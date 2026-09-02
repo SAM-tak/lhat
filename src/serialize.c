@@ -16,10 +16,13 @@
 
 #include <string.h>
 
+#include <stdlib.h>
+
 #include "lhat/config.h"
 #include "lhat/version.h"
 #include "ast.h"
 #include "code.h"
+#include "gc.h"
 #include "grow.h"
 #include "hosted.h"
 #include "registry.h"
@@ -27,6 +30,8 @@
 
 // 0x89 is a UTF-8 continuation byte, which no text begins with.
 static const uint8_t MAGIC[4] = { 0x89, 'L', 'H', '^' };
+// 10.8: the signature table's, told apart from a unit's by the last byte.
+static const uint8_t TABLE_MAGIC[4] = { 0x89, 'L', 'H', 'S' };
 #define FORMAT_VERSION 1u
 #define FLAG_DEBUG_NAMES 1u
 #define FLAG_STRICT 2u
@@ -510,7 +515,7 @@ static uint32_t ext_of_enum(Writer *w, const void *decl)
         }
     }
     const LhatUnit *unit = w->unit;
-    if (unit->parsed.root != NULL) {
+    if (unit != NULL && unit->parsed.root != NULL) {
         EnumSearch search = { decl, NULL };
         find_enumdef(&search, NULL, false, unit->parsed.root);
         const char *text = NULL;
@@ -523,7 +528,7 @@ static uint32_t ext_of_enum(Writer *w, const void *decl)
             return add_ext(w, &ext);
         }
     }
-    for (size_t i = 0; i < unit->referenced_count; i++) {
+    for (size_t i = 0; unit != NULL && i < unit->referenced_count; i++) {
         const LhatUnit *other = unit->referenced[i];
         const LhatType *exports = other->checked.exports;
         if (exports == NULL) {
@@ -840,6 +845,67 @@ static void emit_proto(Writer *w, Out *o, const LhatProto *proto)
     }
 }
 
+// The three tables every format begins with: the strings (each followed
+// by a NUL, so a reader may hand the bytes to the C library as they
+// stand), the external references, and the objects front to back.
+static void emit_tables(Writer *w, Out *o)
+{
+    put_u32(o, (uint32_t)w->string_count);
+    for (size_t i = 0; i < w->string_count; i++) {
+        put_text(o, w->strings[i].text, w->strings[i].length);
+        put_u8(o, 0);
+    }
+
+    put_u32(o, (uint32_t)w->ext_count);
+    for (size_t i = 0; i < w->ext_count; i++) {
+        const Ext *e = &w->exts[i];
+        put_u8(o, (uint8_t)e->kind);
+        put_u32(o, e->module);
+        put_u32(o, e->name);
+        put_u32(o, e->variant);
+        put_u32(o, e->path);
+        put_u32(o, e->width);
+    }
+
+    put_u32(o, (uint32_t)w->obj_count);
+    for (size_t i = 0; i < w->obj_count; i++) {
+        const LhatObject *object = w->objs[i];
+        if (object->kind == LHAT_OBJECT_ERROR_KIND) {
+            emit_kind(w, o, (const LhatErrorKind *)object);
+        } else {
+            emit_rt(w, o, (const LhatRuntimeType *)object);
+        }
+    }
+}
+
+static void writer_dispose(Writer *w)
+{
+    lhat_free(w->strings);
+    lhat_free(w->exts);
+    lhat_free((void *)w->objs);
+    free_owned_texts(w);
+}
+
+// The header, with the hash left for seal_header.
+static void emit_header(Out *o, const uint8_t *magic, uint16_t flags)
+{
+    put_bytes(o, magic, 4);
+    put_u16(o, FORMAT_VERSION);
+    put_u16(o, flags);
+    put_u64(o, fingerprint());
+    put_u64(o, 0);
+    put_text(o, LHAT_VERSION, strlen(LHAT_VERSION));
+}
+
+static void seal_header(Out *o)
+{
+    uint64_t hash =
+        fnv_step(FNV_BASIS, o->data + HEADER_BYTES, o->length - HEADER_BYTES);
+    for (int i = 0; i < 8; i++) {
+        o->data[16 + i] = (uint8_t)(hash >> (8 * i));
+    }
+}
+
 bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
                           uint8_t **out, size_t *length)
 {
@@ -881,43 +947,10 @@ bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
 
     Out o;
     memset(&o, 0, sizeof o);
-    put_bytes(&o, MAGIC, sizeof MAGIC);
-    put_u16(&o, FORMAT_VERSION);
-    put_u16(&o, (uint16_t)((with_debug_names ? FLAG_DEBUG_NAMES : 0) |
+    emit_header(&o, MAGIC,
+                (uint16_t)((with_debug_names ? FLAG_DEBUG_NAMES : 0) |
                            (unit->program->strict ? FLAG_STRICT : 0)));
-    put_u64(&o, fingerprint());
-    put_u64(&o, 0);  // the hash, patched below
-    put_text(&o, LHAT_VERSION, strlen(LHAT_VERSION));
-
-    // Each string is followed by a NUL, so a reader may hand the bytes to
-    // the C library as they stand.
-    put_u32(&o, (uint32_t)w.string_count);
-    for (size_t i = 0; i < w.string_count; i++) {
-        put_text(&o, w.strings[i].text, w.strings[i].length);
-        put_u8(&o, 0);
-    }
-
-    put_u32(&o, (uint32_t)w.ext_count);
-    for (size_t i = 0; i < w.ext_count; i++) {
-        const Ext *e = &w.exts[i];
-        put_u8(&o, (uint8_t)e->kind);
-        put_u32(&o, e->module);
-        put_u32(&o, e->name);
-        put_u32(&o, e->variant);
-        put_u32(&o, e->path);
-        put_u32(&o, e->width);
-    }
-
-    put_u32(&o, (uint32_t)w.obj_count);
-    for (size_t i = 0; i < w.obj_count; i++) {
-        const LhatObject *object = w.objs[i];
-        if (object->kind == LHAT_OBJECT_ERROR_KIND) {
-            emit_kind(&w, &o, (const LhatErrorKind *)object);
-        } else {
-            emit_rt(&w, &o, (const LhatRuntimeType *)object);
-        }
-    }
-
+    emit_tables(&w, &o);
     emit_proto(&w, &o, unit->proto);
     put_u32(&o, cstr_ref(&w, unit->module_name));
     put_u32(&o, (uint32_t)exports);
@@ -937,20 +970,154 @@ bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
 
     bool ok = !w.failed && !o.failed;
     if (ok) {
-        uint64_t hash =
-            fnv_step(FNV_BASIS, o.data + HEADER_BYTES, o.length - HEADER_BYTES);
-        for (int i = 0; i < 8; i++) {
-            o.data[16 + i] = (uint8_t)(hash >> (8 * i));
-        }
+        seal_header(&o);
         *out = o.data;
         *length = o.length;
     } else {
         lhat_free(o.data);
     }
-    lhat_free(w.strings);
-    lhat_free(w.exts);
-    lhat_free((void *)w.objs);
-    free_owned_texts(&w);
+    writer_dispose(&w);
+    return ok;
+}
+
+// ---------------------------------------------------------------------------
+// 10.8: the signature table, written
+// ---------------------------------------------------------------------------
+
+// What install builds for an entry, as one descriptor: the parameters as
+// the parts, the receiver and variadic marks on it. Made on `scratch` so
+// that writing leaves nothing on the program; the parts themselves are the
+// entry's own, on host_heap, and travel as the objects they are.
+static LhatRuntimeType *entry_descriptor(LhatHeap *scratch, uint8_t parameters,
+                                         LhatRuntimeType *const *types,
+                                         bool has_variadic, bool takes_self,
+                                         bool self_last)
+{
+    LhatRuntimeType *rt = lhat_type_rt_new(scratch, LHAT_TYPE_RT_SUBROUTINE);
+    if (rt == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < parameters; i++) {
+        if (!lhat_type_rt_add_part(rt, types != NULL ? types[i] : NULL)) {
+            return NULL;
+        }
+    }
+    rt->takes_self = takes_self;
+    rt->self_last = self_last;
+    if (has_variadic) {
+        // The mark is what a host arm reads (fits_call's has_variadic); the
+        // element type is not kept on an entry, so any^ stands for it.
+        rt->variadic = lhat_type_rt_new(scratch, LHAT_TYPE_RT_ANY);
+        if (rt->variadic == NULL) {
+            return NULL;
+        }
+    }
+    return rt;
+}
+
+// One record: the text, then the body -- the three tables and the root --
+// as bytes of its own, so a reader decodes it alone and in any order.
+static bool emit_record(const LhatProgram *program, Out *o, const char *text,
+                        const LhatRuntimeType *rt)
+{
+    Writer w;
+    memset(&w, 0, sizeof w);
+    w.program = program;
+    intern_rt(&w, rt);
+
+    Out body;
+    memset(&body, 0, sizeof body);
+    emit_tables(&w, &body);
+    put_u32(&body, obj_ref(&w, rt));
+
+    bool ok = !w.failed && !body.failed;
+    if (ok) {
+        put_text(o, text, strlen(text));
+        put_u8(o, 0);
+        put_u32(o, (uint32_t)body.length);
+        put_bytes(o, body.data, body.length);
+    }
+    lhat_free(body.data);
+    writer_dispose(&w);
+    return ok;
+}
+
+typedef struct {
+    const char *text;
+    const LhatRuntimeType *rt;
+} Record;
+
+static bool seen_text(const Record *records, size_t count, const char *text)
+{
+    for (size_t i = 0; i < count; i++) {
+        if (strcmp(records[i].text, text) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool lhat_serialize_write_signatures(const LhatProgram *program,
+                                     uint8_t **out, size_t *length)
+{
+    if (program == NULL || out == NULL || length == NULL) {
+        return false;
+    }
+    LhatHeap scratch;
+    memset(&scratch, 0, sizeof scratch);
+    scratch.white = LHAT_GC_BLACK;
+
+    size_t room = program->host_entry_count + program->global_count;
+    Record *records =
+        (Record *)lhat_calloc(room ? room : 1, sizeof *records);
+    size_t count = 0;
+    bool ok = records != NULL;
+    for (size_t i = 0; ok && i < program->host_entry_count; i++) {
+        const LhatHostEntry *e = &program->host_entries[i];
+        if (e->call == NULL || e->signature_text == NULL ||
+            seen_text(records, count, e->signature_text)) {
+            continue;
+        }
+        records[count].text = e->signature_text;
+        records[count].rt = entry_descriptor(&scratch, e->parameters,
+                                             e->parameter_types,
+                                             e->has_variadic, e->takes_self,
+                                             e->self_last);
+        ok = records[count].rt != NULL;
+        count++;
+    }
+    for (size_t i = 0; ok && i < program->global_count; i++) {
+        const LhatGlobalEntry *e = &program->global_entries[i];
+        if (e->signature_text == NULL ||
+            seen_text(records, count, e->signature_text)) {
+            continue;
+        }
+        records[count].text = e->signature_text;
+        records[count].rt = entry_descriptor(&scratch, e->parameters,
+                                             e->parameter_types,
+                                             e->has_variadic, e->takes_self,
+                                             e->self_last);
+        ok = records[count].rt != NULL;
+        count++;
+    }
+
+    Out o;
+    memset(&o, 0, sizeof o);
+    emit_header(&o, TABLE_MAGIC, 0);
+    put_u32(&o, (uint32_t)count);
+    for (size_t i = 0; ok && i < count; i++) {
+        ok = emit_record(program, &o, records[i].text, records[i].rt);
+    }
+    ok = ok && !o.failed;
+    if (ok) {
+        seal_header(&o);
+        *out = o.data;
+        *length = o.length;
+    } else {
+        lhat_free(o.data);
+    }
+    lhat_free(records);
+    lhat_object_free_all(&scratch);
     return ok;
 }
 
@@ -979,7 +1146,9 @@ typedef struct {
     LhatObject **objs;
     size_t obj_count;
 
-    LhatProto *root;  // the heap every object is made on
+    LhatProto *root;   // a unit's root body, NULL for a record
+    LhatHeap *heap;    // where every object is made
+    const char *label; // what a report names
 } Reader;
 
 static void fail(Reader *r, LhatProgramErrorCode error)
@@ -1026,8 +1195,7 @@ static LhatString *lstring_at(Reader *r, uint32_t ref)
         return NULL;
     }
     if (r->made[ref - 1] == NULL) {
-        r->made[ref - 1] = lhat_string_new(&r->root->chunk.heap,
-                                           r->strings[ref - 1].text,
+        r->made[ref - 1] = lhat_string_new(r->heap, r->strings[ref - 1].text,
                                            r->strings[ref - 1].length);
         if (r->made[ref - 1] == NULL) {
             fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
@@ -1079,7 +1247,7 @@ static const void *resolve_ext(Reader *r, ExtKind kind, uint32_t module_ref,
     }
     switch (kind) {
         case EXT_UNIT: {
-            if (path == NULL) {
+            if (path == NULL || r->unit == NULL) {
                 fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
                 return NULL;
             }
@@ -1152,7 +1320,7 @@ static const void *resolve_ext(Reader *r, ExtKind kind, uint32_t module_ref,
             fail(r, LHAT_PROGRAM_ERR_HOST_MISMATCH);
             return NULL;
         case EXT_ENUMDECL: {
-            if (name == NULL) {
+            if (name == NULL || r->unit == NULL) {
                 fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
                 return NULL;
             }
@@ -1191,8 +1359,7 @@ static void read_kind(Reader *r)
         fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
         return;
     }
-    LhatErrorKind *made =
-        lhat_error_kind_new(&r->root->chunk.heap, group, local, name);
+    LhatErrorKind *made = lhat_error_kind_new(r->heap, group, local, name);
     if (made == NULL) {
         fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
         return;
@@ -1208,8 +1375,7 @@ static void read_rt(Reader *r)
         fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
         return;
     }
-    LhatRuntimeType *rt =
-        lhat_type_rt_new(&r->root->chunk.heap, (LhatRuntimeTypeKind)kind);
+    LhatRuntimeType *rt = lhat_type_rt_new(r->heap, (LhatRuntimeTypeKind)kind);
     if (rt == NULL) {
         fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
         return;
@@ -1256,8 +1422,9 @@ static void read_rt(Reader *r)
     }
     uint32_t parts = get_u32(in);
     for (uint32_t i = 0; i < parts && !in->failed; i++) {
+        // A NULL part is a parameter nothing compares (a host arm's).
         LhatRuntimeType *part = rt_at(r, get_u32(in));
-        if (part == NULL || !lhat_type_rt_add_part(rt, part)) {
+        if (in->failed || !lhat_type_rt_add_part(rt, part)) {
             fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
         }
     }
@@ -1452,6 +1619,100 @@ static bool read_proto(Reader *r, LhatProto *proto)
     return !in->failed;
 }
 
+// The three tables (see emit_tables). Strings are views into the bytes
+// with a slot for each one's object; external references are resolved as
+// they are read -- a unit first, so that what this one requires is closed
+// before its bodies point at it; the objects come front to back.
+static void read_tables(Reader *r)
+{
+    In *in = &r->in;
+    r->string_count = get_u32(in);
+    if (!in->failed && r->string_count > 0) {
+        r->strings = (Str *)lhat_calloc(r->string_count, sizeof *r->strings);
+        r->made = (LhatString **)lhat_calloc(r->string_count, sizeof *r->made);
+        if (r->strings == NULL || r->made == NULL) {
+            fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+        }
+    }
+    for (size_t i = 0; i < r->string_count && !in->failed; i++) {
+        r->strings[i].text = get_text(in, &r->strings[i].length);
+        if (get_u8(in) != 0) {
+            fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+        }
+    }
+
+    r->ext_count = get_u32(in);
+    if (!in->failed && r->ext_count > 0) {
+        r->exts = (Resolved *)lhat_calloc(r->ext_count, sizeof *r->exts);
+        if (r->exts == NULL) {
+            fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+        }
+    }
+    for (size_t i = 0; i < r->ext_count && !in->failed; i++) {
+        uint8_t kind = get_u8(in);
+        uint32_t module = get_u32(in);
+        uint32_t name = get_u32(in);
+        uint32_t variant = get_u32(in);
+        uint32_t path = get_u32(in);
+        uint32_t width = get_u32(in);
+        if (kind > EXT_ENUMDECL) {
+            fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+            break;
+        }
+        r->exts[i].kind = (ExtKind)kind;
+        r->exts[i].resolved =
+            resolve_ext(r, (ExtKind)kind, module, name, variant, path, width);
+    }
+
+    size_t objects = get_u32(in);
+    if (!in->failed && objects > 0) {
+        r->objs = (LhatObject **)lhat_calloc(objects, sizeof *r->objs);
+        if (r->objs == NULL) {
+            fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+        }
+    }
+    for (size_t i = 0; i < objects && !in->failed; i++) {
+        uint8_t what = get_u8(in);
+        if (what == 0) {
+            read_kind(r);
+        } else if (what == 1) {
+            read_rt(r);
+        } else {
+            fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+        }
+    }
+}
+
+static void reader_dispose(Reader *r)
+{
+    lhat_free(r->strings);
+    lhat_free(r->made);
+    lhat_free(r->exts);
+    lhat_free(r->objs);
+}
+
+// The header every format shares: magic, format, fingerprint, hash, then
+// the version the writer was. False leaves nothing to say but BAD_BINARY.
+static bool read_header(In *in, const uint8_t *magic, const uint8_t *bytes,
+                        size_t length)
+{
+    uint8_t seen[4];
+    bool ok = take(in, seen, sizeof seen) && memcmp(seen, magic, 4) == 0 &&
+              get_u16(in) == FORMAT_VERSION;
+    (void)get_u16(in);  // the flags
+    uint64_t stamped = get_u64(in);
+    uint64_t hash = get_u64(in);
+    if (!ok || in->failed || stamped != fingerprint() ||
+        hash != fnv_step(FNV_BASIS, bytes + HEADER_BYTES,
+                         length - HEADER_BYTES)) {
+        return false;
+    }
+    size_t version_length = 0;
+    const char *version = get_text(in, &version_length);
+    return !in->failed && version_length == strlen(LHAT_VERSION) &&
+           memcmp(version, LHAT_VERSION, version_length) == 0;
+}
+
 static void free_binary_unit(LhatBinaryUnit *out)
 {
     lhat_proto_free(out->proto);
@@ -1478,23 +1739,7 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
     memset(out, 0, sizeof *out);
 
     In *in = &r.in;
-    uint8_t magic[4];
-    bool ok = take(in, magic, sizeof magic) && memcmp(magic, MAGIC, 4) == 0 &&
-              get_u16(in) == FORMAT_VERSION;
-    uint16_t flags = get_u16(in);
-    (void)flags;
-    uint64_t stamped = get_u64(in);
-    uint64_t hash = get_u64(in);
-    if (!ok || in->failed || stamped != fingerprint() ||
-        hash != fnv_step(FNV_BASIS, bytes + HEADER_BYTES,
-                         length - HEADER_BYTES)) {
-        lhat_program_report(program, LHAT_PROGRAM_ERR_BAD_BINARY, unit->path);
-        return false;
-    }
-    size_t version_length = 0;
-    const char *version = get_text(in, &version_length);
-    if (in->failed || version_length != strlen(LHAT_VERSION) ||
-        memcmp(version, LHAT_VERSION, version_length) != 0) {
+    if (length < HEADER_BYTES || !read_header(in, MAGIC, bytes, length)) {
         lhat_program_report(program, LHAT_PROGRAM_ERR_BAD_BINARY, unit->path);
         return false;
     }
@@ -1504,66 +1749,9 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
         lhat_program_report(program, LHAT_PROGRAM_ERR_BAD_BINARY, unit->path);
         return false;
     }
-
-    // Strings: views into the bytes, and a slot for each one's object.
-    r.string_count = get_u32(in);
-    if (!in->failed && r.string_count > 0) {
-        r.strings = (Str *)lhat_calloc(r.string_count, sizeof *r.strings);
-        r.made = (LhatString **)lhat_calloc(r.string_count, sizeof *r.made);
-        if (r.strings == NULL || r.made == NULL) {
-            fail(&r, LHAT_PROGRAM_ERR_BAD_BINARY);
-        }
-    }
-    for (size_t i = 0; i < r.string_count && !in->failed; i++) {
-        r.strings[i].text = get_text(in, &r.strings[i].length);
-        if (get_u8(in) != 0) {
-            fail(&r, LHAT_PROGRAM_ERR_BAD_BINARY);
-        }
-    }
-
-    // External references, resolved as they are read -- a unit first, so
-    // that what this one requires is closed before its bodies point at it.
-    r.ext_count = get_u32(in);
-    if (!in->failed && r.ext_count > 0) {
-        r.exts = (Resolved *)lhat_calloc(r.ext_count, sizeof *r.exts);
-        if (r.exts == NULL) {
-            fail(&r, LHAT_PROGRAM_ERR_BAD_BINARY);
-        }
-    }
-    for (size_t i = 0; i < r.ext_count && !in->failed; i++) {
-        uint8_t kind = get_u8(in);
-        uint32_t module = get_u32(in);
-        uint32_t name = get_u32(in);
-        uint32_t variant = get_u32(in);
-        uint32_t path = get_u32(in);
-        uint32_t width = get_u32(in);
-        if (kind > EXT_ENUMDECL) {
-            fail(&r, LHAT_PROGRAM_ERR_BAD_BINARY);
-            break;
-        }
-        r.exts[i].kind = (ExtKind)kind;
-        r.exts[i].resolved =
-            resolve_ext(&r, (ExtKind)kind, module, name, variant, path, width);
-    }
-
-    // The objects, front to back.
-    size_t objects = get_u32(in);
-    if (!in->failed && objects > 0) {
-        r.objs = (LhatObject **)lhat_calloc(objects, sizeof *r.objs);
-        if (r.objs == NULL) {
-            fail(&r, LHAT_PROGRAM_ERR_BAD_BINARY);
-        }
-    }
-    for (size_t i = 0; i < objects && !in->failed; i++) {
-        uint8_t what = get_u8(in);
-        if (what == 0) {
-            read_kind(&r);
-        } else if (what == 1) {
-            read_rt(&r);
-        } else {
-            fail(&r, LHAT_PROGRAM_ERR_BAD_BINARY);
-        }
-    }
+    r.heap = &r.root->chunk.heap;
+    r.label = unit->path;
+    read_tables(&r);
 
     out->proto = r.root;
     if (!in->failed && read_proto(&r, r.root)) {
@@ -1615,9 +1803,91 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
         free_binary_unit(out);
         lhat_program_report(program, r.error, unit->path);
     }
-    lhat_free(r.strings);
-    lhat_free(r.made);
-    lhat_free(r.exts);
-    lhat_free(r.objs);
+    reader_dispose(&r);
     return loaded;
+}
+
+// ---------------------------------------------------------------------------
+// 10.8: the signature table, read
+// ---------------------------------------------------------------------------
+
+static int compare_index(const void *a, const void *b)
+{
+    return strcmp(((const LhatSignatureIndex *)a)->text,
+                  ((const LhatSignatureIndex *)b)->text);
+}
+
+bool lhat_serialize_index_signatures(LhatProgram *program,
+                                     const uint8_t *bytes, size_t length,
+                                     LhatSignatureIndex **out_index,
+                                     size_t *out_count)
+{
+    *out_index = NULL;
+    *out_count = 0;
+    In in;
+    memset(&in, 0, sizeof in);
+    in.data = bytes;
+    in.length = length;
+    if (length < HEADER_BYTES || !read_header(&in, TABLE_MAGIC, bytes, length)) {
+        lhat_program_report(program, LHAT_PROGRAM_ERR_BAD_BINARY, "signatures");
+        return false;
+    }
+    uint32_t count = get_u32(&in);
+    LhatSignatureIndex *index =
+        count > 0 ? (LhatSignatureIndex *)lhat_calloc(count, sizeof *index)
+                  : NULL;
+    if (count > 0 && index == NULL) {
+        return false;
+    }
+    for (uint32_t i = 0; i < count && !in.failed; i++) {
+        index[i].text = get_text(&in, &index[i].text_length);
+        if (get_u8(&in) != 0) {
+            in.failed = true;
+            break;
+        }
+        uint32_t body = get_u32(&in);
+        if (in.failed || in.length - in.at < body) {
+            in.failed = true;
+            break;
+        }
+        index[i].body_offset = in.at;
+        index[i].body_length = body;
+        in.at += body;
+    }
+    if (in.failed || in.at != in.length) {
+        lhat_free(index);
+        lhat_program_report(program, LHAT_PROGRAM_ERR_BAD_BINARY, "signatures");
+        return false;
+    }
+    if (count > 1) {
+        qsort(index, count, sizeof *index, compare_index);
+    }
+    *out_index = index;
+    *out_count = count;
+    return true;
+}
+
+const LhatRuntimeType *lhat_serialize_read_signature(LhatProgram *program,
+                                                     const uint8_t *body,
+                                                     size_t length)
+{
+    Reader r;
+    memset(&r, 0, sizeof r);
+    r.program = program;
+    r.in.data = body;
+    r.in.length = length;
+    r.error = LHAT_PROGRAM_ERR_BAD_BINARY;
+    r.heap = &program->host_heap;
+    r.label = "signatures";
+    read_tables(&r);
+    const LhatRuntimeType *rt = NULL;
+    if (!r.in.failed) {
+        rt = rt_at(&r, get_u32(&r.in));
+    }
+    if (r.in.failed || r.in.at != r.in.length || rt == NULL) {
+        lhat_program_report(program, r.error, "signatures");
+        rt = NULL;
+    }
+    reader_dispose(&r);
+    return rt;
 }

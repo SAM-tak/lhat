@@ -801,6 +801,30 @@ static int compile_program(const char *path, const char *out_dir,
 // than the one file named on the command line.
 // `arguments` is what follows the path on the command line: 02 の 13.7 with
 // 05 の 3.2 make a script's top level 'p^...', and these are its '...'.
+// 10.8: the table read before anything registers, when one was named.
+static const char *signatures_file;  // --signatures FILE, or NULL
+
+static bool read_signatures(LhatProgram *program)
+{
+    if (signatures_file == NULL) {
+        return true;
+    }
+    size_t length = 0;
+    char *bytes = lhat_load_file(NULL, signatures_file, &length);
+    if (bytes == NULL) {
+        fprintf(stderr, "lhat: cannot read %s\n", signatures_file);
+        return false;
+    }
+    bool ok = lhat_program_read_signatures(program, (const uint8_t *)bytes,
+                                           length);
+    lhat_free(bytes);
+    if (!ok) {
+        fprintf(stderr, "lhat: %s is not a signature table this build "
+                        "reads\n", signatures_file);
+    }
+    return ok;
+}
+
 static int check_program(const char *path, bool run, bool strict,
                          char **arguments, size_t argument_count,
                          unsigned dap_port)
@@ -808,7 +832,8 @@ static int check_program(const char *path, bool run, bool strict,
     (void)dap_port;  // unused without LHAT_CLI_WITH_DAP
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
-    if (!bind_host_names(&program)) {  // 05 の 8.2, before checking (8.3)
+    if (!read_signatures(&program) || !bind_host_names(&program)) {
+        // 05 の 8.2, before checking (8.3)
         fprintf(stderr, "lhat: out of memory\n");
         lhat_program_dispose(&program);
         return EXIT_FAILURE;
@@ -1227,6 +1252,11 @@ static void print_usage(void)
                             " as JSON, for lhatls\n");
     printf("  --compile -o DIR  check and compile the whole program and"
                             " write every unit to DIR as bytes\n");
+    printf("  --dump-signatures FILE  write the signature table this"
+                            " driver's registrations make\n");
+    printf("  --signatures FILE  read a signature table before"
+                            " registering (what a build without the front"
+                            " end registers by)\n");
     printf("  --strip-debug  leave the local and captured names out of"
                             " what --compile writes\n");
     printf("  --dap=PORT     run under a debugger over DAP on that"
@@ -1249,6 +1279,8 @@ int main(int argc, char **argv)
     bool compile_out = false;      // 05 の 10 章
     const char *out_dir = NULL;
     bool strip_debug = false;
+    const char *dump_signatures_path = NULL;  // 10.8
+    const char *signatures_path = NULL;
     bool show_help = false;
     bool show_version = false;
     unsigned dap_port = 0;  // 09 章: --dap=PORT runs under a debugger
@@ -1280,6 +1312,10 @@ int main(int argc, char **argv)
             strip_debug = true;
         } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             out_dir = argv[++i];
+        } else if (strcmp(argv[i], "--dump-signatures") == 0 && i + 1 < argc) {
+            dump_signatures_path = argv[++i];
+        } else if (strcmp(argv[i], "--signatures") == 0 && i + 1 < argc) {
+            signatures_path = argv[++i];
         } else if (strcmp(argv[i], "-h") == 0 ||
                    strcmp(argv[i], "--help") == 0) {
             show_help = true;
@@ -1355,6 +1391,32 @@ int main(int argc, char **argv)
         return status;
     }
 
+    // 10.8: the signature table this driver's registrations make.
+    if (dump_signatures_path != NULL) {
+        LhatProgram program;
+        lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL,
+                          NULL);
+        uint8_t *bytes = NULL;
+        size_t length = 0;
+        bool ok = bind_host_names(&program) &&
+                  lhat_program_write_signatures(&program, &bytes, &length);
+        lhat_program_dispose(&program);
+        if (!ok) {
+            fprintf(stderr, "lhat: could not write the signature table\n");
+            return EXIT_FAILURE;
+        }
+        FILE *file = fopen(dump_signatures_path, "wb");
+        if (file == NULL) {
+            fprintf(stderr, "lhat: cannot write %s\n", dump_signatures_path);
+            lhat_free(bytes);
+            return EXIT_FAILURE;
+        }
+        fwrite(bytes, 1, length, file);
+        fclose(file);
+        lhat_free(bytes);
+        return EXIT_SUCCESS;
+    }
+
     // 03 の 4 章: with nothing to read, read from the prompt.
     if (path == NULL && !tokens_only && !bytecode_only && !check_only &&
         !run_program && !command_form) {
@@ -1369,6 +1431,7 @@ int main(int argc, char **argv)
     // Checking is a question about a program, not about a file: 05 の 6.2
     // puts the units a file requires ahead of it. The bytecode dump walks
     // the same graph, so it reads its own input the same way.
+    signatures_file = signatures_path;
     if (compile_out) {
         if (out_dir == NULL) {
             fprintf(stderr, "lhat: --compile needs -o DIR\n");

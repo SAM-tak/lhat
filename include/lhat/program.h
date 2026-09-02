@@ -46,7 +46,12 @@ typedef enum {
     LHAT_PROGRAM_ERR_HOST_MISMATCH,
     // 10 章: a text unit required a binary one or the other way round. A
     // program is one or the other.
-    LHAT_PROGRAM_ERR_MIXED
+    LHAT_PROGRAM_ERR_MIXED,
+    // 10.8: a registration's signature that the signature table does not
+    // hold, in a build that has no front end to read the text with.
+    LHAT_PROGRAM_ERR_NO_SIGNATURE,
+    // 10.9: a text unit met by a build without the front end.
+    LHAT_PROGRAM_ERR_NO_FRONTEND
 } LhatProgramErrorCode;
 
 typedef struct {
@@ -522,6 +527,27 @@ bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
 // program with the same registrations.
 bool lhat_unit_write_binary(const LhatUnit *unit, bool with_debug_names,
                             uint8_t **bytes, size_t *length);
+
+// 10.8: the signature table. A registration's signature is text
+// ("f^number^ -> number^;"), and reading it takes the front end -- the
+// parser and the checker. A build without one (10.9) registers by looking
+// the text up in a table a full build wrote from the same registrations:
+// what the table holds for each text is the descriptor the machine's
+// overload search reads, exactly as install would have built it.
+//
+// Write it from a program that has registered everything the host
+// registers, after registering and before checking; read it into a program
+// of the other build before registering. The bytes are lhat_alloc'd and
+// the caller's to lhat_free. Reading refuses a table from another build
+// (LHAT_PROGRAM_ERR_BAD_BINARY); a name the reading program did not
+// register the same way is LHAT_PROGRAM_ERR_HOST_MISMATCH when the
+// registration that needs it comes.
+//
+// A build with the front end reads the text as ever and consults no table.
+bool lhat_program_write_signatures(const LhatProgram *program,
+                                   uint8_t **bytes, size_t *length);
+bool lhat_program_read_signatures(LhatProgram *program, const uint8_t *bytes,
+                                  size_t length);
 
 // ---------------------------------------------------------------------------
 // 01 の 6.4: what a unit says about itself

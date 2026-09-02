@@ -1064,6 +1064,13 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         // 13.13: the same word naming the same step out.
         case LHAT_TYPE_RT_SELF:
             return a->levels == b->levels;
+        // 02 の 19 章: an enum is its declaration, and a member is one
+        // position in it -- the same identity fits^ compares.
+        case LHAT_TYPE_RT_ENUM:
+            return a->enum_decl == b->enum_decl;
+        case LHAT_TYPE_RT_ENUM_MEMBER:
+            return a->enum_decl == b->enum_decl &&
+                   a->enum_member_index == b->enum_member_index;
     }
     return false;
 }

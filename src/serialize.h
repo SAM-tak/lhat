@@ -43,4 +43,26 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
                          const uint8_t *bytes, size_t length,
                          LhatBinaryUnit *out);
 
+// 10.8: the signature table. Writes one record per distinct signature text
+// the program's registrations carry -- the descriptor install builds for
+// the entry -- under the same header a unit has.
+bool lhat_serialize_write_signatures(const LhatProgram *program,
+                                     uint8_t **out, size_t *length);
+
+// Checks the header of a table and lists its records, sorted by text. The
+// index points into `bytes`, which the caller keeps for as long as it does.
+// False (with the reason reported on the program) when the bytes are not a
+// table this build wrote.
+bool lhat_serialize_index_signatures(LhatProgram *program,
+                                     const uint8_t *bytes, size_t length,
+                                     LhatSignatureIndex **out_index,
+                                     size_t *out_count);
+
+// Decodes one record's body onto the program's host heap. NULL when a name
+// in it is not registered on this program (HOST_MISMATCH reported) or the
+// record is damaged.
+const LhatRuntimeType *lhat_serialize_read_signature(LhatProgram *program,
+                                                     const uint8_t *body,
+                                                     size_t length);
+
 #endif  // LHAT_SERIALIZE_H

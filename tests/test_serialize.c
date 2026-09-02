@@ -14,6 +14,8 @@
 #include "lhat/port.h"
 #include "lhat/program.h"
 #include "program_internal.h"
+#include "check.h"
+#include "rttype.h"
 
 // A disk of bytes: text or binary, told apart by nothing but the content.
 typedef struct {
@@ -508,6 +510,152 @@ static void test_exports(void)
     lhat_free(lib_bytes);
 }
 
+// 10.8: the signature table. What a full build writes for a registration
+// is what install builds for it -- the parameters as parts, the receiver
+// and variadic marks -- and a program of any build reads it back.
+static void host_noop(LhatMachine *machine, void *context,
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
+{
+    (void)machine;
+    (void)context;
+    (void)arguments;
+    (void)count;
+    (void)answers;
+    *answer_count = 0;
+}
+
+static const char *const SIGNATURES[] = {
+    "f^number^, k.T -> number^;",
+    "f^string^ -> number^|nil^;",
+    "f^t^{number^[]} -> string^|k.Bad.Oops;",
+    "f^k.Mode, k.V -> k.V;",
+    "f^ -> nil^;",
+    "p^ ...:number^;",
+};
+#define SIGNATURE_COUNT (sizeof SIGNATURES / sizeof SIGNATURES[0])
+static const char *const MEMBER_SIGNATURES[] = {
+    "f^self^ -> c^{p^ -> any^};",
+    "p^self^, string^;",
+};
+#define MEMBER_SIGNATURE_COUNT \
+    (sizeof MEMBER_SIGNATURES / sizeof MEMBER_SIGNATURES[0])
+
+static void register_signatures(LhatProgram *program)
+{
+    char name[8];
+    for (size_t i = 0; i < SIGNATURE_COUNT; i++) {
+        snprintf(name, sizeof name, "f%zu", i);
+        LHAT_CHECK(lhat_register_func(program, "k", name, SIGNATURES[i],
+                                      host_noop, NULL),
+                   "a function registered");
+    }
+    for (size_t i = 0; i < MEMBER_SIGNATURE_COUNT; i++) {
+        snprintf(name, sizeof name, "m%zu", i);
+        LHAT_CHECK(lhat_register_member(program, "k", "T", name,
+                                        MEMBER_SIGNATURES[i], host_noop, NULL),
+                   "a member registered");
+    }
+}
+
+// The descriptor the table holds against the one the front end builds for
+// the same text: the same parts, the same marks.
+static void check_signature(LhatProgram *program, const char *text)
+{
+    const LhatRuntimeType *held = lhat_program_signature_type(program, text);
+    LHAT_CHECK(held != NULL, text);
+    const LhatType *written = lhat_type_of_text(text, strlen(text),
+                                                &program->types,
+                                                program->hosted, NULL);
+    LHAT_CHECK(written != NULL, "the text reads");
+    if (held == NULL || written == NULL) {
+        return;
+    }
+    const LhatRuntimeType *expected =
+        lhat_rt_from_checked(&program->host_heap, written);
+    LHAT_CHECK(expected != NULL && held->kind == LHAT_TYPE_RT_SUBROUTINE,
+               "a subroutine");
+    if (expected == NULL) {
+        return;
+    }
+    LHAT_CHECK_EQ_INT(held->part_count, expected->part_count);
+    for (size_t i = 0; i < held->part_count && i < expected->part_count; i++) {
+        bool same = (held->parts[i] == NULL) == (expected->parts[i] == NULL) &&
+                    (held->parts[i] == NULL ||
+                     lhat_runtime_type_equal(held->parts[i], expected->parts[i]));
+        LHAT_CHECK(same, "the parameter descriptors agree");
+    }
+    LHAT_CHECK(held->takes_self == expected->takes_self &&
+                   held->self_last == expected->self_last &&
+                   (held->variadic != NULL) == (expected->variadic != NULL),
+               "the marks agree");
+}
+
+static void test_signatures(void)
+{
+    uint8_t *bytes = NULL;
+    size_t length = 0;
+    {
+        LhatProgram program;
+        lhat_program_init(&program, true, NULL, NULL);
+        register_host(&program, 8);
+        register_signatures(&program);
+        LHAT_CHECK(lhat_program_write_signatures(&program, &bytes, &length),
+                   "the table wrote");
+        lhat_program_dispose(&program);
+    }
+
+    LHAT_TEST("a signature table reads back what install would build");
+    {
+        LhatProgram program;
+        lhat_program_init(&program, true, NULL, NULL);
+        register_host(&program, 8);
+        LHAT_CHECK(lhat_program_read_signatures(&program, bytes, length),
+                   "the table read");
+        for (size_t i = 0; i < SIGNATURE_COUNT; i++) {
+            check_signature(&program, SIGNATURES[i]);
+        }
+        for (size_t i = 0; i < MEMBER_SIGNATURE_COUNT; i++) {
+            check_signature(&program, MEMBER_SIGNATURES[i]);
+        }
+        LHAT_CHECK(lhat_program_signature_type(&program, "f^ -> bool^;") ==
+                       NULL,
+                   "a text the table does not hold answers nothing");
+        LHAT_CHECK(!has_program_error(&program, LHAT_PROGRAM_ERR_BAD_BINARY),
+                   "and reports nothing");
+        lhat_program_dispose(&program);
+    }
+
+    LHAT_TEST("a name the reading program did not register is a mismatch");
+    {
+        LhatProgram program;
+        lhat_program_init(&program, true, NULL, NULL);
+        LHAT_CHECK(lhat_program_read_signatures(&program, bytes, length),
+                   "the table read");
+        LHAT_CHECK(lhat_program_signature_type(&program, SIGNATURES[0]) == NULL,
+                   "k.T is not there");
+        LHAT_CHECK(has_program_error(&program, LHAT_PROGRAM_ERR_HOST_MISMATCH),
+                   "and says why");
+        lhat_program_dispose(&program);
+    }
+
+    LHAT_TEST("a table from another build is refused");
+    {
+        uint8_t *other = (uint8_t *)malloc(length);
+        memcpy(other, bytes, length);
+        other[9] ^= 0x01;
+        LhatProgram program;
+        lhat_program_init(&program, true, NULL, NULL);
+        LHAT_CHECK(!lhat_program_read_signatures(&program, other, length),
+                   "refused");
+        LHAT_CHECK(has_program_error(&program, LHAT_PROGRAM_ERR_BAD_BINARY),
+                   "and says why");
+        lhat_program_dispose(&program);
+        free(other);
+    }
+    lhat_free(bytes);
+}
+
 int main(void)
 {
     test_roundtrip();
@@ -516,5 +664,6 @@ int main(void)
     test_traceback();
     test_host_references();
     test_exports();
+    test_signatures();
     return lhat_test_report("test_serialize");
 }

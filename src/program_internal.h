@@ -97,6 +97,16 @@ typedef struct LhatProgramEnum {
     LhatRuntimeType *decl_rt;
 } LhatProgramEnum;
 
+// 05 の 10 章: one entry of the signature table a program read (10.8): the
+// text a registration is written with, and where its record stands in the
+// bytes the program keeps. Sorted by text, so a lookup halves its way in.
+typedef struct LhatSignatureIndex {
+    const char *text;  // into the program's copy of the bytes; NUL-terminated
+    size_t text_length;
+    size_t body_offset;
+    size_t body_length;
+} LhatSignatureIndex;
+
 // 05 の 10 章: the identity an enum^ declaration has in a binary program --
 // the token fits^ compares (RT_ENUM.enum_decl), found again by the unit it
 // was declared in and its name. The type object is the arena's; the strings
@@ -106,6 +116,70 @@ typedef struct LhatEnumIdentity {
     char *name;
     LhatType *decl;
 } LhatEnumIdentity;
+
+// One thing the host registered, kept so that lhat_program_install can build
+// the values once a machine exists. The type side is in `program->hosted`
+// already, since the checker needs it before anything runs.
+// 05 の 8.7改: which scalar a constant entry carries. NONE for a function
+// or a type declaration -- the two shapes every entry had before.
+typedef enum {
+    LHAT_HOST_CONST_NONE = 0,
+    LHAT_HOST_CONST_INTEGER,
+    LHAT_HOST_CONST_REAL,
+    LHAT_HOST_CONST_BOOL,
+    LHAT_HOST_CONST_STRING
+} LhatHostConstKind;
+
+typedef struct LhatHostEntry {
+    char *module;   // owned; the dotted path
+    char *type;     // owned; NULL when the entry belongs to the module itself
+    char *name;     // owned
+    // The signature as the registration wrote it, owned; NULL for a type
+    // declaration, which has none. `signature` below is what checking uses;
+    // this is for writing the registration back out
+    // (lhat_program_dump_host_api) -- the parsed type cannot be turned back
+    // into text without losing the names it was written with (a hostdata
+    // type prints structurally, an error kind loses its module prefix), so
+    // the text itself is what survives.
+    char *signature_text;
+    LhatHostFn call;  // NULL for a type, which carries no value of its own
+    void *context;
+    uint8_t parameters;
+    bool has_variadic;  // 13.7: the signature ended in '...' -- see LhatHost
+    bool takes_self;
+    bool self_last;     // 02 の 11.3改: the receiver is the right operand
+    // 02 の 14.12: the descriptor the machine's overload search reads, one
+    // per parameter, lowered once at registration onto host_heap (the
+    // nodes) -- install hands every machine the same ones. The array is
+    // owned; NULL where there is nothing to compare.
+    LhatRuntimeType **parameter_types;
+    // 05 の 8.8: the tag values of this type carry. Kept on the entry so that
+    // it lives as long as the program and points at the entry's own strings.
+    LhatHostDataTag *tag;
+
+    // 05 の 8.7改: the constant's shape and value, when the entry is one.
+    // `call` is NULL then, as for a type declaration -- const_kind is what
+    // tells the two apart. const_text is owned.
+    LhatHostConstKind const_kind;
+    int64_t const_integer;
+    double const_real;
+    bool const_bool;
+    char *const_text;
+} LhatHostEntry;
+
+// 05 の 8.6: one member of L^ itself. Separate from the above because it does
+// not land under L^.modules, so install puts it somewhere else.
+typedef struct LhatGlobalEntry {
+    char *name;  // owned
+    char *signature_text;  // owned, as on LhatHostEntry
+    LhatHostFn call;
+    void *context;
+    uint8_t parameters;
+    bool has_variadic;
+    bool takes_self;
+    bool self_last;
+    LhatRuntimeType **parameter_types;  // 14.12, as on LhatHostEntry
+} LhatGlobalEntry;
 
 struct LhatProgram {
     // 6 章: shared, so the types one unit publishes stay valid in the units
@@ -177,6 +251,15 @@ struct LhatProgram {
     LhatEnumIdentity *enum_identities;
     size_t enum_identity_count;
     size_t enum_identity_capacity;
+
+    // 10.8: the signature table lhat_program_read_signatures kept -- a copy
+    // of the bytes and the sorted index into them. A build without the
+    // front end registers a signature by looking it up here instead of
+    // reading the text.
+    uint8_t *signatures;
+    size_t signature_length;
+    LhatSignatureIndex *signature_index;
+    size_t signature_count;
     size_t host_entry_capacity;
 
     // 02 の 18.5: what lhat_register_annotation recorded. Only the checker
@@ -277,5 +360,12 @@ void lhat_program_report(LhatProgram *program, LhatProgramErrorCode code,
 const LhatType *lhat_program_enum_identity(LhatProgram *program,
                                            const char *path,
                                            const char *name);
+// 10.8: the descriptor the signature table holds for `text` -- a
+// SUBROUTINE whose parts are the parameters, with the receiver and variadic
+// marks, built onto host_heap. NULL when the table has no such text, or a
+// name in it is not registered on this program (reported as
+// HOST_MISMATCH).
+const LhatRuntimeType *lhat_program_signature_type(LhatProgram *program,
+                                                   const char *text);
 
 #endif  // LHAT_PROGRAM_INTERNAL_H

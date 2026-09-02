@@ -1179,69 +1179,6 @@ bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
 // 05 の 8.7: what the host provides
 // ---------------------------------------------------------------------------
 
-// One thing the host registered, kept so that lhat_program_install can build
-// the values once a machine exists. The type side is in `program->hosted`
-// already, since the checker needs it before anything runs.
-// 05 の 8.7改: which scalar a constant entry carries. NONE for a function
-// or a type declaration -- the two shapes every entry had before.
-typedef enum {
-    LHAT_HOST_CONST_NONE = 0,
-    LHAT_HOST_CONST_INTEGER,
-    LHAT_HOST_CONST_REAL,
-    LHAT_HOST_CONST_BOOL,
-    LHAT_HOST_CONST_STRING
-} LhatHostConstKind;
-
-typedef struct LhatHostEntry {
-    char *module;   // owned; the dotted path
-    char *type;     // owned; NULL when the entry belongs to the module itself
-    char *name;     // owned
-    // The signature as the registration wrote it, owned; NULL for a type
-    // declaration, which has none. `signature` below is what checking uses;
-    // this is for writing the registration back out
-    // (lhat_program_dump_host_api) -- the parsed type cannot be turned back
-    // into text without losing the names it was written with (a hostdata
-    // type prints structurally, an error kind loses its module prefix), so
-    // the text itself is what survives.
-    char *signature_text;
-    LhatHostFn call;  // NULL for a type, which carries no value of its own
-    void *context;
-    uint8_t parameters;
-    bool has_variadic;  // 13.7: the signature ended in '...' -- see LhatHost
-    bool takes_self;
-    bool self_last;     // 02 の 11.3改: the receiver is the right operand
-    // 02 の 14.12: the descriptor the machine's overload search reads, one
-    // per parameter, lowered once at registration onto host_heap (the
-    // nodes) -- install hands every machine the same ones. The array is
-    // owned; NULL where there is nothing to compare.
-    LhatRuntimeType **parameter_types;
-    // 05 の 8.8: the tag values of this type carry. Kept on the entry so that
-    // it lives as long as the program and points at the entry's own strings.
-    LhatHostDataTag *tag;
-
-    // 05 の 8.7改: the constant's shape and value, when the entry is one.
-    // `call` is NULL then, as for a type declaration -- const_kind is what
-    // tells the two apart. const_text is owned.
-    LhatHostConstKind const_kind;
-    int64_t const_integer;
-    double const_real;
-    bool const_bool;
-    char *const_text;
-} LhatHostEntry;
-
-// 05 の 8.6: one member of L^ itself. Separate from the above because it does
-// not land under L^.modules, so install puts it somewhere else.
-typedef struct LhatGlobalEntry {
-    char *name;  // owned
-    char *signature_text;  // owned, as on LhatHostEntry
-    LhatHostFn call;
-    void *context;
-    uint8_t parameters;
-    bool has_variadic;
-    bool takes_self;
-    bool self_last;
-    LhatRuntimeType **parameter_types;  // 14.12, as on LhatHostEntry
-} LhatGlobalEntry;
 
 // The table type a dotted path names inside `owner`, made where the path does
 // not reach one. The same walk 02 の 8.8 does, over text.
@@ -3083,6 +3020,8 @@ void lhat_program_dispose(LhatProgram *program)
         lhat_free(program->enum_identities[i].name);
     }
     lhat_free(program->enum_identities);
+    lhat_free(program->signature_index);
+    lhat_free(program->signatures);
     // 05 の 8.7: what the registrations left with the program, first and in
     // reverse -- everything of the program's own is still standing here, so
     // a disposal may read whatever it was written against, and a module may
@@ -3828,6 +3767,11 @@ const char *lhat_program_error_message(LhatProgramErrorCode code)
         case LHAT_PROGRAM_ERR_MIXED:
             return "a program is text or binary throughout; this unit is "
                    "the other kind";
+        case LHAT_PROGRAM_ERR_NO_SIGNATURE:
+            return "this build has no front end to read a signature with, "
+                   "and the signature table does not hold this one";
+        case LHAT_PROGRAM_ERR_NO_FRONTEND:
+            return "this build has no front end; only a binary unit runs";
     }
     return "unknown error";
 }
@@ -3897,6 +3841,65 @@ bool lhat_unit_write_binary(const LhatUnit *unit, bool with_debug_names,
                             uint8_t **bytes, size_t *length)
 {
     return lhat_serialize_write(unit, with_debug_names, bytes, length);
+}
+
+bool lhat_program_write_signatures(const LhatProgram *program,
+                                   uint8_t **bytes, size_t *length)
+{
+    return lhat_serialize_write_signatures(program, bytes, length);
+}
+
+bool lhat_program_read_signatures(LhatProgram *program, const uint8_t *bytes,
+                                  size_t length)
+{
+    if (program == NULL || bytes == NULL) {
+        return false;
+    }
+    uint8_t *copy = (uint8_t *)lhat_alloc(length ? length : 1);
+    if (copy == NULL) {
+        return false;
+    }
+    memcpy(copy, bytes, length);
+    LhatSignatureIndex *index = NULL;
+    size_t count = 0;
+    if (!lhat_serialize_index_signatures(program, copy, length, &index,
+                                         &count)) {
+        lhat_free(copy);
+        return false;
+    }
+    lhat_free(program->signature_index);
+    lhat_free(program->signatures);
+    program->signatures = copy;
+    program->signature_length = length;
+    program->signature_index = index;
+    program->signature_count = count;
+    return true;
+}
+
+const LhatRuntimeType *lhat_program_signature_type(LhatProgram *program,
+                                                   const char *text)
+{
+    if (program == NULL || text == NULL || program->signature_count == 0) {
+        return NULL;
+    }
+    size_t low = 0;
+    size_t high = program->signature_count;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        int order = strcmp(program->signature_index[mid].text, text);
+        if (order == 0) {
+            const LhatSignatureIndex *e = &program->signature_index[mid];
+            return lhat_serialize_read_signature(
+                program, program->signatures + e->body_offset,
+                e->body_length);
+        }
+        if (order < 0) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    return NULL;
 }
 
 // ---------------------------------------------------------------------------
