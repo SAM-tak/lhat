@@ -1148,7 +1148,11 @@ int main(int argc, char **argv)
     // without one it goes to stdout.
     if (dump_host_api) {
         LhatProgram program;
-        lhat_program_init(&program, true, NULL, NULL);
+        // 03 の 3.1: the dump says which strictness this host runs under,
+        // and lsp/host_config.c reads it back -- so --relaxed writes
+        // "strict": false rather than always claiming strict.
+        lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL,
+                          NULL);
         if (!bind_host_names(&program)) {
             fprintf(stderr, "lhat: out of memory\n");
             lhat_program_dispose(&program);
