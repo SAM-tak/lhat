@@ -59,7 +59,12 @@ static const char *const CONFIG =
     "    {\"kind\": \"hostvalue\", \"module\": \"std.geo\", \"name\": \"Vec2\","
     " \"size\": 8, \"fields\": ["
     "{\"name\": \"x\", \"offset\": 0, \"type\": \"f32\"},"
-    " {\"name\": \"y\", \"offset\": 4, \"type\": \"f32\"}]}\n"
+    " {\"name\": \"y\", \"offset\": 4, \"type\": \"f32\"}]},\n"
+    // 05 の 8.7改2: an enum stands among the types, after the host type it
+    // is declared under -- so a signature further down may name it.
+    "    {\"kind\": \"enum\", \"module\": \"std.io\", \"type\": \"File\","
+    " \"name\": \"Mode\", \"members\": [\"Read\", \"Write\"],"
+    " \"values\": [0, 1]}\n"
     "  ],\n"
     "  \"functions\": [\n"
     // Answering the type alone (no error union) keeps the member test below
@@ -69,6 +74,8 @@ static const char *const CONFIG =
     " \"signature\": \"f^string^ -> std.io.File;\"},\n"
     "    {\"kind\": \"member\", \"module\": \"std.io\", \"type\": \"File\","
     " \"name\": \"write\", \"signature\": \"p^self^, string^;\"},\n"
+    "    {\"kind\": \"member\", \"module\": \"std.io\", \"type\": \"File\","
+    " \"name\": \"reopen\", \"signature\": \"p^self^, std.io.File.Mode;\"},\n"
     "    {\"kind\": \"func\", \"module\": \"std.io\", \"name\": \"connect\","
     " \"signature\": \"f^string^ -> std.io.Socket;\"},\n"
     "    {\"kind\": \"hostvalue_member\", \"module\": \"std.geo\","
@@ -186,6 +193,15 @@ static void test_round_trip(void)
                 "import^ std.io\n"
                 "let^ s = std.io.connect(\"host\")\n"
                 "s.write(\"hi\")\n");
+
+    // The shape that was falling over: a one-pass replay in file order met
+    // "std.io.File.Mode" in a signature before the enum was declared, back
+    // when the dump kept enums in the functions section.
+    LHAT_TEST("a member's signature may name a configured enum");
+    check_clean("enum named by a signature",
+                "import^ std.io\n"
+                "let^ f = std.io.open(\"log\")\n"
+                "f.reopen(std.io.File.Mode.Read)\n");
 
     LHAT_TEST("a configured binding is written unqualified");
     check_clean("binding", "print(\"hi\")\n");

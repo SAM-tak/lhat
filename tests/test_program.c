@@ -3480,6 +3480,14 @@ static void test_dump_host_api(void)
     LHAT_CHECK(lhat_register_hostvalue_field(&program, "sys.geo", "Vec2", "x",
                                              0, LHAT_HVFIELD_F32),
                "the field registered");
+    // 05 の 8.7改2: an enum under a host type. A signature may name it, so
+    // the dump has to declare it among the types, after the type it stands
+    // under.
+    static const char *const dump_modes[] = {"Read", "Write"};
+    static const int64_t dump_mode_values[] = {0, 1};
+    LHAT_CHECK(lhat_register_enum_valued(&program, "sys.io", "File", "Mode",
+                                         dump_modes, dump_mode_values, 2),
+               "the enum registered");
     LHAT_CHECK(lhat_register_func(&program, "sys.io", "open",
                                   "f^string^ -> sys.io.File|sys.io.IOError.NotFound;",
                                   host_add, &calls),
@@ -3530,6 +3538,9 @@ static void test_dump_host_api(void)
             "{\"kind\": \"hostvalue\", \"module\": \"sys.geo\", \"name\": "
             "\"Vec2\", \"size\": 8, \"fields\": [{\"name\": \"x\", "
             "\"offset\": 0, \"type\": \"f32\"}]}",
+            "{\"kind\": \"enum\", \"module\": \"sys.io\", \"type\": \"File\", "
+            "\"name\": \"Mode\", \"members\": [\"Read\", \"Write\"], "
+            "\"values\": [0, 1]}",
             "{\"kind\": \"func\", \"module\": \"sys.io\", \"name\": \"open\", "
             "\"signature\": \"f^string^ -> sys.io.File|sys.io.IOError.NotFound;\"}",
             "{\"kind\": \"member\", \"module\": \"sys.io\", \"type\": "
@@ -3558,6 +3569,10 @@ static void test_dump_host_api(void)
         LHAT_CHECK(functions != NULL && hostvalue != NULL &&
                        hostvalue < functions,
                    "types come before functions");
+        const char *enum_decl = strstr(text, "\"kind\": \"enum\"");
+        LHAT_CHECK(functions != NULL && enum_decl != NULL &&
+                       enum_decl < functions,
+                   "and so do enums, which signatures name too");
         free(text);
     }
     lhat_program_dispose(&program);

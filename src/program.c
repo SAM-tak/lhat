@@ -3979,6 +3979,38 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
         }
         dump_text(&w, "]}");
     }
+    // 8.7改2: an enum is a declaration the signatures name, the same
+    // standing as a type's -- and one may stand under a host type
+    // ("godot.Node.InternalMode"), so the types come first and the enums
+    // close the section. A reader registering in file order then never
+    // meets a name it has not seen, which the dump test pins.
+    for (size_t i = 0; i < program->host_enum_count; i++) {
+        const LhatProgramEnum *e = &program->host_enums[i];
+        dump_comma(&w, &first);
+        dump_text(&w, "    {\"kind\": \"enum\", \"module\": ");
+        dump_string(&w, e->module);
+        if (e->type != NULL) {
+            dump_text(&w, ", \"type\": ");
+            dump_string(&w, e->type);
+        }
+        dump_text(&w, ", \"name\": ");
+        dump_string(&w, e->name);
+        dump_text(&w, ", \"members\": [");
+        for (size_t k = 0; k < e->count; k++) {
+            if (k > 0) {
+                dump_text(&w, ", ");
+            }
+            dump_string(&w, e->members[k]);
+        }
+        dump_text(&w, "], \"values\": [");
+        char number[32];
+        for (size_t k = 0; k < e->count; k++) {
+            snprintf(number, sizeof number, k > 0 ? ", %lld" : "%lld",
+                     (long long)e->values[k]);
+            dump_text(&w, number);
+        }
+        dump_text(&w, "]}");
+    }
     dump_text(&w, first ? "],\n" : "\n  ],\n");
 
     dump_text(&w, "  \"functions\": [");
@@ -4048,33 +4080,6 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
         dump_string(&w, entry->signature_text != NULL ? entry->signature_text
                                                       : "");
         dump_text(&w, "}");
-    }
-    for (size_t i = 0; i < program->host_enum_count; i++) {
-        const LhatProgramEnum *e = &program->host_enums[i];
-        dump_comma(&w, &first);
-        dump_text(&w, "    {\"kind\": \"enum\", \"module\": ");
-        dump_string(&w, e->module);
-        if (e->type != NULL) {
-            dump_text(&w, ", \"type\": ");
-            dump_string(&w, e->type);
-        }
-        dump_text(&w, ", \"name\": ");
-        dump_string(&w, e->name);
-        dump_text(&w, ", \"members\": [");
-        for (size_t k = 0; k < e->count; k++) {
-            if (k > 0) {
-                dump_text(&w, ", ");
-            }
-            dump_string(&w, e->members[k]);
-        }
-        dump_text(&w, "], \"values\": [");
-        char number[32];
-        for (size_t k = 0; k < e->count; k++) {
-            snprintf(number, sizeof number, k > 0 ? ", %lld" : "%lld",
-                     (long long)e->values[k]);
-            dump_text(&w, number);
-        }
-        dump_text(&w, "]}");
     }
     for (size_t i = 0; i < program->global_count; i++) {
         const LhatGlobalEntry *entry = &program->global_entries[i];

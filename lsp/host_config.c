@@ -176,6 +176,47 @@ static void apply_type(const cJSON *entry, LhatProgram *program)
         return;
     }
 
+    // 05 の 8.7改2: a declaration the signatures name, dumped among the
+    // types -- after the host type it may stand under, before the first
+    // signature that names it. A dump from before the section moved keeps
+    // its enums in "functions", where nothing reads them any more; the
+    // signatures naming them fail there the way they always did, and
+    // re-dumping is the fix.
+    if (strcmp(kind, "enum") == 0) {
+        const cJSON *members =
+            cJSON_GetObjectItemCaseSensitive(entry, "members");
+        const cJSON *values =
+            cJSON_GetObjectItemCaseSensitive(entry, "values");
+        int count = cJSON_IsArray(members) ? cJSON_GetArraySize(members) : 0;
+        if (count <= 0 || (cJSON_IsArray(values) &&
+                           cJSON_GetArraySize(values) != count)) {
+            return;
+        }
+        const char **names =
+            (const char **)malloc((size_t)count * sizeof *names);
+        int64_t *numbers =
+            (int64_t *)malloc((size_t)count * sizeof *numbers);
+        if (names == NULL || numbers == NULL) {
+            free(names);
+            free(numbers);
+            return;
+        }
+        bool valued = cJSON_IsArray(values);
+        for (int i = 0; i < count; i++) {
+            const cJSON *mn = cJSON_GetArrayItem(members, i);
+            names[i] = cJSON_IsString(mn) ? mn->valuestring : "";
+            const cJSON *v = valued ? cJSON_GetArrayItem(values, i) : NULL;
+            numbers[i] = v != NULL && cJSON_IsNumber(v)
+                             ? (int64_t)v->valuedouble
+                             : (int64_t)i + 1;
+        }
+        lhat_register_enum_valued(program, module, string_of(entry, "type"),
+                                  name, names, numbers, (size_t)count);
+        free(names);
+        free(numbers);
+        return;
+    }
+
     if (strcmp(kind, "hostdata") == 0) {
         // 05 の 8.8改: under the type it was declared under, where the dump
         // says there is one. What the derived type inherits is reached
@@ -227,52 +268,14 @@ static void apply_function(const cJSON *entry, LhatProgram *program)
     const char *kind = string_of(entry, "kind");
     const char *name = string_of(entry, "name");
     const char *signature = string_of(entry, "signature");
-    // A const or enum entry carries values, not a signature.
+    // A const entry carries a value, not a signature.
     if (kind == NULL || name == NULL ||
-        (signature == NULL && strcmp(kind, "const") != 0 &&
-         strcmp(kind, "enum") != 0)) {
+        (signature == NULL && strcmp(kind, "const") != 0)) {
         return;
     }
 
     if (strcmp(kind, "global") == 0) {
         lhat_register_global(program, name, signature, stub_host_fn, NULL);
-        return;
-    }
-
-    if (strcmp(kind, "enum") == 0) {
-        const char *emodule = string_of(entry, "module");
-        const cJSON *members =
-            cJSON_GetObjectItemCaseSensitive(entry, "members");
-        const cJSON *values =
-            cJSON_GetObjectItemCaseSensitive(entry, "values");
-        int count = cJSON_IsArray(members) ? cJSON_GetArraySize(members) : 0;
-        if (emodule == NULL || count <= 0 ||
-            (cJSON_IsArray(values) &&
-             cJSON_GetArraySize(values) != count)) {
-            return;
-        }
-        const char **names =
-            (const char **)malloc((size_t)count * sizeof *names);
-        int64_t *numbers =
-            (int64_t *)malloc((size_t)count * sizeof *numbers);
-        if (names == NULL || numbers == NULL) {
-            free(names);
-            free(numbers);
-            return;
-        }
-        bool valued = cJSON_IsArray(values);
-        for (int i = 0; i < count; i++) {
-            const cJSON *mn = cJSON_GetArrayItem(members, i);
-            names[i] = cJSON_IsString(mn) ? mn->valuestring : "";
-            const cJSON *v = valued ? cJSON_GetArrayItem(values, i) : NULL;
-            numbers[i] = v != NULL && cJSON_IsNumber(v)
-                             ? (int64_t)v->valuedouble
-                             : (int64_t)i + 1;
-        }
-        lhat_register_enum_valued(program, emodule, string_of(entry, "type"),
-                                  name, names, numbers, (size_t)count);
-        free(names);
-        free(numbers);
         return;
     }
 
