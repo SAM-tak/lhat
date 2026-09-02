@@ -510,7 +510,7 @@ static void test_exports(void)
     lhat_free(lib_bytes);
 }
 
-// 10.8: the signature table. What a full build writes for a registration
+// 10.7: the signature table. What a full build writes for a registration
 // is what install builds for it -- the parameters as parts, the receiver
 // and variadic marks -- and a program of any build reads it back.
 static void host_noop(LhatMachine *machine, void *context,

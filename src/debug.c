@@ -324,6 +324,20 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
                            const char *text, size_t length, LhatValue *answer,
                            char *error, size_t error_capacity)
 {
+#if !LHAT_WITH_FRONTEND
+    // 05 の 10.8: an expression is text, and nothing here reads text. The
+    // frames are still readable; only evaluation is not.
+    (void)machine;
+    (void)level;
+    (void)text;
+    (void)length;
+    if (answer != NULL) {
+        *answer = lhat_nil();
+    }
+    say(error, error_capacity,
+        "this build has no front end to read an expression with", 0);
+    return false;
+#else
     if (answer != NULL) {
         *answer = lhat_nil();
     }
@@ -432,6 +446,7 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
     lhat_lexer_dispose(&lexer);
     lhat_source_dispose(&source);
     return ok;
+#endif  // LHAT_WITH_FRONTEND
 }
 
 #endif  // LHAT_WITH_DEBUGGER

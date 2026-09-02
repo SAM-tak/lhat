@@ -29,4 +29,12 @@
 // changes the shape of LhatMachine, so it lives here for the reason above.
 #define LHAT_WITH_DEBUGGER @LHAT_WITH_DEBUGGER_VALUE@
 
+// 05 の 10.8: whether the front end -- lexer, parser, checker, compiler --
+// is in the library. Off, a program reads binary units (10 章) and
+// registers a host by the signature table (10.7); a text unit, a std.load,
+// a prompt, an expression under the debugger are refused as "no front
+// end". Nothing's layout changes, but what a call answers does, so an
+// installed consumer wants the same value the library was built with.
+#define LHAT_WITH_FRONTEND @LHAT_WITH_FRONTEND_VALUE@
+
 #endif  // LHAT_VERSION_H

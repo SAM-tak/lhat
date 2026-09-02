@@ -7501,21 +7501,3 @@ LhatCompileResult lhat_compile_next(LhatCompileSession *session,
     return compile_unit(session, unit, lexer, &units, out);
 }
 
-const char *lhat_compile_status_message(LhatCompileStatus status)
-{
-    switch (status) {
-        case LHAT_COMPILE_OK:          return "compiled";
-        case LHAT_COMPILE_UNSUPPORTED: return "this form does not compile yet";
-        case LHAT_COMPILE_TOO_COMPLEX: return "too many registers or constants";
-        case LHAT_COMPILE_UNDEFINED:   return "no such name";
-        case LHAT_COMPILE_BREAK_TOO_FAR:
-            return "this break^ or next^ names more loops than there are "
-                   "around it";
-        case LHAT_COMPILE_NOT_PUBLISHED:
-            return "a definition composed from another unit may only use what "
-                   "that unit published";
-        case LHAT_COMPILE_SCOPE_TOO_FAR:
-            return "this reaches out past more scopes than are open here";
-    }
-    return "unknown";
-}

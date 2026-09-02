@@ -1,6 +1,10 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
   "configurePresets": [
     {
       "name": "base",
@@ -21,19 +25,25 @@
       "name": "debug",
       "displayName": "Debug (Ninja)",
       "inherits": "ninja-base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     },
     {
       "name": "release",
       "displayName": "Release (Ninja)",
       "inherits": "ninja-base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     },
     {
       "name": "asan",
       "displayName": "Debug + sanitizers (Ninja)",
       "inherits": "debug",
-      "cacheVariables": { "LHAT_SANITIZE": "ON" }
+      "cacheVariables": {
+        "LHAT_SANITIZE": "ON"
+      }
     },
     {
       "name": "pgo",
@@ -54,6 +64,17 @@
       "inherits": "base",
       "generator": "Visual Studio 18 2026",
       "architecture": "x64"
+    },
+    {
+      "name": "vmonly",
+      "displayName": "Release, VM only (Ninja)",
+      "description": "05 の 10.8: no front end -- binary units and the signature table only",
+      "inherits": "ninja-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "LHAT_WITH_FRONTEND": "OFF",
+        "LHAT_BUILD_LSP": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -88,23 +109,34 @@
       "displayName": "Release (Visual Studio)",
       "configurePreset": "vs",
       "configuration": "Release"
+    },
+    {
+      "name": "vmonly",
+      "displayName": "Release, VM only (Ninja)",
+      "configurePreset": "vmonly"
     }
   ],
   "testPresets": [
     {
       "name": "debug",
       "configurePreset": "debug",
-      "output": { "outputOnFailure": true }
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "release",
       "configurePreset": "release",
-      "output": { "outputOnFailure": true }
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "asan",
       "configurePreset": "asan",
-      "output": { "outputOnFailure": true }
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

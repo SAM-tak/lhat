@@ -2450,14 +2450,61 @@ SEGV し得る。読むのは自分が書いたものだけ、という前提で
 書き出しは `lhat_unit_write_binary(unit, with_debug_names, &bytes, &length)`
 （program.h）。検査・コンパイル済みの単位から。
 
-### 10.7 次段
+### 10.7 署名表——登録のテキストを前段なしで読む
 
-VM のみビルド自体は別の仕事——CMake の knob で字句解析器・構文解析器・型検査器・
-コンパイラを外し、`program.c` のテキスト経路をコンパイル外に置く。この章はその
-前提を作るだけで、読み戻しは検査器を呼ばない。
+ホスト登録の署名は文字列（`"f^number^ -> number^;"`）で、それを読むのは構文解析器と
+型検査器である。前段の無いビルド（10.8）がホストを登録できる道は一つ——
+**フルビルドが同じ登録から書いた表を引く**こと。
+
+- `lhat_program_write_signatures(program, &bytes, &length)`: 登録を終えた
+  プログラムから、署名テキストごとに1レコード。値は **install がそのエントリに
+  作る記述子そのもの**（引数を parts に、受け手と可変長の印を付けた
+  `SUBROUTINE`）——解析し直さない。二つ目の文法も解決器も持たない
+- `lhat_program_read_signatures(program, bytes, length)`: どのビルドでも読める。
+  レコードは自己完結（自分の文字列・外部参照・オブジェクト表）で、**引く時に
+  初めてデコード**する——型登録と関数登録が交互に来ても（生成 API はクラスごとに
+  そう並ぶ）順序を問わない
+- 前段の無いビルドの `lhat_register_func` / `_member` / `_hostvalue_member` /
+  `_global` は表を引く。表に無いテキストは `LHAT_PROGRAM_ERR_NO_SIGNATURE`、
+  表にあってもこのプログラムが同じに登録していない名前は `HOST_MISMATCH`。
+  検査器の hosted 表は作らない（読む者がいない）
+- 前段のあるビルドは従来どおりテキストを読み、表を引かない——状態を増やさない
+  ための線。起動短縮（表ヒットで解析を飛ばす）は後日の opt-in
+
+CLI: `lhat --dump-signatures FILE` がこのドライバの登録から表を書き、
+`lhat --signatures FILE` が登録の前に読む。
+
+### 10.8 VM のみビルド——`LHAT_WITH_FRONTEND`
+
+CMake の `LHAT_WITH_FRONTEND`（既定 ON）を OFF にすると、字句解析器・構文解析器・
+構文木・型検査器・コンパイラ・semantic・token をライブラリから外す。残るのは
+vm/gc/object/value/code/program/registry/rttype/serialize/debug/source/error/
+number と **type.c**（登録が型を作る中核で、前段を一切読まない）。
+
+その構成で:
+
+- 単位はバイナリだけ。テキストに出会えば `LHAT_PROGRAM_ERR_NO_FRONTEND`
+- 登録は署名表（10.7）。表なしでは署名付き登録が失敗する
+- `std.load` / `std.lton` は外れる（テキストを読む2つ）。プロンプト・
+  `--tokens`・構文木の出力・LSP・テスト・ベンチマークは無い。DAP は式評価だけ
+  「前段なし」を答え、フレームの読みと traceback は動く
+- 反射 API（`lhat_unit_annotation*` / `_member*` / `_documentation`）は空を答え、
+  `lhat_unit_export_conforms` は偽、`lhat_unit_write_binary` は偽
+
+プリセット `vmonly`（Ninja Release）。往復は
+`lhat --dump-signatures sig.bin` と `lhat --compile main.lh -o out` をフルで、
+`lhat --signatures sig.bin --run out/main.lh` を vmonly で。
+
+大きさ（MSVC Release、2026-09-02）: lhat.exe 620KB → 311KB、lhat.lib 1.71MB →
+761KB。
 
 ## 改定履歴（要約）
 
+- **10.7・10.8（2026-09-02）: 署名表と VM のみビルド。** 前段の無いビルドが
+  ホストを登録する唯一の道として、フルビルドが登録から書いた「署名テキスト→
+  install の記述子」の表を引く（ユーザー案）。二つ目の文法も解決器も持たず、
+  表の中身は登録が作った物そのもの。`LHAT_WITH_FRONTEND` で前段を外し、
+  lhat.exe が半分になった。フルビルドは表を引かない（状態を増やさない）
 - **10 章（2026-09-02）: バイナリ単位。** 検査・コンパイル済みの単位をバイト列に
   書き出し、同じローダ・同じパス・同じ lhat_program_check で読み戻す。拡張子は
   変えず先頭のバイトが種別を言う。混在なし（輸出型を運ばない — 型グラフの往復が

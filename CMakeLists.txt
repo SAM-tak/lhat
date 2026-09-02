@@ -20,6 +20,21 @@ if(LHAT_BUILD_DAP AND NOT LHAT_WITH_DEBUGGER)
     message(FATAL_ERROR "LHAT_BUILD_DAP needs LHAT_WITH_DEBUGGER: the "
         "adapter sits on the machine's line hook.")
 endif()
+# 05 の 10.8: the front end -- lexer, parser, checker, compiler -- or the VM
+# alone. Off, the library reads binary units (10 章) and registers a host
+# by the signature table (10.7); no text is ever read, and the source files
+# that read one are not compiled. What needs the front end says so here.
+option(LHAT_WITH_FRONTEND "Compile the front end (lexer, parser, checker, compiler) into the core" ON)
+if(LHAT_BUILD_LSP AND NOT LHAT_WITH_FRONTEND)
+    message(FATAL_ERROR "LHAT_BUILD_LSP needs LHAT_WITH_FRONTEND: a language "
+        "server reads text.")
+endif()
+if(NOT LHAT_WITH_FRONTEND)
+    # The suite and the benchmarks compile L^ text; without the front end
+    # there is nothing for them to build against.
+    set(LHAT_BUILD_TESTS OFF)
+    set(LHAT_BUILD_BENCH OFF)
+endif()
 # 03 の 5.1: what a specialised instruction would be worth, measured.
 # Off by default -- it takes minutes to run and asserts almost nothing, so
 # it has no business in an ordinary build or in CI.
@@ -108,23 +123,17 @@ endif()
 # ---- The language ---------------------------------------------------------
 # Everything but the driver, so a host embeds this and nothing else. It calls
 # out to lhatport for memory and for reading a unit -- see src/port.h.
-add_library(lhat
+# 05 の 10.8: the core is what runs a compiled unit; the front end is what
+# makes one out of text. type.c stays with the core -- registration builds
+# types, and it reads nothing of the front end.
+set(LHAT_CORE_SOURCES
     src/source.c
     src/error.c
-    src/token.c
     src/number.c
-    src/lexer.c
-    src/ast.c
-    src/parser.c
     src/type.c
-    src/check.c
-    src/check_expr.c
-    src/check_stmt.c
-    src/semantic.c
     src/program.c
     src/registry.c
     src/code.c
-    src/compile.c
     src/rttype.c
     src/serialize.c
     src/vm.c
@@ -133,6 +142,22 @@ add_library(lhat
     src/value.c
     src/object.c
 )
+set(LHAT_FRONTEND_SOURCES
+    src/token.c
+    src/lexer.c
+    src/ast.c
+    src/parser.c
+    src/check.c
+    src/check_expr.c
+    src/check_stmt.c
+    src/semantic.c
+    src/compile.c
+)
+if(LHAT_WITH_FRONTEND)
+    add_library(lhat ${LHAT_CORE_SOURCES} ${LHAT_FRONTEND_SOURCES})
+else()
+    add_library(lhat ${LHAT_CORE_SOURCES})
+endif()
 
 # The version and the build knobs live in a generated header rather than in
 # compile definitions: LHAT_WITH_COMMENTS changes the shape of LhatLexer and
@@ -154,6 +179,11 @@ if(LHAT_WITH_DEBUGGER)
     set(LHAT_WITH_DEBUGGER_VALUE 1)
 else()
     set(LHAT_WITH_DEBUGGER_VALUE 0)
+endif()
+if(LHAT_WITH_FRONTEND)
+    set(LHAT_WITH_FRONTEND_VALUE 1)
+else()
+    set(LHAT_WITH_FRONTEND_VALUE 0)
 endif()
 configure_file(include/lhat/version.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/include/lhat/version.h)
@@ -227,7 +257,7 @@ target_include_directories(lhatthread
 option(LHAT_BUILD_STDLIB "Build the L^ sample standard library (stdlib/)" ON)
 
 if(LHAT_BUILD_STDLIB)
-    add_library(lhatstdlib
+    set(LHAT_STDLIB_SOURCES
         stdlib/async.c
         stdlib/carry.c
         stdlib/debug.c
@@ -239,10 +269,13 @@ if(LHAT_BUILD_STDLIB)
         stdlib/random.c
         stdlib/regex.c
         stdlib/regex_engine.c
-        stdlib/load.c
-        stdlib/lton.c
         stdlib/thread.c
     )
+    # 05 の 10.8: std.load and std.lton read text, which takes the front end.
+    if(LHAT_WITH_FRONTEND)
+        list(APPEND LHAT_STDLIB_SOURCES stdlib/load.c stdlib/lton.c)
+    endif()
+    add_library(lhatstdlib ${LHAT_STDLIB_SOURCES})
     # lhat.h is the whole of what it needs (no private path into src/) --
     # for the same reason port/ has none, this is itself the worked example
     # of "a library written against lhat.h alone". std.thread is the one

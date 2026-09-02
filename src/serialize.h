@@ -43,7 +43,7 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
                          const uint8_t *bytes, size_t length,
                          LhatBinaryUnit *out);
 
-// 10.8: the signature table. Writes one record per distinct signature text
+// 10.7: the signature table. Writes one record per distinct signature text
 // the program's registrations carry -- the descriptor install builds for
 // the entry -- under the same header a unit has.
 bool lhat_serialize_write_signatures(const LhatProgram *program,

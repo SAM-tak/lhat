@@ -43,6 +43,7 @@
 #include "adapter.h"
 #endif
 
+#if LHAT_WITH_FRONTEND
 static void print_token(const LhatLexer *lexer, const LhatToken *token)
 {
     printf("%4u:%-3u %-18s", token->line, token->column,
@@ -356,6 +357,8 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
     }
 }
 
+#endif  // LHAT_WITH_FRONTEND
+
 // Whether a diagnostic is shown with the line it happened on. The rich form
 // wants the source, so it is off wherever this driver has none to hand.
 static bool rich_reports = true;
@@ -382,6 +385,7 @@ static void say(const LhatReport *report, const LhatSource *source,
     free(bigger);
 }
 
+#if LHAT_WITH_FRONTEND
 // The parser's message can name the token it wanted, which no literal can
 // carry, so it is written into a buffer first and the report borrows that.
 static void say_parse_error(const LhatSource *source, const char *name,
@@ -436,6 +440,8 @@ static void say_check_error(const LhatSource *source, const char *name,
     say(&report, source, name);
     free(bigger);
 }
+
+#endif  // LHAT_WITH_FRONTEND
 
 // 03 の 4.2 puts the refusals in the checker, so a compile that stops is a
 // hole in it -- and whoever has to close that hole is told where, the same
@@ -531,6 +537,7 @@ static void say_run_error(const char *path, LhatRunResult ran)
     fprintf(stderr, "\n");
 }
 
+#if LHAT_WITH_FRONTEND
 static void say_error(const LhatSource *source, const char *name,
                       uint32_t offset, uint32_t line, uint32_t column,
                       const char *message)
@@ -574,6 +581,8 @@ static int dump_tokens(const LhatSource *source)
     lhat_lexer_dispose(&lexer);
     return status;
 }
+
+#endif  // LHAT_WITH_FRONTEND
 
 // 05 の 8.2's example, and the only name this driver hands out. 02 の 10.6
 // calls this the one exception the f^ constraints allow: what it changes is
@@ -626,20 +635,41 @@ static bool bind_host_names(LhatProgram *program)
 #ifdef LHAT_CLI_WITH_STDLIB
     if (!lhatstdlib_io_register(program) ||
         !lhatstdlib_json_register(program) ||
-        !lhatstdlib_lton_register(program) ||
         !lhatstdlib_thread_register(program) ||
         !lhatstdlib_random_register(program) ||
         !lhatstdlib_regex_register(program) ||
-        !lhatstdlib_load_register(program) ||
         !lhatstdlib_math_register(program) ||
         !lhatstdlib_mathvector3_register(program) ||
         !lhatstdlib_debug_register(program) ||
         !lhatstdlib_async_register(program)) {
         return false;
     }
+#if LHAT_WITH_FRONTEND
+    // 05 の 10.8: these two read text, which takes the front end.
+    if (!lhatstdlib_lton_register(program) ||
+        !lhatstdlib_load_register(program)) {
+        return false;
+    }
+#endif
 #endif
 
     return true;
+}
+
+// 05 の 8.7 with 10.7: a registration that answered false has usually said
+// why on the program (a signature the table does not hold, a name it does
+// not know); memory is the last reason, not the first.
+static void say_registration_failure(const LhatProgram *program)
+{
+    if (program->diagnostic_count == 0) {
+        fprintf(stderr, "lhat: out of memory\n");
+        return;
+    }
+    for (size_t i = 0; i < program->diagnostic_count; i++) {
+        const LhatProgramDiagnostic *d = &program->diagnostics[i];
+        fprintf(stderr, "%s: error: %s\n", d->path,
+                lhat_program_error_message(d->code));
+    }
 }
 
 // 03 の 1.1's three stages, each with its own codes and one shape to show
@@ -720,7 +750,7 @@ static int compile_program(const char *path, const char *out_dir,
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
     if (!bind_host_names(&program)) {
-        fprintf(stderr, "lhat: out of memory\n");
+        say_registration_failure(&program);
         lhat_program_dispose(&program);
         return EXIT_FAILURE;
     }
@@ -801,7 +831,7 @@ static int compile_program(const char *path, const char *out_dir,
 // than the one file named on the command line.
 // `arguments` is what follows the path on the command line: 02 の 13.7 with
 // 05 の 3.2 make a script's top level 'p^...', and these are its '...'.
-// 10.8: the table read before anything registers, when one was named.
+// 10.7: the table read before anything registers, when one was named.
 static const char *signatures_file;  // --signatures FILE, or NULL
 
 static bool read_signatures(LhatProgram *program)
@@ -834,7 +864,7 @@ static int check_program(const char *path, bool run, bool strict,
     lhat_program_init(&program, strict, lhat_load_file, NULL);
     if (!read_signatures(&program) || !bind_host_names(&program)) {
         // 05 の 8.2, before checking (8.3)
-        fprintf(stderr, "lhat: out of memory\n");
+        say_registration_failure(&program);
         lhat_program_dispose(&program);
         return EXIT_FAILURE;
     }
@@ -930,6 +960,7 @@ static int check_program(const char *path, bool run, bool strict,
     return failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
+#if LHAT_WITH_FRONTEND
 static int dump_tree(const LhatSource *source, bool typed, bool command)
 {
     LhatLexer lexer;
@@ -961,6 +992,8 @@ static int dump_tree(const LhatSource *source, bool typed, bool command)
     lhat_lexer_dispose(&lexer);
     return status;
 }
+
+#endif  // LHAT_WITH_FRONTEND
 
 // One compiled body, then the bodies written inside it, one step deeper --
 // the shape 03 の 5.2 gives a unit. lhat_chunk_print writes the instruction;
@@ -999,7 +1032,7 @@ static int dump_bytecode(const char *path)
     LhatProgram program;
     lhat_program_init(&program, false, lhat_load_file, NULL);
     if (!bind_host_names(&program)) {  // 05 の 8.2, before checking (8.3)
-        fprintf(stderr, "lhat: out of memory\n");
+        say_registration_failure(&program);
         lhat_program_dispose(&program);
         return EXIT_FAILURE;
     }
@@ -1034,6 +1067,7 @@ static int dump_bytecode(const char *path)
     return failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
+#if LHAT_WITH_FRONTEND
 // 03 の 4 章: one machine and one session of each stage, answering many
 // inputs. 4.3 keeps the names of one input for the next; 02 の 8.2 makes a
 // bare expression a statement here and nowhere else.
@@ -1232,6 +1266,8 @@ static int repl(bool strict)
     return EXIT_SUCCESS;
 }
 
+#endif  // LHAT_WITH_FRONTEND
+
 static void print_usage(void)
 {
     printf("L^ (lhat) %s\n", LHAT_VERSION);
@@ -1279,7 +1315,7 @@ int main(int argc, char **argv)
     bool compile_out = false;      // 05 の 10 章
     const char *out_dir = NULL;
     bool strip_debug = false;
-    const char *dump_signatures_path = NULL;  // 10.8
+    const char *dump_signatures_path = NULL;  // 10.7
     const char *signatures_path = NULL;
     bool show_help = false;
     bool show_version = false;
@@ -1391,7 +1427,7 @@ int main(int argc, char **argv)
         return status;
     }
 
-    // 10.8: the signature table this driver's registrations make.
+    // 10.7: the signature table this driver's registrations make.
     if (dump_signatures_path != NULL) {
         LhatProgram program;
         lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL,
@@ -1420,7 +1456,13 @@ int main(int argc, char **argv)
     // 03 の 4 章: with nothing to read, read from the prompt.
     if (path == NULL && !tokens_only && !bytecode_only && !check_only &&
         !run_program && !command_form) {
+#if LHAT_WITH_FRONTEND
         return repl(strictness == STRICTNESS_STRICT);
+#else
+        fprintf(stderr, "lhat: this build has no front end; --run a binary "
+                        "unit\n");
+        return EXIT_FAILURE;
+#endif
     }
 
     if (path == NULL) {
@@ -1449,6 +1491,7 @@ int main(int argc, char **argv)
         return dump_bytecode(path);
     }
 
+#if LHAT_WITH_FRONTEND
     LhatSource source;
     char *error = NULL;
     if (!lhat_source_init_from_file(&source, path, &error)) {
@@ -1461,4 +1504,11 @@ int main(int argc, char **argv)
                              : dump_tree(&source, false, command_form);
     lhat_source_dispose(&source);
     return status;
+#else
+    (void)tokens_only;
+    (void)command_form;
+    fprintf(stderr, "lhat: this build has no front end; --run a binary "
+                    "unit\n");
+    return EXIT_FAILURE;
+#endif
 }

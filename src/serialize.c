@@ -30,7 +30,7 @@
 
 // 0x89 is a UTF-8 continuation byte, which no text begins with.
 static const uint8_t MAGIC[4] = { 0x89, 'L', 'H', '^' };
-// 10.8: the signature table's, told apart from a unit's by the last byte.
+// 10.7: the signature table's, told apart from a unit's by the last byte.
 static const uint8_t TABLE_MAGIC[4] = { 0x89, 'L', 'H', 'S' };
 #define FORMAT_VERSION 1u
 #define FLAG_DEBUG_NAMES 1u
@@ -479,6 +479,7 @@ typedef struct {
     const LhatNode *name;
 } EnumSearch;
 
+#if LHAT_WITH_FRONTEND
 static void find_enumdef(void *context, const char *field, bool in_list,
                          const LhatNode *child)
 {
@@ -494,6 +495,7 @@ static void find_enumdef(void *context, const char *field, bool in_list,
     }
     lhat_node_visit_children(child, find_enumdef, context);
 }
+#endif
 
 static uint32_t ext_of_enum(Writer *w, const void *decl)
 {
@@ -515,6 +517,7 @@ static uint32_t ext_of_enum(Writer *w, const void *decl)
         }
     }
     const LhatUnit *unit = w->unit;
+#if LHAT_WITH_FRONTEND
     if (unit != NULL && unit->parsed.root != NULL) {
         EnumSearch search = { decl, NULL };
         find_enumdef(&search, NULL, false, unit->parsed.root);
@@ -528,6 +531,7 @@ static uint32_t ext_of_enum(Writer *w, const void *decl)
             return add_ext(w, &ext);
         }
     }
+#endif
     for (size_t i = 0; unit != NULL && i < unit->referenced_count; i++) {
         const LhatUnit *other = unit->referenced[i];
         const LhatType *exports = other->checked.exports;
@@ -618,6 +622,7 @@ static uint32_t intern_rt(Writer *w, const LhatRuntimeType *rt)
     return add_obj(w, (const LhatObject *)rt);
 }
 
+#if LHAT_WITH_FRONTEND
 static void intern_constant(Writer *w, LhatValue v)
 {
     if (lhat_is_object_kind(v, LHAT_OBJECT_STRING)) {
@@ -658,6 +663,7 @@ static void intern_proto(Writer *w, const LhatProto *proto)
         intern_proto(w, proto->protos[i]);
     }
 }
+#endif  // LHAT_WITH_FRONTEND
 
 // ---- emitting ----
 
@@ -743,6 +749,7 @@ static void emit_rt(Writer *w, Out *o, const LhatRuntimeType *rt)
     put_u32(o, (uint32_t)rt->levels);
 }
 
+#if LHAT_WITH_FRONTEND
 static void emit_constant(Writer *w, Out *o, LhatValue v)
 {
     if (lhat_is_nil(v)) {
@@ -844,6 +851,7 @@ static void emit_proto(Writer *w, Out *o, const LhatProto *proto)
         emit_proto(w, o, proto->protos[i]);
     }
 }
+#endif  // LHAT_WITH_FRONTEND
 
 // The three tables every format begins with: the strings (each followed
 // by a NUL, so a reader may hand the bytes to the C library as they
@@ -906,6 +914,7 @@ static void seal_header(Out *o)
     }
 }
 
+#if LHAT_WITH_FRONTEND
 bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
                           uint8_t **out, size_t *length)
 {
@@ -979,9 +988,20 @@ bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
     writer_dispose(&w);
     return ok;
 }
+#else
+bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
+                          uint8_t **out, size_t *length)
+{
+    (void)unit;
+    (void)with_debug_names;
+    (void)out;
+    (void)length;
+    return false;
+}
+#endif  // LHAT_WITH_FRONTEND
 
 // ---------------------------------------------------------------------------
-// 10.8: the signature table, written
+// 10.7: the signature table, written
 // ---------------------------------------------------------------------------
 
 // What install builds for an entry, as one descriptor: the parameters as
@@ -1808,7 +1828,7 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
 }
 
 // ---------------------------------------------------------------------------
-// 10.8: the signature table, read
+// 10.7: the signature table, read
 // ---------------------------------------------------------------------------
 
 static int compare_index(const void *a, const void *b)

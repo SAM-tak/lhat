@@ -97,7 +97,7 @@ typedef struct LhatProgramEnum {
     LhatRuntimeType *decl_rt;
 } LhatProgramEnum;
 
-// 05 の 10 章: one entry of the signature table a program read (10.8): the
+// 05 の 10 章: one entry of the signature table a program read (10.7): the
 // text a registration is written with, and where its record stands in the
 // bytes the program keeps. Sorted by text, so a lookup halves its way in.
 typedef struct LhatSignatureIndex {
@@ -252,7 +252,7 @@ struct LhatProgram {
     size_t enum_identity_count;
     size_t enum_identity_capacity;
 
-    // 10.8: the signature table lhat_program_read_signatures kept -- a copy
+    // 10.7: the signature table lhat_program_read_signatures kept -- a copy
     // of the bytes and the sorted index into them. A build without the
     // front end registers a signature by looking it up here instead of
     // reading the text.
@@ -360,7 +360,7 @@ void lhat_program_report(LhatProgram *program, LhatProgramErrorCode code,
 const LhatType *lhat_program_enum_identity(LhatProgram *program,
                                            const char *path,
                                            const char *name);
-// 10.8: the descriptor the signature table holds for `text` -- a
+// 10.7: the descriptor the signature table holds for `text` -- a
 // SUBROUTINE whose parts are the parameters, with the receiver and variadic
 // marks, built onto host_heap. NULL when the table has no such text, or a
 // name in it is not registered on this program (reported as

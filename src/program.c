@@ -149,8 +149,12 @@ static LhatUnit *find_unit(LhatProgram *program, const char *path)
 }
 
 static LhatUnit *check_path(LhatProgram *program, char *path);
+static const LhatSignatureIndex *find_signature(const LhatProgram *program,
+                                                const char *text);
+#if LHAT_WITH_FRONTEND
 static void check_parsed(LhatProgram *program, LhatUnit *unit,
                          LhatTypeArena *arena);
+#endif
 // 05 の 8.8改: gives every derived host type what its base registered. Both
 // of the two ways checking starts call it; it does its work once.
 static void flatten_hostdata_bases(LhatProgram *program);
@@ -285,9 +289,16 @@ static void load_into(LhatProgram *program, LhatUnit *unit)
         return;
     }
 
+#if LHAT_WITH_FRONTEND
     lhat_source_init_from_string(&unit->source, unit->path, text, length);
     lhat_free(text);
     check_parsed(program, unit, &program->types);
+#else
+    // 05 の 10.8: text, and nothing here reads text.
+    lhat_free(text);
+    report(program, LHAT_PROGRAM_ERR_NO_FRONTEND, unit->path);
+    unit->state = LHAT_UNIT_FAILED;
+#endif
 }
 
 // Takes ownership of `path`.
@@ -336,6 +347,7 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
 // program's for a unit of the program (6 章: what it publishes has to
 // outlive it) and NULL for a loaded script (5.6), whose types nobody else
 // will point at -- the result then owns them.
+#if LHAT_WITH_FRONTEND
 static void check_parsed(LhatProgram *program, LhatUnit *unit,
                          LhatTypeArena *arena)
 {
@@ -382,9 +394,11 @@ static void check_parsed(LhatProgram *program, LhatUnit *unit,
 
     unit->state = LHAT_UNIT_DONE;
 }
+#endif  // LHAT_WITH_FRONTEND
 
 // 05 の 5 章: the compile-time twin of resolve_require. The unit is already
 // there -- checking put it there -- so this only has to say where it sits.
+#if LHAT_WITH_FRONTEND
 static size_t resolve_unit(void *context, const char *path, size_t length,
                            const char **module_name)
 {
@@ -1017,6 +1031,109 @@ LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
     walk_written_names(&walk, member_body(entry));
     return walk.found;
 }
+#else
+// 05 の 10.8: a build without the front end has no tree to walk. What a
+// host asks of a unit's declarations answers empty; the compile resolvers
+// above are never reached, since no text unit ever checks.
+size_t lhat_unit_annotation_count(const LhatUnit *unit, const char *definition,
+                                  const char *name)
+{
+    (void)unit;
+    (void)definition;
+    (void)name;
+    return 0;
+}
+
+LhatAnnotation lhat_unit_annotation(const LhatUnit *unit,
+                                    const char *definition, const char *name,
+                                    size_t index)
+{
+    LhatAnnotation out;
+    (void)unit;
+    (void)definition;
+    (void)name;
+    (void)index;
+    memset(&out, 0, sizeof out);
+    return out;
+}
+
+LhatAnnotationArgument lhat_annotation_argument(LhatAnnotation annotation,
+                                                size_t at)
+{
+    LhatAnnotationArgument out;
+    (void)annotation;
+    (void)at;
+    memset(&out, 0, sizeof out);
+    return out;
+}
+
+size_t lhat_unit_documentation(const LhatUnit *unit, const char *definition,
+                               const char *name, char *out, size_t capacity)
+{
+    (void)unit;
+    (void)definition;
+    (void)name;
+    if (out != NULL && capacity > 0) {
+        out[0] = '\0';
+    }
+    return 0;
+}
+
+size_t lhat_unit_member_count(const LhatUnit *unit, const char *definition)
+{
+    (void)unit;
+    (void)definition;
+    return 0;
+}
+
+LhatUnitMember lhat_unit_member(const LhatUnit *unit, const char *definition,
+                                size_t index)
+{
+    LhatUnitMember out;
+    (void)unit;
+    (void)definition;
+    (void)index;
+    memset(&out, 0, sizeof out);
+    return out;
+}
+
+LhatUnitParameter lhat_unit_member_parameter(const LhatUnit *unit,
+                                             const char *definition,
+                                             size_t member, size_t at)
+{
+    LhatUnitParameter out;
+    (void)unit;
+    (void)definition;
+    (void)member;
+    (void)at;
+    memset(&out, 0, sizeof out);
+    return out;
+}
+
+size_t lhat_unit_member_written_name_count(const LhatUnit *unit,
+                                           const char *definition,
+                                           size_t member)
+{
+    (void)unit;
+    (void)definition;
+    (void)member;
+    return 0;
+}
+
+LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
+                                           const char *definition,
+                                           size_t member, size_t at)
+{
+    LhatUnitText out;
+    (void)unit;
+    (void)definition;
+    (void)member;
+    (void)at;
+    out.text = NULL;
+    out.length = 0;
+    return out;
+}
+#endif  // LHAT_WITH_FRONTEND
 
 // ---------------------------------------------------------------------------
 // 05 の 4.5: what the unit published, as types
@@ -1157,6 +1274,7 @@ size_t lhat_unit_export_type_text(const LhatUnit *unit, const char *name,
     return lhat_type_write_full(m->type, out, capacity);
 }
 
+#if LHAT_WITH_FRONTEND
 bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
                                const char *signature)
 {
@@ -1174,6 +1292,16 @@ bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
                                                program->hosted, NULL);
     return wanted != NULL && lhat_type_conforms(m->type, wanted);
 }
+#else
+bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
+                               const char *signature)
+{
+    (void)unit;
+    (void)name;
+    (void)signature;
+    return false;  // 10.8: the checker's question, and there is no checker
+}
+#endif  // LHAT_WITH_FRONTEND
 
 // ---------------------------------------------------------------------------
 // 05 の 8.7: what the host provides
@@ -1744,6 +1872,7 @@ void *lhat_lookup_host_context(const LhatProgram *program, const char *module,
 // Told apart by anything that decides a call: how many parameters, whether a
 // tail collects more, which operand the receiver is (11.3改), and failing all
 // of those, a parameter position where neither type admits the other's values.
+#if LHAT_WITH_FRONTEND
 static bool host_arms_overlap(const LhatType *a, const LhatType *b)
 {
     if (a == NULL || b == NULL || a->kind != LHAT_TYPE_FUNC ||
@@ -1780,7 +1909,9 @@ static bool host_arms_overlap(const LhatType *a, const LhatType *b)
         }
     }
 }
+#endif  // LHAT_WITH_FRONTEND
 
+#if LHAT_WITH_FRONTEND
 static bool register_into(LhatProgram *program, LhatType *owner,
                           const char *module, const char *type,
                           const char *name, const char *signature,
@@ -1847,6 +1978,65 @@ static bool register_into(LhatProgram *program, LhatType *owner,
            keep_entry(program, module, type, name, call, context, written,
                       signature);
 }
+#else
+// 05 の 10.7: what keep_entry takes from a parsed signature, taken from the
+// descriptor the table holds instead -- the parts are the parameters, the
+// marks are the receiver and the variadic tail.
+static bool keep_entry_rt(LhatProgram *program, const char *module,
+                          const char *type, const char *name, LhatHostFn call,
+                          void *context, const LhatRuntimeType *rt,
+                          const char *signature_text)
+{
+    LHAT_GROW(program->host_entries, program->host_entry_count,
+              program->host_entry_capacity, 8, return false);
+    LhatHostEntry *entry = &program->host_entries[program->host_entry_count];
+    memset(entry, 0, sizeof *entry);
+    entry->module = duplicate(module);
+    entry->name = duplicate(name);
+    entry->type = type != NULL ? duplicate(type) : NULL;
+    entry->signature_text = duplicate(signature_text);
+    entry->call = call;
+    entry->context = context;
+    if (rt->part_count > 0xFF) {
+        return false;
+    }
+    entry->parameters = (uint8_t)rt->part_count;
+    entry->has_variadic = rt->variadic != NULL;
+    entry->takes_self = rt->takes_self;
+    entry->self_last = rt->self_last;
+    if (entry->parameters > 0) {
+        entry->parameter_types = borrowed_params(
+            (const LhatRuntimeType *const *)rt->parts, entry->parameters);
+    }
+    if (entry->module == NULL || entry->name == NULL ||
+        (type != NULL && entry->type == NULL) ||
+        entry->signature_text == NULL ||
+        (entry->parameters > 0 && entry->parameter_types == NULL)) {
+        return false;
+    }
+    program->host_entry_count++;
+    return true;
+}
+
+// 10.8: the signature table stands in for the text. The checker's side
+// (hosted) is not built -- nothing here reads it.
+static bool register_into(LhatProgram *program, LhatType *owner,
+                          const char *module, const char *type,
+                          const char *name, const char *signature,
+                          LhatHostFn call, void *context)
+{
+    if (owner == NULL || call == NULL || signature == NULL) {
+        return false;
+    }
+    if (find_signature(program, signature) == NULL) {
+        report(program, LHAT_PROGRAM_ERR_NO_SIGNATURE, signature);
+        return false;
+    }
+    const LhatRuntimeType *rt = lhat_program_signature_type(program, signature);
+    return rt != NULL && keep_entry_rt(program, module, type, name, call,
+                                       context, rt, signature);
+}
+#endif  // LHAT_WITH_FRONTEND
 
 bool lhat_register_member(LhatProgram *program, const char *module,
                           const char *type, const char *name,
@@ -1963,6 +2153,7 @@ static LhatAnnotationDecl *annotation_named(LhatProgram *program,
     return NULL;
 }
 
+#if LHAT_WITH_FRONTEND
 bool lhat_register_annotation_signature(LhatProgram *program,
                                         const char *name,
                                         const char *signature)
@@ -1985,6 +2176,23 @@ bool lhat_register_annotation_signature(LhatProgram *program,
     program->annotation_signatures[at] = kept;
     return true;
 }
+#else
+bool lhat_register_annotation_signature(LhatProgram *program,
+                                        const char *name,
+                                        const char *signature)
+{
+    // 10.8: an annotation is the checker's to read, and there is no
+    // checker; the text is kept for a dump, the type is not made.
+    size_t at = 0;
+    LhatAnnotationDecl *decl = annotation_named(program, name, &at);
+    if (decl == NULL || signature == NULL ||
+        program->annotation_signatures[at] != NULL) {
+        return false;
+    }
+    program->annotation_signatures[at] = duplicate(signature);
+    return program->annotation_signatures[at] != NULL;
+}
+#endif  // LHAT_WITH_FRONTEND
 
 bool lhat_register_annotation_exclusive(LhatProgram *program,
                                         const char *name, const char *other)
@@ -2400,6 +2608,7 @@ bool lhat_register_global(LhatProgram *program, const char *name,
     if (hosted_member(program->globals, name) != NULL) {
         return false;  // 8.7: one name, one thing
     }
+#if LHAT_WITH_FRONTEND
     LhatType *written = lhat_type_of_text(signature, strlen(signature),
                                           &program->types, program->hosted,
                                           NULL);
@@ -2408,6 +2617,18 @@ bool lhat_register_global(LhatProgram *program, const char *name,
                              strlen(name), written) == NULL) {
         return false;
     }
+#else
+    // 10.8: the table stands in for the text, as in register_into.
+    if (signature == NULL || find_signature(program, signature) == NULL) {
+        report(program, LHAT_PROGRAM_ERR_NO_SIGNATURE,
+               signature != NULL ? signature : name);
+        return false;
+    }
+    const LhatRuntimeType *held = lhat_program_signature_type(program, signature);
+    if (held == NULL || held->part_count > 0xFF) {
+        return false;
+    }
+#endif
 
     LHAT_GROW(program->global_entries, program->global_count,
               program->global_capacity, 4, return false);
@@ -2417,6 +2638,7 @@ bool lhat_register_global(LhatProgram *program, const char *name,
     entry->signature_text = duplicate(signature);
     entry->call = call;
     entry->context = context;
+#if LHAT_WITH_FRONTEND
     if (written->kind == LHAT_TYPE_FUNC) {
         size_t count = 0;
         for (const LhatTypeList *p = written->v.func.params; p != NULL;
@@ -2430,6 +2652,16 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         entry->parameter_types =
             lower_host_params(program, written, entry->parameters);
     }
+#else
+    entry->parameters = (uint8_t)held->part_count;
+    entry->has_variadic = held->variadic != NULL;
+    entry->takes_self = held->takes_self;
+    entry->self_last = held->self_last;
+    if (entry->parameters > 0) {
+        entry->parameter_types = borrowed_params(
+            (const LhatRuntimeType *const *)held->parts, entry->parameters);
+    }
+#endif
     if (entry->name == NULL || entry->signature_text == NULL ||
         (entry->parameters > 0 && entry->parameter_types == NULL)) {
         return false;
@@ -2532,6 +2764,7 @@ static bool fill_unit_table(LhatUnit *u)
 // registry write for a module^ unit -- off for a loaded one (5.6), which
 // answers its table to whoever called it and enters no registry. False
 // leaves the failure where lhat_program_compile_failure reads it.
+#if LHAT_WITH_FRONTEND
 static bool compile_one(LhatProgram *program, LhatUnit *u, bool registers)
 {
     Resolution resolution;
@@ -2572,10 +2805,12 @@ static bool compile_one(LhatProgram *program, LhatUnit *u, bool registers)
     stamp_source(u->proto, u->path);
     return true;
 }
+#endif  // LHAT_WITH_FRONTEND
 
 bool lhat_program_compile(LhatProgram *program)
 {
     bool ok = true;
+#if LHAT_WITH_FRONTEND
     for (LhatUnit *u = program->units; u != NULL; u = u->next) {
         if (!u->loaded || u->state != LHAT_UNIT_DONE || u->proto != NULL) {
             continue;  // failed to check, or compiled by an earlier call
@@ -2585,6 +2820,7 @@ bool lhat_program_compile(LhatProgram *program)
             break;
         }
     }
+#endif
     // What compiled gets its table either way: a unit the first pass made
     // is runnable on its own, and a host that stops at `false` loses
     // nothing by it.
@@ -2732,6 +2968,7 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
     return true;
 }
 
+#if LHAT_WITH_FRONTEND
 void lhat_program_install_checks(const LhatProgram *program,
                                  LhatCheckSession *session)
 {
@@ -2761,6 +2998,21 @@ void lhat_program_install_compiles(const LhatProgram *program,
                               (const char *const *)program->initial_members,
                               program->initial_count);
 }
+#else
+void lhat_program_install_checks(const LhatProgram *program,
+                                 LhatCheckSession *session)
+{
+    (void)program;
+    (void)session;  // 10.8: no prompt without the front end
+}
+
+void lhat_program_install_compiles(const LhatProgram *program,
+                                   LhatCompileSession *session)
+{
+    (void)program;
+    (void)session;
+}
+#endif  // LHAT_WITH_FRONTEND
 
 void lhat_program_init(LhatProgram *program, bool strict,
                        LhatProgramLoader load, void *context)
@@ -2798,9 +3050,11 @@ static void unit_clear_stages(LhatUnit *unit)
         unit->binary = false;
     }
     if (unit->loaded) {
+#if LHAT_WITH_FRONTEND
         lhat_check_result_dispose(&unit->checked);
         lhat_parse_result_dispose(&unit->parsed);
         lhat_lexer_dispose(&unit->lexer);
+#endif
         lhat_source_dispose(&unit->source);
         memset(&unit->checked, 0, sizeof unit->checked);
         memset(&unit->parsed, 0, sizeof unit->parsed);
@@ -2878,6 +3132,7 @@ static void say_unit(Said *s, const LhatUnit *unit)
 // lhat_program_compile, registered when it first runs); the unit itself is
 // checked into an arena of its own, compiled without 5.3's guard and
 // registry write, and forgotten -- the proto is the caller's.
+#if LHAT_WITH_FRONTEND
 static LhatLoadStatus load_placed(LhatProgram *program, LhatUnit *unit,
                                   LhatProto **out)
 {
@@ -2931,6 +3186,19 @@ static LhatLoadStatus load_placed(LhatProgram *program, LhatUnit *unit,
     lhat_free(unit);
     return status;
 }
+#else
+static LhatLoadStatus load_placed(LhatProgram *program, LhatUnit *unit,
+                                  LhatProto **out)
+{
+    // 10.8: a loaded script is text, and nothing here reads text.
+    (void)unit;
+    *out = NULL;
+    lhat_free(program->load_failure);
+    program->load_failure =
+        duplicate("this build has no front end; only a binary unit runs");
+    return LHAT_LOAD_REJECTED;
+}
+#endif  // LHAT_WITH_FRONTEND
 
 char *lhat_program_read(LhatProgram *program, const char *path,
                         size_t *length)
@@ -3667,6 +3935,14 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
         return 0;
     }
 
+#if !LHAT_WITH_FRONTEND
+    // 10.8: a binary unit reports nothing of its own.
+    (void)within;
+    if (out != NULL && capacity > 0) {
+        out[0] = '\0';
+    }
+    return 0;
+#else
     switch (stage) {
         case LHAT_STAGE_LEXER: {
             // A literal, so it is copied rather than written.
@@ -3688,6 +3964,7 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
                                             out, capacity);
     }
     return 0;
+#endif
 }
 
 size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
@@ -3840,7 +4117,15 @@ const LhatType *lhat_program_enum_identity(LhatProgram *program,
 bool lhat_unit_write_binary(const LhatUnit *unit, bool with_debug_names,
                             uint8_t **bytes, size_t *length)
 {
+#if LHAT_WITH_FRONTEND
     return lhat_serialize_write(unit, with_debug_names, bytes, length);
+#else
+    (void)unit;
+    (void)with_debug_names;
+    (void)bytes;
+    (void)length;
+    return false;  // 10.8: what a binary unit was written from is gone
+#endif
 }
 
 bool lhat_program_write_signatures(const LhatProgram *program,
@@ -3876,8 +4161,8 @@ bool lhat_program_read_signatures(LhatProgram *program, const uint8_t *bytes,
     return true;
 }
 
-const LhatRuntimeType *lhat_program_signature_type(LhatProgram *program,
-                                                   const char *text)
+static const LhatSignatureIndex *find_signature(const LhatProgram *program,
+                                                const char *text)
 {
     if (program == NULL || text == NULL || program->signature_count == 0) {
         return NULL;
@@ -3888,10 +4173,7 @@ const LhatRuntimeType *lhat_program_signature_type(LhatProgram *program,
         size_t mid = low + (high - low) / 2;
         int order = strcmp(program->signature_index[mid].text, text);
         if (order == 0) {
-            const LhatSignatureIndex *e = &program->signature_index[mid];
-            return lhat_serialize_read_signature(
-                program, program->signatures + e->body_offset,
-                e->body_length);
+            return &program->signature_index[mid];
         }
         if (order < 0) {
             low = mid + 1;
@@ -3900,6 +4182,16 @@ const LhatRuntimeType *lhat_program_signature_type(LhatProgram *program,
         }
     }
     return NULL;
+}
+
+const LhatRuntimeType *lhat_program_signature_type(LhatProgram *program,
+                                                   const char *text)
+{
+    const LhatSignatureIndex *e = find_signature(program, text);
+    return e != NULL ? lhat_serialize_read_signature(
+                           program, program->signatures + e->body_offset,
+                           e->body_length)
+                     : NULL;
 }
 
 // ---------------------------------------------------------------------------

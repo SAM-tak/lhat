@@ -47,10 +47,10 @@ typedef enum {
     // 10 章: a text unit required a binary one or the other way round. A
     // program is one or the other.
     LHAT_PROGRAM_ERR_MIXED,
-    // 10.8: a registration's signature that the signature table does not
+    // 10.7: a registration's signature that the signature table does not
     // hold, in a build that has no front end to read the text with.
     LHAT_PROGRAM_ERR_NO_SIGNATURE,
-    // 10.9: a text unit met by a build without the front end.
+    // 10.8: a text unit met by a build without the front end.
     LHAT_PROGRAM_ERR_NO_FRONTEND
 } LhatProgramErrorCode;
 
@@ -528,9 +528,9 @@ bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
 bool lhat_unit_write_binary(const LhatUnit *unit, bool with_debug_names,
                             uint8_t **bytes, size_t *length);
 
-// 10.8: the signature table. A registration's signature is text
+// 10.7: the signature table. A registration's signature is text
 // ("f^number^ -> number^;"), and reading it takes the front end -- the
-// parser and the checker. A build without one (10.9) registers by looking
+// parser and the checker. A build without one (10.8) registers by looking
 // the text up in a table a full build wrote from the same registrations:
 // what the table holds for each text is the descriptor the machine's
 // overload search reads, exactly as install would have built it.
