@@ -371,11 +371,150 @@ static void test_traceback(void)
     lhat_free(bytes);
 }
 
+// The names that leave a chunk: a hostdata type behind a fits^, a host
+// value type behind a parameter (its width baked into the frame), a
+// registered error kind as a constant and behind a fits^, the language's
+// CastFailure, and a registered enum's declaration.
+static const char *const HOSTED =
+    "import^ k\n"
+    "var^ n = 0\n"
+    "let^ x : any^ = 1\n"
+    "if^ x fits^ k.T { n := n + 1 else^: n := n + 2 }\n"
+    "let^ f = f^ v:k.V -> number^ { return^ 1 }\n"
+    "let^ e = error^k.Bad.Oops{ message := \"m\" }\n"
+    "if^ e fits^ k.Bad { n := n + 10 }\n"
+    "if^ x fits^ localerror^.CastFailure { n := n + 100 else^: n := n + 200 }\n"
+    "if^ k.Mode.A fits^ k.Mode { n := n + 1000 }\n"
+    "return^ n\n";
+#define HOSTED_ANSWER 1212
+
+static void register_host(LhatProgram *program, size_t value_size)
+{
+    static const char *const variants[] = { "Oops" };
+    static const char *const modes[] = { "A", "B" };
+    LHAT_CHECK(lhat_register_hostdata_type(program, "k", "T") != NULL,
+               "hostdata registered");
+    LHAT_CHECK(lhat_register_hostvalue_type(program, "k", "V", value_size) !=
+                   NULL,
+               "host value registered");
+    LHAT_CHECK(lhat_register_error_kind(program, "k", "Bad", variants, 1, NULL,
+                                        NULL),
+               "error kind registered");
+    LHAT_CHECK(lhat_register_enum(program, "k", NULL, "Mode", modes, 2),
+               "enum registered");
+}
+
+static void test_host_references(void)
+{
+    uint8_t *bytes = NULL;
+    size_t length = 0;
+    {
+        Disk disk;
+        memset(&disk, 0, sizeof disk);
+        disk_text(&disk, "main.lh", HOSTED);
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &disk);
+        register_host(&program, 8);
+        const LhatUnit *root = NULL;
+        LHAT_CHECK_EQ_INT(run_root(&program, "main.lh", &root), HOSTED_ANSWER);
+        LHAT_CHECK(root != NULL &&
+                       lhat_unit_write_binary(root, true, &bytes, &length),
+                   "the hosted unit wrote");
+        lhat_program_dispose(&program);
+    }
+
+    LHAT_TEST("host names resolve against the same registrations");
+    {
+        Disk disk;
+        memset(&disk, 0, sizeof disk);
+        disk_bytes(&disk, "main.lh", bytes, length);
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &disk);
+        register_host(&program, 8);
+        LHAT_CHECK_EQ_INT(run_root(&program, "main.lh", NULL), HOSTED_ANSWER);
+        lhat_program_dispose(&program);
+    }
+
+    LHAT_TEST("and a program that registered nothing refuses the unit");
+    {
+        Disk disk;
+        memset(&disk, 0, sizeof disk);
+        disk_bytes(&disk, "main.lh", bytes, length);
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &disk);
+        LHAT_CHECK(lhat_program_check(&program, "main.lh") == NULL,
+                   "nothing loads");
+        LHAT_CHECK(has_program_error(&program, LHAT_PROGRAM_ERR_HOST_MISMATCH),
+                   "and says why");
+        lhat_program_dispose(&program);
+    }
+
+    // 8.9: the width is checked too, but not here -- the registry is the
+    // process's (registry.h), so one name has one size for as long as
+    // the process runs, and a second registration of k.V at another size
+    // is refused before any binary could meet it. The check matters
+    // across processes, where the host may have changed the type.
+    lhat_free(bytes);
+}
+
+static void test_exports(void)
+{
+    uint8_t *lib_bytes = NULL;
+    size_t lib_length = 0;
+    {
+        Disk disk;
+        memset(&disk, 0, sizeof disk);
+        disk_text(&disk, "lib.lh", LIB);
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &disk);
+        const LhatUnit *lib = lhat_program_check(&program, "lib.lh");
+        LHAT_CHECK(lib != NULL && lhat_program_compile(&program), "lib built");
+        LHAT_CHECK(lib != NULL && lhat_unit_write_binary(lib, true, &lib_bytes,
+                                                         &lib_length),
+                   "lib wrote");
+        lhat_program_dispose(&program);
+    }
+
+    // 8.7: what a host asks of a unit's exports is answered off the
+    // descriptors the bytes carried.
+    LHAT_TEST("a binary unit answers its export descriptors");
+    {
+        Disk disk;
+        memset(&disk, 0, sizeof disk);
+        disk_bytes(&disk, "lib.lh", lib_bytes, lib_length);
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &disk);
+        const LhatUnit *lib = lhat_program_check(&program, "lib.lh");
+        LHAT_CHECK(lib != NULL, "loaded");
+        if (lib != NULL) {
+            LHAT_CHECK_EQ_INT(lhat_unit_export_count(lib), 2);
+            LhatUnitText first = lhat_unit_export_name(lib, 0);
+            LHAT_CHECK(first.text != NULL && first.length == 1 &&
+                           first.text[0] == 'E',
+                       "the enum comes first");
+            const LhatRuntimeType *twice = lhat_unit_export_type(lib, "twice");
+            LHAT_CHECK(twice != NULL && twice->kind == LHAT_TYPE_RT_SUBROUTINE,
+                       "twice is a subroutine");
+            char text[64];
+            size_t n = lhat_unit_export_type_text(lib, "twice", text,
+                                                  sizeof text);
+            LHAT_CHECK(n != SIZE_MAX && strncmp(text, "f^", 2) == 0,
+                       "and spells as one");
+            LHAT_CHECK(lhat_unit_export_type(lib, "nope") == NULL,
+                       "a name it did not publish answers nothing");
+        }
+        lhat_program_dispose(&program);
+    }
+    lhat_free(lib_bytes);
+}
+
 int main(void)
 {
     test_roundtrip();
     test_refusals();
     test_units();
     test_traceback();
+    test_host_references();
+    test_exports();
     return lhat_test_report("test_serialize");
 }

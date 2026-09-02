@@ -862,6 +862,22 @@ bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
     }
     intern_cstring(&w, unit->module_name);
     intern_proto(&w, unit->proto);
+    // 8.7: the export descriptors, built onto the root heap by the same
+    // call a host makes -- so they travel as the objects they are.
+    size_t exports = lhat_unit_export_count(unit);
+    for (size_t i = 0; i < exports; i++) {
+        LhatUnitText name = lhat_unit_export_name(unit, i);
+        char *named = (char *)lhat_alloc(name.length + 1);
+        if (named == NULL) {
+            w.failed = true;
+            break;
+        }
+        memcpy(named, name.text, name.length);
+        named[name.length] = '\0';
+        intern_string(&w, name.text, name.length);
+        intern_rt(&w, lhat_unit_export_type(unit, named));
+        lhat_free(named);
+    }
 
     Out o;
     memset(&o, 0, sizeof o);
@@ -904,6 +920,20 @@ bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
 
     emit_proto(&w, &o, unit->proto);
     put_u32(&o, cstr_ref(&w, unit->module_name));
+    put_u32(&o, (uint32_t)exports);
+    for (size_t i = 0; i < exports; i++) {
+        LhatUnitText name = lhat_unit_export_name(unit, i);
+        char *named = (char *)lhat_alloc(name.length + 1);
+        if (named == NULL) {
+            w.failed = true;
+            break;
+        }
+        memcpy(named, name.text, name.length);
+        named[name.length] = '\0';
+        put_u32(&o, str_ref(&w, name.text, name.length));
+        put_u32(&o, obj_ref(&w, lhat_unit_export_type(unit, named)));
+        lhat_free(named);
+    }
 
     bool ok = !w.failed && !o.failed;
     if (ok) {
@@ -1422,9 +1452,21 @@ static bool read_proto(Reader *r, LhatProto *proto)
     return !in->failed;
 }
 
+static void free_binary_unit(LhatBinaryUnit *out)
+{
+    lhat_proto_free(out->proto);
+    lhat_free(out->module_name);
+    for (size_t i = 0; i < out->export_count; i++) {
+        lhat_free(out->export_names[i]);
+    }
+    lhat_free(out->export_names);
+    lhat_free(out->export_rt);
+    memset(out, 0, sizeof *out);
+}
+
 bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
                          const uint8_t *bytes, size_t length,
-                         LhatProto **out_proto, char **out_module_name)
+                         LhatBinaryUnit *out)
 {
     Reader r;
     memset(&r, 0, sizeof r);
@@ -1433,8 +1475,7 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
     r.in.data = bytes;
     r.in.length = length;
     r.error = LHAT_PROGRAM_ERR_BAD_BINARY;
-    *out_proto = NULL;
-    *out_module_name = NULL;
+    memset(out, 0, sizeof *out);
 
     In *in = &r.in;
     uint8_t magic[4];
@@ -1524,28 +1565,54 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
         }
     }
 
+    out->proto = r.root;
     if (!in->failed && read_proto(&r, r.root)) {
         r.root->is_unit = true;
         uint32_t module_ref = get_u32(in);
         const char *module_name = cstring_at(&r, module_ref);
         if (!in->failed && module_name != NULL) {
             size_t n = strlen(module_name);
-            *out_module_name = (char *)lhat_alloc(n + 1);
-            if (*out_module_name != NULL) {
-                memcpy(*out_module_name, module_name, n + 1);
+            out->module_name = (char *)lhat_alloc(n + 1);
+            if (out->module_name != NULL) {
+                memcpy(out->module_name, module_name, n + 1);
             }
+        }
+        // 8.7: the export descriptors, for lhat_unit_export_* to answer.
+        uint32_t exports = get_u32(in);
+        if (!in->failed && exports > 0) {
+            out->export_names =
+                (char **)lhat_calloc(exports, sizeof *out->export_names);
+            out->export_rt = (struct LhatRuntimeType **)lhat_calloc(
+                exports, sizeof *out->export_rt);
+            if (out->export_names == NULL || out->export_rt == NULL) {
+                fail(&r, LHAT_PROGRAM_ERR_BAD_BINARY);
+            } else {
+                out->export_count = exports;
+            }
+        }
+        for (uint32_t i = 0; i < exports && !in->failed; i++) {
+            const char *name = cstring_at(&r, get_u32(in));
+            LhatRuntimeType *type = rt_at(&r, get_u32(in));
+            if (name == NULL) {
+                fail(&r, LHAT_PROGRAM_ERR_BAD_BINARY);
+                break;
+            }
+            size_t n = strlen(name);
+            out->export_names[i] = (char *)lhat_alloc(n + 1);
+            if (out->export_names[i] == NULL) {
+                fail(&r, LHAT_PROGRAM_ERR_BAD_BINARY);
+                break;
+            }
+            memcpy(out->export_names[i], name, n + 1);
+            out->export_rt[i] = type;
         }
     } else {
         fail(&r, r.error);
     }
 
     bool loaded = !in->failed && in->at == in->length;
-    if (loaded) {
-        *out_proto = r.root;
-    } else {
-        lhat_proto_free(r.root);
-        lhat_free(*out_module_name);
-        *out_module_name = NULL;
+    if (!loaded) {
+        free_binary_unit(out);
         lhat_program_report(program, r.error, unit->path);
     }
     lhat_free(r.strings);

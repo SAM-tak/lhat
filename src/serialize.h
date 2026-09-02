@@ -24,13 +24,23 @@ bool lhat_serialize_is_binary(const char *bytes, size_t length);
 bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
                           uint8_t **out, size_t *length);
 
+// What a read answers: the root body, the module name (owned, or NULL),
+// and the export descriptors a host asks for (8.7's lhat_unit_export_*),
+// as parallel arrays the unit takes over.
+typedef struct {
+    LhatProto *proto;
+    char *module_name;
+    char **export_names;
+    struct LhatRuntimeType **export_rt;
+    size_t export_count;
+} LhatBinaryUnit;
+
 // Reads a binary unit for `unit` (its path set, its state CHECKING): the
 // referenced units are required first, the identities resolved against the
-// program, and the tree built. Answers the root body and the module name
-// (owned, or NULL) through the out parameters; false reports the failure on
-// the program and leaves nothing behind.
+// program, and the tree built. False reports the failure on the program
+// and leaves nothing behind.
 bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
                          const uint8_t *bytes, size_t length,
-                         LhatProto **out_proto, char **out_module_name);
+                         LhatBinaryUnit *out);
 
 #endif  // LHAT_SERIALIZE_H

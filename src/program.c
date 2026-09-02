@@ -264,10 +264,9 @@ static void load_into(LhatProgram *program, LhatUnit *unit)
     // a checked one does, so that everything after this treats the two
     // alike.
     if (lhat_serialize_is_binary(text, length)) {
-        LhatProto *proto = NULL;
-        char *module_name = NULL;
+        LhatBinaryUnit read;
         bool ok = lhat_serialize_load(program, unit, (const uint8_t *)text,
-                                      length, &proto, &module_name);
+                                      length, &read);
         lhat_free(text);
         if (!ok) {
             unit->state = LHAT_UNIT_FAILED;
@@ -275,10 +274,13 @@ static void load_into(LhatProgram *program, LhatUnit *unit)
         }
         unit->binary = true;
         unit->loaded = true;
-        unit->proto = proto;
-        stamp_source(proto, unit->path);
+        unit->proto = read.proto;
+        stamp_source(read.proto, unit->path);
         lhat_free(unit->module_name);
-        unit->module_name = module_name;
+        unit->module_name = read.module_name;
+        unit->export_names = read.export_names;
+        unit->export_rt = read.export_rt;
+        unit->export_rt_count = read.export_count;
         unit->state = LHAT_UNIT_DONE;
         return;
     }
@@ -1037,9 +1039,25 @@ static const LhatTypeMember *export_named(const LhatUnit *unit,
     return NULL;
 }
 
+// 05 の 10 章: a binary unit answers off the descriptors it carried; the
+// index of a name in them is what lhat_unit_export_type reads by.
+static size_t binary_export_index(const LhatUnit *unit, const char *name)
+{
+    for (size_t i = 0; unit->export_names != NULL && i < unit->export_rt_count;
+         i++) {
+        if (strcmp(unit->export_names[i], name) == 0) {
+            return i;
+        }
+    }
+    return SIZE_MAX;
+}
+
 size_t lhat_unit_export_count(const LhatUnit *unit)
 {
     size_t count = 0;
+    if (unit != NULL && unit->binary) {
+        return unit->export_rt_count;
+    }
     if (unit != NULL && unit->loaded && unit->checked.exports != NULL) {
         for (const LhatTypeMember *m = unit->checked.exports->v.table.members;
              m != NULL; m = m->next) {
@@ -1054,6 +1072,13 @@ LhatUnitText lhat_unit_export_name(const LhatUnit *unit, size_t index)
     LhatUnitText text;
     text.text = NULL;
     text.length = 0;
+    if (unit != NULL && unit->binary) {
+        if (index < unit->export_rt_count) {
+            text.text = unit->export_names[index];
+            text.length = strlen(text.text);
+        }
+        return text;
+    }
     if (unit == NULL || !unit->loaded || unit->checked.exports == NULL) {
         return text;
     }
@@ -1071,6 +1096,10 @@ LhatUnitText lhat_unit_export_name(const LhatUnit *unit, size_t index)
 const struct LhatRuntimeType *lhat_unit_export_type(const LhatUnit *unit,
                                                     const char *name)
 {
+    if (unit != NULL && unit->binary && name != NULL) {
+        size_t at = binary_export_index(unit, name);
+        return at != SIZE_MAX ? unit->export_rt[at] : NULL;
+    }
     const LhatTypeMember *m = export_named(unit, name);
     if (m == NULL || unit->proto == NULL) {
         return NULL;
@@ -1108,6 +1137,16 @@ const struct LhatRuntimeType *lhat_unit_export_type(const LhatUnit *unit,
 size_t lhat_unit_export_type_text(const LhatUnit *unit, const char *name,
                                   char *out, size_t capacity)
 {
+    if (unit != NULL && unit->binary) {
+        const struct LhatRuntimeType *rt = lhat_unit_export_type(unit, name);
+        if (rt == NULL) {
+            if (out != NULL && capacity > 0) {
+                out[0] = '\0';
+            }
+            return SIZE_MAX;
+        }
+        return lhat_runtime_type_write(rt, out, capacity);
+    }
     const LhatTypeMember *m = export_named(unit, name);
     if (m == NULL) {
         if (out != NULL && capacity > 0) {
@@ -1121,6 +1160,8 @@ size_t lhat_unit_export_type_text(const LhatUnit *unit, const char *name,
 bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
                                const char *signature)
 {
+    // 05 の 10 章: a binary unit carries no checker type to conform, and
+    // this question is the checker's -- it answers no.
     const LhatTypeMember *m = export_named(unit, name);
     if (m == NULL || signature == NULL || unit->program == NULL) {
         return false;
@@ -2830,6 +2871,12 @@ static void unit_clear_stages(LhatUnit *unit)
         memset(&unit->source, 0, sizeof unit->source);
         unit->loaded = false;
     }
+    for (size_t i = 0; unit->export_names != NULL && i < unit->export_rt_count;
+         i++) {
+        lhat_free(unit->export_names[i]);
+    }
+    lhat_free(unit->export_names);
+    unit->export_names = NULL;
     lhat_free(unit->export_rt);
     unit->export_rt = NULL;
     unit->export_rt_count = 0;

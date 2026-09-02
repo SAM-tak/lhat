@@ -7,6 +7,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
 
 #include "lhat.h"
 
@@ -680,6 +685,117 @@ static size_t say_unit_diagnostics(const LhatProgram *program)
     return units;
 }
 
+// 05 の 10 章: the directories above `path`, made as needed.
+static bool make_directories(const char *path)
+{
+    size_t length = strlen(path);
+    char *copy = (char *)malloc(length + 1);
+    if (copy == NULL) {
+        return false;
+    }
+    memcpy(copy, path, length + 1);
+    for (size_t i = 1; i < length; i++) {
+        if (copy[i] != '/' && copy[i] != '\\') {
+            continue;
+        }
+        copy[i] = '\0';
+#ifdef _WIN32
+        (void)_mkdir(copy);
+#else
+        (void)mkdir(copy, 0777);
+#endif
+        copy[i] = path[i];
+    }
+    free(copy);
+    return true;
+}
+
+// 05 の 10 章: checks and compiles the program the way --run does, then
+// writes every unit out as bytes under `out_dir`, laid out as the sources
+// are around the root -- the same relative paths, the same names, so the
+// require^s inside the bytes find each other where the loader looks.
+static int compile_program(const char *path, const char *out_dir,
+                           bool strict, bool with_debug)
+{
+    LhatProgram program;
+    lhat_program_init(&program, strict, lhat_load_file, NULL);
+    if (!bind_host_names(&program)) {
+        fprintf(stderr, "lhat: out of memory\n");
+        lhat_program_dispose(&program);
+        return EXIT_FAILURE;
+    }
+    const LhatUnit *root = lhat_program_check(&program, path);
+    (void)say_unit_diagnostics(&program);
+    bool failed = root == NULL || lhat_program_has_errors(&program);
+    if (!failed && !lhat_program_compile(&program)) {
+        const char *where = NULL;
+        LhatCompileResult failure =
+            lhat_program_compile_failure(&program, &where);
+        say_compile_error(program.compile_unit != NULL
+                              ? &program.compile_unit->source
+                              : NULL,
+                          where != NULL ? where : path, &failure);
+        failed = true;
+    }
+
+    // The root's directory is what every unit's path is read against.
+    const char *root_path = failed ? NULL : lhat_unit_path(root);
+    size_t root_dir = 0;
+    for (size_t i = 0; root_path != NULL && root_path[i] != '\0'; i++) {
+        if (root_path[i] == '/' || root_path[i] == '\\') {
+            root_dir = i + 1;
+        }
+    }
+    size_t written = 0;
+    for (const LhatUnit *u = lhat_program_units(&program);
+         !failed && u != NULL; u = lhat_unit_next(u)) {
+        const char *unit_path = lhat_unit_path(u);
+        if (lhat_unit_proto(u) == NULL) {
+            continue;
+        }
+        if (strncmp(unit_path, root_path, root_dir) != 0) {
+            fprintf(stderr, "%s: error: outside the root's directory, so it "
+                            "has no place under %s\n", unit_path, out_dir);
+            failed = true;
+            break;
+        }
+        uint8_t *bytes = NULL;
+        size_t length = 0;
+        if (!lhat_unit_write_binary(u, with_debug, &bytes, &length)) {
+            fprintf(stderr, "%s: error: could not be written out\n",
+                    unit_path);
+            failed = true;
+            break;
+        }
+        const char *relative = unit_path + root_dir;
+        size_t out_length = strlen(out_dir) + 1 + strlen(relative);
+        char *out_path = (char *)malloc(out_length + 1);
+        if (out_path == NULL) {
+            lhat_free(bytes);
+            failed = true;
+            break;
+        }
+        snprintf(out_path, out_length + 1, "%s/%s", out_dir, relative);
+        FILE *file = make_directories(out_path) ? fopen(out_path, "wb") : NULL;
+        if (file == NULL) {
+            fprintf(stderr, "lhat: cannot write %s\n", out_path);
+            failed = true;
+        } else {
+            fwrite(bytes, 1, length, file);
+            fclose(file);
+            written++;
+        }
+        free(out_path);
+        lhat_free(bytes);
+    }
+    if (!failed) {
+        printf("%s: %zu unit%s written under %s\n", path, written,
+               written == 1 ? "" : "s", out_dir);
+    }
+    lhat_program_dispose(&program);
+    return failed ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
 // 03 の 1.1's third stage, over the unit graph of 05 の 6.2: a unit cannot be
 // checked before the units it requires, so the whole graph is walked rather
 // than the one file named on the command line.
@@ -1109,6 +1225,10 @@ static void print_usage(void)
                             " (default for the prompt)\n");
     printf("  --dump-host-api [file]  write what this driver registers"
                             " as JSON, for lhatls\n");
+    printf("  --compile -o DIR  check and compile the whole program and"
+                            " write every unit to DIR as bytes\n");
+    printf("  --strip-debug  leave the local and captured names out of"
+                            " what --compile writes\n");
     printf("  --dap=PORT     run under a debugger over DAP on that"
                             " loopback port (implies --run)\n");
     printf("  -h, --help     show this and do nothing else\n");
@@ -1126,6 +1246,9 @@ int main(int argc, char **argv)
     bool run_program = false;
     bool command_form = false;
     bool dump_host_api = false;
+    bool compile_out = false;      // 05 の 10 章
+    const char *out_dir = NULL;
+    bool strip_debug = false;
     bool show_help = false;
     bool show_version = false;
     unsigned dap_port = 0;  // 09 章: --dap=PORT runs under a debugger
@@ -1151,6 +1274,12 @@ int main(int argc, char **argv)
             strictness = STRICTNESS_RELAXED;
         } else if (strcmp(argv[i], "--dump-host-api") == 0) {
             dump_host_api = true;
+        } else if (strcmp(argv[i], "--compile") == 0) {
+            compile_out = true;
+        } else if (strcmp(argv[i], "--strip-debug") == 0) {
+            strip_debug = true;
+        } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+            out_dir = argv[++i];
         } else if (strcmp(argv[i], "-h") == 0 ||
                    strcmp(argv[i], "--help") == 0) {
             show_help = true;
@@ -1240,6 +1369,14 @@ int main(int argc, char **argv)
     // Checking is a question about a program, not about a file: 05 の 6.2
     // puts the units a file requires ahead of it. The bytecode dump walks
     // the same graph, so it reads its own input the same way.
+    if (compile_out) {
+        if (out_dir == NULL) {
+            fprintf(stderr, "lhat: --compile needs -o DIR\n");
+            return EXIT_FAILURE;
+        }
+        return compile_program(path, out_dir,
+                               strictness != STRICTNESS_RELAXED, !strip_debug);
+    }
     if (check_only || run_program) {
         return check_program(path, run_program,
                              strictness != STRICTNESS_RELAXED, arguments,

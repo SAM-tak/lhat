@@ -36,6 +36,10 @@ struct LhatUnit {
     // reload's recheck starts it empty again.
     struct LhatRuntimeType **export_rt;
     size_t export_rt_count;
+    // 05 の 10 章: a binary unit has no checked exports to walk, so it
+    // carries the names beside the descriptors, parallel to export_rt.
+    // Owned; NULL for a text unit.
+    char **export_names;
 
     LhatUnitState state;
 
