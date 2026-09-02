@@ -1091,6 +1091,30 @@ static int repl(bool strict)
     return EXIT_SUCCESS;
 }
 
+static void print_usage(void)
+{
+    printf("L^ (lhat) %s\n", LHAT_VERSION);
+    printf("usage: lhat [option] <file> [argument...]\n");
+    printf("  no file        read from a prompt\n");
+    printf("  --run          check the whole program and run it; "
+                            "what follows the file is its '...'\n");
+    printf("  --check        type check and report, without running\n");
+    printf("  default        print the syntax tree\n");
+    printf("  --tokens       print the token stream instead\n");
+    printf("  --dump-bytecode  print what the unit compiles to\n");
+    printf("  --command      read the input as the command form\n");
+    printf("  --strict       report a type error at compile time"
+                            " (default for a file)\n");
+    printf("  --relaxed      leave an undecided type to a runtime check"
+                            " (default for the prompt)\n");
+    printf("  --dump-host-api [file]  write what this driver registers"
+                            " as JSON, for lhatls\n");
+    printf("  --dap=PORT     run under a debugger over DAP on that"
+                            " loopback port (implies --run)\n");
+    printf("  -h, --help     show this and do nothing else\n");
+    printf("  -v, --version  show the version and do nothing else\n");
+}
+
 int main(int argc, char **argv)
 {
     const char *path = NULL;
@@ -1102,6 +1126,8 @@ int main(int argc, char **argv)
     bool run_program = false;
     bool command_form = false;
     bool dump_host_api = false;
+    bool show_help = false;
+    bool show_version = false;
     unsigned dap_port = 0;  // 09 章: --dap=PORT runs under a debugger
     // 03 の 3.1: a file defaults to strict, the prompt to relaxed. Writing
     // the other one out overrides whichever default the mode below picks.
@@ -1125,6 +1151,12 @@ int main(int argc, char **argv)
             strictness = STRICTNESS_RELAXED;
         } else if (strcmp(argv[i], "--dump-host-api") == 0) {
             dump_host_api = true;
+        } else if (strcmp(argv[i], "-h") == 0 ||
+                   strcmp(argv[i], "--help") == 0) {
+            show_help = true;
+        } else if (strcmp(argv[i], "-v") == 0 ||
+                   strcmp(argv[i], "--version") == 0) {
+            show_version = true;
         } else if (strncmp(argv[i], "--dap=", 6) == 0) {
             // 09 章: run under a debugger on the named loopback port. Implies
             // --run: there is nothing to debug about a tree or a token dump.
@@ -1140,6 +1172,15 @@ int main(int argc, char **argv)
             argument_count = (size_t)(argc - i);
             break;
         }
+    }
+
+    if (show_version) {
+        printf("L^ (lhat) %s\n", LHAT_VERSION);
+        return EXIT_SUCCESS;
+    }
+    if (show_help) {
+        print_usage();
+        return EXIT_SUCCESS;
     }
 
     // What this driver registers, written out for a reader that cannot run
@@ -1192,27 +1233,7 @@ int main(int argc, char **argv)
     }
 
     if (path == NULL) {
-        printf("L^ (lhat) %s\n", LHAT_VERSION);
-        printf("usage: lhat [option] <file> [argument...]\n");
-        printf("  no file        read from a prompt (03 の 4 章)\n");
-        printf("  --run          check the whole program and run it"
-                                " (05 の 5.3); what follows the file is"
-                                " its '...'\n");
-        printf("  --check        type check and report, without running\n");
-        printf("  default        print the syntax tree\n");
-        printf("  --tokens       print the token stream instead\n");
-        printf("  --dump-bytecode  print what the unit compiles to"
-                                  " (03 の 5 章)\n");
-        printf("  --command      read the input as the command form"
-                                " (02 の 2 章)\n");
-        printf("  --strict       report a type error at compile time"
-                                " (03 の 3.1; default for a file)\n");
-        printf("  --relaxed      leave an undecided type to a runtime check"
-                                " (03 の 3.1; default for the prompt)\n");
-        printf("  --dump-host-api [file]  write what this driver registers"
-                                " as JSON, for lhatls (05 の 8.7)\n");
-        printf("  --dap=PORT     run under a debugger over DAP on that"
-                                " loopback port (09 章; implies --run)\n");
+        print_usage();
         return EXIT_SUCCESS;
     }
 
