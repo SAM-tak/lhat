@@ -68,6 +68,11 @@ struct LhatUnit {
     // before anything is checked; false for every unit of the program.
     bool as_data;
 
+    // 05 の 10 章: read from bytes rather than text. No source, no tree, no
+    // check result -- `proto` is the whole of it, and the stages above are
+    // zero. What reads them guards on parsed.root already.
+    bool binary;
+
     // 05 の 5.7: the text this unit was last read from, hashed, so that
     // lhat_program_invalidate can tell a save that changed something from a
     // save that changed nothing. Zero before anything was read.
@@ -75,6 +80,28 @@ struct LhatUnit {
 
     struct LhatUnit *next;
 };
+
+// 05 の 8.7改2: one registered enum. The strings are owned; decl_rt is the
+// per-program identity on host_heap.
+typedef struct LhatProgramEnum {
+    char *module;
+    char *type;  // NULL for an enum of the module itself
+    char *name;
+    char **members;   // owned, each owned
+    int64_t *values;  // owned
+    size_t count;
+    LhatRuntimeType *decl_rt;
+} LhatProgramEnum;
+
+// 05 の 10 章: the identity an enum^ declaration has in a binary program --
+// the token fits^ compares (RT_ENUM.enum_decl), found again by the unit it
+// was declared in and its name. The type object is the arena's; the strings
+// are owned here.
+typedef struct LhatEnumIdentity {
+    char *path;
+    char *name;
+    LhatType *decl;
+} LhatEnumIdentity;
 
 struct LhatProgram {
     // 6 章: shared, so the types one unit publishes stay valid in the units
@@ -141,6 +168,11 @@ struct LhatProgram {
     struct LhatProgramEnum *host_enums;
     size_t host_enum_count;
     size_t host_enum_capacity;
+
+    // 05 の 10 章: see LhatEnumIdentity.
+    LhatEnumIdentity *enum_identities;
+    size_t enum_identity_count;
+    size_t enum_identity_capacity;
     size_t host_entry_capacity;
 
     // 02 の 18.5: what lhat_register_annotation recorded. Only the checker
@@ -226,5 +258,20 @@ struct LhatProgram {
 void lhat_program_init(LhatProgram *program, bool strict,
                        LhatProgramLoader load, void *context);
 void lhat_program_dispose(LhatProgram *program);
+
+// 05 の 10 章: what serialize.c asks of the program while reading a unit.
+// `relative` is read against `from`'s directory, as a require^ is.
+LhatUnit *lhat_program_require_unit(LhatProgram *program, LhatUnit *from,
+                                    const char *relative, size_t length);
+// The normalised path `relative` names from `from`, owned by the caller.
+char *lhat_program_resolve_path(const LhatUnit *from, const char *relative,
+                                size_t length);
+void lhat_program_report(LhatProgram *program, LhatProgramErrorCode code,
+                         const char *path);
+// The identity for the enum^ `name` declared in the unit at `path`, made
+// on first asking.
+const LhatType *lhat_program_enum_identity(LhatProgram *program,
+                                           const char *path,
+                                           const char *name);
 
 #endif  // LHAT_PROGRAM_INTERNAL_H

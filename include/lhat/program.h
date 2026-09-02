@@ -36,7 +36,17 @@ typedef struct LhatUnit LhatUnit;
 
 typedef enum {
     LHAT_PROGRAM_ERR_CANNOT_READ,  // no such unit
-    LHAT_PROGRAM_ERR_CYCLE         // 6.3
+    LHAT_PROGRAM_ERR_CYCLE,        // 6.3
+    // 05 の 10 章: a binary unit that is not one this library wrote -- the
+    // magic, the format, the build's fingerprint or the hash disagree.
+    LHAT_PROGRAM_ERR_BAD_BINARY,
+    // 10 章: the binary names a host type, kind or enum this program did
+    // not register the same way (a host value type of another width among
+    // them).
+    LHAT_PROGRAM_ERR_HOST_MISMATCH,
+    // 10 章: a text unit required a binary one or the other way round. A
+    // program is one or the other.
+    LHAT_PROGRAM_ERR_MIXED
 } LhatProgramErrorCode;
 
 typedef struct {
@@ -493,6 +503,25 @@ size_t lhat_unit_export_type_text(const LhatUnit *unit, const char *name,
 // as a type.
 bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
                                const char *signature);
+
+// ---------------------------------------------------------------------------
+// 05 の 10 章: a unit as bytes
+// ---------------------------------------------------------------------------
+//
+// Writes a checked and compiled unit out as the bytes a loader may hand back
+// in place of its text: the same path, the same require^s, read by the same
+// lhat_program_check -- the file's first bytes say which it is, so no name
+// changes. What runs is what the compiler left; nothing is checked again.
+// `with_debug_names` keeps the local and captured names a debugger reads
+// (09 の 4 章); the lines a traceback needs stay either way. The bytes are
+// lhat_alloc'd and the caller's to lhat_free. False when the unit has no
+// compiled body.
+//
+// A program is text or binary throughout (LHAT_PROGRAM_ERR_MIXED), and a
+// binary reads back only into a build with the same fingerprint and a
+// program with the same registrations.
+bool lhat_unit_write_binary(const LhatUnit *unit, bool with_debug_names,
+                            uint8_t **bytes, size_t *length);
 
 // ---------------------------------------------------------------------------
 // 01 の 6.4: what a unit says about itself

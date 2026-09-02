@@ -1,6 +1,7 @@
 // L^ (lhat) -- a program: one unit and everything it requires.
 
 #include "program_internal.h"
+#include "serialize.h"
 #include "registry.h"
 
 #include <stdio.h>  // snprintf: lhat_program_dump_host_api's numbers
@@ -153,6 +154,7 @@ static void check_parsed(LhatProgram *program, LhatUnit *unit,
 // 05 の 8.8改: gives every derived host type what its base registered. Both
 // of the two ways checking starts call it; it does its work once.
 static void flatten_hostdata_bases(LhatProgram *program);
+static void stamp_source(LhatProto *proto, const char *path);
 
 // 05 の 5.3: `from` require^s `to`. Answers the position in `from`'s list,
 // which is the number the compiler writes into a UNIT instruction, or
@@ -199,6 +201,12 @@ static LhatType *resolve_require(void *context, const char *path, size_t length,
     // and is invalidated, this unit is what has to be checked again.
     (void)remember_edge(r->requiring, unit);
     if (unit->state != LHAT_UNIT_DONE) {
+        return NULL;
+    }
+    // 05 の 10 章: a text unit reaching a binary one has no exports to read
+    // -- a program is one or the other.
+    if (unit->binary) {
+        report(r->program, LHAT_PROGRAM_ERR_MIXED, unit->path);
         return NULL;
     }
     // 05 の 3 章: the unit outlives this program's checking, so handing the
@@ -250,6 +258,31 @@ static void load_into(LhatProgram *program, LhatUnit *unit)
     }
 
     unit->source_hash = hash_text(text, length);
+
+    // 05 の 10 章: the bytes say which they are. A binary unit is built
+    // rather than read -- no tree, no check -- and lands in the same state
+    // a checked one does, so that everything after this treats the two
+    // alike.
+    if (lhat_serialize_is_binary(text, length)) {
+        LhatProto *proto = NULL;
+        char *module_name = NULL;
+        bool ok = lhat_serialize_load(program, unit, (const uint8_t *)text,
+                                      length, &proto, &module_name);
+        lhat_free(text);
+        if (!ok) {
+            unit->state = LHAT_UNIT_FAILED;
+            return;
+        }
+        unit->binary = true;
+        unit->loaded = true;
+        unit->proto = proto;
+        stamp_source(proto, unit->path);
+        lhat_free(unit->module_name);
+        unit->module_name = module_name;
+        unit->state = LHAT_UNIT_DONE;
+        return;
+    }
+
     lhat_source_init_from_string(&unit->source, unit->path, text, length);
     lhat_free(text);
     check_parsed(program, unit, &program->types);
@@ -1154,18 +1187,6 @@ typedef struct LhatHostEntry {
     bool const_bool;
     char *const_text;
 } LhatHostEntry;
-
-// 05 の 8.7改2: one registered enum. The strings are owned; decl_rt is the
-// per-program identity on host_heap.
-typedef struct LhatProgramEnum {
-    char *module;
-    char *type;  // NULL for an enum of the module itself
-    char *name;
-    char **members;   // owned, each owned
-    int64_t *values;  // owned
-    size_t count;
-    LhatRuntimeType *decl_rt;
-} LhatProgramEnum;
 
 // 05 の 8.6: one member of L^ itself. Separate from the above because it does
 // not land under L^.modules, so install puts it somewhere else.
@@ -2794,6 +2815,10 @@ void lhat_program_init(LhatProgram *program, bool strict,
 // it, and only the caller knows which this is.
 static void unit_clear_stages(LhatUnit *unit)
 {
+    if (unit->loaded && unit->binary) {
+        unit->loaded = false;
+        unit->binary = false;
+    }
     if (unit->loaded) {
         lhat_check_result_dispose(&unit->checked);
         lhat_parse_result_dispose(&unit->parsed);
@@ -3005,6 +3030,12 @@ const char *lhat_program_load_failure(const LhatProgram *program)
 
 void lhat_program_dispose(LhatProgram *program)
 {
+    // 05 の 10 章: the strings; the types are the arena's.
+    for (size_t i = 0; i < program->enum_identity_count; i++) {
+        lhat_free(program->enum_identities[i].path);
+        lhat_free(program->enum_identities[i].name);
+    }
+    lhat_free(program->enum_identities);
     // 05 の 8.7: what the registrations left with the program, first and in
     // reverse -- everything of the program's own is still standing here, so
     // a disposal may read whatever it was written against, and a module may
@@ -3741,8 +3772,84 @@ const char *lhat_program_error_message(LhatProgramErrorCode code)
             return "this unit could not be read";
         case LHAT_PROGRAM_ERR_CYCLE:
             return "the units require each other; move the common part out";
+        case LHAT_PROGRAM_ERR_BAD_BINARY:
+            return "this binary unit was not written by this build of the "
+                   "library, or has been damaged";
+        case LHAT_PROGRAM_ERR_HOST_MISMATCH:
+            return "this binary unit names a host type, kind or enum that "
+                   "this program did not register the same way";
+        case LHAT_PROGRAM_ERR_MIXED:
+            return "a program is text or binary throughout; this unit is "
+                   "the other kind";
     }
     return "unknown error";
+}
+
+// ---------------------------------------------------------------------------
+// 05 の 10 章: what serialize.c asks of the program
+// ---------------------------------------------------------------------------
+
+LhatUnit *lhat_program_require_unit(LhatProgram *program, LhatUnit *from,
+                                    const char *relative, size_t length)
+{
+    char *resolved = resolve_against(from->path, relative, length);
+    if (resolved == NULL) {
+        return NULL;
+    }
+    LhatUnit *unit = check_path(program, resolved);  // takes `resolved`
+    if (unit == NULL) {
+        return NULL;
+    }
+    (void)remember_edge(from, unit);
+    return unit;
+}
+
+char *lhat_program_resolve_path(const LhatUnit *from, const char *relative,
+                                size_t length)
+{
+    return resolve_against(from->path, relative, length);
+}
+
+void lhat_program_report(LhatProgram *program, LhatProgramErrorCode code,
+                         const char *path)
+{
+    report(program, code, path);
+}
+
+const LhatType *lhat_program_enum_identity(LhatProgram *program,
+                                           const char *path, const char *name)
+{
+    for (size_t i = 0; i < program->enum_identity_count; i++) {
+        const LhatEnumIdentity *e = &program->enum_identities[i];
+        if (strcmp(e->path, path) == 0 && strcmp(e->name, name) == 0) {
+            return e->decl;
+        }
+    }
+    LHAT_GROW(program->enum_identities, program->enum_identity_count,
+              program->enum_identity_capacity, 4, return NULL);
+    LhatEnumIdentity *e =
+        &program->enum_identities[program->enum_identity_count];
+    e->path = duplicate(path);
+    e->name = duplicate(name);
+    // The declaration's name is borrowed by the type (type.h), so it is
+    // the owned copy that is handed over.
+    e->decl = e->path != NULL && e->name != NULL
+                  ? lhat_type_enum_decl(&program->types, e->name,
+                                        strlen(e->name))
+                  : NULL;
+    if (e->decl == NULL) {
+        lhat_free(e->path);
+        lhat_free(e->name);
+        return NULL;
+    }
+    program->enum_identity_count++;
+    return e->decl;
+}
+
+bool lhat_unit_write_binary(const LhatUnit *unit, bool with_debug_names,
+                            uint8_t **bytes, size_t *length)
+{
+    return lhat_serialize_write(unit, with_debug_names, bytes, length);
 }
 
 // ---------------------------------------------------------------------------

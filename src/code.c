@@ -266,6 +266,17 @@ size_t lhat_chunk_constant(LhatChunk *chunk, LhatValue value)
     return chunk->constant_count++;
 }
 
+size_t lhat_chunk_constant_raw(LhatChunk *chunk, LhatValue value)
+{
+    LHAT_GROW(chunk->constants, chunk->constant_count,
+              chunk->constant_capacity, 8, return SIZE_MAX);
+    if (chunk->constant_count > 0xFFFF) {
+        return SIZE_MAX;
+    }
+    chunk->constants[chunk->constant_count] = value;
+    return chunk->constant_count++;
+}
+
 size_t lhat_chunk_member_cache(LhatChunk *chunk, uint16_t key)
 {
     // NOT reused the way a constant is. Two sites reading the same name are

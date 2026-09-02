@@ -126,6 +126,7 @@ add_library(lhat
     src/code.c
     src/compile.c
     src/rttype.c
+    src/serialize.c
     src/vm.c
     src/gc.c
     src/debug.c

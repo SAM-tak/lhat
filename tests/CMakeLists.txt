@@ -44,6 +44,7 @@ lhat_add_test(test_type core)
 lhat_add_test(test_value core)
 lhat_add_test(test_object core)
 lhat_add_test(test_program core)
+lhat_add_test(test_serialize core)
 lhat_add_test(test_leak core)
 
 # The checker suite, split by topic; each file is one executable.

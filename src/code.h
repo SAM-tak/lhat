@@ -610,6 +610,9 @@ size_t lhat_chunk_add_local(LhatChunk *chunk, const char *name, size_t length,
 // Adds a constant, reusing an equal one rather than storing it twice.
 // Returns the index, or SIZE_MAX when the pool is full or out of memory.
 size_t lhat_chunk_constant(LhatChunk *chunk, LhatValue value);
+// 05 の 10 章: the same without the reuse -- a reader putting a pool back
+// as it was written wants every index where it stood.
+size_t lhat_chunk_constant_raw(LhatChunk *chunk, LhatValue value);
 
 // The same for a string literal: the bytes are copied into a string the chunk
 // owns. Two literals spelling the same thing share one constant, which is
