@@ -483,6 +483,18 @@ void chk_check_define(Checker *c, const LhatNode *node)
                 // Collected before the walk, so this is where its let^ runs.
                 b->type = annotated != NULL ? annotated : actual;
                 b->reached = true;
+                // 03 の 3.4改4: which literal the name means, for the call
+                // sites that hand it their shapes. Only a let^'s -- a var^
+                // may come to mean another subroutine -- and never a
+                // public^ one's: a published signature is a promise to
+                // callers in other units, and the calls of this one must
+                // not be what narrows it.
+                b->value_node = node->v.binding.immutable &&
+                                        !node->v.binding.exported &&
+                                        tuple == NULL && value != NULL &&
+                                        value->kind == LHAT_NODE_FUNC
+                                    ? value
+                                    : NULL;
                 // 15.1改. A destructuring bind takes pieces out of something
                 // that was already there (13.10), so nothing it binds is new
                 // whatever the source looks like.

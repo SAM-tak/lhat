@@ -2575,6 +2575,57 @@ void chk_constrain_member(Checker *c, LhatType *target, const char *name,
     chk_constrain(c, target, shape);
 }
 
+// 03 の 3.4改4: the call shapes. One flat list for the whole unit -- a
+// round rolls back what a walk said, and these are what it learned, so they
+// live outside the rounds the way a binding's seed does.
+Instantiation *chk_instantiation_add(Checker *c, const LhatNode *func,
+                                     LhatType *const *args, size_t count)
+{
+    for (Instantiation *i = c->instantiations; i != NULL; i = i->next) {
+        if (i->func != func || i->count != count) {
+            continue;
+        }
+        bool same = true;
+        for (size_t k = 0; k < count && same; k++) {
+            same = lhat_type_equal(i->args[k], args[k]);
+        }
+        if (same) {
+            return i;
+        }
+    }
+    Instantiation *made = (Instantiation *)lhat_calloc(1, sizeof *made);
+    if (made == NULL) {
+        return NULL;
+    }
+    made->func = func;
+    made->count = count;
+    for (size_t k = 0; k < count; k++) {
+        made->args[k] = args[k];
+    }
+    made->next = c->instantiations;
+    c->instantiations = made;
+    return made;
+}
+
+bool chk_instantiations_exist(const Checker *c, const LhatNode *func)
+{
+    for (const Instantiation *i = c->instantiations; i != NULL; i = i->next) {
+        if (i->func == func) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void chk_dispose_instantiations(Checker *c)
+{
+    while (c->instantiations != NULL) {
+        Instantiation *i = c->instantiations;
+        c->instantiations = i->next;
+        lhat_free(i);
+    }
+}
+
 ParamVar *chk_push_param_var(Checker *c, LhatType *slot, const LhatNode *node)
 {
     ParamVar *pv = (ParamVar *)lhat_calloc(1, sizeof *pv);
@@ -2975,6 +3026,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
 #endif
 
     chk_dispose_operator_carriers(&checker);
+    chk_dispose_instantiations(&checker);
     lhat_free(checker.annotation_seen);
     chk_scope_dispose(&scope);
 }
@@ -3209,6 +3261,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     session->typeinfo_type = checker.typeinfo_type;
 
     chk_dispose_operator_carriers(&checker);
+    chk_dispose_instantiations(&checker);
     chk_scope_dispose(&scope);
 }
 
@@ -3582,6 +3635,10 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "several types here carry this operator and nothing says "
                    "which is meant; write one of the types the signature "
                    "names, or narrow to it with fits^";
+        case LHAT_CHECK_ERR_SHAPE_REFUSED:
+            return "this call hands over argument types the body cannot "
+                   "take; writing the parameter types is what would surface "
+                   "the body's own report";
         case LHAT_CHECK_ERR_PARAM_UNDECIDED:
             return "nothing in this body says what this parameter is, so its "
                    "type has to be written; any^ is how to say it really does "

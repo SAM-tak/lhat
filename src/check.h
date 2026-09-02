@@ -34,6 +34,8 @@ typedef enum {
                                         // errordef^, and to nothing else
 
     LHAT_CHECK_ERR_MISMATCH,            // 13.11: the value does not fit
+    LHAT_CHECK_ERR_SHAPE_REFUSED,       // 03 の 3.4改3: the body cannot
+                                        // take this call's argument types
     LHAT_CHECK_ERR_NOT_NUMBER,          // unary '-' on something else. The
                                         // binary arithmetic goes through
                                         // 11.3's question instead (11.8)

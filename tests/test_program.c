@@ -3727,9 +3727,12 @@ static void test_diagnostics(void)
     // an ordinary mismatch, found the same way under both, answers false.
     LHAT_TEST("lhat_unit_diagnostic_relaxed_ok answers only the strict-only gaps");
     {
+        // 03 の 3.4改3: a called f would take its parameter's type from
+        // the call, so the one with a genuine gap is a subroutine nobody
+        // calls.
         static const File gap[] = {
             {"main.lh", "let^ f = f^ n -> number^ { return^ 1 }\n"
-                        "return^ f(1)\n"},
+                        "return^ 1\n"},
         };
         program_with(&program, &disk, gap, 1);
         const LhatUnit *root = lhat_program_check(&program, "main.lh");

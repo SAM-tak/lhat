@@ -48,6 +48,7 @@ lhat_add_test(test_leak core)
 
 # The checker suite, split by topic; each file is one executable.
 lhat_add_test(test_check_core check)
+lhat_add_test(test_check_instantiation check)
 lhat_add_test(test_check_narrowing check)
 lhat_add_test(test_check_def check)
 lhat_add_test(test_check_forms check)

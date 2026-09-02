@@ -1220,9 +1220,11 @@ bool chk_signature_accepts(const LhatType *func, LhatType *const *args,
 }
 
 // 03 の 3.4改: a subroutine written where it is called. The call is part of
-// the same expression, so reading it leaves nothing -- 3.4's "the call sites
-// are not read" is about the ones elsewhere, which are what would make a
-// signature depend on who happens to use it (05 の 4.3 rests on that).
+// the same expression, so reading it leaves nothing. The ones elsewhere are
+// 3.4改4's to read -- as shapes, one walk of the body per shape, never as
+// demands folded into one signature -- and only for a unit-local let^: a
+// published name's callers stay unread, which is what keeps a signature
+// from depending on who happens to use it (05 の 4.3 rests on that).
 //
 // Refused for the two shapes whose arguments do not line up with the
 // parameters one for one: a receiver (14.4) is written first and belongs to
@@ -1337,6 +1339,42 @@ static void check_mutable_receiver(Checker *c, const LhatNode *node,
     }
 }
 
+// 03 の 3.4改4: the callee whose call shapes are collected -- a name a
+// let^ bound to a literal, some parameter of which nothing was written on,
+// with no receiver seat and no variadic tail (those two are the shapes 3.4改
+// already refuses to line up positionally). NULL for every other callee,
+// which keeps today's reading.
+static const LhatNode *instantiable_callee(Checker *c, const LhatNode *node,
+                                           const LhatType *callee)
+{
+    const LhatNode *target = node->v.access.target;
+    const char *name = NULL;
+    size_t length = 0;
+    if (target == NULL || target->kind != LHAT_NODE_IDENT ||
+        callee->v.func.takes_self || callee->v.func.variadic != NULL ||
+        !chk_node_name(c, target, &name, &length)) {
+        return NULL;
+    }
+    Binding *b = chk_scope_find(c->scope, name, length, NULL);
+    if (b == NULL || !b->immutable || b->being_defined ||
+        b->value_node == NULL || b->value_node->kind != LHAT_NODE_FUNC) {
+        return NULL;
+    }
+    const LhatNode *literal = b->value_node;
+    bool unwritten = false;
+    for (const LhatNode *param = literal->v.func.params; param != NULL;
+         param = param->next) {
+        if (chk_self_marker_at(c, literal->v.func.params, param) != 0 ||
+            param->v.param.variadic) {
+            return NULL;
+        }
+        if (param->v.param.type == NULL) {
+            unwritten = true;
+        }
+    }
+    return unwritten ? literal : NULL;
+}
+
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
     // 3.4改: the arguments first where the callee is a literal, so what they
@@ -1373,6 +1411,78 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     // this is the written form that does it under strict too.
     if (!c->strict || node->v.access.nil_safe) {
         callee = chk_without_nil_arm(c, callee);
+    }
+
+    // 03 の 3.4改4: the other place a call site is read. 3.4改 reads the one
+    // immediate call; this reads a call of a let^-bound literal elsewhere in
+    // the unit, recording its argument types as one shape for infer_func to
+    // walk the body under. 05 の 4.3 still holds at the unit's edge: an
+    // exported name's callers live in units checked after this one, so no
+    // shape ever reaches them and a published signature still does not
+    // depend on who uses it.
+    if (!seeded && callee != NULL && callee->kind == LHAT_TYPE_FUNC) {
+        const LhatNode *literal = instantiable_callee(c, node, callee);
+        if (literal != NULL) {
+            size_t count = 0;
+            for (const LhatNode *arg = node->v.access.argument; arg != NULL;
+                 arg = arg->next) {
+                // A literal argument with an unwritten parameter reads its
+                // expectation off the position it is written into (3.4改),
+                // which a shape still being collected cannot give -- the
+                // loop below infers those as ever. One written out in full
+                // asks nothing of its position, so it rides along.
+                bool defers = false;
+                if (arg->kind == LHAT_NODE_FUNC) {
+                    for (const LhatNode *p = arg->v.func.params; p != NULL;
+                         p = p->next) {
+                        if (p->v.param.type == NULL &&
+                            chk_self_marker_at(c, arg->v.func.params, p) == 0) {
+                            defers = true;
+                        }
+                    }
+                }
+                if (count >= LHAT_CHECK_MAX_TRACKED_ARGS ||
+                    arg->kind == LHAT_NODE_SPREAD || defers) {
+                    break;
+                }
+                given_types[count++] = chk_infer(c, arg);
+            }
+            // The loop below reads back what was inferred here whether or
+            // not a shape comes of it -- asking twice would report twice.
+            seeded = true;
+            given_count = count;
+            // Only a whole, settled shape is worth keeping: a gap or a tuple
+            // in one is a reading of something not yet decided, and 3.4改2's
+            // rounds bring this walk back once it is.
+            size_t declared_here = 0;
+            for (const LhatTypeList *p = callee->v.func.params; p != NULL;
+                 p = p->next) {
+                declared_here++;
+            }
+            bool takeable = count == declared_here;
+            for (size_t i = 0; i < count && takeable; i++) {
+                takeable = given_types[i] != NULL &&
+                           !lhat_type_has_gap(given_types[i]) &&
+                           lhat_type_tuple_width(given_types[i]) == 0;
+            }
+            Instantiation *inst =
+                takeable ? chk_instantiation_add(c, literal, given_types,
+                                                 count)
+                         : NULL;
+            if (inst != NULL && inst->signature != NULL) {
+                // The body has been walked under this very shape, so what it
+                // settled to there is this call's signature -- which is what
+                // keeps an answer tied to what was handed in.
+                callee = inst->signature;
+                if (inst->failed) {
+                    chk_report(c, node, LHAT_CHECK_ERR_SHAPE_REFUSED);
+                }
+            } else if (inst != NULL) {
+                // Recorded and not yet walked: ask for the round that walks
+                // it, and let this round's answer stand as provisional.
+                c->read_provisional = true;
+            }
+        }
     }
 
     size_t given = 0;
@@ -3101,6 +3211,81 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
     return func;
 }
 
+// 03 の 3.4改4: a literal whose call shapes were recorded is walked once
+// per shape -- each walk reads the literal again with the shape standing
+// where an annotation would (3.4改's expectation path), so none of them
+// collects demands or reports a parameter undecided. What a walk under one
+// shape reported is rolled back the way a round's walk is (3.4改2): the
+// call that handed the shape in reads `failed` and says so at its own
+// position. The walk that stays -- the stamp the compiler reads, the type
+// the binding holds -- is over the join of the shapes the body took, so the
+// one body still serves every caller.
+static LhatType *infer_func_instantiated(Checker *c, const LhatNode *node)
+{
+    const LhatNode *outer = c->instantiating;
+    c->instantiating = node;
+
+    for (Instantiation *i = c->instantiations; i != NULL; i = i->next) {
+        if (i->func != node) {
+            continue;
+        }
+        size_t diagnostics = c->result->diagnostic_count;
+#if LHAT_WITH_RESOLUTIONS
+        size_t resolutions = c->result->resolution_count;
+#endif
+        LhatType *shape =
+            lhat_type_func(c->result->types, node->v.func.is_function);
+        for (size_t k = 0; k < i->count; k++) {
+            lhat_type_add_param(c->result->types, shape, i->args[k]);
+        }
+        c->expected_func = shape;
+        i->signature = chk_infer_func(c, node);
+        i->failed = c->result->diagnostic_count > diagnostics;
+        c->result->diagnostic_count = diagnostics;
+#if LHAT_WITH_RESOLUTIONS
+        c->result->resolution_count = resolutions;
+#endif
+    }
+
+    // The join, per position. A shape the body refused is left out, so the
+    // walk that stamps is over what actually holds -- unless it refused them
+    // all, and then they all stay in: the body reports under the join, which
+    // is the nearest thing there is to the truth of it.
+    bool any_taken = false;
+    for (const Instantiation *i = c->instantiations; i != NULL; i = i->next) {
+        if (i->func == node && !i->failed) {
+            any_taken = true;
+        }
+    }
+    LhatType *join =
+        lhat_type_func(c->result->types, node->v.func.is_function);
+    size_t position = 0;
+    for (const LhatNode *param = node->v.func.params; param != NULL;
+         param = param->next, position++) {
+        LhatType *arm = NULL;
+        for (const Instantiation *i = c->instantiations; i != NULL;
+             i = i->next) {
+            if (i->func != node || (any_taken && i->failed) ||
+                position >= i->count) {
+                continue;
+            }
+            arm = arm == NULL ? i->args[position]
+                              : lhat_type_union(c->result->types, arm,
+                                                i->args[position]);
+        }
+        if (arm == NULL) {
+            // Unreachable while the arity gate holds; any^ keeps the walk
+            // sound if it ever stops holding.
+            arm = chk_simple(c, LHAT_TYPE_ANY);
+        }
+        lhat_type_add_param(c->result->types, join, arm);
+    }
+    c->expected_func = join;
+    LhatType *settled = chk_infer_func(c, node);
+    c->instantiating = outer;
+    return settled;
+}
+
 LhatType *chk_infer_func(Checker *c, const LhatNode *node)
 {
     // 03 の 3.4改: what expects this literal, taken here and cleared at once
@@ -3133,6 +3318,13 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     }
     const LhatTypeList *expected_param =
         expected_func != NULL ? expected_func->v.func.params : NULL;
+
+    // 03 の 3.4改4: call shapes were recorded for this literal, and nothing
+    // else expects it here -- the shape walks are what read the body now.
+    if (expected_func == NULL && c->instantiating != node &&
+        chk_instantiations_exist(c, node)) {
+        return infer_func_instantiated(c, node);
+    }
 
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
     // 15.2: whether the body suspends is read off the body, not written.

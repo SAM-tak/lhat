@@ -71,6 +71,11 @@ typedef struct Binding {
     // stands says only that there is a name, and the type says only what it
     // holds. Which of the two declared it is known here and nowhere else.
     bool is_parameter;
+    // 03 の 3.4改4: the f^ literal this let^ bound, when it bound one --
+    // what lets a call site say which body its argument shapes belong to.
+    // NULL for every other value, and for a var^, whose name may come to
+    // mean some other subroutine.
+    const LhatNode *value_node;
     // 8.7改: its own let^'s value is being walked right now. A name read
     // there -- anywhere there, a deferred body included -- resolves past
     // this binding to whatever the name meant outside; the binding itself
@@ -154,6 +159,26 @@ typedef struct ParamVar {
     bool closed;
     struct ParamVar *next;
 } ParamVar;
+
+// 03 の 3.4改4: one call shape of a literal whose parameters nothing was
+// written on -- the argument types one call site handed it. infer_func walks
+// the body once under each shape recorded for it (the expectation path, so
+// no demands are collected and nothing is reported undecided), keeps what
+// the body settled to under this shape in `signature`, and marks `failed`
+// where the walk refused it; the call site reads both back on the next
+// round. The walk that stays -- the stamp, the binding -- is over the join
+// of the shapes, so one body serves every caller the way it always did.
+typedef struct Instantiation {
+    const LhatNode *func;  // the literal these types were handed to
+    LhatType *args[LHAT_CHECK_MAX_TRACKED_ARGS];
+    size_t count;
+    // What the body settled to under this shape. NULL until a walk of the
+    // literal has seen the record -- a call site reading NULL asks for
+    // another round rather than inventing an answer.
+    LhatType *signature;
+    bool failed;  // the body refused these types
+    struct Instantiation *next;
+} Instantiation;
 
 // 03 の 3.4改2: the bookkeeping of a walk that is one iteration of a least
 // fixpoint. Two walks are run that way -- a def^'s entries and a statement
@@ -246,6 +271,14 @@ typedef struct {
     // one's -- a demand made inside one still reaches an outer parameter, since
     // the value it names came from out there.
     ParamVar *param_vars;
+
+    // 03 の 3.4改4: the call shapes this unit's walks have recorded, one
+    // list across every round -- the rounds roll back what a walk said, and
+    // these are what it learned. `instantiating` is the literal whose shapes
+    // are being walked right now, so the walk under one shape does not open
+    // the shape loop again.
+    Instantiation *instantiations;
+    const LhatNode *instantiating;
 
     // 03 の 3.4改: what this unit writes an op^ for, so that an operator used
     // on a parameter demands the candidates rather than 11.8's built-in
@@ -602,6 +635,14 @@ void chk_constrain_member(Checker *c, LhatType *target, const char *name,
                           size_t length);
 ParamVar *chk_push_param_var(Checker *c, LhatType *slot, const LhatNode *node);
 void chk_settle_param_vars(Checker *c, ParamVar *mark);
+
+// 03 の 3.4改4. Finds the record of this shape for this literal, adding one
+// when it is new -- two shapes are the same when their types are (11.3, so
+// lhat_type_equal). NULL only when memory refuses.
+Instantiation *chk_instantiation_add(Checker *c, const LhatNode *func,
+                                     LhatType *const *args, size_t count);
+bool chk_instantiations_exist(const Checker *c, const LhatNode *func);
+void chk_dispose_instantiations(Checker *c);
 void chk_rounds_begin(Checker *c, Rounds *r, size_t count);
 bool chk_rounds_next(Checker *c, Rounds *r);
 void chk_rounds_end(Checker *c, Rounds *r);

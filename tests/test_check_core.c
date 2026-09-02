@@ -1308,14 +1308,17 @@ static void test_undecided_results(void)
     // A ring whose other half never settles keeps its gap however often it is
     // walked -- 'b' demands nothing of x, so what it answers stays undecided
     // and so does 'a'. Reported at both definitions, and once more at the x
-    // that started it (3.1③).
+    // that started it (3.1③). 3.4改3: a let^-bound b would take its shape
+    // from the very call in a's body, so the half that cannot settle is a
+    // var^'s -- the name may come to mean some other subroutine, and no call
+    // shape is collected for it.
     LHAT_TEST("a ring that cannot settle says so at both definitions");
     check_text(&u,
                "let^ a = f^ n:number^ {\n"
                "    if^ n <= 0 { return^ true^ }\n"
                "    return^ b(n)\n"
                "}\n"
-               "let^ b = f^ x { return^ x }\n");
+               "var^ b = f^ x { return^ x }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_RESULT_UNDECIDED);
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 3);
@@ -1369,14 +1372,15 @@ static void test_undecided_results(void)
     unit_dispose(&u);
 
     // 3.1③: a gap that survives into what a name holds is the same hole said
-    // of a binding. Every reader of the name would be handed it.
+    // of a binding. Every reader of the name would be handed it. var^ again,
+    // as above -- a let^-bound b takes its shape from a's call (3.4改3).
     LHAT_TEST("a gap reaching a binding is reported at the name");
     check_text(&u,
                "let^ a = f^ n:number^ {\n"
                "    if^ n <= 0 { return^ true^ }\n"
                "    return^ b(n)\n"
                "}\n"
-               "let^ b = f^ x { return^ x }\n"
+               "var^ b = f^ x { return^ x }\n"
                "let^ y = a(4)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TYPE_UNDECIDED);
     unit_dispose(&u);
