@@ -8,7 +8,7 @@ Modern & Better Lua with Visual Programming.
 
 ## 影響を受けた言語
 
-Lua / Zig / TypeScript / Python / Luau / Ruby / OCaml / Elixir / Lisp
+Lua / Zig / TypeScript / Python / Luau / Ruby / OCaml / Elixir
 
 ## 言語コア
 

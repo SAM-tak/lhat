@@ -136,8 +136,7 @@ let^Reader = def^{
 
 # Whether the four dealt and the four used are the same multiset. Each takes a
 # table of counts, one per digit of 1..9
-# This function needs a type annotation. But this function only in this file.
-let^same = f^want:t^{ number^[9] }, used:t^{ number^[9] } {
+let^same = f^want, used {
     for^i from^1 to^9 {
         if^want[i] != used[i] { return^false^}
     }
