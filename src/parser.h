@@ -47,6 +47,10 @@ typedef enum {
                                               // so the header takes neither an
                                               // introducer nor a bare ':='
     LHAT_PARSE_ERR_EXPECTED_MEMBER,           // 14 章: def^ holds members
+    LHAT_PARSE_ERR_SIGNATURE_NAMED,           // 13.3: a signature's
+                                              // parameters carry no names
+    LHAT_PARSE_ERR_PARAM_NEEDS_NAME,          // 13.14: a type stood where a
+                                              // parameter name is wanted
     LHAT_PARSE_ERR_FRESH_TUPLE,               // 15.1改3: fresh^ covers one
                                               // result, and a tuple is several
     LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE,    // 11.4: only '..' has an op^

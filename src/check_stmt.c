@@ -495,6 +495,17 @@ void chk_check_define(Checker *c, const LhatNode *node)
                                         value->kind == LHAT_NODE_FUNC
                                     ? value
                                     : NULL;
+                // 02 の 13.14: a let^ bound to a written type names it in
+                // type positions. Only a let^'s -- a var^ may come to hold
+                // some other descriptor -- and the flag is beside the type
+                // rather than in it, since what a read of the name answers
+                // (the typeinfo above) is not what the name stands for.
+                b->names_type = node->v.binding.immutable && tuple == NULL &&
+                                value != NULL &&
+                                value->kind == LHAT_NODE_TYPE_VALUE &&
+                                value->checked_type != NULL;
+                b->named_type =
+                    b->names_type ? (LhatType *)value->checked_type : NULL;
                 // 15.1改. A destructuring bind takes pieces out of something
                 // that was already there (13.10), so nothing it binds is new
                 // whatever the source looks like.
@@ -1975,10 +1986,16 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
             }
             // 05 の 6.1: a reader of the published type is in another unit,
             // and the place to point at is the declaration here.
-            chk_member_declared_at(
-                c, lhat_type_add_member(c->result->types, table, name, length,
-                                        b->type),
-                target_name_node(named));
+            LhatTypeMember *made = lhat_type_add_member(
+                c->result->types, table, name, length, b->type);
+            // 02 の 13.14: an exported name bound to a type^ value carries
+            // what it names, so another unit may write m.T where a type
+            // stands.
+            if (made != NULL && b->names_type) {
+                made->names_type = true;
+                made->named_type = b->named_type;
+            }
+            chk_member_declared_at(c, made, target_name_node(named));
         }
     }
     return table;

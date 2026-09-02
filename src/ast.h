@@ -47,6 +47,7 @@ typedef enum {
     LHAT_NODE_ERROR_NEW,     // error^Kind{ ... }            (04 の 2.5)
     LHAT_NODE_TRY,           // try^ expr                    (04 の 5 章)
     LHAT_NODE_TYPEOF,        // typeof^(expr)                (14.16)
+    LHAT_NODE_TYPE_VALUE,    // type^ <written type>         (13.14)
     LHAT_NODE_SPREAD,        // expr...  as the last call argument (13.7)
     LHAT_NODE_REQUIRE,       // require^ "path"              (05 の 5 章)
     LHAT_NODE_REQUIRE_STMT,  // require^ "path" on its own   (05 の 5.5)

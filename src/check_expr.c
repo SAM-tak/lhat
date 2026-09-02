@@ -5685,6 +5685,18 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             return chk_typeinfo_type(c);
         }
 
+        // 02 の 13.14: the spelling resolved, stamped for the compiler to
+        // fold into a descriptor constant -- and the expression itself is
+        // worth a typeinfo to the program, exactly what typeof^ answers.
+        case LHAT_NODE_TYPE_VALUE: {
+            bool outer_in_type_value = c->in_type_value;
+            c->in_type_value = true;
+            LhatType *named = chk_resolve_type(c, node->v.jump.value);
+            c->in_type_value = outer_in_type_value;
+            ((LhatNode *)node)->checked_type = named;
+            return chk_typeinfo_type(c);
+        }
+
         case LHAT_NODE_IF_EXPR: {
             // The same shape as the statement form: each clause sees what the
             // earlier conditions ruled out, which is what makes a chain over

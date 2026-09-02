@@ -178,6 +178,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         // an expression's operand or a statement's.
         case LHAT_NODE_TRY:
         case LHAT_NODE_TYPEOF:
+        case LHAT_NODE_TYPE_VALUE:
         case LHAT_NODE_SPREAD:
         case LHAT_NODE_REQUIRE:
         case LHAT_NODE_REQUIRE_STMT:
@@ -496,6 +497,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_ERROR_NEW:      return "error-new";
         case LHAT_NODE_TRY:            return "try";
         case LHAT_NODE_TYPEOF:         return "typeof";
+        case LHAT_NODE_TYPE_VALUE:     return "type";
         case LHAT_NODE_SPREAD:         return "spread";
         case LHAT_NODE_ERRORDEF:       return "errordef";
         case LHAT_NODE_ERROR_KIND:     return "error-kind";

@@ -1420,52 +1420,40 @@ static LhatNode *parse_def(Parser *p)
 // what completion and the visual editor put into a call site while the call is
 // being written, not a value the callee supplies for a missing argument, so
 // neither the checker nor the compiler has anything to do with it.
-static LhatNode *parse_params(Parser *p)
+// 02 の 13.14: the rest of the spelling a type read as an expression may
+// carry -- '&' binding tighter than '|' exactly as in a type position --
+// and the wrap that makes it the value typeof^ answers.
+static LhatNode *type_value_from(Parser *p, const LhatToken *start,
+                                 LhatNode *written)
 {
-    LhatNode *head = NULL;
-    LhatNode *tail = NULL;
-
-    while (!at_eof(p) && !check_op(p, LHAT_OP_LBRACE) &&
-           !check_op(p, LHAT_OP_ARROW)) {
-        LhatNode *param = make(p, LHAT_NODE_PARAM, &p->current);
-        if (param == NULL) {
+    while (check_op(p, LHAT_OP_INTERSECT)) {
+        LhatToken at = p->current;
+        advance(p);
+        LhatNode *join = make(p, LHAT_NODE_TYPE_INTERSECT, &at);
+        if (join == NULL) {
             break;
         }
-
-        if (match_op(p, LHAT_OP_ELLIPSIS)) {
-            param->v.param.variadic = true;
-            if (match_op(p, LHAT_OP_COLON)) {
-                param->v.param.type = parse_type(p);
-            }
-        } else if (p->current.kind == LHAT_TOKEN_IDENT ||
-                   p->current.kind == LHAT_TOKEN_HAT_IDENT) {
-            // 15.1改2: 'mutable^self^' -- the marker on the receiver's seat.
-            // Only that two-word run is the spelling; 'mutable^' anywhere
-            // else stays an ordinary name of the writer's.
-            if (check_hat(p, "mutable") &&
-                token_is_hat(p, &p->ahead, "self")) {
-                param->v.param.mutable_receiver = true;
-                advance(p);
-            }
-            param->v.param.name = simple_node(p);
-            if (match_op(p, LHAT_OP_COLON)) {
-                param->v.param.type = parse_type(p);
-            }
-            if (match_op(p, LHAT_OP_EQ)) {
-                param->v.param.fallback = parse_expression(p);
-            }
-        } else {
-            report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
-            break;
-        }
-
-        lhat_node_append(&head, &tail, finish(p, param));
-
-        if (!match_op(p, LHAT_OP_COMMA)) {
-            break;
-        }
+        join->v.binary.left = written;
+        join->v.binary.right = parse_type_primary(p);
+        written = finish(p, join);
     }
-    return head;
+    while (check_op(p, LHAT_OP_UNION)) {
+        LhatToken at = p->current;
+        advance(p);
+        LhatNode *join = make(p, LHAT_NODE_TYPE_UNION, &at);
+        if (join == NULL) {
+            break;
+        }
+        join->v.binary.left = written;
+        join->v.binary.right = parse_type_intersection(p);
+        written = finish(p, join);
+    }
+    LhatNode *node = make(p, LHAT_NODE_TYPE_VALUE, start);
+    if (node == NULL) {
+        return written;
+    }
+    node->v.jump.value = written;
+    return finish(p, node);
 }
 
 // 15.12: a function whose body is one expression answers with it, without a
@@ -1521,7 +1509,16 @@ static void answer_with_body(Parser *p, LhatNode *body)
     }
 }
 
-static LhatNode *parse_function(Parser *p, bool is_function)
+// 02 の 13.14: 'f^'/'p^' opens a literal or a written signature (13.3), and
+// the two only part at the '{' that begins a body or the ';' that closes a
+// signature -- at unbounded distance. 01 の 4.5 forbids backtracking, so the
+// head is read once, each parameter slot kept neutral where it could belong
+// to either: a bare name may be a parameter's or a type's, and is settled in
+// place when the decider arrives (its node re-kinded to a type name). A ':'
+// or a '=' commits a slot to the literal; a spelling no parameter name takes
+// -- 't^{', a qualified or unioned name, '(' -- commits it to the type; and
+// the decider reports whichever slot the other reading leaves behind.
+static LhatNode *parse_subroutine_or_type(Parser *p, bool is_function)
 {
     LhatToken start = p->current;
     advance(p);  // f^ or p^
@@ -1531,22 +1528,121 @@ static LhatNode *parse_function(Parser *p, bool is_function)
         return NULL;
     }
     node->v.func.is_function = is_function;
-    node->v.func.params = parse_params(p);
+
+    LhatNode *head = NULL;
+    LhatNode *tail = NULL;
+    LhatToken named_at;
+    LhatToken typed_at;
+    bool literal_told = false;  // some slot was the literal's alone
+    bool type_told = false;     // some slot was the signature's alone
+    while (!at_eof(p) && !check_op(p, LHAT_OP_LBRACE) &&
+           !check_op(p, LHAT_OP_ARROW) &&
+           !check_op(p, LHAT_OP_SEMICOLON)) {
+        LhatNode *param = make(p, LHAT_NODE_PARAM, &p->current);
+        if (param == NULL) {
+            break;
+        }
+
+        if (match_op(p, LHAT_OP_ELLIPSIS)) {
+            // 13.7: the collector, spelled the same in both readings.
+            param->v.param.variadic = true;
+            if (match_op(p, LHAT_OP_COLON)) {
+                param->v.param.type = parse_type(p);
+            }
+        } else {
+            // 15.1改2: 'mutable^self^' -- the marker on the receiver's
+            // seat, also one spelling shared by both. 'mutable^' anywhere
+            // else stays an ordinary name of the writer's.
+            if (check_hat(p, "mutable") &&
+                token_is_hat(p, &p->ahead, "self")) {
+                param->v.param.mutable_receiver = true;
+                advance(p);
+            }
+            // A slot is neutral only as a bare name. One the next token
+            // qualifies ('.'), unions ('|', '&'), or opens a table or
+            // coroutine type on ('{' after t^/c^) is a spelling no
+            // parameter name takes -- and Self^ is a type wherever it
+            // stands (13.13).
+            bool named =
+                (p->current.kind == LHAT_TOKEN_IDENT ||
+                 p->current.kind == LHAT_TOKEN_HAT_IDENT) &&
+                !is_op(&p->ahead, LHAT_OP_DOT) &&
+                !is_op(&p->ahead, LHAT_OP_UNION) &&
+                !is_op(&p->ahead, LHAT_OP_INTERSECT) &&
+                !token_is_hat_stacked(p, &p->current, "Self") &&
+                !((token_is_hat(p, &p->current, "t") ||
+                   token_is_hat(p, &p->current, "c")) &&
+                  is_op(&p->ahead, LHAT_OP_LBRACE));
+            if (named) {
+                LhatToken at = p->current;
+                param->v.param.name = simple_node(p);
+                if (match_op(p, LHAT_OP_COLON)) {
+                    param->v.param.type = parse_type(p);
+                    literal_told = true;
+                    named_at = at;
+                }
+                if (match_op(p, LHAT_OP_EQ)) {
+                    param->v.param.fallback = parse_expression(p);
+                    literal_told = true;
+                    named_at = at;
+                }
+            } else if (p->current.kind == LHAT_TOKEN_IDENT ||
+                       p->current.kind == LHAT_TOKEN_HAT_IDENT ||
+                       check_op(p, LHAT_OP_LPAREN)) {
+                typed_at = p->current;
+                param->v.param.type = parse_type(p);
+                type_told = true;
+            } else {
+                report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
+                break;
+            }
+        }
+
+        lhat_node_append(&head, &tail, finish(p, param));
+
+        if (!match_op(p, LHAT_OP_COMMA)) {
+            break;
+        }
+    }
+    node->v.func.params = head;
 
     if (match_op(p, LHAT_OP_ARROW)) {
-        // 15.1改3: as in a written signature.
+        // 15.1改3: 'fresh^' on the result's seat promises the answer is new.
         if (match_hat(p, "fresh")) {
             node->v.func.answers_fresh = true;
         }
-        // 13.8改2: as in a written signature -- several written bare are the
-        // tuple that one result is. The body's '{' closes the reading here,
-        // where a signature's ';' does.
+        // 13.8改2: several written bare are the tuple that one result is.
+        // The decider closes the reading either way: a body's '{' or a
+        // signature's ';'.
         node->v.func.return_type = parse_type_result(p);
         if (node->v.func.answers_fresh &&
             node->v.func.return_type != NULL &&
             node->v.func.return_type->kind == LHAT_NODE_TYPE_TUPLE) {
             report(p, &p->current, LHAT_PARSE_ERR_FRESH_TUPLE);
         }
+    }
+
+    // 13.3's ';' says signature. Anything else is read as the literal it
+    // was, whose '{' the expect below still demands.
+    if (match_op(p, LHAT_OP_SEMICOLON)) {
+        if (literal_told) {
+            report(p, &named_at, LHAT_PARSE_ERR_SIGNATURE_NAMED);
+        }
+        node->kind = LHAT_NODE_TYPE_FUNC;
+        for (LhatNode *param = node->v.func.params; param != NULL;
+             param = param->next) {
+            // The settling: a neutral name was this type all along, and its
+            // node already carries the fields a written type name does.
+            if (param->v.param.name != NULL && param->v.param.type == NULL) {
+                param->v.param.name->kind = LHAT_NODE_TYPE_NAME;
+                param->v.param.type = param->v.param.name;
+                param->v.param.name = NULL;
+            }
+        }
+        return finish(p, node);
+    }
+    if (type_told) {
+        report(p, &typed_at, LHAT_PARSE_ERR_PARAM_NEEDS_NAME);
     }
 
     // 15.2: yield^ in the body is what makes a procedure yieldable, so the
@@ -1753,23 +1849,36 @@ static LhatNode *parse_primary(Parser *p)
             return parse_interpolation(p);
 
         case LHAT_TOKEN_HAT_IDENT:
-            if (check_hat(p, "f")) {
-                return parse_function(p, true);
-            }
-            if (check_hat(p, "p")) {
-                return parse_function(p, false);
+            if (check_hat(p, "f") || check_hat(p, "p")) {
+                // 02 の 13.14: a literal or a written signature -- the one
+                // head both share is read once, and the '{' or the ';' says
+                // which it was. A signature is the value typeof^ answers.
+                bool making_function = check_hat(p, "f");
+                LhatToken head = p->current;
+                LhatNode *made = parse_subroutine_or_type(p, making_function);
+                if (made != NULL && made->kind == LHAT_NODE_TYPE_FUNC) {
+                    return type_value_from(p, &head, made);
+                }
+                return made;
             }
             // 15.13: the mark stands before the kind, and marks a body --
             // so what follows has to be one.
             if (check_hat(p, "closed")) {
+                LhatToken head = p->current;
                 advance(p);
                 if (!check_hat(p, "f") && !check_hat(p, "p")) {
                     report(p, &p->current, LHAT_PARSE_ERR_CLOSED_NEEDS_BODY);
                     return NULL;
                 }
-                LhatNode *marked = parse_function(p, check_hat(p, "f"));
+                LhatNode *marked =
+                    parse_subroutine_or_type(p, check_hat(p, "f"));
                 if (marked != NULL) {
                     marked->v.func.closed = true;
+                    // 02 の 13.14: the mark rides whichever reading the
+                    // decider chose, as it does in a type position.
+                    if (marked->kind == LHAT_NODE_TYPE_FUNC) {
+                        return type_value_from(p, &head, marked);
+                    }
                 }
                 return marked;
             }
@@ -1805,6 +1914,16 @@ static LhatNode *parse_primary(Parser *p)
                 node->v.jump.value = parse_expression(p);
                 expect_op(p, LHAT_OP_RPAREN);
                 return finish(p, node);
+            }
+            // 02 の 13.14: 't^{' and 'c^{' open nothing an expression
+            // could be, so the spelling is a written type standing as a
+            // value -- all of it, parse_type taking the unions too. A bare
+            // 't^' or 'c^' stays the name it always was, and in a header
+            // the '{' is the body's (the same care self^{ takes below).
+            if ((check_hat(p, "t") || check_hat(p, "c")) &&
+                is_op(&p->ahead, LHAT_OP_LBRACE) && !p->brace_is_body) {
+                LhatToken head = p->current;
+                return type_value_from(p, &head, parse_type(p));
             }
             // 'self^' on its own is an ordinary value, as in self^.value1, so
             // only a '{' immediately after it makes the form of 14.6. The
@@ -1991,8 +2110,26 @@ static bool is_access_node(const LhatNode *node)
             node->kind == LHAT_NODE_CALL);
 }
 
+// 02 の 13.14: a run of names and nothing else -- what may be re-read as
+// the qualified type name it already spells.
+static bool names_only(const LhatNode *node)
+{
+    while (node != NULL && node->kind == LHAT_NODE_MEMBER &&
+           !node->v.access.nil_safe) {
+        const LhatNode *argument = node->v.access.argument;
+        if (argument == NULL || (argument->kind != LHAT_NODE_IDENT &&
+                                 argument->kind != LHAT_NODE_HAT_IDENT)) {
+            return false;
+        }
+        node = node->v.access.target;
+    }
+    return node != NULL && (node->kind == LHAT_NODE_IDENT ||
+                            node->kind == LHAT_NODE_HAT_IDENT);
+}
+
 static LhatNode *parse_postfix(Parser *p)
 {
+    LhatToken start = p->current;
     LhatNode *node = parse_primary(p);
 
     // 11.7改2: the first '?' guards the rest of the run, and the nil^ arm is
@@ -2086,6 +2223,20 @@ static LhatNode *parse_postfix(Parser *p)
     // chain answers, so it is not the end -- the access under it is.
     if (guarded && last_access != NULL) {
         last_access->v.access.nil_chain_end = true;
+    }
+    // 02 の 13.14: '|' and '&' belong to no expression (11.6's table leaves
+    // them to the types), so one standing after a plain run of names is a
+    // union or intersection being spelled -- the leaf re-kinded to the type
+    // name it already carries the fields of. Anything else before the '|'
+    // keeps today's refusal.
+    if ((check_op(p, LHAT_OP_UNION) || check_op(p, LHAT_OP_INTERSECT)) &&
+        !guarded && names_only(node)) {
+        LhatNode *leaf = node;
+        while (leaf->kind == LHAT_NODE_MEMBER) {
+            leaf = leaf->v.access.target;
+        }
+        leaf->kind = LHAT_NODE_TYPE_NAME;
+        return type_value_from(p, &start, node);
     }
     return node;
 }
@@ -5027,6 +5178,12 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_FRESH_TUPLE:
             return "fresh^ promises one new answer; a tuple result cannot "
                    "carry it";
+        case LHAT_PARSE_ERR_SIGNATURE_NAMED:
+            return "a written signature carries no parameter names (13.3); "
+                   "the names belong to a literal, whose body a '{' opens";
+        case LHAT_PARSE_ERR_PARAM_NEEDS_NAME:
+            return "a type stands where a parameter name is wanted; bare "
+                   "types belong to a written signature, which a ';' closes";
         case LHAT_PARSE_ERR_EXPECTED_MEMBER:
             return "a def^ holds 'name := value' members and one self^{ ... }";
         case LHAT_PARSE_ERR_FIELD_NEEDS_NAME:

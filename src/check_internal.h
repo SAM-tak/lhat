@@ -71,6 +71,12 @@ typedef struct Binding {
     // stands says only that there is a name, and the type says only what it
     // holds. Which of the two declared it is known here and nowhere else.
     bool is_parameter;
+    // 02 の 13.14: the name a let^ bound to a type^ value stands for that
+    // type where a type is written. `named_type` is what it stands for
+    // there; `type` above stays the value's own (the typeinfo table), so a
+    // read of the name as a value keeps answering the descriptor.
+    bool names_type;
+    LhatType *named_type;
     // 03 の 3.4改4: the f^ literal this let^ bound, when it bound one --
     // what lets a call site say which body its argument shapes belong to.
     // NULL for every other value, and for a var^, whose name may come to
@@ -279,6 +285,13 @@ typedef struct {
     // the shape loop again.
     Instantiation *instantiations;
     const LhatNode *instantiating;
+
+    // 02 の 13.14: inside the spelling of a type-as-value right now -- what
+    // scopes the old-world rule to the alias: only there does a name
+    // reaching its own being-defined binding refuse to mean it. Elsewhere a
+    // type position keeps reading the collecting pass's seed, which 14.9's
+    // neighbours pin.
+    bool in_type_value;
 
     // 03 の 3.4改: what this unit writes an op^ for, so that an operator used
     // on a parameter demands the candidates rather than 11.8's built-in

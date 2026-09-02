@@ -113,6 +113,13 @@ typedef struct LhatTypeMember {
     const char *name;
     size_t name_length;
     LhatType *type;
+    // 02 の 13.14: this member names a type -- a type^ value a let^ bound
+    // and a public^ exported. `named_type` is what the name stands for in a
+    // type position; `type` above stays the value's own (a typeinfo), so
+    // reading the member as a value is unchanged. Nothing in the relations
+    // reads these.
+    bool names_type;
+    LhatType *named_type;
     // 04 の 2.2: a field declared with a default need not be written at the
     // construction. Whether it has one is not part of the type -- two kinds
     // differing only there are still the same shape -- so nothing in the

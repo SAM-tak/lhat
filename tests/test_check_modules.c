@@ -67,6 +67,28 @@ static void check_against_dispose(Unit *u, Library *lib)
     unit_dispose(&lib->provider);
 }
 
+// 02 の 13.14 with 05 の 6.1: an exported alias carries what it names, so
+// a reader in another unit writes m.T where a type stands -- an f^ one
+// included, which only the declaration flag lets through the shape reading.
+static void test_exported_alias(void)
+{
+    Unit u;
+    Library lib;
+
+    LHAT_TEST("an exported alias is a type name across units");
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/shapes.lh";
+    check_against(&u, &lib,
+                  "public^ let^ Vec = t^{number^[2]}|nil^\n"
+                  "public^ let^ Op = f^number^ -> number^;\n",
+                  "var^ m = require^ \"lib/shapes.lh\"\n"
+                  "let^ v : m.Vec = {1, 2}\n"
+                  "let^ g : m.Op = f^ x { return^ x + 1 }\n"
+                  "let^ n : number^ = g(1)\n");
+    CHECK_CLEAN(&u);
+    check_against_dispose(&u, &lib);
+}
+
 static void test_modules(void)
 {
     Unit u;
@@ -468,6 +490,7 @@ static void test_named_diagnostics(void)
 int main(void)
 {
     test_modules();
+    test_exported_alias();
     test_session();
     test_named_diagnostics();
     return lhat_test_report("test_check_modules");

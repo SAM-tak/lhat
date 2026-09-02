@@ -898,6 +898,14 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     // resolves here exactly as one under 8.8's nominal table does.
     if (outer->kind == LHAT_TYPE_TABLE || outer->kind == LHAT_TYPE_HOSTVALUE) {
         const LhatTypeMember *member = chk_find_member(outer, name, length);
+        // 02 の 13.14: the member names a type by declaration, whatever the
+        // value's own shape -- an exported f^ alias would fail the shape
+        // reading below.
+        if (member != NULL && member->names_type &&
+            member->named_type != NULL) {
+            record_type_name(c, node->v.access.argument, member->named_type);
+            return member->named_type;
+        }
         // 2.2 again: a unit publishes values as well as types, and only the
         // types among them may be written here.
         if (member != NULL && names_a_type(member->type)) {
@@ -1113,23 +1121,62 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
             // up in the same place a value is, which is what 14.9 needs --
             // it says a definition takes its name from its binding, and a
             // binding lives here.
-            Binding *declared = chk_scope_find(c->scope, name, length, NULL);
-            if (declared == NULL) {
-                chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
-                return chk_simple(c, LHAT_TYPE_UNKNOWN);
-            }
+            Scope *found_in = NULL;
+            Binding *declared =
+                chk_scope_find(c->scope, name, length, &found_in);
 
             // 14.9: written inside the very def^ this name is being bound to,
             // where the binding still holds the collecting pass's pending^
             // seed. What it will mean is already built, so the name says the
             // same thing here as it does anywhere else -- 14.7's instance,
-            // which is what Self^ answers with too.
+            // which is what Self^ answers with too. Asked before the old-world
+            // skip below: a def^'s own name is the one self-reference 14.9
+            // grants, and this is what grants it.
             for (const struct DefLink *d = c->def_link; d != NULL;
                  d = d->outer) {
-                if (d->binding == declared && d->instance != NULL) {
+                if (declared != NULL && d->binding == declared &&
+                    d->instance != NULL) {
                     record_type_name(c, node, d->instance);
                     return d->instance;
                 }
+            }
+
+            // 8.7改: its own let^'s right side is the old world -- inside
+            // the spelling of a type-as-value (13.14), the name still means
+            // what it meant outside, so an alias may not name itself. Only
+            // there: any other type position keeps reading the collecting
+            // pass's seed, which is what lets a signature deeper in a value
+            // name the binding being made (the case beside 14.9's).
+            if (declared != NULL && declared->being_defined &&
+                c->in_type_value && found_in != NULL) {
+                declared = chk_scope_find(found_in->parent, name, length,
+                                          NULL);
+            }
+            if (declared == NULL) {
+                chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+                return chk_simple(c, LHAT_TYPE_UNKNOWN);
+            }
+
+            // 02 の 13.14: a name a let^ bound to a type^ value stands for
+            // the type it spelled, whatever shape the value's own type has
+            // -- an f^ alias would fail the shape reading below.
+            if (declared->names_type && declared->named_type != NULL) {
+#if LHAT_WITH_RESOLUTIONS
+                chk_record_narrowed_resolution(c, node, declared,
+                                               declared->named_type);
+#else
+                record_type_name(c, node, declared->named_type);
+#endif
+                return declared->named_type;
+            }
+
+            // 02 の 13.14: a descriptor that is only a value -- typeof^'s
+            // answer, a var^'s hold -- names nothing. Only the let^-bound
+            // spelling above does; without the refusal the typeinfo table
+            // itself would read as a type here.
+            if (declared->type == c->typeinfo_type) {
+                chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+                return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
 
             // 2.2 gives a type to a def^ and an errordef^, and to nothing
