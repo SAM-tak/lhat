@@ -6,7 +6,7 @@
 //
 //   std.regex.new(p)            -> std.regex.Regex | std.regex.Error.BadPattern
 //   r.match(s)                  -> string^|nil^ | Error.Exhausted
-//   r.captures(s)               -> t^{...:string^}|nil^ | Error.Exhausted
+//   r.captures(s)               -> t^{string^[]}|nil^ | Error.Exhausted
 //   r.gmatch(s)                 -> an f^ walk of (ordinal, match) pairs
 //   r.gsub(s, "…$1…")           -> string^ | Error.Exhausted
 //   r.gsub(s, f^m, at, caps {}) -> the same, each match through the function

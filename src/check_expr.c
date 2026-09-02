@@ -932,7 +932,7 @@ static bool concatenable_table(const LhatType *type)
 // halves in order -- the left's positions, then the right's renumbered after
 // them -- and the named keys from both sides, a name both carry reported
 // (14.5改's rule, without the qualified spelling that saves a method there).
-// An unbounded left ('t^{ ...:T }') leaves the right's positions nowhere to
+// An unbounded left ('t^{ T[] }') leaves the right's positions nowhere to
 // be counted, so everything past it folds into one unbounded element type.
 static LhatType *concat_table_types(Checker *c, const LhatNode *node,
                                     const LhatType *left,
@@ -3409,7 +3409,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
             // 13.7: '...' inside the body names what was collected. 14.10's
             // form for that is a table whose sequence is unbounded, one
             // element type throughout -- the same shape a written
-            // 't^{ ...:T }' names, since both describe the same thing.
+            // 't^{ T[] }' names, since both describe the same thing.
             LhatType *collected = lhat_type_table(c->result->types);
             collected->v.table.variadic = element;
             Binding *b = chk_scope_add(&body, "...", 3, collected, param->offset);

@@ -531,7 +531,7 @@ static void test_strings(void)
 
     LHAT_TEST("pop of an empty table answers nil^, not a fault");
     run_checked_text(&r,
-                     "var^ t:t^{...:number^} = {}\n"
+                     "var^ t:t^{number^[]} = {}\n"
                      "return^ t.pop^() ?? -1\n");
     CHECK_INTEGER(&r, -1);
     run_dispose(&r);

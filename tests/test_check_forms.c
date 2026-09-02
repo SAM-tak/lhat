@@ -599,7 +599,7 @@ static void test_variadic(void)
     LHAT_TEST("'...' inside the body is a table of the element type");
     check_text(&u,
                "var^ f = f^ ...:number^ -> number^ {\n"
-               "  var^ t : t^{ ...:number^ } = ...\n"
+               "  var^ t : t^{ number^[] } = ...\n"
                "  return^ 0\n"
                "}\n");
     CHECK_CLEAN(&u);

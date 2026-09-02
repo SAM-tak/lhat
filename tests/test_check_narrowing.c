@@ -646,7 +646,7 @@ static void test_nil_propagation(void)
 
     LHAT_TEST("'?[' reaches through one the same way");
     check_text(&u,
-               "var^ f = f^ -> t^{ ...:string^ }|nil^ { return^ nil^ }\n"
+               "var^ f = f^ -> t^{ string^[] }|nil^ { return^ nil^ }\n"
                "var^ t = f()\n"
                "var^ s : string^ = t?[1] ?? \"\"\n");
     CHECK_CLEAN(&u);
@@ -732,7 +732,7 @@ static void test_operator_on_maybe_nil(void)
     Unit u;
 
     LHAT_TEST("the receiver may be nil^");
-    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "var^ n : number^ = t[1] + 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
@@ -741,21 +741,21 @@ static void test_operator_on_maybe_nil(void)
     // 11.3改 hands this one to the right operand, which is where a built-in
     // on the left leaves it -- the same mistake read from the other end.
     LHAT_TEST("the argument may be nil^");
-    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "var^ n : number^ = 1 + t[1]\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
     LHAT_TEST("an ordering says it too, rather than 'nothing orders these'");
-    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "var^ b : bool^ = t[1] < 3\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
     LHAT_TEST("and the unary '-', rather than 'arithmetic needs number^'");
-    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "var^ n : number^ = -t[1]\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
@@ -764,7 +764,7 @@ static void test_operator_on_maybe_nil(void)
     // 11.2's '..' is carried by string^ rather than by 14.8's number^, so it
     // reaches the refusal by a different road and has to be asked separately.
     LHAT_TEST("'..' is the same mistake");
-    check_text(&u, "var^ f = f^ -> t^{ ...:string^ } { return^ { \"a\" } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ string^[] } { return^ { \"a\" } }\n"
                    "var^ t = f()\n"
                    "var^ s : string^ = t[1] .. \"a\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
@@ -772,14 +772,14 @@ static void test_operator_on_maybe_nil(void)
 
     // The two ways out the message names.
     LHAT_TEST("'??' is one of them");
-    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "var^ n : number^ = (t[1] ?? 0) + 1\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("binding it to a name and narrowing that is the other");
-    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "var^ v = t[1]\n"
                    "if^ v fits^ number^ { var^ n : number^ = v + 1 }\n");
@@ -790,7 +790,7 @@ static void test_operator_on_maybe_nil(void)
     // message says to bind it first -- without that line a writer tries this
     // and meets the same refusal a second time.
     LHAT_TEST("narrowing the index where it stands does not do it");
-    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "if^ t[1] fits^ number^ { var^ n : number^ = t[1] + 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
@@ -1286,7 +1286,7 @@ static void test_match_arm_narrowing(void)
 
     LHAT_TEST("a match arm narrows its bare-name subject");
     check_text(&u,
-               "let^ g = f^ x:number^|t^{ ...:number^ } -> number^ {\n"
+               "let^ g = f^ x:number^|t^{ number^[] } -> number^ {\n"
                "    return^ for^x:\n"
                "    when^ fits^ t^{}: x.count^\n"
                "    other^: 0\n"
@@ -1297,7 +1297,7 @@ static void test_match_arm_narrowing(void)
 
     LHAT_TEST("and in the statement form too");
     check_text(&u,
-               "let^ g = f^ x:number^|t^{ ...:number^ } -> number^ {\n"
+               "let^ g = f^ x:number^|t^{ number^[] } -> number^ {\n"
                "    for^x {\n"
                "    when^ fits^ t^{}:\n"
                "        return^ x.count^\n"
@@ -1309,7 +1309,7 @@ static void test_match_arm_narrowing(void)
 
     LHAT_TEST("a wider subject narrows through it^");
     check_text(&u,
-               "let^ pick = f^ -> number^|t^{ ...:number^ } { return^ 4 }\n"
+               "let^ pick = f^ -> number^|t^{ number^[] } { return^ 4 }\n"
                "let^ g = f^ -> number^ {\n"
                "    return^ for^ pick():\n"
                "    when^ fits^ t^{}: it^.count^\n"

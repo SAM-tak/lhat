@@ -128,7 +128,7 @@ module^ namespace1.module1
 
 コマンドラインなら `lhat --run main.lh a b` の `a` `b`（文字列）、
 `require^` なら空の表、8.8改 の `std.load` が答えた閉包なら呼び出しの引数。
-型は `t^{...:any^}` で、読む側が `fits^` で絞る。
+型は `t^{any^[]}` で、読む側が `fits^` で絞る。
 
 ```lhat
 let^ args = ...
@@ -2487,7 +2487,7 @@ cli/            コマンドライン      → lhat.exe
   `L^.load` でなく stdlib に置いた理由は 5.6 末尾
 
 - **3.2改（2026-08-22）: スクリプトの最上位は `p^...`。** `module^` の無い
-  単位の最上位に `...`（`t^{...:any^}`）を束縛し、走らせたもの（CLI の
+  単位の最上位に `...`（`t^{any^[]}`）を束縛し、走らせたもの（CLI の
   コマンドライン引数・`require^` の空表・`std.load` の閉包の呼び出し）が
   その中身を決める。`lhat_run` は `lhat_run_arguments(…, NULL, 0)` に。
   `module^` 単位は従来どおり引数を取らない

@@ -206,7 +206,7 @@ error: this needs a ':' after it; what follows was read as
 `nil^` の側に演算子は無いので、演算子が見つからない最頻出の原因はこれになる。
 
 ```lhat
-let^ f = f^ t:t^{ ...:number^ } -> number^ { return^ t[1] + 1 }
+let^ f = f^ t:t^{ number^[] } -> number^ { return^ t[1] + 1 }
 ```
 
 ここで 02 の 11.3改（どちらの operand が `self^` を持つか）を読ませても、

@@ -363,7 +363,7 @@ static void test_positions(void)
 // A type that says nothing about that kind is left alone: there is no T to
 // make the union out of, and 14.10 leaves what an undeclared table holds
 // unsaid. Closing that would need a spelling for an open keyed half, which
-// 't^{ ...:T }' is not -- it describes the sequence.
+// 't^{ T[] }' is not -- it describes the sequence.
 static void test_dynamic_key(void)
 {
     Unit u;
@@ -441,7 +441,7 @@ static void test_dynamic_key(void)
     // reaching it now that one road serves both.
     LHAT_TEST("an unbounded tail answers the same as before");
     check_text(&u,
-               "var^ f = f^ t:t^{ ...:number^ }, i:number^ -> number^ {\n"
+               "var^ f = f^ t:t^{ number^[] }, i:number^ -> number^ {\n"
                "    return^ t[i]\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
@@ -467,14 +467,14 @@ static void test_nil_safe_compound(void)
     Unit u;
 
     LHAT_TEST("a plain compound has nothing to add to an absent place");
-    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "t[1] += 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
     LHAT_TEST("and the '?' spelling is what answers that");
-    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "t[1] ?+= 1\n");
     CHECK_CLEAN(&u);
@@ -483,7 +483,7 @@ static void test_nil_safe_compound(void)
     // The nil^ comes off the place, not off everything of that shape: what
     // stands in the right-hand side is a read like any other.
     LHAT_TEST("the right-hand side keeps its own nil^");
-    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "t[1] ?+= t[2] + 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
@@ -500,14 +500,14 @@ static void test_nil_safe_compound(void)
     // Only the nil^ is taken off. An operator the rest does not answer is
     // still an operator the rest does not answer.
     LHAT_TEST("what is left still has to answer the operator");
-    check_text(&u, "var^ f = f^ -> t^{ ...:string^ } { return^ { \"a\" } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ string^[] } { return^ { \"a\" } }\n"
                    "var^ t = f()\n"
                    "t[1] ?+= 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("the concatenating one reaches a string the same way");
-    check_text(&u, "var^ f = f^ -> t^{ ...:string^ } { return^ { \"a\" } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ string^[] } { return^ { \"a\" } }\n"
                    "var^ t = f()\n"
                    "t[1] ?..= \"b\"\n");
     CHECK_CLEAN(&u);
@@ -530,7 +530,7 @@ static void test_nil_safe_compound(void)
     // so there is no operator to be short of and nothing here to report. What
     // it changes is which places get written, which only the machine sees.
     LHAT_TEST("the plain nil-safe assignment checks like ':='");
-    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "t[1] ?:= 2\n");
     CHECK_CLEAN(&u);
@@ -545,7 +545,7 @@ static void test_nil_safe_compound(void)
     // The value is held to what the place was declared to hold, exactly as a
     // ':=' would be -- the '?' says when the write happens, not what fits.
     LHAT_TEST("and the value still has to fit the place");
-    check_text(&u, "var^ f = f^ -> t^{ ...:number^ } { return^ { 1 } }\n"
+    check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "t[1] ?:= \"text\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
@@ -721,9 +721,16 @@ static void test_builtin_operations(void)
 
     LHAT_TEST("a push against a written element type is measured");
     check_text(&u,
-               "var^ t : t^{ ...:number^ } = {1}\n"
+               "var^ t : t^{ number^[] } = {1}\n"
                "t.push^(\"s\")\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 14.10改2: the parameter list keeps its own spelling; a table type
+    // does not read it any more.
+    LHAT_TEST("the parameter spelling is no table type");
+    check_text(&u, "var^ t : t^{ ...:number^ } = {1}\n");
+    LHAT_CHECK(syntax_errors(&u) > 0, "the old spelling is refused");
     unit_dispose(&u);
 
     // 04 の 11.3's line: an empty table's pop is not an error, so the
@@ -749,7 +756,7 @@ static void test_builtin_operations(void)
 
     LHAT_TEST("but not one that arrived as an argument");
     check_text(&u,
-               "let^ f = f^ t:t^{ ...:number^ } -> number^ {\n"
+               "let^ f = f^ t:t^{ number^[] } -> number^ {\n"
                "    t.sort^()\n"
                "    return^ t[1] ?? 0\n"
                "}\n");
@@ -759,7 +766,7 @@ static void test_builtin_operations(void)
     // And the reading half are f^, callable anywhere.
     LHAT_TEST("the reading half are functions");
     check_text(&u,
-               "let^ f = f^ t:t^{ ...:number^ } -> string^ {\n"
+               "let^ f = f^ t:t^{ number^[] } -> string^ {\n"
                "    return^ t.slice^(1, 2).join^(\",\")\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -779,7 +786,7 @@ static void test_builtin_operations(void)
     // is the body's own -- an f^ clones what arrived and mends the copy.
     LHAT_TEST("an f^ mends its own clone of what arrived");
     check_text(&u,
-               "let^ mend = f^ src:t^{ ...:number^ } -> t^{ ...:number^ } {\n"
+               "let^ mend = f^ src:t^{ number^[] } -> t^{ number^[] } {\n"
                "    var^ mine = src.clone^()\n"
                "    mine.sort^()\n"
                "    return^ mine\n"
@@ -789,7 +796,7 @@ static void test_builtin_operations(void)
 
     LHAT_TEST("and may chain straight off the fresh answer");
     check_text(&u,
-               "let^ g = f^ src:t^{ ...:number^ } -> number^ {\n"
+               "let^ g = f^ src:t^{ number^[] } -> number^ {\n"
                "    return^ src.clone^().pop^() ?? -1\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -797,7 +804,7 @@ static void test_builtin_operations(void)
 
     LHAT_TEST("a slice is the body's own the same way");
     check_text(&u,
-               "let^ g = f^ src:t^{ ...:number^ } -> number^ {\n"
+               "let^ g = f^ src:t^{ number^[] } -> number^ {\n"
                "    var^ cut = src.slice^(1, 2)\n"
                "    cut.push^(9)\n"
                "    return^ cut.count^\n"

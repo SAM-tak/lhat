@@ -268,7 +268,7 @@ struct LhatType {
             // shape alone cannot answer.
             bool is_module;
             // 13.7's variadic collector as a table type, and 14.10's
-            // 't^{ ...:T }': the sequence half is unbounded, every position
+            // 't^{ T[] }': the sequence half is unbounded, every position
             // of it T. NULL everywhere else -- mirrors func.variadic below,
             // which is the same idea for a parameter list instead of members.
             LhatType *variadic;

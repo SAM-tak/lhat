@@ -2178,7 +2178,7 @@ static void test_types(void)
     // 13.7, 14.10: the sequence half may end in a variadic tail, the same
     // marker a parameter list ends in.
     LHAT_TEST("a table type's tail may be variadic");
-    parse_text(&p, "x := y as^ t^{ ...:number^ }");
+    parse_text(&p, "x := y as^ t^{ number^[] }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *t = first_value(&p)->v.ascription.type;
@@ -2187,16 +2187,18 @@ static void test_types(void)
     }
     parse_dispose(&p);
 
-    LHAT_TEST("and an untyped one is still accepted");
-    parse_text(&p, "x := y as^ t^{ ... }");
+    // 14.10改2: the bare '...' went with the ':' spelling; any^[] is how
+    // an element left open is written now, and it still marks the entry.
+    LHAT_TEST("an open element type is spelled any^[]");
+    parse_text(&p, "x := y as^ t^{ any^[] }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK(
         first_value(&p)->v.ascription.type->v.list.items->v.entry.variadic,
-        "marked variadic with no written type");
+        "marked variadic");
     parse_dispose(&p);
 
     LHAT_TEST("and it may follow fixed positions");
-    parse_text(&p, "x := y as^ t^{ number^, ...:string^ }");
+    parse_text(&p, "x := y as^ t^{ number^, string^[] }");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     LHAT_CHECK_EQ_INT(
         lhat_node_list_length(

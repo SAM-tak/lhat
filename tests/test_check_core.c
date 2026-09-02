@@ -82,7 +82,7 @@ static void test_names(void)
     // written for is exactly this: the new name starts from the old one.
     LHAT_TEST("and a shadow one scope in reads what it shadows");
     check_text(&u,
-               "var^ f = f^ t:t^{ ...:number^ } -> number^ {\n"
+               "var^ f = f^ t:t^{ number^[] } -> number^ {\n"
                "  var^ total = 0\n"
                "  for^ i from^1 to^2 {\n"
                "    var^ t = t[i] ?? 0\n"
@@ -2279,7 +2279,7 @@ static void test_annotations(void)
     unit_dispose(&u);
 
     LHAT_TEST("13.7's tail may follow a counted run");
-    check_text(&u, "var^ f = p^ t:t^{ number^[2], ...:string^ } { }\n");
+    check_text(&u, "var^ f = p^ t:t^{ number^[2], string^[] } { }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 

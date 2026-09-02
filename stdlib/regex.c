@@ -730,7 +730,7 @@ bool lhatstdlib_regex_register(LhatProgram *program)
            lhat_register_member(
                program, "std.regex", "Regex", "captures",
                "f^self^, string^ -> "
-               "t^{...:string^}|nil^|std.regex.Error.Exhausted;",
+               "t^{string^[]}|nil^|std.regex.Error.Exhausted;",
                regex_captures, module) &&
            lhat_register_member(
                program, "std.regex", "Regex", "gmatch",
@@ -739,13 +739,13 @@ bool lhatstdlib_regex_register(LhatProgram *program)
            lhat_register_member(
                program, "std.regex", "Regex", "gsub",
                "f^self^, string^, "
-               "string^|f^string^, number^, t^{...:string^} -> string^|nil^; "
+               "string^|f^string^, number^, t^{string^[]} -> string^|nil^; "
                "-> string^|std.regex.Error.Exhausted;",
                regex_gsub, module) &&
            lhat_register_member(
                program, "std.regex", "Regex", "split",
                "f^self^, string^ -> "
-               "t^{...:string^}|std.regex.Error.Exhausted;",
+               "t^{string^[]}|std.regex.Error.Exhausted;",
                regex_split, module) &&
            lhat_register_member(program, "std.regex", "Regex", "dispose",
                                 "p^self^;", regex_dispose, module) &&
@@ -762,7 +762,7 @@ bool lhatstdlib_regex_register(LhatProgram *program)
            lhat_register_func(
                program, "std.regex", "gsub",
                "f^string^, string^, "
-               "string^|f^string^, number^, t^{...:string^} -> string^|nil^; "
+               "string^|f^string^, number^, t^{string^[]} -> string^|nil^; "
                "-> string^|std.regex.Error.BadPattern"
                "|std.regex.Error.Exhausted;",
                module_gsub, module);

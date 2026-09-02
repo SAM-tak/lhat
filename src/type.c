@@ -2042,12 +2042,17 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 write_lent_members(sink, type, depth);
             }
             if (type->v.table.variadic != NULL) {
-                // 14.10: the sequence half, unbounded.
+                // 14.10改2: the sequence half, unbounded -- 'T[]', with the
+                // parentheses a union needs to stay one element type.
                 if (type->v.table.members != NULL) {
                     put_text(sink, ", ");
                 }
-                put_text(sink, "...:");
+                bool wrap = type->v.table.variadic->kind == LHAT_TYPE_UNION;
+                if (wrap) {
+                    put_text(sink, "(");
+                }
                 write_type(sink, type->v.table.variadic, depth + 1);
+                put_text(sink, wrap ? ")[]" : "[]");
             }
             put_text(sink, " }");
             sink->seen = here.outer;

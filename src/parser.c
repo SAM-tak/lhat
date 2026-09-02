@@ -522,6 +522,12 @@ static uint32_t parse_position_count(Parser *p)
     if (!match_op(p, LHAT_OP_LBRACKET)) {
         return 1;
     }
+    // 14.10改2: '[]' with no count is the unbounded run -- the sequence
+    // past the fixed positions, one element type throughout. Zero, which no
+    // written count may be, is how this answer says it.
+    if (match_op(p, LHAT_OP_RBRACKET)) {
+        return 0;
+    }
     uint32_t count = 1;
     if (p->current.kind == LHAT_TOKEN_INT &&
         p->current.v.integer.value > 0 &&
@@ -582,22 +588,6 @@ static LhatNode *parse_member_decls(Parser *p)
             continue;
         }
 
-        // 13.7, 14.10: the sequence half may end in a variadic tail, the
-        // same '...' a parameter list ends in -- unbounded, one type for
-        // every position beyond the fixed ones.
-        if (check_op(p, LHAT_OP_ELLIPSIS)) {
-            advance(p);
-            member->v.entry.variadic = true;
-            if (match_op(p, LHAT_OP_COLON)) {
-                member->v.entry.value = parse_type(p);
-            }
-            lhat_node_append(&head, &tail, finish(p, member));
-            if (!match_op(p, LHAT_OP_COMMA)) {
-                break;
-            }
-            continue;
-        }
-
         // 14.10: a member is written 'name : type'. Anything else in the
         // list is a type on its own, and takes the next position -- 14 章
         // makes a table a sequence as well as a mapping, and the sequence
@@ -609,7 +599,11 @@ static LhatNode *parse_member_decls(Parser *p)
         if (!named) {
             member->v.entry.key = NULL;
             member->v.entry.value = parse_type(p);
-            member->v.entry.repeat = parse_position_count(p);
+            uint32_t count = parse_position_count(p);
+            // 14.10改2: 'T[]' is the unbounded tail -- one spelling family
+            // with 'T[n]', where '...:T' stays the parameter list's own.
+            member->v.entry.variadic = count == 0;
+            member->v.entry.repeat = count == 0 ? 1 : count;
             lhat_node_append(&head, &tail, finish(p, member));
             if (!match_op(p, LHAT_OP_COMMA)) {
                 break;

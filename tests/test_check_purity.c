@@ -114,7 +114,7 @@ static void test_purity(void)
     // coroutine -- which is the case 15.3改 was reopened for.
     LHAT_TEST("an f^ may walk a table with for^ in^");
     check_text(&u,
-               "var^ count = f^ t:t^{ ...:number^ } -> number^ {\n"
+               "var^ count = f^ t:t^{ number^[] } -> number^ {\n"
                "    var^ n = 0\n"
                "    for^ k, v in^ t { n := n + 1 }\n"
                "    return^ n\n"
@@ -441,7 +441,7 @@ static void test_purity(void)
     // spelling.)
     LHAT_TEST("an indexed write is the same change");
     check_text(&u,
-               "var^ f = f^ t:t^{ ...:number^ } -> number^ {\n"
+               "var^ f = f^ t:t^{ number^[] } -> number^ {\n"
                "    t[1] := 5\n"
                "    return^ 0\n"
                "}\n");
@@ -552,7 +552,7 @@ static void test_purity(void)
     // held to it -- every exit has to answer something this body made.
     LHAT_TEST("a fresh^ body answering its own table checks clean");
     check_text(&u,
-               "var^ pair = f^ a:number^ -> fresh^t^{ ...:number^ } {\n"
+               "var^ pair = f^ a:number^ -> fresh^t^{ number^[] } {\n"
                "    return^ {a, a}\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -560,8 +560,8 @@ static void test_purity(void)
 
     LHAT_TEST("and one answering its argument is refused");
     check_text(&u,
-               "var^ echo = f^ t:t^{ ...:number^ } -> "
-               "fresh^t^{ ...:number^ } {\n"
+               "var^ echo = f^ t:t^{ number^[] } -> "
+               "fresh^t^{ number^[] } {\n"
                "    return^ t\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ANSWER_NOT_FRESH);
@@ -569,7 +569,7 @@ static void test_purity(void)
 
     LHAT_TEST("a fresh^ answer counts as the caller's own");
     check_text(&u,
-               "var^ pair = f^ a:number^ -> fresh^t^{ ...:number^ } {\n"
+               "var^ pair = f^ a:number^ -> fresh^t^{ number^[] } {\n"
                "    return^ {a, a}\n"
                "}\n"
                "var^ f = f^ -> number^ {\n"
@@ -584,20 +584,20 @@ static void test_purity(void)
     // promised is fine, missing where one was is not.
     LHAT_TEST("a fresh^ method does not owe a plain seat anything");
     check_text(&u,
-               "var^ pair = f^ a:number^ -> fresh^t^{ ...:number^ } {\n"
+               "var^ pair = f^ a:number^ -> fresh^t^{ number^[] } {\n"
                "    return^ {a, a}\n"
                "}\n"
-               "var^ seat : f^number^ -> t^{ ...:number^ }; = pair\n");
+               "var^ seat : f^number^ -> t^{ number^[] }; = pair\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("but a plain one may not stand where fresh^ was promised");
     check_text(&u,
-               "var^ echo = f^ t:t^{ ...:number^ } -> t^{ ...:number^ } {\n"
+               "var^ echo = f^ t:t^{ number^[] } -> t^{ number^[] } {\n"
                "    return^ t\n"
                "}\n"
-               "var^ seat : f^t^{ ...:number^ } -> "
-               "fresh^t^{ ...:number^ }; = echo\n");
+               "var^ seat : f^t^{ number^[] } -> "
+               "fresh^t^{ number^[] }; = echo\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 

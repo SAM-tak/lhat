@@ -461,7 +461,7 @@ static void test_catch_and_try(void)
 
     LHAT_TEST("'?[' answers nil^ for an absent target");
     run_text(&r,
-             "var^ t : t^{ ...:number^ }|nil^ = nil^\n"
+             "var^ t : t^{ number^[] }|nil^ = nil^\n"
              "return^ t?[1] ?? 7\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
@@ -587,7 +587,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("an absent target evaluates no key");
     run_text(&r,
              "var^ log = { ran = 0 }\n"
-             "var^ t : t^{ ...:number^ }|nil^ = nil^\n"
+             "var^ t : t^{ number^[] }|nil^ = nil^\n"
              "var^ side = p^ -> number^ { log.ran := 1 return^ 1 }\n"
              "var^ got = t?[side()]\n"
              "return^ log.ran\n");

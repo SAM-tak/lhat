@@ -356,9 +356,9 @@ struct LhatNode {
             // bakes onto the prototype. NULL when only a value was written,
             // which is every other entry.
             LhatNode *type;
-            // 13.7, 14.10: MEMBER_DECL only. Written '...:type' in a
-            // t^{ ... }, the way a parameter list writes a variadic one --
-            // `value` is the element type, `key` is unused.
+            // 14.10改2: MEMBER_DECL only. Written 'type[]' in a t^{ ... }
+            // -- the unbounded run past the fixed positions. `value` is the
+            // element type, `key` is unused.
             bool variadic;
             // 14.10改: MEMBER_DECL only, and only on a positional entry.
             // 'type[n]' is n positions of that type, which is what a run of

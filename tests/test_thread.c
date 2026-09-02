@@ -148,7 +148,7 @@ static void test_spawn_upvalue(void)
             "    if^ got fits^ t^{} {\n"
             "        if^ got[\"me\"] is^ got { cyclic := 1000 }\n"
             "    }\n"
-            "    if^ list fits^ t^{...:number^} { list.push^(4) }\n"
+            "    if^ list fits^ t^{number^[]} { list.push^(4) }\n"
             "    return^ { cyclic, list }\n"
             "}, ring, items)\n"
             "if^ h fits^ std.thread.ThreadHandle {\n"
