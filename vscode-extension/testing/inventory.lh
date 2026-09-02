@@ -64,7 +64,7 @@ let^classify = f^n {
     if^n = 0: "none" el^n < 5: "low" el^n < 20: "some" el^: "many" ;
 }
 
-let^report = p^items:t^{...:Item} {
+let^report = p^items:t^{Item[]} {
     for^it in^items {
         let^kind = classify(it.count)
         if^kind = "none" {
@@ -78,7 +78,7 @@ let^report = p^items:t^{...:Item} {
     }
 }
 
-let^total = f^items:t^{...:Item} {
+let^total = f^items:t^{Item[]} {
     var^sum = 0
     for^it in^items {
         sum += gross(try^priceOf(it.sku)) * it.count
