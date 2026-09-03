@@ -4186,6 +4186,27 @@ static void compile_compare_chain(Compiler *c, const LhatNode *node,
     c->next_register = mark;
 }
 
+// 02 の 13.14: the descriptor is a constant, built from what the checker
+// resolved the spelling to -- the fold typeof^ takes when its operand's
+// type is known, with no operand to run. An unchecked compile has no
+// resolution and loads unknown^, which 03 の 4.2 keeps runnable; a
+// spelling reaching an error type is the same (a descriptor has no arm for
+// one).
+static void load_type_constant(Compiler *c, const LhatType *checked,
+                               uint8_t into)
+{
+    LhatRuntimeType *rt =
+        checked != NULL && checked->kind != LHAT_TYPE_UNKNOWN &&
+                !lhat_rt_mentions_error(checked)
+            ? lhat_rt_from_checked(&c->proto->chunk.heap, checked)
+            : lhat_type_rt_new(&c->proto->chunk.heap, LHAT_TYPE_RT_UNKNOWN);
+    if (rt == NULL) {
+        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        return;
+    }
+    load_constant(c, into, lhat_object((LhatObject *)rt));
+}
+
 static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 {
     if (node == NULL || c->result->status != LHAT_COMPILE_OK) {
@@ -4301,27 +4322,10 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             return;
         }
 
-        // 02 の 13.14: the descriptor is a constant, built from what the
-        // checker resolved the spelling to -- the fold typeof^ takes when
-        // its operand's type is known, with no operand to run. An unchecked
-        // compile has no resolution and loads unknown^, which 03 の 4.2
-        // keeps runnable; a spelling reaching an error type is the same
-        // (a descriptor has no arm for one).
-        case LHAT_NODE_TYPE_VALUE: {
-            const LhatType *checked = (const LhatType *)node->checked_type;
-            LhatRuntimeType *rt =
-                checked != NULL && checked->kind != LHAT_TYPE_UNKNOWN &&
-                        !lhat_rt_mentions_error(checked)
-                    ? lhat_rt_from_checked(&c->proto->chunk.heap, checked)
-                    : lhat_type_rt_new(&c->proto->chunk.heap,
-                                       LHAT_TYPE_RT_UNKNOWN);
-            if (rt == NULL) {
-                fail(c, LHAT_COMPILE_TOO_COMPLEX);
-                return;
-            }
-            load_constant(c, into, lhat_object((LhatObject *)rt));
+        // 02 の 13.14: the descriptor is a constant (load_type_constant).
+        case LHAT_NODE_TYPE_VALUE:
+            load_type_constant(c, (const LhatType *)node->checked_type, into);
             return;
-        }
 
         // 11.6改3: the operand lands in `into` and stays there where it
         // fits -- as^ narrows the type the checker tracks, not the value,
@@ -4515,6 +4519,15 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         // knowledge out of the instruction set until specialisation.
         case LHAT_NODE_MEMBER:
         case LHAT_NODE_INDEX: {
+            // 02 の 13.14改: X.ReturnType is a type spelling the checker
+            // resolved, folded the way a written one is; nothing of X runs.
+            // Unchecked, it stays a member read the machine answers.
+            if (node->kind == LHAT_NODE_MEMBER && node->v.access.type_spelling) {
+                load_type_constant(
+                    c, (const LhatType *)node->v.access.argument->checked_type,
+                    into);
+                return;
+            }
             // 02 の 14.8改2: number^.pi and the rest are constants, loaded
             // as such -- the checker already refused any other name there.
             const LhatNode *on = node->v.access.target;

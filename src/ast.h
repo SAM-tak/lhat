@@ -301,6 +301,11 @@ struct LhatNode {
             // so an arm met before this one came from the writer's own type
             // and is refused as ever.
             bool nil_chain_end;
+            // 02 の 13.14改: the checker read this MEMBER as a type spelling
+            // (X.ReturnType) and stamped what it names on `argument`. The
+            // compiler folds it into a descriptor constant, and a let^
+            // binding it names a type.
+            bool type_spelling;
         } access;
 
         struct {

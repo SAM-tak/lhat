@@ -50,6 +50,23 @@ void chk_member_declared_at(Checker *c, LhatTypeMember *member,
 #endif
 }
 
+void chk_kind_declared_at(Checker *c, LhatType *kind, const LhatNode *at)
+{
+#if LHAT_WITH_RESOLUTIONS
+    if (kind == NULL || at == NULL) {
+        return;
+    }
+    kind->v.error.declared_at = at->offset;
+    kind->v.error.declared_in = c->lexer != NULL && c->lexer->source != NULL
+                                    ? c->lexer->source->name
+                                    : NULL;
+#else
+    (void)c;
+    (void)kind;
+    (void)at;
+#endif
+}
+
 #if LHAT_WITH_RESOLUTIONS
 // 07 の 4 章: what a written name turned out to mean. Kept so that a tool
 // reads the walk's own answer rather than resolving 8 章's scoping a second
@@ -110,9 +127,14 @@ void chk_record_typed_resolution(Checker *c, const LhatNode *at,
 }
 
 
-void chk_record_member_resolution(Checker *c, const LhatNode *at,
-                                  LhatType *type,
-                                  const LhatTypeMember *member, bool builtin)
+// A name whose meaning was found somewhere other than a scope -- in a type
+// (14.10), in the set that declared it (04 の 2.2, 19 章), in the unit a
+// require^ reached (05 の 5 章). `path` is the unit `definition` is an offset
+// into, and doubles as whether there is a place at all: NULL is the "no
+// place to point at" check.h describes, which a host registration and a
+// built-in keep.
+static void record_placed(Checker *c, const LhatNode *at, LhatType *type,
+                          uint32_t definition, const char *path, bool builtin)
 {
     LhatCheckResult *r = c->result;
     if (at == NULL || at->end <= at->offset) {
@@ -124,9 +146,9 @@ void chk_record_member_resolution(Checker *c, const LhatNode *at,
     LhatResolution *entry = &r->resolutions[r->resolution_count++];
     entry->use = at->offset;
     entry->use_end = at->end;
-    entry->definition = 0;
-    entry->has_definition = false;
-    entry->definition_path = NULL;
+    entry->definition = path != NULL ? definition : 0;
+    entry->has_definition = path != NULL;
+    entry->definition_path = path;
     // Neither question applies to any of these. A member is not what a
     // signature declared, and 8.9's let^/var^ is about a name a scope holds
     // -- what a table's member may be written through is 15.1改 and 05 の
@@ -136,16 +158,31 @@ void chk_record_member_resolution(Checker *c, const LhatNode *at,
     entry->is_parameter = false;
     entry->immutable = false;
     entry->builtin = builtin;
+    entry->type = type;
+}
+
+void chk_record_member_resolution(Checker *c, const LhatNode *at,
+                                  LhatType *type,
+                                  const LhatTypeMember *member, bool builtin)
+{
     // 14.10 looks a member up in a type, and the type says where it was
     // written -- in this unit or in the one that published it (05 の 6.1).
-    // Nobody wrote a host registration or a built-in, and those keep the
-    // "no place to point at" the paragraph above describes.
-    if (member != NULL && member->declared_in != NULL) {
-        entry->definition = member->declared_at;
-        entry->has_definition = true;
-        entry->definition_path = member->declared_in;
-    }
-    entry->type = type;
+    record_placed(c, at, type, member != NULL ? member->declared_at : 0,
+                  member != NULL ? member->declared_in : NULL, builtin);
+}
+
+void chk_record_kind_resolution(Checker *c, const LhatNode *at, LhatType *type,
+                                const LhatType *kind)
+{
+    record_placed(c, at, type, kind != NULL ? kind->v.error.declared_at : 0,
+                  kind != NULL ? kind->v.error.declared_in : NULL, false);
+}
+
+void chk_record_unit_resolution(Checker *c, const LhatNode *at,
+                                LhatType *exports, const char *unit_path)
+{
+    // The whole unit is what was named, so its start is the place.
+    record_placed(c, at, exports, 0, unit_path, false);
 }
 
 static int compare_resolutions(const void *a, const void *b)
@@ -842,11 +879,116 @@ static void record_type_name(Checker *c, const LhatNode *at, LhatType *type)
 #endif
 }
 
-static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
+// The same two, where the name was found in something that knows where it
+// was written -- so a reader can be sent there, which a bare type cannot say.
+static void record_type_member(Checker *c, const LhatNode *at, LhatType *type,
+                               const LhatTypeMember *member)
 {
-    LhatType *outer = chk_resolve_type(c, node->v.access.target);
+#if LHAT_WITH_RESOLUTIONS
+    if (at != NULL && type != NULL) {
+        chk_record_member_resolution(c, at, type, member, false);
+    }
+#else
+    (void)c;
+    (void)at;
+    (void)type;
+    (void)member;
+#endif
+}
+
+static void record_type_kind(Checker *c, const LhatNode *at, LhatType *kind)
+{
+#if LHAT_WITH_RESOLUTIONS
+    if (at != NULL && kind != NULL) {
+        chk_record_kind_resolution(c, at, kind, kind);
+    }
+#else
+    (void)c;
+    (void)at;
+    (void)kind;
+#endif
+}
+
+// 02 の 13.14改: what X names, for X.ReturnType -- a function: a let^- or
+// var^-bound value, a signature alias, a unit's export, or another
+// ReturnType (a function answering a function). The name is read where a
+// value's is (05 の 2.2), and the declaration flag or the value's own type
+// says what it is: a function value never passes names_a_type, so this is
+// where it is looked at directly. NULL where nothing is found.
+static LhatType *function_named_by(Checker *c, const LhatNode *node)
+{
     const char *name = NULL;
     size_t length = 0;
+    if (node->kind == LHAT_NODE_MEMBER) {
+        if (!chk_node_name(c, node->v.access.argument, &name, &length)) {
+            return NULL;
+        }
+        if (chk_name_is(name, length, "ReturnType")) {
+            return chk_resolve_type(c, node);
+        }
+        LhatType *outer = chk_resolve_type(c, node->v.access.target);
+        if (outer == NULL || (outer->kind != LHAT_TYPE_TABLE &&
+                              outer->kind != LHAT_TYPE_HOSTVALUE)) {
+            return NULL;
+        }
+        const LhatTypeMember *member = chk_find_member(outer, name, length);
+        if (member == NULL) {
+            return NULL;
+        }
+        LhatType *named = member->names_type && member->named_type != NULL
+                              ? member->named_type
+                              : member->type;
+        record_type_member(c, node->v.access.argument, named, member);
+        return named;
+    }
+    if (!chk_node_name(c, node, &name, &length)) {
+        return NULL;
+    }
+    Scope *found_in = NULL;
+    Binding *declared = chk_scope_find(c->scope, name, length, &found_in);
+    if (declared == NULL) {
+        return NULL;
+    }
+    LhatType *named = declared->names_type && declared->named_type != NULL
+                          ? declared->named_type
+                          : declared->type;
+    record_type_name(c, node, named);
+    return named;
+}
+
+// 02 の 13.14改: X.ReturnType -- what a call of X answers, as a type. A
+// yielding body's is the coroutine (15.5); a signature answering no value
+// (13.2) has none, and says so rather than answering nil^.
+static LhatType *resolve_return_type(Checker *c, const LhatNode *node)
+{
+    LhatType *callee = function_named_by(c, node->v.access.target);
+    if (callee != NULL && callee->kind == LHAT_TYPE_UNKNOWN) {
+        return callee;  // already reported, one step in
+    }
+    if (callee == NULL || callee->kind != LHAT_TYPE_FUNC) {
+        chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+        return chk_simple(c, LHAT_TYPE_UNKNOWN);
+    }
+    LhatType *answer = chk_call_answer(c, callee);
+    if (answer == NULL || answer->kind == LHAT_TYPE_NONE) {
+        chk_report(c, node, LHAT_CHECK_ERR_NO_RESULT_TYPE);
+        return chk_simple(c, LHAT_TYPE_UNKNOWN);
+    }
+    record_type_name(c, node->v.access.argument, answer);
+    return answer;
+}
+
+static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    // 13.14改: read before the left side is, since that side names a value
+    // rather than a type.
+    if (chk_node_name(c, node->v.access.argument, &name, &length) &&
+        chk_name_is(name, length, "ReturnType")) {
+        return resolve_return_type(c, node);
+    }
+    LhatType *outer = chk_resolve_type(c, node->v.access.target);
     if (outer == NULL || !chk_node_name(c, node->v.access.argument, &name, &length)) {
         chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
@@ -855,7 +997,7 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     if (outer->kind == LHAT_TYPE_ERROR_SET || outer->kind == LHAT_TYPE_ENUM) {
         LhatType *kind = chk_kind_of_set(outer, name, length);
         if (kind != NULL) {
-            record_type_name(c, node->v.access.argument, kind);
+            record_type_kind(c, node->v.access.argument, kind);
             return kind;
         }
         chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
@@ -903,14 +1045,15 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
         // reading below.
         if (member != NULL && member->names_type &&
             member->named_type != NULL) {
-            record_type_name(c, node->v.access.argument, member->named_type);
+            record_type_member(c, node->v.access.argument, member->named_type,
+                               member);
             return member->named_type;
         }
         // 2.2 again: a unit publishes values as well as types, and only the
         // types among them may be written here.
         if (member != NULL && names_a_type(member->type)) {
             LhatType *written = as_written_type(member->type);
-            record_type_name(c, node->v.access.argument, written);
+            record_type_member(c, node->v.access.argument, written, member);
             return written;
         }
     }
@@ -3503,6 +3646,8 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
                    "takes none";
         case LHAT_CHECK_ERR_NO_MEMBER:
             return "this value has no such member";
+        case LHAT_CHECK_ERR_NO_RESULT_TYPE:
+            return "this signature answers no value, so it has no ReturnType";
         case LHAT_CHECK_ERR_KIND_AS_VALUE:
             return "a kind is a type, not a value; error^Kind{ ... } is what "
                    "makes one";

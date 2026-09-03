@@ -111,6 +111,107 @@ static void test_parse_discrimination(void)
     unit_dispose(&u);
 }
 
+// 02 の 13.14改: X.ReturnType is what a call of X answers, written where a
+// type stands or as the descriptor a written type is.
+static void test_return_type(void)
+{
+    Unit u;
+
+    // The asked-for use: a signature borrows what another function answers
+    // instead of writing it out again.
+    LHAT_TEST("ReturnType of a function value stands in a signature");
+    check_text(&u,
+               "let^ gen = f^ n:number^ -> number^|nil^ { return^ n }\n"
+               "let^ wrap = f^ -> gen.ReturnType { return^ gen(1) }\n"
+               "let^ x : gen.ReturnType = wrap()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("ReturnType of a signature alias");
+    check_text(&u,
+               "let^ Sig = f^number^ -> string^;\n"
+               "let^ s : Sig.ReturnType = \"x\"\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 15.5: a call of a yielding body answers the coroutine, so that is
+    // what its ReturnType is -- and c^{ … } is not taken apart further.
+    LHAT_TEST("a yielding body's ReturnType is the coroutine");
+    check_text(&u,
+               "let^ walk = p^ n:number^ { yield^ n }\n"
+               "let^ co : walk.ReturnType = walk(1)\n"
+               "let^ first = co.start()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("ReturnType of a ReturnType, and in a union");
+    check_text(&u,
+               "let^ Inner = f^ -> number^;\n"
+               "let^ maker = f^ -> Inner { return^ f^ -> number^ { return^ 1 } }\n"
+               "let^ n : maker.ReturnType.ReturnType = 1\n"
+               "let^ m : maker.ReturnType.ReturnType|nil^ = nil^\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.14's rule for the value: a let^ binding it names the type, a var^
+    // holds a descriptor and names nothing.
+    LHAT_TEST("let^ binds a ReturnType as an alias");
+    check_text(&u,
+               "let^ gen = f^ -> number^ { return^ 1 }\n"
+               "let^ R = gen.ReturnType\n"
+               "let^ x : R = 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but a var^ bound to one is not a type name");
+    check_text(&u,
+               "let^ gen = f^ -> number^ { return^ 1 }\n"
+               "var^ R = gen.ReturnType\n"
+               "let^ x : R = 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+    unit_dispose(&u);
+
+    // The function may be var^-bound: its type is still the binding's.
+    LHAT_TEST("a var^-bound function still has a ReturnType");
+    check_text(&u,
+               "var^ gen = f^ -> number^ { return^ 1 }\n"
+               "let^ x : gen.ReturnType = 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a name that is no function has none");
+    check_text(&u,
+               "let^ n = 1\n"
+               "let^ x : n.ReturnType = 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+    unit_dispose(&u);
+
+    // 13.2: no '-> …' is no result, which is not nil^ -- so there is
+    // nothing to name, in either position.
+    LHAT_TEST("a signature answering no value has none, as a type");
+    check_text(&u,
+               "let^ run = p^ { }\n"
+               "let^ x : run.ReturnType = 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_RESULT_TYPE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and as a value");
+    check_text(&u,
+               "let^ run = p^ { }\n"
+               "let^ R = run.ReturnType\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_RESULT_TYPE);
+    unit_dispose(&u);
+
+    // The fold runs nothing of X, so a call may not stand there.
+    LHAT_TEST("only a run of names may stand before a ReturnType value");
+    check_text(&u,
+               "let^ Inner = f^ -> number^;\n"
+               "let^ maker = f^ -> Inner { return^ f^ -> number^ { return^ 1 } }\n"
+               "let^ R = maker().ReturnType\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+}
+
 static void test_runtime(void)
 {
     Run r;
@@ -128,8 +229,22 @@ static void test_runtime(void)
              "let^ N = number^|nil^\n"
              "let^ one : N = 1\n"
              "if^ typeof^(one) = number^|nil^ { n := n + 1000 }\n"
+             // 13.14改: the fold and the reflection spell the same coroutine.
+             "let^ walk = p^ k:number^ { yield^ k }\n"
+             "let^ co = walk(1)\n"
+             "if^ walk.ReturnType.signature = typeof^(co).signature {"
+             " n := n + 10000 }\n"
              "return^ n\n");
-    CHECK_INTEGER(&r, 1121);
+    CHECK_INTEGER(&r, 11121);
+    run_dispose(&r);
+
+    // 03 の 4.2: nothing checked, so nothing folded -- the machine answers
+    // the member off the closure's own signature.
+    LHAT_TEST("13.14改: unchecked, the machine answers a closure's ReturnType");
+    run_text(&r,
+             "let^ f = f^ -> number^ { return^ 1 }\n"
+             "return^ f.ReturnType.signature\n");
+    CHECK_STRING(&r, "number^");
     run_dispose(&r);
 }
 
@@ -137,6 +252,7 @@ int main(void)
 {
     test_aliases();
     test_parse_discrimination();
+    test_return_type();
     test_runtime();
     return lhat_test_report("test_check_typedef");
 }

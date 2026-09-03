@@ -22,7 +22,8 @@ typedef struct {
 } Library;
 
 static LhatType *library_resolve(void *context, const char *path, size_t length,
-                                 const char **module_name)
+                                 const char **module_name,
+                                 const char **unit_path)
 {
     Library *lib = (Library *)context;
     lib->asked = true;
@@ -33,6 +34,9 @@ static LhatType *library_resolve(void *context, const char *path, size_t length,
     // 05 の 3 章: what the provider declared, which 5.5 binds it under.
     if (module_name != NULL) {
         *module_name = lib->provider.checked.module_name;
+    }
+    if (unit_path != NULL) {
+        *unit_path = lib->provider.source.name;
     }
     return lib->provider.checked.exports;
 }
@@ -80,11 +84,16 @@ static void test_exported_alias(void)
     lib.expected_path = "lib/shapes.lh";
     check_against(&u, &lib,
                   "public^ let^ Vec = t^{number^[2]}|nil^\n"
-                  "public^ let^ Op = f^number^ -> number^;\n",
+                  "public^ let^ Op = f^number^ -> number^;\n"
+                  "public^ let^ dist = f^ a:number^ -> string^ { return^ \"\" }\n",
                   "var^ m = require^ \"lib/shapes.lh\"\n"
                   "let^ v : m.Vec = {1, 2}\n"
                   "let^ g : m.Op = f^ x { return^ x + 1 }\n"
-                  "let^ n : number^ = g(1)\n");
+                  "let^ n : number^ = g(1)\n"
+                  // 13.14改: an export's ReturnType, of a value and of an
+                  // alias.
+                  "let^ d : m.dist.ReturnType = \"d\"\n"
+                  "let^ o : m.Op.ReturnType = 2\n");
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
 }

@@ -1788,6 +1788,18 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         }
     }
 
+    // 15.10: when the body being checked is calling itself, its result is
+    // still being worked out, and 03 の 3.4 reads the NULL to mean exactly
+    // that -- so a self-call has to keep handing the NULL back.
+    if (!callee->v.func.yields && callee->v.func.result == NULL &&
+        callee == c->this_type) {
+        return NULL;
+    }
+    return chk_call_answer(c, callee);
+}
+
+LhatType *chk_call_answer(Checker *c, const LhatType *callee)
+{
     // 15.5: calling a yieldable procedure answers a coroutine rather than
     // running it. infer_func puts that on the signature as it settles the
     // three types, and every other reader takes it from there; a signature a
@@ -1799,11 +1811,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     // 13.2: a signature with no result answers no value. That is not a gap in
     // inference, so it is not spelled with a NULL -- 03 の 3.4 kept it apart
     // from nil^, and this is where that stays observable.
-    //
-    // 15.10: except when the body being checked is calling itself. Its result
-    // is still being worked out, and 03 の 3.4 reads the NULL to mean exactly
-    // that -- so a self-call has to keep handing the NULL back.
-    if (callee->v.func.result == NULL && callee != c->this_type) {
+    if (callee->v.func.result == NULL) {
         return chk_simple(c, LHAT_TYPE_NONE);
     }
     return callee->v.func.result;
@@ -2129,6 +2137,23 @@ static bool all_error_arms(const LhatType *type)
     return true;
 }
 
+// 02 の 13.14改: a run of names and nothing else -- parser.c's names_only,
+// asked again of what stands before a ReturnType.
+static bool run_of_names(const LhatNode *node)
+{
+    while (node != NULL && node->kind == LHAT_NODE_MEMBER &&
+           !node->v.access.nil_safe) {
+        const LhatNode *argument = node->v.access.argument;
+        if (argument == NULL || (argument->kind != LHAT_NODE_IDENT &&
+                                 argument->kind != LHAT_NODE_HAT_IDENT)) {
+            return false;
+        }
+        node = node->v.access.target;
+    }
+    return node != NULL && (node->kind == LHAT_NODE_IDENT ||
+                            node->kind == LHAT_NODE_HAT_IDENT);
+}
+
 LhatType *chk_infer_member(Checker *c, const LhatNode *node)
 {
     // 02 の 14.8改2: number^ carries a few static members -- the constants.
@@ -2158,6 +2183,7 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
     // a.b through this same function, and clearing on the way in would leave
     // b's record standing where c's was asked for.
     c->resolved_member = NULL;
+    c->resolved_kind = NULL;
 #endif
     const char *name = NULL;
     size_t length = 0;
@@ -2190,6 +2216,28 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
     // unlike relaxed it says so in the answer (nil_propagated).
     if (!c->strict || node->v.access.nil_safe) {
         target = chk_without_nil_arm(c, target);
+    }
+
+    // 02 の 13.14改: X.ReturnType -- what a call of X answers, as the
+    // descriptor a written type is (13.14). Only a run of names may stand
+    // for X: the compiler folds the whole access into a constant, so a call
+    // written there would never run. The answer is stamped on the name the
+    // access ends in, for that fold and for the let^ that binds an alias to
+    // it; the flag is what says the stamp is there.
+    if (target->kind == LHAT_TYPE_FUNC &&
+        chk_name_is(name, length, "ReturnType")) {
+        if (!run_of_names(node->v.access.target)) {
+            chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
+            return chk_simple(c, LHAT_TYPE_UNKNOWN);
+        }
+        LhatType *answer = chk_call_answer(c, target);
+        if (answer == NULL || answer->kind == LHAT_TYPE_NONE) {
+            chk_report(c, node, LHAT_CHECK_ERR_NO_RESULT_TYPE);
+            return chk_simple(c, LHAT_TYPE_UNKNOWN);
+        }
+        ((LhatNode *)node->v.access.argument)->checked_type = answer;
+        ((LhatNode *)node)->v.access.type_spelling = true;
+        return chk_typeinfo_type(c);
     }
 
     // 04 の 2.3: every kind carries message and cause without declaring them
@@ -2305,6 +2353,11 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         if (target->kind == LHAT_TYPE_ENUM) {
             LhatType *member = chk_kind_of_set(target, name, length);
             if (member != NULL) {
+#if LHAT_WITH_RESOLUTIONS
+                // 07 の 4 章: the wide type is the answer, but the member is
+                // what the name reached and where it was written.
+                c->resolved_kind = member;
+#endif
                 return target;
             }
             if (chk_name_is(name, length, "value")) {
@@ -5500,17 +5553,26 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             // member left over is whatever ran before it -- not this one.
             const LhatTypeMember *found =
                 narrowed != NULL ? NULL : c->resolved_member;
+            // 02 の 19 章: an enum's member read in value position answers
+            // the wide type, and what the name reached is left the same way
+            // a member is -- the place a reader is sent to is the member's.
+            const LhatType *kind = narrowed != NULL ? NULL : c->resolved_kind;
             // 14.19, 14.17改, 15.6改: an answer with no member record behind
             // it is the language's own -- a host registration leaves a real
             // member (with nothing written for declared_in), and a def^ or a
             // t^{ … } leaves one that says where it stands. A miss answers
             // unknown^ and is nobody's.
-            bool builtin = narrowed == NULL && found == NULL &&
+            bool builtin = narrowed == NULL && found == NULL && kind == NULL &&
                            answer != NULL &&
                            answer->kind != LHAT_TYPE_UNKNOWN &&
                            answer->kind != LHAT_TYPE_PENDING;
-            chk_record_member_resolution(c, node->v.access.argument, answer,
-                                         found, builtin);
+            if (kind != NULL) {
+                chk_record_kind_resolution(c, node->v.access.argument, answer,
+                                           kind);
+            } else {
+                chk_record_member_resolution(c, node->v.access.argument,
+                                             answer, found, builtin);
+            }
 #endif
             return answer;
         }
@@ -5880,13 +5942,19 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
             const char *module_name = NULL;
+            const char *unit_path = NULL;
             LhatType *exports = c->require.resolve(
                 c->require.context, c->lexer->strings + path->v.string.offset,
-                path->v.string.length, &module_name);
+                path->v.string.length, &module_name, &unit_path);
             if (exports == NULL) {
                 chk_report(c, node, LHAT_CHECK_ERR_REQUIRE_FAILED);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
+#if LHAT_WITH_RESOLUTIONS
+            // 07 の 4 章: the written path names a unit the way a name names
+            // a binding, and the resolver has just found it.
+            chk_record_unit_resolution(c, path, exports, unit_path);
+#endif
             // 5.3: running the unit is what registers it, and this is where
             // it runs -- so L^.modules can be said to hold it from here on.
             chk_register_module_type(c, module_name, exports);

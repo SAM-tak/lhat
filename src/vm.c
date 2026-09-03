@@ -4251,6 +4251,31 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     SET_R(a, lhat_object((LhatObject *)native));
                     break;
                 }
+                // 02 の 13.14改: a closure answers its ReturnType -- what a
+                // call of it answers, off the reflection typeof^ makes (a
+                // yielding body's is the coroutine). Only a compile that
+                // never checked reaches here: the checker folds the access
+                // into a constant. Any other name falls through to what a
+                // closure answered before.
+                if (lhat_is_object_kind(R(b), LHAT_OBJECT_SUBROUTINE) &&
+                    lhat_is_object_kind(member_key, LHAT_OBJECT_STRING) &&
+                    ((const LhatString *)lhat_as_object(member_key))->length ==
+                        10 &&
+                    memcmp(((const LhatString *)lhat_as_object(member_key))
+                               ->text,
+                           "ReturnType", 10) == 0) {
+                    LhatRuntimeType *signature = tag_type(&m->objects, R(b));
+                    if (signature == NULL) {
+                        return finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
+                                      lhat_nil(), at);
+                    }
+                    if (signature->result == NULL) {
+                        return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(),
+                                      at);
+                    }
+                    SET_R(a, lhat_object((LhatObject *)signature->result));
+                    break;
+                }
                 // 02 の 14.16: a type-info value carries exactly one member.
                 // It is not a table, so the ordinary lookup below never sees
                 // it -- this is what makes '.signature' answer something.

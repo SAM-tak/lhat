@@ -512,6 +512,10 @@ typedef struct {
     // after it returns, so the one that mattered is the last one written --
     // the target of a member access is inferred before its own lookup runs.
     const LhatTypeMember *resolved_member;
+    // The same, for 02 の 19 章's enum member read in value position: what
+    // is answered is the wide ENUM type, so the singleton the name reached
+    // -- and with it the place it was written -- is left here instead.
+    const LhatType *resolved_kind;
 #endif
     enum YieldContext {
         YIELD_CTX_NONE,
@@ -539,6 +543,17 @@ void chk_record_typed_resolution(Checker *c, const LhatNode *at,
 void chk_record_member_resolution(Checker *c, const LhatNode *at,
                                   LhatType *type,
                                   const LhatTypeMember *member, bool builtin);
+// The same, for 04 の 2.2's error kind and 19 章's enum member: found in
+// the set that declared them, and the type carries the place (type.h's
+// v.error.declared_at). `type` is what the name answers there -- the kind
+// itself in type position, the wide ENUM in value position.
+void chk_record_kind_resolution(Checker *c, const LhatNode *at, LhatType *type,
+                                const LhatType *kind);
+// And for a require^'s written path: what it reaches is a whole unit, so the
+// place is that unit's start. `unit_path` is the resolver's answer, or NULL
+// when it gave none -- then the record has the exports and no place.
+void chk_record_unit_resolution(Checker *c, const LhatNode *at,
+                                LhatType *exports, const char *unit_path);
 
 void chk_settle_resolutions(LhatCheckResult *result);
 #endif
@@ -550,6 +565,8 @@ void chk_settle_resolutions(LhatCheckResult *result);
 // registration, a built-in) simply have none to pass.
 void chk_member_declared_at(Checker *c, LhatTypeMember *member,
                            const LhatNode *at);
+// The same mark on an error kind or an enum member (type.h's v.error).
+void chk_kind_declared_at(Checker *c, LhatType *kind, const LhatNode *at);
 void chk_report_named(Checker *c, const LhatNode *at,
                       LhatCheckErrorCode code, const char *name,
                       size_t length);
@@ -693,6 +710,9 @@ bool chk_is_hostvalue(const LhatType *type);
 LhatType *chk_infer(Checker *c, const LhatNode *node);
 LhatType *chk_environment_type(Checker *c);
 LhatType *chk_typeinfo_type(Checker *c);
+// 15.5 with 13.2: what a call of this signature answers -- the coroutine a
+// yielding body makes, its result, or NONE where it answers no value.
+LhatType *chk_call_answer(Checker *c, const LhatType *callee);
 LhatType *chk_cast_failure_type(Checker *c);
 void chk_check_define(Checker *c, const LhatNode *node);
 LhatType *chk_module_root_table(Checker *c);

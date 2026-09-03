@@ -500,12 +500,21 @@ void chk_check_define(Checker *c, const LhatNode *node)
                 // some other descriptor -- and the flag is beside the type
                 // rather than in it, since what a read of the name answers
                 // (the typeinfo above) is not what the name stands for.
+                //
+                // 13.14改: and to X.ReturnType, which the checker read as one
+                // and stamped on the name the access ends in.
+                const LhatNode *spelling =
+                    value == NULL                            ? NULL
+                    : value->kind == LHAT_NODE_TYPE_VALUE    ? value
+                    : value->kind == LHAT_NODE_MEMBER &&
+                            value->v.access.type_spelling
+                        ? value->v.access.argument
+                        : NULL;
                 b->names_type = node->v.binding.immutable && tuple == NULL &&
-                                value != NULL &&
-                                value->kind == LHAT_NODE_TYPE_VALUE &&
-                                value->checked_type != NULL;
+                                spelling != NULL &&
+                                spelling->checked_type != NULL;
                 b->named_type =
-                    b->names_type ? (LhatType *)value->checked_type : NULL;
+                    b->names_type ? (LhatType *)spelling->checked_type : NULL;
                 // 15.1改. A destructuring bind takes pieces out of something
                 // that was already there (13.10), so nothing it binds is new
                 // whatever the source looks like.
@@ -835,13 +844,19 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
     }
 
     const char *module_name = NULL;
+    const char *unit_path = NULL;
     LhatType *exports = c->require.resolve(
         c->require.context, c->lexer->strings + path->v.string.offset,
-        path->v.string.length, &module_name);
+        path->v.string.length, &module_name, &unit_path);
     if (exports == NULL) {
         chk_report(c, node, LHAT_CHECK_ERR_REQUIRE_FAILED);
         return;
     }
+#if LHAT_WITH_RESOLUTIONS
+    // 07 の 4 章: the unit was found whether or not it declared a module^, so
+    // the path is recorded before 3.2 has its say below.
+    chk_record_unit_resolution(c, path, exports, unit_path);
+#endif
     // 3.2 lets a unit declare no path. Then there is nothing to bind it
     // under, and the reader has to pick a name with let^ instead.
     if (module_name == NULL || *module_name == '\0') {
@@ -1739,6 +1754,7 @@ static void check_errordef(Checker *c, const LhatNode *node)
         }
         LhatType *type = lhat_type_error_kind(c->result->types, set, kind_name,
                                               kind_length);
+        chk_kind_declared_at(c, type, kind->v.named.name);
         for (const LhatNode *field = kind->v.named.members; field != NULL;
              field = field->next) {
             const char *field_name = NULL;
@@ -1803,8 +1819,11 @@ static void check_enumdef(Checker *c, const LhatNode *node)
             member->v.named.members != NULL
                 ? chk_infer(c, member->v.named.members)
                 : chk_simple(c, LHAT_TYPE_NUMBER);
-        lhat_type_enum_member(c->result->types, decl, member_name,
-                              member_length, value_type);
+        chk_kind_declared_at(c,
+                             lhat_type_enum_member(c->result->types, decl,
+                                                   member_name, member_length,
+                                                   value_type),
+                             member->v.named.name);
     }
 }
 

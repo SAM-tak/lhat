@@ -53,6 +53,8 @@ typedef enum {
                                         // variadic tail, and this callee has
                                         // none
     LHAT_CHECK_ERR_NO_MEMBER,           // 14.10: the structure lacks it
+    LHAT_CHECK_ERR_NO_RESULT_TYPE,      // 13.14改: X.ReturnType of a
+                                        // signature answering no value (13.2)
     LHAT_CHECK_ERR_KIND_AS_VALUE,       // 04 の 2.3: a kind of the errordef^
                                         // written where a value was wanted.
                                         // The declaration makes types and no
@@ -371,7 +373,10 @@ typedef struct {
     // resolution belongs to, and a borrowed path (the member's declared_in,
     // type.h) for a name whose meaning was written somewhere else -- 05 の
     // 6.1 publishes a type, and a member of it was written in the unit that
-    // published it.
+    // published it. Two more meanings are found the same way and recorded
+    // the same way: 04 の 2.2's error kind and 19 章's enum member carry
+    // their written place on the type (type.h's v.error), and a require^'s
+    // path names a whole unit, whose `definition` is 0 -- its start.
     const char *definition_path;
     // 14.19 and 14.17改 with 15.6改: the language answered this member
     // itself. Nothing wrote it and no host registered it -- `length` on a
@@ -457,9 +462,15 @@ const LhatResolution *lhat_check_resolution_at(const LhatCheckResult *result,
 // `module_name` is filled with the path 3 章 had that unit declare, or left
 // NULL when it declared none (3.2). 5.5 binds the short form under it, so
 // the text has to outlive the call -- the unit owns it.
+//
+// `unit_path` is filled with the path the resolver holds the unit under, or
+// left NULL when it has none to give. 07 の 4 章 records it against the
+// written path, so that a reader standing on `"lib.lh"` can be sent to the
+// file; it too has to outlive the call, and the unit owns it likewise.
 typedef LhatType *(*LhatRequireResolver)(void *context, const char *path,
                                          size_t length,
-                                         const char **module_name);
+                                         const char **module_name,
+                                         const char **unit_path);
 
 typedef struct {
     LhatRequireResolver resolve;
