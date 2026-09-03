@@ -185,6 +185,17 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             for (size_t which = 0; which < 2; which++) {
             for (const LhatType *up = chains[which]; up != NULL;
                  up = up->v.table.base) {
+                // 05 の 8.8改: a host type on the chain is named, not copied.
+                // Its members are the host's whole API -- every signature of
+                // every method, and twice over for a definition and its
+                // instance -- and what a value holds of it is found the way
+                // a lookup finds a lent member. So the descriptor keeps the
+                // tag and stops here; the tag's own base chain is what
+                // satisfies (object.c) walks, as it does for HOSTDATA.
+                if (up->v.table.hostdata_tag != NULL) {
+                    rt->hostdata_tag = up->v.table.hostdata_tag;
+                    break;
+                }
                 for (const LhatTypeMember *m = up->v.table.members;
                      m != NULL; m = m->next) {
                     if (lhat_type_find_member(type, m->name,

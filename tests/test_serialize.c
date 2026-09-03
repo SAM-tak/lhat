@@ -852,6 +852,63 @@ static void test_reflection(void)
     lhat_free(bytes);
 }
 
+// 05 の 8.8改: a wrapper over a wide host type. The export descriptor names
+// the host type by its tag rather than copying its members, so the bytes do
+// not grow with the host's API -- which is what took a 1.4KB unit to 160KB.
+static void test_host_wrapper_size(void)
+{
+    LHAT_TEST("a wrapper's descriptor holds its own members and a tag");
+    {
+        Disk disk;
+        memset(&disk, 0, sizeof disk);
+        disk_text(&disk, "main.lh",
+                  "import^ k\n"
+                  "public^ let^ Wrap = def^{\n"
+                  "  self^{ abstract^ h : k.T },\n"
+                  "  delegate^ self^.h\n"
+                  "}\n");
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &disk);
+        const LhatHostDataTag *tag =
+            lhat_register_hostdata_type(&program, "k", "T");
+        LHAT_CHECK(tag != NULL, "hostdata registered");
+        for (int i = 0; i < 64; i++) {
+            char name[16];
+            snprintf(name, sizeof name, "m%d", i);
+            LHAT_CHECK(lhat_register_member(
+                           &program, "k", "T", name,
+                           "f^self^, number^, string^ -> number^|nil^;",
+                           host_noop, NULL),
+                       "member %s", name);
+        }
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+                       lhat_program_compile(&program),
+                   "built");
+        const LhatRuntimeType *wrap =
+            root != NULL ? lhat_unit_export_type(root, "Wrap") : NULL;
+        LHAT_CHECK(wrap != NULL && wrap->kind == LHAT_TYPE_RT_TABLE &&
+                       wrap->instance != NULL,
+                   "the export is a definition");
+        if (wrap != NULL && wrap->instance != NULL) {
+            LHAT_CHECK_EQ_INT(wrap->instance->member_count, 1);
+            LHAT_CHECK(wrap->instance->hostdata_tag == tag,
+                       "and its instances hold a k.T");
+            LHAT_CHECK(wrap->hostdata_tag == NULL,
+                       "the definition itself holds none");
+        }
+        uint8_t *bytes = NULL;
+        size_t length = 0;
+        LHAT_CHECK(root != NULL &&
+                       lhat_unit_write_binary(root, false, &bytes, &length),
+                   "wrote");
+        LHAT_CHECK(length < 2048,
+                   "%zu bytes for a wrapper over 64 methods", length);
+        lhat_free(bytes);
+        lhat_program_dispose(&program);
+    }
+}
+
 int main(void)
 {
     test_roundtrip();
@@ -862,5 +919,6 @@ int main(void)
     test_exports();
     test_signatures();
     test_reflection();
+    test_host_wrapper_size();
     return lhat_test_report("test_serialize");
 }

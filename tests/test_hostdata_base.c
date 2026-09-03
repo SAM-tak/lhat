@@ -570,6 +570,26 @@ static const char *class_new_takes(LhatMachine *machine, LhatValue definition)
     return takes->hostdata_tag->name;
 }
 
+// One field of a table the program returned.
+static LhatValue field_of(LhatMachine *machine, LhatValue table,
+                          const char *name)
+{
+    LhatValue key = lhat_nil();
+    if (!lhat_is_object_kind(table, LHAT_OBJECT_TABLE) ||
+        !lhat_machine_make_string(machine, name, strlen(name), &key)) {
+        return lhat_nil();
+    }
+    return lhat_table_get((const LhatTable *)lhat_as_object(table), key);
+}
+
+// What a public definition's instances are, off the export descriptor.
+static const LhatRuntimeType *instance_type(const LhatUnit *unit,
+                                            const char *name)
+{
+    const LhatRuntimeType *definition = lhat_unit_export_type(unit, name);
+    return definition != NULL ? definition->instance : NULL;
+}
+
 static void test_value_type(void)
 {
     LhatProgram program;
@@ -743,6 +763,95 @@ static void test_delegate_to_host(void)
         program_with(&program, &disk, files, 1);
         LHAT_CHECK(register_scene(&program, false), "registered");
         LHAT_CHECK(!checked_clean(&program), "a wrapper is not a scene.Node");
+        lhat_program_dispose(&program);
+    }
+
+    // 05 の 8.8改: the wrapper's descriptor names the host type it holds
+    // rather than copying its members -- a class tree's whole API, twice --
+    // and fits^ reaches the held value the way a lookup does: one delegate
+    // step, the tag's base chain included.
+    LHAT_TEST("the wrapper's type names the host type instead of copying it");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ scene\n"
+             "module^ ns.main\n"
+             "public^ let^ Sprite = def^{\n"
+             "    self^{ abstract^ gdobj : scene.Sprite2D },\n"
+             "    override^new = f^ { self^{ gdobj = scene.makeSprite() } },\n"
+             "    delegate^ self^.gdobj\n"
+             "}\n"
+             // The same field, held without delegating.
+             "public^ let^ Plain = def^{\n"
+             "    self^{ abstract^ gdobj : scene.Sprite2D },\n"
+             "    override^new = f^ { self^{ gdobj = scene.makeSprite() } },\n"
+             "}\n"
+             // Asks for the base of what it actually holds.
+             "public^ let^ AsNode = def^{\n"
+             "    self^{ abstract^ gdobj : scene.Node },\n"
+             "    override^new = f^ { self^{ gdobj = scene.makeSprite() } },\n"
+             "    delegate^ self^.gdobj\n"
+             "}\n"
+             "return^ {\n"
+             "    spelt = typeof^(Sprite.new()).signature,\n"
+             "    sprite = Sprite.new(), plain = Plain.new(),\n"
+             "    raw = scene.makeSprite(),\n"
+             "}\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0 &&
+                       lhat_program_compile(&program),
+                   "built");
+        LhatMachine *machine = lhat_machine_new();
+        lhat_program_install(&program, machine);
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+
+        LhatValue spelt = field_of(machine, ran.value, "spelt");
+        LHAT_CHECK(lhat_is_object_kind(spelt, LHAT_OBJECT_STRING) &&
+                       strcmp(((const LhatString *)lhat_as_object(spelt))->text,
+                              "t^{ gdobj : scene.Sprite2D } & scene.Sprite2D") ==
+                           0,
+                   "typeof^ spells the held type after the members: %s",
+                   lhat_is_object_kind(spelt, LHAT_OBJECT_STRING)
+                       ? ((const LhatString *)lhat_as_object(spelt))->text
+                       : "(not a string)");
+
+        LhatValue sprite = field_of(machine, ran.value, "sprite");
+        LhatValue plain = field_of(machine, ran.value, "plain");
+        LhatValue raw = field_of(machine, ran.value, "raw");
+        // 14.16: the run does not build a deep shape out of data, so the
+        // descriptor holding the tag is the checker's -- what the export
+        // answers, and what a compiled fits^ carries.
+        const LhatRuntimeType *sprite_type = instance_type(root, "Sprite");
+        const LhatRuntimeType *plain_type = instance_type(root, "Plain");
+        const LhatRuntimeType *node_type = instance_type(root, "AsNode");
+        LHAT_CHECK(sprite_type != NULL && plain_type != NULL &&
+                       node_type != NULL,
+                   "the exports answered");
+        LHAT_CHECK(sprite_type != NULL &&
+                       sprite_type->kind == LHAT_TYPE_RT_TABLE &&
+                       sprite_type->member_count == 1 &&
+                       sprite_type->hostdata_tag == sprite_tag,
+                   "one member of its own, and the tag");
+        LHAT_CHECK(plain_type != NULL && plain_type->hostdata_tag == NULL,
+                   "holding without delegating names nothing");
+        LHAT_CHECK(lhat_value_satisfies(sprite, sprite_type),
+                   "a wrapper fits its own type");
+        LHAT_CHECK(!lhat_value_satisfies(plain, sprite_type),
+                   "the same field without the delegation does not");
+        LHAT_CHECK(lhat_value_satisfies(sprite, plain_type),
+                   "though the wrapper fits the plain shape");
+        LHAT_CHECK(!lhat_value_satisfies(raw, sprite_type),
+                   "and the host value itself lacks the member");
+        LHAT_CHECK(lhat_value_satisfies(sprite, node_type),
+                   "8.8改: a Sprite2D held is a Node held");
+        LHAT_CHECK(!lhat_runtime_type_equal(sprite_type, plain_type),
+                   "14.9: the tag is part of the shape");
+
+        lhat_machine_dispose(machine);
         lhat_program_dispose(&program);
     }
 }

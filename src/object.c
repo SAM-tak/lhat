@@ -386,6 +386,31 @@ static const LhatTable *members_table_of(LhatValue value)
     return NULL;
 }
 
+static LhatValue delegate_held(const LhatTable *receiver, LhatValue key,
+                               const LhatTable **owner_out);
+
+// 05 の 8.8: identity is the tag alone, so the value has to actually be
+// hostdata -- otherwise there is no tag to compare and the answer is about
+// two different kinds of value.
+//
+// 8.8改: or a tag declared under the asked-for one. The same walk the
+// checker makes (type.c's nominal_derives), which is what keeps
+// 'x fits^ godot.Node' answering the same thing on both sides of 03 の 4.2.
+static bool hostdata_derives(LhatValue value, const LhatHostDataTag *tag)
+{
+    if (!lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {
+        return false;
+    }
+    for (const LhatHostDataTag *at =
+             ((const LhatHostData *)lhat_as_object(value))->tag;
+         at != NULL; at = at->base) {
+        if (at == tag) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
 {
     if (type == NULL) {
@@ -426,6 +451,23 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                                                .name));
                 if (lhat_is_nil(held) ||
                     !lhat_value_satisfies(held, type->members[i].type)) {
+                    return false;
+                }
+            }
+            // 05 の 8.8改: and the host type the structure holds, which the
+            // descriptor names by its tag rather than by copying its members
+            // (rttype.c). The value is the host's own, or reaches one the
+            // way a lookup reaches a lent member -- one delegate step
+            // (14.7改2), the same reading table_get_in makes.
+            if (type->hostdata_tag != NULL &&
+                !hostdata_derives(value, type->hostdata_tag)) {
+                const LhatTable *owner = NULL;
+                LhatValue held =
+                    lhat_is_object_kind(value, LHAT_OBJECT_TABLE)
+                        ? delegate_held((const LhatTable *)lhat_as_object(value),
+                                        lhat_nil(), &owner)
+                        : lhat_nil();
+                if (!hostdata_derives(held, type->hostdata_tag)) {
                     return false;
                 }
             }
@@ -484,27 +526,8 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
         }
         case LHAT_TYPE_RT_ERROR_KIND:
             return lhat_error_is_kind(value, type->error_kind);
-        // 05 の 8.8: identity is the tag alone, so the value has to actually
-        // be hostdata -- otherwise there is no tag to compare and the answer
-        // is about two different kinds of value.
-        //
-        // 8.8改: or a tag declared under the asked-for one. The same walk the
-        // checker makes (type.c's nominal_derives), which is what keeps
-        // 'x fits^ godot.Node' answering the same thing on both sides of
-        // 03 の 4.2.
-        case LHAT_TYPE_RT_HOSTDATA: {
-            if (!lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {
-                return false;
-            }
-            for (const LhatHostDataTag *at =
-                     ((const LhatHostData *)lhat_as_object(value))->tag;
-                 at != NULL; at = at->base) {
-                if (at == type->hostdata_tag) {
-                    return true;
-                }
-            }
-            return false;
-        }
+        case LHAT_TYPE_RT_HOSTDATA:
+            return hostdata_derives(value, type->hostdata_tag);
         // 05 の 8.9: the same rule over the head slot's own tag. A head
         // travels as the first slot of its width, so asking the head is
         // asking the value.
@@ -616,6 +639,26 @@ static bool has_member_named(const LhatRuntimeType *type,
     return false;
 }
 
+static void write_hostdata_name(TypeWriter *w, const LhatHostDataTag *tag)
+{
+    if (tag->module != NULL) {
+        type_put_text(w, tag->module);
+        type_put_text(w, ".");
+    }
+    type_put_text(w, tag->name);
+}
+
+// 05 の 8.8改: the host type a structure holds through its delegate, named
+// by 14.5's '&' after the members -- what the structure has in addition to
+// them, not written out as them.
+static void write_held_host(TypeWriter *w, const LhatRuntimeType *type)
+{
+    if (type->hostdata_tag != NULL) {
+        type_put_text(w, " & ");
+        write_hostdata_name(w, type->hostdata_tag);
+    }
+}
+
 static void write_structure_body(TypeWriter *w, const LhatRuntimeType *type)
 {
     type_put_text(w, "{");
@@ -625,6 +668,7 @@ static void write_structure_body(TypeWriter *w, const LhatRuntimeType *type)
     if (type->instance != NULL) {
         type_put_text(w, " self^");
         write_structure_body(w, type->instance);
+        write_held_host(w, type->instance);
         first = false;
     }
     // 14 章: the sequence half first, in order, the way a value written down
@@ -724,11 +768,7 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 type_put_text(w, "UNKNOWN");
                 return;
             }
-            if (type->hostdata_tag->module != NULL) {
-                type_put_text(w, type->hostdata_tag->module);
-                type_put_text(w, ".");
-            }
-            type_put_text(w, type->hostdata_tag->name);
+            write_hostdata_name(w, type->hostdata_tag);
             return;
 
         // 05 の 8.9: named the same qualified way; the box adds its own word.
@@ -881,6 +921,7 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
         case LHAT_TYPE_RT_TABLE:
             type_put_text(w, "t^");
             write_structure_body(w, type);
+            write_held_host(w, type);
             return;
     }
 }
@@ -1041,7 +1082,8 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
             // (lhat_type_rt_sort_members), so the same shape lines up
             // member-by-member without a search.
             if (a->part_count != b->part_count ||
-                a->member_count != b->member_count) {
+                a->member_count != b->member_count ||
+                a->hostdata_tag != b->hostdata_tag) {
                 return false;
             }
             for (size_t i = 0; i < a->part_count; i++) {
@@ -1656,31 +1698,9 @@ static LhatValue table_get_in(const LhatTable *table, LhatValue key,
     // of those per delegated member is what writing them out by hand already
     // was, and 4.2 wants delegation to be there whether or not anything was
     // checked -- so it is structure, not something a compiler decided.
-    //
-    // Where the name is read from is what the spelling said. 'self^.x' means
-    // the receiver's own table, 'x' means the definition's, and 14.3 makes
-    // both possible for one name -- so this is a reading of what was written
-    // and not a search.
-    //
-    // The read is UNRESTRICTED. 14.7's rule is about what an instance may
-    // call; finding the delegate is not a call, and a definition's member
-    // holding a plain value (a shared handle, a singleton) takes no receiver
-    // and would be invisible under it.
-    const LhatTable *owner = receiver != NULL ? receiver->definition : NULL;
-    if (owner == NULL && receiver != NULL && receiver->is_definition) {
-        owner = receiver;  // reached through the definition itself
-    }
-    if (owner != NULL && !lhat_is_nil(owner->delegate_key) &&
-        // The name being asked for IS the delegate's own. Reading it below
-        // would come back here and ask again, for ever.
-        !lhat_value_equal(key, owner->delegate_key)) {
-        const LhatTable *holder =
-            owner->delegate_from_self ? receiver : owner;
-        LhatValue held =
-            holder != NULL
-                ? table_get_in(holder, owner->delegate_key, NULL, NULL, NULL,
-                               NULL)
-                : lhat_nil();
+    const LhatTable *owner = NULL;
+    LhatValue held = delegate_held(receiver, key, &owner);
+    {
         const LhatTable *to = members_table_of(held);
         // And a delegate that reaches back to where the walk began is a ring
         // of one. 14.2 fixes the chain at the definition, which keeps a
@@ -1717,6 +1737,39 @@ static LhatValue table_get_in(const LhatTable *table, LhatValue key,
         }
     }
     return lhat_nil();
+}
+
+// 14.7改2: what the receiver's definition delegates to -- the value under
+// the delegate entry's name. Where it is read from is what the spelling
+// said: 'self^.x' means the receiver's own table, 'x' the definition's, and
+// 14.3 makes both possible for one name -- so this is a reading of what was
+// written and not a search.
+//
+// The read is UNRESTRICTED. 14.7's rule is about what an instance may call;
+// finding the delegate is not a call, and a definition's member holding a
+// plain value (a shared handle, a singleton) takes no receiver and would be
+// invisible under it.
+//
+// Nil when nothing is delegated -- or when `key`, the name a lookup is
+// after, IS the delegate's own: reading it here would come back and ask
+// again, for ever. `owner_out` answers the definition, for the ring check a
+// lookup makes.
+static LhatValue delegate_held(const LhatTable *receiver, LhatValue key,
+                               const LhatTable **owner_out)
+{
+    const LhatTable *owner = receiver != NULL ? receiver->definition : NULL;
+    if (owner == NULL && receiver != NULL && receiver->is_definition) {
+        owner = receiver;  // reached through the definition itself
+    }
+    *owner_out = owner;
+    if (owner == NULL || lhat_is_nil(owner->delegate_key) ||
+        lhat_value_equal(key, owner->delegate_key)) {
+        return lhat_nil();
+    }
+    const LhatTable *holder = owner->delegate_from_self ? receiver : owner;
+    return holder != NULL ? table_get_in(holder, owner->delegate_key, NULL,
+                                         NULL, NULL, NULL)
+                          : lhat_nil();
 }
 
 LhatValue lhat_table_locate(const LhatTable *table, LhatValue key,
