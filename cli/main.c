@@ -26,6 +26,7 @@
 
 #ifdef LHAT_CLI_WITH_STDLIB
 #include "stdlib/async.h"
+#include "stdlib/channel.h"
 #include "stdlib/debug.h"
 #include "stdlib/error.h"
 #include "stdlib/io.h"
@@ -641,7 +642,8 @@ static bool bind_host_names(LhatProgram *program)
         !lhatstdlib_math_register(program) ||
         !lhatstdlib_mathvector3_register(program) ||
         !lhatstdlib_debug_register(program) ||
-        !lhatstdlib_async_register(program)) {
+        !lhatstdlib_async_register(program) ||
+        !lhatstdlib_channel_register(program)) {
         return false;
     }
     // 05 の 10.8 with 08 の 7改: text through the front end, bytes without

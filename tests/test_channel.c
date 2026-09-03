@@ -8,9 +8,13 @@
 
 #include <string.h>
 
+#include "stdlibutil.h"
 #include "testutil.h"
 
 #include "../stdlib/carry.h"
+#include "../stdlib/channel.h"
+#include "../stdlib/thread.h"
+#include "port/thread.h"
 
 // The contract's state. One per process, like the tag it is declared on:
 // a second program declaring the type has to hand over the same functions
@@ -218,8 +222,248 @@ static void test_sharing_contract(void)
     }
 }
 
+// ---------------------------------------------------------------------------
+// std.channel, as an L^ program sees it
+// ---------------------------------------------------------------------------
+
+static const LhatTestRegister regs[] = {lhatstdlib_channel_register};
+static const LhatTestRegister with_thread[] = {lhatstdlib_channel_register,
+                                               lhatstdlib_thread_register};
+
+// Every case names a channel of its own, since the table of names is the
+// process's and the cases run in one.
+static LhatTestRan run_source(const char *text)
+{
+    return lhat_test_run(regs, 1, text);
+}
+
+static void test_one_machine(void)
+{
+    LHAT_TEST("what goes in comes out, in order and unchanged");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.channel\n"
+            "let^ c = std.channel.new()\n"
+            "if^ c fits^ std.channel.Channel {\n"
+            "    c.push(42)\n"
+            "    c.push(\"two\")\n"
+            "    c.push({ x = 3, y = 4 })\n"
+            "    var^ n = 0\n"
+            "    let^ first = c.pop()\n"
+            // 05 の 8.8改: an integer stays an integer through carry, which
+            // is what a channel of a Variant cannot promise.
+            "    if^ first fits^ number^ { n := n + first }\n"
+            "    let^ second = c.pop()\n"
+            "    if^ second = \"two\" { n := n + 100 }\n"
+            "    let^ third = c.pop()\n"
+            "    if^ third fits^ t^{ x : number^, y : number^ } {\n"
+            "        n := n + third.x * third.y\n"
+            "    }\n"
+            "    if^ c.pop() fits^ nil^ { n := n + 1000 }\n"
+            "    return^ n\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1154);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("count, peek, hasRead and clear");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.channel\n"
+            "let^ c = std.channel.new()\n"
+            "if^ c fits^ std.channel.Channel {\n"
+            "    var^ n = 0\n"
+            "    let^ first = c.push(1)\n"
+            "    c.push(2)\n"
+            "    if^ first fits^ number^ and^ first = 1 { n := n + 1 }\n"
+            "    if^ c.count() = 2 { n := n + 10 }\n"
+            "    if^ c.peek() = 1 { n := n + 100 }\n"
+            "    if^ c.count() = 2 { n := n + 1000 }\n"
+            "    if^ first fits^ number^ and^ !c.hasRead(first) { n := n + 10000 }\n"
+            "    c.pop()\n"
+            "    if^ first fits^ number^ and^ c.hasRead(first) { n := n + 100000 }\n"
+            "    c.clear()\n"
+            "    if^ c.count() = 0 { n := n + 1000000 }\n"
+            "    return^ n\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1111111);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("a closure crosses, and a channel goes into a channel");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.channel\n"
+            "let^ outer = std.channel.new()\n"
+            "let^ inner = std.channel.new()\n"
+            "if^ outer fits^ std.channel.Channel"
+            "   and^ inner fits^ std.channel.Channel {\n"
+            "    let^ scale = 7\n"
+            "    outer.push(f^ n:number^ -> number^ { return^ n * scale })\n"
+            // 8.8改2: the channel itself crosses, so a worker may be handed
+            // the one it is to answer on.
+            "    outer.push(inner)\n"
+            "    var^ n = 0\n"
+            "    let^ fn = outer.pop()\n"
+            "    if^ fn fits^ f^number^ -> number^; { n := n + fn(6) }\n"
+            "    let^ got = outer.pop()\n"
+            "    if^ got fits^ std.channel.Channel {\n"
+            "        got.push(5)\n"
+            "        if^ inner.count() = 1 { n := n + 100 }\n"
+            "    }\n"
+            "    return^ n\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 142);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // carry's boundary, answered as a value the way std.thread answers it.
+    LHAT_TEST("what cannot cross is refused with carry's own reason");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.channel\n"
+            "let^ c = std.channel.new()\n"
+            "if^ c fits^ std.channel.Channel {\n"
+            "    let^ co = (p^ { yield^ 1 })()\n"
+            "    let^ said = c.push(co)\n"
+            "    co.dispose()\n"
+            "    if^ said fits^ std.channel.ChannelError.Refused {\n"
+            "        return^ said.message\n"
+            "    }\n"
+            "    return^ \"took it\"\n"
+            "}\n"
+            "return^ \"no channel\"\n");
+        LHAT_CHECK_RAN_TEXT(ran, "a coroutine stays on its machine");
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // The lock is held across the body, and the reads inside it answer
+    // rather than wait (channel.h).
+    LHAT_TEST("atomic holds the channel across the body");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.channel\n"
+            "let^ c = std.channel.new()\n"
+            "if^ c fits^ std.channel.Channel {\n"
+            "    var^ n = 0\n"
+            "    c.push(3)\n"
+            "    c.atomic(p^ it:std.channel.Channel {\n"
+            "        let^ got = it.demand()\n"
+            "        if^ got fits^ number^ { n := n + got }\n"
+            "        if^ it.demand(1) fits^ nil^ { n := n + 10 }\n"
+            "        it.push(9)\n"
+            "        n := n + it.count() * 100\n"
+            "    })\n"
+            "    if^ c.pop() = 9 { n := n + 1000 }\n"
+            "    return^ n\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1113);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("a wait that runs out answers nothing");
+    {
+        int64_t before = lhat_now_ms();
+        LhatTestRan ran = run_source(
+            "import^ std.channel\n"
+            "let^ c = std.channel.new()\n"
+            "if^ c fits^ std.channel.Channel {\n"
+            "    if^ c.demand(0.05) fits^ nil^ { return^ 1 }\n"
+            "    return^ 0\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        LHAT_CHECK(lhat_now_ms() - before >= 40,
+                   "it waited: %lld ms", (long long)(lhat_now_ms() - before));
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
+static void test_between_machines(void)
+{
+    // The shape a worker pool is written in: the worker waits on one
+    // channel and answers on another, and the body is a closure of the
+    // same unit (std.thread carries it over).
+    LHAT_TEST("a worker waits on a named channel and answers on another");
+    {
+        LhatTestRan ran = lhat_test_run(
+            with_thread, 2,
+            "import^ std.channel\n"
+            "import^ std.thread\n"
+            "let^ jobs = std.channel.named(\"jobs\")\n"
+            "let^ done = std.channel.named(\"results\")\n"
+            "if^ jobs fits^ std.channel.Channel"
+            "   and^ done fits^ std.channel.Channel {\n"
+            "    let^ h = std.thread.spawn(p^ ... {\n"
+            "        let^ mine = std.channel.named(\"jobs\")\n"
+            "        let^ back = std.channel.named(\"results\")\n"
+            "        if^ mine fits^ std.channel.Channel"
+            "           and^ back fits^ std.channel.Channel {\n"
+            "            repeat^ {\n"
+            "                let^ job = mine.demand()\n"
+            "                if^ job fits^ string^ { break^ }\n"
+            "                if^ job fits^ number^ { back.push(job * 2) }\n"
+            "            }\n"
+            "        }\n"
+            "    })\n"
+            "    if^ h fits^ std.thread.ThreadHandle {\n"
+            "        jobs.push(1)\n"
+            "        jobs.push(2)\n"
+            // supply waits until the worker has taken it, so by the time
+            // this returns both numbers are answered for.
+            "        let^ taken = jobs.supply(\"stop\")\n"
+            "        h.join()\n"
+            "        var^ n = 0\n"
+            "        if^ taken fits^ bool^ and^ taken { n := n + 1000 }\n"
+            "        repeat^ {\n"
+            "            let^ got = done.pop()\n"
+            "            if^ got fits^ nil^ { break^ }\n"
+            "            if^ got fits^ number^ { n := n + got }\n"
+            "        }\n"
+            "        return^ n\n"
+            "    }\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1006);
+        lhat_test_ran_dispose(&ran);
+        lhatstdlib_channel_forget_named();
+    }
+
+    // 8.8改2 again, over the boundary it was written for: the channel is
+    // handed to the worker as an argument rather than found by name.
+    LHAT_TEST("a channel handed to spawn is the same channel");
+    {
+        LhatTestRan ran = lhat_test_run(
+            with_thread, 2,
+            "import^ std.channel\n"
+            "import^ std.thread\n"
+            "let^ c = std.channel.new()\n"
+            "if^ c fits^ std.channel.Channel {\n"
+            "    let^ h = std.thread.spawn(p^ ... {\n"
+            "        let^ mine = ...[1]\n"
+            "        if^ mine fits^ std.channel.Channel { mine.push(11) }\n"
+            "    }, c)\n"
+            "    if^ h fits^ std.thread.ThreadHandle {\n"
+            "        h.join()\n"
+            "        let^ got = c.demand(2)\n"
+            "        if^ got fits^ number^ { return^ got }\n"
+            "    }\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 11);
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
 int main(void)
 {
     test_sharing_contract();
+    test_one_machine();
+    test_between_machines();
+    lhatstdlib_channel_forget_named();
     return lhat_test_report("test_channel");
 }

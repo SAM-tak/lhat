@@ -1980,6 +1980,40 @@ hold は3つで釣り合う: carry が木に1つ取り、`lhat_carried_free` が
 値は運ばない。
 二つ目のプログラムの宣言は同じ組なら同じ宣言、違えば拒む（7.3）。
 
+#### 機械の間のキュー — `std.channel`
+
+> **carry の上に置く MPMC の待ち行列。中身は運ばれた木のまま持ち、
+> 取り出す機械で組み直す。**
+
+spawn の引数と join の答えは一往復ずつで、仕事を配られ続けるワーカーや、
+何度も答えるワーカーには足りない。std.channel はその置き場である
+（LÖVE の `love.thread.Channel` と同じ形——バインドが自前で持つ必要は
+無くなる）。
+
+```lhat
+let^ jobs = std.channel.named("jobs")     # プロセス全体で同じ1つ
+let^ ch = std.channel.new()               # 手渡した先だけが持つ
+
+ch.push(v) -> number^      # 積んで番号（1, 2, 3 …）を答える
+ch.supply(v[, 秒])         # 積み、誰かが取るまで待つ。取られたか
+ch.pop() -> any^           # 先頭。無ければ nil^
+ch.demand([秒]) -> any^    # 来るまで待つ。切れたら nil^
+ch.peek() / ch.count() / ch.hasRead(番号) / ch.clear()
+ch.atomic(p^ c:std.channel.Channel { … })   # 錠を持ったまま呼ぶ
+```
+
+- 渡るものは carry が運ぶもの（8.8改2 のホストデータを含む）。それ以外は
+  `ChannelError.Refused` に carry の理由文がそのまま乗る
+- **Channel 自身が 8.8改2 の共有型**なので、チャネルをチャネルに積める・
+  `spawn` の引数に渡せる。ワーカープールはこれで書ける（`demand` で待つ
+  ワーカーを N 本）
+- `atomic` の中では待たない——錠を持っているのは自分なので、`supply` と
+  `demand` は `push` / `pop` と同じに答える。追加引数は取らない
+  （閉包が捕捉すればよい。固定引数の閉包は可変長署名に適合しない）
+- 名前付きはプロセスの表。閉包を積んだまま program を捨てるなら、
+  その前に `lhatstdlib_channel_forget_named()`（本体は機械のヒープのもの、
+  5.6 の裏返し）
+
 ### 8.9 ホストの値
 
 > **ホストは参照だけでなく値も定義できる。8.8 のホストデータが「ホストが
@@ -2556,6 +2590,11 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
 
 ## 改定履歴（要約）
 
+- **std.channel（2026-09-04）: 機械の間のキュー。** carry の上に載せた
+  MPMC の待ち行列（push/supply/pop/demand/peek/count/hasRead/clear/atomic、
+  名前付き）。中身は運ばれた木のまま持ち、取り出す機械で組み直す。
+  Channel 自身が共有型なので手渡せる——`demand` で待つワーカーを並べる
+  プールが書けるようになった（lhatove の thread-design 4.2）
 - **8.8改2（2026-09-04）: ホストデータの共有契約。** carry が「境界の外」に
   置いていた印。`lhat_register_hostdata_shared` で型が宣言すれば hostdata が
   ポインタとして渡り、hold（木に1・包みに1）を `retain` / `let_go` で数える。
