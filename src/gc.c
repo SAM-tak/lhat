@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #endif
 
+#include "code.h"
 #include "lhat/config.h"
 #include "machine.h"
 
@@ -417,6 +418,23 @@ static size_t sweep_some(Machine *m, size_t budget)
         // walk's state goes back the same way.
         lhat_hostdata_release(object, m);
         lhat_coroutine_release(object, m);
+        // 05 の 5.6: a script's body goes with its last closure, but what
+        // its constants named may have got out -- the table std.lton
+        // answered has the script's own strings for keys. Those become the
+        // machine's here rather than going with the body, wearing the colour
+        // of the living as one born since the swap does: this sweep keeps
+        // them, and the next cycle judges them by what still reaches them
+        // -- the marking cannot have, since a chunk's objects are never
+        // white (object.h).
+        if (object->kind == LHAT_OBJECT_SCRIPT) {
+            LhatObject *before = m->objects.objects;
+            lhat_proto_give_objects(((LhatLoadedScript *)object)->root,
+                                    &m->objects);
+            for (LhatObject *given = m->objects.objects; given != before;
+                 given = given->next) {
+                given->color = m->objects.white;
+            }
+        }
         lhat_object_free(object);
         m->objects.count--;
         m->collected++;

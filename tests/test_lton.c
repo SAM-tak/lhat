@@ -292,6 +292,31 @@ static void test_load(void)
         lhat_program_free(program);
     }
 
+    // 05 の 5.6: the script that answered the table is gone once nothing
+    // holds its closure, but the table has the script's own strings for
+    // keys and values. They are the machine's from then on, not the body's
+    // -- read after a collection, which is when the body goes.
+    LHAT_TEST("the table outlives the script that answered it");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ std.lton\n"
+             "let^ c = try^ std.lton.parse(\"width = 960, window = { title = "
+             "\\\"t\\\" },\")\n"
+             "L^.collectgarbage()\n"
+             "L^.collectgarbage()\n"
+             "if^ (c[\"window\"][\"title\"] = \"t\") and^ (c[\"width\"] = 960) {"
+             " return^ 1 }\n"
+             "return^ 0\n"},
+            {NULL, NULL},
+        };
+        LhatProgram *program = NULL;
+        LhatRunResult ran = run_files(files, &program, NULL);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1);
+        lhat_program_free(program);
+    }
+
     // 8.9: through the loader and nothing else, so a path the host does not
     // serve is not there however the file system feels about it.
     LHAT_TEST("a path the loader does not serve cannot be read");

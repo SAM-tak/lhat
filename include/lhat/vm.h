@@ -394,8 +394,10 @@ bool lhat_machine_panic_text(LhatMachine *machine, const char *text);
 // 05 の 5.6: a closure of a proto the machine takes ownership of -- what
 // lhat_program_load_* answered. The proto (the whole tree under it) is freed
 // when the last closure of any body in it is collected; a program's own
-// units never go this way. The proto must capture nothing, as a unit's top
-// level does not.
+// units never go this way. What its constants named and that got out -- the
+// strings a table it answered has for keys -- becomes the machine's as the
+// body goes, and is collected when nothing reaches it. The proto must
+// capture nothing, as a unit's top level does not.
 bool lhat_machine_adopt_script(LhatMachine *machine, LhatProto *proto,
                                LhatValue *out);
 

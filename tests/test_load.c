@@ -236,7 +236,9 @@ static void test_files(void)
 
     // The body goes with the last closure of it. Two identical runs settle
     // what a run leaves on the heap; a load and a call between them leaves
-    // nothing more once the collector has been through.
+    // nothing more once the collector has been through twice -- the body
+    // goes on the first pass, and what its constants named, handed to the
+    // machine as it goes (gc.c), is judged on the next.
     LHAT_TEST("a loaded script's body is collected with its closures");
     {
         static const File files[] = {
@@ -263,13 +265,16 @@ static void test_files(void)
         LHAT_CHECK_EQ_INT(called.status, LHAT_RUN_OK);
         LHAT_CHECK_EQ_INT(lhat_as_integer(called.value), 1);
 
-        // Nothing holds the closure now; a run collects the script with it
-        // and leaves the heap as the identical earlier run did.
+        // Nothing holds the closure now; a run collects the script with it,
+        // and the run after leaves the heap as the identical earlier run
+        // did.
         LhatRunResult third = lhat_run(machine, lhat_unit_proto(root));
         LHAT_CHECK_EQ_INT(third.status, LHAT_RUN_OK);
-        LHAT_CHECK_EQ_INT(third.live, second.live);
         LHAT_CHECK(third.collected > second.collected,
                    "the script and its closures were collected");
+        LhatRunResult fourth = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(fourth.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(fourth.live, second.live);
         (void)first;
         lhat_machine_dispose(machine);
         lhat_program_free(program);
