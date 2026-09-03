@@ -285,6 +285,7 @@ static void load_into(LhatProgram *program, LhatUnit *unit)
         unit->export_names = read.export_names;
         unit->export_rt = read.export_rt;
         unit->export_rt_count = read.export_count;
+        unit->reflection = read.reflection;
         unit->state = LHAT_UNIT_DONE;
         return;
     }
@@ -564,7 +565,7 @@ static const LhatNode *unit_annotations_of(const LhatUnit *unit,
     return entry != NULL ? entry->v.entry.annotations : NULL;
 }
 
-size_t lhat_unit_annotation_count(const LhatUnit *unit, const char *definition,
+static size_t tree_annotation_count(const LhatUnit *unit, const char *definition,
                                   const char *name)
 {
     size_t count = 0;
@@ -575,7 +576,7 @@ size_t lhat_unit_annotation_count(const LhatUnit *unit, const char *definition,
     return count;
 }
 
-LhatAnnotation lhat_unit_annotation(const LhatUnit *unit,
+static LhatAnnotation tree_annotation(const LhatUnit *unit,
                                     const char *definition, const char *name,
                                     size_t index)
 {
@@ -606,7 +607,7 @@ LhatAnnotation lhat_unit_annotation(const LhatUnit *unit,
     return out;
 }
 
-LhatAnnotationArgument lhat_annotation_argument(LhatAnnotation annotation,
+static LhatAnnotationArgument tree_argument(LhatAnnotation annotation,
                                                 size_t at)
 {
     LhatAnnotationArgument out;
@@ -697,7 +698,7 @@ static const LhatNode *unit_documented_node(const LhatUnit *unit,
     return definition_entry(unit, binding->v.binding.values, name);
 }
 
-size_t lhat_unit_documentation(const LhatUnit *unit, const char *definition,
+static size_t tree_documentation(const LhatUnit *unit, const char *definition,
                                const char *name, char *out, size_t capacity)
 {
     const LhatNode *node = unit_documented_node(unit, definition, name);
@@ -924,7 +925,7 @@ static void walk_written_names(NameWalk *walk, const LhatNode *node)
     lhat_node_visit_children(node, written_names_child, walk);
 }
 
-size_t lhat_unit_member_count(const LhatUnit *unit, const char *definition)
+static size_t tree_member_count(const LhatUnit *unit, const char *definition)
 {
     const LhatNode *binding = unit_top_binding(unit, definition);
     if (binding == NULL) {
@@ -935,7 +936,7 @@ size_t lhat_unit_member_count(const LhatUnit *unit, const char *definition)
     return seen;
 }
 
-LhatUnitMember lhat_unit_member(const LhatUnit *unit, const char *definition,
+static LhatUnitMember tree_member(const LhatUnit *unit, const char *definition,
                                 size_t index)
 {
     LhatUnitMember out;
@@ -973,7 +974,7 @@ LhatUnitMember lhat_unit_member(const LhatUnit *unit, const char *definition,
     return out;
 }
 
-LhatUnitParameter lhat_unit_member_parameter(const LhatUnit *unit,
+static LhatUnitParameter tree_member_parameter(const LhatUnit *unit,
                                              const char *definition,
                                              size_t member, size_t at)
 {
@@ -1004,7 +1005,7 @@ LhatUnitParameter lhat_unit_member_parameter(const LhatUnit *unit,
     return out;
 }
 
-size_t lhat_unit_member_written_name_count(const LhatUnit *unit,
+static size_t tree_written_name_count(const LhatUnit *unit,
                                            const char *definition,
                                            size_t member)
 {
@@ -1018,7 +1019,7 @@ size_t lhat_unit_member_written_name_count(const LhatUnit *unit,
     return walk.seen;
 }
 
-LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
+static LhatUnitText tree_written_name(const LhatUnit *unit,
                                            const char *definition,
                                            size_t member, size_t at)
 {
@@ -1031,17 +1032,97 @@ LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
     walk_written_names(&walk, member_body(entry));
     return walk.found;
 }
-#else
-// 05 の 10.8: a build without the front end has no tree to walk. What a
-// host asks of a unit's declarations answers empty; the compile resolvers
-// above are never reached, since no text unit ever checks.
+#endif  // LHAT_WITH_FRONTEND
+
+// ---------------------------------------------------------------------------
+// 05 の 10.6: a binary unit answers 02 の 18 off the records the bytes carried
+// ---------------------------------------------------------------------------
+//
+// The addresses are the four lhat_unit_annotation_count names (program.h).
+// The records hold the top-level bindings in written order, each with the
+// members of the definition it holds -- what the walkers above answered
+// when the unit was written, kept because the bytes have no tree. 10.8: a
+// build without the front end has only these, and answers nothing else.
+
+static bool reflected_named(const LhatReflectedText *text, const char *name)
+{
+    return text->text != NULL && strlen(name) == text->length &&
+           memcmp(text->text, name, text->length) == 0;
+}
+
+static const LhatReflectedBinding *reflected_binding(const LhatUnit *unit,
+                                                     const char *name)
+{
+    if (unit == NULL || unit->reflection == NULL || name == NULL) {
+        return NULL;
+    }
+    const LhatReflection *r = unit->reflection;
+    for (size_t i = 0; i < r->binding_count; i++) {
+        if (reflected_named(&r->bindings[i].name, name)) {
+            return &r->bindings[i];
+        }
+    }
+    return NULL;
+}
+
+// The member at an index, or -- given a name -- the one definition_entry
+// would find: the right side of a composition overrides, and the records
+// run left to right, so the last written wins.
+static const LhatReflectedMember *reflected_member(const LhatUnit *unit,
+                                                   const char *definition,
+                                                   const char *name,
+                                                   size_t index)
+{
+    const LhatReflectedBinding *binding = reflected_binding(unit, definition);
+    if (binding == NULL) {
+        return NULL;
+    }
+    if (name == NULL) {
+        return index < binding->member_count ? &binding->members[index] : NULL;
+    }
+    for (size_t i = binding->member_count; i-- > 0;) {
+        if (reflected_named(&binding->members[i].name, name)) {
+            return &binding->members[i];
+        }
+    }
+    return NULL;
+}
+
+static const LhatReflectedAbout *reflected_about(const LhatUnit *unit,
+                                                 const char *definition,
+                                                 const char *name)
+{
+    if (unit == NULL || unit->reflection == NULL) {
+        return NULL;
+    }
+    if (definition == NULL && name == NULL) {
+        return &unit->reflection->about;
+    }
+    if (definition == NULL || name == NULL) {
+        const LhatReflectedBinding *binding =
+            reflected_binding(unit, definition != NULL ? definition : name);
+        return binding != NULL ? &binding->about : NULL;
+    }
+    const LhatReflectedMember *member =
+        reflected_member(unit, definition, name, 0);
+    return member != NULL ? &member->about : NULL;
+}
+
 size_t lhat_unit_annotation_count(const LhatUnit *unit, const char *definition,
                                   const char *name)
 {
-    (void)unit;
+    if (unit != NULL && unit->binary) {
+        const LhatReflectedAbout *about =
+            reflected_about(unit, definition, name);
+        return about != NULL ? about->annotation_count : 0;
+    }
+#if LHAT_WITH_FRONTEND
+    return tree_annotation_count(unit, definition, name);
+#else
     (void)definition;
     (void)name;
     return 0;
+#endif
 }
 
 LhatAnnotation lhat_unit_annotation(const LhatUnit *unit,
@@ -1049,11 +1130,26 @@ LhatAnnotation lhat_unit_annotation(const LhatUnit *unit,
                                     size_t index)
 {
     LhatAnnotation out;
-    (void)unit;
-    (void)definition;
-    (void)name;
-    (void)index;
     memset(&out, 0, sizeof out);
+    if (unit == NULL || !unit->binary) {
+#if LHAT_WITH_FRONTEND
+        return tree_annotation(unit, definition, name, index);
+#else
+        (void)definition;
+        (void)name;
+        (void)index;
+        return out;
+#endif
+    }
+    const LhatReflectedAbout *about = reflected_about(unit, definition, name);
+    if (about != NULL && index < about->annotation_count) {
+        const LhatReflectedAnnotation *a = &about->annotations[index];
+        out.name = a->name.text;
+        out.name_length = a->name.length;
+        out.argument_count = a->argument_count;
+        out.written = a;
+        out.unit = unit;
+    }
     return out;
 }
 
@@ -1061,39 +1157,96 @@ LhatAnnotationArgument lhat_annotation_argument(LhatAnnotation annotation,
                                                 size_t at)
 {
     LhatAnnotationArgument out;
-    (void)annotation;
-    (void)at;
     memset(&out, 0, sizeof out);
+    const LhatUnit *unit = (const LhatUnit *)annotation.unit;
+    if (unit == NULL || !unit->binary) {
+#if LHAT_WITH_FRONTEND
+        return tree_argument(annotation, at);
+#else
+        (void)at;
+        return out;
+#endif
+    }
+    const LhatReflectedAnnotation *a =
+        (const LhatReflectedAnnotation *)annotation.written;
+    if (a != NULL && at < a->argument_count) {
+        const LhatReflectedArgument *arg = &a->arguments[at];
+        out.kind = arg->kind;
+        out.number = arg->number;
+        out.boolean = arg->boolean;
+        out.text = arg->text.text;
+        out.length = arg->text.length;
+    }
     return out;
 }
 
 size_t lhat_unit_documentation(const LhatUnit *unit, const char *definition,
                                const char *name, char *out, size_t capacity)
 {
-    (void)unit;
-    (void)definition;
-    (void)name;
-    if (out != NULL && capacity > 0) {
-        out[0] = '\0';
+    if (unit == NULL || !unit->binary) {
+#if LHAT_WITH_FRONTEND
+        return tree_documentation(unit, definition, name, out, capacity);
+#else
+        (void)definition;
+        (void)name;
+        if (out != NULL && capacity > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+#endif
     }
-    return 0;
+    const LhatReflectedAbout *about = reflected_about(unit, definition, name);
+    const char *text = about != NULL ? about->documentation.text : NULL;
+    size_t length = text != NULL ? about->documentation.length : 0;
+    if (out != NULL && capacity > 0) {
+        size_t n = length < capacity - 1 ? length : capacity - 1;
+        if (n > 0) {
+            memcpy(out, text, n);
+        }
+        out[n] = '\0';
+    }
+    return length;
 }
 
 size_t lhat_unit_member_count(const LhatUnit *unit, const char *definition)
 {
-    (void)unit;
+    if (unit != NULL && unit->binary) {
+        const LhatReflectedBinding *binding =
+            reflected_binding(unit, definition);
+        return binding != NULL ? binding->member_count : 0;
+    }
+#if LHAT_WITH_FRONTEND
+    return tree_member_count(unit, definition);
+#else
     (void)definition;
     return 0;
+#endif
 }
 
 LhatUnitMember lhat_unit_member(const LhatUnit *unit, const char *definition,
                                 size_t index)
 {
     LhatUnitMember out;
-    (void)unit;
-    (void)definition;
-    (void)index;
     memset(&out, 0, sizeof out);
+    if (unit == NULL || !unit->binary) {
+#if LHAT_WITH_FRONTEND
+        return tree_member(unit, definition, index);
+#else
+        (void)definition;
+        (void)index;
+        return out;
+#endif
+    }
+    const LhatReflectedMember *m =
+        reflected_member(unit, definition, NULL, index);
+    if (m != NULL) {
+        out.name = m->name.text;
+        out.name_length = m->name.length;
+        out.declared = m->declared;
+        out.empty_body = m->empty_body;
+        out.parameter_count = m->parameter_count;
+        out.type = m->type;
+    }
     return out;
 }
 
@@ -1102,11 +1255,26 @@ LhatUnitParameter lhat_unit_member_parameter(const LhatUnit *unit,
                                              size_t member, size_t at)
 {
     LhatUnitParameter out;
-    (void)unit;
-    (void)definition;
-    (void)member;
-    (void)at;
     memset(&out, 0, sizeof out);
+    if (unit == NULL || !unit->binary) {
+#if LHAT_WITH_FRONTEND
+        return tree_member_parameter(unit, definition, member, at);
+#else
+        (void)definition;
+        (void)member;
+        (void)at;
+        return out;
+#endif
+    }
+    const LhatReflectedMember *m =
+        reflected_member(unit, definition, NULL, member);
+    if (m != NULL && at < m->parameter_count) {
+        const LhatReflectedParameter *p = &m->parameters[at];
+        out.name = p->name.text;
+        out.name_length = p->name.length;
+        out.type = p->type;
+        out.variadic = p->variadic;
+    }
     return out;
 }
 
@@ -1114,10 +1282,18 @@ size_t lhat_unit_member_written_name_count(const LhatUnit *unit,
                                            const char *definition,
                                            size_t member)
 {
-    (void)unit;
+    if (unit != NULL && unit->binary) {
+        const LhatReflectedMember *m =
+            reflected_member(unit, definition, NULL, member);
+        return m != NULL ? m->written_count : 0;
+    }
+#if LHAT_WITH_FRONTEND
+    return tree_written_name_count(unit, definition, member);
+#else
     (void)definition;
     (void)member;
     return 0;
+#endif
 }
 
 LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
@@ -1125,15 +1301,26 @@ LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
                                            size_t member, size_t at)
 {
     LhatUnitText out;
-    (void)unit;
-    (void)definition;
-    (void)member;
-    (void)at;
     out.text = NULL;
     out.length = 0;
+    if (unit == NULL || !unit->binary) {
+#if LHAT_WITH_FRONTEND
+        return tree_written_name(unit, definition, member, at);
+#else
+        (void)definition;
+        (void)member;
+        (void)at;
+        return out;
+#endif
+    }
+    const LhatReflectedMember *m =
+        reflected_member(unit, definition, NULL, member);
+    if (m != NULL && at < m->written_count) {
+        out.text = m->written_names[at].text;
+        out.length = m->written_names[at].length;
+    }
     return out;
 }
-#endif  // LHAT_WITH_FRONTEND
 
 // ---------------------------------------------------------------------------
 // 05 の 4.5: what the unit published, as types
@@ -3071,6 +3258,8 @@ static void unit_clear_stages(LhatUnit *unit)
     lhat_free(unit->export_rt);
     unit->export_rt = NULL;
     unit->export_rt_count = 0;
+    lhat_reflection_free(unit->reflection);
+    unit->reflection = NULL;
     lhat_free(unit->referenced);
     unit->referenced = NULL;
     unit->referenced_count = 0;

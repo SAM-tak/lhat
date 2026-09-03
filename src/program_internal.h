@@ -17,6 +17,68 @@
 #include "lhat/source.h"
 #include "type.h"
 
+// 05 の 10.6: what a binary unit carries of 02 の 18 -- the answers the
+// reflection API (program.h) reads off a text unit's tree, kept as records
+// because the bytes have no tree. Every string is owned and NUL-terminated.
+typedef struct {
+    char *text;  // NULL when there is none
+    size_t length;
+} LhatReflectedText;
+
+typedef struct {
+    LhatAnnotationArgumentKind kind;
+    double number;
+    bool boolean;
+    LhatReflectedText text;  // STRING and NAME
+} LhatReflectedArgument;
+
+typedef struct {
+    LhatReflectedText name;
+    LhatReflectedArgument *arguments;
+    size_t argument_count;
+} LhatReflectedAnnotation;
+
+// What 18.4 puts on any of its four addresses.
+typedef struct {
+    LhatReflectedAnnotation *annotations;
+    size_t annotation_count;
+    LhatReflectedText documentation;
+} LhatReflectedAbout;
+
+typedef struct {
+    LhatReflectedText name;  // none when written without one
+    LhatUnitTypeKind type;
+    bool variadic;
+} LhatReflectedParameter;
+
+typedef struct {
+    LhatReflectedText name;
+    bool declared;
+    bool empty_body;
+    LhatUnitTypeKind type;
+    LhatReflectedParameter *parameters;
+    size_t parameter_count;
+    LhatReflectedText *written_names;
+    size_t written_count;
+    LhatReflectedAbout about;
+} LhatReflectedMember;
+
+typedef struct {
+    LhatReflectedText name;
+    LhatReflectedMember *members;  // of the definition it holds, if any
+    size_t member_count;
+    LhatReflectedAbout about;
+} LhatReflectedBinding;
+
+typedef struct LhatReflection {
+    LhatReflectedBinding *bindings;  // the top-level bindings, as written
+    size_t binding_count;
+    LhatReflectedAbout about;  // the unit's head
+} LhatReflection;
+
+// Frees the records and the struct itself; NULL is fine.
+void lhat_reflection_free(LhatReflection *reflection);
+
 struct LhatUnit {
     char *path;  // resolved and normalised; the key 5.3 loads once against
     bool loaded;
@@ -76,6 +138,9 @@ struct LhatUnit {
     // check result -- `proto` is the whole of it, and the stages above are
     // zero. What reads them guards on parsed.root already.
     bool binary;
+    // 05 の 10.6: what the bytes carried for 02 の 18, owned. NULL for a
+    // text unit, whose tree answers instead.
+    LhatReflection *reflection;
 
     // 05 の 5.7: the text this unit was last read from, hashed, so that
     // lhat_program_invalidate can tell a save that changed something from a

@@ -33,6 +33,8 @@ typedef struct {
     char **export_names;
     struct LhatRuntimeType **export_rt;
     size_t export_count;
+    // 10.6: what the declarations said, for the reflection API to answer.
+    LhatReflection *reflection;
 } LhatBinaryUnit;
 
 // Reads a binary unit for `unit` (its path set, its state CHECKING): the

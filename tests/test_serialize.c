@@ -656,6 +656,202 @@ static void test_signatures(void)
     lhat_free(bytes);
 }
 
+// 10.6: what a host asks of the declarations (02 の 18) is answered off the
+// records the bytes carried -- the same answers the tree gave when the unit
+// was written. The specimen puts something at every address: the unit's
+// head, a plain binding, a definition with template fields and members of
+// each shape, and a composition.
+static const char REFLECTED[] =
+    "# What the unit is for.\n"
+    "@tool\n"
+    "module^ ns.main\n"
+    "\n"
+    "let^ note = p^ tag:string^, more:string^ { }\n"
+    "\n"
+    "# A thing with parts.\n"
+    "@icon(\"res://x.svg\")\n"
+    "public^ let^ Thing = def^{\n"
+    "  self^{\n"
+    "    # Hit points.\n"
+    "    @export(0, 100) hp = 5,\n"
+    "    label : string^ = \"x\",\n"
+    "    flag = true^,\n"
+    "  },\n"
+    "  # Goes somewhere.\n"
+    "  @rpc(\"any_peer\") go = p^self^, where:number^, ...:string^ {\n"
+    "    note(\"moved\", id^done)\n"
+    "  },\n"
+    "  abstract^ waiting : p^string^;,\n"
+    "  hollow = p^self^ { },\n"
+    "}\n"
+    "@kinds(-1.5, \"text\", SOME_NAME, true^, false^)\n"
+    "let^ x = 1\n"
+    "public^ let^ Both = def^{ a = 1 } .. def^{ @rpc(\"b\") b = p^self^ { } }\n";
+
+static void register_reflected(LhatProgram *program)
+{
+    lhat_register_annotation(program, "h", "tool", LHAT_ANNOTATION_UNIT);
+    lhat_register_annotation(program, "h", "icon", LHAT_ANNOTATION_BINDING);
+    lhat_register_annotation_signature(program, "icon", "p^ string^;");
+    lhat_register_annotation(program, "h", "export", LHAT_ANNOTATION_FIELD);
+    lhat_register_annotation_signature(program, "export",
+                                       "p^ number^, number^;");
+    lhat_register_annotation(program, "h", "rpc", LHAT_ANNOTATION_MEMBER);
+    lhat_register_annotation_signature(program, "rpc", "p^ string^;");
+    lhat_register_annotation(program, "h", "kinds", LHAT_ANNOTATION_BINDING);
+    lhat_register_annotation_signature(
+        program, "kinds", "p^ number^, string^, string^, bool^, bool^;");
+}
+
+static LhatUnitText text_of(const char *text, size_t length)
+{
+    LhatUnitText out;
+    out.text = text;
+    out.length = length;
+    return out;
+}
+
+static void check_same_text(const char *what, LhatUnitText a, LhatUnitText b)
+{
+    LHAT_CHECK((a.text == NULL) == (b.text == NULL) && a.length == b.length &&
+                   (a.text == NULL || memcmp(a.text, b.text, a.length) == 0),
+               "%s: \"%.*s\" became \"%.*s\"", what, (int)a.length,
+               a.text != NULL ? a.text : "", (int)b.length,
+               b.text != NULL ? b.text : "");
+}
+
+static void check_same_about(const LhatUnit *text, const LhatUnit *binary,
+                             const char *definition, const char *name)
+{
+    size_t count = lhat_unit_annotation_count(text, definition, name);
+    LHAT_CHECK_EQ_INT(lhat_unit_annotation_count(binary, definition, name),
+                      count);
+    for (size_t i = 0; i < count; i++) {
+        LhatAnnotation a = lhat_unit_annotation(text, definition, name, i);
+        LhatAnnotation b = lhat_unit_annotation(binary, definition, name, i);
+        check_same_text("annotation", text_of(a.name, a.name_length),
+                        text_of(b.name, b.name_length));
+        LHAT_CHECK_EQ_INT(b.argument_count, a.argument_count);
+        for (size_t j = 0; j < a.argument_count; j++) {
+            LhatAnnotationArgument x = lhat_annotation_argument(a, j);
+            LhatAnnotationArgument y = lhat_annotation_argument(b, j);
+            LHAT_CHECK(x.kind == y.kind && x.number == y.number &&
+                           x.boolean == y.boolean,
+                       "argument %zu of @%.*s", j, (int)a.name_length, a.name);
+            check_same_text("argument", text_of(x.text, x.length),
+                            text_of(y.text, y.length));
+        }
+    }
+    char from_text[256];
+    char from_binary[256];
+    size_t n = lhat_unit_documentation(text, definition, name, from_text,
+                                       sizeof from_text);
+    size_t m = lhat_unit_documentation(binary, definition, name, from_binary,
+                                       sizeof from_binary);
+    LHAT_CHECK(n == m && strcmp(from_text, from_binary) == 0,
+               "documentation at (%s, %s): \"%s\" became \"%s\"",
+               definition != NULL ? definition : "-",
+               name != NULL ? name : "-", from_text, from_binary);
+}
+
+static void check_same_members(const LhatUnit *text, const LhatUnit *binary,
+                               const char *definition)
+{
+    size_t count = lhat_unit_member_count(text, definition);
+    LHAT_CHECK_EQ_INT(lhat_unit_member_count(binary, definition), count);
+    for (size_t i = 0; i < count; i++) {
+        LhatUnitMember a = lhat_unit_member(text, definition, i);
+        LhatUnitMember b = lhat_unit_member(binary, definition, i);
+        check_same_text("member", text_of(a.name, a.name_length),
+                        text_of(b.name, b.name_length));
+        LHAT_CHECK(a.declared == b.declared && a.empty_body == b.empty_body &&
+                       a.type == b.type &&
+                       a.parameter_count == b.parameter_count,
+                   "member %zu of %s", i, definition);
+        for (size_t j = 0; j < a.parameter_count; j++) {
+            LhatUnitParameter p =
+                lhat_unit_member_parameter(text, definition, i, j);
+            LhatUnitParameter q =
+                lhat_unit_member_parameter(binary, definition, i, j);
+            check_same_text("parameter", text_of(p.name, p.name_length),
+                            text_of(q.name, q.name_length));
+            LHAT_CHECK(p.type == q.type && p.variadic == q.variadic,
+                       "parameter %zu of member %zu of %s", j, i, definition);
+        }
+        size_t names =
+            lhat_unit_member_written_name_count(text, definition, i);
+        LHAT_CHECK_EQ_INT(
+            lhat_unit_member_written_name_count(binary, definition, i),
+            names);
+        for (size_t j = 0; j < names; j++) {
+            check_same_text(
+                "written name",
+                lhat_unit_member_written_name(text, definition, i, j),
+                lhat_unit_member_written_name(binary, definition, i, j));
+        }
+        if (a.name != NULL && a.name_length < 64) {
+            char named[64];
+            memcpy(named, a.name, a.name_length);
+            named[a.name_length] = '\0';
+            check_same_about(text, binary, definition, named);
+        }
+    }
+}
+
+static void test_reflection(void)
+{
+    Disk text_disk;
+    memset(&text_disk, 0, sizeof text_disk);
+    disk_text(&text_disk, "main.lh", REFLECTED);
+    LhatProgram from_text;
+    lhat_program_init(&from_text, true, disk_load, &text_disk);
+    register_reflected(&from_text);
+    const LhatUnit *text = lhat_program_check(&from_text, "main.lh");
+    uint8_t *bytes = NULL;
+    size_t length = 0;
+
+    LHAT_TEST("a binary unit answers what the tree answered");
+    LHAT_CHECK(text != NULL && !lhat_program_has_errors(&from_text) &&
+                   lhat_program_compile(&from_text),
+               "the text built");
+    LHAT_CHECK(text != NULL &&
+                   lhat_unit_write_binary(text, false, &bytes, &length),
+               "and wrote");
+    // The specimen has to say something at every address for the
+    // comparison below to mean anything.
+    LHAT_CHECK(lhat_unit_annotation_count(text, NULL, NULL) == 1 &&
+                   lhat_unit_member_count(text, "Thing") == 6 &&
+                   lhat_unit_member_count(text, "Both") == 2 &&
+                   lhat_unit_member_written_name_count(text, "Thing", 3) == 2,
+               "the specimen says what it should");
+
+    Disk binary_disk;
+    memset(&binary_disk, 0, sizeof binary_disk);
+    disk_bytes(&binary_disk, "main.lh", bytes, length);
+    LhatProgram from_binary;
+    lhat_program_init(&from_binary, true, disk_load, &binary_disk);
+    const LhatUnit *binary = lhat_program_check(&from_binary, "main.lh");
+    LHAT_CHECK(binary != NULL && !lhat_program_has_errors(&from_binary),
+               "the bytes loaded");
+    if (text != NULL && binary != NULL) {
+        check_same_about(text, binary, NULL, NULL);
+        static const char *const bindings[] = {"note", "Thing", "x", "Both"};
+        for (size_t i = 0; i < sizeof bindings / sizeof bindings[0]; i++) {
+            check_same_about(text, binary, NULL, bindings[i]);
+            check_same_about(text, binary, bindings[i], NULL);
+            check_same_members(text, binary, bindings[i]);
+        }
+        // An address nothing was written at answers nothing, as before.
+        LHAT_CHECK_EQ_INT(lhat_unit_annotation_count(binary, "Nope", "hp"), 0);
+        LHAT_CHECK_EQ_INT(lhat_unit_member_count(binary, "x"), 0);
+        LHAT_CHECK(lhat_unit_member(binary, "Thing", 99).name == NULL,
+                   "an index past the end is nobody");
+    }
+    lhat_program_dispose(&from_binary);
+    lhat_program_dispose(&from_text);
+    lhat_free(bytes);
+}
+
 int main(void)
 {
     test_roundtrip();
@@ -665,5 +861,6 @@ int main(void)
     test_host_references();
     test_exports();
     test_signatures();
+    test_reflection();
     return lhat_test_report("test_serialize");
 }

@@ -32,7 +32,7 @@
 static const uint8_t MAGIC[4] = { 0x89, 'L', 'H', '^' };
 // 10.7: the signature table's, told apart from a unit's by the last byte.
 static const uint8_t TABLE_MAGIC[4] = { 0x89, 'L', 'H', 'S' };
-#define FORMAT_VERSION 1u
+#define FORMAT_VERSION 2u
 #define FLAG_DEBUG_NAMES 1u
 #define FLAG_STRICT 2u
 #define HEADER_BYTES 24u  // magic, format, flags, fingerprint, hash
@@ -915,6 +915,222 @@ static void seal_header(Out *o)
 }
 
 #if LHAT_WITH_FRONTEND
+// ---------------------------------------------------------------------------
+// 10.6: the reflection records, collected
+// ---------------------------------------------------------------------------
+//
+// Gathered through the public API itself rather than by a second walk of
+// the tree, so what a binary unit answers is by construction what the text
+// unit answered. The strings are interned as they are met, since the table
+// is written before the section; they are borrowed by it, so the records
+// outlive the writer's emit.
+
+static bool keep_reflected(Writer *w, const char *text, size_t length,
+                           LhatReflectedText *out)
+{
+    out->text = NULL;
+    out->length = 0;
+    if (text == NULL) {
+        return true;
+    }
+    out->text = (char *)lhat_alloc(length + 1);
+    if (out->text == NULL) {
+        w->failed = true;
+        return false;
+    }
+    memcpy(out->text, text, length);
+    out->text[length] = '\0';
+    out->length = length;
+    intern_string(w, out->text, length);
+    return true;
+}
+
+static void *reflected_array(Writer *w, size_t count, size_t size)
+{
+    if (count == 0) {
+        return NULL;
+    }
+    void *made = lhat_calloc(count, size);
+    if (made == NULL) {
+        w->failed = true;
+    }
+    return made;
+}
+
+static void collect_about(Writer *w, const char *definition, const char *name,
+                          LhatReflectedAbout *about)
+{
+    const LhatUnit *unit = w->unit;
+    about->annotation_count = lhat_unit_annotation_count(unit, definition, name);
+    about->annotations = (LhatReflectedAnnotation *)reflected_array(
+        w, about->annotation_count, sizeof *about->annotations);
+    for (size_t i = 0; about->annotations != NULL && i < about->annotation_count;
+         i++) {
+        LhatAnnotation written = lhat_unit_annotation(unit, definition, name, i);
+        LhatReflectedAnnotation *a = &about->annotations[i];
+        keep_reflected(w, written.name, written.name_length, &a->name);
+        a->argument_count = written.argument_count;
+        a->arguments = (LhatReflectedArgument *)reflected_array(
+            w, a->argument_count, sizeof *a->arguments);
+        for (size_t j = 0; a->arguments != NULL && j < a->argument_count; j++) {
+            LhatAnnotationArgument arg = lhat_annotation_argument(written, j);
+            a->arguments[j].kind = arg.kind;
+            a->arguments[j].number = arg.number;
+            a->arguments[j].boolean = arg.boolean;
+            keep_reflected(w, arg.text, arg.length, &a->arguments[j].text);
+        }
+    }
+    size_t n = lhat_unit_documentation(unit, definition, name, NULL, 0);
+    if (n > 0) {
+        char *text = (char *)lhat_alloc(n + 1);
+        if (text == NULL) {
+            w->failed = true;
+            return;
+        }
+        lhat_unit_documentation(unit, definition, name, text, n + 1);
+        about->documentation.text = text;
+        about->documentation.length = n;
+        intern_string(w, text, n);
+    }
+}
+
+static void collect_member(Writer *w, const char *definition, size_t index,
+                           LhatReflectedMember *m)
+{
+    const LhatUnit *unit = w->unit;
+    LhatUnitMember member = lhat_unit_member(unit, definition, index);
+    keep_reflected(w, member.name, member.name_length, &m->name);
+    m->declared = member.declared;
+    m->empty_body = member.empty_body;
+    m->type = member.type;
+    m->parameter_count = member.parameter_count;
+    m->parameters = (LhatReflectedParameter *)reflected_array(
+        w, m->parameter_count, sizeof *m->parameters);
+    for (size_t i = 0; m->parameters != NULL && i < m->parameter_count; i++) {
+        LhatUnitParameter p =
+            lhat_unit_member_parameter(unit, definition, index, i);
+        keep_reflected(w, p.name, p.name_length, &m->parameters[i].name);
+        m->parameters[i].type = p.type;
+        m->parameters[i].variadic = p.variadic;
+    }
+    m->written_count =
+        lhat_unit_member_written_name_count(unit, definition, index);
+    m->written_names = (LhatReflectedText *)reflected_array(
+        w, m->written_count, sizeof *m->written_names);
+    for (size_t i = 0; m->written_names != NULL && i < m->written_count; i++) {
+        LhatUnitText t =
+            lhat_unit_member_written_name(unit, definition, index, i);
+        keep_reflected(w, t.text, t.length, &m->written_names[i]);
+    }
+    if (m->name.text != NULL) {
+        collect_about(w, definition, m->name.text, &m->about);
+    }
+}
+
+static bool top_binding_name(const LhatUnit *unit, const LhatNode *s,
+                             const char **spelt, size_t *length)
+{
+    return s->kind == LHAT_NODE_DEFINE && s->v.binding.targets != NULL &&
+           s->v.binding.targets->next == NULL &&
+           lhat_node_name(s->v.binding.targets, unit->lexer.source->text,
+                          unit->lexer.strings, spelt, length);
+}
+
+static LhatReflection *collect_reflection(Writer *w)
+{
+    const LhatUnit *unit = w->unit;
+    LhatReflection *out = (LhatReflection *)lhat_calloc(1, sizeof *out);
+    if (out == NULL) {
+        w->failed = true;
+        return NULL;
+    }
+    collect_about(w, NULL, NULL, &out->about);
+    // The top-level bindings are the one thing the API does not list,
+    // since a host asks about them by name.
+    const LhatNode *first =
+        unit->parsed.root != NULL ? unit->parsed.root->v.list.items : NULL;
+    size_t count = 0;
+    const char *spelt = NULL;
+    size_t length = 0;
+    for (const LhatNode *s = first; s != NULL; s = s->next) {
+        count += top_binding_name(unit, s, &spelt, &length);
+    }
+    out->bindings = (LhatReflectedBinding *)reflected_array(
+        w, count, sizeof *out->bindings);
+    for (const LhatNode *s = first; out->bindings != NULL && s != NULL;
+         s = s->next) {
+        if (!top_binding_name(unit, s, &spelt, &length)) {
+            continue;
+        }
+        LhatReflectedBinding *b = &out->bindings[out->binding_count++];
+        if (!keep_reflected(w, spelt, length, &b->name)) {
+            break;
+        }
+        collect_about(w, NULL, b->name.text, &b->about);
+        b->member_count = lhat_unit_member_count(unit, b->name.text);
+        b->members = (LhatReflectedMember *)reflected_array(
+            w, b->member_count, sizeof *b->members);
+        for (size_t i = 0; b->members != NULL && i < b->member_count; i++) {
+            collect_member(w, b->name.text, i, &b->members[i]);
+        }
+    }
+    return out;
+}
+
+static void emit_text(const Writer *w, Out *o, const LhatReflectedText *t)
+{
+    put_u32(o, t->text != NULL ? str_ref(w, t->text, t->length) : 0);
+}
+
+static void emit_about(const Writer *w, Out *o, const LhatReflectedAbout *about)
+{
+    put_u32(o, (uint32_t)about->annotation_count);
+    for (size_t i = 0; i < about->annotation_count; i++) {
+        const LhatReflectedAnnotation *a = &about->annotations[i];
+        emit_text(w, o, &a->name);
+        put_u32(o, (uint32_t)a->argument_count);
+        for (size_t j = 0; j < a->argument_count; j++) {
+            uint64_t bits;
+            memcpy(&bits, &a->arguments[j].number, sizeof bits);
+            put_u8(o, (uint8_t)a->arguments[j].kind);
+            put_u64(o, bits);
+            put_u8(o, a->arguments[j].boolean ? 1 : 0);
+            emit_text(w, o, &a->arguments[j].text);
+        }
+    }
+    emit_text(w, o, &about->documentation);
+}
+
+static void emit_reflection(const Writer *w, Out *o, const LhatReflection *r)
+{
+    emit_about(w, o, &r->about);
+    put_u32(o, (uint32_t)r->binding_count);
+    for (size_t i = 0; i < r->binding_count; i++) {
+        const LhatReflectedBinding *b = &r->bindings[i];
+        emit_text(w, o, &b->name);
+        emit_about(w, o, &b->about);
+        put_u32(o, (uint32_t)b->member_count);
+        for (size_t j = 0; j < b->member_count; j++) {
+            const LhatReflectedMember *m = &b->members[j];
+            emit_text(w, o, &m->name);
+            put_u8(o, m->declared ? 1 : 0);
+            put_u8(o, m->empty_body ? 1 : 0);
+            put_u8(o, (uint8_t)m->type);
+            put_u32(o, (uint32_t)m->parameter_count);
+            for (size_t k = 0; k < m->parameter_count; k++) {
+                emit_text(w, o, &m->parameters[k].name);
+                put_u8(o, (uint8_t)m->parameters[k].type);
+                put_u8(o, m->parameters[k].variadic ? 1 : 0);
+            }
+            put_u32(o, (uint32_t)m->written_count);
+            for (size_t k = 0; k < m->written_count; k++) {
+                emit_text(w, o, &m->written_names[k]);
+            }
+            emit_about(w, o, &m->about);
+        }
+    }
+}
+
 bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
                           uint8_t **out, size_t *length)
 {
@@ -954,6 +1170,8 @@ bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
         lhat_free(named);
     }
 
+    LhatReflection *reflection = collect_reflection(&w);
+
     Out o;
     memset(&o, 0, sizeof o);
     emit_header(&o, MAGIC,
@@ -976,6 +1194,9 @@ bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
         put_u32(&o, obj_ref(&w, lhat_unit_export_type(unit, named)));
         lhat_free(named);
     }
+    if (reflection != NULL) {
+        emit_reflection(&w, &o, reflection);
+    }
 
     bool ok = !w.failed && !o.failed;
     if (ok) {
@@ -985,6 +1206,7 @@ bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
     } else {
         lhat_free(o.data);
     }
+    lhat_reflection_free(reflection);
     writer_dispose(&w);
     return ok;
 }
@@ -1733,8 +1955,183 @@ static bool read_header(In *in, const uint8_t *magic, const uint8_t *bytes,
            memcmp(version, LHAT_VERSION, version_length) == 0;
 }
 
+// ---------------------------------------------------------------------------
+// 10.6: the reflection records, read
+// ---------------------------------------------------------------------------
+
+static void free_about(LhatReflectedAbout *about)
+{
+    for (size_t i = 0; i < about->annotation_count; i++) {
+        LhatReflectedAnnotation *a = &about->annotations[i];
+        for (size_t j = 0; j < a->argument_count; j++) {
+            lhat_free(a->arguments[j].text.text);
+        }
+        lhat_free(a->arguments);
+        lhat_free(a->name.text);
+    }
+    lhat_free(about->annotations);
+    lhat_free(about->documentation.text);
+}
+
+void lhat_reflection_free(LhatReflection *r)
+{
+    if (r == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < r->binding_count; i++) {
+        LhatReflectedBinding *b = &r->bindings[i];
+        for (size_t j = 0; j < b->member_count; j++) {
+            LhatReflectedMember *m = &b->members[j];
+            for (size_t k = 0; k < m->parameter_count; k++) {
+                lhat_free(m->parameters[k].name.text);
+            }
+            lhat_free(m->parameters);
+            for (size_t k = 0; k < m->written_count; k++) {
+                lhat_free(m->written_names[k].text);
+            }
+            lhat_free(m->written_names);
+            free_about(&m->about);
+            lhat_free(m->name.text);
+        }
+        lhat_free(b->members);
+        free_about(&b->about);
+        lhat_free(b->name.text);
+    }
+    lhat_free(r->bindings);
+    free_about(&r->about);
+    lhat_free(r);
+}
+
+static void read_text(Reader *r, LhatReflectedText *out)
+{
+    const char *text = NULL;
+    size_t length = 0;
+    out->text = NULL;
+    out->length = 0;
+    if (!string_at(r, get_u32(&r->in), &text, &length)) {
+        fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+        return;
+    }
+    if (text == NULL) {
+        return;
+    }
+    out->text = (char *)lhat_alloc(length + 1);
+    if (out->text == NULL) {
+        fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+        return;
+    }
+    memcpy(out->text, text, length + 1);
+    out->length = length;
+}
+
+// A count the bytes cannot back is damage, not a large unit: every record
+// takes at least a byte.
+static void *read_array(Reader *r, uint32_t count, size_t size)
+{
+    if (count == 0 || r->in.failed) {
+        return NULL;
+    }
+    void *made = count <= r->in.length - r->in.at ? lhat_calloc(count, size)
+                                                  : NULL;
+    if (made == NULL) {
+        fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+    }
+    return made;
+}
+
+static uint8_t read_below(Reader *r, unsigned bound)
+{
+    uint8_t v = get_u8(&r->in);
+    if (v > bound) {
+        fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+    }
+    return v;
+}
+
+static void read_about(Reader *r, LhatReflectedAbout *about)
+{
+    In *in = &r->in;
+    uint32_t count = get_u32(in);
+    about->annotations = (LhatReflectedAnnotation *)read_array(
+        r, count, sizeof *about->annotations);
+    about->annotation_count = about->annotations != NULL ? count : 0;
+    for (size_t i = 0; !in->failed && i < about->annotation_count; i++) {
+        LhatReflectedAnnotation *a = &about->annotations[i];
+        read_text(r, &a->name);
+        uint32_t arguments = get_u32(in);
+        a->arguments = (LhatReflectedArgument *)read_array(
+            r, arguments, sizeof *a->arguments);
+        a->argument_count = a->arguments != NULL ? arguments : 0;
+        for (size_t j = 0; !in->failed && j < a->argument_count; j++) {
+            LhatReflectedArgument *arg = &a->arguments[j];
+            arg->kind = (LhatAnnotationArgumentKind)read_below(
+                r, LHAT_ANNOTATION_ARG_BOOL);
+            uint64_t bits = get_u64(in);
+            memcpy(&arg->number, &bits, sizeof arg->number);
+            arg->boolean = get_u8(in) != 0;
+            read_text(r, &arg->text);
+        }
+    }
+    read_text(r, &about->documentation);
+}
+
+static LhatReflection *read_reflection(Reader *r)
+{
+    In *in = &r->in;
+    LhatReflection *out = (LhatReflection *)lhat_calloc(1, sizeof *out);
+    if (out == NULL) {
+        fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+        return NULL;
+    }
+    read_about(r, &out->about);
+    uint32_t bindings = get_u32(in);
+    out->bindings = (LhatReflectedBinding *)read_array(r, bindings,
+                                                       sizeof *out->bindings);
+    out->binding_count = out->bindings != NULL ? bindings : 0;
+    for (size_t i = 0; !in->failed && i < out->binding_count; i++) {
+        LhatReflectedBinding *b = &out->bindings[i];
+        read_text(r, &b->name);
+        read_about(r, &b->about);
+        uint32_t members = get_u32(in);
+        b->members = (LhatReflectedMember *)read_array(r, members,
+                                                       sizeof *b->members);
+        b->member_count = b->members != NULL ? members : 0;
+        for (size_t j = 0; !in->failed && j < b->member_count; j++) {
+            LhatReflectedMember *m = &b->members[j];
+            read_text(r, &m->name);
+            m->declared = get_u8(in) != 0;
+            m->empty_body = get_u8(in) != 0;
+            m->type = (LhatUnitTypeKind)read_below(r, LHAT_UNIT_TYPE_BOOL);
+            uint32_t parameters = get_u32(in);
+            m->parameters = (LhatReflectedParameter *)read_array(
+                r, parameters, sizeof *m->parameters);
+            m->parameter_count = m->parameters != NULL ? parameters : 0;
+            for (size_t k = 0; !in->failed && k < m->parameter_count; k++) {
+                read_text(r, &m->parameters[k].name);
+                m->parameters[k].type =
+                    (LhatUnitTypeKind)read_below(r, LHAT_UNIT_TYPE_BOOL);
+                m->parameters[k].variadic = get_u8(in) != 0;
+            }
+            uint32_t written = get_u32(in);
+            m->written_names = (LhatReflectedText *)read_array(
+                r, written, sizeof *m->written_names);
+            m->written_count = m->written_names != NULL ? written : 0;
+            for (size_t k = 0; !in->failed && k < m->written_count; k++) {
+                read_text(r, &m->written_names[k]);
+            }
+            read_about(r, &m->about);
+        }
+    }
+    if (in->failed) {
+        lhat_reflection_free(out);
+        return NULL;
+    }
+    return out;
+}
+
 static void free_binary_unit(LhatBinaryUnit *out)
 {
+    lhat_reflection_free(out->reflection);
     lhat_proto_free(out->proto);
     lhat_free(out->module_name);
     for (size_t i = 0; i < out->export_count; i++) {
@@ -1813,6 +2210,10 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
             }
             memcpy(out->export_names[i], name, n + 1);
             out->export_rt[i] = type;
+        }
+        // 10.6: what the declarations said, for the reflection API.
+        if (!in->failed) {
+            out->reflection = read_reflection(&r);
         }
     } else {
         fail(&r, r.error);

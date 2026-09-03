@@ -2447,6 +2447,17 @@ SEGV し得る。読むのは自分が書いたものだけ、という前提で
 `lhat_unit_export_conforms` は検査器の型を要するので、バイナリ単位には
 偽を答える。
 
+02 の 18 の反射 API（`lhat_unit_annotation_count / _annotation`・
+`lhat_annotation_argument`・`lhat_unit_documentation`・`lhat_unit_member_count /
+_member / _member_parameter / _member_written_name_count / _member_written_name`）も
+バイナリ単位で答える。テキスト単位が木から読む答え——注釈とその引数、説明文、
+定義のメンバとフィールドとそのパラメタ、本体の書かれた名前——を書き出し時に
+同じ API で集めてレコードの節に運び、読み手はそれで答える。木は運ばない。
+最上位束縛の列は書かれた順、合成 def^ のメンバは左から右。説明文は書き出した
+ビルドがコメントを保持していた（`LHAT_WITH_COMMENTS`）ときだけ残る。
+節はデバッグ名と違って落とせない——ホストがバイナリだけを配る場面こそ、
+これらを訊く場面だから。
+
 書き出しは `lhat_unit_write_binary(unit, with_debug_names, &bytes, &length)`
 （program.h）。検査・コンパイル済みの単位から。
 
@@ -2488,7 +2499,8 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
 - `std.load` / `std.lton` は外れる（テキストを読む2つ）。プロンプト・
   `--tokens`・構文木の出力・LSP・テスト・ベンチマークは無い。DAP は式評価だけ
   「前段なし」を答え、フレームの読みと traceback は動く
-- 反射 API（`lhat_unit_annotation*` / `_member*` / `_documentation`）は空を答え、
+- 反射 API（`lhat_unit_annotation*` / `_member*` / `_documentation`）はバイナリ
+  単位のレコード（10.6）から答える——木を歩く道が無いだけで、答えは同じ。
   `lhat_unit_export_conforms` は偽、`lhat_unit_write_binary` は偽
 
 プリセット `vmonly`（Ninja Release）。往復は
@@ -2500,6 +2512,11 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
 
 ## 改定履歴（要約）
 
+- **10.6改（2026-09-03）: バイナリ単位が反射を運ぶ。** godot バインディングの
+  報告——反射 API は木を歩くのでバイナリ単位に空を答え、@signal/@export/@node/
+  @rpc・メンバ一覧・説明文が消えていた。書き出し時に公開 API 自身で集めた
+  レコードを節に運び、読み手はそれで答える（木は運ばない）。VM のみビルドも
+  同じ道で答える
 - **10.7・10.8（2026-09-02）: 署名表と VM のみビルド。** 前段の無いビルドが
   ホストを登録する唯一の道として、フルビルドが登録から書いた「署名テキスト→
   install の記述子」の表を引く（ユーザー案）。二つ目の文法も解決器も持たず、
