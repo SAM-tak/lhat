@@ -105,6 +105,15 @@ bool lsp_workspace_is_host_config_path(const LspWorkspace *ws,
 // editor happens to open) from being registered as a root and read as L^.
 bool lsp_workspace_is_unit_path(const char *path);
 
+// 05 の 10 章: whether the file at `path` holds a compiled unit rather than
+// text. `lhat --compile` writes a unit out under the name it had, so a
+// binary unit is a *.lh like any other and only its bytes say which it is.
+// Read from disk, because that is the only place they survive: what an
+// editor shows of one has already been through a decoder, and the magic --
+// a byte no UTF-8 text can start on -- comes back as a replacement
+// character. False for a file that is not there to read.
+bool lsp_workspace_is_binary_unit(const char *path);
+
 // Ensures `path` (absolute) is a known root, then re-checks its own root
 // plus every root the reverse index says last reached `path`.
 void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path);

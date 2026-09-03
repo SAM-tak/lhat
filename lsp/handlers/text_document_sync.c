@@ -38,6 +38,36 @@ static bool worth_rechecking(LspServer *server, const char *path)
            lsp_workspace_is_host_config_path(&server->workspace, path);
 }
 
+// The editor's copy of `path`, kept for everything downstream to read
+// instead of the disk -- which is the whole of what this store is for
+// (document_store.h).
+//
+// 05 の 10 章: except for a compiled unit. One is a *.lh like any other and
+// an editor will happily show it, but what it shows has been through a
+// decoder and the magic -- a byte no UTF-8 text can start on -- does not
+// survive it. Kept, that text would reach the front end as a source file
+// and be reported on line after line, while the file itself holds a unit
+// the checker has nothing to say about. So it is not kept, and every reader
+// falls through to the bytes on disk, where the library still recognises
+// them (lsp_program_load, and program.c's own load). A copy already held
+// goes too: the file may have been a source one when it was opened and been
+// compiled over since.
+static void remember_text(LspServer *server, const char *path,
+                          const cJSON *text_item, const cJSON *version_item)
+{
+    if (!cJSON_IsString(text_item)) {
+        return;
+    }
+    if (lsp_workspace_is_binary_unit(path)) {
+        lsp_document_store_remove(&server->workspace.documents, path);
+        return;
+    }
+    int version = cJSON_IsNumber(version_item) ? version_item->valueint : 0;
+    char *text = lsp_strdup(text_item->valuestring);
+    lsp_document_store_put(&server->workspace.documents, path, text,
+                           strlen(text_item->valuestring), version);
+}
+
 void lsp_handle_did_open(LspServer *server, const cJSON *params)
 {
     if (params == NULL) {
@@ -50,15 +80,9 @@ void lsp_handle_did_open(LspServer *server, const cJSON *params)
         return;
     }
 
-    const cJSON *text_item = cJSON_GetObjectItemCaseSensitive(text_document, "text");
-    if (cJSON_IsString(text_item)) {
-        const cJSON *version_item =
-            cJSON_GetObjectItemCaseSensitive(text_document, "version");
-        int version = cJSON_IsNumber(version_item) ? version_item->valueint : 0;
-        char *text = lsp_strdup(text_item->valuestring);
-        lsp_document_store_put(&server->workspace.documents, path, text,
-                               strlen(text_item->valuestring), version);
-    }
+    remember_text(server, path,
+                  cJSON_GetObjectItemCaseSensitive(text_document, "text"),
+                  cJSON_GetObjectItemCaseSensitive(text_document, "version"));
     if (worth_rechecking(server, path)) {
         lsp_queue_mark_dirty(&server->queue, path);
     }
@@ -84,16 +108,10 @@ void lsp_handle_did_change(LspServer *server, const cJSON *params)
         // the last entry's "text" is the whole new document, not a delta.
         const cJSON *last =
             cJSON_GetArrayItem(changes, cJSON_GetArraySize(changes) - 1);
-        const cJSON *text_item = cJSON_GetObjectItemCaseSensitive(last, "text");
-        if (cJSON_IsString(text_item)) {
-            const cJSON *version_item =
-                cJSON_GetObjectItemCaseSensitive(text_document, "version");
-            int version =
-                cJSON_IsNumber(version_item) ? version_item->valueint : 0;
-            char *text = lsp_strdup(text_item->valuestring);
-            lsp_document_store_put(&server->workspace.documents, path, text,
-                                   strlen(text_item->valuestring), version);
-        }
+        remember_text(server, path,
+                      cJSON_GetObjectItemCaseSensitive(last, "text"),
+                      cJSON_GetObjectItemCaseSensitive(text_document,
+                                                       "version"));
     }
     if (worth_rechecking(server, path)) {
         lsp_queue_mark_dirty(&server->queue, path);

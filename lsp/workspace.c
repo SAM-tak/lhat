@@ -16,6 +16,7 @@
 #include "lhat/port.h"   // lhat_load_file
 #include "lhat/value.h"  // lhat_nil
 #include "lhat/vm.h"     // LhatMachine, LhatHostFn's shape
+#include "serialize.h"   // lhat_serialize_is_binary (05 の 10 章)
 
 #include "diagnostics.h"
 #include "lton.h"
@@ -384,6 +385,24 @@ bool lsp_workspace_is_host_config_path(const LspWorkspace *ws,
 bool lsp_workspace_is_unit_path(const char *path)
 {
     return is_checkable(path);
+}
+
+bool lsp_workspace_is_binary_unit(const char *path)
+{
+    if (path == NULL) {
+        return false;
+    }
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return false;
+    }
+    char head[8];
+    size_t read = fread(head, 1, sizeof head, file);
+    fclose(file);
+    // The library's own answer rather than a second spelling of the magic:
+    // what counts as a binary unit is serialize.c's to say, and a header it
+    // grows must not leave this reading the old one.
+    return lhat_serialize_is_binary(head, read);
 }
 
 LspHostConfigOutcome lsp_workspace_load_host_config(LspWorkspace *ws,
