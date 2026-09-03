@@ -129,6 +129,37 @@ static void test_a_written_type_name(void)
     check_dispose(&c);
 }
 
+// 04 の 2.2 and 02 の 19 章: a kind is found in the set that declared it
+// rather than in a scope, and the set is a type -- so the place is the type's
+// to carry (type.h's v.error.declared_at), the way a member's is.
+static void test_a_kind_of_a_set(void)
+{
+    Checked c;
+
+    LHAT_TEST("04 の 2.2: an error kind goes to where the errordef^ wrote it");
+    check_text(&c,
+               "errordef^ Fault { Bad, Worse }\n"
+               "let^ fail = p^ e:Fault.Worse { }\n");
+    expect_definition(&c, "Worse {", "Worse }");
+    check_dispose(&c);
+
+    // In value position the name answers the wide enum type (19 章), which
+    // is not where it was written -- the place is still the member's.
+    LHAT_TEST("02 の 19 章: an enum member goes to its declaration");
+    check_text(&c,
+               "enum^ Mode { Idle, Walk }\n"
+               "let^ x = Mode.Walk\n"
+               "let^ n = for^x:\n"
+               "    when^ Mode.Idle: 1\n"
+               "    when^ Mode.Walk: 2\n"
+               ";\n"
+               "let^ only = p^ m:Mode.Walk { }\n");
+    expect_definition(&c, "Walk\n", "Walk }");
+    expect_definition(&c, "Walk: 2", "Walk }");
+    expect_definition(&c, "Walk {", "Walk }");
+    check_dispose(&c);
+}
+
 static void test_nothing_to_point_at(void)
 {
     Checked c;
@@ -176,6 +207,7 @@ int main(void)
     test_a_name_a_scope_holds();
     test_a_member_found_in_a_type();
     test_a_written_type_name();
+    test_a_kind_of_a_set();
     test_nothing_to_point_at();
     test_the_name_ends_where_the_name_ends();
     return lhat_test_report("test_definition");

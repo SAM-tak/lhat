@@ -114,6 +114,22 @@ static void test_definition(void)
     free(text);
     check_dispose(&c);
 
+    // 13.1 spells an annotated target as a parameter node, but the form that
+    // declares the name is the let^ -- the whole line, with what 01 の 6.4
+    // wrote above it, rather than 'n:number^' alone.
+    LHAT_TEST("and an annotated let^ still shows as the let^ it is");
+    check_text(&c,
+               "# how many\n"
+               "public^let^ n:number^ = 1\n"
+               "print(n)\n");
+    text = hover_text(&c, last_offset(&c, "n"));
+    expect_contains(text, "public^let^ n:number^ = 1");
+#if LHAT_WITH_COMMENTS
+    expect_contains(text, "how many");
+#endif
+    free(text);
+    check_dispose(&c);
+
     // 07 の what the checker settled on, under the line as written. A
     // definition with no annotation has only this.
     LHAT_TEST("the inferred type is shown");
@@ -413,6 +429,151 @@ static void test_named_by_the_form(void)
     check_dispose(&c);
 }
 
+// ---------------------------------------------------------------------------
+// Across units. The same table-driven fake disk tests/test_program.c reads
+// units from, since 05 の 6.1 needs a program with two.
+// ---------------------------------------------------------------------------
+
+typedef struct {
+    const char *path;
+    const char *text;
+} File;
+
+typedef struct {
+    const File *files;
+    size_t count;
+} Disk;
+
+static char *disk_load(void *context, const char *path, size_t *length)
+{
+    Disk *disk = (Disk *)context;
+    for (size_t i = 0; i < disk->count; i++) {
+        if (strcmp(disk->files[i].path, path) != 0) {
+            continue;
+        }
+        size_t size = strlen(disk->files[i].text);
+        char *copy = (char *)malloc(size + 1);
+        if (copy != NULL) {
+            memcpy(copy, disk->files[i].text, size + 1);
+            *length = size;
+        }
+        return copy;
+    }
+    return NULL;
+}
+
+static const LhatUnit *unit_named(const LhatProgram *program, const char *path)
+{
+    for (const LhatUnit *u = program->units; u != NULL; u = u->next) {
+        if (strcmp(u->path, path) == 0) {
+            return u;
+        }
+    }
+    return NULL;
+}
+
+static uint32_t offset_in(const LhatUnit *unit, const char *needle)
+{
+    const char *found = strstr(unit->source.text, needle);
+    return found != NULL ? (uint32_t)(found - unit->source.text) : 0;
+}
+
+// The hover as the server makes it (lsp/handlers/hover.c): located in the
+// unit asked, described in whichever unit the part says the definition is in.
+static char *hover_across(const LhatProgram *program, const LhatUnit *asked,
+                          uint32_t offset)
+{
+    LspHoverPart part;
+    char *copy = NULL;
+    if (lsp_hover_locate(asked, offset, &part)) {
+        if (part.definition_path != NULL) {
+            lsp_hover_describe(unit_named(program, part.definition_path),
+                               &part);
+        }
+        cJSON *hover = lsp_hover_render(&part);
+        cJSON *contents = cJSON_GetObjectItemCaseSensitive(hover, "contents");
+        cJSON *value = cJSON_GetObjectItemCaseSensitive(contents, "value");
+        copy = cJSON_IsString(value) ? _strdup(value->valuestring) : NULL;
+        cJSON_Delete(hover);
+    }
+    lsp_hover_part_dispose(&part);
+    return copy;
+}
+
+// 05 の 6.1: a name from another unit reaches a definition written there, and
+// what a hover shows of it has to be cut from that unit -- not from whatever
+// stands at the same offset in this one, which is what the one-unit shape
+// showed before the halves were split (hover.h).
+static void test_across_units(void)
+{
+    static const File files[] = {
+        {"lib.lh",
+         "# what the store holds\n"
+         "module^ store\n"
+         "\n"
+         "# a thing held\n"
+         "public^let^ Held = def^{\n"
+         "    self^{ count = 0 },\n"
+         "}\n"
+         "public^ enum^ Mode { Idle, Walk = 5 }\n"},
+        {"main.lh",
+         "module^ app\n"
+         "require^ \"lib.lh\"\n"
+         "let^ made = store.Held.new()\n"
+         "let^ mode = store.Mode.Walk\n"},
+    };
+    Disk disk = {files, 2};
+    LhatProgram program;
+    lhat_program_init(&program, true, disk_load, &disk);
+    const LhatUnit *main_unit = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(main_unit != NULL && main_unit->checked.diagnostic_count == 0,
+               "the program checked");
+    if (main_unit != NULL) {
+        LHAT_TEST("05 の 6.1: a name from another unit shows that unit's line");
+        char *text = hover_across(&program, main_unit,
+                                  offset_in(main_unit, "Held.new()"));
+        expect_contains(text, "public^let^ Held = def^{");
+#if LHAT_WITH_COMMENTS
+        expect_contains(text, "a thing held");
+#endif
+        LHAT_CHECK(text != NULL && strstr(text, "let^ made") == NULL,
+                   "a line of main.lh leaked in: %s", text ? text : "");
+        free(text);
+
+        LHAT_TEST("05 の 5 章: a require^'s path shows the unit it names");
+        text = hover_across(&program, main_unit,
+                            offset_in(main_unit, "\"lib.lh\""));
+        // lib.lh opens with a comment, so nothing stands at its byte 0: the
+        // first statement is what there is to show, and its comment is the
+        // unit's own description (07 の 4 章).
+        expect_contains(text, "module^ store");
+        expect_contains(text, "Held");  // the exports, as the type
+#if LHAT_WITH_COMMENTS
+        expect_contains(text, "what the store holds");
+#endif
+        free(text);
+
+        // The record for the path has a definition of 0 in lib.lh -- which is
+        // also where main.lh's own text starts. A lookup by definition
+        // (lsp/resolution.c) has to see which unit the 0 is in.
+        LHAT_TEST("and this unit's own start is not mistaken for it");
+        LHAT_CHECK(hover_across(&program, main_unit, 0) == NULL,
+                   "expected nothing on the module^ keyword at byte 0");
+
+        // The member's own line, the way an error kind's is (binds_a_name):
+        // its value is what a reader wanted, and a comment above it is about
+        // it and not about the whole enum^.
+        LHAT_TEST("02 の 19 章: an enum member shows its declaration elsewhere");
+        text = hover_across(&program, main_unit, offset_in(main_unit, "Walk"));
+        expect_contains(text, "Walk = 5");
+        expect_contains(text, ": Mode");  // 19 章: wide in value position
+        LHAT_CHECK(text != NULL && strstr(text, "let^ mode") == NULL,
+                   "a line of main.lh leaked in: %s", text ? text : "");
+        free(text);
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     test_definition();
@@ -426,5 +587,6 @@ int main(void)
     test_module();
 #endif
     test_nothing();
+    test_across_units();
     return lhat_test_report("test_hover");
 }

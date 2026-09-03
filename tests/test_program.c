@@ -4951,49 +4951,109 @@ static void test_where_a_published_member_was_written(void)
              "public^let^ Held = def^{\n"
              "    self^{ count = 0 },\n"
              "    read = f^self^ -> number^ { return^ self^.count },\n"
-             "}\n"},
+             "}\n"
+             "public^ errordef^ Fault { Bad }\n"
+             "public^ enum^ Mode { Idle, Walk }\n"},
         {"main.lh",
              "require^ \"lib.lh\"\n"
              "let^ made = store.Held.new()\n"
-             "let^ value = made.read()\n"},
+             "let^ value = made.read()\n"
+             "let^ hold = f^ h:store.Held -> number^ { return^ h.read() }\n"
+             "let^ fail = p^ e:store.Fault.Bad { }\n"
+             "let^ mode = store.Mode.Walk\n"},
     };
     program_with(&program, &disk, files, 2);
 
     const LhatUnit *root = lhat_program_check(&program, "main.lh");
     LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 0,
                "the program checked");
-    if (root != NULL) {
-        const char *use = strstr(root->source.text, "Held.new()");
-        LHAT_CHECK(use != NULL, "expected the member use to be there");
-        if (use != NULL) {
+    const LhatUnit *lib = program.units;
+    while (lib != NULL && strcmp(lib->path, "lib.lh") != 0) {
+        lib = lib->next;
+    }
+    LHAT_CHECK(lib != NULL, "expected lib.lh to be in the graph");
+    if (root != NULL && lib != NULL) {
+        // Standing on `use` in main.lh, the record should point at
+        // `declared` in lib.lh.
+        static const struct {
+            const char *use;
+            const char *declared;
+            const char *what;
+        } across[] = {
+            // 05 の 4 章 publishes names, so the place is the public^let^
+            // that wrote this one.
+            {"Held.new()", "Held =", "a published member"},
+            // 13 章: the same name written where a type is (07 の 4 章).
+            {"Held -> number^", "Held =", "a published type name"},
+            // 04 の 2.2: a kind is found in the set that declared it, and
+            // the set was published.
+            {"Bad {", "Bad }", "a published error kind"},
+            // 02 の 19 章: an enum member in value position answers the wide
+            // type, and still says where it was written.
+            {"Walk\n", "Walk }", "a published enum member"},
+        };
+        for (size_t i = 0; i < sizeof across / sizeof across[0]; i++) {
+            const char *use = strstr(root->source.text, across[i].use);
+            const char *declared = strstr(lib->source.text, across[i].declared);
+            LHAT_CHECK(use != NULL && declared != NULL,
+                       "%s: expected both spellings to be there",
+                       across[i].what);
+            if (use == NULL || declared == NULL) {
+                continue;
+            }
             const LhatResolution *r = lhat_check_resolution_at(
                 &root->checked, (uint32_t)(use - root->source.text));
             LHAT_CHECK(r != NULL && r->has_definition,
-                       "expected the published member to say where it is");
-            if (r != NULL && r->has_definition) {
-                LHAT_CHECK(r->definition_path != NULL &&
-                               strcmp(r->definition_path, "lib.lh") == 0,
-                           "expected lib.lh, got %s",
-                           r->definition_path != NULL ? r->definition_path
-                                                      : "(nothing)");
-                // 05 の 4 章 publishes names, so the place is the public^let^
-                // that wrote this one.
-                const LhatUnit *lib = program.units;
-                while (lib != NULL && strcmp(lib->path, "lib.lh") != 0) {
-                    lib = lib->next;
-                }
-                LHAT_CHECK(lib != NULL, "expected lib.lh to be in the graph");
-                if (lib != NULL) {
-                    const char *declared = strstr(lib->source.text, "Held =");
-                    LHAT_CHECK(declared != NULL, "expected the declaration");
-                    if (declared != NULL) {
-                        LHAT_CHECK_EQ_INT(
-                            r->definition,
-                            (uint32_t)(declared - lib->source.text));
-                    }
-                }
+                       "%s: expected the record to say where it is",
+                       across[i].what);
+            if (r == NULL || !r->has_definition) {
+                continue;
             }
+            LHAT_CHECK(r->definition_path != NULL &&
+                           strcmp(r->definition_path, "lib.lh") == 0,
+                       "%s: expected lib.lh, got %s", across[i].what,
+                       r->definition_path != NULL ? r->definition_path
+                                                  : "(nothing)");
+            LHAT_CHECK_EQ_INT(r->definition,
+                              (uint32_t)(declared - lib->source.text));
+            LHAT_CHECK(!r->builtin, "%s: written, not the language's own",
+                       across[i].what);
         }
+
+        // 05 の 5 章: the written path names the whole unit, so the place is
+        // its start -- and the type is what it publishes.
+        const char *path = strstr(root->source.text, "\"lib.lh\"");
+        LHAT_CHECK(path != NULL, "expected the require^ path to be there");
+        if (path != NULL) {
+            const LhatResolution *r = lhat_check_resolution_at(
+                &root->checked, (uint32_t)(path - root->source.text));
+            LHAT_CHECK(r != NULL && r->has_definition &&
+                           r->definition_path != NULL &&
+                           strcmp(r->definition_path, "lib.lh") == 0 &&
+                           r->definition == 0,
+                       "expected the path to point at lib.lh's start");
+            LHAT_CHECK(r != NULL && r->type == lib->checked.exports,
+                       "expected the path to carry what lib.lh publishes");
+        }
+    }
+    lhat_program_dispose(&program);
+
+    // A require^ that reached nothing has no unit to point at, and the
+    // program says so on its own terms; the string is left unrecorded.
+    LHAT_TEST("and a path that reaches no unit points nowhere");
+    static const File lone[] = {
+        {"main.lh", "let^ missing = require^ \"nowhere.lh\"\n"},
+    };
+    program_with(&program, &disk, lone, 1);
+    root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL, "the unit was read");
+    if (root != NULL) {
+        const char *path = strstr(root->source.text, "\"nowhere.lh\"");
+        LHAT_CHECK(path != NULL &&
+                       lhat_check_resolution_at(
+                           &root->checked,
+                           (uint32_t)(path - root->source.text)) == NULL,
+                   "expected no record on a path that resolved to nothing");
     }
     lhat_program_dispose(&program);
 }

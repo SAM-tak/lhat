@@ -391,6 +391,17 @@ struct LhatType {
             // Read on ERROR as well, where it tells the two tops apart.
             // Nothing else in the payload is set there.
             bool local;
+#if LHAT_WITH_RESOLUTIONS
+            // 07 の 4 章: where the kind was written, and in which unit --
+            // the same two a member carries (declared_at above), for the
+            // same reason: 04 の 2.2's kind and 19 章's member are found in
+            // the set that declared them rather than in a scope, so nothing
+            // else knows the place. ERROR_KIND / ENUM_MEMBER only; NULL and
+            // zero for one nobody wrote -- a host's registration (05 の
+            // 8.7), or localerror^.CastFailure.
+            uint32_t declared_at;
+            const char *declared_in;
+#endif
         } error;
 
         struct {

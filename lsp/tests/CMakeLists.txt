@@ -39,6 +39,7 @@ lhat_lsp_add_test(test_hover
     ${CMAKE_SOURCE_DIR}/lsp/position.c
     ${CMAKE_SOURCE_DIR}/lsp/lton.c
     ${CMAKE_SOURCE_DIR}/lsp/resolution.c
+    ${CMAKE_SOURCE_DIR}/lsp/util.c
 )
 lhat_lsp_add_test(test_host_config ${CMAKE_SOURCE_DIR}/lsp/host_config.c)
 lhat_lsp_add_test(test_definition ${CMAKE_SOURCE_DIR}/lsp/definition.c)

@@ -188,7 +188,8 @@ typedef struct {
 } Resolution;
 
 static LhatType *resolve_require(void *context, const char *path, size_t length,
-                                 const char **module_name)
+                                 const char **module_name,
+                                 const char **unit_path)
 {
     Resolution *r = (Resolution *)context;
     char *resolved = resolve_against(r->requiring->path, path, length);
@@ -214,9 +215,12 @@ static LhatType *resolve_require(void *context, const char *path, size_t length,
         return NULL;
     }
     // 05 の 3 章: the unit outlives this program's checking, so handing the
-    // text out rather than a copy is safe.
+    // text out rather than a copy is safe -- and its path the same.
     if (module_name != NULL) {
         *module_name = unit->checked.module_name;
+    }
+    if (unit_path != NULL) {
+        *unit_path = unit->path;
     }
     // A unit publishing nothing still loaded, so it answers with an empty
     // structure rather than with failure.
