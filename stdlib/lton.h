@@ -38,6 +38,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "lhat.h"
 
@@ -120,6 +121,16 @@ LhatLtonStatus lhatstdlib_lton_parse(LhatMachine *machine,
 // either. Diagnostics call it by its path.
 LhatLtonStatus lhatstdlib_lton_load(LhatMachine *machine, LhatProgram *program,
                                     const char *path, LhatValue *out);
+
+// 08 の 7改: the text compiled ahead -- the same wrapping and reading parse
+// makes, written out as the bytes parse and load read back without the
+// front end (05 の 10.8). What `lhat --compile conf.lton` writes. `out` is
+// lhat_alloc'd and the caller's to free; a refusal says why in
+// lhat_program_load_failure, as parse's does.
+LhatLtonStatus lhatstdlib_lton_write(LhatProgram *program, const char *name,
+                                     const char *text, size_t length,
+                                     bool with_debug_names, uint8_t **out,
+                                     size_t *out_length);
 
 #ifdef __cplusplus
 }

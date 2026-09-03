@@ -264,6 +264,10 @@ if(LHAT_BUILD_STDLIB)
         stdlib/error.c
         stdlib/io.c
         stdlib/json.c
+        # 05 の 10.8 with 08 の 7改: std.load and std.lton read text through
+        # the front end and bytes without it, so both ship in every build.
+        stdlib/load.c
+        stdlib/lton.c
         stdlib/math.c
         stdlib/mathvector3.c
         stdlib/random.c
@@ -271,10 +275,6 @@ if(LHAT_BUILD_STDLIB)
         stdlib/regex_engine.c
         stdlib/thread.c
     )
-    # 05 の 10.8: std.load and std.lton read text, which takes the front end.
-    if(LHAT_WITH_FRONTEND)
-        list(APPEND LHAT_STDLIB_SOURCES stdlib/load.c stdlib/lton.c)
-    endif()
     add_library(lhatstdlib ${LHAT_STDLIB_SOURCES})
     # lhat.h is the whole of what it needs (no private path into src/) --
     # for the same reason port/ has none, this is itself the worked example

@@ -3316,78 +3316,146 @@ static void say_unit(Said *s, const LhatUnit *unit)
     }
 }
 
+// The program's own diagnostics a load added from `from` on (a unit that
+// could not be read, a cycle, bytes another build wrote), as the text a
+// caller reads back.
+static void say_program(Said *s, const LhatProgram *program, size_t from)
+{
+    for (size_t i = from; i < program->diagnostic_count; i++) {
+        const LhatProgramDiagnostic *d = &program->diagnostics[i];
+        const char *message = lhat_program_error_message(d->code);
+        if (s->length > 0) {
+            say(s, "\n", 1);
+        }
+        say(s, d->path, strlen(d->path));
+        say(s, ": error: ", 9);
+        say(s, message, strlen(message));
+    }
+}
+
+// What a build of a placed unit leaves behind: the failure text on the
+// program -- a compile that stopped names its reason when nothing else was
+// said -- and the status a load answers. The unit keeps its proto on OK.
+static LhatLoadStatus settle_placed(LhatProgram *program,
+                                    const LhatUnit *unit, Said *said,
+                                    bool built)
+{
+    if (!built && said->length == 0) {
+        const char *message =
+            lhat_compile_status_message(program->compile_status);
+        say(said, unit->path, strlen(unit->path));
+        say(said, ": error: ", 9);
+        say(said, message, strlen(message));
+    }
+    program->load_failure = said->text;
+    if (built) {
+        return LHAT_LOAD_OK;
+    }
+    // No text at all means the failure itself did not fit.
+    return said->text != NULL ? LHAT_LOAD_REJECTED : LHAT_LOAD_OUT_OF_MEMORY;
+}
+
 // Takes the unit's source as already placed. What it requires joins the
 // program as any unit does (checked into the program's arena, compiled by
 // lhat_program_compile, registered when it first runs); the unit itself is
 // checked into an arena of its own, compiled without 5.3's guard and
-// registry write, and forgotten -- the proto is the caller's.
+// registry write, and left holding its proto for the caller to take.
 #if LHAT_WITH_FRONTEND
-static LhatLoadStatus load_placed(LhatProgram *program, LhatUnit *unit,
-                                  LhatProto **out)
+static LhatLoadStatus build_placed(LhatProgram *program, LhatUnit *unit)
 {
-    *out = NULL;
-
     LhatUnit *before = program->units;
     size_t reported_before = program->diagnostic_count;
     check_parsed(program, unit, NULL);
 
     Said said;
     memset(&said, 0, sizeof said);
-    // The program's own diagnostics this load added (a unit that could not
-    // be read, a cycle), then what the stages said of the unit and of
-    // every unit the load reached.
-    for (size_t i = reported_before; i < program->diagnostic_count; i++) {
-        const LhatProgramDiagnostic *d = &program->diagnostics[i];
-        const char *message = lhat_program_error_message(d->code);
-        if (said.length > 0) {
-            say(&said, "\n", 1);
-        }
-        say(&said, d->path, strlen(d->path));
-        say(&said, ": error: ", 9);
-        say(&said, message, strlen(message));
-    }
+    // The program's own diagnostics, then what the stages said of the unit
+    // and of every unit the load reached.
+    say_program(&said, program, reported_before);
     say_unit(&said, unit);
     for (const LhatUnit *u = program->units; u != before; u = u->next) {
         say_unit(&said, u);
     }
-
-    LhatLoadStatus status = LHAT_LOAD_OK;
-    if (said.length > 0) {
-        status = LHAT_LOAD_REJECTED;
-    } else if (!lhat_program_compile(program) ||
-               !compile_one(program, unit, false) ||
-               !fill_unit_table(unit)) {
-        const char *message =
-            lhat_compile_status_message(program->compile_status);
-        say(&said, unit->path, strlen(unit->path));
-        say(&said, ": error: ", 9);
-        say(&said, message, strlen(message));
-        status = LHAT_LOAD_REJECTED;
-    }
-    if (status == LHAT_LOAD_OK) {
-        *out = unit->proto;
-        unit->proto = NULL;
-    } else if (said.text == NULL) {
-        status = LHAT_LOAD_OUT_OF_MEMORY;  // the text itself did not fit
-    }
-    program->load_failure = said.text;
-    unit_dispose_contents(unit);
-    lhat_free(unit);
-    return status;
+    bool built = said.length == 0 && lhat_program_compile(program) &&
+                 compile_one(program, unit, false) && fill_unit_table(unit);
+    return settle_placed(program, unit, &said, built);
 }
 #else
-static LhatLoadStatus load_placed(LhatProgram *program, LhatUnit *unit,
-                                  LhatProto **out)
+static LhatLoadStatus build_placed(LhatProgram *program, LhatUnit *unit)
 {
-    // 10.8: a loaded script is text, and nothing here reads text.
+    // 10.8: text, and nothing here reads text.
     (void)unit;
-    *out = NULL;
-    lhat_free(program->load_failure);
     program->load_failure =
         duplicate("this build has no front end; only a binary unit runs");
     return LHAT_LOAD_REJECTED;
 }
 #endif  // LHAT_WITH_FRONTEND
+
+// 05 の 10 章 with 08 の 7改: the bytes a full build wrote for a script or
+// an LTON file (lhat_program_write_text), read the way load_into reads a
+// unit. A script is not one of the program's units, so what the bytes carry
+// beyond the body -- exports, what a host asks of the declarations -- has
+// nobody to answer to and is let go; what it requires joins the program as
+// it would from text.
+static LhatLoadStatus load_binary_placed(LhatProgram *program,
+                                         LhatUnit *unit, const uint8_t *bytes,
+                                         size_t length)
+{
+    size_t reported_before = program->diagnostic_count;
+    LhatBinaryUnit read;
+    unit->state = LHAT_UNIT_CHECKING;
+    bool built = lhat_serialize_load(program, unit, bytes, length, &read);
+    if (built) {
+        unit->proto = read.proto;
+        stamp_source(read.proto, unit->path);
+        lhat_free(read.module_name);
+        for (size_t i = 0; i < read.export_count; i++) {
+            lhat_free(read.export_names[i]);
+        }
+        lhat_free(read.export_names);
+        lhat_free(read.export_rt);
+        lhat_reflection_free(read.reflection);
+        built = lhat_program_compile(program) && fill_unit_table(unit);
+    }
+    Said said;
+    memset(&said, 0, sizeof said);
+    say_program(&said, program, reported_before);
+    return settle_placed(program, unit, &said, built);
+}
+
+// A unit of the program's making for what a caller holds: named, as data
+// or not, and nothing else yet.
+static LhatUnit *place(LhatProgram *program, const char *name,
+                       const LhatLoadOptions *options)
+{
+    // 05 の 8.8改: the other way checking begins (5.6). check_path's own call
+    // does not cover this one -- a script that requires nothing never reaches
+    // it -- and the pass does its work once whichever arrives first.
+    flatten_hostdata_bases(program);
+    lhat_free(program->load_failure);
+    program->load_failure = NULL;
+    LhatUnit *unit = (LhatUnit *)lhat_calloc(1, sizeof *unit);
+    if (unit == NULL) {
+        return NULL;
+    }
+    unit->path = normalise_path(name);
+    if (unit->path == NULL) {
+        lhat_free(unit);
+        return NULL;
+    }
+    unit->program = program;
+    // 05 の 8.2: what check_parsed reads to decide whether the host's initial
+    // bindings are in scope. Set before anything is checked, since that is
+    // the one moment it is asked.
+    unit->as_data = options != NULL && !options->initial_bindings;
+    return unit;
+}
+
+static void forget(LhatUnit *unit)
+{
+    unit_dispose_contents(unit);
+    lhat_free(unit);
+}
 
 char *lhat_program_read(LhatProgram *program, const char *path,
                         size_t *length)
@@ -3407,28 +3475,54 @@ LhatLoadStatus lhat_program_load_text_with(LhatProgram *program,
                                            LhatProto **out)
 {
     *out = NULL;
-    // 05 の 8.8改: the other way checking begins (5.6). check_path's own call
-    // does not cover this one -- a script that requires nothing never reaches
-    // it -- and the pass does its work once whichever arrives first.
-    flatten_hostdata_bases(program);
-    lhat_free(program->load_failure);
-    program->load_failure = NULL;
-    LhatUnit *unit = (LhatUnit *)lhat_calloc(1, sizeof *unit);
+    LhatUnit *unit = place(program, name, options);
     if (unit == NULL) {
         return LHAT_LOAD_OUT_OF_MEMORY;
     }
-    unit->path = normalise_path(name);
-    if (unit->path == NULL) {
-        lhat_free(unit);
+    // 10.1: the first byte says which the caller holds.
+    LhatLoadStatus status;
+    if (lhat_serialize_is_binary(text, length)) {
+        status = load_binary_placed(program, unit, (const uint8_t *)text,
+                                    length);
+    } else {
+        lhat_source_init_from_string(&unit->source, unit->path, text, length);
+        status = build_placed(program, unit);
+    }
+    if (status == LHAT_LOAD_OK) {
+        *out = unit->proto;
+        unit->proto = NULL;
+    }
+    forget(unit);
+    return status;
+}
+
+LhatLoadStatus lhat_program_write_text(LhatProgram *program, const char *name,
+                                       const char *text, size_t length,
+                                       const LhatLoadOptions *options,
+                                       bool with_debug_names, uint8_t **out,
+                                       size_t *out_length)
+{
+    *out = NULL;
+    *out_length = 0;
+    LhatUnit *unit = place(program, name, options);
+    if (unit == NULL) {
         return LHAT_LOAD_OUT_OF_MEMORY;
     }
-    unit->program = program;
-    // 05 の 8.2: what check_parsed reads to decide whether the host's initial
-    // bindings are in scope. Set before anything is checked, since that is
-    // the one moment it is asked.
-    unit->as_data = options != NULL && !options->initial_bindings;
     lhat_source_init_from_string(&unit->source, unit->path, text, length);
-    return load_placed(program, unit, out);
+    LhatLoadStatus status = build_placed(program, unit);
+    if (status == LHAT_LOAD_OK &&
+        !lhat_serialize_write(unit, with_debug_names, out, out_length)) {
+        lhat_free(program->load_failure);
+        program->load_failure = duplicate("the unit could not be written out");
+        status = LHAT_LOAD_REJECTED;
+    }
+    forget(unit);
+    return status;
+}
+
+bool lhat_program_is_binary_unit(const char *bytes, size_t length)
+{
+    return lhat_serialize_is_binary(bytes, length);
 }
 
 LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,

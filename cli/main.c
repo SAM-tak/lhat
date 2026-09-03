@@ -644,13 +644,12 @@ static bool bind_host_names(LhatProgram *program)
         !lhatstdlib_async_register(program)) {
         return false;
     }
-#if LHAT_WITH_FRONTEND
-    // 05 の 10.8: these two read text, which takes the front end.
+    // 05 の 10.8 with 08 の 7改: text through the front end, bytes without
+    // it -- so both are here in every build.
     if (!lhatstdlib_lton_register(program) ||
         !lhatstdlib_load_register(program)) {
         return false;
     }
-#endif
 #endif
 
     return true;
@@ -741,12 +740,87 @@ static bool make_directories(const char *path)
 }
 
 // 05 の 10 章: checks and compiles the program the way --run does, then
+static bool write_bytes(const char *out_path, const uint8_t *bytes,
+                        size_t length)
+{
+    FILE *file = make_directories(out_path) ? fopen(out_path, "wb") : NULL;
+    if (file == NULL) {
+        fprintf(stderr, "lhat: cannot write %s\n", out_path);
+        return false;
+    }
+    fwrite(bytes, 1, length, file);
+    fclose(file);
+    return true;
+}
+
+static bool is_lton_path(const char *path)
+{
+    size_t n = strlen(path);
+    return n > 5 && strcmp(path + n - 5, ".lton") == 0;
+}
+
+// 08 の 7改: an LTON file compiles on its own -- nothing requires one, it is
+// read at run time -- and lands under `out_dir` by its own name.
+static int compile_lton(const char *path, const char *out_dir, bool strict,
+                        bool with_debug)
+{
+#ifdef LHAT_CLI_WITH_STDLIB
+    size_t length = 0;
+    char *text = lhat_load_file(NULL, path, &length);
+    if (text == NULL) {
+        fprintf(stderr, "lhat: cannot read %s\n", path);
+        return EXIT_FAILURE;
+    }
+    LhatProgram program;
+    lhat_program_init(&program, strict, lhat_load_file, NULL);
+    uint8_t *bytes = NULL;
+    size_t size = 0;
+    LhatLtonStatus status = lhatstdlib_lton_write(&program, path, text, length,
+                                                  with_debug, &bytes, &size);
+    lhat_free(text);
+    int code = EXIT_FAILURE;
+    if (status != LHAT_LTON_OK) {
+        fprintf(stderr, "%s\n", lhat_program_load_failure(&program));
+    } else {
+        const char *base = path;
+        for (const char *at = path; *at != '\0'; at++) {
+            if (*at == '/' || *at == '\\') {
+                base = at + 1;
+            }
+        }
+        size_t out_length = strlen(out_dir) + 1 + strlen(base);
+        char *out_path = (char *)malloc(out_length + 1);
+        if (out_path != NULL) {
+            snprintf(out_path, out_length + 1, "%s/%s", out_dir, base);
+            if (write_bytes(out_path, bytes, size)) {
+                printf("%s: written as %s\n", path, out_path);
+                code = EXIT_SUCCESS;
+            }
+        }
+        free(out_path);
+    }
+    lhat_free(bytes);
+    lhat_program_dispose(&program);
+    return code;
+#else
+    (void)out_dir;
+    (void)strict;
+    (void)with_debug;
+    fprintf(stderr, "%s: this driver has no std.lton to compile it with\n",
+            path);
+    return EXIT_FAILURE;
+#endif
+}
+
 // writes every unit out as bytes under `out_dir`, laid out as the sources
 // are around the root -- the same relative paths, the same names, so the
 // require^s inside the bytes find each other where the loader looks.
 static int compile_program(const char *path, const char *out_dir,
                            bool strict, bool with_debug)
 {
+    if (is_lton_path(path)) {
+        return compile_lton(path, out_dir, strict, with_debug);
+    }
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
     if (!bind_host_names(&program)) {
@@ -806,14 +880,10 @@ static int compile_program(const char *path, const char *out_dir,
             break;
         }
         snprintf(out_path, out_length + 1, "%s/%s", out_dir, relative);
-        FILE *file = make_directories(out_path) ? fopen(out_path, "wb") : NULL;
-        if (file == NULL) {
-            fprintf(stderr, "lhat: cannot write %s\n", out_path);
-            failed = true;
-        } else {
-            fwrite(bytes, 1, length, file);
-            fclose(file);
+        if (write_bytes(out_path, bytes, length)) {
             written++;
+        } else {
+            failed = true;
         }
         free(out_path);
         lhat_free(bytes);
@@ -1287,7 +1357,8 @@ static void print_usage(void)
     printf("  --dump-host-api [file]  write what this driver registers"
                             " as JSON, for lhatls\n");
     printf("  --compile -o DIR  check and compile the whole program and"
-                            " write every unit to DIR as bytes\n");
+                            " write every unit to DIR as bytes; a .lton"
+                            " compiles on its own\n");
     printf("  --dump-signatures FILE  write the signature table this"
                             " driver's registrations make\n");
     printf("  --signatures FILE  read a signature table before"

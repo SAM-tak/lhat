@@ -909,6 +909,71 @@ static void test_host_wrapper_size(void)
     }
 }
 
+// 05 の 10 章 with 08 の 7改: a script compiled ahead loads back through the
+// same entry its text would, which is what a host does for a script it
+// ships to a build without the front end.
+static void test_scripts(void)
+{
+    LHAT_TEST("a script compiled ahead loads back through lhat_program_load_text");
+    {
+        LhatProgram program;
+        lhat_program_init(&program, true, NULL, NULL);
+        static const char text[] = "return^ 40 + 2\n";
+        uint8_t *bytes = NULL;
+        size_t length = 0;
+        LHAT_CHECK_EQ_INT(lhat_program_write_text(&program, "s.lh", text,
+                                                  sizeof text - 1, NULL, false,
+                                                  &bytes, &length),
+                          LHAT_LOAD_OK);
+        LHAT_CHECK(bytes != NULL &&
+                       lhat_program_is_binary_unit((const char *)bytes, length),
+                   "what came out is a unit");
+
+        LhatProto *proto = NULL;
+        LHAT_CHECK_EQ_INT(lhat_program_load_text(&program, "s.lh",
+                                                 (const char *)bytes, length,
+                                                 &proto),
+                          LHAT_LOAD_OK);
+        LhatMachine *machine = lhat_machine_new();
+        LhatValue closure = lhat_nil();
+        LHAT_CHECK(proto != NULL &&
+                       lhat_machine_adopt_script(machine, proto, &closure),
+                   "the machine took it");
+        LhatRunResult ran = lhat_machine_call(machine, closure, NULL, 0);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+        lhat_machine_dispose(machine);
+        lhat_free(bytes);
+        lhat_program_dispose(&program);
+    }
+
+    LHAT_TEST("damaged bytes are refused with the reason on the program");
+    {
+        LhatProgram program;
+        lhat_program_init(&program, true, NULL, NULL);
+        static const char text[] = "return^ 1\n";
+        uint8_t *bytes = NULL;
+        size_t length = 0;
+        LHAT_CHECK_EQ_INT(lhat_program_write_text(&program, "s.lh", text,
+                                                  sizeof text - 1, NULL, false,
+                                                  &bytes, &length),
+                          LHAT_LOAD_OK);
+        bytes[length - 1] ^= 0xff;
+        LhatProto *proto = NULL;
+        LHAT_CHECK_EQ_INT(lhat_program_load_text(&program, "s.lh",
+                                                 (const char *)bytes, length,
+                                                 &proto),
+                          LHAT_LOAD_REJECTED);
+        LHAT_CHECK(proto == NULL, "nothing came back");
+        const char *said = lhat_program_load_failure(&program);
+        LHAT_CHECK(said != NULL && strstr(said, "s.lh") != NULL,
+                   "the failure names the script: %s",
+                   said != NULL ? said : "(none)");
+        lhat_free(bytes);
+        lhat_program_dispose(&program);
+    }
+}
+
 int main(void)
 {
     test_roundtrip();
@@ -920,5 +985,6 @@ int main(void)
     test_signatures();
     test_reflection();
     test_host_wrapper_size();
+    test_scripts();
     return lhat_test_report("test_serialize");
 }

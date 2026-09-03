@@ -504,11 +504,67 @@ static void test_from_c(void)
     }
 }
 
+// 08 の 7改: the same text compiled ahead reads back as the same table
+// through the same entry -- which is how a build without the front end
+// (05 の 10.8) reads a configuration at all.
+static void test_compiled(void)
+{
+    LHAT_TEST("an LTON file compiled ahead parses back as the same table");
+    {
+        LhatProgram *program = lhat_program_new(true, NULL, NULL);
+        static const char text[] =
+            "width = 480 * 2,\n"
+            "name = \"lh\" .. \"at\",\n"
+            "window = { title = \"t\", vsync = 0 },\n";
+        uint8_t *bytes = NULL;
+        size_t length = 0;
+        LHAT_CHECK_EQ_INT(lhatstdlib_lton_write(program, "conf.lton", text,
+                                                sizeof text - 1, false, &bytes,
+                                                &length),
+                          LHAT_LTON_OK);
+        LHAT_CHECK(bytes != NULL &&
+                       lhat_program_is_binary_unit((const char *)bytes, length),
+                   "what came out is a unit");
+
+        LhatMachine *machine = lhat_machine_new();
+        LhatValue conf = lhat_nil();
+        LHAT_CHECK_EQ_INT(lhatstdlib_lton_parse(machine, program, "conf.lton",
+                                                (const char *)bytes, length,
+                                                &conf),
+                          LHAT_LTON_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(field(machine, conf, "width")), 960);
+        check_text(field(machine, conf, "name"), "lhat", "name");
+        check_text(field(machine, field(machine, conf, "window"), "title"),
+                   "t", "window.title");
+        lhat_machine_dispose(machine);
+        lhat_free(bytes);
+        lhat_program_free(program);
+    }
+
+    LHAT_TEST("what does not check is refused before anything is written");
+    {
+        LhatProgram *program = lhat_program_new(true, NULL, NULL);
+        uint8_t *bytes = NULL;
+        size_t length = 0;
+        LHAT_CHECK_EQ_INT(lhatstdlib_lton_write(program, "bad.lton",
+                                                "b = 1 +,", 8, false, &bytes,
+                                                &length),
+                          LHAT_LTON_REJECTED);
+        LHAT_CHECK(bytes == NULL, "nothing came out");
+        const char *said = lhat_program_load_failure(program);
+        LHAT_CHECK(said != NULL && strstr(said, "bad.lton:1:") != NULL,
+                   "the failure names the file: %s",
+                   said != NULL ? said : "(none)");
+        lhat_program_free(program);
+    }
+}
+
 int main(void)
 {
     test_what_may_be_written();
     test_what_may_not();
     test_load();
     test_from_c();
+    test_compiled();
     return lhat_test_report("test_lton");
 }

@@ -2513,9 +2513,12 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
 
 - 単位はバイナリだけ。テキストに出会えば `LHAT_PROGRAM_ERR_NO_FRONTEND`
 - 登録は署名表（10.7）。表なしでは署名付き登録が失敗する
-- `std.load` / `std.lton` は外れる（テキストを読む2つ）。プロンプト・
-  `--tokens`・構文木の出力・LSP・テスト・ベンチマークは無い。DAP は式評価だけ
-  「前段なし」を答え、フレームの読みと traceback は動く
+- `std.load` / `std.lton` はバイト列だけ読む: フルビルドが
+  `lhat_program_write_text` / `lhatstdlib_lton_write`（CLI は
+  `--compile x.lton`）で書いたものを、同じ入口が先頭バイトで見分けて
+  前段なしに読む（08 の 7改）。テキストを渡せば「前段なし」で拒む。
+  プロンプト・`--tokens`・構文木の出力・LSP・テスト・ベンチマークは無い。
+  DAP は式評価だけ「前段なし」を答え、フレームの読みと traceback は動く
 - 反射 API（`lhat_unit_annotation*` / `_member*` / `_documentation`）はバイナリ
   単位のレコード（10.6）から答える——木を歩く道が無いだけで、答えは同じ。
   `lhat_unit_export_conforms` は偽、`lhat_unit_write_binary` は偽
@@ -2529,6 +2532,11 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
 
 ## 改定履歴（要約）
 
+- **10.8改（2026-09-03）: 事前コンパイルした LTON とスクリプト。**
+  `lhat_program_load_text*` はバイト列も読み（先頭バイトで見分ける）、
+  `lhat_program_write_text` が同じ読みを書き出す。std.lton / std.load は
+  全ビルドに乗り、VM のみビルドではバイト列だけを読む（08 の 7改）。LTON は
+  前段そのものなので別の読み手は置かない
 - **8.8改（2026-09-03）: 記述子はホスト型でタグに止まる。** 委譲先が
   ホスト型の包みは、輸出記述子にホストの全 API を定義と instance の2回
   写していた（mob.lh 1.4KB → 162KB）。記述子は鎖の途中のホスト型で

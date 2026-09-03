@@ -83,6 +83,32 @@ static char *wrapped(const char *text, size_t length, size_t *out_length)
 // The reading itself, which is what a host names too (lton.h)
 // ---------------------------------------------------------------------------
 
+static LhatLtonStatus status_of(LhatLoadStatus status)
+{
+    switch (status) {
+        case LHAT_LOAD_OK:
+            return LHAT_LTON_OK;
+        // Not reachable from parse -- the text is already in hand, and only
+        // reading one through the loader can fail to find it. lton_load's
+        // half below is where it comes from.
+        case LHAT_LOAD_CANNOT_READ:
+            return LHAT_LTON_CANNOT_READ;
+        case LHAT_LOAD_REJECTED:
+            return LHAT_LTON_REJECTED;
+        case LHAT_LOAD_OUT_OF_MEMORY:
+            break;
+    }
+    return LHAT_LTON_OUT_OF_MEMORY;
+}
+
+// 05 の 8.2: as data, so the host's initial bindings are not in scope.
+static LhatLoadOptions as_data(void)
+{
+    LhatLoadOptions options;
+    options.initial_bindings = false;
+    return options;
+}
+
 // Wrap the text, have the program check and compile it as data, give the
 // body to the machine and run it. What comes back is the table -- unlike
 // std.load, which answers the closure and leaves the running to its caller.
@@ -93,34 +119,24 @@ LhatLtonStatus lhatstdlib_lton_parse(LhatMachine *machine,
 {
     *out = lhat_nil();
 
-    size_t whole = 0;
-    char *source = wrapped(text, length, &whole);
-    if (source == NULL) {
+    // 08 の 7改: bytes a full build wrote (lhatstdlib_lton_write) are the
+    // wrapping already done, and a wrapper put around them would bury the
+    // magic the loader tells them apart by. They go as they are.
+    bool binary = lhat_program_is_binary_unit(text, length);
+    size_t whole = length;
+    char *source = binary ? NULL : wrapped(text, length, &whole);
+    if (!binary && source == NULL) {
         return LHAT_LTON_OUT_OF_MEMORY;
     }
 
-    // 05 の 8.2: as data, so the host's initial bindings are not in scope.
-    LhatLoadOptions options;
-    options.initial_bindings = false;
-
+    LhatLoadOptions options = as_data();
     LhatProto *proto = NULL;
-    LhatLoadStatus status =
-        lhat_program_load_text_with(program, name != NULL ? name : "(lton)",
-                                    source, whole, &options, &proto);
+    LhatLoadStatus status = lhat_program_load_text_with(
+        program, name != NULL ? name : "(lton)", binary ? text : source,
+        whole, &options, &proto);
     lhat_free(source);
-
-    switch (status) {
-        case LHAT_LOAD_OK:
-            break;
-        // Not reachable from here -- the text is already in hand, and only
-        // reading one through the loader can fail to find it. lton_load's
-        // half below is where it comes from.
-        case LHAT_LOAD_CANNOT_READ:
-            return LHAT_LTON_CANNOT_READ;
-        case LHAT_LOAD_REJECTED:
-            return LHAT_LTON_REJECTED;
-        case LHAT_LOAD_OUT_OF_MEMORY:
-            return LHAT_LTON_OUT_OF_MEMORY;
+    if (status != LHAT_LOAD_OK) {
+        return status_of(status);
     }
 
     LhatValue closure = lhat_nil();
@@ -134,6 +150,24 @@ LhatLtonStatus lhatstdlib_lton_parse(LhatMachine *machine,
     }
     *out = ran.value;
     return LHAT_LTON_OK;
+}
+
+LhatLtonStatus lhatstdlib_lton_write(LhatProgram *program, const char *name,
+                                     const char *text, size_t length,
+                                     bool with_debug_names, uint8_t **out,
+                                     size_t *out_length)
+{
+    size_t whole = 0;
+    char *source = wrapped(text, length, &whole);
+    if (source == NULL) {
+        return LHAT_LTON_OUT_OF_MEMORY;
+    }
+    LhatLoadOptions options = as_data();
+    LhatLoadStatus status = lhat_program_write_text(
+        program, name != NULL ? name : "(lton)", source, whole, &options,
+        with_debug_names, out, out_length);
+    lhat_free(source);
+    return status_of(status);
 }
 
 LhatLtonStatus lhatstdlib_lton_load(LhatMachine *machine, LhatProgram *program,

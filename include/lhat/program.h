@@ -244,6 +244,28 @@ LhatLoadStatus lhat_program_load_file(LhatProgram *program, const char *path,
                                       LhatProto **out);
 const char *lhat_program_load_failure(const LhatProgram *program);
 
+// 05 の 10 章 with 08 の 7改: whether `bytes` begin the way a compiled unit
+// does -- the one reading that tells the two apart, since the extension
+// does not (10.1). The loaders above ask it themselves, so a script or an
+// LTON file a full build wrote out loads through the same entries as its
+// text would, front end or no (10.8); what holds something that may be
+// either and has to treat the two differently first (std.lton's wrapping)
+// asks here.
+bool lhat_program_is_binary_unit(const char *bytes, size_t length);
+
+// The same reading lhat_program_load_text_with makes of a text, written out
+// as the bytes those entries read back rather than handed over as a proto
+// -- what `lhat --compile` does for a .lton (08 の 7改), and what a host
+// does for a script it ships to a build without the front end. `out` is
+// lhat_alloc'd and the caller's to free. Answers as the load would; a build
+// without the front end refuses (LHAT_LOAD_REJECTED), having nothing to
+// read the text with.
+LhatLoadStatus lhat_program_write_text(LhatProgram *program, const char *name,
+                                       const char *text, size_t length,
+                                       const LhatLoadOptions *options,
+                                       bool with_debug_names, uint8_t **out,
+                                       size_t *out_length);
+
 // The same failure with where it was. The position indexes the source of the
 // unit that would not compile, which `path` names -- pass NULL for it where
 // the name is not wanted. Answers a zeroed result while nothing has failed.
