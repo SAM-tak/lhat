@@ -91,6 +91,10 @@ if(LHAT_BUILD_STDLIB)
     lhat_add_test(test_async stdlib)
     target_link_libraries(test_async PRIVATE lhatstdlib lhatthread)
 
+    # std.channel, and the sharing contract carry moves hostdata under.
+    lhat_add_test(test_channel stdlib)
+    target_link_libraries(test_channel PRIVATE lhatstdlib lhatthread)
+
     lhat_add_test(test_io stdlib)
     target_link_libraries(test_io PRIVATE lhatstdlib)
 

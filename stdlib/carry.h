@@ -27,8 +27,13 @@
 //   a coroutine                  a frame belongs to the machine that runs it
 //   a def^ or its instance       the definition's identity is the other
 //                                machine's to find again -- later
-//   a host value or hostdata     a pointer's ownership (dispose^) is the
-//                                host's contract, not settled here
+//   a host value                 a pointer's ownership (dispose^) is the
+//                                host's contract, not settled here --
+//                                and hostdata whose type declared that
+//                                contract (05 の 8.8改2,
+//                                lhat_register_hostdata_shared) crosses as
+//                                its pointer, held once for the tree and
+//                                once per wrapper rebuilt; the rest stays
 //   a host subroutine            installed per machine, not carried
 //   a loaded script's closure    its body belongs to the machine that
 //                                loaded it (05 の 5.6)

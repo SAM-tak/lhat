@@ -634,6 +634,12 @@ typedef enum {
     LHAT_ANNOTATION_FILEUNIQUE = 1u << 5
 } LhatAnnotationTarget;
 
+// 05 の 8.8改2: one more hold on a pointer taken, or one given back, by a
+// host that counts them. Called with no machine at hand -- by the thread
+// that carries a value and by the one that rebuilds it -- so it must not
+// reach into the L^ API.
+typedef void (*LhatHostHoldFn)(void *pointer, void *context);
+
 // 05 の 8.8: what tells one registered type from another while running.
 // Compared by identity alone -- 7.3's rule made into an object, and the one
 // thing standing between a Texture and the C code that expects a Sound. The
@@ -662,6 +668,16 @@ typedef struct LhatHostDataTag {
     // pass has no business writing into it.
     LhatHostFn release;
     void *release_context;
+    // 05 の 8.8改2: declared to cross machines
+    // (lhat_register_hostdata_shared). `retain` takes one more hold on the
+    // pointer and `let_go` gives one back, both without a machine at hand:
+    // a carried tree holds one while it lives, and every wrapper made from
+    // it holds one, given back through dispose^ as any wrapper's is. Both
+    // NULL for a type shared uncounted -- the host keeps the lifetime.
+    bool shared;
+    LhatHostHoldFn retain;
+    LhatHostHoldFn let_go;
+    void *hold_context;
 } LhatHostDataTag;
 
 // 05 の 8.8改: which declaration hands a value of `tag`'s type back -- its

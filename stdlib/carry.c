@@ -18,7 +18,8 @@ typedef enum {
     NODE_STRING,
     NODE_TABLE,
     NODE_CLOSURE,
-    NODE_CELL      // a captured place; held by one or more closures
+    NODE_CELL,     // a captured place; held by one or more closures
+    NODE_HOSTDATA  // 05 の 8.8改2: a pointer of a type declared shared
 } NodeKind;
 
 typedef struct {
@@ -39,7 +40,27 @@ typedef struct {
     size_t *cells;             // CLOSURE: node indexes of NODE_CELLs, owned
     size_t cell_count;
     size_t held;               // CELL: the node index of what it holds
+    // HOSTDATA. The tree holds the pointer once (tag->retain on the way
+    // in, tag->let_go when freed); every rebuild takes one more for the
+    // wrapper it makes.
+    const LhatHostDataTag *tag;
+    void *pointer;
 } Node;
+
+// 05 の 8.8改2: one more hold, or one given back, for a type that counts.
+static void hold(const LhatHostDataTag *tag, void *pointer)
+{
+    if (tag->retain != NULL) {
+        tag->retain(pointer, tag->hold_context);
+    }
+}
+
+static void let_go(const LhatHostDataTag *tag, void *pointer)
+{
+    if (tag->let_go != NULL) {
+        tag->let_go(pointer, tag->hold_context);
+    }
+}
 
 struct LhatCarried {
     Node *nodes;
@@ -348,6 +369,21 @@ static bool carry_value(Carrier *c, LhatValue value, size_t *index)
     if (lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE)) {
         return refuse(c, "a coroutine stays on its machine");
     }
+    // 05 の 8.8改2: a host type that declared it may cross does, as its
+    // pointer with one hold taken for the tree. A value already given back
+    // has no pointer to share and stays refused below.
+    if (lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {
+        const LhatHostData *data = (const LhatHostData *)lhat_as_object(value);
+        if (data->tag != NULL && data->tag->shared && !data->released) {
+            if (!add_node(c, NODE_HOSTDATA, index)) {
+                return false;
+            }
+            c->out->nodes[*index].tag = data->tag;
+            c->out->nodes[*index].pointer = data->pointer;
+            hold(data->tag, data->pointer);
+            return true;
+        }
+    }
     if (lhat_is_hostvalue(value) ||
         lhat_is_object_kind(value, LHAT_OBJECT_HOSTVALUE_BOX) ||
         lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {
@@ -400,6 +436,10 @@ void lhat_carried_free(LhatCarried *carried)
         lhat_free(carried->nodes[i].bytes);
         lhat_free(carried->nodes[i].entries);
         lhat_free(carried->nodes[i].cells);
+        if (carried->nodes[i].kind == NODE_HOSTDATA &&
+            carried->nodes[i].tag != NULL) {
+            let_go(carried->nodes[i].tag, carried->nodes[i].pointer);
+        }
     }
     lhat_free(carried->nodes);
     lhat_free(carried);
@@ -531,6 +571,19 @@ static bool build(Builder *b, size_t index, LhatValue *out)
         case NODE_CELL:
             // Reached only through a closure above; a cell is never a value.
             return build_cell(b, index);
+        case NODE_HOSTDATA:
+            // 05 の 8.8改2: a wrapper of its own on this machine, holding
+            // the pointer once more -- given back through dispose^ as any
+            // wrapper's is (the tag's, so on a machine the program was
+            // never installed on as well). Only memory fails this, and
+            // then the hold goes straight back.
+            hold(node->tag, node->pointer);
+            if (!lhat_machine_make_hostdata(b->machine, node->tag,
+                                            node->pointer, out)) {
+                let_go(node->tag, node->pointer);
+                return false;
+            }
+            break;
     }
     b->made[index] = *out;
     b->built[index] = true;

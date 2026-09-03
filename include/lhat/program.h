@@ -654,6 +654,29 @@ const LhatHostDataTag *lhat_register_hostdata_subtype(LhatProgram *program,
                                                       const char *base_module,
                                                       const char *base_name);
 
+// 05 の 8.8改2: declares that a pointer of this type may cross machines --
+// that stdlib/carry may move a value of it as its pointer and make a
+// wrapper of the same type on the far side (std.thread's arguments and
+// answers, std.channel's contents). What the language could not decide on
+// its own is the pointer's lifetime, and this is where the host decides it:
+// `retain` takes one more hold and `let_go` gives one back, called without
+// a machine at hand (a reference count, in a host that has one). A carried
+// tree holds the pointer once while it lives; every wrapper made from it
+// holds it once more, given back through the type's dispose^ as any
+// wrapper's is. Both NULL declares a type shared uncounted, whose lifetime
+// the host keeps by itself.
+//
+// Thread safety is the host's promise too, as it is in every host that
+// hands objects between threads: a type it cannot share stays undeclared,
+// and carry keeps refusing it.
+//
+// The type has to be registered already. A second program declaring the
+// same contract is that one declaration made twice; a different one is
+// refused (false), the way a differing dispose^ is.
+bool lhat_register_hostdata_shared(LhatProgram *program, const char *module,
+                                   const char *name, LhatHostHoldFn retain,
+                                   LhatHostHoldFn let_go, void *context);
+
 // A member of a type registered earlier. `signature` describes it; a p^ or f^
 // whose first parameter is written self^ is an instance method (14.4).
 //

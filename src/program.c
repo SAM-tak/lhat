@@ -1859,6 +1859,24 @@ const LhatHostDataTag *lhat_register_hostdata_subtype(LhatProgram *program,
     return lhat_registry_set_hostdata_base(tag, base) ? tag : NULL;
 }
 
+bool lhat_register_hostdata_shared(LhatProgram *program, const char *module,
+                                   const char *name, LhatHostHoldFn retain,
+                                   LhatHostHoldFn let_go, void *context)
+{
+    if (program == NULL || module == NULL || name == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < program->host_type_entry_count; i++) {
+        const LhatHostTypeEntry *at = &program->host_type_entries[i];
+        if (strcmp(at->module, module) == 0 && strcmp(at->name, name) == 0) {
+            // 8.8改2: the tag is the process's, so the contract settles
+            // there (registry.h), as the release and the base do.
+            return lhat_registry_set_hold(at->tag, retain, let_go, context);
+        }
+    }
+    return false;
+}
+
 // lhat_register_error_kind の失敗経路が繰り返し要る後始末: variant_copies
 // の先頭 filled_count 個(まだ何も書かれていない calloc 直後なら 0)と、
 // 配列自体2つ。variants/variant_copies のどちらかが NULL でも(要素数0の

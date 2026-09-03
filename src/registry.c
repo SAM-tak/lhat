@@ -178,6 +178,26 @@ bool lhat_registry_set_release(const LhatHostDataTag *tag, LhatHostFn release,
     return true;
 }
 
+bool lhat_registry_set_hold(const LhatHostDataTag *tag, LhatHostHoldFn retain,
+                            LhatHostHoldFn let_go, void *context)
+{
+    if (tag == NULL) {
+        return false;
+    }
+    LhatHostDataTag *mine = (LhatHostDataTag *)tag;
+    if (mine->shared) {
+        // 8.8改2: as with the release above -- one declaration, however
+        // many programs make it.
+        return mine->retain == retain && mine->let_go == let_go &&
+               mine->hold_context == context;
+    }
+    mine->shared = true;
+    mine->retain = retain;
+    mine->let_go = let_go;
+    mine->hold_context = context;
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // 05 の 8.9: host values
 // ---------------------------------------------------------------------------

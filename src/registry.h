@@ -55,6 +55,11 @@ bool lhat_registry_set_hostdata_base(const LhatHostDataTag *tag,
 bool lhat_registry_set_release(const LhatHostDataTag *tag, LhatHostFn release,
                                void *context);
 
+// 8.8改2: the sharing contract the type declared. False when one is
+// already set and it is not this one.
+bool lhat_registry_set_hold(const LhatHostDataTag *tag, LhatHostHoldFn retain,
+                            LhatHostHoldFn let_go, void *context);
+
 // 8.9: the same for a host value type. `size` is the payload the host
 // declared; a second declaration of a different size is refused (NULL),
 // since the width is what every frame that holds one was laid out against.
