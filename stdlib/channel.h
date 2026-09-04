@@ -9,13 +9,13 @@
 // are not: those hand a value over once each way, and a worker that wants
 // to be given work, or to answer more than once, needs somewhere to put it.
 //
-//     let^ jobs = std.channel.named("jobs")     # the same channel in every
-//     let^ done = std.channel.named("results")  # machine of this process
+//     let^jobs = std.channel.named("jobs")     # the same channel in every
+//     let^done = std.channel.named("results")  # machine of this process
 //
 //     # in the worker
-//     repeat^ {
-//         let^ job = jobs.demand()              # waits until there is one
-//         if^ job fits^ nil^ { break^ }
+//     repeat^{
+//         let^job = jobs.demand()              # waits until there is one
+//         if^job fits^ nil^{ break^}
 //         done.push(work(job))
 //     }
 //

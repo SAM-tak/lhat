@@ -112,11 +112,11 @@ let^Reader = def^{
     expr = p^self^{
         var^value = self^.term()
         repeat^while^self^.ok {
-            let^ c = self^.peek()
-            if^ c = "+" {
+            let^c = self^.peek()
+            if^c = "+" {
                 self^.bump()
                 value += self^.term()
-            elif^ c = "-":
+            elif^c = "-":
                 self^.bump()
                 value -= self^.term()
             else^:

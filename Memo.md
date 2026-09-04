@@ -88,134 +88,28 @@ hash^ ユーザー定義のハッシュ。これがないと値比較でテー�
 
 インスタンス検査が入ったことで実質パラメトリック多相を実現している、という認識。
 
-#### sync^構文
-
-同期的にその場でコルーチンを回すイディオムを毎回書くのだるいから、`sync^`を追加しても良いかも。
-が、具体的にどういう構文になる？ 受け取る結果は T 型のみでいいが、 R Y があるコルーチンの場合は？
-`sync^`一語では済まない。L^ にマクロかジェネリクスがあればユーザー定義で同じ事ができるかもしれないが、
-現状無いのでできない。
-
-> sync^(coroutine, awaiter:f|p^Y -> R;)
+#### std.task
 
 ```lhat
-let^r = sync^(co, f^a, b { # start/resume の返り値を引数に受け取り（そしてこれは流石に推論してほしい）
-    print(a)
-    return^b + 1 # 次のresume に渡す値を返す
-})
-```
-
-この構文で良さそうだが、もうちと練る。（が、Fable先生によると必要ないらしい…？）
-たしかに。Unityで async/await使っているとasync関数を呼び出すトップの姿を見たことがないわけだが
-Unity内部やUniTaskの中で見えないだけで、そういうもの（スケジューラー）は存在する。
-スケジューラーをユーザーに書かせるかホストが提供するかはホストアプリケーションの判断。
-どっちにしろ、ユーザーサイドでコルーチンの自前回しは基本しない、と考えて良い。
-
-#### 異型 yield は、実は今でも書ける
-
-let^ g = p^ -> c^{p^ -> number^|string^ -> nil^} {
-  yield^ 1 as^ number^|string^      # 通る
-  yield^ "a" as^ number^|string^
+let^gen1 = p^{
+    return await^someAsyncJob1()
 }
-as^ を外すと落ちる。理由は chk_unify_yield が lhat_type_equal（厳密一致） で照合しているから — 合併を書いてあっても各サイトが合併型そのものでないと通らない。
 
-ここを「Y が書かれているときは適合で照合する」に変えれば as^ が消える。 検査器1箇所。「全部 await する」を現実的にする最小の一手はこれ。推論で勝手に合併を作らない（15.2 の「異種の yield^ を型で見分けさせない」）方針は保ったまま、書いた合併だけは効くという線になる。
-
-「どうしても同型にできない」場合も、アダプタは普通の p^ で書ける — 内側を回して外側の形で yield し直すだけ。マクロは要らない。
-
-let^ adapt = p^ inner:c^{…} -> c^{外の形} {
-  var^ y = inner.start()
-  ... 外の形に変換して yield^、返ってきた R を inner.resume() に渡す
+let^gen2 = p^{
+    return await^someAsyncJob2()
 }
-呼ぶ側は await^ adapt(inner)。
 
-##### まとめると
+std.task.start(6) # ワーカースレッド６個で初期化。省略した場合物理コア分のワーカースレッドを製作
 
-専用構文もマクロも要らない。要るのは (a) Y を「要求型」1つに決める設計判断、(b) 書かれた Y の照合を適合に緩める検査器の1箇所
-f^ 内での駆動は諦める。作る側が f^、回す側が p^ かホスト、で分業する
-Godot は _ready start /_process resume。エンジン側の await と同じ構造なので違和感も出ない
-(b) は小さい変更で効果が大きい。やるなら着手する。
-
-これは良いが、なるとなると c^{} のシグネチャの手書きが増えるのが嫌。
-
-gen.Return などとしてその返り値型にアクセスできて、
-
-f^->gen.Return {}
-
-と書けるなら良いかもしれない。が、そうなると合併されてた時の書き分け、引数にも同様なのが欲しい、となる…
-
-```lhat
-func = f^a:number^, b:string^ -> (number^|string^, number^|nil^)|Error|nil^;
-
-func.Argument        # (number^, string^)
-func.Argument[1]     # number^
-func.Argument[2]     # string^
-func.Return          # (number^|string^, number^|nil^)|Error|nil^
-func.Return[1]       # (number^|string^, number^|nil^)
-func.Return[2]       # Error
-func.Return[3]       # nil^
-func.Return[1][1]    # number^|string^
-func.Return[1,1]     # number^|string^ これはこう書けなくても良いかな…
-func.Return[1][1][1] # number^
-func.Return[1][1][2] # string^
-
-gen = f^a:number^, b:string^->c^{f^number^,number^->string^,string^->File|Error|nil^};
-
-gen.Return          # c^{f^number^,number^->string^,string^->File|Error|nil^}
-gen.Return[1]       # c^{f^number^,number^->string^,string^->File|Error|nil^}
-gen.Return[1][1]    # (number^,number^) こう、か？つまり R項
-gen.Return[1][2]    # (string^,string^) つまり Y項
-gen.Return[1][3]    # File|Error|nil^ つまり T項
-gen.Return[1][3][1] # File
-gen.Return[1][3][1] # Error
-
-c^{}はそれ以上分解できない、でいい気はする
-```
-
-ReturnType の一語だけあればいいのでは？
-
-typeof^() は？あれは何？
-
----
-
-では std.task の答え。
-
-今できるか
-
-スレッド版は既にある: std.thread.spawn(p^ ... { … }) ＋ h.join() が Elixir の Task.async/Task.await そのもの。呼ぶ側は yield^ も await^ も書かない。代償は別機械——引数と答えは carry の写し、hostdata・コルーチンは渡らない
-同一機械版は部品だけある: std.async（timer/external/wait）＋ sample/async.lh の Scheduler。非 yieldable な関数からも Scheduler.new() → add(p^{ r := await^ co }()) → run() で「その場で回す」は書けるが、結果の受け渡しが手作業で、提案の見た目には程遠い
-障害は1つだけ、しかも決定的: 「C のスレッドプールがコルーチンを回す」は不可能。コルーチンは機械のフレームそのもので、機械は1スレッド1台、carry も拒む。よって同一機械の std.task はバックグラウンドで何も進めない——進むのは async()・await() の呼び出しの中だけ。
-
-ただし Elixir の絵は大部分残る。バックグラウンドにあるのは I/O であって L^ のコードではない:
-
-std.task.async(co) がその場で co を最初の中断まで進める → HTTP 要求なりタイマーなりが出る（std.async の id）
-「他の処理」の間、ホスト側の I/O は勝手に進む
-std.task.await(t) が t が済むまでここで回す（済んだ id を持つ他のタスクも進める）。ホスト関数からの入れ子 resume は 8.8 の API が既に許している → 呼ぶ側は赤くならない
-CPU バウンドの「裏で計算」は同一機械では原理的に無理で、それは std.thread の仕事（写しで渡す）。二つは別物として並ぶ。
-
-設計案（stdlib/task.c、std.async の上）
-
-std.task.async : p^any^ -> std.task.Task|std.task.Error; — コルーチン以外は Error.NotATask。登録して最初の中断まで進める。initialize は不要（状態は機械ごと、std.async と同じ）
-std.task.await : p^std.task.Task -> any^|std.task.Error; — 済むまで回す。タスクが yield^ したものが std.async の id でなければ Error.Unawaitable（async.lh の joined のようにスレッド待ちも id に変換して差し出す）
-答えは any^。ホスト登録の署名は T を運べないので isa^ で絞る——join() と同じ線。ここが見た目との唯一の差で、T を通したければ言語側の組込み（コルーチンのメンバ）になるが、Memo の結論「専用構文は要らない」に反する
-埋め込み先の注意: await は眠る。Godot の _process や LÖVE の update の中で呼ぶとフレームが止まる。そこでは従来どおり poll 形（毎フレーム一周して返す）で、await は CLI・ツール・worker スレッドの中向け。std.task.poll() も同じ表から出せる
-着手するなら上の形で計画に落とす。any^ の答えで良いかだけ決めてほしい。
-
----
-
-ちょっとガッカリの返答だ。
-
-> スレッド版は既にある: std.thread.spawn(p^ ... { … }) ＋ h.join() が Elixir の Task.async/Task.await そのもの。呼ぶ側は yield^ も await^ も書かない。代償は別機械——引数と答えは carry の写し、hostdata・コルーチンは渡らない
-
-そんな訳はない。Elixir の Task.async がいちいち新規スレッドを立てているわけがない。
-
-> std.task.await(t) が t が済むまでここで回す（済んだ id を持つ他のタスクも進める）。ホスト関数からの入れ子 resume は 8.8 の API が既に許している → 呼ぶ側は赤くならない
-
-t1 = std.task.async(gen1())
-t2 = std.task.async(gen2())
-std.task.await(t1)
+t1 = std.task.async(gen1()) # コルーチンではなくタスクハンドル、のような物を返す
+t2 = std.task.async(gen2()) # なので、std.task.async/std.task.awaitの呼び出しは、yieldableにしない
+std.task.await(t1) # get1 gen2 は別スレッドで完全並行動作。
 std.task.await(t2)
+```
 
-この std.task.await(t1) の間、t2は一切先に進まない、というのは望まれた挙動ではない。
+Elixir で言うところの軽量プロセス は L^ では LhatMachine のこと。
+数千のプロセスを立ち上げ並行処理、を実現するには、現在の L^ の設計では如何に LhatMachine を安価にできるか、にかかっている。
+CPUリソースはさして問題ではなく、現状問題なのはメモリ容量。レジスタを最大数常に確保してしまうのをやめ、小さいサイズから初めて随時新調していく実装に改めれば解決する。
 
 #### マクロ
 
