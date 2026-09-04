@@ -121,6 +121,28 @@ typedef struct LhatMachine LhatMachine;
 
 LhatMachine *lhat_machine_new(void);
 
+// 03 の 4.3改: the same machine, measured by the caller. `frames` is how
+// deep a call may go and `slots` how many registers the frames share; 0 for
+// either asks for what lhat_machine_new does (LHAT_MAX_FRAMES,
+// LHAT_STACK_SLOTS), and anything too small to run a single body at all is
+// raised to the least that can -- one frame, and 256 slots, which is every
+// width a proto can name.
+//
+// This exists because a machine is not small: the default one is about
+// 160 KiB, over half of it the frame array, and a host that runs many at
+// once -- a task pool giving a job its own machine -- pays that per job.
+// Measurements it chooses can bring that to a few kilobytes.
+//
+// WHAT THE MEASUREMENTS COST. Nothing derives them: the width of one frame
+// is known exactly at compile time (a body's register high-water mark), but
+// the DEPTH is not knowable at all -- there is no call graph, a callee is a
+// first-class value, and host callbacks add frames no bytecode mentions. So
+// these are a policy, not a calculation, and a run that outgrows them ends
+// with LHAT_RUN_STACK_OVERFLOW. That is an ordinary run status: the frames
+// are left standing and the traceback reads, exactly as a machine of the
+// default size answers a runaway recursion.
+LhatMachine *lhat_machine_new_with_size(size_t frames, size_t slots);
+
 // Frees the machine and everything still allocated on it. Any LhatValue that
 // came out of a run on it points into that, so nothing read from a result
 // outlives this call.

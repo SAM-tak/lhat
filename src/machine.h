@@ -130,7 +130,8 @@ _Static_assert(LHAT_MAX_TUPLE <= LHAT_HOSTVALUE_MAX_BYTES / 8,
 
 // 05 の 8.9: the host value whose head sits at `slot`, as a host receives
 // one -- a value aiming back into the stack. Stable for as long as the
-// machine does not move: the stack is a fixed array of the machine's.
+// machine lives: the stack is the machine's own, made once and never moved
+// (03 の 4.3改 lets a caller choose how long it is, not where it sits).
 static inline LhatValue hostvalue_argument(LhatSlots slots, size_t slot)
 {
     LhatValue v;
@@ -150,13 +151,19 @@ typedef struct LhatWeakEntry {
 
 struct LhatMachine {
     // 2.2: the one shared stack, as two parallel runs -- payloads dense,
-    // tags one byte each -- read and written through `slots` below. 16
-    // bytes a slot becomes 9, and a frame's worth of tags sits in one or
-    // two cache lines.
-    LhatValueUnion stack_values[LHAT_STACK_SLOTS];
-    uint8_t stack_tags[LHAT_STACK_SLOTS];
-    LhatSlots slots;  // the view over the two, fixed at lhat_machine_new
-    Frame frames[LHAT_MAX_FRAMES];
+    // tags one byte each -- read and written through `slots`. 16 bytes a
+    // slot becomes 9, and a frame's worth of tags sits in one or two cache
+    // lines.
+    //
+    // 03 の 4.3改: the two runs and the frame array are laid down after the
+    // struct inside the machine's single allocation, so how long they are is
+    // the caller's to say (lhat_machine_new_with_size) while a machine stays
+    // one calloc and one free. Their lengths are read from the machine, not
+    // from the constants -- those are only what lhat_machine_new asks for.
+    LhatSlots slots;       // the view over the two runs, fixed at creation
+    size_t slot_capacity;  // how many slots the two runs hold
+    Frame *frames;
+    size_t frame_capacity;
     size_t frame_count;
 
     // 04 の 11.6改: where the running span of frames begins -- run_frames'

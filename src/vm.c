@@ -355,7 +355,7 @@ static bool place_hostvalue_answer(Machine *m, size_t at, LhatValue answered)
 {
     const LhatValueUnion *run = answered.as.hostvalue_run;
     const LhatHostValueTag *tag = run != NULL ? run[0].hostvalue : NULL;
-    if (tag == NULL || at + tag->width > LHAT_STACK_SLOTS) {
+    if (tag == NULL || at + tag->width > m->slot_capacity) {
         return false;
     }
     // Ascending, which survives the one overlapping case there is: a host
@@ -405,7 +405,7 @@ static bool place_run_answer(Machine *m, size_t at, size_t reserved,
     size_t held = m->tuple_scratch_count;
     m->tuple_scratch_count = 0;
     if (positions != held || reserved != positions + 1 ||
-        at + positions >= LHAT_STACK_SLOTS) {
+        at + positions >= m->slot_capacity) {
         return false;
     }
     lhat_slots_set(m->slots, at, answered);
@@ -1480,7 +1480,7 @@ static void reattach_upvalues(Machine *m, LhatCoroutine *co, size_t base)
 
 // 5.11 with 02 の 10.7: puts a suspended coroutine's one saved frame back on
 // the stack so that what it still owes can be run. The caller has already
-// made room (LHAT_MAX_FRAMES and the stack's own end) and picked where the
+// made room (the frame array and the stack's own end) and picked where the
 // frame goes: `next_base` is its first register and `result` the slot in the
 // caller's frame the answer lands in.
 //
@@ -2990,22 +2990,70 @@ static bool build_environment(Machine *m)
     return true;
 }
 
+// 03 の 4.3改: the three runs sit after the struct in one block, so their
+// starts have to land aligned without any padding arithmetic. They do,
+// because a type's size is a multiple of its alignment -- asserted rather
+// than assumed.
+_Static_assert(sizeof(Machine) % _Alignof(Frame) == 0 &&
+                   sizeof(Frame) % _Alignof(LhatValueUnion) == 0,
+               "what is laid after the machine has to land aligned");
+
 LhatMachine *lhat_machine_new(void)
 {
+    return lhat_machine_new_with_size(0, 0);
+}
+
+LhatMachine *lhat_machine_new_with_size(size_t frames, size_t slots)
+{
+    if (frames == 0) {
+        frames = LHAT_MAX_FRAMES;
+    }
+    if (slots == 0) {
+        slots = LHAT_STACK_SLOTS;
+    }
+    // The least that can run anything: one frame, and room for the widest
+    // body there could be. 256 rather than LHAT_MAX_REGISTERS + 1 because
+    // what has to fit is not what a compile makes but what a proto may SAY
+    // -- `chunk.registers` and `reserved` are both uint8_t, in a unit read
+    // from a file as readily as one just compiled. At 256 every value of
+    // those fields fits, so no run has to be turned away for being wider
+    // than the machine, and no read can reach past the runs.
+    if (frames < 1) {
+        frames = 1;
+    }
+    if (slots < 256) {
+        slots = 256;
+    }
+    // Far past anything a caller means, and the point of saying so is that
+    // the arithmetic below must not wrap on the way to a refusal.
+    if (frames > (size_t)1 << 16 || slots > (size_t)1 << 24) {
+        return NULL;
+    }
+
     // A whole stack and a frame array, so the heap is where it belongs --
     // a static one could serve only one caller and never nest.
     // calloc rather than malloc, and nothing more: 03 の 2.2 numbers
     // LHAT_VALUE_NIL first and gives it a zero payload, so zeroed memory is
     // already a stack full of nil^.
-    Machine *m = (Machine *)lhat_calloc(1, sizeof *m);
+    //
+    // 4.3改: one block for the struct and the three runs together. A machine
+    // is still one allocation and one free, and the runs are as near the
+    // fields that walk them as the fixed arrays were.
+    size_t bytes = sizeof(Machine) + frames * sizeof(Frame) +
+                   slots * sizeof(LhatValueUnion) + slots;
+    Machine *m = (Machine *)lhat_calloc(1, bytes);
     if (m == NULL) {
         return NULL;
     }
+    m->frames = (Frame *)((char *)m + sizeof *m);
+    m->frame_capacity = frames;
     // 2.2: the one view every register read goes through, fixed for the
-    // machine's whole life. Tag zero is nil^, so the zeroed runs above are
-    // already a stack full of it.
-    m->slots.values = m->stack_values;
-    m->slots.tags = m->stack_tags;
+    // machine's whole life. Tag zero is nil^, so the zeroed runs are already
+    // a stack full of it.
+    LhatValueUnion *values = (LhatValueUnion *)(m->frames + frames);
+    m->slots.values = values;
+    m->slots.tags = (uint8_t *)(values + slots);
+    m->slot_capacity = slots;
     m->threshold = LHAT_GC_INITIAL_THRESHOLD;
     if (!build_environment(m)) {
         lhat_machine_dispose(m);
@@ -3691,7 +3739,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // cutting into it would interleave two unwindings that have nothing
         // to do with each other. The queue waits; it is in no hurry.
         if (m->pending_dispose != NULL && !frame->disposing) {
-            if (m->frame_count >= LHAT_MAX_FRAMES) {
+            if (m->frame_count >= m->frame_capacity) {
                 return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), pc);
             }
             // Just past what this frame uses, so nothing live is written
@@ -3699,7 +3747,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // return still lands somewhere and this is somewhere harmless.
             uint8_t into = chunk->registers;
             size_t next_base = rbase + (into) + 1;
-            if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
+            // 4.3改: the queued one's own width. gc.c holds back only a
+            // suspended BODY coroutine, so the closure is there to ask.
+            if (next_base +
+                    m->pending_dispose->closure->proto->chunk.registers >=
+                m->slot_capacity) {
                 return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), pc);
             }
             LhatCoroutine *co = lhat_gc_take_pending(m);
@@ -4642,7 +4694,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);
                     }
-                    if (rbase + a + (size_t)b >= LHAT_STACK_SLOTS) {
+                    if (rbase + a + (size_t)b >= m->slot_capacity) {
                         return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW,
                                       lhat_nil(), at);
                     }
@@ -4658,7 +4710,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     break;
                 }
                 if (width > (size_t)b ||
-                    rbase + a + (size_t)b >= LHAT_STACK_SLOTS) {
+                    rbase + a + (size_t)b >= m->slot_capacity) {
                     return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
                                   at);
                 }
@@ -4674,7 +4726,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // from here the run is the one every other path produces.
             case LHAT_BC_MAKERUN: {
                 if (b < 2 || (size_t)b > LHAT_MAX_TUPLE ||
-                    rbase + a + (size_t)b >= LHAT_STACK_SLOTS) {
+                    rbase + a + (size_t)b >= m->slot_capacity) {
                     return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
                                   at);
                 }
@@ -6209,7 +6261,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                           lhat_nil(), at);
                         }
                         if (room == 3) {
-                            if (rbase + a + 2 >= LHAT_STACK_SLOTS) {
+                            if (rbase + a + 2 >= m->slot_capacity) {
                                 return finish(m, chunk,
                                               LHAT_RUN_STACK_OVERFLOW,
                                               lhat_nil(), at);
@@ -6245,7 +6297,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         }
                         unsigned room = lhat_call_prepared(cc);
                         if (room > 1 &&
-                            rbase + a + room - 1 >= LHAT_STACK_SLOTS) {
+                            rbase + a + room - 1 >= m->slot_capacity) {
                             return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW,
                                           lhat_nil(), at);
                         }
@@ -6272,12 +6324,14 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         break;
                     }
 
-                    if (m->frame_count >= LHAT_MAX_FRAMES) {
+                    if (m->frame_count >= m->frame_capacity) {
                         return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                     }
 
                     size_t next_base = rbase + (a) + 1;
-                    if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
+                    // 4.3改: a suspension's saved registers are its body's
+                    // width, which is the window the restore lays down.
+                    if (next_base + co->register_count >= m->slot_capacity) {
                         return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                     }
                     frame->pc = pc;
@@ -6486,7 +6540,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 bool reuse = tail && frame->cleanup_count == 0 &&
                              frame->coroutine == NULL &&
                              frame->closure->proto->kept == 0;
-                if (!reuse && m->frame_count >= LHAT_MAX_FRAMES) {
+                if (!reuse && m->frame_count >= m->frame_capacity) {
                     return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
 
@@ -6496,7 +6550,15 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // overwrite the slot after the fixed ones with the table just
                 // built.
                 size_t next_base = rbase + a + skip;
-                if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
+                // 03 の 4.3改: room for THIS callee's window, not for the
+                // widest a compile could make. The two were the same
+                // question while every machine had 8192 slots to spend; a
+                // machine measured by its caller may have a few hundred,
+                // and reserving 250 of them per call would leave it one
+                // frame deep. What the callee's own calls need is asked
+                // again here when it makes them.
+                if (next_base + callee->proto->chunk.registers >=
+                    m->slot_capacity) {
                     return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
                 if (spread_table != NULL) {
@@ -6887,7 +6949,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // CHECKRUN pads it where the binding takes it apart.
                     size_t positions = lhat_run_width(value);
                     if ((size_t)reserved < positions + 1 ||
-                        rbase + into + positions >= LHAT_STACK_SLOTS) {
+                        rbase + into + positions >= m->slot_capacity) {
                         return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);
                     }
@@ -6909,7 +6971,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     const LhatTable *yielded =
                         (const LhatTable *)lhat_as_object(value);
                     size_t positions = (size_t)reserved - 1;
-                    if (rbase + into + positions >= LHAT_STACK_SLOTS) {
+                    if (rbase + into + positions >= m->slot_capacity) {
                         return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);
                     }
@@ -6974,7 +7036,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // loop written with two names is asking the same way.
                     if (mode == WALK_AS_RUN &&
                         (co->part != LHAT_WALK_PAIR || (size_t)cc != 3 ||
-                         rbase + a + 2 >= LHAT_STACK_SLOTS)) {
+                         rbase + a + 2 >= m->slot_capacity)) {
                         return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);
                     }
@@ -6986,7 +7048,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // is what a BODY's resume writes into sent_into below.
                 if (co->source == LHAT_COROUTINE_HOST) {
                     if (mode == WALK_AS_RUN &&
-                        rbase + a + (size_t)cc - 1 >= LHAT_STACK_SLOTS) {
+                        rbase + a + (size_t)cc - 1 >= m->slot_capacity) {
                         return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW,
                                       lhat_nil(), at);
                     }
@@ -7001,7 +7063,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         if (lhat_is_run(R(a))) {
                             size_t width = lhat_run_width(R(a));
                             if (width > LHAT_MAX_TUPLE ||
-                                rbase + a + width >= LHAT_STACK_SLOTS) {
+                                rbase + a + width >= m->slot_capacity) {
                                 return finish(m, chunk,
                                               LHAT_RUN_TUPLE_ARITY,
                                               lhat_nil(), at);
@@ -7026,7 +7088,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                     break;
                 }
-                if (m->frame_count >= LHAT_MAX_FRAMES) {
+                if (m->frame_count >= m->frame_capacity) {
                     return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
                 // 13.8改: the frame goes above the slots the loop reserved
@@ -7037,7 +7099,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     ((cc & LHAT_RESUME_WIDE) != 0
                          ? (size_t)(cc & ~LHAT_RESUME_WIDE)
                          : cc >= 3 ? (size_t)cc : 1);
-                if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
+                if (next_base + co->register_count >= m->slot_capacity) {  // 4.3改
                     return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
 
@@ -7064,7 +7126,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 } else if (lhat_is_run(R(a))) {
                     size_t width = lhat_run_width(R(a));
                     if (width > LHAT_MAX_TUPLE ||
-                        rbase + a + width >= LHAT_STACK_SLOTS) {
+                        rbase + a + width >= m->slot_capacity) {
                         return finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);
                     }
@@ -7369,7 +7431,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         if (carried->proto == NULL || carried->proto->yields) {
             return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }
-        if (m->frame_count >= LHAT_MAX_FRAMES) {
+        if (m->frame_count >= m->frame_capacity) {
             return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
         }
 
@@ -7384,7 +7446,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // values whichever side the receiver is. Only which slot the body
         // calls self^ differs, and that is the body's own business.
         size_t next_base = rbase + (a) + 1;
-        if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
+        if (next_base + carried->proto->chunk.registers >=
+            m->slot_capacity) {  // 4.3改
             return finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
         }
         // Both operands are read before either slot of the new window is
@@ -7594,7 +7657,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // positions with nil^ where the binding takes it apart.
                 // Only a wider run than the reservation is the mismatch.
                 if ((size_t)reserved < positions + 1 ||
-                    rbase + into + positions >= LHAT_STACK_SLOTS) {
+                    rbase + into + positions >= m->slot_capacity) {
                     return finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
                                   at);
                 }
@@ -7661,7 +7724,7 @@ LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
     // this run's frames, not the span the last one recorded.
     m->fault_depth = m->fault_base = 0;
     close_upvalues(m, proto->reserved);
-    for (size_t i = proto->reserved; i < LHAT_STACK_SLOTS; i++) {
+    for (size_t i = proto->reserved; i < m->slot_capacity; i++) {
         lhat_slots_set(m->slots, i, lhat_nil());
     }
 
@@ -7937,7 +8000,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         return made;
     }
 
-    if (base >= LHAT_MAX_FRAMES) {
+    if (base >= m->frame_capacity) {
         return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
     }
 
@@ -7950,7 +8013,8 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         base == 0 ? 0
                   : m->frames[base - 1].base +
                         m->frames[base - 1].closure->proto->chunk.registers;
-    if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
+    if (next_base + closure->proto->chunk.registers >=
+        m->slot_capacity) {  // 4.3改
         return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
     }
 
@@ -8024,14 +8088,15 @@ LhatRunResult lhat_machine_run_seeded(Machine *m, const LhatClosure *closure,
         count > closure->proto->chunk.registers) {
         return call_fault(m, LHAT_RUN_NOT_CALLABLE);
     }
-    if (base >= LHAT_MAX_FRAMES) {
+    if (base >= m->frame_capacity) {
         return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
     }
     size_t next_base =
         base == 0 ? 0
                   : m->frames[base - 1].base +
                         m->frames[base - 1].closure->proto->chunk.registers;
-    if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
+    if (next_base + closure->proto->chunk.registers >=
+        m->slot_capacity) {  // 4.3改
         return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
     }
     for (size_t i = 0; i < count; i++) {
@@ -8092,14 +8157,15 @@ static size_t waiting_disposals(const Machine *m)
 static bool run_one_disposal(Machine *m, LhatRunStatus *status)
 {
     size_t base = m->frame_count;
-    if (m->pending_dispose == NULL || base >= LHAT_MAX_FRAMES) {
+    if (m->pending_dispose == NULL || base >= m->frame_capacity) {
         return false;
     }
     size_t next_base =
         base == 0 ? 0
                   : m->frames[base - 1].base +
                         m->frames[base - 1].closure->proto->chunk.registers;
-    if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
+    if (next_base + m->pending_dispose->closure->proto->chunk.registers >=
+        m->slot_capacity) {  // 4.3改
         return false;
     }
 
@@ -8451,14 +8517,14 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
         }
     }
     size_t base = m->frame_count;
-    if (base >= LHAT_MAX_FRAMES) {
+    if (base >= m->frame_capacity) {
         return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
     }
     size_t next_base =
         base == 0 ? 0
                   : m->frames[base - 1].base +
                         m->frames[base - 1].closure->proto->chunk.registers;
-    if (next_base + LHAT_MAX_REGISTERS >= LHAT_STACK_SLOTS) {
+    if (next_base + co->register_count >= m->slot_capacity) {  // 4.3改
         return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
     }
     // prepared = 1: the host boundary takes one value, as host_call says.

@@ -1682,6 +1682,149 @@ static void test_budget(void)
     }
 }
 
+// ---------------------------------------------------------------------------
+// 03 の 4.3改: the machine's measurements are the caller's
+//
+// A machine of the default size is about 160 KiB, over half of it the frame
+// array. A host running many at once -- a task pool giving a job its own --
+// wants to say how deep and how wide, and nothing can work it out for it:
+// the width of one frame is exact at compile time, but the depth is not
+// knowable at all (no call graph, callees are values, hosts call back in).
+// So what is pinned here is that the measurements are obeyed, that outgrowing
+// them is the ordinary LHAT_RUN_STACK_OVERFLOW with the frames left standing,
+// and that a call reserves room for the callee rather than for the widest
+// body there could be.
+
+// A body that goes exactly `n` frames down. Narrow: a handful of registers a
+// frame, which is what makes the difference between reserving 250 slots per
+// call and reserving what the callee uses show up as depth.
+static void deep_text(char *into, size_t size, int n)
+{
+    snprintf(into, size,
+             "var^ down = f^ n { if^ n <= 0 { return^ 0 } "
+             "return^ 1 + this^(n - 1) }\n"
+             "return^ down(%d)\n",
+             n);
+}
+
+static void test_measured_machine(void)
+{
+    Run r;
+    char text[256];
+
+    LHAT_TEST("a machine measured by its caller runs an ordinary body");
+    {
+        compile_text(&r,
+                     "var^ n = 0\n"
+                     "for^ i from^ 1 to^ 100 { n := n + i }\n"
+                     "return^ n\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new_with_size(16, 512);
+        LHAT_CHECK(r.machine != NULL, "made");
+        r.ran = lhat_run(r.machine, r.proto);
+        CHECK_INTEGER(&r, 5050);
+        run_dispose(&r);
+    }
+
+    // 0 is "whatever lhat_machine_new asks for", so the two have to agree
+    // about a depth that is near the edge of the default.
+    LHAT_TEST("0 for either measurement is the default one");
+    {
+        deep_text(text, sizeof text, 150);
+        compile_text(&r, text);
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new_with_size(0, 0);
+        r.ran = lhat_run(r.machine, r.proto);
+        CHECK_INTEGER(&r, 150);
+        run_dispose(&r);
+    }
+
+    // Nothing may be measured so small that it cannot run at all -- the
+    // floor is raised under the caller rather than the machine refusing
+    // every proto it is handed.
+    LHAT_TEST("measurements below the floor are raised to it");
+    {
+        compile_text(&r, "return^ 41 + 1\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new_with_size(1, 1);
+        LHAT_CHECK(r.machine != NULL, "made");
+        r.ran = lhat_run(r.machine, r.proto);
+        CHECK_INTEGER(&r, 42);
+        run_dispose(&r);
+    }
+
+    // The failure a small machine has to have: an ordinary run status, not a
+    // crash, with the frames left standing so the traceback reads. Exactly
+    // what a default machine answers a runaway recursion with.
+    LHAT_TEST("a shallow machine ends a deep run with STACK_OVERFLOW");
+    {
+        deep_text(text, sizeof text, 40);
+        compile_text(&r, text);
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new_with_size(8, 1024);
+        r.ran = lhat_run(r.machine, r.proto);
+        LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_STACK_OVERFLOW);
+        // 04 の 11.6改: and the frames it stopped on are still readable.
+        size_t depth = lhat_machine_fault_depth(r.machine);
+        LHAT_CHECK(depth > 1 && depth <= 8,
+                   "the fault span is the frames it had (%zu)", depth);
+        LhatFrameInfo where;
+        LHAT_CHECK(lhat_machine_fault_frame(r.machine, 0, &where),
+                   "and level 0 reads");
+        run_dispose(&r);
+    }
+
+    // The same body on a machine with frames to spare but no stack.
+    LHAT_TEST("a narrow machine ends a deep run the same way");
+    {
+        deep_text(text, sizeof text, 200);
+        compile_text(&r, text);
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new_with_size(256, 300);
+        r.ran = lhat_run(r.machine, r.proto);
+        LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_STACK_OVERFLOW);
+        run_dispose(&r);
+    }
+
+    // 4.3改 stated as depth. A call reserves room for the callee's own
+    // window rather than for the widest body there could be. Reserving
+    // LHAT_MAX_REGISTERS (250) instead would leave a 300-slot machine with
+    // under 50 slots to put frames in -- six or so -- and this body goes 20
+    // down through them. The frame count is not what stops it: 64 is more
+    // than it needs.
+    LHAT_TEST("a call reserves the callee's width, not the widest there is");
+    {
+        deep_text(text, sizeof text, 20);
+        compile_text(&r, text);
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new_with_size(64, 300);
+        r.ran = lhat_run(r.machine, r.proto);
+        CHECK_INTEGER(&r, 20);
+        run_dispose(&r);
+    }
+
+    // Several at once, since a pool is what this exists for, and each has to
+    // keep its own runs and its own heap.
+    LHAT_TEST("machines of different measurements stand side by side");
+    {
+        LhatMachine *small = lhat_machine_new_with_size(8, 384);
+        LhatMachine *large = lhat_machine_new_with_size(0, 0);
+        LHAT_CHECK(small != NULL && large != NULL, "both made");
+        deep_text(text, sizeof text, 40);
+        compile_text(&r, text);
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        LhatRunResult on_small = lhat_run(small, r.proto);
+        LhatRunResult on_large = lhat_run(large, r.proto);
+        LHAT_CHECK_EQ_INT(on_small.status, LHAT_RUN_STACK_OVERFLOW);
+        LHAT_CHECK_EQ_INT(on_large.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(on_large.value), 40);
+        lhat_machine_dispose(small);
+        lhat_machine_dispose(large);
+        r.machine = NULL;
+        compiled_dispose(&r);
+    }
+}
+
 int main(void)
 {
     test_encoding();
@@ -1697,5 +1840,6 @@ int main(void)
     test_variadic();
     test_names_table();
     test_budget();
+    test_measured_machine();
     return lhat_test_report("test_vm_core");
 }

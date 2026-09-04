@@ -84,7 +84,9 @@
 #define LHAT_MAX_QUALIFIER_SEGMENTS 8
 
 // vm -- running
-// The shared stack every frame's registers live on.
+// The shared stack every frame's registers live on -- what
+// lhat_machine_new asks for. 03 の 4.3改: a machine's own length is in the
+// machine (Machine.slot_capacity), since a caller may choose another.
 #define LHAT_STACK_SLOTS 8192
 // 05 の 8.9: the largest payload a host value type may register, sized so a
 // whole value (one head slot plus the data slots) fits the machine's answer
@@ -97,7 +99,8 @@
 // can be a fixed array rather than an allocation on the way out.
 #define LHAT_MAX_TUPLE (LHAT_HOSTVALUE_MAX_BYTES / 8)
 // How deep a call may recurse before the machine gives up, rather than
-// letting the host's own stack decide it for us.
+// letting the host's own stack decide it for us -- again what
+// lhat_machine_new asks for, with Machine.frame_capacity the real one.
 #define LHAT_MAX_FRAMES 200
 // How many with^ bindings and finally^ clauses one frame may have open for
 // unwinding at once.
