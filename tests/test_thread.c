@@ -673,6 +673,31 @@ static void test_pushed_completion(void)
         lhat_test_ran_dispose(&ran);
     }
 
+    // 04 の 11.6改: the whole of what a failure says. A body whose failure
+    // is a top-level panic^ used to report the one word `panic^` -- no
+    // value (the machine that held it was gone by then) and no line (the
+    // traceback is only made from two frames down). Both are read on the
+    // worker now, while its machine is still standing.
+    LHAT_TEST("a top-level panic says what it panicked with, and where");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            "let^ h = std.thread.spawn(p^ ... { panic^ \"boom\" })\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
+            "    repeat^ { if^ h.done() { break^ } std.thread.sleep(0.005) }\n"
+            "    let^ said = h.failed()\n"
+            "    h.join()\n"
+            "    if^ said fits^ string^ { return^ said }\n"
+            "}\n"
+            "return^ \"nothing\"\n");
+        LHAT_CHECK(ran.ok && ran.text != NULL &&
+                       strstr(ran.text, "boom") != NULL &&
+                       strstr(ran.text, "line 2") != NULL,
+                   "the value and the line are there: %s",
+                   ran.text != NULL ? ran.text : "(none)");
+        lhat_test_ran_dispose(&ran);
+    }
+
     LHAT_TEST("and answers nothing for a body that ran clean");
     {
         LhatTestRan ran = run_source(

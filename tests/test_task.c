@@ -181,8 +181,11 @@ static void test_answers(void)
             "}\n"
             "std.task.stop()\n"
             "return^ said\n");
+        // 04 の 11.6改: what it panicked with and where, not just the
+        // word `panic^`.
         LHAT_CHECK(ran.ok && ran.text != NULL &&
-                       strstr(ran.text, "panic") != NULL,
+                       strstr(ran.text, "boom") != NULL &&
+                       strstr(ran.text, "line ") != NULL,
                    "the fault is readable: %s",
                    ran.text != NULL ? ran.text : "(none)");
         lhat_test_ran_dispose(&ran);

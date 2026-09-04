@@ -39,6 +39,7 @@
 
 #include <limits.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "async.h"
@@ -112,6 +113,12 @@ typedef struct ThreadHandle {
     // -- the joiner's error message carries them. NULL when the run was
     // clean or nothing was standing. Owned here, freed with the handle.
     char *traceback;
+    // 04 の 11.6改: what the body failed WITH and WHERE. Both belong to the
+    // machine that ran it, so both are read there (thread_main) rather than
+    // here: the value is one of that machine's objects and the line is on
+    // the result, and neither outlives the dispose.
+    char *fault_text;
+    uint32_t fault_line;
     // 02 の 15.14: what a scheduler asks instead of waiting -- has the body
     // finished. This one *is* read while the thread may still be running, so
     // unlike the fields above it is not covered by the join's ordering and
@@ -191,28 +198,38 @@ static bool has_finished(ThreadHandle *handle)
     return finished;
 }
 
-// 04 の 11.6改: what a failure reads as -- the status, and the frames the
-// body was standing in when it stopped. NULL when it ran clean or there was
-// no room for the text; the caller frees it.
+// 04 の 11.6改: what a failure reads as. The status names the kind of it,
+// and the three things beside it are what a reader actually needs: WHAT was
+// panicked with, WHERE it happened, and the frames it was standing in.
+//
+// The value is rendered on the worker's own thread while its machine is
+// still there (thread_main below) -- it is that machine's object, and
+// nothing of it survives the dispose. Without that, a body whose whole
+// failure is `panic^ "..."` reported the one word `panic^`, which says
+// neither what nor where (a Love2D binding met exactly that).
 static char *failure_text(const ThreadHandle *handle)
 {
     if (handle->status == LHAT_RUN_OK) {
         return NULL;
     }
     const char *said = lhat_run_status_message(handle->status);
-    size_t said_length = strlen(said);
-    size_t trace_length =
-        handle->traceback != NULL ? strlen(handle->traceback) : 0;
-    char *text = (char *)lhat_alloc(said_length + 1 + trace_length + 1);
+    const char *value = handle->fault_text;
+    const char *trace = handle->traceback;
+    char where[32];
+    where[0] = '\0';
+    if (handle->fault_line > 0) {
+        snprintf(where, sizeof where, " (line %u)",
+                 (unsigned)handle->fault_line);
+    }
+    size_t needed = strlen(said) + (value != NULL ? 2 + strlen(value) : 0) +
+                    strlen(where) + (trace != NULL ? 1 + strlen(trace) : 0);
+    char *text = (char *)lhat_alloc(needed + 1);
     if (text == NULL) {
         return NULL;
     }
-    memcpy(text, said, said_length);
-    if (trace_length > 0) {
-        text[said_length] = '\n';
-        memcpy(text + said_length + 1, handle->traceback, trace_length);
-    }
-    text[said_length + (trace_length > 0 ? 1 + trace_length : 0)] = '\0';
+    snprintf(text, needed + 1, "%s%s%s%s%s%s", said,
+             value != NULL ? ": " : "", value != NULL ? value : "", where,
+             trace != NULL ? "\n" : "", trace != NULL ? trace : "");
     return text;
 }
 
@@ -291,8 +308,21 @@ static int thread_main(void *raw)
                 !lhat_carry(ran.value, &handle->result, NULL)) {
                 handle->status = LHAT_RUN_TYPE_ERROR;  // 表現できない戻り値
             }
-            // 04 の 11.6改: the frames are about to go with the machine, so
-            // the text is made now for the join to carry.
+            // 04 の 11.6改: what it failed with, read here because the
+            // value is this machine's and the machine is about to go.
+            if (ran.status != LHAT_RUN_OK) {
+                handle->fault_line = ran.line;
+                if (!lhat_is_nil(ran.value)) {
+                    size_t room = lhat_value_write(ran.value, NULL, 0);
+                    handle->fault_text = (char *)lhat_alloc(room + 1);
+                    if (handle->fault_text != NULL) {
+                        lhat_value_write(ran.value, handle->fault_text,
+                                         room + 1);
+                    }
+                }
+            }
+            // The frames are about to go with the machine, so the text is
+            // made now for the join to carry.
             if (ran.status != LHAT_RUN_OK &&
                 lhat_machine_fault_depth(machine) >= 2) {
                 size_t needed = lhat_machine_traceback(machine, NULL, 0);
@@ -343,6 +373,7 @@ static void join_and_free(ThreadHandle *handle)
     }
     lhat_mutex_destroy(&handle->done_lock);
     lhat_free(handle->traceback);
+    lhat_free(handle->fault_text);
     lhat_free(handle);
 }
 
@@ -471,6 +502,7 @@ static void thread_spawn(LhatMachine *machine, void *context,
         forget(handle);
         lhat_mutex_destroy(&handle->done_lock);
         lhat_free(handle->traceback);
+        lhat_free(handle->fault_text);
         lhat_free(handle);
         answers[0] = fail_with(machine, module->spawn_failed,
                          "the operating system refused to start a thread");
@@ -706,6 +738,7 @@ static void thread_dispose(LhatMachine *machine, void *context,
         }
         lhat_mutex_destroy(&handle->done_lock);
         lhat_free(handle->traceback);
+        lhat_free(handle->fault_text);
         lhat_free(handle);
     } else {
         join_and_free(handle);

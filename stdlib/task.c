@@ -12,6 +12,7 @@
 
 #include <limits.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "async.h"
@@ -68,6 +69,10 @@ struct Task {
     LhatRunStatus status;
     LhatCarried *result;
     char *traceback;
+    // 04 の 11.6改: what it failed with and where, read on the worker while
+    // its machine is still standing (stdlib/thread.c says why).
+    char *fault_text;
+    uint32_t fault_line;
 
     // 15.14改: the wait a scheduler parks on, pushed when the job ends.
     void *waits;
@@ -96,6 +101,7 @@ static void task_free(Task *task)
     free_carried_values(task->arguments, task->argument_count);
     lhat_carried_free(task->result);
     lhat_free(task->traceback);
+    lhat_free(task->fault_text);
     lhat_condition_destroy(&task->done);
     lhat_mutex_destroy(&task->lock);
     lhat_free(task);
@@ -137,27 +143,38 @@ static void task_finished(Task *task)
     }
 }
 
-// 04 の 11.6改: what a failure reads as -- the status and the frames the job
-// was standing in. NULL when it ran clean; the caller frees it.
+// 04 の 11.6改: what a failure reads as. The status names the kind of it,
+// and the three things beside it are what a reader actually needs: WHAT was
+// panicked with, WHERE it happened, and the frames it was standing in.
+//
+// The value is rendered on the worker's own thread while its machine is
+// still there (run_job below) -- it is that machine's object, and
+// nothing of it survives the dispose. Without that, a body whose whole
+// failure is `panic^ "..."` reported the one word `panic^`, which says
+// neither what nor where (the same hole stdlib/thread.c had).
 static char *failure_text(const Task *task)
 {
     if (task->status == LHAT_RUN_OK) {
         return NULL;
     }
     const char *said = lhat_run_status_message(task->status);
-    size_t said_length = strlen(said);
-    size_t trace_length =
-        task->traceback != NULL ? strlen(task->traceback) : 0;
-    char *text = (char *)lhat_alloc(said_length + 1 + trace_length + 1);
+    const char *value = task->fault_text;
+    const char *trace = task->traceback;
+    char where[32];
+    where[0] = '\0';
+    if (task->fault_line > 0) {
+        snprintf(where, sizeof where, " (line %u)",
+                 (unsigned)task->fault_line);
+    }
+    size_t needed = strlen(said) + (value != NULL ? 2 + strlen(value) : 0) +
+                    strlen(where) + (trace != NULL ? 1 + strlen(trace) : 0);
+    char *text = (char *)lhat_alloc(needed + 1);
     if (text == NULL) {
         return NULL;
     }
-    memcpy(text, said, said_length);
-    if (trace_length > 0) {
-        text[said_length] = '\n';
-        memcpy(text + said_length + 1, task->traceback, trace_length);
-    }
-    text[said_length + (trace_length > 0 ? 1 + trace_length : 0)] = '\0';
+    snprintf(text, needed + 1, "%s%s%s%s%s%s", said,
+             value != NULL ? ": " : "", value != NULL ? value : "", where,
+             trace != NULL ? "\n" : "", trace != NULL ? trace : "");
     return text;
 }
 
@@ -224,6 +241,33 @@ static LhatRunResult run_in_slices(TaskModule *module, LhatMachine *machine,
     return ran;
 }
 
+// 04 の 11.6改: what a run failed with, kept while the machine that ran it
+// is still standing -- the value is one of its objects and the frames are
+// still up. Every way out of run_job that carries a fault comes through
+// here, which is what the closure path used to skip.
+static void note_failure(Task *task, LhatMachine *machine, LhatRunResult ran)
+{
+    task->status = ran.status;
+    if (ran.status == LHAT_RUN_OK) {
+        return;
+    }
+    task->fault_line = ran.line;
+    if (!lhat_is_nil(ran.value)) {
+        size_t room = lhat_value_write(ran.value, NULL, 0);
+        task->fault_text = (char *)lhat_alloc(room + 1);
+        if (task->fault_text != NULL) {
+            lhat_value_write(ran.value, task->fault_text, room + 1);
+        }
+    }
+    if (lhat_machine_fault_depth(machine) >= 2) {
+        size_t needed = lhat_machine_traceback(machine, NULL, 0);
+        task->traceback = (char *)lhat_alloc(needed + 1);
+        if (task->traceback != NULL) {
+            lhat_machine_traceback(machine, task->traceback, needed + 1);
+        }
+    }
+}
+
 // One job, on this worker's machine. What the answer was is left on the
 // task; this says nothing.
 static void run_job(TaskModule *module, LhatMachine *machine, Task *task)
@@ -259,7 +303,7 @@ static void run_job(TaskModule *module, LhatMachine *machine, Task *task)
                                               task->argument_count));
         lhat_free(arguments);
         if (ran.status != LHAT_RUN_OK) {
-            task->status = ran.status;
+            note_failure(task, machine, ran);
             return;
         }
         job = ran.value;
@@ -302,19 +346,10 @@ static void run_job(TaskModule *module, LhatMachine *machine, Task *task)
         }
     }
 
-    task->status = ran.status;
+    note_failure(task, machine, ran);
     if (ran.status == LHAT_RUN_OK &&
         !lhat_carry(ran.value, &task->result, NULL)) {
         task->status = LHAT_RUN_TYPE_ERROR;
-    }
-    // 04 の 11.6改: the frames go with the machine at the end of the pool,
-    // so the text is made while they are still standing.
-    if (ran.status != LHAT_RUN_OK && lhat_machine_fault_depth(machine) >= 2) {
-        size_t needed = lhat_machine_traceback(machine, NULL, 0);
-        task->traceback = (char *)lhat_alloc(needed + 1);
-        if (task->traceback != NULL) {
-            lhat_machine_traceback(machine, task->traceback, needed + 1);
-        }
     }
 }
 

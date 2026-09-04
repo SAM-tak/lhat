@@ -4022,8 +4022,52 @@ static void test_stacked_hats(void)
     parse_dispose(&p);
 }
 
+// 01 の 2.1 with 04 の 4.5: a call standing alone as a statement must not
+// swallow the word that opens the next one. The five asked about here each
+// begin a statement of their own but are not jump keywords -- a jump takes
+// them as its value (`return^ try^ f()`), which is why they are a question
+// of their own. A Love2D binding met this as `print(x)` followed by
+// `try^ { }` complaining about command mode.
+static void check_parses(const char *text)
+{
+    Parse p;
+    parse_text(&p, text);
+    LHAT_CHECK(error_count(&p) == 0, "%zu unexpected diagnostics",
+               error_count(&p));
+    parse_dispose(&p);
+}
+
+static void test_statement_after_a_call(void)
+{
+    LHAT_TEST("a try^ block after a call statement is its own statement");
+    check_parses("let^ f = p^ {\n"
+                 "    print(\"before\")\n"
+                 "    try^ {\n"
+                 "        print(\"inside\")\n"
+                 "    catch^:\n"
+                 "        print(\"caught\")\n"
+                 "    }\n"
+                 "}\n");
+
+    LHAT_TEST("and so are import^, public^ and require^");
+    check_parses("module^ ns.main\n"
+                 "print(\"a\")\n"
+                 "import^ std.math\n"
+                 "print(\"b\")\n"
+                 "public^ let^ x = 1\n"
+                 "print(\"c\")\n"
+                 "var^ m = require^ \"other.lh\"\n");
+
+    // The other half of the same question: a jump still reads them as its
+    // value, which is what keeps `return^ try^ f()` meaning something.
+    LHAT_TEST("a jump still takes try^ and require^ as its value");
+    check_parses("let^ f = p^ { return^ try^ g() }\n"
+                 "let^ h = p^ { return^ require^ \"other.lh\" }\n");
+}
+
 int main(void)
 {
+    test_statement_after_a_call();
     test_kind_names();
     test_spans();
 #if LHAT_WITH_COMMENTS

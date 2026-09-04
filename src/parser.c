@@ -2773,7 +2773,23 @@ static bool can_begin_statement(const Parser *p)
             // call on the line above.
             // 04 の 4.5's catch^ ends the statement above it as surely as a
             // '}' would: in the list a try^{ } owns, the word opens an arm.
+            //
+            // The five below open a statement of their own
+            // (parse_statement_after_annotations dispatches on each), and
+            // are not in the list above because that one also decides what
+            // a jump takes as its value: return^ try^ f() and
+            // var^ m = require^ "x" read the word as an expression, which
+            // is right, and a jump must go on doing that. What is asked
+            // HERE is a different question -- may a statement start here --
+            // and the answer for all five is yes. Left out, the call on the
+            // line above swallowed them: 'print(x)' followed by 'try^ { }'
+            // read the try^ as an argument of the print, and what the
+            // reader saw was a complaint about command mode (a Love2D
+            // binding met exactly that).
             return is_statement_keyword(p) || at_catch_arm(p) ||
+                   check_hat(p, "try") || check_hat(p, "import") ||
+                   check_hat(p, "require") || check_hat(p, "module") ||
+                   check_hat(p, "public") ||
                    check_hat(p, "L") ||
                    check_hat(p, "this") || check_hat(p, "self") ||
                    check_hat(p, "it") || check_hat(p, "super");
