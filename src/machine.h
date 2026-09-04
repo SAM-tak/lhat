@@ -204,6 +204,13 @@ struct LhatMachine {
     // it (gc.c's mark_roots).
     LhatString *self_key;
 
+    // 05 の 8.7: L^.modules itself. Every registration and every hostdata
+    // value made reaches through it, and finding it by name meant a
+    // "modules" string made to ask the question and thrown away. Held here
+    // instead; the environment above is what roots it, and this is that
+    // same table rather than a second one.
+    LhatTable *modules;
+
     // 05 の 8.9: one members table per registered host value type, indexed
     // by tag->index -- what a member call on a host value answers through,
     // since the value itself has no heap half to carry one. The tables live

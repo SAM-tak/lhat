@@ -2986,6 +2986,7 @@ static bool build_environment(Machine *m)
     // check.c refuses what a writer spells there, which is the half that can
     // be told apart by looking at the source.
     m->environment->sealed = true;
+    m->modules = modules_value;
     return true;
 }
 
@@ -3072,19 +3073,21 @@ static LhatTable *reach_table(Machine *m, LhatTable *owner, const char *path)
 {
     for (const char *segment = path;;) {
         size_t length = strcspn(segment, ".");
-        LhatString *key = lhat_string_new(&m->objects, segment, length);
-        if (key == NULL) {
-            return NULL;
-        }
-        LhatValue found = lhat_table_get(owner, lhat_object((LhatObject *)key));
+        // Asked by bytes: a string key's equality is its bytes, so the
+        // question needs no key object -- and every registration after the
+        // first of a path asks it and finds one. A key is made only where a
+        // table has to be, which is once per path for the life of the
+        // machine.
+        LhatValue found = lhat_table_get_bytes(owner, segment, length);
         LhatTable *next = table_of(found);
         if (next == NULL) {
             if (!lhat_is_nil(found)) {
                 return NULL;  // something that is not a table is there
             }
+            LhatString *key = lhat_string_new(&m->objects, segment, length);
             next = lhat_table_new(&m->objects);
             bool refused = false;
-            if (next == NULL ||
+            if (key == NULL || next == NULL ||
                 !set_key(m, owner, lhat_object((LhatObject *)key),
                          lhat_object((LhatObject *)next), &refused) ||
                 refused) {
@@ -3108,12 +3111,7 @@ bool lhat_machine_make_hostdata(LhatMachine *machine, const LhatHostDataTag *tag
     // The members live where the registration put them, which is under the
     // type's own name in L^.modules -- so what answers a call on this value
     // is the same table every other value of the type answers through.
-    LhatString *modules_key = lhat_string_new(&machine->objects, "modules", 7);
-    if (modules_key == NULL) {
-        return false;
-    }
-    LhatTable *registry = table_of(lhat_table_get(
-        machine->environment, lhat_object((LhatObject *)modules_key)));
+    LhatTable *registry = machine->modules;
     if (registry == NULL) {
         return false;
     }
@@ -3301,12 +3299,7 @@ bool lhat_machine_bind_hostvalues(LhatMachine *machine,
     if (tables == NULL) {
         return false;
     }
-    LhatString *modules_key = lhat_string_new(&machine->objects, "modules", 7);
-    LhatTable *registry =
-        modules_key != NULL
-            ? table_of(lhat_table_get(machine->environment,
-                                      lhat_object((LhatObject *)modules_key)))
-            : NULL;
+    LhatTable *registry = machine->modules;
     if (registry == NULL) {
         lhat_free(tables);
         return false;
@@ -3350,12 +3343,7 @@ bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
         *module == '\0') {
         return false;
     }
-    LhatString *modules_key = lhat_string_new(&machine->objects, "modules", 7);
-    if (modules_key == NULL) {
-        return false;
-    }
-    LhatTable *owner = table_of(lhat_table_get(
-        machine->environment, lhat_object((LhatObject *)modules_key)));
+    LhatTable *owner = machine->modules;
     if (owner == NULL) {
         return false;
     }
@@ -3444,12 +3432,7 @@ bool lhat_machine_register(LhatMachine *machine, const char *module,
     if (machine == NULL || machine->environment == NULL) {
         return false;
     }
-    LhatString *modules_key = lhat_string_new(&machine->objects, "modules", 7);
-    if (modules_key == NULL) {
-        return false;
-    }
-    LhatTable *owner = table_of(lhat_table_get(
-        machine->environment, lhat_object((LhatObject *)modules_key)));
+    LhatTable *owner = machine->modules;
     if (owner == NULL) {
         return false;
     }
@@ -3513,12 +3496,7 @@ bool lhat_machine_link_hostdata_base(LhatMachine *machine,
     if (m == NULL || m->environment == NULL) {
         return false;
     }
-    LhatString *modules_key = lhat_string_new(&m->objects, "modules", 7);
-    if (modules_key == NULL) {
-        return false;
-    }
-    LhatTable *root = table_of(
-        lhat_table_get(m->environment, lhat_object((LhatObject *)modules_key)));
+    LhatTable *root = m->modules;
     if (root == NULL) {
         return false;
     }
