@@ -404,6 +404,23 @@ static void atomic(Machine *m)
     check_invariant(m);
 #endif
 
+    // 05 の 8.12: the weak cache, emptied of what the marking decided
+    // against -- HERE, while "white" still means "nothing reached it", and
+    // before the sweep frees any of it. This is the guarantee a host's own
+    // map cannot give itself: from this instant a get answers nil^ rather
+    // than a value the sweep is about to take.
+    for (size_t i = 0; i < m->weak_capacity; i++) {
+        LhatWeakEntry *entry = &m->weak[i];
+        if (entry->key == NULL || entry->key == LHAT_WEAK_GONE ||
+            !lhat_is_object(entry->value) ||
+            !lhat_gc_is_white(lhat_as_object(entry->value))) {
+            continue;
+        }
+        entry->key = LHAT_WEAK_GONE;
+        entry->value = lhat_nil();
+        m->weak_count--;
+    }
+
     // The swap: from here on a new object is born the other white, so the
     // only things still wearing this one are what the marking did not reach.
     m->objects.white = lhat_gc_other_white(m->objects.white);

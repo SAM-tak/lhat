@@ -3577,6 +3577,7 @@ void lhat_machine_dispose(LhatMachine *machine)
     lhat_object_free_all(&machine->objects);
     // 05 の 8.9: the tables were the heap's (freed just above); the array
     // alone is the machine's.
+    lhat_free(machine->weak);
     lhat_free(machine->hostvalue_members);
     lhat_free(machine);
 }
@@ -8537,6 +8538,139 @@ bool lhat_machine_make_coroutine_from(LhatMachine *machine, LhatValue closure,
     }
     *out = lhat_object((LhatObject *)co);
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// 05 の 8.12: the weak cache
+// ---------------------------------------------------------------------------
+
+// An address, spread over the word. The low bits of a malloc'd pointer are
+// zero (alignment), so they are the last thing an index should be taken
+// from.
+static size_t weak_hash(const void *key)
+{
+    uint64_t bits = (uint64_t)(uintptr_t)key;
+    bits ^= bits >> 33;
+    bits *= 0xff51afd7ed558ccdULL;
+    bits ^= bits >> 29;
+    return (size_t)bits;
+}
+
+// The slot `key` belongs in: the one holding it, or the first free one on
+// its probe. NULL when the table has no room at all. A removed slot is
+// remembered and answered where the key is not there, so a put fills it in
+// again rather than growing past it.
+static LhatWeakEntry *weak_slot(LhatWeakEntry *entries, size_t capacity,
+                                const void *key)
+{
+    if (capacity == 0) {
+        return NULL;
+    }
+    size_t mask = capacity - 1;
+    size_t at = weak_hash(key) & mask;
+    LhatWeakEntry *gone = NULL;
+    for (size_t step = 0; step < capacity; step++) {
+        LhatWeakEntry *entry = &entries[(at + step) & mask];
+        if (entry->key == key) {
+            return entry;
+        }
+        if (entry->key == NULL) {
+            return gone != NULL ? gone : entry;
+        }
+        if (entry->key == LHAT_WEAK_GONE && gone == NULL) {
+            gone = entry;
+        }
+    }
+    return gone;
+}
+
+static bool weak_grow(Machine *m)
+{
+    size_t wanted = m->weak_capacity > 0 ? m->weak_capacity * 2 : 16;
+    LhatWeakEntry *bigger =
+        (LhatWeakEntry *)lhat_calloc(wanted, sizeof *bigger);
+    if (bigger == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < m->weak_capacity; i++) {
+        const void *key = m->weak[i].key;
+        if (key == NULL || key == LHAT_WEAK_GONE) {
+            continue;
+        }
+        LhatWeakEntry *into = weak_slot(bigger, wanted, key);
+        into->key = key;
+        into->value = m->weak[i].value;
+    }
+    lhat_free(m->weak);
+    m->weak = bigger;
+    m->weak_capacity = wanted;
+    m->weak_used = m->weak_count;
+    return true;
+}
+
+LhatValue lhat_machine_weak_cache_get(LhatMachine *machine, const void *key)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || key == NULL || key == LHAT_WEAK_GONE) {
+        return lhat_nil();
+    }
+    LhatWeakEntry *entry = weak_slot(m->weak, m->weak_capacity, key);
+    if (entry == NULL || entry->key != key) {
+        return lhat_nil();
+    }
+    // Asking for it is what makes it reachable again. Only while a marking
+    // is under way: in the sweep the entry would already be gone if it had
+    // been decided against, and outside a cycle there is no colour to fix.
+    if (m->gcstate == LHAT_GC_PROPAGATE) {
+        lhat_gc_reach(&m->gray, entry->value);
+    }
+    return entry->value;
+}
+
+bool lhat_machine_weak_cache_put(LhatMachine *machine, const void *key,
+                                 LhatValue value)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || key == NULL || key == LHAT_WEAK_GONE) {
+        return false;
+    }
+    if (lhat_is_nil(value)) {
+        lhat_machine_weak_cache_forget(machine, key);
+        return true;
+    }
+    // Three quarters full counting what removals left, since those are what
+    // a probe still has to step over.
+    if ((m->weak_used + 1) * 4 >= m->weak_capacity * 3 && !weak_grow(m)) {
+        return false;
+    }
+    LhatWeakEntry *entry = weak_slot(m->weak, m->weak_capacity, key);
+    if (entry == NULL) {
+        return false;
+    }
+    if (entry->key != key) {
+        if (entry->key == NULL) {
+            m->weak_used++;
+        }
+        m->weak_count++;
+        entry->key = key;
+    }
+    entry->value = value;
+    return true;
+}
+
+void lhat_machine_weak_cache_forget(LhatMachine *machine, const void *key)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || key == NULL || key == LHAT_WEAK_GONE) {
+        return;
+    }
+    LhatWeakEntry *entry = weak_slot(m->weak, m->weak_capacity, key);
+    if (entry == NULL || entry->key != key) {
+        return;
+    }
+    entry->key = LHAT_WEAK_GONE;  // the probe past it still has to work
+    entry->value = lhat_nil();
+    m->weak_count--;
 }
 
 void lhat_machine_set_budget(LhatMachine *machine, int64_t turns)

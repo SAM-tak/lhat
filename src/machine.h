@@ -139,6 +139,15 @@ static inline LhatValue hostvalue_argument(LhatSlots slots, size_t slot)
     return v;
 }
 
+// 05 の 8.12: one thing a host remembered about one of its own objects. A
+// free slot's key is NULL and one a removal left is LHAT_WEAK_GONE.
+#define LHAT_WEAK_GONE ((const void *)(uintptr_t)1)
+
+typedef struct LhatWeakEntry {
+    const void *key;
+    LhatValue value;
+} LhatWeakEntry;
+
 struct LhatMachine {
     // 2.2: the one shared stack, as two parallel runs -- payloads dense,
     // tags one byte each -- read and written through `slots` below. 16
@@ -229,6 +238,16 @@ struct LhatMachine {
     // under L^.modules (bound by lhat_machine_bind_hostvalues), so the
     // environment root already keeps them; only the array is the machine's
     // to free.
+    // 05 の 8.12: what a host remembers about its own objects, held WEAKLY.
+    // Not a root: the collector drops an entry whose value it decided is
+    // dead, at the end of marking and before the sweep (gc.c's atomic).
+    // That is the whole of what makes reading one safe -- a host's own map
+    // cannot do it, because nothing tells it when the decision was made.
+    LhatWeakEntry *weak;
+    size_t weak_count;     // live entries
+    size_t weak_used;      // live plus removed, which is what the load is
+    size_t weak_capacity;  // a power of two, or 0
+
     LhatTable **hostvalue_members;
     size_t hostvalue_member_count;
 

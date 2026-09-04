@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "gc.h"
+#include "machine.h"
 #include "program_internal.h"
 #include "registry.h"
 #include "fixture.h"
@@ -938,6 +940,194 @@ static void test_registered_sees_the_chain(void)
     }
 }
 
+// ---------------------------------------------------------------------------
+// 05 の 8.12: what a host remembers about its own objects
+//
+// The cache a binding wants and cannot write for itself. What makes it
+// unsound in a host's own map is that the collection is incremental: between
+// the marking deciding a wrapper is unreachable and the sweep freeing it, the
+// map still answers with it. So the guarantee has to come from the collector
+// -- it takes the entry out at the end of the marking, and a read during a
+// marking brings the value back.
+
+static SceneNode cache_nodes[4];
+static int cache_hits;
+static int cache_misses;
+
+// The shape a binding writes: ask, and make one only where the answer was
+// nothing.
+static void cached_node(LhatMachine *machine, void *context,
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
+{
+    (void)context;
+    (void)count;
+    SceneNode *node = &cache_nodes[lhat_as_integer(arguments[0]) & 3];
+    LhatValue found = lhat_machine_weak_cache_get(machine, node);
+    if (!lhat_is_nil(found)) {
+        cache_hits++;
+        answers[0] = found;
+        *answer_count = 1;
+        return;
+    }
+    cache_misses++;
+    LhatValue made = lhat_nil();
+    lhat_machine_make_hostdata(machine, sprite_tag, node, &made);
+    lhat_machine_weak_cache_put(machine, node, made);
+    answers[0] = made;
+    *answer_count = 1;
+}
+
+// A machine with scene registered on it, for a test that drives the cache
+// from C rather than through a program.
+static LhatMachine *scene_machine(LhatProgram *program, Disk *disk)
+{
+    static const File files[] = {{"main.lh", "return^ 1\n"}};
+    program_with(program, disk, files, 1);
+    if (!register_scene(program, false) ||
+        lhat_program_check(program, "main.lh") == NULL ||
+        !lhat_program_compile(program)) {
+        return NULL;
+    }
+    LhatMachine *machine = lhat_machine_new();
+    if (machine == NULL || !lhat_program_install(program, machine)) {
+        return NULL;
+    }
+    return machine;
+}
+
+static void test_the_weak_cache(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    // What the cache is for. The same pointer is handed over turn after turn
+    // and answers the same wrapper, with collections running throughout --
+    // because something in L^ is holding it, so the marking reaches it.
+    LHAT_TEST("a wrapper something holds is answered again and again");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ scene\n"
+             "var^ same = 0\n"
+             "let^ held = scene.cached(0)\n"
+             "for^ i from^ 1 to^ 200 {\n"
+             "    let^ again = scene.cached(0)\n"
+             "    if^ again is^ held { same := same + 1 }\n"
+             "    L^.collectgarbage()\n"
+             "}\n"
+             "return^ same\n"},
+        };
+        cache_hits = 0;
+        cache_misses = 0;
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        LHAT_CHECK(lhat_register_func(&program, "scene", "cached",
+                                      "f^number^ -> scene.Sprite2D;",
+                                      cached_node, NULL),
+                   "the cache's call registered");
+        LhatRunResult ran = run_program(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        // Not "mostly the same": the same, every turn. is^ is what tells two
+        // wrappers of one pointer apart (8.8 makes them equal under '=').
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 200);
+        LHAT_CHECK_EQ_INT(cache_misses, 1);
+        LHAT_CHECK_EQ_INT(cache_hits, 200);
+        lhat_program_dispose(&program);
+    }
+
+    // And the other half: nothing holds it, so the entry goes. Driven from C
+    // because what is being pinned is that a HOST's own hold counts for
+    // nothing (vm.h says so) -- the value below is reachable from this
+    // function and from nowhere the collector looks.
+    LHAT_TEST("an entry nothing reaches is gone by the end of the marking");
+    {
+        LhatMachine *machine = scene_machine(&program, &disk);
+        LHAT_CHECK(machine != NULL, "installed");
+
+        LhatValue wrapper = lhat_nil();
+        LHAT_CHECK(lhat_machine_make_hostdata(machine, sprite_tag,
+                                              &cache_nodes[1], &wrapper),
+                   "made");
+        LHAT_CHECK(lhat_machine_weak_cache_put(machine, &cache_nodes[1],
+                                               wrapper),
+                   "remembered");
+        LHAT_CHECK(!lhat_is_nil(lhat_machine_weak_cache_get(machine,
+                                                            &cache_nodes[1])),
+                   "and answered while it is there");
+
+        lhat_machine_collectgarbage(machine);
+        LHAT_CHECK(lhat_is_nil(lhat_machine_weak_cache_get(machine,
+                                                           &cache_nodes[1])),
+                   "the collector took the entry out itself");
+
+        // A pointer never put is nothing, and a removal by hand is too.
+        LHAT_CHECK(lhat_is_nil(lhat_machine_weak_cache_get(machine,
+                                                           &cache_nodes[2])),
+                   "a key nothing remembered");
+        LhatValue other = lhat_nil();
+        LHAT_CHECK(lhat_machine_make_hostdata(machine, sprite_tag,
+                                              &cache_nodes[2], &other) &&
+                       lhat_machine_weak_cache_put(machine, &cache_nodes[2],
+                                                   other),
+                   "remembered another");
+        lhat_machine_weak_cache_forget(machine, &cache_nodes[2]);
+        LHAT_CHECK(lhat_is_nil(lhat_machine_weak_cache_get(machine,
+                                                           &cache_nodes[2])),
+                   "a key the host took out by hand");
+
+        lhat_machine_dispose(machine);
+        lhat_program_dispose(&program);
+    }
+
+    // The resurrection, which is the whole reason this cannot be a host's
+    // own map plus a callback. The marking is under way and has already
+    // passed everything that could name the wrapper; the host asks for it;
+    // the entry has to survive THIS cycle, because asking is what made it
+    // reachable again.
+    LHAT_TEST("a read during a marking brings the value back");
+    {
+        LhatMachine *machine = scene_machine(&program, &disk);
+        LHAT_CHECK(machine != NULL, "installed");
+        Machine *m = (Machine *)machine;
+
+        LhatValue wrapper = lhat_nil();
+        LHAT_CHECK(lhat_machine_make_hostdata(machine, sprite_tag,
+                                              &cache_nodes[3], &wrapper),
+                   "made");
+        LHAT_CHECK(lhat_machine_weak_cache_put(machine, &cache_nodes[3],
+                                               wrapper),
+                   "remembered");
+
+        // Into a marking, and no further: the step that follows the last of
+        // the gray is the one that empties the cache, so stop before it.
+        int guard = 0;
+        while (m->gcstate != LHAT_GC_PROPAGATE && guard++ < 10000) {
+            lhat_gc_step(machine);
+        }
+        LHAT_CHECK_EQ_INT(m->gcstate, LHAT_GC_PROPAGATE);
+
+        // The ask. Nothing else in the machine names this wrapper.
+        LHAT_CHECK(!lhat_is_nil(lhat_machine_weak_cache_get(machine,
+                                                            &cache_nodes[3])),
+                   "answered mid-marking");
+
+        // Now to the end of that cycle, past the point where the entries
+        // that were not reached are dropped.
+        guard = 0;
+        while (m->gcstate == LHAT_GC_PROPAGATE && guard++ < 100000) {
+            lhat_gc_step(machine);
+        }
+        LHAT_CHECK(lhat_is_nil(lhat_machine_weak_cache_get(machine,
+                                                           &cache_nodes[3])) ==
+                       false,
+                   "and kept, because asking for it is what reached it");
+
+        lhat_machine_dispose(machine);
+        lhat_program_dispose(&program);
+    }
+}
+
 int main(void)
 {
     test_the_relation();
@@ -947,6 +1137,7 @@ int main(void)
     test_value_type();
     test_registration();
     test_delegate_to_host();
+    test_the_weak_cache();
     test_values_keep_their_members();
     test_registered_sees_the_chain();
     return lhat_test_report("test_hostdata_base");

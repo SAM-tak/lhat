@@ -413,6 +413,52 @@ bool lhat_machine_make_closure_with(LhatMachine *machine,
                                     LhatUpvalue *const *cells, size_t count,
                                     LhatValue *out);
 
+// ---------------------------------------------------------------------------
+// 05 の 8.12: what a host remembers about its own objects
+// ---------------------------------------------------------------------------
+//
+// A binding hands the same C object to L^ over and over -- a node every
+// frame, a body every step -- and wants the same L^ value back each time,
+// rather than a fresh wrapper per handover. The obvious way is a map of its
+// own from pointer to LhatValue.
+//
+// THAT MAP IS UNSOUND, and quietly so. The collection is incremental: the
+// program runs between the marking and the sweep. So
+//
+//   1. the marking ends; a wrapper nothing in L^ names is white
+//   2. before the sweep reaches it, the host's map answers with it and the
+//      program puts it somewhere live
+//   3. the sweep frees it, because step 1 already decided
+//
+// Every sentence of "the map is not a root, so wrappers are collected as
+// before and dispose^ takes the entry out" is true and the conclusion is
+// false. What a weak table gives is not "do not root it" but **the
+// collector takes the entry out itself, at the end of the marking** -- and
+// a host's own map has no way to be told, and no way to bring one back.
+//
+// This is that table. `key` is the host's own pointer, compared by address
+// and never read through. The value is weak: an entry whose value the
+// marking found unreachable is gone before anything can ask for it again,
+// so a get either answers a value that is alive or answers nil^.
+//
+// A get during a marking also marks what it answers -- asking for it is
+// what makes it reachable again, which is the resurrection a cache needs.
+//
+// It is a speed feature and nothing more: a binding that makes a fresh
+// wrapper every time is correct as it stands (05 の 8.8 makes two wrappers
+// of one pointer equal with '='; only 'is^' tells them apart).
+LhatValue lhat_machine_weak_cache_get(LhatMachine *machine, const void *key);
+
+// Remembers `value` under `key`, replacing what stood there. False only
+// when there is no room. Storing nil^ removes the entry, the way 04 の 11.3
+// spells "not there" everywhere else.
+bool lhat_machine_weak_cache_put(LhatMachine *machine, const void *key,
+                                 LhatValue value);
+
+// Takes one out by hand -- for a host whose object is being freed, since
+// the key is an address and the next allocation may be given it again.
+void lhat_machine_weak_cache_forget(LhatMachine *machine, const void *key);
+
 // 02 の 15.5 with 05 の 8.8改3: reading a coroutine that has not started, so
 // that a copy of it can be made on another machine (stdlib/carry.c).
 //
