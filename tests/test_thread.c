@@ -323,15 +323,40 @@ static void test_arguments(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // Only the four kinds cross, and spawn's own '...' is any^ so that a
-    // forwarded collector fits (see the registration) -- which puts this
-    // refusal at run time, by name, rather than in the checker.
-    LHAT_TEST("a coroutine is not an argument spawn can carry");
+    // 05 の 8.8改3: a coroutine that has not started crosses, so a worker
+    // may be handed the very thing the caller wrote as a call.
+    LHAT_TEST("a spawn takes a coroutine that has not started");
     {
         LhatTestRan ran = run_source(
             "import^ std.thread\n"
-            "let^ gen = p^ { yield^ 1 }\n"
-            "let^ h = std.thread.spawn(closed^p^ ... { return^ 1 }, gen())\n"
+            "let^ h = std.thread.spawn(p^ ... {\n"
+            "    let^ job = ...[1]\n"
+            "    if^ job fits^ c^{p^ -> number^ -> nil^} {\n"
+            "        let^ first = job.start()\n"
+            "        if^ first fits^ number^ { return^ first }\n"
+            "    }\n"
+            "    return^ 0\n"
+            "}, (p^ n:number^ { yield^ n + 1 })(41))\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
+            "    let^ answer = h.join()\n"
+            "    if^ answer fits^ number^ { return^ answer }\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 42);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // Only what carry carries crosses, and spawn's own '...' is any^ so that
+    // a forwarded collector fits (see the registration) -- which puts this
+    // refusal at run time, by name, rather than in the checker.
+    LHAT_TEST("a coroutine that has started is not one spawn can carry");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
+            "let^ started = gen()\n"
+            "started.start()\n"
+            "let^ h = std.thread.spawn(closed^p^ ... { return^ 1 }, started)\n"
             "if^ h fits^ std.thread.ThreadError.BadArgument {\n"
             "    return^ \"refused\"\n"
             "}\n"

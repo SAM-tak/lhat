@@ -8412,6 +8412,79 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
     return run_frames(m, base, false);
 }
 
+// 05 の 8.8改3: what a carry reads of a coroutine that has not started, and
+// the maker that puts one back together.
+static const LhatCoroutine *fresh_body(LhatValue coroutine)
+{
+    if (!lhat_is_object_kind(coroutine, LHAT_OBJECT_COROUTINE)) {
+        return NULL;
+    }
+    const LhatCoroutine *co =
+        (const LhatCoroutine *)lhat_as_object(coroutine);
+    // Every other field of a FRESH body is still what lhat_coroutine_new
+    // left: only enter_resume_frame and YIELD write pc, sent_into, the
+    // cleanups and the open list, and neither has run.
+    return co->state == LHAT_COROUTINE_FRESH &&
+                   co->source == LHAT_COROUTINE_BODY && co->closure != NULL
+               ? co
+               : NULL;
+}
+
+bool lhat_coroutine_is_fresh_body(LhatValue coroutine)
+{
+    return fresh_body(coroutine) != NULL;
+}
+
+size_t lhat_coroutine_fresh_width(LhatValue coroutine)
+{
+    const LhatCoroutine *co = fresh_body(coroutine);
+    return co != NULL ? co->register_count : 0;
+}
+
+LhatValue lhat_coroutine_fresh_slot(LhatValue coroutine, size_t index)
+{
+    const LhatCoroutine *co = fresh_body(coroutine);
+    return co != NULL && index < co->register_count
+               ? lhat_slots_get(co->registers, index)
+               : lhat_nil();
+}
+
+LhatValue lhat_coroutine_fresh_closure(LhatValue coroutine)
+{
+    const LhatCoroutine *co = fresh_body(coroutine);
+    return co != NULL ? lhat_object((LhatObject *)(void *)co->closure)
+                      : lhat_nil();
+}
+
+bool lhat_machine_make_coroutine_from(LhatMachine *machine, LhatValue closure,
+                                      const LhatValue *slots, size_t count,
+                                      LhatValue *out)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || out == NULL ||
+        !lhat_is_object_kind(closure, LHAT_OBJECT_SUBROUTINE)) {
+        return false;
+    }
+    const LhatClosure *made = (const LhatClosure *)lhat_as_object(closure);
+    if (made->proto == NULL || !made->proto->yields) {
+        return false;
+    }
+    LhatCoroutine *co =
+        lhat_coroutine_new(&m->objects, made, made->proto->chunk.registers);
+    if (co == NULL) {
+        return false;
+    }
+    // The image as it stands: the same slot-blind copy the interpreter makes
+    // where a call answers a coroutine, so a wide host value's continuation
+    // slots travel beside their head.
+    for (size_t i = 0; i < count && i < co->register_count; i++) {
+        lhat_slots_set(co->registers, i, slots[i]);
+        lhat_gc_barrier_back(m, (LhatObject *)co, slots[i]);
+    }
+    *out = lhat_object((LhatObject *)co);
+    return true;
+}
+
 bool lhat_machine_coroutine_done(LhatValue coroutine)
 {
     return lhat_is_object_kind(coroutine, LHAT_OBJECT_COROUTINE) &&

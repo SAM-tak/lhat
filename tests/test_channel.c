@@ -321,13 +321,16 @@ static void test_one_machine(void)
     }
 
     // carry's boundary, answered as a value the way std.thread answers it.
+    // 05 の 8.8改3: a coroutine crosses while it has not started; once it
+    // has, its frame is the machine's.
     LHAT_TEST("what cannot cross is refused with carry's own reason");
     {
         LhatTestRan ran = run_source(
             "import^ std.channel\n"
             "let^ c = std.channel.new()\n"
             "if^ c fits^ std.channel.Channel {\n"
-            "    let^ co = (p^ { yield^ 1 })()\n"
+            "    let^ co = (p^ { yield^ 1 yield^ 2 })()\n"
+            "    co.start()\n"
             "    let^ said = c.push(co)\n"
             "    co.dispose()\n"
             "    if^ said fits^ std.channel.ChannelError.Refused {\n"
@@ -336,7 +339,56 @@ static void test_one_machine(void)
             "    return^ \"took it\"\n"
             "}\n"
             "return^ \"no channel\"\n");
-        LHAT_CHECK_RAN_TEXT(ran, "a coroutine stays on its machine");
+        LHAT_CHECK_RAN_TEXT(ran,
+                            "a coroutine that has started stays on its machine");
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // 05 の 8.8改3: and the fresh one goes, arguments and captures with it.
+    LHAT_TEST("a coroutine that has not started crosses and runs there");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.channel\n"
+            "let^ c = std.channel.new()\n"
+            "if^ c fits^ std.channel.Channel {\n"
+            "    let^ scale = 10\n"
+            "    let^ gen = p^ n:number^ { yield^ n * scale }\n"
+            "    c.push(gen(4))\n"
+            "    let^ got = c.pop()\n"
+            "    if^ got fits^ c^{p^ -> number^ -> nil^} {\n"
+            "        let^ first = got.start()\n"
+            "        if^ first fits^ number^ { return^ first }\n"
+            "    }\n"
+            "    return^ 0\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 40);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // The copy is its own: starting one leaves the other startable.
+    LHAT_TEST("the copy and the original are two coroutines");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.channel\n"
+            "let^ c = std.channel.new()\n"
+            "if^ c fits^ std.channel.Channel {\n"
+            "    let^ gen = p^ { yield^ 7 }\n"
+            "    let^ mine = gen()\n"
+            "    c.push(mine)\n"
+            "    let^ theirs = c.pop()\n"
+            "    var^ n = 0\n"
+            "    let^ a = mine.start()\n"
+            "    if^ a fits^ number^ { n += a }\n"
+            "    if^ theirs fits^ c^{p^ -> number^ -> nil^} {\n"
+            "        let^ b = theirs.start()\n"
+            "        if^ b fits^ number^ { n += b * 100 }\n"
+            "    }\n"
+            "    mine.dispose()\n"
+            "    return^ n\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 707);
         lhat_test_ran_dispose(&ran);
     }
 

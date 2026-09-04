@@ -19,7 +19,8 @@ typedef enum {
     NODE_TABLE,
     NODE_CLOSURE,
     NODE_CELL,     // a captured place; held by one or more closures
-    NODE_HOSTDATA  // 05 の 8.8改2: a pointer of a type declared shared
+    NODE_HOSTDATA, // 05 の 8.8改2: a pointer of a type declared shared
+    NODE_COROUTINE // 05 の 8.8改3: one whose body has not started
 } NodeKind;
 
 typedef struct {
@@ -45,6 +46,10 @@ typedef struct {
     // wrapper it makes.
     const LhatHostDataTag *tag;
     void *pointer;
+    // COROUTINE: the node of the closure it was made from. Its register
+    // image rides in `cells`/`cell_count`, which a coroutine has no cells
+    // of its own to want.
+    size_t of_closure;
 } Node;
 
 // 05 の 8.8改2: one more hold, or one given back, for a type that counts.
@@ -315,6 +320,49 @@ static bool carry_closure(Carrier *c, LhatValue closure, size_t *index)
     return true;
 }
 
+// 05 の 8.8改3: a coroutine whose body has not started is the closure it was
+// made from plus the arguments already laid into its frame -- 02 の 15.5
+// runs nothing at the call, so there is no progress to move and no frame to
+// belong to a machine. One that HAS started keeps the refusal, and so do a
+// table's walk and a walk the host wrote: those are the machine's own state.
+static bool carry_coroutine(Carrier *c, LhatValue value, size_t *index)
+{
+    if (!lhat_coroutine_is_fresh_body(value)) {
+        return refuse(c, "a coroutine that has started stays on its machine");
+    }
+    const void *identity = lhat_as_object(value);
+    if (memo_find(&c->memo, identity, index)) {
+        return true;
+    }
+    if (!add_node(c, NODE_COROUTINE, index) ||
+        !memo_put(&c->memo, identity, *index)) {
+        return false;
+    }
+    size_t self = *index;
+    size_t of_closure = 0;
+    if (!carry_closure(c, lhat_coroutine_fresh_closure(value), &of_closure)) {
+        return false;
+    }
+    size_t width = lhat_coroutine_fresh_width(value);
+    size_t *image =
+        width > 0 ? (size_t *)lhat_calloc(width, sizeof *image) : NULL;
+    if (width > 0 && image == NULL) {
+        return refuse(c, "out of memory");
+    }
+    for (size_t i = 0; i < width; i++) {
+        if (!carry_value(c, lhat_coroutine_fresh_slot(value, i), &image[i])) {
+            lhat_free(image);
+            return false;
+        }
+    }
+    // add_node may have moved the array, so the node is reached again here.
+    Node *node = &c->out->nodes[self];
+    node->of_closure = of_closure;
+    node->cells = image;
+    node->cell_count = width;
+    return true;
+}
+
 static bool carry_value(Carrier *c, LhatValue value, size_t *index)
 {
     if (lhat_is_nil(value)) {
@@ -367,7 +415,7 @@ static bool carry_value(Carrier *c, LhatValue value, size_t *index)
         return carry_closure(c, value, index);
     }
     if (lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE)) {
-        return refuse(c, "a coroutine stays on its machine");
+        return carry_coroutine(c, value, index);
     }
     // 05 の 8.8改2: a host type that declared it may cross does, as its
     // pointer with one hold taken for the tree. A value already given back
@@ -571,6 +619,35 @@ static bool build(Builder *b, size_t index, LhatValue *out)
         case NODE_CELL:
             // Reached only through a closure above; a cell is never a value.
             return build_cell(b, index);
+        case NODE_COROUTINE: {
+            // The closure first, then the image it was made with -- made
+            // rather than called (vm.h), so the arguments are not laid out
+            // a second time. The rebuilt one is a coroutine of its own:
+            // this machine may start it, and the machine the original
+            // stayed on may start that.
+            LhatValue closure = lhat_nil();
+            if (!build(b, node->of_closure, &closure)) {
+                return false;
+            }
+            LhatValue *image =
+                node->cell_count > 0
+                    ? (LhatValue *)lhat_calloc(node->cell_count, sizeof *image)
+                    : NULL;
+            if (node->cell_count > 0 && image == NULL) {
+                return false;
+            }
+            bool ok = true;
+            for (size_t i = 0; ok && i < node->cell_count; i++) {
+                ok = build(b, node->cells[i], &image[i]);
+            }
+            ok = ok && lhat_machine_make_coroutine_from(
+                           b->machine, closure, image, node->cell_count, out);
+            lhat_free(image);
+            if (!ok) {
+                return false;
+            }
+            break;
+        }
         case NODE_HOSTDATA:
             // 05 の 8.8改2: a wrapper of its own on this machine, holding
             // the pointer once more -- given back through dispose^ as any

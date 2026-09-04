@@ -408,6 +408,33 @@ bool lhat_machine_make_closure_with(LhatMachine *machine,
                                     LhatUpvalue *const *cells, size_t count,
                                     LhatValue *out);
 
+// 02 の 15.5 with 05 の 8.8改3: reading a coroutine that has not started, so
+// that a copy of it can be made on another machine (stdlib/carry.c).
+//
+// A call of a yieldable body runs nothing, so what such a coroutine holds is
+// the closure and the arguments already laid into its frame -- there is no
+// progress to move and no frame to belong to the machine. `_is_fresh_body`
+// is what tells that from one already started (whose frame IS the running
+// machine's), from a table's walk and from a walk the host wrote; the other
+// two answer only for one it said true of.
+bool lhat_coroutine_is_fresh_body(LhatValue coroutine);
+size_t lhat_coroutine_fresh_width(LhatValue coroutine);
+LhatValue lhat_coroutine_fresh_slot(LhatValue coroutine, size_t index);
+LhatValue lhat_coroutine_fresh_closure(LhatValue coroutine);
+
+// The other half: a coroutine of `closure` with that register image, made
+// rather than called. A call would lay the arguments out a second time --
+// 13.7's variadic tail is already collected into a table in the image, and
+// handing it back as one argument would nest it -- so what is copied here
+// is what the machine itself wrote.
+//
+// The body has run nothing, so this is a coroutine anyone may start; the
+// one it was copied from stays startable where it is. False when the value
+// is no closure, when its proto does not yield, or when there is no memory.
+bool lhat_machine_make_coroutine_from(LhatMachine *machine, LhatValue closure,
+                                      const LhatValue *slots, size_t count,
+                                      LhatValue *out);
+
 // Reading a closure back out: its proto, how many places it captured, each
 // captured place's current value (an open cell reads through to the stack,
 // a closed one from itself -- the machine's own dereference), and the

@@ -24,7 +24,14 @@
 //
 // What does not, with the reason lhat_carry answers:
 //
-//   a coroutine                  a frame belongs to the machine that runs it
+//   a started coroutine          a frame belongs to the machine that runs
+//                                it. One whose body has NOT started
+//                                crosses (05 の 8.8改3): 02 の 15.5 runs
+//                                nothing at the call, so it is the closure
+//                                and the arguments laid out, and the copy
+//                                is a second coroutine both machines may
+//                                start. A table's walk and a walk the host
+//                                wrote stay where they are
 //   a def^ or its instance       the definition's identity is the other
 //                                machine's to find again -- later
 //   a host value                 a pointer's ownership (dispose^) is the
