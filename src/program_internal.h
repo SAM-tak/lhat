@@ -246,6 +246,12 @@ typedef struct LhatGlobalEntry {
     LhatRuntimeType **parameter_types;  // 14.12, as on LhatHostEntry
 } LhatGlobalEntry;
 
+// 05 の 8.7改5: one registered module's table, on the program's own heap.
+typedef struct {
+    const char *path;  // borrowed from the registration that named it
+    LhatTable *table;
+} LhatSharedModule;
+
 struct LhatProgram {
     // 05 の 8.11: the host's lock over every write to this program, or NULL
     // for the one-threaded case that needs none. Taken by the public
@@ -357,6 +363,28 @@ struct LhatProgram {
     // host_error_entries is what lhat_compile_module is given as
     // LhatUnits.host_errors.
     LhatHeap host_heap;
+
+    // 05 の 8.7改5: the registrations, built ONCE on host_heap as the tables
+    // a machine would otherwise build for itself. `path` is the module a
+    // registration named, `table` what stands at it; install hangs each off
+    // the machine's own L^.modules rather than filling one in.
+    //
+    // Sealed and never written after they are built, which is what the black
+    // birth requires -- gc.h's rule is that a shared object is safe because
+    // nothing writes it, not because it is black (a write would trip
+    // lhat_gc_barrier_back, whose guard every black object meets for ever).
+    //
+    // Built lazily at the first install and rebuilt when a registration has
+    // been added since -- which is why the three counts are kept. A machine
+    // installed before that registration does not have it, exactly as today.
+    LhatSharedModule *shared;
+    size_t shared_count;
+    size_t shared_capacity;
+    bool shared_ready;
+    size_t shared_from_entries;
+    size_t shared_from_types;
+    size_t shared_from_enums;
+
     LhatHostErrorKind *host_error_entries;
     size_t host_error_entry_count;
     size_t host_error_entry_capacity;

@@ -436,6 +436,18 @@ bool lhat_machine_make_closure_with(LhatMachine *machine,
                                     LhatValue *out);
 
 // ---------------------------------------------------------------------------
+// 05 の 8.7改5: hangs a table the PROGRAM built onto this machine's
+// L^.modules at `path` -- the module's own name being the last segment and
+// what stands above it made where it is not there yet. What arrives is
+// sealed and belongs to the program, so the machine writes a pointer and
+// builds nothing; only the few tables of the path above it are its own.
+//
+// Not for a host to call: lhat_program_install is what uses it, and a host
+// that wants a registration writes lhat_register_* and lets install place
+// it. Declared here because the machine's side of the join lives in vm.c.
+bool lhat_machine_attach_module(LhatMachine *machine, const char *path,
+                                struct LhatTable *table);
+
 // 05 の 8.12: what a host remembers about its own objects
 // ---------------------------------------------------------------------------
 //

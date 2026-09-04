@@ -3549,6 +3549,48 @@ bool lhat_machine_register(LhatMachine *machine, const char *module,
                    &refused) && !refused;
 }
 
+// 05 の 8.7改5: the machine's half of the join. The path above the module
+// is the machine's to make (a unit's own module^ lands in the same spine),
+// and the module itself is a pointer to what the program built.
+bool lhat_machine_attach_module(LhatMachine *machine, const char *path,
+                               LhatTable *table)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || m->modules == NULL || path == NULL || table == NULL) {
+        return false;
+    }
+    const char *last = strrchr(path, '.');
+    LhatTable *owner = m->modules;
+    if (last != NULL) {
+        size_t above = (size_t)(last - path);
+        char spine[LHAT_QUALIFIED_NAME_BUFFER];
+        if (above >= sizeof spine) {
+            return false;
+        }
+        memcpy(spine, path, above);
+        spine[above] = '\0';
+        owner = reach_table(m, owner, spine);
+        if (owner == NULL) {
+            return false;
+        }
+        last++;
+    } else {
+        last = path;
+    }
+    LhatString *key = lhat_string_new(&m->objects, last, strlen(last));
+    if (key == NULL) {
+        return false;
+    }
+    // A black table written into a white one: the backward barrier asks
+    // whether the VALUE is white, and this one never is, so nothing is
+    // threaded onto anybody's gray list. The other direction -- a machine's
+    // object written into the shared table -- is what the seal refuses.
+    bool refused = false;
+    return set_key(m, owner, lhat_object((LhatObject *)key),
+                   lhat_object((LhatObject *)table), &refused) &&
+           !refused;
+}
+
 // 05 の 8.8改: puts a registered type's members table under its base's, so
 // that a member the base declared is found by WALKING rather than by having
 // been copied down when the program was installed. Copying meant a pass over

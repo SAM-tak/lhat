@@ -1099,6 +1099,29 @@ static void test_the_weak_cache(void)
                                                wrapper),
                    "remembered");
 
+        // 05 の 8.7改5 made a machine's heap small enough that a whole
+        // cycle passes inside one step (LHAT_GC_STEP_WORK is 20), and then
+        // the loop below would never SEE the marking. So give the marking
+        // enough to walk -- REACHABLE objects, since unreachable ones are
+        // work for the sweep and none for the marking.
+        {
+            LhatValue held = lhat_nil();
+            LHAT_CHECK(lhat_machine_make_table(machine, &held), "a bag");
+            LHAT_CHECK(lhat_machine_set_global(machine, "bag", held),
+                       "rooted");
+            LhatTable *bag = (LhatTable *)lhat_as_object(held);
+            for (int i = 0; i < 400; i++) {
+                LhatValue one = lhat_nil();
+                bool refused = false;
+                if (!lhat_machine_make_table(machine, &one) ||
+                    !lhat_machine_table_set(machine, bag, lhat_integer(i),
+                                            one, &refused)) {
+                    LHAT_CHECK(false, "filling the bag");
+                    break;
+                }
+            }
+        }
+
         // Into a marking, and no further: the step that follows the last of
         // the gray is the one that empties the cache, so stop before it.
         int guard = 0;
@@ -1128,6 +1151,151 @@ static void test_the_weak_cache(void)
     }
 }
 
+// ---------------------------------------------------------------------------
+// 05 の 8.7改5: the registrations are the program's
+//
+// What install used to build per machine is built once on the program's own
+// heap, born black, and hung off each machine's L^.modules by name. What is
+// pinned here is that several machines answer the same, that the shared
+// tables outlive a machine, and that the seal holds where a unit reaches for
+// a name the host registered.
+
+static void test_registrations_are_shared(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    LHAT_TEST("two machines of one program answer the same registrations");
+    {
+        static const File files[] = {
+            {"main.lh", "import^ scene\nreturn^ scene.makeSprite().id()\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        the_node.id = 9;
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_compile(&program), "built");
+
+        LhatMachine *first = lhat_machine_new();
+        LhatMachine *second = lhat_machine_new();
+        LHAT_CHECK(lhat_program_install(&program, first) &&
+                       lhat_program_install(&program, second),
+                   "both installed");
+
+        // The same table, not a copy: what one machine reaches through
+        // L^.modules is the object the other reaches.
+        LhatValue here = lhat_nil();
+        LhatValue there = lhat_nil();
+        LHAT_CHECK(lhat_machine_registered(first, "scene", "Node", "id",
+                                           &here) &&
+                       lhat_machine_registered(second, "scene", "Node", "id",
+                                               &there),
+                   "both find the base's member");
+        LHAT_CHECK(lhat_is_object(here) && lhat_is_object(there) &&
+                       lhat_as_object(here) == lhat_as_object(there),
+                   "and it is one object, not two");
+        // 8.8改's base link is built once too, so the walk still climbs it.
+        LHAT_CHECK(lhat_machine_registered(second, "scene", "Sprite2D", "id",
+                                           &there),
+                   "a derived type still reaches through its base");
+
+        LhatRunResult ran = lhat_run(first, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 9);
+
+        // The first machine goes; the shared tables belong to the program,
+        // so the second goes on answering.
+        lhat_machine_dispose(first);
+        ran = lhat_run(second, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 9);
+        lhat_machine_dispose(second);
+        lhat_program_dispose(&program);
+    }
+
+    // A machine made after another has run, on a program whose shared tables
+    // were built long before: the build is once, the attaching is per
+    // machine, and a value made on the new machine reads its members off the
+    // shared table like any other.
+    LHAT_TEST("a machine installed later gets the same tables");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ scene\n"
+             "var^ n = 0\n"
+             "for^ i from^ 1 to^ 200 {\n"
+             "    n := n + scene.makeSprite().id()\n"
+             "    if^ i % 16 = 0 { L^.collectgarbage() }\n"
+             "}\n"
+             "return^ n\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        the_node.id = 2;
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_compile(&program), "built");
+
+        LhatMachine *first = lhat_machine_new();
+        LHAT_CHECK(lhat_program_install(&program, first), "installed");
+        LhatRunResult ran = lhat_run(first, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+
+        LhatMachine *later = lhat_machine_new();
+        LHAT_CHECK(lhat_program_install(&program, later), "installed later");
+        ran = lhat_run(later, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 2 * 200);
+
+        lhat_machine_dispose(first);
+        lhat_machine_dispose(later);
+        lhat_program_dispose(&program);
+    }
+
+    // The one corner the granularity leaves: a unit naming a path BELOW a
+    // registered module writes into the sealed table, and SETINDEX refuses
+    // it. Naming the module's own path is not that -- it replaces the entry
+    // in the machine's own L^.modules, shadowing the registrations for that
+    // machine exactly as it did before any of this.
+    LHAT_TEST("a unit may not publish inside a module the host registered");
+    {
+        // A unit publishes where a require^ brings it in, so the reach has
+        // to be one -- a root run on its own registers nothing.
+        static const File files[] = {
+            {"main.lh", "require^ \"extra.lh\"\nreturn^ 1\n"},
+            {"extra.lh", "module^ scene.extra\npublic^ let^ answer = 42\n"},
+        };
+        program_with(&program, &disk, files, 2);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_compile(&program), "built");
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_CHECK(lhat_program_install(&program, machine), "installed");
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_SEALED);
+        lhat_machine_dispose(machine);
+        lhat_program_dispose(&program);
+    }
+
+    LHAT_TEST("a unit under its own name publishes as it always did");
+    {
+        static const File files[] = {
+            {"main.lh", "require^ \"own.lh\"\nreturn^ mine.own.answer\n"},
+            {"own.lh", "module^ mine.own\npublic^ let^ answer = 42\n"},
+        };
+        program_with(&program, &disk, files, 2);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_compile(&program), "built");
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_CHECK(lhat_program_install(&program, machine), "installed");
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+        lhat_machine_dispose(machine);
+        lhat_program_dispose(&program);
+    }
+}
+
 int main(void)
 {
     test_the_relation();
@@ -1140,5 +1308,6 @@ int main(void)
     test_the_weak_cache();
     test_values_keep_their_members();
     test_registered_sees_the_chain();
+    test_registrations_are_shared();
     return lhat_test_report("test_hostdata_base");
 }

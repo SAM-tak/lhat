@@ -3143,53 +3143,368 @@ static bool install_entry(LhatMachine *machine, const LhatHostEntry *e,
     return lhat_machine_register(machine, module, type, name, value);
 }
 
-static bool install_all(const LhatProgram *program, LhatMachine *machine)
+// ---------------------------------------------------------------------------
+// 05 の 8.7改5: the registrations, built once on the program's own heap
+// ---------------------------------------------------------------------------
+//
+// install used to build every registration again for every machine: a value
+// object and a key string apiece, and a table per path segment, all on that
+// machine's heap. Nothing about any of it is the machine's -- a LhatHost
+// carries the host's own C pointers, a key string is bytes, a type's members
+// table holds only more of the same. So it is built here instead, on
+// host_heap, where things are born black (LHAT_GC_BLACK, set below) and
+// therefore belong to no machine's collection: lhat_gc_reach returns without
+// writing when what it is handed is not white, which is the whole of what
+// makes a shared object safe to walk from several threads at once.
+//
+// The condition that comes with it is IMMUTABILITY, not blackness (gc.h).
+// A write into a black table would trip lhat_gc_barrier_back -- whose guard
+// is "is the parent black", which these meet for ever -- and thread the
+// table onto one machine's gray list. So everything built here is sealed,
+// and what a machine still writes into (a unit's own module^, a late
+// registration) lands on the machine's side of the join.
+
+// The heap-only twin of vm.c's reach_table. No machine, so no barrier and
+// no reserved-seat dance: nothing here is written twice.
+static LhatTable *shared_reach(LhatHeap *heap, LhatTable *owner,
+                               const char *path)
 {
-    for (size_t i = 0; i < program->host_entry_count; i++) {
-        const LhatHostEntry *e = &program->host_entries[i];
-        if (!install_entry(machine, e, e->module, e->type, e->name)) {
+    for (const char *segment = path;;) {
+        size_t length = strcspn(segment, ".");
+        LhatString *key = lhat_string_new(heap, segment, length);
+        if (key == NULL) {
+            return NULL;
+        }
+        LhatValue held = lhat_table_get(owner, lhat_object((LhatObject *)key));
+        LhatTable *next =
+            lhat_is_object_kind(held, LHAT_OBJECT_TABLE)
+                ? (LhatTable *)lhat_as_object(held)
+                : NULL;
+        if (next == NULL) {
+            if (!lhat_is_nil(held)) {
+                return NULL;  // something that is not a table is there
+            }
+            next = lhat_table_new(heap);
+            bool refused = false;
+            if (next == NULL ||
+                !lhat_table_set(owner, lhat_object((LhatObject *)key),
+                                lhat_object((LhatObject *)next), &refused) ||
+                refused) {
+                return NULL;
+            }
+        }
+        owner = next;
+        if (segment[length] == '\0') {
+            return owner;
+        }
+        segment += length + 1;
+    }
+}
+
+// The heap-only twin of lhat_machine_register, overloads included: 02 の
+// 14.12 makes a second registration of one name another arm, and that is a
+// fact about the registrations rather than about any machine.
+static bool shared_register(LhatHeap *heap, LhatTable *root,
+                            const char *module, const char *type,
+                            const char *name, LhatValue value)
+{
+    LhatTable *owner = shared_reach(heap, root, module);
+    if (owner != NULL && type != NULL) {
+        owner = shared_reach(heap, owner, type);
+    }
+    if (owner == NULL) {
+        return false;
+    }
+    LhatString *key = lhat_string_new(heap, name, strlen(name));
+    if (key == NULL) {
+        return false;
+    }
+    LhatValue held = lhat_table_get(owner, lhat_object((LhatObject *)key));
+    if (!lhat_is_nil(held)) {
+        LhatOverload *group =
+            lhat_is_object_kind(held, LHAT_OBJECT_OVERLOAD)
+                ? (LhatOverload *)lhat_as_object(held)
+                : lhat_overload_new(heap);
+        if (group == NULL) {
+            return false;
+        }
+        if (!lhat_is_object_kind(held, LHAT_OBJECT_OVERLOAD) &&
+            !lhat_overload_add(group, held)) {
+            return false;
+        }
+        if (!lhat_overload_add(group, value)) {
+            return false;
+        }
+        value = lhat_object((LhatObject *)group);
+    }
+    bool refused = false;
+    return lhat_table_set(owner, lhat_object((LhatObject *)key), value,
+                          &refused) &&
+           !refused;
+}
+
+// install_entry's five cases, on the program's heap.
+static bool shared_entry(LhatProgram *program, LhatTable *root,
+                         const LhatHostEntry *e)
+{
+    LhatHeap *heap = &program->host_heap;
+    LhatValue value = lhat_nil();
+    if (e->const_kind == LHAT_HOST_CONST_INTEGER) {
+        value = lhat_integer(e->const_integer);
+    } else if (e->const_kind == LHAT_HOST_CONST_REAL) {
+        value = lhat_real(e->const_real);
+    } else if (e->const_kind == LHAT_HOST_CONST_BOOL) {
+        value = lhat_bool(e->const_bool);
+    } else if (e->const_kind == LHAT_HOST_CONST_STRING) {
+        LhatString *text =
+            lhat_string_new(heap, e->const_text, strlen(e->const_text));
+        if (text == NULL) {
+            return false;
+        }
+        value = lhat_object((LhatObject *)text);
+    } else if (e->call == NULL) {
+        // A type registers as an empty table under its module; its members
+        // are entries of their own and land in it as they come. The order
+        // matters: a member arriving first would make the table, and the
+        // type's own entry would then read a non-nil and wrap the two into
+        // an overload. The registration API keeps the order.
+        LhatTable *made = lhat_table_new(heap);
+        if (made == NULL) {
+            return false;
+        }
+        value = lhat_object((LhatObject *)made);
+    } else {
+        LhatHost *host = lhat_host_new(heap, e->call, e->context,
+                                       e->parameters, e->has_variadic,
+                                       e->takes_self);
+        if (host == NULL) {
+            return false;
+        }
+        host->self_last = e->self_last;
+        host->parameter_types = borrowed_params(
+            (const LhatRuntimeType *const *)e->parameter_types,
+            e->parameters);
+        if (e->parameters > 0 && host->parameter_types == NULL) {
+            return false;
+        }
+        value = lhat_object((LhatObject *)host);
+    }
+    return shared_register(heap, root, e->module, e->type, e->name, value);
+}
+
+// lhat_machine_make_enum, on the program's heap. The declaration type is
+// already there (lhat_type_rt_new against host_heap at registration).
+static bool shared_enum(LhatProgram *program, LhatTable *root,
+                        const LhatProgramEnum *e)
+{
+    LhatHeap *heap = &program->host_heap;
+    LhatString *named = lhat_string_new(heap, e->name, strlen(e->name));
+    if (named == NULL) {
+        return false;
+    }
+    LhatEnum *made = lhat_enum_new(heap, named, e->decl_rt);
+    if (made == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < e->count; i++) {
+        LhatString *member =
+            lhat_string_new(heap, e->members[i], strlen(e->members[i]));
+        if (member == NULL) {
+            return false;
+        }
+        LhatEnumerator *made_one = lhat_enumerator_new(
+            heap, made, member,
+            lhat_integer(e->values != NULL ? e->values[i] : (int64_t)i + 1),
+            i + 1);
+        bool refused = false;
+        if (made_one == NULL ||
+            !lhat_table_set(made->members, lhat_object((LhatObject *)member),
+                            lhat_object((LhatObject *)made_one), &refused) ||
+            refused) {
             return false;
         }
     }
+    return shared_register(heap, root, e->module, e->type, e->name,
+                           lhat_object((LhatObject *)made));
+}
 
-    // 05 の 8.8改: and now what each type is declared under. The machine
-    // reads a hostdata value's members off the type's own table under
-    // L^.modules (lhat_machine_make_hostdata), which is a different place
-    // from the checker's type -- so what the checker does with the base
-    // link on the type has to be done here too, or a derived value would
-    // check as having a member and then not find it.
-    //
-    // A LINK, one per type, and the walk climbs it (vm.c's
-    // lhat_machine_link_hostdata_base). Copying the base's members down
-    // instead meant a pass over every registration for every type and every
-    // one of its ancestors, with another such pass inside it to decide
-    // which declaration was nearest -- and a binding with a class per
-    // engine class waited seconds for that on every load. Nearest still
-    // wins, now because the walk meets it first.
+// 05 の 8.8改, done once: a derived type's members table stands on its
+// base's, so a member the base declares is found by walking. The machine
+// used to do this per install (lhat_machine_link_hostdata_base); it is a
+// fact about the declarations, so it belongs to the build.
+static bool shared_link_bases(LhatProgram *program, LhatTable *root)
+{
+    LhatHeap *heap = &program->host_heap;
     for (size_t i = 0; i < program->host_type_entry_count; i++) {
         const LhatHostTypeEntry *te = &program->host_type_entries[i];
         const LhatHostDataTag *base = te->tag->base;
         if (base == NULL) {
             continue;
         }
-        if (!lhat_machine_link_hostdata_base(machine, te->module, te->name,
-                                             base->module, base->name)) {
+        LhatTable *derived = shared_reach(heap, root, te->module);
+        LhatTable *under = shared_reach(heap, root, base->module);
+        if (derived == NULL || under == NULL) {
+            return false;
+        }
+        derived = shared_reach(heap, derived, te->name);
+        under = shared_reach(heap, under, base->name);
+        if (derived == NULL || under == NULL) {
+            return false;
+        }
+        derived->definition = under;
+        derived->is_definition = true;
+        under->is_definition = true;
+    }
+    return true;
+}
+
+// Every table under `table`, sealed. What a program writes at L^.modules is
+// refused by SETINDEX from here on, which is what keeps the promise the
+// black birth is made under.
+static void seal_tree(LhatTable *table)
+{
+    if (table == NULL || table->sealed) {
+        return;  // sealed already: either done, or an enum's members
+    }
+    table->sealed = true;
+    for (size_t i = 0; i < table->entry_capacity; i++) {
+        LhatValue held = table->entries[i].value;
+        if (lhat_is_object_kind(held, LHAT_OBJECT_TABLE)) {
+            seal_tree((LhatTable *)lhat_as_object(held));
+        }
+    }
+}
+
+// The module a registration named, by number over both lists -- an enum may
+// be the only thing registered under its module (a lone `k.Mode`), so the
+// entries alone do not name every module there is.
+static const char *registered_module(const LhatProgram *program, size_t at)
+{
+    if (at < program->host_entry_count) {
+        return program->host_entries[at].module;
+    }
+    at -= program->host_entry_count;
+    return at < program->host_enum_count ? program->host_enums[at].module
+                                         : NULL;
+}
+
+static size_t registered_module_count(const LhatProgram *program)
+{
+    return program->host_entry_count + program->host_enum_count;
+}
+
+// Whether `path` has another registered module path above it. Where one
+// does, only the shallower is shared -- the deeper is inside it already,
+// and hanging both off a machine would mean writing into a sealed table.
+static bool has_shared_ancestor(const LhatProgram *program, const char *path)
+{
+    for (size_t i = 0; i < registered_module_count(program); i++) {
+        const char *other = registered_module(program, i);
+        size_t length = strlen(other);
+        if (length < strlen(path) && strncmp(other, path, length) == 0 &&
+            path[length] == '.') {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool remember_shared(LhatProgram *program, const char *path,
+                            LhatTable *table)
+{
+    for (size_t i = 0; i < program->shared_count; i++) {
+        if (strcmp(program->shared[i].path, path) == 0) {
+            return true;  // one entry per module, however many registrations
+        }
+    }
+    LHAT_GROW(program->shared, program->shared_count,
+              program->shared_capacity, 8, return false);
+    program->shared[program->shared_count].path = path;
+    program->shared[program->shared_count].table = table;
+    program->shared_count++;
+    return true;
+}
+
+// The whole of it. Answers false only when memory ran out; the caller then
+// installs the old way, which is still correct.
+static bool build_shared_modules(LhatProgram *program)
+{
+    if (program->shared_ready &&
+        program->shared_from_entries == program->host_entry_count &&
+        program->shared_from_types == program->host_type_entry_count &&
+        program->shared_from_enums == program->host_enum_count) {
+        return true;
+    }
+    // A registration has arrived since the last build. The old tables stay
+    // where they are -- host_heap is freed with the program, and machines
+    // installed against them go on reading them -- and this makes new ones.
+    // A machine installed before a registration does not have it, which is
+    // what install answered before this existed too.
+    program->shared_count = 0;
+    program->shared_ready = false;
+
+    LhatHeap *heap = &program->host_heap;
+    // Scaffolding: the shape L^.modules has, so that a path is reached the
+    // same way it is at install. Only the nodes named by a registration are
+    // kept; what stands above them is a machine's to make.
+    LhatTable *root = lhat_table_new(heap);
+    if (root == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < program->host_entry_count; i++) {
+        if (!shared_entry(program, root, &program->host_entries[i])) {
+            return false;
+        }
+    }
+    if (!shared_link_bases(program, root)) {
+        return false;
+    }
+    for (size_t i = 0; i < program->host_enum_count; i++) {
+        if (!shared_enum(program, root, &program->host_enums[i])) {
+            return false;
+        }
+    }
+    for (size_t i = 0; i < registered_module_count(program); i++) {
+        const char *path = registered_module(program, i);
+        if (has_shared_ancestor(program, path)) {
+            continue;
+        }
+        LhatTable *table = shared_reach(heap, root, path);
+        if (table == NULL || !remember_shared(program, path, table)) {
+            return false;
+        }
+    }
+    for (size_t i = 0; i < program->shared_count; i++) {
+        seal_tree(program->shared[i].table);
+    }
+    program->shared_ready = true;
+    program->shared_from_entries = program->host_entry_count;
+    program->shared_from_types = program->host_type_entry_count;
+    program->shared_from_enums = program->host_enum_count;
+    return true;
+}
+
+static bool install_all(const LhatProgram *program, LhatMachine *machine)
+{
+    // 05 の 8.7改5: the registrations, the types they stand under and the
+    // enums, all built once on the program's heap and hung here by name.
+    // What was a value object and a key string per registration is now a
+    // pointer per module.
+    LhatProgram *writable = (LhatProgram *)program;
+    if (!build_shared_modules(writable)) {
+        return false;
+    }
+    for (size_t i = 0; i < program->shared_count; i++) {
+        if (!lhat_machine_attach_module(machine, program->shared[i].path,
+                                        program->shared[i].table)) {
             return false;
         }
     }
 
-    // 05 の 8.7改2: the enums, one value object per machine.
-    for (size_t i = 0; i < program->host_enum_count; i++) {
-        const LhatProgramEnum *e = &program->host_enums[i];
-        LhatValue value = lhat_nil();
-        if (!lhat_machine_make_enum(machine, e->name, e->decl_rt,
-                                    (const char *const *)e->members,
-                                    e->values, e->count, &value) ||
-            !lhat_machine_register(machine, e->module, e->type, e->name,
-                                   value)) {
-            return false;
-        }
-    }
+    // 8.8改's base links and 8.7改2's enums used to be built here, once per
+    // machine. They are facts about the declarations rather than about any
+    // machine, so build_shared_modules has them (shared_link_bases,
+    // shared_enum).
     // 05 の 8.6: what goes in L^ itself rather than under its registry.
     for (size_t i = 0; i < program->global_count; i++) {
         const LhatGlobalEntry *e = &program->global_entries[i];
@@ -3773,6 +4088,13 @@ void lhat_program_dispose(LhatProgram *program)
     program->host_error_entries = NULL;
     program->host_error_entry_count = 0;
     program->host_error_entry_capacity = 0;
+    // 05 の 8.7改5: the frontier itself. What it points at is on host_heap
+    // and goes with it below.
+    lhat_free(program->shared);
+    program->shared = NULL;
+    program->shared_count = 0;
+    program->shared_capacity = 0;
+    program->shared_ready = false;
     // 04 の 12.4: この program が登録した誤り種別のオブジェクト自身
     // (LhatErrorKind/LhatString)。chunk->heap と同じ扱いで、program の
     // 寿命が尽きるここでまとめて解放する。
