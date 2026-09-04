@@ -18,8 +18,10 @@
 #include "stdlibutil.h"
 #include "testutil.h"
 
+#include "../stdlib/async.h"
 #include "../stdlib/io.h"
 #include "../stdlib/thread.h"
+#include "port/thread.h"
 
 // std.thread is the module every case here registers; the run itself is
 // stdlibutil.h's, shared with the other stdlib tests.
@@ -512,6 +514,267 @@ static void test_done(void)
     }
 }
 
+// ---------------------------------------------------------------------------
+// 15.14改: what a body's end pushes, rather than what a caller has to ask for
+// ---------------------------------------------------------------------------
+
+static const LhatTestRegister with_async[] = {lhatstdlib_thread_register,
+                                              lhatstdlib_async_register};
+
+// What the host is told, from the worker's own thread.
+typedef struct {
+    LhatMutex lock;
+    int calls;
+    bool ok;
+    char message[256];
+} Heard;
+
+static Heard heard;
+
+static void note_finished(void *context, void *handle, bool ok,
+                          const char *message)
+{
+    Heard *said = (Heard *)context;
+    (void)handle;
+    lhat_mutex_lock(&said->lock);
+    said->calls++;
+    said->ok = ok;
+    said->message[0] = '\0';
+    if (message != NULL) {
+        size_t length = strlen(message);
+        if (length >= sizeof said->message) {
+            length = sizeof said->message - 1;
+        }
+        memcpy(said->message, message, length);
+        said->message[length] = '\0';
+    }
+    lhat_mutex_unlock(&said->lock);
+}
+
+static bool register_and_watch(LhatProgram *program)
+{
+    return lhatstdlib_thread_register(program) &&
+           lhatstdlib_thread_on_finish(program, note_finished, &heard);
+}
+
+static void test_pushed_completion(void)
+{
+    // The wait awaitable() arms is pushed when the body finishes, so a
+    // scheduler parks on it instead of asking done() over and over. Here
+    // the L^ side does what a scheduler would: take the id, then ask
+    // std.async which wait is ready.
+    LHAT_TEST("15.14改: the end of a body completes the wait it armed");
+    {
+        LhatTestRan ran = lhat_test_run(
+            with_async, 2,
+            "import^ std.async\n"
+            "import^ std.thread\n"
+            "let^ h = std.thread.spawn(p^ ... { std.thread.sleep(0.02) })\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
+            "    let^ id = h.awaitable()\n"
+            "    if^ id > 0 {\n"
+            // A wait of its own is armed, so what comes back has to be the
+            // thread's rather than whatever was in the table.
+            "        let^ ready = std.async.wait(2)\n"
+            "        h.join()\n"
+            "        if^ ready = id { return^ 1 }\n"
+            "        return^ 0\n"
+            "    }\n"
+            "    h.join()\n"
+            "    return^ -2\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // Asking after it has already finished is the race this has to answer
+    // for: the push happened before there was anything to push to.
+    LHAT_TEST("and one asked for after the body finished is ready at once");
+    {
+        LhatTestRan ran = lhat_test_run(
+            with_async, 2,
+            "import^ std.async\n"
+            "import^ std.thread\n"
+            "let^ h = std.thread.spawn(p^ ... { })\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
+            "    repeat^ { if^ h.done() { break^ } std.thread.sleep(0.005) }\n"
+            "    let^ id = h.awaitable()\n"
+            "    let^ ready = std.async.wait(2)\n"
+            "    h.join()\n"
+            "    if^ id > 0 and^ ready = id { return^ 1 }\n"
+            "    return^ 0\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // No std.async on the program: nothing to arm, and the answer says so
+    // rather than failing.
+    LHAT_TEST("without a scheduler it answers nothing to wait on");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            "let^ h = std.thread.spawn(p^ ... { })\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
+            "    let^ id = h.awaitable()\n"
+            "    h.join()\n"
+            "    if^ id = 0 { return^ 1 }\n"
+            "    return^ 0\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("failed() reads the fault without joining");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            "let^ h = std.thread.spawn(p^ ... { panic^ \"boom\" })\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
+            "    repeat^ { if^ h.done() { break^ } std.thread.sleep(0.005) }\n"
+            "    let^ said = h.failed()\n"
+            "    h.join()\n"
+            "    if^ said fits^ string^ { return^ said }\n"
+            "    return^ \"nothing said\"\n"
+            "}\n"
+            "return^ \"refused\"\n");
+        LHAT_CHECK(ran.ok && ran.text != NULL &&
+                       strstr(ran.text, "panic") != NULL,
+                   "the fault is readable: %s",
+                   ran.text != NULL ? ran.text : "(none)");
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("and answers nothing for a body that ran clean");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            "let^ h = std.thread.spawn(p^ ... { return^ 1 })\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
+            "    h.join()\n"
+            "    if^ h.failed() fits^ nil^ { return^ 1 }\n"
+            "    return^ 0\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // The host's hook, which is what lets a loop notice a worker dying
+    // without ever joining one.
+    LHAT_TEST("the host hears about a fault without joining");
+    {
+        memset(&heard, 0, sizeof heard);
+        lhat_mutex_init(&heard.lock);
+        static const LhatTestRegister watched[] = {register_and_watch};
+        LhatTestRan ran = lhat_test_run(
+            watched, 1,
+            "import^ std.thread\n"
+            "let^ h = std.thread.spawn(p^ ... { panic^ \"boom\" })\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
+            "    repeat^ { if^ h.done() { break^ } std.thread.sleep(0.005) }\n"
+            "    h.dispose()\n"
+            "    return^ 1\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_mutex_lock(&heard.lock);
+        LHAT_CHECK_EQ_INT(heard.calls, 1);
+        LHAT_CHECK(!heard.ok, "it was told the body failed");
+        LHAT_CHECK(strstr(heard.message, "panic") != NULL,
+                   "with what a join would have said: %s", heard.message);
+        lhat_mutex_unlock(&heard.lock);
+        lhat_test_ran_dispose(&ran);
+        lhat_mutex_destroy(&heard.lock);
+    }
+
+    // 8.8改2 made carry answer with more than the scalars the old signature
+    // listed, so join says any^ and the caller narrows.
+    LHAT_TEST("a body answering a table is joined as one");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            "let^ h = std.thread.spawn(p^ ... { return^ { x = 6, y = 7 } })\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
+            "    let^ answer = h.join()\n"
+            "    if^ answer fits^ t^{ x : number^, y : number^ } {\n"
+            "        return^ answer.x * answer.y\n"
+            "    }\n"
+            "    return^ 0\n"
+            "}\n"
+            "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 42);
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
+// 4.5: a host disposing of a program has to know nothing of it is still
+// running. Every handle is dropped here without a join, which before this
+// left three threads reading a proto the program was about to free.
+// The one file these build a program out of. stdlibutil's own loader is
+// not reachable from here, and what this needs is the program itself rather
+// than the run its helpers wrap.
+static char *only_file(void *context, const char *path, size_t *length)
+{
+    const char *text = (const char *)context;
+    if (strcmp(path, "main.lh") != 0) {
+        return NULL;
+    }
+    *length = strlen(text);
+    char *copy = (char *)lhat_alloc(*length + 1);
+    if (copy != NULL) {
+        memcpy(copy, text, *length + 1);
+    }
+    return copy;
+}
+
+static void test_join_all(void)
+{
+    LHAT_TEST("a host waits for every thread the program still has");
+    {
+        static const char text[] =
+            "import^ std.thread\n"
+            "var^ made = 0\n"
+            "for^ i from^ 1 to^ 3 {\n"
+            "    let^ h = std.thread.spawn(p^ ... {\n"
+            "        std.thread.sleep(0.05)\n"
+            "    })\n"
+            "    if^ h fits^ std.thread.ThreadHandle { made := made + 1 }\n"
+            "}\n"
+            "return^ made\n";
+        LhatProgram *program =
+            lhat_program_new(true, only_file, (void *)text);
+        LHAT_CHECK(lhatstdlib_thread_register(program), "registered");
+        const LhatUnit *root = lhat_program_check(program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(program) &&
+                       lhat_program_compile(program),
+                   "built");
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_CHECK(lhat_program_install(program, machine), "installed");
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 3);
+        // The handles are still the machine's, unjoined; this is what says
+        // the bodies are done before anything they read goes.
+        lhatstdlib_thread_join_all(program);
+        lhat_machine_dispose(machine);
+        lhat_program_free(program);
+    }
+
+    LHAT_TEST("and a program without the module is left alone");
+    {
+        LhatProgram *program = lhat_program_new(true, NULL, NULL);
+        lhatstdlib_thread_join_all(program);  // nothing to wait for
+        LHAT_CHECK(!lhatstdlib_thread_on_finish(program, note_finished,
+                                                &heard),
+                   "and has no hook to set");
+        lhat_program_free(program);
+    }
+}
+
 int main(void)
 {
     test_spawn_shape();
@@ -521,5 +784,7 @@ int main(void)
     test_sleep();
     test_modules_reach_the_thread();
     test_done();
+    test_pushed_completion();
+    test_join_all();
     return lhat_test_report("test_thread");
 }

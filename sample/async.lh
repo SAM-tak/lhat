@@ -26,18 +26,26 @@ public^let^delay:p^number^-> c^{p^-> number^ -> nil^}; = p^seconds {
 }
 
 #[
-別スレッドの完了を待つ（05 の 8.9・15.14）。`join()` は止まってしまうので、
-`done()` で訊いて、まだなら少し `delay` する——**スケジューラは何も知らなくてよい**。
-待てるものを増やすのが `delay` の上に1つ書くだけで済む、というのがこの層の要点。
+別スレッドの完了を待つ（05 の 8.9・15.14）。`join()` は止まってしまうので使えない。
+`awaitable()` が済んだときに押される待ちを1つ配るので、その id を出して止まる——
+`delay` と同じ形で、**スケジューラは何も知らなくてよい**。
+待てるものを増やすのが1つ書くだけで済む、というのがこの層の要点。
+
+std.async が登録されていなければ id は 0。そのときだけ `done()` で訊く形に落ちる。
 ]#
 public^let^joined:p^std.thread.ThreadHandle -> c^{p^-> number^ ->
-        number^|bool^|string^|nil^
+        any^
         |std.thread.ThreadError.AlreadyJoined
         |std.thread.ThreadError.BadResult
         |std.error.OutOfMemory }; = p^h {
-    repeat^{
-        if^h.done() { break^}
-        await^delay(0.002)
+    let^id = h.awaitable()
+    if^id > 0 {
+        yield^id
+    else^:
+        repeat^{
+            if^h.done() { break^}
+            await^delay(0.002)
+        }
     }
     return^h.join()
 }

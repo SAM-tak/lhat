@@ -136,15 +136,24 @@ static void async_external(LhatMachine *machine, void *context,
     (void)machine;
     (void)arguments;
     (void)count;
-    AsyncModule *module = (AsyncModule *)context;
+    // The same call a library makes on a program's behalf (async.h).
+    answers[0] = lhat_integer(lhatstdlib_async_external(context));
+    *answer_count = 1;
+}
+
+int64_t lhatstdlib_async_external(void *waits)
+{
+    AsyncModule *module = (AsyncModule *)waits;
+    if (module == NULL) {
+        return 0;
+    }
     lhat_mutex_lock(&module->lock);
     Waiting *armed = add_wait(module, false, 0);
     int64_t id = armed != NULL ? armed->id : 0;
     lhat_mutex_unlock(&module->lock);
     // 0 is no wait at all: ids start at 1, so a table that could not grow
     // answers something the L^ side already reads as "not waiting".
-    answers[0] = lhat_integer(id);
-    *answer_count = 1;
+    return id;
 }
 
 // Whoever armed a wait may give up on it. An external one nobody will ever
@@ -272,7 +281,7 @@ bool lhatstdlib_async_complete(void *waits, int64_t id)
     return found;
 }
 
-void *lhatstdlib_async_waits(LhatProgram *program)
+void *lhatstdlib_async_waits(const LhatProgram *program)
 {
     // 05 の 8.7: the context every registration of this module was given.
     // Asked of the program rather than kept in a static, for the reason

@@ -1980,6 +1980,27 @@ hold は3つで釣り合う: carry が木に1つ取り、`lhat_carried_free` が
 値は運ばない。
 二つ目のプログラムの宣言は同じ組なら同じ宣言、違えば拒む（7.3）。
 
+#### 終わりは押して届ける — `awaitable` / `failed` / 完了フック
+
+> **`join()` を呼ぶまで気づけない、では困る。ワーカーの終わりは
+> スケジューラにもホストにも押して届く。**
+
+- `h.awaitable() -> number^` —— `std.async.external` の待ちを1つ配り、
+  本体が終わったときに押す。スケジューラはその id を出して止まればよく、
+  `done()` を数 ms おきに訊く形は要らない（`sample/async.lh` の `joined`
+  がこの形に変わった）。std.async が登録されていなければ 0
+- `h.failed() -> string^|nil^` —— join せずに誤りだけ読む。走っている間と
+  正常終了は `nil^`
+- `lhatstdlib_thread_on_finish(program, fn, ctx)`（thread.h）——
+  本体が終わった時点で**ワーカー自身のスレッドから**呼ばれる。機械はもう
+  無い。LÖVE の `threaderror` を積むのがこれ。L^ には触れない
+- `lhatstdlib_thread_join_all(program)` —— program を捨てる前に、走って
+  いる本体を全部待つ。ハンドルはそのまま（後の `join()` は答えを返す）。
+  ハンドルを手放したワーカーが proto を読み続ける経路を塞ぐ口
+
+`join` の答えは `any^` になった。carry が運ぶものは 8.8改2 以降
+テーブル・閉包・ホストのオブジェクトも含み、scalar の合併では嘘になる。
+
 #### 機械の間のキュー — `std.channel`
 
 > **carry の上に置く MPMC の待ち行列。中身は運ばれた木のまま持ち、
@@ -2590,6 +2611,11 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
 
 ## 改定履歴（要約）
 
+- **15.14改（2026-09-04）: ワーカーの終わりを押して届ける。** `awaitable()`
+  が配る待ちを本体の終わりで押す（`joined` の 2ms ポーリングが消えた）、
+  `failed()` が join せず誤りを読む、`lhatstdlib_thread_on_finish` が
+  ホストのループへ、`lhatstdlib_thread_join_all` が破棄前の待ち。
+  `join` の答えは `any^`（lhatove の thread-design 4.3・4.5・4.6）
 - **std.channel（2026-09-04）: 機械の間のキュー。** carry の上に載せた
   MPMC の待ち行列（push/supply/pop/demand/peek/count/hasRead/clear/atomic、
   名前付き）。中身は運ばれた木のまま持ち、取り出す機械で組み直す。

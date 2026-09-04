@@ -58,7 +58,15 @@ bool lhatstdlib_async_register(LhatProgram *program);
 // The table this module registered, or NULL if it never was. Held by an
 // embedder for as long as it may push completions -- it lives as long as the
 // program does.
-void *lhatstdlib_async_waits(LhatProgram *program);
+void *lhatstdlib_async_waits(const LhatProgram *program);
+
+// Arms a wait nothing but a completion ends -- std.async.external, for a
+// library arming one on a program's behalf rather than for L^ code that
+// asked. Answers its id, or 0 when there is no table (this module was
+// never registered) or no room. std.thread's awaitable() is what this
+// exists for: the wait it arms is completed when the body finishes, so a
+// scheduler parks on it instead of asking done() over and over.
+int64_t lhatstdlib_async_external(void *waits);
 
 // Says an external wait is ready. Any thread may call it. False when the id
 // names no wait that is still outstanding -- one already taken, one dropped,

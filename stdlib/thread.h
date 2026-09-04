@@ -62,6 +62,38 @@ extern "C" {
 
 bool lhatstdlib_thread_register(LhatProgram *program);
 
+// What a host is told when a spawned body finishes, however it finished.
+// `handle` is the pointer a ThreadHandle carries (lhat_hostdata_pointer),
+// so a host holding one of those values can tell which thread this was.
+// `message` is what a join would have said about a failure, and NULL when
+// the body ran clean.
+//
+// CALLED ON THE WORKER'S OWN THREAD, once, with its machine already gone.
+// It must not reach into L^ -- what a host does here is what LÖVE does with
+// a threaderror: put it on a queue its own loop reads.
+typedef void (*LhatStdlibThreadFinished)(void *context, void *handle,
+                                         bool ok, const char *message);
+
+// Sets that hook, or clears it (NULL). One per program; a second call
+// replaces the first. False when this module was never registered on
+// `program`.
+//
+// This is the push half of what join() answers: without it a fault in a
+// worker is not noticed until somebody joins, which a host with a loop of
+// its own may never do.
+bool lhatstdlib_thread_on_finish(LhatProgram *program,
+                                 LhatStdlibThreadFinished call, void *context);
+
+// Waits for every thread this program spawned that is still running --
+// what a host does before it disposes of the program, since a body still
+// running is reading a proto the program owns (stdlib/thread.c's
+// join_and_free says what that costs).
+//
+// The handles stay as they are: a join() afterwards still answers what the
+// body answered. Call it with nothing of this program's L^ running, which
+// is the same moment a disposal is.
+void lhatstdlib_thread_join_all(LhatProgram *program);
+
 #ifdef __cplusplus
 }
 #endif
