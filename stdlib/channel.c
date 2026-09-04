@@ -18,10 +18,20 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "async.h"
 #include "carry.h"
 #include "error.h"
 #include "lhat/port.h"
 #include "port/thread.h"
+
+// One "tell me when something arrives". `waits` is the std.async module of
+// the program the asking machine belongs to -- a channel may be shared by
+// two programs (a named one is the process's), so the module cannot be the
+// channel's own.
+typedef struct {
+    void *waits;
+    int64_t id;
+} Waiter;
 
 typedef struct Channel {
     LhatMutex lock;
@@ -40,6 +50,14 @@ typedef struct Channel {
     // the last to let go frees it.
     int holds;
 
+    // Tasks that asked to be told when something arrives, rather than
+    // waiting for it on this thread. Each is a std.async wait armed on the
+    // machine that asked; the next push tells them all and empties this.
+    // See channel_awaitable.
+    Waiter *waiters;
+    size_t waiter_count;
+    size_t waiter_capacity;
+
     // What is inside atomic(): the machine whose call holds `lock`. Every
     // entry below lets that machine straight through rather than taking the
     // lock again (port/thread.h's mutex does not nest), and makes the waits
@@ -48,6 +66,7 @@ typedef struct Channel {
 } Channel;
 
 typedef struct {
+    const LhatProgram *program;  // borrowed; where std.async's waits live
     const LhatErrorKind *refused;
     const LhatErrorKind *out_of_memory;
     const LhatHostDataTag *tag;
@@ -56,6 +75,55 @@ typedef struct {
 // ---------------------------------------------------------------------------
 // The channel itself, which knows nothing about L^
 // ---------------------------------------------------------------------------
+
+// `channel->lock` is held. Takes the whole list off the channel so it can
+// be told outside the lock -- std.async has a lock of its own, and holding
+// both is how orders get crossed. The caller frees what comes back.
+//
+// Emptying rather than picking: a waiter asked to hear about the next
+// arrival, and this is it. One that finds the value already taken by
+// someone else asks again.
+static Waiter *take_waiters(Channel *channel, size_t *count)
+{
+    Waiter *taken = channel->waiters;
+    *count = channel->waiter_count;
+    channel->waiters = NULL;
+    channel->waiter_count = 0;
+    channel->waiter_capacity = 0;
+    return taken;
+}
+
+// Outside the lock. An id that names no outstanding wait is answered false
+// and ignored -- a task dropped while parked leaves one behind.
+static void tell_waiters(Waiter *waiters, size_t count)
+{
+    for (size_t i = 0; i < count; i++) {
+        lhatstdlib_async_complete(waiters[i].waits, waiters[i].id);
+    }
+    lhat_free(waiters);
+}
+
+// `channel->lock` is held. False when there is no room, and then the caller
+// answers 0 -- a task that cannot park polls instead, which is slower but
+// never wrong.
+static bool remember_waiter(Channel *channel, void *waits, int64_t id)
+{
+    if (channel->waiter_count == channel->waiter_capacity) {
+        size_t wanted =
+            channel->waiter_capacity > 0 ? channel->waiter_capacity * 2 : 8;
+        Waiter *bigger =
+            (Waiter *)lhat_realloc(channel->waiters, wanted * sizeof *bigger);
+        if (bigger == NULL) {
+            return false;
+        }
+        channel->waiters = bigger;
+        channel->waiter_capacity = wanted;
+    }
+    channel->waiters[channel->waiter_count].waits = waits;
+    channel->waiters[channel->waiter_count].id = id;
+    channel->waiter_count++;
+    return true;
+}
 
 static Channel *channel_new(void)
 {
@@ -71,6 +139,9 @@ static Channel *channel_new(void)
 
 static void channel_free(Channel *channel)
 {
+    size_t waiting = 0;
+    Waiter *waiters = take_waiters(channel, &waiting);
+    tell_waiters(waiters, waiting);
     for (size_t i = 0; i < channel->count; i++) {
         lhat_carried_free(channel->items[(channel->head + i) %
                                          channel->capacity]);
@@ -434,7 +505,14 @@ static void channel_push(LhatMachine *machine, void *context,
         enter(channel, machine);
         uint64_t id = 0;
         bool ok = push_locked(channel, item, &id);
+        // Taken under the lock, told outside it (take_waiters says why).
+        // Inside atomic() `leave` is a pass-through and the lock is still
+        // this machine's -- which is safe, because nothing that holds
+        // std.async's lock ever asks for a channel's.
+        size_t waiting = 0;
+        Waiter *waiters = ok ? take_waiters(channel, &waiting) : NULL;
         leave(channel, machine);
+        tell_waiters(waiters, waiting);
         if (!ok) {
             lhat_carried_free(item);
             answers[0] = fail_with(machine, module->out_of_memory,
@@ -549,6 +627,162 @@ static void channel_demand(LhatMachine *machine, void *context,
     }
     answers[0] = rebuild(machine, item);
     *answer_count = 1;
+}
+
+// 15.14改 with 05 の 8.7改: a wait to yield^ instead of holding the thread.
+//
+// demand() waits on the channel's own condition, which is an OS thread going
+// to sleep -- and under std.task that thread is a worker, so a job waiting
+// for a value stops every other job that worker could have run. This is the
+// way down: the task asks for a wait, yields it, and the scheduler puts the
+// task aside and takes another. The next push tells the wait.
+//
+//     var^ job = ch.pop()
+//     repeat^ while^ job is^ nil^ {
+//         yield^ ch.awaitable()
+//         job := ch.pop()
+//     }
+//
+// The loop is not a formality. Between the wait being told and the task
+// running again, another taker may have had the value -- the same discipline
+// a condition variable asks for, for the same reason.
+//
+// 0 means "nothing to wait for": the channel already has something, or
+// std.async is not registered, or there was no room to remember the ask.
+// `yield^ 0` is a hand-over rather than a wait (05 の std.task), so the task
+// comes straight back and the loop reads the channel again.
+// `channel->lock` is held. A wait armed on `machine` and put on the
+// channel's list, or 0 where there is nothing to wait on. Asked under the
+// lock so that a push landing between the look and the ask cannot slip
+// past: either the value is already here, or the ask is on the list before
+// the push can take it off.
+static int64_t arm_wait(Channel *channel, LhatMachine *machine,
+                        const ChannelModule *module)
+{
+    void *waits = lhatstdlib_async_waits(module->program);
+    if (waits == NULL) {
+        return 0;
+    }
+    int64_t id = lhatstdlib_async_external(waits, machine);
+    if (id != 0 && !remember_waiter(channel, waits, id)) {
+        lhatstdlib_async_complete(waits, id);  // no room; let it go at once
+        return 0;
+    }
+    return id;
+}
+
+static void channel_awaitable(LhatMachine *machine, void *context,
+                              const LhatValue *arguments, size_t count,
+                              LhatValue *answers, int *answer_count)
+{
+    const ChannelModule *module = (const ChannelModule *)context;
+    (void)count;
+    Channel *channel = self_of(module, arguments[0]);
+    int64_t id = 0;
+    if (channel != NULL) {
+        enter(channel, machine);
+        if (channel->count == 0) {
+            id = arm_wait(channel, machine, module);
+        }
+        leave(channel, machine);
+    }
+    answers[0] = lhat_integer(id);
+    *answer_count = 1;
+}
+
+// ---------------------------------------------------------------------------
+// take() -- the wait as a coroutine
+// ---------------------------------------------------------------------------
+//
+// awaitable() above is the primitive and it leaves the writer a loop:
+//
+//     var^ got : any^ = ch.pop()
+//     repeat^ while^ got is^ nil^ { yield^ ch.awaitable() got := ch.pop() }
+//
+// The loop is not a formality -- between the wait being told and the job
+// running again another taker may have had the value -- and it is exactly
+// the kind of thing that is forgotten once and then reads nil^ for ever
+// after. So the loop lives here instead, as a coroutine the job delegates
+// to (02 の 15.6's await^):
+//
+//     let^ got = await^ ch.take()
+//
+// The step answers false with the value when there is one, which is how a
+// host coroutine ends (13.9), and true with the wait id when there is not,
+// which is a yield -- and a yield of a std.async id is what puts a task
+// aside (05 の std.task). Nothing of the retry reaches the writer.
+typedef struct {
+    Channel *channel;  // held, released with the walk
+    const ChannelModule *module;
+} TakeWalk;
+
+static void take_release(LhatMachine *machine, void *context,
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
+{
+    (void)machine;
+    (void)arguments;
+    (void)count;
+    (void)answers;
+    (void)answer_count;
+    TakeWalk *walk = (TakeWalk *)context;
+    channel_let_go(walk->channel, NULL);
+    lhat_free(walk);
+}
+
+static bool take_step(LhatMachine *machine, void *context,
+                      const LhatValue *sent, size_t sent_count,
+                      LhatValue *answers, int *answer_count)
+{
+    (void)sent;
+    (void)sent_count;
+    TakeWalk *walk = (TakeWalk *)context;
+    Channel *channel = walk->channel;
+
+    enter(channel, machine);
+    LhatCarried *item = pop_locked(channel);
+    int64_t id = item == NULL ? arm_wait(channel, machine, walk->module) : 0;
+    leave(channel, machine);
+
+    *answer_count = 1;
+    if (item != NULL) {
+        answers[0] = rebuild(machine, item);
+        return false;  // the walk ends, and this is what await^ answers
+    }
+    // 0 says there is nothing to wait on -- std.async is not registered, or
+    // there was no room to remember the ask. Yielding it is a hand-over
+    // rather than a wait, so the job comes straight back and looks again.
+    answers[0] = lhat_integer(id);
+    return true;
+}
+
+static void channel_take(LhatMachine *machine, void *context,
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
+{
+    const ChannelModule *module = (const ChannelModule *)context;
+    (void)count;
+    *answer_count = 1;
+    answers[0] = lhat_nil();
+    Channel *channel = self_of(module, arguments[0]);
+    if (channel == NULL) {
+        return;
+    }
+    TakeWalk *walk = (TakeWalk *)lhat_calloc(1, sizeof *walk);
+    if (walk == NULL) {
+        return;  // nil^, as std.regex.gmatch answers
+    }
+    walk->channel = channel;
+    walk->module = module;
+    channel_retain(channel, NULL);  // the walk's own hold
+    LhatValue made = lhat_nil();
+    if (!lhat_machine_make_coroutine(machine, take_step, walk, take_release,
+                                     arguments[0], &made)) {
+        take_release(machine, walk, NULL, 0, NULL, NULL);
+        return;  // nil^, as above
+
+    }
+    answers[0] = made;
 }
 
 static void channel_peek(LhatMachine *machine, void *context,
@@ -679,6 +913,7 @@ bool lhatstdlib_channel_register(LhatProgram *program)
         lhat_free(module);
         return false;
     }
+    module->program = program;
     module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
 
     static const char *const variants[] = {"Refused"};
@@ -724,6 +959,14 @@ bool lhatstdlib_channel_register(LhatProgram *program)
            lhat_register_member(program, "std.channel", "Channel", "demand",
                                 "p^self^, number^ -> any^;", channel_demand,
                                 module) &&
+           lhat_register_member(program, "std.channel", "Channel",
+                                "awaitable", "f^self^ -> number^;",
+                                channel_awaitable, module) &&
+           // What await^ delegates to. c^ says a coroutine; what it ends
+           // with is the value taken off the channel.
+           lhat_register_member(program, "std.channel", "Channel", "take",
+                                "f^self^ -> c^{f^ -> number^ -> any^};",
+                                channel_take, module) &&
            lhat_register_member(program, "std.channel", "Channel", "peek",
                                 "p^self^ -> any^;", channel_peek, module) &&
            lhat_register_member(program, "std.channel", "Channel", "count",

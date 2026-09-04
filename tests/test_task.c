@@ -372,6 +372,150 @@ static void test_task_crosses(void)
     }
 }
 
+// The other half of "a waiting job holds nothing". A job waiting on a
+// channel used to wait on the channel's own condition, which is the WORKER
+// going to sleep -- so with one worker a consumer and a producer could not
+// both make progress at all. Channel.awaitable() is the way down: the
+// consumer yields a std.async wait, the scheduler puts it aside, and the
+// push tells the wait.
+//
+// One worker on purpose. With demand() this cannot finish: the worker sleeps
+// in the consumer and the producer never runs.
+static void test_channel_without_holding(void)
+{
+    LHAT_TEST("a job waiting on a channel gives the worker up");
+    {
+        LhatTestRan ran = lhat_test_run(
+            with_channel, 3,
+            "import^ std.task\n"
+            "import^ std.async\n"
+            "import^ std.channel\n"
+            "std.task.start(1)\n"
+            "let^ c = std.channel.new()\n"
+            "var^ n = -1\n"
+            "if^ c fits^ std.channel.Channel {\n"
+            // The consumer. awaitable() is what it yields instead of
+            // demand()'s wait, and the loop is because another taker may
+            // have had the value between the telling and the running.
+            "    let^ eat = p^ mine:std.channel.Channel {\n"
+            "        var^ got : any^ = mine.pop()\n"
+            "        repeat^ while^ got is^ nil^ {\n"
+            "            yield^ mine.awaitable()\n"
+            "            got := mine.pop()\n"
+            "        }\n"
+            "        if^ got fits^ number^ { return^ got }\n"
+            "        return^ 0\n"
+            "    }\n"
+            // Queued second, and it only runs if the first gave the worker
+            // up.
+            "    let^ feed = p^ mine:std.channel.Channel {\n"
+            "        yield^ std.async.timer(0.03)\n"
+            "        mine.push(41)\n"
+            "        return^ 1\n"
+            "    }\n"
+            "    let^ eater = std.task.async(eat(c))\n"
+            "    std.task.async(feed(c))\n"
+            "    if^ eater fits^ std.task.Task {\n"
+            "        let^ got = std.task.await(eater)\n"
+            "        if^ got fits^ number^ { n := got }\n"
+            "    }\n"
+            "}\n"
+            "std.task.stop()\n"
+            "return^ n\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 41);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // The same thing said in one line. take() is the loop above as a
+    // coroutine, so await^ hides both the parking and the retry -- and the
+    // retry is what a writer forgets.
+    LHAT_TEST("await^ take() is the whole of waiting on a channel");
+    {
+        LhatTestRan ran = lhat_test_run(
+            with_channel, 3,
+            "import^ std.task\n"
+            "import^ std.async\n"
+            "import^ std.channel\n"
+            "std.task.start(1)\n"
+            "let^ c = std.channel.new()\n"
+            "var^ n = -1\n"
+            "if^ c fits^ std.channel.Channel {\n"
+            "    let^ eat = p^ mine:std.channel.Channel {\n"
+            "        let^ got = await^ mine.take()\n"
+            "        if^ got fits^ number^ { return^ got }\n"
+            "        return^ 0\n"
+            "    }\n"
+            "    let^ feed = p^ mine:std.channel.Channel {\n"
+            "        yield^ std.async.timer(0.03)\n"
+            "        mine.push(41)\n"
+            "        return^ 1\n"
+            "    }\n"
+            "    let^ eater = std.task.async(eat(c))\n"
+            "    std.task.async(feed(c))\n"
+            "    if^ eater fits^ std.task.Task {\n"
+            "        let^ got = std.task.await(eater)\n"
+            "        if^ got fits^ number^ { n := got }\n"
+            "    }\n"
+            "}\n"
+            "std.task.stop()\n"
+            "return^ n\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 41);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // A channel with something in it is answered by the first step, so the
+    // walk ends without ever yielding -- and it takes them in order.
+    LHAT_TEST("take() on a channel that has something never parks");
+    {
+        LhatTestRan ran = lhat_test_run(
+            with_channel, 3,
+            "import^ std.task\n"
+            "import^ std.async\n"
+            "import^ std.channel\n"
+            "std.task.start(1)\n"
+            "let^ c = std.channel.new()\n"
+            "var^ n = -1\n"
+            "if^ c fits^ std.channel.Channel {\n"
+            "    c.push(6)\n"
+            "    c.push(7)\n"
+            "    let^ eat = p^ mine:std.channel.Channel {\n"
+            "        let^ a = await^ mine.take()\n"
+            "        let^ b = await^ mine.take()\n"
+            "        if^ a fits^ number^ and^ b fits^ number^ { return^ a * b }\n"
+            "        return^ 0\n"
+            "    }\n"
+            "    let^ eater = std.task.async(eat(c))\n"
+            "    if^ eater fits^ std.task.Task {\n"
+            "        let^ got = std.task.await(eater)\n"
+            "        if^ got fits^ number^ { n := got }\n"
+            "    }\n"
+            "}\n"
+            "std.task.stop()\n"
+            "return^ n\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 42);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // Nothing to wait for is 0, and yield^ 0 is a hand-over rather than a
+    // wait -- so a consumer that reads a channel with something in it never
+    // parks at all.
+    LHAT_TEST("awaitable answers 0 when the channel already has something");
+    {
+        LhatTestRan ran = lhat_test_run(
+            with_channel, 3,
+            "import^ std.channel\n"
+            "let^ c = std.channel.new()\n"
+            "var^ n = -1\n"
+            "if^ c fits^ std.channel.Channel {\n"
+            "    c.push(1)\n"
+            "    n := c.awaitable()\n"
+            "}\n"
+            "return^ n\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 0);
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
 // 02 の 15.15: the slice. A job that neither yields nor ends used to hold
 // its worker for ever, and a stop would wait for it -- which is to say the
 // program hung. The budget is what gets the worker's attention back.
@@ -404,6 +548,7 @@ int main(void)
     test_side_by_side();
     test_answers();
     test_task_crosses();
+    test_channel_without_holding();
     test_runaway();
     return lhat_test_report("test_task");
 }
