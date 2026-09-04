@@ -856,6 +856,88 @@ static void test_delegate_to_host(void)
     }
 }
 
+// 05 の 8.8 with 8.8改: every value of a registered type answers through
+// the type's own members table, which lhat_machine_make_hostdata reaches by
+// walking L^.modules by name -- once per value. A walk that answered "not
+// there" would put a fresh empty table in its place, and from then on new
+// values would answer nothing while the ones already made kept working.
+//
+// Made and collected in a loop, because that is the shape a binding has: a
+// wrapper per host object, thousands of them, with the collector running in
+// between.
+static void test_values_keep_their_members(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    LHAT_TEST("every value of a type reaches the same members, value after value");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ scene\n"
+             "var^ n = 0\n"
+             "for^ i from^ 1 to^ 2000 {\n"
+             // id() is scene.Node's, reached through the base chain -- the
+             // walk that a wrong members table breaks.
+             "    let^ s = scene.makeSprite()\n"
+             "    n := n + s.id()\n"
+             "    let^ r = scene.makeResource()\n"
+             "    if^ i % 32 = 0 { L^.collectgarbage() }\n"
+             "}\n"
+             "return^ n\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        the_node.id = 3;
+        LhatRunResult ran = run_program(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 3 * 2000);
+        lhat_program_dispose(&program);
+    }
+}
+
+// 05 の 8.8改 with 8.7: what a value answers and what the host may ask
+// about the type are one question. A member the type inherits is reached by
+// a call on the value, so lhat_machine_registered has to find it too --
+// which takes the read that climbs the chain rather than the one that sees
+// a single table.
+static void test_registered_sees_the_chain(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    LHAT_TEST("a member a type inherits is one the host can ask for");
+    {
+        static const File files[] = {
+            {"main.lh", "import^ scene\nreturn^ scene.makeSprite().id()\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        the_node.id = 5;
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_compile(&program), "built");
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_CHECK(lhat_program_install(&program, machine), "installed");
+
+        LhatValue held = lhat_nil();
+        LHAT_CHECK(lhat_machine_registered(machine, "scene", "Node", "id",
+                                           &held),
+                   "the one the base declares");
+        LHAT_CHECK(lhat_machine_registered(machine, "scene", "Sprite2D", "id",
+                                           &held),
+                   "and the one a derived type reaches through it");
+        LHAT_CHECK(!lhat_machine_registered(machine, "scene", "Sprite2D",
+                                            "nope", &held),
+                   "a name nothing declared is still nothing");
+
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 5);
+        lhat_machine_dispose(machine);
+        lhat_program_dispose(&program);
+    }
+}
+
 int main(void)
 {
     test_the_relation();
@@ -865,5 +947,7 @@ int main(void)
     test_value_type();
     test_registration();
     test_delegate_to_host();
+    test_values_keep_their_members();
+    test_registered_sees_the_chain();
     return lhat_test_report("test_hostdata_base");
 }

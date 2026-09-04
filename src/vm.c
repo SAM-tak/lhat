@@ -3073,26 +3073,41 @@ static LhatTable *reach_table(Machine *m, LhatTable *owner, const char *path)
 {
     for (const char *segment = path;;) {
         size_t length = strcspn(segment, ".");
-        // Asked by bytes: a string key's equality is its bytes, so the
-        // question needs no key object -- and every registration after the
-        // first of a path asks it and finds one. A key is made only where a
-        // table has to be, which is once per path for the life of the
-        // machine.
+        // Asked by bytes first: a string key's equality is its bytes, so a
+        // hit needs no key object -- and every registration after the first
+        // of a path is a hit. But that read sees ONE table's hash half,
+        // where the real one also climbs `definition`, steps past a
+        // reserved seat and follows a delegate (object.c's table_get_in).
+        //
+        // A miss here is DESTRUCTIVE: what follows makes a table and writes
+        // it over whatever the path named. So a miss is asked again with
+        // the read that decides what a name means, and only a miss on THAT
+        // makes anything.
         LhatValue found = lhat_table_get_bytes(owner, segment, length);
         LhatTable *next = table_of(found);
-        if (next == NULL) {
-            if (!lhat_is_nil(found)) {
-                return NULL;  // something that is not a table is there
-            }
+        if (next == NULL && lhat_is_nil(found)) {
             LhatString *key = lhat_string_new(&m->objects, segment, length);
-            next = lhat_table_new(&m->objects);
-            bool refused = false;
-            if (key == NULL || next == NULL ||
-                !set_key(m, owner, lhat_object((LhatObject *)key),
-                         lhat_object((LhatObject *)next), &refused) ||
-                refused) {
+            if (key == NULL) {
                 return NULL;
             }
+            LhatValue held =
+                lhat_table_get(owner, lhat_object((LhatObject *)key));
+            next = table_of(held);
+            if (next == NULL) {
+                if (!lhat_is_nil(held)) {
+                    return NULL;  // something that is not a table is there
+                }
+                next = lhat_table_new(&m->objects);
+                bool refused = false;
+                if (next == NULL ||
+                    !set_key(m, owner, lhat_object((LhatObject *)key),
+                             lhat_object((LhatObject *)next), &refused) ||
+                    refused) {
+                    return NULL;
+                }
+            }
+        } else if (next == NULL) {
+            return NULL;  // something that is not a table is there
         }
         owner = next;
         if (segment[length] == '\0') {
@@ -3380,12 +3395,21 @@ bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
 // above creates the tables a registration needs; a read that created one
 // would answer nil^ for a name and leave a table behind saying it had been
 // asked for.
-static const LhatTable *find_table(const LhatTable *owner, const char *path)
+// The read-only twin of reach_table. It has a machine, so it asks the read
+// that decides what a name means rather than the narrow one -- otherwise a
+// member a type inherits (05 の 8.8改) reads as not registered while a call
+// on the value finds it.
+static const LhatTable *find_table(Machine *m, const LhatTable *owner,
+                                   const char *path)
 {
     for (const char *segment = path;;) {
         size_t length = strcspn(segment, ".");
+        LhatString *key = lhat_string_new(&m->objects, segment, length);
+        if (key == NULL) {
+            return NULL;
+        }
         const LhatTable *next =
-            table_of(lhat_table_get_bytes(owner, segment, length));
+            table_of(lhat_table_get(owner, lhat_object((LhatObject *)key)));
         if (next == NULL) {
             return NULL;
         }
@@ -3406,19 +3430,22 @@ bool lhat_machine_registered(LhatMachine *machine, const char *module,
         return false;
     }
     *out = lhat_nil();
-    const LhatTable *owner = table_of(
-        lhat_table_get_bytes(machine->environment, "modules", 7));
+    Machine *m = (Machine *)machine;
+    const LhatTable *owner = m->modules;
     if (owner == NULL) {
         return false;
     }
-    owner = find_table(owner, module);
+    owner = find_table(m, owner, module);
     if (owner != NULL && type != NULL) {
-        owner = find_table(owner, type);
+        owner = find_table(m, owner, type);
     }
     if (owner == NULL) {
         return false;
     }
-    LhatValue held = lhat_table_get_bytes(owner, name, strlen(name));
+    LhatString *last = lhat_string_new(&m->objects, name, strlen(name));
+    LhatValue held =
+        last != NULL ? lhat_table_get(owner, lhat_object((LhatObject *)last))
+                     : lhat_nil();
     if (lhat_is_nil(held)) {
         return false;
     }

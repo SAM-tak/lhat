@@ -976,10 +976,12 @@ bool lhat_takes_receiver(LhatValue value);
 // among the instance's own fields is looked for there.
 LhatValue lhat_table_get(const LhatTable *table, LhatValue key);
 
-// The same read with the key as bytes -- for a caller that has no machine
-// to make a string on, which is every reader outside the run (05 の 8.7's
-// lhat_machine_registered among them). Answers nil^ where the name is not
-// there, exactly as the read above does.
+// ONE TABLE'S NAMED HALF, and no more. The read above climbs `definition`,
+// steps past a reserved seat to keep climbing, and follows a delegate
+// (02 の 14.7改2); this does none of that, because it exists for a caller
+// that has no machine to make the key on. Where those legs can matter --
+// anywhere a type's members table may stand on the path -- the caller has
+// to use the read above instead.
 LhatValue lhat_table_get_bytes(const LhatTable *table, const char *name,
                                size_t length);
 

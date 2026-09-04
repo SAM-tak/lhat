@@ -213,6 +213,21 @@ static void mark_roots(Machine *m)
     // 02 の 14.11: the machine's own key to a definition's prototype. No
     // frame holds it, so the machine is its root too.
     lhat_gc_reach(&m->gray, lhat_object((LhatObject *)m->self_key));
+    // 05 の 8.7: L^.modules, and the members table of every registered host
+    // value type. Both are reached through the environment TODAY, and both
+    // are also held as raw pointers the machine reads without looking them
+    // up again -- lhat_machine_register and lhat_machine_make_hostdata walk
+    // the first, a member call on a host value reads the second. Rooting
+    // them here is what makes "the environment holds them anyway" a fact
+    // rather than an assumption: a host global written over `modules`
+    // (lhat_machine_set_global goes round the seal by design) or a
+    // forget_unit over a type's path would otherwise leave a pointer the
+    // sweep has freed.
+    lhat_gc_reach(&m->gray, lhat_object((LhatObject *)m->modules));
+    for (size_t i = 0; i < m->hostvalue_member_count; i++) {
+        lhat_gc_reach(&m->gray,
+                      lhat_object((LhatObject *)m->hostvalue_members[i]));
+    }
     for (size_t i = 0; i < m->frame_count; i++) {
         Frame *frame = &m->frames[i];
         lhat_gc_reach(&m->gray,
