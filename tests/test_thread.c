@@ -866,6 +866,61 @@ static void test_program_lock(void)
     }
 }
 
+// ---------------------------------------------------------------------------
+// 03 の 5.1改5: the member cache under several machines at once
+// ---------------------------------------------------------------------------
+
+// A proto belongs to the program, so every worker running this body reads
+// the same chunk -- and the member cache is the one thing on a chunk that
+// is written while it runs. The site below is polymorphic on purpose: two
+// definitions with the same member name, alternating, so the workers keep
+// filling one site with different places. A read that took a mix of two
+// fills would answer another member (or walk off the end); every worker
+// answering the same total is what says it cannot.
+static void test_shared_member_cache(void)
+{
+    LHAT_TEST("many machines fill one member site without mixing it");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.thread\n"
+            // The definitions are made inside the body: a def^ does not
+            // cross (carry.h), and this is the sharper test anyway -- every
+            // worker fills the one site with tables of its own.
+            "let^ work = p^ ... {\n"
+            "    let^ A = def^{ self^{ },\n"
+            "        what = f^self^ -> number^ { return^ 1 },\n"
+            "        other = f^self^ -> number^ { return^ 100 } }\n"
+            "    let^ B = def^{ self^{ },\n"
+            "        what = f^self^ -> number^ { return^ 2 },\n"
+            "        other = f^self^ -> number^ { return^ 200 } }\n"
+            "    let^ a = A.new()\n"
+            "    let^ b = B.new()\n"
+            "    var^ sum = 0\n"
+            "    for^ i from^ 1 to^ 1000 {\n"
+            "        var^ it = a\n"
+            "        if^ i % 2 = 0 { it := b }\n"
+            "        sum += it.what() + it.other()\n"
+            "    }\n"
+            "    return^ sum\n"
+            "}\n"
+            // Four of them at once on the one chunk.
+            "var^ hands : t^{std.thread.ThreadHandle[]} = {}\n"
+            "for^ i from^ 1 to^ 4 {\n"
+            "    let^ h = std.thread.spawn(work)\n"
+            "    if^ h fits^ std.thread.ThreadHandle { hands.push^(h) }\n"
+            "}\n"
+            "var^ total = 0\n"
+            "for^ h in^ hands {\n"
+            "    let^ answer = h.join()\n"
+            "    if^ answer fits^ number^ { total += answer }\n"
+            "}\n"
+            "return^ total\n");
+        // 500 turns of (1 + 100) and 500 of (2 + 200), four times over.
+        LHAT_CHECK_RAN_INTEGER(ran, 4 * (500 * 101 + 500 * 202));
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
 int main(void)
 {
     test_spawn_shape();
@@ -878,5 +933,6 @@ int main(void)
     test_pushed_completion();
     test_join_all();
     test_program_lock();
+    test_shared_member_cache();
     return lhat_test_report("test_thread");
 }

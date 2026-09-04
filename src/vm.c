@@ -599,6 +599,31 @@ static const LhatTable *readable_table(LhatValue value)
     return table_of(value);
 }
 
+// 03 の 5.1改5: what a cached place has to still hold for a hit to be this
+// member.
+//
+// `member_caches` is the one thing on a chunk that is written while the
+// program runs, and a chunk is shared by every machine of a program that
+// runs the same body (05 の 8.8改: a carried closure keeps its proto, and a
+// pool hands one job to N workers). Two of them filling one site write the
+// place in three fields with nothing between them, so a third may read a
+// mix of the two.
+//
+// Reading the key back is what makes a mix harmless. An index past the end
+// is a miss; an index in range whose key is this site's key IS this
+// member, whichever fill it came from -- so the answer is either right or
+// a miss, never another member and never a wild read. The cost is one
+// comparison of a short name, against the hash probe a hit is avoiding.
+//
+// The mutable half is kept on the chunk rather than moved to the machine
+// because a per-machine table would have to be found by the chunk first,
+// and that lookup is the very thing the cache exists to avoid.
+static bool cached_here(const LhatTable *table, uint32_t index, LhatValue key)
+{
+    return (size_t)index < table->entry_capacity &&
+           lhat_value_equal(table->entries[index].key, key);
+}
+
 // 02 の 14.16: what typeof^ answers where no checked type was
 // compiled in -- the value's TAG, the dispatch information every value
 // already carries, read in O(1). It never walks a structure: a table is
@@ -4150,7 +4175,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                          // 05 の 8.8 shares one members table per host type,
                          // so for those this is the same table every time.
                          : (start == cache->answered &&
-                            start->version == cache->version))) {
+                            start->version == cache->version)) &&
+                    cached_here(cache->answered, cache->index,
+                                chunk->constants[cache->key])) {
                     SET_R(a, cache->answered->entries[cache->index].value);
                     break;
                 }
@@ -4172,7 +4199,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             start->definition == cache->answered &&
                             cache->answered->version == cache->version)
                          : (start == cache->answered &&
-                            start->version == cache->version))) {
+                            start->version == cache->version)) &&
+                    cached_here(cache->answered, cache->index,
+                                chunk->constants[cache->key])) {
                     SET_R(a, cache->answered->entries[cache->index].value);
                     at = pc;
                     instruction = chunk->code[pc++];

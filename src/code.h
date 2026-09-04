@@ -365,6 +365,12 @@ static inline int32_t lhat_jump_offset(LhatInstruction i)
 // structurally written (version 0) and points at the cached definition.
 // 5.10 seals the prototype, so an untouched clone of it carries exactly the
 // prototype's keys and cannot be shadowing the member.
+//
+// The three places below are written with nothing between them, and a chunk
+// is shared by every machine of a program that runs this body -- so a
+// reader may see a mix of two fills. vm.c's cached_here is what makes that
+// harmless: a hit reads the key back, so a mixed read answers this member
+// or misses, and never another member.
 typedef struct {
     uint16_t key;  // which constant names the member
     const struct LhatTable *answered;
