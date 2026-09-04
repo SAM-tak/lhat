@@ -1,12 +1,26 @@
 // L^ (lhat) -- sample standard library: std.task (see task.h).
 //
-// N machines standing on N OS threads, a queue of carried jobs between
-// them, and a handle per job. Everything that crosses goes through carry.h,
-// so nothing here reaches into another machine's heap.
+// A MACHINE PER TASK, and N OS threads that take turns running them.
+// Everything that crosses goes through carry.h, so nothing here reaches into
+// another machine's heap.
 //
-// The worker is stdlib/thread.c's thread_main with the setup lifted out of
-// the loop: a machine made and installed once, then take a job, rebuild it,
-// run it, carry the answer back, repeat.
+// A machine is what a task's whole state is. Its frame stack is one stack
+// and a coroutine saves one frame, so a single machine cannot hold two jobs
+// half-done -- which is why a task that stops in the middle of a call chain
+// needs a machine of its own to stop in. 03 の 4.3改 is what made that
+// affordable: a task's machine is measured for the job rather than for a
+// REPL.
+//
+// The worker owns no machine at all. It takes a runnable task, gives it one
+// slice (02 の 15.15), and files it by what the slice answered:
+//
+//   still going  -> the back of the run queue, so the next task gets a turn
+//   waiting      -> the parked set, and the worker takes something else
+//   done, failed -> the answer is carried out and the machine is let go
+//
+// The middle line is the point. A job that waits on std.async used to hold
+// its worker asleep; now it holds nothing, and N threads keep working
+// however many tasks are parked.
 
 #include "task.h"
 
@@ -23,21 +37,24 @@
 
 typedef struct Task Task;
 
-// 02 の 15.15: how many loop turns a job runs before the worker gets a word
-// in. Only used to notice a stop -- a job still runs to its end, and this
-// says how long a runaway one may go unnoticed. Small enough to answer a
-// stop in well under a millisecond, large enough that the check is nothing.
+// 02 の 15.15: how many loop turns a task runs before the worker takes it
+// off. This is the quantum -- what one task may do before another gets a
+// turn -- and it is also what lets a body that neither yields nor ends be
+// put down at all. Small enough that a stop is answered in well under a
+// millisecond and a spinning task does not starve its neighbours, large
+// enough that the counting costs nothing.
 #define TASK_SLICE 20000
 
-// 03 の 4.3改: how big a worker's machine is. A pool exists to hold several
-// at once, so the default measurements -- about 160 KiB apiece -- are the
-// wrong ones here: 64 workers of them is 10 MiB of mostly untouched frame
-// array. These bring one to about a third of that.
+// 03 の 4.3改: how big a task's machine is. It is PER TASK now, so it is
+// paid by everything running or parked at once rather than once per worker
+// -- which is what makes the measurements worth having. The default ones
+// (about 160 KiB) would make a thousand parked tasks 160 MiB; these make it
+// 48 MiB.
 //
 // It is a depth of 64 rather than 200, and a job that recurses past it ends
 // with LHAT_RUN_STACK_OVERFLOW and comes back through Task.failed() like any
-// other failure. A job that needs more depth than a pool worker has is a job
-// std.thread should run.
+// other failure. A job that needs more depth than that is a job std.thread
+// should run.
 #define TASK_FRAMES 64
 #define TASK_SLOTS 2048
 
@@ -57,14 +74,45 @@ typedef struct {
     LhatThread *threads;
     size_t worker_count;
 
-    Task **queue;  // a ring of jobs nobody has taken yet
+    Task **queue;  // a ring of tasks that could run right now
     size_t head;
     size_t queued;
     size_t capacity;
+
+    // Tasks parked on a std.async wait. Nothing signals when one of these
+    // becomes ready (a timer's clock, a push from another thread), so a
+    // worker with nothing runnable is what looks -- see move_ready.
+    Task **parked;
+    size_t parked_count;
+    size_t parked_capacity;
+    int64_t looked_at;  // when a worker last looked them over
 } TaskModule;
+
+// What the worker does to a task next. A task carries this between turns
+// because the turns are on different threads.
+typedef enum {
+    MOVE_START,     // nothing has run; the machine is not made yet
+    MOVE_RESUME,    // `driving` is a coroutine with more to do
+    MOVE_CONTINUE,  // the last slice ran out of budget mid-instruction
+    MOVE_NONE       // finished, one way or the other
+} TaskMove;
+
+// What a turn answered, which is how the worker files the task.
+typedef enum { STEP_AGAIN, STEP_PARK, STEP_DONE } StepResult;
 
 struct Task {
     TaskModule *module;
+
+    // 03 の 4.3改: the task's own machine, made the first time it runs and
+    // let go when it ends. Only ever touched by the worker holding the task
+    // -- a task is in the run queue, in the parked set, or out with exactly
+    // one worker, never two of those.
+    LhatMachine *machine;
+    LhatValue driving;  // the coroutine being resumed, once there is one
+    bool driving_set;
+    LhatRunResult ran;  // what the last turn answered
+    TaskMove move;
+    int64_t parked_on;  // the std.async id it is parked on
 
     // What to run: the job, and the arguments where it is a closure. Owned
     // here until a worker has rebuilt them.
@@ -77,7 +125,6 @@ struct Task {
     LhatMutex lock;
     LhatCondition done;
     bool finished;
-    bool taken;  // a worker has it; a stop must not drop it
     LhatRunStatus status;
     LhatCarried *result;
     char *traceback;
@@ -109,6 +156,12 @@ static void free_carried_values(LhatCarried **values, size_t count)
 
 static void task_free(Task *task)
 {
+    // A task dropped where it stood (the pool was torn down under it) still
+    // has its frames up. The machine goes whole, as 02 の 15.15 says a run
+    // that will not be continued may.
+    if (task->machine != NULL) {
+        lhat_machine_dispose(task->machine);
+    }
     lhat_carried_free(task->job);
     free_carried_values(task->arguments, task->argument_count);
     lhat_carried_free(task->result);
@@ -239,20 +292,6 @@ static bool pool_running(TaskModule *module)
     return running;
 }
 
-// 02 の 15.15: a run, taken in slices so that a body which neither yields
-// nor ends cannot hold the worker for ever. What the slices are for is the
-// stop: between two of them the worker is free to look, and a pool being
-// torn down leaves the job where it stands (its machine is thrown away
-// whole, frames and all).
-static LhatRunResult run_in_slices(TaskModule *module, LhatMachine *machine,
-                                   LhatRunResult ran)
-{
-    while (ran.status == LHAT_RUN_SUSPENDED && pool_running(module)) {
-        ran = lhat_machine_continue(machine);
-    }
-    return ran;
-}
-
 // 04 の 11.6改: what a run failed with, kept while the machine that ran it
 // is still standing -- the value is one of its objects and the frames are
 // still up. Every way out of run_job that carries a fault comes through
@@ -280,142 +319,288 @@ static void note_failure(Task *task, LhatMachine *machine, LhatRunResult ran)
     }
 }
 
-// One job, on this worker's machine. What the answer was is left on the
-// task; this says nothing.
-static void run_job(TaskModule *module, LhatMachine *machine, Task *task)
+// ---------------------------------------------------------------------------
+// One task, one turn at a time
+// ---------------------------------------------------------------------------
+
+// Reads what the turn answered and says how the worker should file the task,
+// leaving `move` set to whatever the next turn does.
+static StepResult after_turn(TaskModule *module, Task *task)
 {
-    LhatValue job = lhat_nil();
-    if (!lhat_uncarry(machine, task->job, &job)) {
-        task->status = LHAT_RUN_OUT_OF_MEMORY;
-        return;
+    // 02 の 15.15: the budget ran out mid-body. The frames are standing and
+    // lhat_machine_continue picks them up -- on whichever worker takes the
+    // task next, since a machine has no thread of its own.
+    if (task->ran.status == LHAT_RUN_SUSPENDED) {
+        task->move = MOVE_CONTINUE;
+        return STEP_AGAIN;
     }
-    // A closure is called first -- a yieldable one answers its coroutine
-    // (02 の 15.5), which is then driven the same way a carried one is.
-    LhatRunResult ran;
-    memset(&ran, 0, sizeof ran);
-    if (lhat_is_object_kind(job, LHAT_OBJECT_SUBROUTINE)) {
-        LhatValue *arguments =
-            task->argument_count > 0
-                ? (LhatValue *)lhat_calloc(task->argument_count,
-                                           sizeof *arguments)
-                : NULL;
-        if (task->argument_count > 0 && arguments == NULL) {
-            task->status = LHAT_RUN_OUT_OF_MEMORY;
-            return;
+    if (task->ran.status != LHAT_RUN_OK) {
+        note_failure(task, task->machine, task->ran);
+        task->move = MOVE_NONE;
+        return STEP_DONE;
+    }
+    // A closure's call answered. 02 の 15.5: a yieldable one answers its
+    // coroutine, and that is what the rest of this drives; anything else is
+    // the job's own answer.
+    if (!task->driving_set) {
+        if (lhat_is_object_kind(task->ran.value, LHAT_OBJECT_COROUTINE)) {
+            task->driving = task->ran.value;
+            task->driving_set = true;
+            task->move = MOVE_RESUME;
+            return STEP_AGAIN;
         }
-        for (size_t i = 0; i < task->argument_count; i++) {
-            if (!lhat_uncarry(machine, task->arguments[i], &arguments[i])) {
-                lhat_free(arguments);
-                task->status = LHAT_RUN_OUT_OF_MEMORY;
-                return;
-            }
-        }
-        ran = run_in_slices(module, machine,
-                            lhat_machine_call(machine, job, arguments,
-                                              task->argument_count));
-        lhat_free(arguments);
-        if (ran.status != LHAT_RUN_OK) {
-            note_failure(task, machine, ran);
-            return;
-        }
-        job = ran.value;
+        task->status = LHAT_RUN_OK;
+        task->move = MOVE_NONE;
+        return STEP_DONE;
+    }
+    if (lhat_machine_coroutine_done(task->driving)) {
+        task->status = LHAT_RUN_OK;
+        task->move = MOVE_NONE;
+        return STEP_DONE;
     }
 
-    // 15.5: a coroutine, driven to its end -- the worker is its scheduler.
+    // It yielded. What it handed over is read the way sample/async.lh's
+    // Scheduler reads it: a std.async id of THIS machine's is something to
+    // wait for, and anything else -- 0, another number, a value of another
+    // kind -- is a body that stopped to hand something over rather than to
+    // wait, so it goes straight on.
     //
-    // What a yield^ hands over is read the way sample/async.lh's Scheduler
-    // reads it: a std.async id of this machine's is something to wait for,
-    // and anything else -- 0, another number, a value of any other kind --
-    // is a body that stopped to hand something over rather than to wait, so
-    // it goes straight on. Waiting for the ONE id (05 の 8.7改's take by id)
-    // rather than for whatever is ready is what keeps two workers from
-    // taking each other's.
-    if (lhat_is_object_kind(job, LHAT_OBJECT_COROUTINE)) {
-        void *waits = lhatstdlib_async_waits(module->program);
-        for (;;) {
-            ran = run_in_slices(module, machine,
-                                lhat_machine_resume(machine, job, NULL, 0));
-            if (ran.status != LHAT_RUN_OK ||
-                lhat_machine_coroutine_done(job)) {
-                break;
-            }
-            int64_t id =
-                lhat_is_integer(ran.value) ? lhat_as_integer(ran.value) : 0;
-            if (waits == NULL || id <= 0) {
-                continue;
-            }
-            // -1 says this machine armed no such wait, so the number was
-            // not one: on it goes. 0 says not yet.
-            while (lhatstdlib_async_take(waits, machine, id) == 0) {
-                if (!pool_running(module)) {
-                    task->status = LHAT_RUN_SUSPENDED;
-                    return;
-                }
-                // Short, because a push from another thread is not
-                // signalled -- the same reading std.async's own wait makes.
-                lhat_thread_sleep(2);
-            }
-        }
+    // 05 の 8.7改: taken by id rather than by whatever is ready, which is
+    // what keeps two tasks from taking each other's.
+    task->move = MOVE_RESUME;
+    int64_t id =
+        lhat_is_integer(task->ran.value) ? lhat_as_integer(task->ran.value) : 0;
+    void *waits = lhatstdlib_async_waits(module->program);
+    if (waits == NULL || id <= 0) {
+        return STEP_AGAIN;
+    }
+    // 1 says it was ready and is now taken; -1 says this machine armed no
+    // such wait, so the number was not one. Either way the job runs on. 0 is
+    // the only answer that parks it.
+    if (lhatstdlib_async_take(waits, task->machine, id) != 0) {
+        return STEP_AGAIN;
+    }
+    task->parked_on = id;
+    return STEP_PARK;
+}
+
+// The first turn: the machine, the registrations, and the job rebuilt on it.
+// 03 の 4.3改 measures it for a job rather than for a REPL.
+static StepResult task_begin(TaskModule *module, Task *task)
+{
+    task->machine = lhat_machine_new_with_size(TASK_FRAMES, TASK_SLOTS);
+    if (task->machine == NULL ||
+        !lhat_program_install(module->program, task->machine)) {
+        task->status = LHAT_RUN_OUT_OF_MEMORY;
+        task->move = MOVE_NONE;
+        return STEP_DONE;
+    }
+    lhat_machine_set_budget(task->machine, TASK_SLICE);
+
+    LhatValue job = lhat_nil();
+    if (!lhat_uncarry(task->machine, task->job, &job)) {
+        task->status = LHAT_RUN_OUT_OF_MEMORY;
+        task->move = MOVE_NONE;
+        return STEP_DONE;
     }
 
-    note_failure(task, machine, ran);
-    if (ran.status == LHAT_RUN_OK &&
-        !lhat_carry(ran.value, &task->result, NULL)) {
+    // A closure is called with whatever was written after it; a coroutine
+    // carried in (05 の 8.8改3) is already the thing to drive.
+    if (!lhat_is_object_kind(job, LHAT_OBJECT_SUBROUTINE)) {
+        task->driving = job;
+        task->driving_set = true;
+        task->ran = lhat_machine_resume(task->machine, job, NULL, 0);
+        return after_turn(module, task);
+    }
+
+    LhatValue *arguments =
+        task->argument_count > 0
+            ? (LhatValue *)lhat_calloc(task->argument_count, sizeof *arguments)
+            : NULL;
+    if (task->argument_count > 0 && arguments == NULL) {
+        task->status = LHAT_RUN_OUT_OF_MEMORY;
+        task->move = MOVE_NONE;
+        return STEP_DONE;
+    }
+    for (size_t i = 0; i < task->argument_count; i++) {
+        if (!lhat_uncarry(task->machine, task->arguments[i], &arguments[i])) {
+            lhat_free(arguments);
+            task->status = LHAT_RUN_OUT_OF_MEMORY;
+            task->move = MOVE_NONE;
+            return STEP_DONE;
+        }
+    }
+    task->ran = lhat_machine_call(task->machine, job, arguments,
+                                  task->argument_count);
+    lhat_free(arguments);
+    return after_turn(module, task);
+}
+
+// One turn of one task -- exactly one call into the VM, and then the filing.
+static StepResult task_turn(TaskModule *module, Task *task)
+{
+    switch (task->move) {
+    case MOVE_START:
+        return task_begin(module, task);
+    case MOVE_RESUME:
+        task->ran = lhat_machine_resume(task->machine, task->driving, NULL, 0);
+        return after_turn(module, task);
+    case MOVE_CONTINUE:
+        task->ran = lhat_machine_continue(task->machine);
+        return after_turn(module, task);
+    case MOVE_NONE:
+    default:
+        return STEP_DONE;
+    }
+}
+
+// The end: the answer carried off the machine before the machine goes, since
+// the answer is one of its objects.
+static void task_conclude(Task *task)
+{
+    if (task->status == LHAT_RUN_OK && task->machine != NULL &&
+        !lhat_carry(task->ran.value, &task->result, NULL)) {
         task->status = LHAT_RUN_TYPE_ERROR;
     }
+    if (task->machine != NULL) {
+        lhat_machine_dispose(task->machine);
+        task->machine = NULL;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The worker
+// ---------------------------------------------------------------------------
+
+// `module->lock` is held. Every parked task whose wait has come ready moves
+// to the run queue. Nothing signals readiness -- a timer's clock reaching
+// its deadline is not an event and a push comes from a thread that knows
+// nothing of this pool -- so this is a look, and the worker below is what
+// decides how often to take it.
+static void move_ready(TaskModule *module)
+{
+    void *waits = lhatstdlib_async_waits(module->program);
+    size_t kept = 0;
+    for (size_t i = 0; i < module->parked_count; i++) {
+        Task *task = module->parked[i];
+        // -1 as well as 1: a wait that is no longer there is not one to go
+        // on holding a task for.
+        if (waits != NULL &&
+            lhatstdlib_async_take(waits, task->machine, task->parked_on) == 0) {
+            module->parked[kept++] = task;
+            continue;
+        }
+        task->parked_on = 0;
+        if (!queue_push(module, task)) {
+            module->parked[kept++] = task;  // no room; look again next time
+        }
+    }
+    module->parked_count = kept;
+}
+
+// `module->lock` is held.
+static bool park(TaskModule *module, Task *task)
+{
+    if (module->parked_count == module->parked_capacity) {
+        size_t wanted =
+            module->parked_capacity > 0 ? module->parked_capacity * 2 : 8;
+        Task **bigger = (Task **)lhat_calloc(wanted, sizeof *bigger);
+        if (bigger == NULL) {
+            return false;
+        }
+        for (size_t i = 0; i < module->parked_count; i++) {
+            bigger[i] = module->parked[i];
+        }
+        lhat_free(module->parked);
+        module->parked = bigger;
+        module->parked_capacity = wanted;
+    }
+    module->parked[module->parked_count++] = task;
+    return true;
+}
+
+// How long a worker with nothing runnable but something parked sleeps before
+// looking again. Short, because a push from another thread is not signalled
+// -- the same reading std.async's own wait makes.
+#define TASK_LOOK_MS 2
+
+// The next task to run, or NULL when the pool is done. Takes and releases
+// the lock.
+static Task *take_task(TaskModule *module)
+{
+    lhat_mutex_lock(&module->lock);
+    for (;;) {
+        if (!module->running) {
+            break;
+        }
+        // BEFORE taking work, and on the clock rather than only when there
+        // is nothing to run. A job that neither waits nor ends is runnable
+        // for ever, so "look when the queue empties" would never look at
+        // all while one of those is in the pool -- and every parked task
+        // would wait on it. Rate-limited because the look asks std.async
+        // about every parked task, and this loop turns as fast as a slice.
+        if (module->parked_count > 0) {
+            int64_t now = lhat_now_ms();
+            if (now - module->looked_at >= TASK_LOOK_MS) {
+                module->looked_at = now;
+                move_ready(module);
+            }
+        }
+        Task *task = queue_pop(module);
+        if (task != NULL) {
+            lhat_mutex_unlock(&module->lock);
+            return task;
+        }
+        if (module->parked_count > 0) {
+            // Nothing to run and nothing will say when there is: a timer's
+            // deadline is not an event and a push comes from a thread that
+            // knows nothing of this pool.
+            lhat_mutex_unlock(&module->lock);
+            lhat_thread_sleep(TASK_LOOK_MS);
+            lhat_mutex_lock(&module->lock);
+            continue;
+        }
+        lhat_condition_wait(&module->work, &module->lock);
+    }
+    lhat_mutex_unlock(&module->lock);
+    return NULL;
+}
+
+// Puts a task back where its turn said it belongs. False when the pool is
+// going or there is no room, in which case the caller ends it where it
+// stands.
+static bool file_task(TaskModule *module, Task *task, StepResult step)
+{
+    lhat_mutex_lock(&module->lock);
+    bool filed = module->running &&
+                 (step == STEP_PARK ? park(module, task)
+                                    : queue_push(module, task));
+    lhat_mutex_unlock(&module->lock);
+    return filed;
 }
 
 static int worker_main(void *raw)
 {
     TaskModule *module = (TaskModule *)raw;
 
-    // 05 の 8.7: a registration is an object on the heap of the machine it
-    // is installed on, so this is the one thing every worker pays for -- and
-    // it pays once, which is the whole difference from std.thread.
-    LhatMachine *machine =
-        lhat_machine_new_with_size(TASK_FRAMES, TASK_SLOTS);
-    if (machine != NULL && !lhat_program_install(module->program, machine)) {
-        lhat_machine_dispose(machine);
-        machine = NULL;
-    }
-    // 02 の 15.15: in slices, so that a stop is answered even by a job that
-    // does nothing but spin.
-    lhat_machine_set_budget(machine, TASK_SLICE);
-
     for (;;) {
-        lhat_mutex_lock(&module->lock);
-        Task *task = NULL;
-        while (module->running && (task = queue_pop(module)) == NULL) {
-            lhat_condition_wait(&module->work, &module->lock);
-        }
+        Task *task = take_task(module);
         if (task == NULL) {
-            lhat_mutex_unlock(&module->lock);
-            break;  // told to stop, and nothing left that was taken
+            break;  // told to stop
         }
-        task->taken = true;
-        lhat_mutex_unlock(&module->lock);
 
-        if (machine == NULL) {
-            task->status = LHAT_RUN_OUT_OF_MEMORY;
-        } else {
-            run_job(module, machine, task);
+        StepResult step = task_turn(module, task);
+        if (step != STEP_DONE && file_task(module, task, step)) {
+            continue;  // someone will pick it up again, here or elsewhere
         }
-        // A job left standing (the pool was stopped under it) leaves frames
-        // on this machine, so the machine goes with it rather than taking
-        // another job on top.
-        bool left_standing = machine != NULL &&
-                             lhat_machine_is_suspended(machine);
+        // Done, or the pool went out from under it. Either way this is where
+        // it ends: the answer comes off the machine and the machine goes.
+        if (step != STEP_DONE) {
+            task->status = LHAT_RUN_SUSPENDED;  // left standing
+        }
+        task_conclude(task);
         task_finished(task);
         task_let_go(task, NULL);  // the queue's hold
-        if (left_standing) {
-            lhat_machine_dispose(machine);
-            machine = NULL;
-            break;
-        }
-    }
-
-    if (machine != NULL) {
-        lhat_machine_dispose(machine);
     }
     return 0;
 }
@@ -451,6 +636,16 @@ static void stop_pool(TaskModule *module)
     Task *dropped = NULL;
     while ((dropped = queue_pop(module)) != NULL) {
         dropped->status = LHAT_RUN_TYPE_ERROR;
+        lhat_mutex_unlock(&module->lock);
+        task_finished(dropped);
+        task_let_go(dropped, NULL);
+        lhat_mutex_lock(&module->lock);
+    }
+    // And the ones parked on a wait that will never be looked at again.
+    // Their machines have frames standing; task_free throws each whole.
+    while (module->parked_count > 0) {
+        dropped = module->parked[--module->parked_count];
+        dropped->status = LHAT_RUN_SUSPENDED;
         lhat_mutex_unlock(&module->lock);
         task_finished(dropped);
         task_let_go(dropped, NULL);

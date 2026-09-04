@@ -133,6 +133,67 @@ static void test_side_by_side(void)
         lhat_test_ran_dispose(&ran);
     }
 
+    // The point of a machine per task. ONE worker and eight jobs that all
+    // wait: a worker that held a job while the job waited would run them one
+    // after another (eight waits end to end), and one that puts a waiting
+    // job down runs all eight waits at once. The bound tells those apart
+    // with room to spare -- 8 x 60ms is 480, and the whole thing should
+    // take about one wait.
+    LHAT_TEST("one worker keeps working while its jobs wait");
+    {
+        int64_t before = lhat_now_ms();
+        LhatTestRan ran = run_source(
+            "import^ std.task\n"
+            "import^ std.async\n"
+            "std.task.start(1)\n"
+            "let^ slow = p^ { yield^ std.async.timer(0.06) return^ 1 }\n"
+            "var^ tasks : t^{std.task.Task[]} = {}\n"
+            "for^ i from^ 1 to^ 8 {\n"
+            "    let^ t = std.task.async(slow())\n"
+            "    if^ t fits^ std.task.Task { tasks.push^(t) }\n"
+            "}\n"
+            "var^ n = 0\n"
+            "for^ t in^ tasks {\n"
+            "    let^ got = std.task.await(t)\n"
+            "    if^ got fits^ number^ { n += got }\n"
+            "}\n"
+            "std.task.stop()\n"
+            "return^ n\n");
+        int64_t spent = lhat_now_ms() - before;
+        LHAT_CHECK_RAN_INTEGER(ran, 8);
+        LHAT_CHECK(spent < 300,
+                   "the waits overlapped on one worker: %lld ms",
+                   (long long)spent);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // And a job that neither waits nor ends does not starve one that does.
+    // 02 の 15.15's slice is the quantum now: the spinner is taken off after
+    // TASK_SLICE turns and the waiter gets the worker. Under a pool that ran
+    // one job to its end this could not return at all.
+    LHAT_TEST("a spinning job does not hold the only worker");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.task\n"
+            "import^ std.async\n"
+            "std.task.start(1)\n"
+            // 15.5: spin has no yield^, so the closure itself is the job --
+            // spin() would run here and never come back.
+            "let^ spin = p^ ... { var^ i = 0 repeat^ { i += 1 } }\n"
+            "let^ waits = p^ { yield^ std.async.timer(0.05) return^ 7 }\n"
+            "std.task.async(spin)\n"
+            "let^ t = std.task.async(waits())\n"
+            "var^ n = 0\n"
+            "if^ t fits^ std.task.Task {\n"
+            "    let^ got = std.task.await(t)\n"
+            "    if^ got fits^ number^ { n := got }\n"
+            "}\n"
+            "std.task.stop()\n"
+            "return^ n\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 7);
+        lhat_test_ran_dispose(&ran);
+    }
+
     // await^ inside a job: the worker drives the coroutine and waits for
     // the very wait it yielded (05 の 8.7改's take by id), so a delay is a
     // delay rather than a resume that came back early.
