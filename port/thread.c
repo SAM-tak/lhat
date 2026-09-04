@@ -11,6 +11,11 @@
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
+// _SC_NPROCESSORS_ONLN is X/Open rather than base POSIX, so the feature test
+// above hides it on glibc unless this is asked for too.
+#if !defined(_WIN32) && !defined(_DEFAULT_SOURCE)
+#define _DEFAULT_SOURCE 1
+#endif
 
 #include "thread.h"
 
@@ -73,6 +78,15 @@ int64_t lhat_now_ms(void)
     return (int64_t)GetTickCount64();
 }
 
+int lhat_cpu_count(void)
+{
+    // Every group, not just the one this thread was started in: a machine
+    // with more than 64 logical processors splits them, and a pool that
+    // asked how many there are meant all of them.
+    DWORD count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+    return count > 0 ? (int)count : 1;
+}
+
 void lhat_mutex_init(LhatMutex *mutex) { InitializeSRWLock(&mutex->lock); }
 
 // An SRWLOCK holds nothing that has to be given back.
@@ -121,6 +135,7 @@ void lhat_condition_broadcast(LhatCondition *condition)
 
 #include <errno.h>
 #include <time.h>
+#include <unistd.h>  // sysconf, for lhat_cpu_count
 
 static void *trampoline(void *raw)
 {
@@ -159,6 +174,12 @@ int64_t lhat_now_ms(void)
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000L;
+}
+
+int lhat_cpu_count(void)
+{
+    long count = sysconf(_SC_NPROCESSORS_ONLN);
+    return count > 0 ? (int)count : 1;
 }
 
 void lhat_thread_sleep(int milliseconds)

@@ -95,6 +95,10 @@ if(LHAT_BUILD_STDLIB)
     lhat_add_test(test_channel stdlib)
     target_link_libraries(test_channel PRIVATE lhatstdlib lhatthread)
 
+    # std.task keeps a pool of worker machines standing.
+    lhat_add_test(test_task stdlib)
+    target_link_libraries(test_task PRIVATE lhatstdlib lhatthread)
+
     lhat_add_test(test_io stdlib)
     target_link_libraries(test_io PRIVATE lhatstdlib)
 

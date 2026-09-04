@@ -116,6 +116,11 @@ void lhat_thread_sleep(int milliseconds);
 // that a user or NTP can wind would make one of those arrive twice or never.
 int64_t lhat_now_ms(void);
 
+// How many threads this machine can run at once -- what a pool sizes itself
+// by when it was told no number. Never less than 1: a system that will not
+// say answers as if it had one core, which is a pool that still works.
+int lhat_cpu_count(void);
+
 void lhat_mutex_init(LhatMutex *mutex);
 void lhat_mutex_destroy(LhatMutex *mutex);
 void lhat_mutex_lock(LhatMutex *mutex);

@@ -274,6 +274,7 @@ if(LHAT_BUILD_STDLIB)
         stdlib/random.c
         stdlib/regex.c
         stdlib/regex_engine.c
+        stdlib/task.c
         stdlib/thread.c
     )
     add_library(lhatstdlib ${LHAT_STDLIB_SOURCES})
@@ -293,6 +294,7 @@ if(LHAT_BUILD_STDLIB)
         RUNTIME DESTINATION bin)
     install(FILES stdlib/async.h stdlib/carry.h stdlib/channel.h stdlib/debug.h stdlib/error.h stdlib/io.h stdlib/json.h
             stdlib/lton.h stdlib/math.h stdlib/mathvector3.h stdlib/random.h stdlib/regex.h stdlib/load.h
+            stdlib/task.h
             stdlib/thread.h
         DESTINATION include/lhatstdlib)
 endif()

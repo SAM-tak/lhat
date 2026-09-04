@@ -36,6 +36,7 @@
 #include "stdlib/mathvector3.h"
 #include "stdlib/random.h"
 #include "stdlib/regex.h"
+#include "stdlib/task.h"
 #include "stdlib/load.h"
 #include "stdlib/thread.h"
 #endif
@@ -643,7 +644,8 @@ static bool bind_host_names(LhatProgram *program)
         !lhatstdlib_mathvector3_register(program) ||
         !lhatstdlib_debug_register(program) ||
         !lhatstdlib_async_register(program) ||
-        !lhatstdlib_channel_register(program)) {
+        !lhatstdlib_channel_register(program) ||
+        !lhatstdlib_task_register(program)) {
         return false;
     }
     // 05 の 10.8 with 08 の 7改: text through the front end, bytes without
