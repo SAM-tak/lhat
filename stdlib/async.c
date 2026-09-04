@@ -26,6 +26,14 @@ typedef struct {
     int64_t due_ms;  // when the clock will make it ready
     bool timed;      // false for an external one: only a push makes it ready
     bool ready;      // pushed, and not yet handed back
+    // 05 の 8.7: whose wait it is. The table belongs to the program and a
+    // program may have any number of machines on it (std.thread starts one
+    // per worker), while a wait means something only to the scheduler that
+    // armed it -- so a wait is answered to the machine it was armed on and
+    // to no other. Without this a second scheduler takes the first's ids
+    // and both stall: one never sees its own, the other has nothing to do
+    // with what it took.
+    LhatMachine *owner;
 } Waiting;
 
 typedef struct {
@@ -52,7 +60,8 @@ static int64_t milliseconds_of(LhatValue value)
 }
 
 // The lock is held. Answers NULL when the table could not grow.
-static Waiting *add_wait(AsyncModule *module, bool timed, int64_t due_ms)
+static Waiting *add_wait(AsyncModule *module, LhatMachine *owner, bool timed,
+                         int64_t due_ms)
 {
     if (module->count == module->capacity) {
         size_t grown = module->capacity == 0 ? 8 : module->capacity * 2;
@@ -69,16 +78,32 @@ static Waiting *add_wait(AsyncModule *module, bool timed, int64_t due_ms)
     added->due_ms = due_ms;
     added->timed = timed;
     added->ready = false;
+    added->owner = owner;
     return added;
+}
+
+// The lock is held. Whether this wait is one `machine` may be answered --
+// its own, or one nobody claimed (a host armed it through async.h without
+// naming a machine).
+static bool mine(const Waiting *wait, const LhatMachine *machine)
+{
+    return wait->owner == NULL || wait->owner == machine;
+}
+
+// The lock is held. Whether the clock or a push has made it ready.
+static bool is_ready(const Waiting *wait, int64_t now)
+{
+    return wait->ready || (wait->timed && wait->due_ms <= now);
 }
 
 // The lock is held. The first wait that is ready now -- pushed, or a deadline
 // the clock has passed -- taken out of the table.
-static bool take_ready(AsyncModule *module, int64_t now, int64_t *id)
+static bool take_ready(AsyncModule *module, const LhatMachine *machine,
+                       int64_t now, int64_t *id)
 {
     for (size_t i = 0; i < module->count; i++) {
         Waiting *wait = &module->waits[i];
-        if (wait->ready || (wait->timed && wait->due_ms <= now)) {
+        if (mine(wait, machine) && is_ready(wait, now)) {
             *id = wait->id;
             module->waits[i] = module->waits[--module->count];
             return true;
@@ -87,15 +112,38 @@ static bool take_ready(AsyncModule *module, int64_t now, int64_t *id)
     return false;
 }
 
+// The lock is held. The one wait `id` names, taken out where the clock or a
+// push has made it ready: 1 taken, 0 still outstanding, -1 no such wait of
+// this machine's (taken already, dropped, never handed out, or another
+// machine's). What a library driving one job waits on -- std.task's worker
+// has an id of its own and no business taking anybody else's.
+static int take_this(AsyncModule *module, const LhatMachine *machine,
+                     int64_t now, int64_t id)
+{
+    for (size_t i = 0; i < module->count; i++) {
+        Waiting *wait = &module->waits[i];
+        if (wait->id != id || !mine(wait, machine)) {
+            continue;
+        }
+        if (!is_ready(wait, now)) {
+            return 0;
+        }
+        module->waits[i] = module->waits[--module->count];
+        return 1;
+    }
+    return -1;
+}
+
 // The lock is held. Milliseconds until the earliest deadline, or -1 when
 // nothing is waiting on the clock. An external wait answers nothing here:
 // there is no time at which it becomes ready.
-static int64_t until_next(const AsyncModule *module, int64_t now)
+static int64_t until_next(const AsyncModule *module,
+                          const LhatMachine *machine, int64_t now)
 {
     int64_t soonest = -1;
     for (size_t i = 0; i < module->count; i++) {
         const Waiting *wait = &module->waits[i];
-        if (!wait->timed) {
+        if (!wait->timed || !mine(wait, machine)) {
             continue;
         }
         int64_t left = wait->due_ms - now;
@@ -113,12 +161,11 @@ static void async_timer(LhatMachine *machine, void *context,
                         const LhatValue *arguments, size_t count,
                         LhatValue *answers, int *answer_count)
 {
-    (void)machine;
     (void)count;
     AsyncModule *module = (AsyncModule *)context;
     lhat_mutex_lock(&module->lock);
-    Waiting *armed =
-        add_wait(module, true, lhat_now_ms() + milliseconds_of(arguments[0]));
+    Waiting *armed = add_wait(module, machine, true,
+                              lhat_now_ms() + milliseconds_of(arguments[0]));
     int64_t id = armed != NULL ? armed->id : 0;
     lhat_mutex_unlock(&module->lock);
     // 0 is no wait at all: ids start at 1, so a table that could not grow
@@ -133,22 +180,22 @@ static void async_external(LhatMachine *machine, void *context,
                            const LhatValue *arguments, size_t count,
                            LhatValue *answers, int *answer_count)
 {
-    (void)machine;
     (void)arguments;
     (void)count;
-    // The same call a library makes on a program's behalf (async.h).
-    answers[0] = lhat_integer(lhatstdlib_async_external(context));
+    // The same call a library makes on a program's behalf (async.h), armed
+    // for the machine that asked.
+    answers[0] = lhat_integer(lhatstdlib_async_external(context, machine));
     *answer_count = 1;
 }
 
-int64_t lhatstdlib_async_external(void *waits)
+int64_t lhatstdlib_async_external(void *waits, LhatMachine *machine)
 {
     AsyncModule *module = (AsyncModule *)waits;
     if (module == NULL) {
         return 0;
     }
     lhat_mutex_lock(&module->lock);
-    Waiting *armed = add_wait(module, false, 0);
+    Waiting *armed = add_wait(module, machine, false, 0);
     int64_t id = armed != NULL ? armed->id : 0;
     lhat_mutex_unlock(&module->lock);
     // 0 is no wait at all: ids start at 1, so a table that could not grow
@@ -163,7 +210,6 @@ static void async_drop(LhatMachine *machine, void *context,
                        const LhatValue *arguments, size_t count,
                        LhatValue *answers, int *answer_count)
 {
-    (void)machine;
     (void)count;
     (void)answers;
     (void)answer_count;
@@ -172,7 +218,7 @@ static void async_drop(LhatMachine *machine, void *context,
                                                : 0;
     lhat_mutex_lock(&module->lock);
     for (size_t i = 0; i < module->count; i++) {
-        if (module->waits[i].id == id) {
+        if (module->waits[i].id == id && mine(&module->waits[i], machine)) {
             module->waits[i] = module->waits[--module->count];
             break;
         }
@@ -187,7 +233,6 @@ static void async_wait(LhatMachine *machine, void *context,
                        const LhatValue *arguments, size_t count,
                        LhatValue *answers, int *answer_count)
 {
-    (void)machine;
     (void)count;
     AsyncModule *module = (AsyncModule *)context;
     int64_t give_up_at = lhat_now_ms() + milliseconds_of(arguments[0]);
@@ -196,13 +241,13 @@ static void async_wait(LhatMachine *machine, void *context,
         lhat_mutex_lock(&module->lock);
         int64_t now = lhat_now_ms();
         int64_t id = 0;
-        if (take_ready(module, now, &id)) {
+        if (take_ready(module, machine, now, &id)) {
             lhat_mutex_unlock(&module->lock);
             answers[0] = lhat_integer(id);
             *answer_count = 1;
             return;
         }
-        int64_t soonest = until_next(module, now);
+        int64_t soonest = until_next(module, machine, now);
         lhat_mutex_unlock(&module->lock);
 
         if (now >= give_up_at) {
@@ -232,12 +277,11 @@ static void async_next(LhatMachine *machine, void *context,
                        const LhatValue *arguments, size_t count,
                        LhatValue *answers, int *answer_count)
 {
-    (void)machine;
     (void)arguments;
     (void)count;
     AsyncModule *module = (AsyncModule *)context;
     lhat_mutex_lock(&module->lock);
-    int64_t left = until_next(module, lhat_now_ms());
+    int64_t left = until_next(module, machine, lhat_now_ms());
     lhat_mutex_unlock(&module->lock);
     answers[0] = left < 0 ? lhat_nil() : lhat_real((double)left / 1000.0);
     *answer_count = 1;
@@ -249,12 +293,14 @@ static void async_pending(LhatMachine *machine, void *context,
                           const LhatValue *arguments, size_t count,
                           LhatValue *answers, int *answer_count)
 {
-    (void)machine;
     (void)arguments;
     (void)count;
     AsyncModule *module = (AsyncModule *)context;
     lhat_mutex_lock(&module->lock);
-    int64_t pending = (int64_t)module->count;
+    int64_t pending = 0;
+    for (size_t i = 0; i < module->count; i++) {
+        pending += mine(&module->waits[i], machine) ? 1 : 0;
+    }
     lhat_mutex_unlock(&module->lock);
     answers[0] = lhat_integer(pending);
     *answer_count = 1;
@@ -268,6 +314,8 @@ bool lhatstdlib_async_complete(void *waits, int64_t id)
     if (module == NULL) {
         return false;
     }
+    // Whoever pushes is on another thread and holds nothing but the id, so
+    // this looks through every machine's waits -- the id says which one.
     bool found = false;
     lhat_mutex_lock(&module->lock);
     for (size_t i = 0; i < module->count; i++) {
@@ -279,6 +327,18 @@ bool lhatstdlib_async_complete(void *waits, int64_t id)
     }
     lhat_mutex_unlock(&module->lock);
     return found;
+}
+
+int lhatstdlib_async_take(void *waits, LhatMachine *machine, int64_t id)
+{
+    AsyncModule *module = (AsyncModule *)waits;
+    if (module == NULL) {
+        return -1;
+    }
+    lhat_mutex_lock(&module->lock);
+    int answered = take_this(module, machine, lhat_now_ms(), id);
+    lhat_mutex_unlock(&module->lock);
+    return answered;
 }
 
 void *lhatstdlib_async_waits(const LhatProgram *program)

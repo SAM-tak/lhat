@@ -594,7 +594,6 @@ static void thread_awaitable(LhatMachine *machine, void *context,
                              const LhatValue *arguments, size_t count,
                              LhatValue *answers, int *answer_count)
 {
-    (void)machine;
     (void)count;
     const ThreadModule *module = (const ThreadModule *)context;
     ThreadHandle *handle =
@@ -604,7 +603,8 @@ static void thread_awaitable(LhatMachine *machine, void *context,
         lhat_mutex_lock(&handle->done_lock);
         if (handle->await_id == 0) {
             handle->waits = lhatstdlib_async_waits(module->program);
-            handle->await_id = lhatstdlib_async_external(handle->waits);
+            handle->await_id =
+                lhatstdlib_async_external(handle->waits, machine);
         }
         id = handle->await_id;
         bool already = handle->finished;

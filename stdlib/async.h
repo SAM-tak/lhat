@@ -66,7 +66,17 @@ void *lhatstdlib_async_waits(const LhatProgram *program);
 // never registered) or no room. std.thread's awaitable() is what this
 // exists for: the wait it arms is completed when the body finishes, so a
 // scheduler parks on it instead of asking done() over and over.
-int64_t lhatstdlib_async_external(void *waits);
+int64_t lhatstdlib_async_external(void *waits, LhatMachine *machine);
+
+// Takes the one wait `id` names, where the clock or a push has made it
+// ready: 1 taken, 0 not yet, -1 no such wait of this machine's (taken
+// already, dropped, never handed out, or armed on another machine).
+//
+// What a library driving one job waits on. std.async.wait answers whichever
+// of a machine's waits is ready, which is what a scheduler with a table of
+// tasks wants; a worker holding one id wants only that one, and taking
+// another's would leave whoever armed it waiting for ever.
+int lhatstdlib_async_take(void *waits, LhatMachine *machine, int64_t id);
 
 // Says an external wait is ready. Any thread may call it. False when the id
 // names no wait that is still outstanding -- one already taken, one dropped,
