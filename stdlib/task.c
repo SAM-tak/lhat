@@ -29,6 +29,18 @@ typedef struct Task Task;
 // stop in well under a millisecond, large enough that the check is nothing.
 #define TASK_SLICE 20000
 
+// 03 の 4.3改: how big a worker's machine is. A pool exists to hold several
+// at once, so the default measurements -- about 160 KiB apiece -- are the
+// wrong ones here: 64 workers of them is 10 MiB of mostly untouched frame
+// array. These bring one to about a third of that.
+//
+// It is a depth of 64 rather than 200, and a job that recurses past it ends
+// with LHAT_RUN_STACK_OVERFLOW and comes back through Task.failed() like any
+// other failure. A job that needs more depth than a pool worker has is a job
+// std.thread should run.
+#define TASK_FRAMES 64
+#define TASK_SLOTS 2048
+
 typedef struct {
     const LhatProgram *program;  // borrowed; the workers install it
     const LhatErrorKind *not_started;
@@ -360,7 +372,8 @@ static int worker_main(void *raw)
     // 05 の 8.7: a registration is an object on the heap of the machine it
     // is installed on, so this is the one thing every worker pays for -- and
     // it pays once, which is the whole difference from std.thread.
-    LhatMachine *machine = lhat_machine_new();
+    LhatMachine *machine =
+        lhat_machine_new_with_size(TASK_FRAMES, TASK_SLOTS);
     if (machine != NULL && !lhat_program_install(module->program, machine)) {
         lhat_machine_dispose(machine);
         machine = NULL;

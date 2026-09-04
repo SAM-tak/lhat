@@ -248,6 +248,36 @@ int main(void)
     LHAT_TEST("the counting allocator takes, before anything else has");
     LHAT_CHECK(lhat_set_allocator(&counting), "registered");
 
+    // 03 の 4.3改: what a machine of each measurement weighs -- the whole
+    // reason the measurements exist. The exact numbers move as the struct's
+    // own fields do, so what is pinned is the shape: a measured machine is a
+    // fraction of the default one. Measured here: 165,157 bytes whole,
+    // 48,933 for a pool worker, 8,869 for the smallest worth having.
+    LHAT_TEST("a machine weighs what its measurements say");
+    {
+        LhatMachine *whole = lhat_machine_new();
+        size_t whole_bytes = live_bytes;
+        lhat_machine_dispose(whole);
+        LHAT_CHECK_EQ_INT(live_bytes, 0);
+
+        LhatMachine *pool = lhat_machine_new_with_size(64, 2048);
+        size_t pool_bytes = live_bytes;
+        lhat_machine_dispose(pool);
+        LHAT_CHECK_EQ_INT(live_bytes, 0);
+
+        LhatMachine *small = lhat_machine_new_with_size(8, 384);
+        size_t small_bytes = live_bytes;
+        lhat_machine_dispose(small);
+        LHAT_CHECK_EQ_INT(live_bytes, 0);
+
+        LHAT_CHECK(whole_bytes > 100000,
+                   "the default machine: %zu bytes", whole_bytes);
+        LHAT_CHECK(pool_bytes * 3 < whole_bytes,
+                   "std.task's worker: %zu bytes", pool_bytes);
+        LHAT_CHECK(small_bytes * 15 < whole_bytes,
+                   "the smallest one worth having: %zu bytes", small_bytes);
+    }
+
     // 05 の 8.7: what the first round leaves behind is what the process
     // keeps, not what a round leaks -- the identities a declaration makes
     // belong to the process (registry.h) and are made once however many
