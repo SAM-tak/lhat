@@ -247,6 +247,15 @@ typedef struct LhatGlobalEntry {
 } LhatGlobalEntry;
 
 struct LhatProgram {
+    // 05 の 8.11: the host's lock over every write to this program, or NULL
+    // for the one-threaded case that needs none. Taken by the public
+    // entries and by nothing else -- an entry that would nest calls the
+    // half of itself that is already inside (compile_all, check_held,
+    // load_text_held).
+    LhatProgramLockFn lock;
+    LhatProgramLockFn unlock;
+    void *lock_context;
+
     // 6 章: shared, so the types one unit publishes stay valid in the units
     // that require it. Never emptied while the program lives: 05 の 5.7's
     // invalidation cannot free what it retired, since a unit it did not

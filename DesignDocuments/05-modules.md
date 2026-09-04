@@ -2339,6 +2339,29 @@ size_t position_count;        // 単値の答えなら 0
   箱は容器であって値の別名ではない
 - 16 バイト境界を要求する型（`__m128` 等）は対象外。整列は 8 バイト
 
+### 8.11 program の書込はホストの錠を通せる
+
+> **`lhat_program_set_lock(program, lock, unlock, ctx)`。渡せば、program を
+> 書く公開入口と `lhat_program_install` がその錠を取る。渡さなければ
+> 従来どおり。**
+
+std.thread はワーカーごとに `lhat_program_install` を呼び、その間ホストは
+検査もコンパイルも読み込みも続けられる（エディタの保存、`std.load`、
+本体から呼ばれた `spawn`）。それらは**書き**であり、走っているワーカーの
+install が歩いている最中のグラフに落ちてはいけない。
+
+- 取るのは公開入口だけ: `check` / `compile` / `load_text*` / `load_file` /
+  `write_text` / `install` / `invalidate` / `discard_retired` / `reload`
+- **入れ子にしない。** 中で他の入口を呼ぶものは、錠の内側にいる半分
+  （`compile_all`・`check_held`・`load_text_held`）を呼ぶ。だからホストの
+  錠は再帰でなくてよい（ただの mutex で足りる）
+- **走る側は何も要らない。** 機械は proto の上を走り、書きは proto を
+  動かさない（5.7 は本体を retire するのであって解放しない）
+- 錠は登録と同じく、何かが走る前に置く
+
+これが無いと、`love.filesystem.load` と `spawn` を同時に呼べない、という
+運用でしのぐことになる（lhatove の thread-design 4.4）。
+
 ### 8.10 継ぎ目は2つある
 
 > **メモリの確保と単位の読み込みは `lhat_*` の公開関数として切り出す。
@@ -2611,6 +2634,10 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
 
 ## 改定履歴（要約）
 
+- **8.11（2026-09-04）: program の書込にホストの錠を通せる。** ワーカーの
+  install と、ホストが続ける検査・読み込みが同じグラフを触る問題。
+  `lhat_program_set_lock` を渡せば公開入口と install が取る。入れ子は
+  作らない（内側の半分を呼ぶ）ので、再帰でない mutex で足りる
 - **15.14改（2026-09-04）: ワーカーの終わりを押して届ける。** `awaitable()`
   が配る待ちを本体の終わりで押す（`joined` の 2ms ポーリングが消えた）、
   `failed()` が join せず誤りを読む、`lhatstdlib_thread_on_finish` が

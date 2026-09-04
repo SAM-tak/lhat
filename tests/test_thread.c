@@ -775,6 +775,97 @@ static void test_join_all(void)
     }
 }
 
+// ---------------------------------------------------------------------------
+// 05 の 8.11: the host's lock over the program's writes
+// ---------------------------------------------------------------------------
+
+// A lock that counts, so the test can say the entries took it -- and a
+// plain one underneath, so an entry taking it twice would hang rather than
+// pass quietly (port/thread.h's mutex does not nest).
+typedef struct {
+    LhatMutex mutex;
+    int taken;
+    int held;
+    int deepest;
+} Counted;
+
+static Counted counted;
+
+static void counted_lock(void *context)
+{
+    Counted *lock = (Counted *)context;
+    lhat_mutex_lock(&lock->mutex);
+    lock->taken++;
+    lock->held++;
+    if (lock->held > lock->deepest) {
+        lock->deepest = lock->held;
+    }
+}
+
+static void counted_unlock(void *context)
+{
+    Counted *lock = (Counted *)context;
+    lock->held--;
+    lhat_mutex_unlock(&lock->mutex);
+}
+
+static void test_program_lock(void)
+{
+    LHAT_TEST("every write and every install goes through the host's lock");
+    {
+        memset(&counted, 0, sizeof counted);
+        lhat_mutex_init(&counted.mutex);
+        static const char text[] =
+            "import^ std.thread\n"
+            "let^ h = std.thread.spawn(p^ ... { return^ 5 })\n"
+            "if^ h fits^ std.thread.ThreadHandle {\n"
+            "    let^ answer = h.join()\n"
+            "    if^ answer fits^ number^ { return^ answer }\n"
+            "}\n"
+            "return^ -1\n";
+        LhatProgram *program =
+            lhat_program_new(true, only_file, (void *)text);
+        lhat_program_set_lock(program, counted_lock, counted_unlock, &counted);
+        LHAT_CHECK(lhatstdlib_thread_register(program), "registered");
+        const LhatUnit *root = lhat_program_check(program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(program) &&
+                       lhat_program_compile(program),
+                   "built");
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_CHECK(lhat_program_install(program, machine), "installed");
+        int before = counted.taken;
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 5);
+        // The check, the compile and the install above, and the worker's
+        // own install during the run.
+        LHAT_CHECK(before >= 3, "the entries took it: %d", before);
+        LHAT_CHECK(counted.taken > before,
+                   "and so did the worker's install: %d", counted.taken);
+        LHAT_CHECK_EQ_INT(counted.deepest, 1);
+        LHAT_CHECK_EQ_INT(counted.held, 0);
+        lhat_machine_dispose(machine);
+        lhat_program_free(program);
+        lhat_mutex_destroy(&counted.mutex);
+    }
+
+    LHAT_TEST("and a program given none runs as it did");
+    {
+        static const char text[] = "return^ 7\n";
+        LhatProgram *program =
+            lhat_program_new(true, only_file, (void *)text);
+        lhat_program_set_lock(program, NULL, NULL, NULL);
+        const LhatUnit *root = lhat_program_check(program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_compile(program), "built");
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_CHECK(lhat_program_install(program, machine), "installed");
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 7);
+        lhat_machine_dispose(machine);
+        lhat_program_free(program);
+    }
+}
+
 int main(void)
 {
     test_spawn_shape();
@@ -786,5 +877,6 @@ int main(void)
     test_done();
     test_pushed_completion();
     test_join_all();
+    test_program_lock();
     return lhat_test_report("test_thread");
 }

@@ -159,6 +159,17 @@ static void check_parsed(LhatProgram *program, LhatUnit *unit,
 // of the two ways checking starts call it; it does its work once.
 static void flatten_hostdata_bases(LhatProgram *program);
 static void stamp_source(LhatProto *proto, const char *path);
+// 05 の 8.11: the halves that run with the lock already held, for the
+// entries that would otherwise take it twice.
+static bool compile_all(LhatProgram *program);
+static const LhatUnit *check_held(LhatProgram *program, const char *path);
+static bool install_all(const LhatProgram *program, LhatMachine *machine);
+static size_t invalidate_held(LhatProgram *program, const char *path);
+static void discard_retired_held(LhatProgram *program);
+static LhatLoadStatus load_text_held(LhatProgram *program, const char *name,
+                                     const char *text, size_t length,
+                                     const LhatLoadOptions *options,
+                                     LhatProto **out);
 
 // 05 の 5.3: `from` require^s `to`. Answers the position in `from`'s list,
 // which is the number the compiler writes into a UNIT instruction, or
@@ -3016,7 +3027,36 @@ static bool compile_one(LhatProgram *program, LhatUnit *u, bool registers)
 }
 #endif  // LHAT_WITH_FRONTEND
 
-bool lhat_program_compile(LhatProgram *program)
+void lhat_program_set_lock(LhatProgram *program, LhatProgramLockFn lock,
+                           LhatProgramLockFn unlock, void *context)
+{
+    if (program == NULL) {
+        return;
+    }
+    program->lock = lock;
+    program->unlock = unlock;
+    program->lock_context = context;
+}
+
+// 05 の 8.11: taken at the public entries and nowhere else, so the pair
+// never has to nest. A program with no lock pays a branch.
+static void hold(LhatProgram *program)
+{
+    if (program != NULL && program->lock != NULL) {
+        program->lock(program->lock_context);
+    }
+}
+
+static void release(LhatProgram *program)
+{
+    if (program != NULL && program->unlock != NULL) {
+        program->unlock(program->lock_context);
+    }
+}
+
+// The compile itself. Called with the lock already held, by the entries
+// that compile as part of something larger (a load, a reload).
+static bool compile_all(LhatProgram *program)
 {
     bool ok = true;
 #if LHAT_WITH_FRONTEND
@@ -3040,6 +3080,14 @@ bool lhat_program_compile(LhatProgram *program)
             ok = false;
         }
     }
+    return ok;
+}
+
+bool lhat_program_compile(LhatProgram *program)
+{
+    hold(program);
+    bool ok = compile_all(program);
+    release(program);
     return ok;
 }
 
@@ -3095,7 +3143,7 @@ static bool install_entry(LhatMachine *machine, const LhatHostEntry *e,
     return lhat_machine_register(machine, module, type, name, value);
 }
 
-bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
+static bool install_all(const LhatProgram *program, LhatMachine *machine)
 {
     for (size_t i = 0; i < program->host_entry_count; i++) {
         const LhatHostEntry *e = &program->host_entries[i];
@@ -3175,6 +3223,18 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
         return false;
     }
     return true;
+}
+
+bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
+{
+    // 05 の 8.11: a read of the registrations and the unit table, and still
+    // under the lock -- those are what a check or a load writes, and
+    // std.thread's worker is the caller this exists for.
+    LhatProgram *writable = (LhatProgram *)program;
+    hold(writable);
+    bool ok = install_all(program, machine);
+    release(writable);
+    return ok;
 }
 
 #if LHAT_WITH_FRONTEND
@@ -3398,7 +3458,7 @@ static LhatLoadStatus build_placed(LhatProgram *program, LhatUnit *unit)
     for (const LhatUnit *u = program->units; u != before; u = u->next) {
         say_unit(&said, u);
     }
-    bool built = said.length == 0 && lhat_program_compile(program) &&
+    bool built = said.length == 0 && compile_all(program) &&
                  compile_one(program, unit, false) && fill_unit_table(unit);
     return settle_placed(program, unit, &said, built);
 }
@@ -3437,7 +3497,7 @@ static LhatLoadStatus load_binary_placed(LhatProgram *program,
         lhat_free(read.export_names);
         lhat_free(read.export_rt);
         lhat_reflection_free(read.reflection);
-        built = lhat_program_compile(program) && fill_unit_table(unit);
+        built = compile_all(program) && fill_unit_table(unit);
     }
     Said said;
     memset(&said, 0, sizeof said);
@@ -3490,11 +3550,10 @@ char *lhat_program_read(LhatProgram *program, const char *path,
     return program->load(program->loader_context, path, length);
 }
 
-LhatLoadStatus lhat_program_load_text_with(LhatProgram *program,
-                                           const char *name, const char *text,
-                                           size_t length,
-                                           const LhatLoadOptions *options,
-                                           LhatProto **out)
+static LhatLoadStatus load_text_held(LhatProgram *program, const char *name,
+                                     const char *text, size_t length,
+                                     const LhatLoadOptions *options,
+                                     LhatProto **out)
 {
     *out = NULL;
     LhatUnit *unit = place(program, name, options);
@@ -3518,6 +3577,19 @@ LhatLoadStatus lhat_program_load_text_with(LhatProgram *program,
     return status;
 }
 
+LhatLoadStatus lhat_program_load_text_with(LhatProgram *program,
+                                           const char *name, const char *text,
+                                           size_t length,
+                                           const LhatLoadOptions *options,
+                                           LhatProto **out)
+{
+    hold(program);
+    LhatLoadStatus status =
+        load_text_held(program, name, text, length, options, out);
+    release(program);
+    return status;
+}
+
 LhatLoadStatus lhat_program_write_text(LhatProgram *program, const char *name,
                                        const char *text, size_t length,
                                        const LhatLoadOptions *options,
@@ -3526,8 +3598,10 @@ LhatLoadStatus lhat_program_write_text(LhatProgram *program, const char *name,
 {
     *out = NULL;
     *out_length = 0;
+    hold(program);
     LhatUnit *unit = place(program, name, options);
     if (unit == NULL) {
+        release(program);
         return LHAT_LOAD_OUT_OF_MEMORY;
     }
     lhat_source_init_from_string(&unit->source, unit->path, text, length);
@@ -3539,6 +3613,7 @@ LhatLoadStatus lhat_program_write_text(LhatProgram *program, const char *name,
         status = LHAT_LOAD_REJECTED;
     }
     forget(unit);
+    release(program);
     return status;
 }
 
@@ -3553,8 +3628,11 @@ LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,
 {
     LhatLoadOptions options;
     options.initial_bindings = true;  // 8.2, as it always was
-    return lhat_program_load_text_with(program, name, text, length, &options,
-                                       out);
+    hold(program);
+    LhatLoadStatus status =
+        load_text_held(program, name, text, length, &options, out);
+    release(program);
+    return status;
 }
 
 LhatLoadStatus lhat_program_load_file(LhatProgram *program, const char *path,
@@ -3573,7 +3651,14 @@ LhatLoadStatus lhat_program_load_file(LhatProgram *program, const char *path,
                      : NULL;
     LhatLoadStatus status = LHAT_LOAD_CANNOT_READ;
     if (text != NULL) {
-        status = lhat_program_load_text(program, resolved, text, length, out);
+        // The read is outside the lock: what it touches is the loader the
+        // host gave, not the program.
+        LhatLoadOptions options;
+        options.initial_bindings = true;
+        hold(program);
+        status =
+            load_text_held(program, resolved, text, length, &options, out);
+        release(program);
         lhat_free(text);
     }
     lhat_free(resolved);
@@ -3957,7 +4042,7 @@ static size_t unit_total(const LhatProgram *program)
     return total;
 }
 
-size_t lhat_program_invalidate(LhatProgram *program, const char *path)
+static size_t invalidate_held(LhatProgram *program, const char *path)
 {
     if (program == NULL || path == NULL) {
         return SIZE_MAX;
@@ -3988,11 +4073,26 @@ size_t lhat_program_invalidate(LhatProgram *program, const char *path)
     return count;
 }
 
+size_t lhat_program_invalidate(LhatProgram *program, const char *path)
+{
+    hold(program);
+    size_t retired = invalidate_held(program, path);
+    release(program);
+    return retired;
+}
+
 void lhat_program_discard_retired(LhatProgram *program)
 {
     if (program == NULL) {
         return;
     }
+    hold(program);
+    discard_retired_held(program);
+    release(program);
+}
+
+static void discard_retired_held(LhatProgram *program)
+{
     for (size_t i = 0; i < program->retired_count; i++) {
         // The code goes; what its constants named does not. A machine may
         // still be holding one -- L^.modules is keyed by the strings a
@@ -4033,10 +4133,10 @@ static size_t fill_bodies(const LhatProto *proto, const LhatProto **out,
     return at;
 }
 
-size_t lhat_reload(LhatProgram *program, const char *path,
-                   LhatMachine *const *machines, size_t machine_count)
+static size_t reload_held(LhatProgram *program, const char *path,
+                          LhatMachine *const *machines, size_t machine_count)
 {
-    size_t retired = lhat_program_invalidate(program, path);
+    size_t retired = invalidate_held(program, path);
     if (retired == 0 || retired == SIZE_MAX) {
         return retired;
     }
@@ -4065,10 +4165,10 @@ size_t lhat_reload(LhatProgram *program, const char *path,
     for (const LhatUnit *unit = lhat_program_units(program); unit != NULL;
          unit = lhat_unit_next(unit)) {
         if (lhat_unit_state(unit) == LHAT_UNIT_STALE) {
-            lhat_program_check(program, lhat_unit_path(unit));
+            check_held(program, lhat_unit_path(unit));
         }
     }
-    if (lhat_program_has_errors(program) || !lhat_program_compile(program)) {
+    if (lhat_program_has_errors(program) || !compile_all(program)) {
         // The old world keeps running and the retired list keeps waiting;
         // the diagnostics say why, and the next save tries again.
         return retired;
@@ -4100,8 +4200,17 @@ size_t lhat_reload(LhatProgram *program, const char *path,
     }
     lhat_free(flat);
     if (!held) {
-        lhat_program_discard_retired(program);
+        discard_retired_held(program);
     }
+    return retired;
+}
+
+size_t lhat_reload(LhatProgram *program, const char *path,
+                   LhatMachine *const *machines, size_t machine_count)
+{
+    hold(program);
+    size_t retired = reload_held(program, path, machines, machine_count);
+    release(program);
     return retired;
 }
 
@@ -4306,7 +4415,9 @@ size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
     return written;
 }
 
-const LhatUnit *lhat_program_check(LhatProgram *program, const char *path)
+// The check itself, with the lock already held -- what a reload calls
+// round after round.
+static const LhatUnit *check_held(LhatProgram *program, const char *path)
 {
     char *resolved = normalise_path(path);
     if (resolved == NULL) {
@@ -4314,6 +4425,14 @@ const LhatUnit *lhat_program_check(LhatProgram *program, const char *path)
     }
     LhatUnit *unit = check_path(program, resolved);
     return (unit != NULL && unit->loaded) ? unit : NULL;
+}
+
+const LhatUnit *lhat_program_check(LhatProgram *program, const char *path)
+{
+    hold(program);
+    const LhatUnit *unit = check_held(program, path);
+    release(program);
+    return unit;
 }
 
 bool lhat_program_has_errors(const LhatProgram *program)

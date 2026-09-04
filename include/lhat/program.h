@@ -82,6 +82,25 @@ typedef char *(*LhatProgramLoader)(void *context, const char *path,
 //
 // port.h's lhat_load_file is written in this shape, for a host that does want
 // the file system. NULL when out of memory.
+// 05 の 8.11: the lock every write to this program takes, for a host that
+// reaches it from more than one thread. std.thread starts a machine per
+// worker (lhat_program_install), and a host may go on checking, compiling
+// and loading while those run -- an editor's save, std.load, a worker
+// spawned from a body. Those are writes, and this is what keeps one from
+// landing on the graph another call is walking.
+//
+// `lock` and `unlock` are the host's own; the language takes nothing on its
+// own account, and a program never given a pair behaves exactly as before.
+// What is asked of them is what a plain mutex does -- **they do not have to
+// nest**, because nothing here takes the lock twice. Set them before
+// anything runs, alongside the registrations.
+//
+// The running side needs nothing: a machine runs off protos, which no write
+// moves (05 の 5.7 retires bodies rather than freeing them).
+typedef void (*LhatProgramLockFn)(void *context);
+void lhat_program_set_lock(LhatProgram *program, LhatProgramLockFn lock,
+                           LhatProgramLockFn unlock, void *context);
+
 LhatProgram *lhat_program_new(bool strict, LhatProgramLoader load,
                               void *context);
 void lhat_program_free(LhatProgram *program);
