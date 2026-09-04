@@ -1573,6 +1573,115 @@ static void test_names_table(void)
     run_dispose(&r);
 }
 
+// ---------------------------------------------------------------------------
+// 02 の 15.15: the slice
+// ---------------------------------------------------------------------------
+//
+// A budget takes a run off the processor at a loop turn and hands it back
+// where it stood. Nothing about what the program computes changes -- what
+// changes is that a scheduler gets a word in, which is what a run that
+// never ends otherwise denies it.
+
+static void test_budget(void)
+{
+    Run r;
+
+    // A loop long enough to outlast several slices, answering a total that
+    // says every turn ran exactly once however many times it was put down.
+    LHAT_TEST("15.15: a run in slices computes what it would have whole");
+    {
+        compile_text(&r,
+                     "var^ n = 0\n"
+                     "for^ i from^ 1 to^ 20000 { n := n + 1 }\n"
+                     "return^ n\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new();
+        lhat_machine_set_budget(r.machine, 1000);
+        r.ran = lhat_run(r.machine, r.proto);
+
+        int slices = 1;
+        while (r.ran.status == LHAT_RUN_SUSPENDED) {
+            LHAT_CHECK(lhat_machine_is_suspended(r.machine),
+                       "the machine says so too");
+            r.ran = lhat_machine_continue(r.machine);
+            slices++;
+            LHAT_CHECK(slices < 200, "it is getting somewhere");
+        }
+        CHECK_INTEGER(&r, 20000);
+        LHAT_CHECK(slices >= 20, "it took the slices it should: %d", slices);
+        LHAT_CHECK(!lhat_machine_is_suspended(r.machine), "and is done");
+        run_dispose(&r);
+    }
+
+    // The point of the whole thing: a body that never ends still hands
+    // control back, so whoever gave it the slice may decide not to give
+    // another.
+    LHAT_TEST("a body that never ends is still put down");
+    {
+        compile_text(&r, "var^ n = 0\nrepeat^ { n := n + 1 }\nreturn^ n\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new();
+        lhat_machine_set_budget(r.machine, 500);
+        r.ran = lhat_run(r.machine, r.proto);
+        LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SUSPENDED);
+        // Twice over, to say a continue is not a one-off.
+        r.ran = lhat_machine_continue(r.machine);
+        LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SUSPENDED);
+        // And the machine is simply thrown away, frames and all.
+        run_dispose(&r);
+    }
+
+    // A machine is born without one, and nothing about a run changes.
+    LHAT_TEST("no budget is what a machine is born with");
+    {
+        run_text(&r, "var^ n = 0\nfor^ i from^ 1 to^ 5000 { n := n + 1 }\n"
+                     "return^ n\n");
+        CHECK_INTEGER(&r, 5000);
+        LHAT_CHECK(!lhat_machine_is_suspended(r.machine), "nothing standing");
+        run_dispose(&r);
+    }
+
+    // A suspension is not an unwinding: the frames are standing exactly
+    // where they were, which is what a continue picks up.
+    LHAT_TEST("a suspension leaves the frames standing");
+    {
+        compile_text(&r, "var^ n = 0\nrepeat^ { n := n + 1 }\n");
+        r.machine = lhat_machine_new();
+        lhat_machine_set_budget(r.machine, 100);
+        r.ran = lhat_run(r.machine, r.proto);
+        LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SUSPENDED);
+        LHAT_CHECK(lhat_machine_fault_depth(r.machine) > 0,
+                   "the body is still there");
+        run_dispose(&r);
+    }
+
+    // 15.15: a nested run is never put down -- its caller's C stack is
+    // under it. The comparator below is called from inside sort^, which
+    // re-enters the loop, and the whole sort has to come back whatever the
+    // budget says.
+    LHAT_TEST("a nested run is not put down");
+    {
+        compile_text(&r,
+                     "var^ t = { }\n"
+                     "for^ i from^ 1 to^ 400 { t.push^(401 - i) }\n"
+                     "t.sort^(f^ a, b {\n"
+                     "    var^ spin = 0\n"
+                     "    for^ k from^ 1 to^ 20 { spin := spin + 1 }\n"
+                     "    return^ a <=> b\n"
+                     "})\n"
+                     "return^ t[1]\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new();
+        lhat_machine_set_budget(r.machine, 50);
+        r.ran = lhat_run(r.machine, r.proto);
+        while (r.ran.status == LHAT_RUN_SUSPENDED) {
+            r.ran = lhat_machine_continue(r.machine);
+        }
+        CHECK_INTEGER(&r, 1);
+        run_dispose(&r);
+    }
+}
+
 int main(void)
 {
     test_encoding();
@@ -1587,5 +1696,6 @@ int main(void)
     test_scope_specifiers();
     test_variadic();
     test_names_table();
+    test_budget();
     return lhat_test_report("test_vm_core");
 }

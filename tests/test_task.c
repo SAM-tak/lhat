@@ -308,11 +308,38 @@ static void test_task_crosses(void)
     }
 }
 
+// 02 の 15.15: the slice. A job that neither yields nor ends used to hold
+// its worker for ever, and a stop would wait for it -- which is to say the
+// program hung. The budget is what gets the worker's attention back.
+static void test_runaway(void)
+{
+    LHAT_TEST("a job that never ends does not hold the pool for ever");
+    {
+        int64_t before = lhat_now_ms();
+        LhatTestRan ran = run_source(
+            "import^ std.task\n"
+            "std.task.start(2)\n"
+            // Two of them, so both workers are held.
+            "let^ spin = p^ ... { var^ n = 0 repeat^ { n := n + 1 } }\n"
+            "std.task.async(spin)\n"
+            "std.task.async(spin)\n"
+            // What is asked here is only that the stop comes back at all.
+            "std.task.stop()\n"
+            "return^ std.task.workers()\n");
+        int64_t spent = lhat_now_ms() - before;
+        LHAT_CHECK_RAN_INTEGER(ran, 0);
+        LHAT_CHECK(spent < 5000, "the stop came back: %lld ms",
+                   (long long)spent);
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
 int main(void)
 {
     test_the_sketch();
     test_side_by_side();
     test_answers();
     test_task_crosses();
+    test_runaway();
     return lhat_test_report("test_task");
 }

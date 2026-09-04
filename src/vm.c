@@ -2621,7 +2621,7 @@ static LhatRunResult finish(Machine *m, const LhatChunk *chunk,
     // 04 の 11.6改: the frames of this run are still standing (nothing
     // here unwinds), so remember which they were and where the top one
     // stopped -- lhat_machine_fault_* walks them until the next run.
-    if (status != LHAT_RUN_OK) {
+    if (status != LHAT_RUN_OK && status != LHAT_RUN_SUSPENDED) {
         m->fault_base = m->run_base;
         m->fault_depth = m->frame_count;
         m->fault_at = at;
@@ -3580,10 +3580,37 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
 static LhatRunResult run_frames(Machine *m, size_t base_depth, bool draining)
 {
     size_t outer = m->run_base;
+    // 02 の 15.15: the slice belongs to the outermost run. A nested one --
+    // a host calling back, sort^'s comparator, clone^'s policy -- has its
+    // caller's C stack under it and roots on it (machine.h's native_hold),
+    // so it cannot be left standing; it runs with no budget and gives the
+    // outer run's remainder back on the way out. The drain is not a run of
+    // the program's either.
+    int64_t kept = m->steps_left;
+    bool outermost = m->running_depth == 0 && !draining;
+    m->steps_left = outermost ? m->budget : 0;
+    m->running_depth++;
     LhatRunResult result = run_frames_loop(m, base_depth, draining);
+    m->running_depth--;
+    if (!outermost) {
+        m->steps_left = kept;
+    }
     m->run_base = outer;
     return result;
 }
+
+// 02 の 15.15: the slice, counted where a run turns back on itself. Reads
+// the loop's own `frame`, `pc`, `chunk`, `at` and `base_depth`, so it can
+// only stand inside run_frames_loop.
+#define LHAT_TURN_BACK()                                                    \
+    do {                                                                    \
+        if (m->steps_left != 0 && --m->steps_left == 0) {                   \
+            frame->pc = pc;                                                 \
+            m->suspended = true;                                            \
+            m->suspended_base = base_depth;                                 \
+            return finish(m, chunk, LHAT_RUN_SUSPENDED, lhat_nil(), at);    \
+        }                                                                   \
+    } while (0)
 
 static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                      bool draining)
@@ -3840,8 +3867,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         lhat_a(paired) == a) {
                         pc++;
                         if (!held) {
-                            pc = (size_t)((int64_t)pc +
-                                          lhat_jump_offset(paired));
+                            int32_t offset = lhat_jump_offset(paired);
+                            pc = (size_t)((int64_t)pc + offset);
+                            if (offset < 0) {
+                                LHAT_TURN_BACK();
+                            }
                         }
                     }
                 }
@@ -3876,8 +3906,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         lhat_a(paired) == a) {
                         pc++;
                         if (!out) {
-                            pc = (size_t)((int64_t)pc +
-                                          lhat_jump_offset(paired));
+                            int32_t offset = lhat_jump_offset(paired);
+                            pc = (size_t)((int64_t)pc + offset);
+                            if (offset < 0) {
+                                LHAT_TURN_BACK();
+                            }
                         }
                     }
                     break;
@@ -3900,18 +3933,33 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 break;
             }
 
-            case LHAT_BC_JUMP:
-                pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction));
+            // 02 の 15.15: a jump back is where every loop turns, and a
+            // run that does not end has to turn -- straight-line code is as
+            // long as the body and recursion runs out of frames. So this is
+            // the one place a slice has to be counted, and an instruction
+            // between two of them costs nothing.
+            case LHAT_BC_JUMP: {
+                int32_t offset = lhat_jump_offset(instruction);
+                pc = (size_t)((int64_t)pc + offset);
+                if (offset < 0) {
+                    LHAT_TURN_BACK();
+                }
                 break;
+            }
 
-            case LHAT_BC_JUMP_FALSE:
+            case LHAT_BC_JUMP_FALSE: {
                 if (!lhat_is_bool(R(a))) {
                     return finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 if (!lhat_as_bool(R(a))) {
-                    pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction));
+                    int32_t offset = lhat_jump_offset(instruction);
+                    pc = (size_t)((int64_t)pc + offset);
+                    if (offset < 0) {
+                        LHAT_TURN_BACK();
+                    }
                 }
                 break;
+            }
 
             case LHAT_BC_CLOSURE: {
                 LHAT_GC_POLL();  // this case allocates
@@ -7115,6 +7163,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                          &more, &status);
                 if (more) {
                     pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction));
+                    LHAT_TURN_BACK();
                 }
                 break;
             }
@@ -8463,6 +8512,34 @@ bool lhat_machine_make_coroutine_from(LhatMachine *machine, LhatValue closure,
     return true;
 }
 
+void lhat_machine_set_budget(LhatMachine *machine, int64_t turns)
+{
+    Machine *m = (Machine *)machine;
+    if (m != NULL) {
+        m->budget = turns > 0 ? turns : 0;
+    }
+}
+
+bool lhat_machine_is_suspended(const LhatMachine *machine)
+{
+    const Machine *m = (const Machine *)machine;
+    return m != NULL && m->suspended;
+}
+
+LhatRunResult lhat_machine_continue(LhatMachine *machine)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || !m->suspended) {
+        LhatRunResult nothing;
+        memset(&nothing, 0, sizeof nothing);
+        nothing.status = LHAT_RUN_OK;
+        nothing.value = lhat_nil();
+        return nothing;
+    }
+    m->suspended = false;
+    return run_frames(m, m->suspended_base, false);
+}
+
 bool lhat_machine_coroutine_done(LhatValue coroutine)
 {
     return lhat_is_object_kind(coroutine, LHAT_OBJECT_COROUTINE) &&
@@ -8716,6 +8793,7 @@ const char *lhat_run_status_message(LhatRunStatus status)
         // status's own name -- the actual message is what the program
         // panicked with, in LhatRunResult.value, which this cannot see.
         case LHAT_RUN_PANIC:                     return "panic^";
+        case LHAT_RUN_SUSPENDED:                 return "the slice ran out";
         // 02 の 13.8改
         case LHAT_RUN_TUPLE_ARITY:
             return "this call and what it called disagree on how many values "

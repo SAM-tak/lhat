@@ -22,6 +22,12 @@
 
 typedef struct Task Task;
 
+// 02 の 15.15: how many loop turns a job runs before the worker gets a word
+// in. Only used to notice a stop -- a job still runs to its end, and this
+// says how long a runaway one may go unnoticed. Small enough to answer a
+// stop in well under a millisecond, large enough that the check is nothing.
+#define TASK_SLICE 20000
+
 typedef struct {
     const LhatProgram *program;  // borrowed; the workers install it
     const LhatErrorKind *not_started;
@@ -194,6 +200,30 @@ static Task *queue_pop(TaskModule *module)
     return task;
 }
 
+// Whether the pool is still taking work. Read between slices, which is how
+// a job that never yields still lets a stop through.
+static bool pool_running(TaskModule *module)
+{
+    lhat_mutex_lock(&module->lock);
+    bool running = module->running;
+    lhat_mutex_unlock(&module->lock);
+    return running;
+}
+
+// 02 の 15.15: a run, taken in slices so that a body which neither yields
+// nor ends cannot hold the worker for ever. What the slices are for is the
+// stop: between two of them the worker is free to look, and a pool being
+// torn down leaves the job where it stands (its machine is thrown away
+// whole, frames and all).
+static LhatRunResult run_in_slices(TaskModule *module, LhatMachine *machine,
+                                   LhatRunResult ran)
+{
+    while (ran.status == LHAT_RUN_SUSPENDED && pool_running(module)) {
+        ran = lhat_machine_continue(machine);
+    }
+    return ran;
+}
+
 // One job, on this worker's machine. What the answer was is left on the
 // task; this says nothing.
 static void run_job(TaskModule *module, LhatMachine *machine, Task *task)
@@ -224,8 +254,9 @@ static void run_job(TaskModule *module, LhatMachine *machine, Task *task)
                 return;
             }
         }
-        ran = lhat_machine_call(machine, job, arguments,
-                                task->argument_count);
+        ran = run_in_slices(module, machine,
+                            lhat_machine_call(machine, job, arguments,
+                                              task->argument_count));
         lhat_free(arguments);
         if (ran.status != LHAT_RUN_OK) {
             task->status = ran.status;
@@ -246,7 +277,8 @@ static void run_job(TaskModule *module, LhatMachine *machine, Task *task)
     if (lhat_is_object_kind(job, LHAT_OBJECT_COROUTINE)) {
         void *waits = lhatstdlib_async_waits(module->program);
         for (;;) {
-            ran = lhat_machine_resume(machine, job, NULL, 0);
+            ran = run_in_slices(module, machine,
+                                lhat_machine_resume(machine, job, NULL, 0));
             if (ran.status != LHAT_RUN_OK ||
                 lhat_machine_coroutine_done(job)) {
                 break;
@@ -259,6 +291,10 @@ static void run_job(TaskModule *module, LhatMachine *machine, Task *task)
             // -1 says this machine armed no such wait, so the number was
             // not one: on it goes. 0 says not yet.
             while (lhatstdlib_async_take(waits, machine, id) == 0) {
+                if (!pool_running(module)) {
+                    task->status = LHAT_RUN_SUSPENDED;
+                    return;
+                }
                 // Short, because a push from another thread is not
                 // signalled -- the same reading std.async's own wait makes.
                 lhat_thread_sleep(2);
@@ -294,6 +330,9 @@ static int worker_main(void *raw)
         lhat_machine_dispose(machine);
         machine = NULL;
     }
+    // 02 の 15.15: in slices, so that a stop is answered even by a job that
+    // does nothing but spin.
+    lhat_machine_set_budget(machine, TASK_SLICE);
 
     for (;;) {
         lhat_mutex_lock(&module->lock);
@@ -313,8 +352,18 @@ static int worker_main(void *raw)
         } else {
             run_job(module, machine, task);
         }
+        // A job left standing (the pool was stopped under it) leaves frames
+        // on this machine, so the machine goes with it rather than taking
+        // another job on top.
+        bool left_standing = machine != NULL &&
+                             lhat_machine_is_suspended(machine);
         task_finished(task);
         task_let_go(task, NULL);  // the queue's hold
+        if (left_standing) {
+            lhat_machine_dispose(machine);
+            machine = NULL;
+            break;
+        }
     }
 
     if (machine != NULL) {

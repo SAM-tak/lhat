@@ -71,8 +71,13 @@ typedef enum {
                               // tuple and a t^{...} are different types, so
                               // converting between them is the program's
                               // word (pack^) and never the machine's
-    LHAT_RUN_PANIC            // 04 の 11.6: panic^, written by the program
+    LHAT_RUN_PANIC,           // 04 の 11.6: panic^, written by the program
                               // itself -- `value` is what it panicked with
+    // 02 の 15.15: the slice ran out. Not a fault: the body is standing
+    // exactly where it was and lhat_machine_continue takes it on. Answered
+    // only where a budget was set (lhat_machine_set_budget) and only by the
+    // outermost run.
+    LHAT_RUN_SUSPENDED
 } LhatRunStatus;
 
 typedef struct {
@@ -467,6 +472,31 @@ LhatRunResult lhat_run(LhatMachine *machine, const LhatProto *proto);
 // there is no self^ and no 'expr...' spread -- a host handing values over
 // already has them as a flat array.
 //
+// 02 の 15.15: how much of a run this machine does before handing control
+// back -- the slice a scheduler gives it. Counted in loop turns, which is
+// where every run that does not end passes: a backward jump. Straight-line
+// code is bounded by its own length and recursion by the frame limit, so
+// nothing runs unboundedly without passing one.
+//
+// 0 (what a machine is born with) is no budget at all: a run goes to its
+// end, as it always did, and the counter costs one compare per turn.
+//
+// When the slice runs out the run answers LHAT_RUN_SUSPENDED with its
+// frames standing. **Nothing else may be run on the machine then** --
+// lhat_machine_continue takes it on, or the machine is disposed of. A
+// nested run is never suspended: a host called back into L^, sort^'s
+// comparator and clone^'s policy each have their caller's C stack under
+// them, and roots on it, so those run to their end whatever the budget.
+void lhat_machine_set_budget(LhatMachine *machine, int64_t turns);
+
+// Takes on a run that answered LHAT_RUN_SUSPENDED, with a fresh slice.
+// Answers as the run it continues would have -- including SUSPENDED again.
+// A machine with nothing suspended answers LHAT_RUN_OK and nil^.
+LhatRunResult lhat_machine_continue(LhatMachine *machine);
+
+// Whether a run of this machine is standing suspended.
+bool lhat_machine_is_suspended(const LhatMachine *machine);
+
 // 02 の 15.5: a yieldable procedure answers its coroutine rather than
 // running, exactly as a compiled call does -- lua_newthread's shape at this
 // boundary. lhat_machine_resume below is what drives it.

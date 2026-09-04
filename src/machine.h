@@ -156,6 +156,18 @@ struct LhatMachine {
     // the faulting instruction, recorded by finish() and readable through
     // lhat_machine_fault_* until the next run resets the frames.
     size_t run_base;
+    // 02 の 15.15: the slice. `budget` is what a run starts with (0 = none,
+    // and then nothing is counted); `steps_left` is what is left of it, and
+    // is 0 for a nested run -- only the outermost may be taken off the
+    // processor. `running_depth` is how many run_frames are on the C stack,
+    // which is what tells the two apart. A run that ran out leaves
+    // `suspended` set with its frames standing and `suspended_base` saying
+    // where the run began, for lhat_machine_continue.
+    int64_t budget;
+    int64_t steps_left;
+    size_t running_depth;
+    size_t suspended_base;
+    bool suspended;
     size_t fault_base;
     size_t fault_depth;
     size_t fault_at;

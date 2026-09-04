@@ -23,8 +23,12 @@
 // reason for it.
 //
 // A JOB RUNS TO COMPLETION on the worker that took it. It never moves to
-// another, and nothing interrupts it -- a job that never ends holds its
-// worker for as long as it runs. Inside, `await^` works: the worker drives
+// another, and no other job of the pool runs on that worker while it does.
+// It is run in slices all the same (02 の 15.15), which is what lets a stop
+// through: a job that neither yields nor ends is put down between two of
+// them and its worker goes, machine and all.
+//
+// Inside a job, `await^` works: the worker drives
 // the coroutine and waits on std.async for whatever it yielded, so a job
 // may await a timer, a thread, or anything else a host completes. That
 // takes std.async registered on the program; without it a job that yields
