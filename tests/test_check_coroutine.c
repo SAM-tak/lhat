@@ -601,6 +601,46 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE);
     unit_dispose(&u);
 
+    // 15.4 with 15.8: what stands after return^ is a value, and these three
+    // are expressions -- so `return^ await^ f()` answers what f answered.
+    // It used to read as a return^ of nothing followed by a statement, and
+    // checked clean either way (a bare await^ is a statement too), so what
+    // pins it is the type the body was found to answer.
+    LHAT_TEST("15.8: return^ takes an await^ as its value");
+    check_text(&u,
+               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "var^ outer = p^ -> number^ { return^ await^ gen() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the type it answers is the awaited one's");
+    check_text(&u,
+               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "var^ outer = p^ -> string^ { return^ await^ gen() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // A yield^ there is read as the value too -- and so reaches 15.4's
+    // own rule, which is what the diagnostic says: what a resume sends
+    // has no type unless one is written where it is bound.
+    LHAT_TEST("a yield^ after return^ is read as its value");
+    check_text(&u,
+               "var^ outer = p^ -> number^ { return^ yield^ 1 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
+    unit_dispose(&u);
+
+    // 01 の 10.9 still draws the line at the end of the line: what is
+    // written on the next one is a statement, as it always was.
+    LHAT_TEST("but one on the next line is a statement of its own");
+    check_text(&u,
+               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "var^ outer = p^ {\n"
+               "    return^\n"
+               "    await^ gen()\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 15.8: the value of a delegation is the inner one's return value.
     LHAT_TEST("the value of await^ is the inner return type");
     check_text(&u,

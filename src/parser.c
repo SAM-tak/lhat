@@ -4400,13 +4400,23 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
     // whatever statement comes next, since an ordinary name begins an
     // expression just as well as it begins a statement.
     //
-    // 5.1 and 17.2: these two begin an expression as readily as a statement,
-    // and what stands after a jump is a value -- 15.12 writes the very same
-    // if^ expression as a body, so refusing it here made one spelling of an
+    // 5.1 and 17.2: these begin an expression as readily as a statement, and
+    // what stands after a jump is a value -- 15.12 writes the very same if^
+    // expression as a body, so refusing them here made one spelling of an
     // answer unwritable. The statement form written on this line is what
     // gives way; the next line still reads as it always did, which is where
     // a statement after a valueless jump belongs.
-    bool begins_expression_form = check_hat(p, "if") || check_hat(p, "for");
+    //
+    // 15.4 and 15.8 put the suspending three here for the same reason, and
+    // it is the reason they exist: yield^ answers what the resume sent and
+    // await^ answers the inner body's result, so `return^ await^ f()` is
+    // the plainest thing an async body writes. Left out, it read as a
+    // return^ of nothing followed by a statement -- and checked clean,
+    // since a bare await^ is a statement too (15.8).
+    bool begins_expression_form = check_hat(p, "if") || check_hat(p, "for") ||
+                                  check_hat(p, "yield") ||
+                                  check_hat(p, "_yield") ||
+                                  check_hat(p, "await");
     bool operand_follows =
         !p->current.preceded_by_newline &&
         ((starts_expression(&p->current) &&
