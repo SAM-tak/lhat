@@ -612,6 +612,30 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 129);
     run_dispose(&r);
 
+    LHAT_TEST("explicit selection survives further composition");
+    run_text(&r,
+             "let^ A = def^{ self^{}, m := f^self^ -> number^ { 1 } }\n"
+             "let^ B = def^{ self^{}, m := f^self^ -> number^ { 2 } }\n"
+             "let^ D = A .. B\n"
+             "let^ E = def^{ self^{}, only := f^self^ -> number^ { 9 } }\n"
+             "let^ F = E .. D .. def^{ self^{} }\n"
+             "let^ fromA = A.m\nlet^ fromB = B.m\nlet^ o = F.new()\n"
+             "return^ fromA(o) * 100 + fromB(o) * 10 + o.only()\n");
+    CHECK_INTEGER(&r, 129);
+    run_dispose(&r);
+
+    LHAT_TEST("one implementation satisfies both abstract requirements");
+    run_text(&r,
+             "let^ N = def^{ self^{ abstract^ n : number^|string^ },\n"
+             "  abstract^ m : f^self^ -> number^|string^; }\n"
+             "let^ S = def^{ self^{ abstract^ n : number^|bool^ },\n"
+             "  abstract^ m : f^self^ -> number^|bool^; }\n"
+             "let^ G = def^{ self^{ n := 7 },\n"
+             "  m := f^self^ -> number^ { self^.n } }\n"
+             "let^ D = (N .. S) .. G\nreturn^ D.new().m()\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
     // 14.2: the chain is settled at the definition, so an instance made
     // before a later definition is unaffected by it.
     LHAT_TEST("two definitions of the same shape stay separate");

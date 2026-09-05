@@ -4159,6 +4159,20 @@ const LhatTypeMember *chk_unimplemented_member(const LhatType *definition)
     return chk_hole_of(definition, NULL);
 }
 
+// Composition copies availability as well as the signature. In particular,
+// extending a definition cannot make an ambiguous name callable again.
+static LhatTypeMember *copy_member(Checker *c, LhatType *into,
+                                   const LhatTypeMember *from)
+{
+    LhatTypeMember *copy = set_member_marked(
+        c, into, from->name, from->name_length, from->type,
+        from->abstract, from->pending);
+    if (copy != NULL) {
+        copy->ambiguous = from->ambiguous;
+    }
+    return copy;
+}
+
 static void copy_members(Checker *c, LhatType *into, const LhatType *from)
 {
     if (from == NULL || from->kind != LHAT_TYPE_TABLE) {
@@ -4166,10 +4180,7 @@ static void copy_members(Checker *c, LhatType *into, const LhatType *from)
     }
     for (const LhatTypeMember *m = from->v.table.members; m != NULL;
          m = m->next) {
-        // 14.15: a hole in the base is a hole in what is composed onto it
-        // until something fills it, and 14.15改's wait carries over too.
-        set_member_marked(c, into, m->name, m->name_length, m->type,
-                          m->abstract, m->pending);
+        copy_member(c, into, m);
     }
 }
 
@@ -4534,6 +4545,11 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
         return replacement;
     }
 
+    if (inherited->ambiguous) {
+        chk_report(c, entry, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER);
+        return replacement;
+    }
+
     // 14.15: a declaration is not a definition of the member, so filling it
     // in is not the collision 14.12 is about -- no marker is wanted. What the
     // declaration does ask is that the value fit the type it wrote.
@@ -4594,121 +4610,100 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
     return replacement;
 }
 
-// 14.5: composition where the right side is a name rather than a def^ literal.
-// The literal form is infer_def, which reads the entries and so can see
-// 14.12's markers. A name carries only its type, and the markers that made it
-// went with its own base -- nothing in it was written against this left side.
-//
-// So a name shared between the two is the plain collision 14.12 refuses, and
-// there is no marker to lift it. It is reported at the '..', which is where
-// the writer brought them together.
-//
-// The compiler flattens the same chain through the def^ registry (14.2), so
-// what this builds has to agree with that: every member of both sides.
+// Merge one name from an independently written definition. A field has no
+// qualified access to fall back to; a shared member does, so only the field
+// collision rejects the composition itself.
+static void compose_member(Checker *c, const LhatNode *node, LhatType *into,
+                           const LhatTypeMember *right, bool field)
+{
+    LhatTypeMember *left = (LhatTypeMember *)lhat_type_own_member(
+        into, right->name, right->name_length);
+    if (left == NULL) {
+        copy_member(c, into, right);
+        return;
+    }
+    if (left->ambiguous || right->ambiguous) {
+        // Neither an abstract requirement nor a pending override can choose
+        // a provider from an ambiguous name. Keep any unmet requirement open.
+        if (right->abstract) {
+            left->type = left->abstract
+                ? lhat_type_intersect(c->result->types, left->type, right->type)
+                : right->type;
+        }
+        left->abstract = left->abstract || right->abstract;
+        left->pending = left->pending || right->pending;
+        left->ambiguous = true;
+        return;
+    }
+    if (left->abstract && right->abstract) {
+        // Both requirements survive, independent of the order of the parts.
+        left->type = lhat_type_intersect(c->result->types, left->type,
+                                        right->type);
+        return;
+    }
+    if (left->abstract || right->abstract) {
+        const LhatTypeMember *need = left->abstract ? left : right;
+        const LhatTypeMember *give = left->abstract ? right : left;
+        if (!lhat_type_conforms(give->type, need->type)) {
+            chk_report_named(c, node, LHAT_CHECK_ERR_MISMATCH,
+                             right->name, right->name_length);
+        }
+        copy_member(c, into, give);
+        return;
+    }
+    if (right->pending) {
+        if (!lhat_type_conforms(right->type, left->type)) {
+            chk_report_named(c, node, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,
+                             right->name, right->name_length);
+        }
+        bool pending = left->pending;
+        LhatTypeMember *written = copy_member(c, into, right);
+        if (written != NULL) {
+            written->pending = pending;
+        }
+    } else if (field) {
+        chk_report_named(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES,
+                         right->name, right->name_length);
+    } else {
+        mark_ambiguous(into, right->name, right->name_length);
+    }
+}
+
+// 14.5: a name on the right brings its type and any pending requirements.
+// Unlike a literal, it was not written against this left side. The compiler
+// flattens the same parts, so the type must preserve every unresolved name.
 LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
                                   LhatType *left, LhatType *right)
 {
     LhatType *definition = lhat_type_table(c->result->types);
     LhatType *instance = lhat_type_table(c->result->types);
     definition->v.table.is_definition = true;
-    definition->v.table.instance = instance;  // 14.7改
+    definition->v.table.instance = instance;  // 14.7
     definition->v.table.from_definition = true;
     instance->v.table.from_definition = true;
 
-    const LhatType *left_instance = chk_instance_of(left);
-    const LhatType *right_instance = chk_instance_of(right);
-
-    // new is on both sides whether or not either wrote one (14.11), so it
-    // would collide every time. It is rebuilt at the end instead.
-    for (const LhatTypeMember *m = left->v.table.members; m != NULL;
-         m = m->next) {
-        if (chk_name_is(m->name, m->name_length, "new")) {
-            continue;
-        }
-        set_member_marked(c, definition, m->name, m->name_length, m->type,
-                          m->abstract, m->pending);
-    }
-    if (left_instance != NULL) {
-        for (const LhatTypeMember *m = left_instance->v.table.members;
-             m != NULL; m = m->next) {
-            set_member_marked(c, instance, m->name, m->name_length, m->type,
-                              m->abstract, m->pending);
-        }
-    }
-
+    copy_members(c, definition, left);
+    copy_members(c, instance, chk_instance_of(left));
     for (const LhatTypeMember *m = right->v.table.members; m != NULL;
          m = m->next) {
-        if (chk_name_is(m->name, m->name_length, "new")) {
-            continue;
+        // Every definition has new; it is rebuilt for the composed instance.
+        if (!chk_name_is(m->name, m->name_length, "new")) {
+            compose_member(c, node, definition, m, false);
         }
-        // 14.15: one side declaring what the other provides is the pairing
-        // the declaration exists for, and neither order is a collision. What
-        // is provided wins; the hole stays open only while both leave it so.
-        const LhatTypeMember *held =
-            chk_find_member(definition, m->name, m->name_length);
-        if (held != NULL && (held->abstract || m->abstract)) {
-            if (m->abstract) {
-                continue;  // what is already there is the better answer
-            }
-        } else if (held != NULL && m->pending) {
-            // 14.15改: this is what the pending override^ was waiting for.
-            // 14.12's check is the one it would have had at the def^, run
-            // here instead because here is where the two finally meet.
-            if (!lhat_type_conforms(m->type, held->type)) {
-                chk_report(c, node, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
-            }
-            // Unless what it landed on is waiting too -- stacking two mixins
-            // settles neither, and the chain still wants something under
-            // them both.
-            set_member_marked(c, definition, m->name, m->name_length, m->type,
-                              false, held->pending);
-            continue;
-        } else if (held != NULL) {
-            // 14.5改: neither side was written against the other, so neither
-            // is the answer. The name stops being reachable through the
-            // composition; what each side wrote is still reachable through
-            // that side, which 14.4 already spells 'let^ f = A.m'.
-            mark_ambiguous(definition, m->name, m->name_length);
-            continue;
-        }
-        set_member_marked(c, definition, m->name, m->name_length, m->type,
-                          m->abstract, m->pending);
     }
+    const LhatType *right_instance = chk_instance_of(right);
     if (right_instance != NULL) {
         for (const LhatTypeMember *m = right_instance->v.table.members;
              m != NULL; m = m->next) {
-            const LhatTypeMember *held =
-                chk_find_member(instance, m->name, m->name_length);
-            if (held != NULL && (held->abstract || m->abstract)) {
-                if (m->abstract) {
-                    continue;
-                }
-            } else if (held != NULL && m->pending) {
-                // The definition side settled it, and reported anything
-                // there was to chk_report (14.7 puts a method in both).
-                set_member_marked(c, instance, m->name, m->name_length,
-                                  m->type, false, held->pending);
-                continue;
-            } else if (held != NULL) {
-                // A method sits in both tables (14.7), and the definition
-                // side settled it -- mirror that here.
-                const LhatTypeMember *shared =
-                    chk_find_member(definition, m->name, m->name_length);
-                if (shared != NULL && shared->ambiguous) {
-                    mark_ambiguous(instance, m->name, m->name_length);
-                    continue;
-                }
-                if (shared == NULL) {
-                    // 14.5改: a field is the one that stays an error. A method
-                    // is shared, so 14.4 can still reach either side's; a
-                    // field is per-instance and the flattened table holds one,
-                    // so dropping it would leave both sides' methods reading
-                    // nothing. There is no qualified form to fall back to.
-                    chk_report(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
-                }
+            const LhatTypeMember *shared =
+                lhat_type_own_member(definition, m->name, m->name_length);
+            if (shared != NULL && member_takes_receiver(m->type)) {
+                // A method is in both tables. Mirror the result rather than
+                // checking it twice and reporting the same mismatch twice.
+                copy_member(c, instance, shared);
+            } else {
+                compose_member(c, node, instance, m, true);
             }
-            set_member_marked(c, instance, m->name, m->name_length, m->type,
-                              m->abstract, m->pending);
         }
     }
 
@@ -4949,14 +4944,20 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             if (!chk_node_name(c, field->v.entry.key, &name, &length)) {
                 continue;
             }
+            const LhatTypeMember *required =
+                lhat_type_own_member(instance, name, length);
             // 14.15: a field the composition has to provide carries its type
             // and no value -- and so no key on the prototype.
             if (field->v.entry.declared) {
+                LhatType *declared =
+                    chk_resolve_type(c, field->v.entry.value);
+                if (required != NULL && required->abstract) {
+                    declared = lhat_type_intersect(c->result->types,
+                                                  required->type, declared);
+                }
                 chk_member_declared_at(
                     c,
-                    set_member_as(c, instance, name, length,
-                                  chk_resolve_type(c, field->v.entry.value),
-                                  true),
+                    set_member_as(c, instance, name, length, declared, true),
                     field->v.entry.key);
                 continue;
             }
@@ -4973,6 +4974,10 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             if (written != NULL) {
                 chk_expect(c, field->v.entry.value, actual, written,
                            LHAT_CHECK_ERR_MISMATCH);
+            }
+            if (required != NULL && required->abstract) {
+                chk_expect(c, field, written != NULL ? written : actual,
+                           required->type, LHAT_CHECK_ERR_MISMATCH);
             }
             // 14.11: the value goes on the prototype and every instance
             // starts as a copy of it, so it has to be a leaf nothing can
@@ -5066,6 +5071,10 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 if (hidden != NULL && !hidden->abstract) {
                     // Already provided, so the declaration asks for nothing.
                     chk_report(c, entry, LHAT_CHECK_ERR_ALREADY_PROVIDED);
+                }
+                if (hidden != NULL && hidden->abstract) {
+                    declared = lhat_type_intersect(c->result->types,
+                                                  hidden->type, declared);
                 }
                 // 14.15改2: and the composition is where it is provided.
                 // Writing the value here as well leaves the declaration
@@ -6107,4 +6116,3 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 }
-

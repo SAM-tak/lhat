@@ -144,7 +144,7 @@ typedef struct LhatTypeMember {
     // second pass writes the inferred type over it. 14.12's "a second member
     // of this name needs a marker" reads the members to find what was already
     // there, and one of these was not -- so that question skips them. The
-    // relations do not read this, as with the three above.
+    // relations do not read this.
     bool provisional;
 
 #if LHAT_WITH_RESOLUTIONS

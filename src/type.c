@@ -1132,9 +1132,15 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             // structure at all.
             for (const LhatTypeMember *want = target->v.table.members;
                  want != NULL; want = want->next) {
+                // An ambiguous name is not part of the usable shape. Keeping
+                // its diagnostic marker must not turn it into a requirement,
+                // or let an ambiguous provider satisfy an ordinary one.
+                if (want->ambiguous) {
+                    continue;
+                }
                 const LhatTypeMember *have =
                     find_member(value, want);
-                if (have == NULL ||
+                if (have == NULL || have->ambiguous ||
                     !conforms_in(have->type, want->type, seen)) {
                     return false;
                 }

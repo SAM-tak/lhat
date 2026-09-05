@@ -856,11 +856,46 @@ static void test_writing_whole(void)
     types_dispose(&t);
 }
 
+static void test_ambiguous_shapes(void)
+{
+    Types t;
+    types_init(&t);
+    LhatType *number = simple(&t, LHAT_TYPE_NUMBER);
+    LhatType *shape = table2(&t, "m", number, "value", number);
+    LhatTypeMember *member =
+        (LhatTypeMember *)lhat_type_own_member(shape, "m", 1);
+    member->ambiguous = true;
+
+    LHAT_TEST("an ambiguous provider cannot satisfy a usable member");
+    LHAT_CHECK(!lhat_type_conforms(shape, table1(&t, "m", number)),
+               "the unavailable name must not satisfy the requirement");
+
+    LHAT_TEST("an ambiguous target name imposes no usable-member requirement");
+    LHAT_CHECK(lhat_type_conforms(table1(&t, "value", number), shape),
+               "only the accessible field is required");
+    LHAT_CHECK(!lhat_type_conforms(table0(&t), shape),
+               "accessible requirements must still be checked");
+    LHAT_CHECK(lhat_type_conforms(shape, shape),
+               "ambiguity must not break reflexivity");
+
+    LHAT_TEST("ambiguity remains unavailable through a composite type");
+    LhatType *wanted = table1(&t, "m", number);
+    LhatType *extra = table1(&t, "extra", number);
+    LHAT_CHECK(!lhat_type_conforms(
+                   lhat_type_intersect(&t.arena, shape, extra), wanted),
+               "an unrelated intersection arm cannot supply the missing name");
+    LHAT_CHECK(!lhat_type_conforms(
+                   lhat_type_union(&t.arena, shape, wanted), wanted),
+               "every union arm must supply the name");
+    types_dispose(&t);
+}
+
 int main(void)
 {
     test_primitives();
     test_writing_whole();
     test_structures();
+    test_ambiguous_shapes();
     test_composites();
     test_functions();
     test_writing_parentheses();

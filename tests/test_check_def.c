@@ -1905,10 +1905,195 @@ static void test_delegate(void)
     unit_dispose(&u);
 }
 
+static void test_composition_availability(void)
+{
+    const char *parts =
+        "let^ A = def^{ self^{}, m := f^self^ -> number^ { 1 },\n"
+        "  s := f^ -> number^ { 1 } }\n"
+        "let^ B = def^{ self^{}, m := f^self^ -> number^ { 2 },\n"
+        "  s := f^ -> number^ { 2 } }\n"
+        "let^ D = A .. B\n"
+        "let^ E = def^{ self^{}, only := f^self^ -> number^ { 9 } }\n";
+    const char *extensions[] = {
+        "D .. E", "E .. D", "D .. def^{ self^{} }",
+        "(E .. D) .. def^{ self^{} }"
+    };
+    const char *accesses[] = { "F.s()", "F.m", "F.new().m()" };
+    char source[2048];
+    char label[256];
+    Unit u;
+    for (int relaxed = 0; relaxed < 2; relaxed++) {
+        void (*check)(Unit *, const char *) =
+            relaxed ? check_relaxed_text : check_text;
+        for (size_t i = 0; i < sizeof extensions / sizeof *extensions; i++) {
+            for (size_t j = 0; j < sizeof accesses / sizeof *accesses; j++) {
+                snprintf(label, sizeof label, "ambiguity survives %s: %s (%d)",
+                         extensions[i], accesses[j], relaxed);
+                LHAT_TEST(label);
+                snprintf(source, sizeof source,
+                         "%slet^ F = %s\nreturn^ %s\n",
+                         parts, extensions[i], accesses[j]);
+                check(&u, source);
+                CHECK_REPORTS(&u, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER);
+                unit_dispose(&u);
+            }
+            LHAT_TEST("extending an ambiguous definition still allows explicit selection");
+            snprintf(source, sizeof source,
+                     "%slet^ F = %s\nlet^ fromA = A.m\nlet^ fromB = B.m\n"
+                     "let^ o = F.new()\nreturn^ fromA(o) + fromB(o)\n",
+                     parts, extensions[i]);
+            check(&u, source);
+            CHECK_CLEAN(&u);
+            unit_dispose(&u);
+        }
+
+        const char *bypasses[] = {
+            "let^ o : t^{ m : f^self^ -> number^; } = D.new()\n",
+            "let^ take = f^o:t^{ m : f^self^ -> number^; } { o.m() }\n"
+            "take(D.new())\n",
+            "let^ d : t^{ s : f^ -> number^; } = D\n",
+            "let^ take = f^d:t^{ s : f^ -> number^; } { d.s() }\n"
+            "take(D)\n"
+        };
+        for (size_t i = 0; i < sizeof bypasses / sizeof *bypasses; i++) {
+            LHAT_TEST("a structural annotation cannot expose an ambiguous member");
+            snprintf(source, sizeof source, "%s%s", parts, bypasses[i]);
+            check(&u, source);
+            CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+            unit_dispose(&u);
+        }
+
+        const char *orders[] = { "D .. Need", "Need .. D" };
+        for (size_t i = 0; i < sizeof orders / sizeof *orders; i++) {
+            LHAT_TEST("an ambiguous member does not fulfill an abstract requirement");
+            snprintf(source, sizeof source,
+                     "%slet^ Need = def^{ self^{}, "
+                     "abstract^ m : f^self^ -> number^; }\n"
+                     "let^ F = %s\nlet^ o = F.new()\n", parts, orders[i]);
+            check(&u, source);
+            CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
+            unit_dispose(&u);
+        }
+    }
+}
+
+static void test_composition_requirements(void)
+{
+    // The provider must satisfy both declarations, even when each alone
+    // accepts a different extra type. Fields and both forms of member obey
+    // the same rule; a literal extension must preserve the requirements too.
+    const char *declarations[] = {
+        "def^{ self^{}, abstract^ m : f^ -> %s; }",
+        "def^{ self^{}, abstract^ m : f^self^ -> %s; }",
+        "def^{ self^{ abstract^ m : %s } }"
+    };
+    const char *providers[] = {
+        "def^{ self^{}, m := f^ -> %s { %s } }",
+        "def^{ self^{}, m := f^self^ -> %s { %s } }",
+        "def^{ self^{ m : %s = %s } }"
+    };
+    const char *orders[] = {
+        "(N .. S) .. G", "(S .. N) .. G",
+        "G .. (N .. S)", "G .. (S .. N)",
+        "N .. G .. S", "S .. G .. N",
+        "(N .. S) .. %s", "(S .. N) .. %s"
+    };
+    const char *types[] = { "number^", "string^", "bool^" };
+    const char *values[] = { "1", "\"x\"", "true^" };
+    char need[256], second[256], give[256], composition[512];
+    char source[2048], label[256];
+    Unit u;
+    for (int relaxed = 0; relaxed < 2; relaxed++) {
+        void (*check)(Unit *, const char *) =
+            relaxed ? check_relaxed_text : check_text;
+        for (size_t kind = 0; kind < 3; kind++) {
+            snprintf(need, sizeof need, declarations[kind], "number^|string^");
+            snprintf(second, sizeof second, declarations[kind], "number^|bool^");
+            for (size_t value = 0; value < 3; value++) {
+                snprintf(give, sizeof give, providers[kind],
+                         types[value], values[value]);
+                for (size_t order = 0; order < sizeof orders / sizeof *orders;
+                     order++) {
+                    snprintf(composition, sizeof composition, orders[order], give);
+                    snprintf(label, sizeof label,
+                             "all abstract requirements: kind %zu, value %zu, order %zu (%d)",
+                             kind, value, order, relaxed);
+                    LHAT_TEST(label);
+                    snprintf(source, sizeof source,
+                             "let^ N = %s\nlet^ S = %s\nlet^ G = %s\n"
+                             "let^ D = %s\nlet^ o = D.new()\n",
+                             need, second, give, composition);
+                    check(&u, source);
+                    if (value == 0) {
+                        CHECK_CLEAN(&u);
+                    } else {
+                        CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+                    }
+                    unit_dispose(&u);
+                }
+            }
+            LHAT_TEST("two declarations remain valid composition material");
+            snprintf(source, sizeof source,
+                     "let^ N = %s\nlet^ S = %s\nlet^ D = N .. S\n",
+                     need, second);
+            check(&u, source);
+            CHECK_CLEAN(&u);
+            unit_dispose(&u);
+
+            LHAT_TEST("two declarations cannot construct without a provider");
+            strcat(source, "let^ o = D.new()\n");
+            check(&u, source);
+            CHECK_REPORTS(&u, kind == 2 ? LHAT_CHECK_ERR_FIELD_UNPROVIDED
+                                       : LHAT_CHECK_ERR_STILL_ABSTRACT);
+            unit_dispose(&u);
+
+            snprintf(need, sizeof need, declarations[kind], "number^");
+            for (size_t value = 0; value < 2; value++) {
+                snprintf(give, sizeof give, providers[kind],
+                         types[value], values[value]);
+                const char *pairs[] = { "N .. G", "G .. N" };
+                for (size_t order = 0; order < 2; order++) {
+                    LHAT_TEST("a named provider is checked against a single declaration");
+                    snprintf(source, sizeof source,
+                             "let^ N = %s\nlet^ G = %s\nlet^ D = %s\n",
+                             need, give, pairs[order]);
+                    check(&u, source);
+                    if (value == 0) {
+                        CHECK_CLEAN(&u);
+                    } else {
+                        CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+                        LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 1);
+                    }
+                    unit_dispose(&u);
+                }
+            }
+        }
+
+        LHAT_TEST("abstract conformance allows wider arguments and narrower results");
+        check(&u,
+              "let^ Need = def^{ abstract^ m : f^number^ -> number^|nil^; }\n"
+              "let^ Give = def^{ m := f^x:number^|string^ -> number^ { 1 } }\n"
+              "let^ A = Need .. Give\nlet^ B = Give .. Need\n"
+              "return^ A.m(1) + B.m(\"x\")\n");
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+
+        LHAT_TEST("abstract conformance rejects a provider with narrower arguments");
+        check(&u,
+              "let^ Need = def^{ abstract^ m : f^number^|string^ -> number^; }\n"
+              "let^ Give = def^{ m := f^x:number^ -> number^ { x } }\n"
+              "let^ A = Need .. Give\n");
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+        unit_dispose(&u);
+    }
+}
+
 int main(void)
 {
     test_definitions();
     test_composition();
+    test_composition_availability();
+    test_composition_requirements();
     test_typeof();
     test_field_types();
     test_new_fills_fields();
