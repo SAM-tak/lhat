@@ -726,6 +726,26 @@ static bool is_error_type(const LhatType *type)
            type->kind == LHAT_TYPE_ERROR_KIND;
 }
 
+bool lhat_type_carries_error(const LhatType *type)
+{
+    if (type == NULL) {
+        return false;
+    }
+    if (is_error_type(type)) {
+        return true;
+    }
+    if (type->kind != LHAT_TYPE_UNION) {
+        return false;
+    }
+    for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+         arm = arm->next) {
+        if (arm->type != NULL && is_error_type(arm->type)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool is_enum_type(const LhatType *type)
 {
     return type->kind == LHAT_TYPE_ENUM ||

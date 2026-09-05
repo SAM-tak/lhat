@@ -441,6 +441,16 @@ void chk_check_define(Checker *c, const LhatNode *node)
         const char *name = NULL;
         size_t length = 0;
         LhatType *held = annotated != NULL ? annotated : actual;
+        // 04 の 8.3: '_^' throws a value away, and a failure is not one of
+        // the things it may throw. 4.4 already said so -- "no spelling of
+        // its own for dropping an error; catch^ is how it is written, and
+        // Go's '_' is not needed" -- and this is that sentence enforced.
+        // The same line Zig draws: a value may be discarded, an error may
+        // not, and saying so is what catch^ is for.
+        if (chk_is_discard(c, target_name_node(target)) &&
+            lhat_type_carries_error(held)) {
+            chk_report(c, target, LHAT_CHECK_ERR_ERROR_DROPPED);
+        }
         // 03 の 3.1③: strict leaves nothing undecided in a unit. A gap that
         // reached here came through whatever the value was inferred from, so
         // this name would hold something nobody decided and hand that on to
@@ -2343,6 +2353,16 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             if (value != NULL && value->kind == LHAT_TYPE_CORO &&
                 node != c->answering) {
                 chk_report(c, node, LHAT_CHECK_ERR_COROUTINE_DROPPED);
+            }
+            // 04 の 8.3: and the answer's failure goes with the answer. 8.1
+            // reads the type as the detection -- "handle the error or you
+            // cannot use the value" -- which holds wherever the value is
+            // WANTED. A statement wants none, so nothing was stopping this,
+            // and 8.2's "L^ has no ignorable err" came back by the other
+            // door: not a second value beside the first, but the first one
+            // thrown away. The same door Zig shuts.
+            if (lhat_type_carries_error(value) && node != c->answering) {
+                chk_report(c, node, LHAT_CHECK_ERR_ERROR_DROPPED);
             }
             break;
         }

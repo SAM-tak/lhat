@@ -3800,6 +3800,10 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "override^ has to be usable where the original was";
         case LHAT_CHECK_ERR_OVERLOAD_OVERLAPS:
             return "overload^ overlaps an existing signature";
+        case LHAT_CHECK_ERR_ERROR_DROPPED:
+            return "this can fail, and dropping the answer drops the failure "
+                   "with it; write try^ to hand it back, catch^ to answer "
+                   "instead, or a name to bind it and narrow";
         case LHAT_CHECK_ERR_DISCARD_READ:
             return "'_^' throws the value away, so it is not a name and there "
                    "is nothing here to read; write a name where the value is "

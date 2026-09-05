@@ -88,6 +88,8 @@ typedef enum {
     LHAT_CHECK_ERR_NOT_DISPOSABLE,      // 12.5: with^ needs a dispose()
     LHAT_CHECK_ERR_DISCARD_READ,        // 13.12: '_^' is not a name, so there
                                         // is nothing there to read back
+    LHAT_CHECK_ERR_ERROR_DROPPED,       // 04 の 8.3: the answer carries a
+                                        // failure and nothing was done with it
 
     LHAT_CHECK_ERR_MEMBER_EXISTS,       // 14.12: same name, no marker
     LHAT_CHECK_ERR_COMPOSE_COLLIDES,    // 14.5: and no marker can be written

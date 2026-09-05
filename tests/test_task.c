@@ -39,7 +39,7 @@ static void test_the_sketch(void)
             "import^ std.task\n"
             "let^ gen1 = p^ { yield^ 0 return^ 40 }\n"
             "let^ gen2 = p^ { yield^ 0 return^ 2 }\n"
-            "std.task.start(2)\n"
+            "std.task.start(2) catch^ panic^ it^\n"
             "let^ t1 = std.task.async(gen1())\n"
             "let^ t2 = std.task.async(gen2())\n"
             "var^ n = 0\n"
@@ -61,13 +61,13 @@ static void test_the_sketch(void)
     {
         LhatTestRan ran = run_source(
             "import^ std.task\n"
-            "std.task.start(2)\n"
+            "std.task.start(2) catch^ panic^ it^\n"
             "let^ t = std.task.async(p^ ... {\n"
             "    let^ a = ...[1]\n"
             "    let^ b = ...[2]\n"
             "    if^ a fits^ number^ and^ b fits^ number^ { return^ a * b }\n"
             "    return^ 0\n"
-            "}, 6, 7)\n"
+            "}, 6, 7) catch^ panic^ it^\n"
             "var^ n = 0\n"
             "if^ t fits^ std.task.Task {\n"
             "    let^ got = std.task.await(t)\n"
@@ -85,7 +85,7 @@ static void test_the_sketch(void)
     {
         LhatTestRan ran = run_source(
             "import^ std.task\n"
-            "std.task.start(1)\n"
+            "std.task.start(1) catch^ panic^ it^\n"
             "let^ scale = 5\n"
             "let^ job = p^ n:number^ { yield^ 0 return^ { got = n * scale } }\n"
             "let^ t = std.task.async(job(8))\n"
@@ -112,7 +112,7 @@ static void test_side_by_side(void)
         LhatTestRan ran = run_source(
             "import^ std.task\n"
             "import^ std.async\n"
-            "std.task.start(4)\n"
+            "std.task.start(4) catch^ panic^ it^\n"
             "let^ slow = p^ { yield^ std.async.timer(0.06) return^ 1 }\n"
             "var^ tasks : t^{std.task.Task[]} = {}\n"
             "for^ i from^ 1 to^ 8 {\n"
@@ -145,7 +145,7 @@ static void test_side_by_side(void)
         LhatTestRan ran = run_source(
             "import^ std.task\n"
             "import^ std.async\n"
-            "std.task.start(1)\n"
+            "std.task.start(1) catch^ panic^ it^\n"
             "let^ slow = p^ { yield^ std.async.timer(0.06) return^ 1 }\n"
             "var^ tasks : t^{std.task.Task[]} = {}\n"
             "for^ i from^ 1 to^ 8 {\n"
@@ -176,12 +176,12 @@ static void test_side_by_side(void)
         LhatTestRan ran = run_source(
             "import^ std.task\n"
             "import^ std.async\n"
-            "std.task.start(1)\n"
+            "std.task.start(1) catch^ panic^ it^\n"
             // 15.5: spin has no yield^, so the closure itself is the job --
             // spin() would run here and never come back.
             "let^ spin = p^ ... { var^ i = 0 repeat^ { i += 1 } }\n"
             "let^ waits = p^ { yield^ std.async.timer(0.05) return^ 7 }\n"
-            "std.task.async(spin)\n"
+            "std.task.async(spin) catch^ panic^ it^\n"
             "let^ t = std.task.async(waits())\n"
             "var^ n = 0\n"
             "if^ t fits^ std.task.Task {\n"
@@ -202,7 +202,7 @@ static void test_side_by_side(void)
         LhatTestRan ran = run_source(
             "import^ std.task\n"
             "import^ std.async\n"
-            "std.task.start(2)\n"
+            "std.task.start(2) catch^ panic^ it^\n"
             "let^ job = p^ {\n"
             "    let^ began = std.async.pending()\n"
             "    yield^ std.async.timer(0.05)\n"
@@ -230,7 +230,7 @@ static void test_answers(void)
     {
         LhatTestRan ran = run_source(
             "import^ std.task\n"
-            "std.task.start(1)\n"
+            "std.task.start(1) catch^ panic^ it^\n"
             "let^ t = std.task.async(p^ ... { panic^ \"boom\" })\n"
             "var^ said = \"nothing\"\n"
             "if^ t fits^ std.task.Task {\n"
@@ -256,7 +256,7 @@ static void test_answers(void)
     {
         LhatTestRan ran = run_source(
             "import^ std.task\n"
-            "std.task.start(1)\n"
+            "std.task.start(1) catch^ panic^ it^\n"
             "let^ gen = p^ { yield^ 1 yield^ 2 }\n"
             "let^ started = gen()\n"
             "started.start()\n"
@@ -293,7 +293,7 @@ static void test_answers(void)
             "std.task.stop()\n"
             "if^ std.task.workers() = 0 { n += 100 }\n"
             // Starting again is a fresh pool.
-            "std.task.start(1)\n"
+            "std.task.start(1) catch^ panic^ it^\n"
             "if^ std.task.workers() = 1 { n += 1000 }\n"
             "std.task.stop()\n"
             "return^ n\n");
@@ -307,7 +307,7 @@ static void test_answers(void)
         LhatTestRan ran = run_source(
             "import^ std.task\n"
             "import^ std.async\n"
-            "std.task.start(1)\n"
+            "std.task.start(1) catch^ panic^ it^\n"
             "let^ t = std.task.async(p^ ... { return^ 5 })\n"
             "var^ n = 0\n"
             "if^ t fits^ std.task.Task {\n"
@@ -340,12 +340,12 @@ static void test_task_crosses(void)
             with_channel, 3,
             "import^ std.task\n"
             "import^ std.channel\n"
-            "std.task.start(2)\n"
+            "std.task.start(2) catch^ panic^ it^\n"
             "let^ c = std.channel.new()\n"
             "var^ n = 0\n"
             "if^ c fits^ std.channel.Channel {\n"
             "    let^ first = std.task.async(p^ ... { return^ 20 })\n"
-            "    if^ first fits^ std.task.Task { c.push(first) }\n"
+            "    if^ first fits^ std.task.Task { c.push(first) catch^ nil^ }\n"
             // The second job takes the first's handle through the channel
             // and awaits it there.
             "    let^ second = std.task.async(p^ ... {\n"
@@ -359,7 +359,7 @@ static void test_task_crosses(void)
             "            }\n"
             "        }\n"
             "        return^ 0\n"
-            "    }, c)\n"
+            "    }, c) catch^ panic^ it^\n"
             "    if^ second fits^ std.task.Task {\n"
             "        let^ got = std.task.await(second)\n"
             "        if^ got fits^ number^ { n := got }\n"
@@ -390,7 +390,7 @@ static void test_channel_without_holding(void)
             "import^ std.task\n"
             "import^ std.async\n"
             "import^ std.channel\n"
-            "std.task.start(1)\n"
+            "std.task.start(1) catch^ panic^ it^\n"
             "let^ c = std.channel.new()\n"
             "var^ n = -1\n"
             "if^ c fits^ std.channel.Channel {\n"
@@ -410,11 +410,11 @@ static void test_channel_without_holding(void)
             // up.
             "    let^ feed = p^ mine:std.channel.Channel {\n"
             "        yield^ std.async.timer(0.03)\n"
-            "        mine.push(41)\n"
+            "        mine.push(41) catch^ nil^\n"
             "        return^ 1\n"
             "    }\n"
             "    let^ eater = std.task.async(eat(c))\n"
-            "    std.task.async(feed(c))\n"
+            "    std.task.async(feed(c)) catch^ panic^ it^\n"
             "    if^ eater fits^ std.task.Task {\n"
             "        let^ got = std.task.await(eater)\n"
             "        if^ got fits^ number^ { n := got }\n"
@@ -436,7 +436,7 @@ static void test_channel_without_holding(void)
             "import^ std.task\n"
             "import^ std.async\n"
             "import^ std.channel\n"
-            "std.task.start(1)\n"
+            "std.task.start(1) catch^ panic^ it^\n"
             "let^ c = std.channel.new()\n"
             "var^ n = -1\n"
             "if^ c fits^ std.channel.Channel {\n"
@@ -447,11 +447,11 @@ static void test_channel_without_holding(void)
             "    }\n"
             "    let^ feed = p^ mine:std.channel.Channel {\n"
             "        yield^ std.async.timer(0.03)\n"
-            "        mine.push(41)\n"
+            "        mine.push(41) catch^ nil^\n"
             "        return^ 1\n"
             "    }\n"
             "    let^ eater = std.task.async(eat(c))\n"
-            "    std.task.async(feed(c))\n"
+            "    std.task.async(feed(c)) catch^ panic^ it^\n"
             "    if^ eater fits^ std.task.Task {\n"
             "        let^ got = std.task.await(eater)\n"
             "        if^ got fits^ number^ { n := got }\n"
@@ -472,12 +472,12 @@ static void test_channel_without_holding(void)
             "import^ std.task\n"
             "import^ std.async\n"
             "import^ std.channel\n"
-            "std.task.start(1)\n"
+            "std.task.start(1) catch^ panic^ it^\n"
             "let^ c = std.channel.new()\n"
             "var^ n = -1\n"
             "if^ c fits^ std.channel.Channel {\n"
-            "    c.push(6)\n"
-            "    c.push(7)\n"
+            "    c.push(6) catch^ nil^\n"
+            "    c.push(7) catch^ nil^\n"
             "    let^ eat = p^ mine:std.channel.Channel {\n"
             "        let^ a = await^ mine.take()\n"
             "        let^ b = await^ mine.take()\n"
@@ -507,7 +507,7 @@ static void test_channel_without_holding(void)
             "let^ c = std.channel.new()\n"
             "var^ n = -1\n"
             "if^ c fits^ std.channel.Channel {\n"
-            "    c.push(1)\n"
+            "    c.push(1) catch^ nil^\n"
             "    n := c.awaitable()\n"
             "}\n"
             "return^ n\n");
@@ -526,11 +526,11 @@ static void test_runaway(void)
         int64_t before = lhat_now_ms();
         LhatTestRan ran = run_source(
             "import^ std.task\n"
-            "std.task.start(2)\n"
+            "std.task.start(2) catch^ panic^ it^\n"
             // Two of them, so both workers are held.
             "let^ spin = p^ ... { var^ n = 0 repeat^ { n := n + 1 } }\n"
-            "std.task.async(spin)\n"
-            "std.task.async(spin)\n"
+            "std.task.async(spin) catch^ panic^ it^\n"
+            "std.task.async(spin) catch^ panic^ it^\n"
             // What is asked here is only that the stop comes back at all.
             "std.task.stop()\n"
             "return^ std.task.workers()\n");

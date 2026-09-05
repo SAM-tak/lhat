@@ -2614,6 +2614,88 @@ static void test_a_written_definition_is_one(void)
 }
 #endif
 
+// 04 の 8.3: a failure is not a thing to drop.
+//
+// 8.1 read the type itself as the detection -- handle the error or you
+// cannot use the value -- and that holds wherever the value is WANTED. A
+// statement wants none, so nothing was stopping a call written for its
+// effect from throwing its failure away with its answer; 8.2's "L^ has no
+// ignorable err" had come back by the other door. These pin the door shut,
+// where Zig shuts it too.
+static void test_dropped_errors(void)
+{
+    Unit u;
+
+    LHAT_TEST("dropping an answer that can fail is reported");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "let^ save = p^ -> number^|IOError { return^ 1 }\n"
+               "save()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ERROR_DROPPED);
+    unit_dispose(&u);
+
+    // 4.4: the deliberate ignore has a spelling, and it is catch^.
+    LHAT_TEST("catch^ is how it is said on purpose");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "let^ save = p^ -> number^|IOError { return^ 1 }\n"
+               "save() catch^ nil^\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 5.1: and try^ hands it to the caller, where the caller says so.
+    LHAT_TEST("try^ hands it back");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "let^ save = p^ -> number^|IOError { return^ 1 }\n"
+               "let^ outer = p^ -> number^|IOError {\n"
+               "    try^ save()\n"
+               "    return^ 2\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 8.1's own way: bind it, and the union makes the narrowing necessary.
+    LHAT_TEST("binding it is not dropping it");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "let^ save = p^ -> number^|IOError { return^ 1 }\n"
+               "let^ r = save()\n"
+               "if^ r fits^ number^ { }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 13.12 throws a VALUE away. A failure is not one of the things it may
+    // throw -- 4.4 says Go's '_' is not needed here, and this is why.
+    LHAT_TEST("'_^' does not throw a failure away either");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "let^ save = p^ -> number^|IOError { return^ 1 }\n"
+               "var^ _^ = save()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ERROR_DROPPED);
+    unit_dispose(&u);
+
+    // The value's own side may be anything; what decides is the arm.
+    LHAT_TEST("an answer of nil^ or a failure is still a failure dropped");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "let^ save = p^ -> nil^|IOError { return^ nil^ }\n"
+               "save()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ERROR_DROPPED);
+    unit_dispose(&u);
+
+    // And nothing else changes: a call that cannot fail is dropped as it
+    // always was, however much it answers.
+    LHAT_TEST("an answer that cannot fail is dropped as before");
+    check_text(&u,
+               "let^ count = f^ -> number^ { return^ 1 }\n"
+               "let^ act = p^ { }\n"
+               "count()\n"
+               "act()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_names();
@@ -2631,6 +2713,7 @@ int main(void)
     test_operator_candidates();
     test_undecided_results();
     test_errors();
+    test_dropped_errors();
     test_annotations();
     return lhat_test_report("test_check_core");
 }

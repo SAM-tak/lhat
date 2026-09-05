@@ -477,6 +477,13 @@ LhatType *lhat_type_error_top(LhatTypeArena *arena, bool local);
 // everything else, so a caller may ask it of any type.
 bool lhat_type_is_local_error(const LhatType *type);
 
+// 04 の 8.3: whether a failure can arrive as this type -- the type is an
+// error, or it is a union with an arm that is. Ask it of any type.
+//
+// 8.2 puts errors around a value and never between values, so this does not
+// look inside a tuple's positions: there can be no error there to find.
+bool lhat_type_carries_error(const LhatType *type);
+
 // Appends and returns the member, or NULL when out of memory. Works on a
 // TABLE and on an ERROR_KIND's fields.
 // The type's OWN members, and no link followed. What a registration asks
