@@ -59,3 +59,9 @@ Luau のソース
 LuaJIT のソース
 
 @../megasource/libs/LuaJIT
+
+### AngelScript
+
+UnrealEngine-AngelScript のソース
+
+@../UnrealEngine-AngelScript
