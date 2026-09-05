@@ -13,9 +13,10 @@ typedef struct LhatNativeHold {
 //
 // vm.h keeps LhatMachine opaque, which is the right shape for a host: the
 // thing is a whole stack and a frame array, so a caller keeps the handle and
-// never the object. This is the inside of it, for the three files that are
-// the machine -- vm.c, which runs it, gc.c, which has to see the roots, and
-// debug.c, which reads the frames for a debugger (09 章).
+// never the object. This is the inside of it, for the files that are the
+// machine -- vm.c and the vm_*.c beside it, which run it and are wired
+// together by vm_internal.h; gc.c, which has to see the roots; and debug.c,
+// which reads the frames for a debugger (09 章).
 //
 // Not on a host's include path and not installed. Nothing include/lhat.h
 // reaches names this file.

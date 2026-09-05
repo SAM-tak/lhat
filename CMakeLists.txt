@@ -137,6 +137,12 @@ set(LHAT_CORE_SOURCES
     src/rttype.c
     src/serialize.c
     src/vm.c
+    src/vm_call.c
+    src/vm_host.c
+    src/vm_machine.c
+    src/vm_member.c
+    src/vm_native.c
+    src/vm_table.c
     src/gc.c
     src/debug.c
     src/value.c

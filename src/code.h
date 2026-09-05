@@ -507,7 +507,7 @@ struct LhatProto {
     // 05 の 8.9: how many slots those parameters occupy, which is not the
     // count -- a host value parameter is one parameter and as many slots as
     // its type is wide. What the caller lays down ends here, so this is where
-    // the frame's scratch begins (vm.c's clear_scratch).
+    // the frame's scratch begins (vm_call.c's vm_clear_scratch).
     uint8_t parameter_slots;
     bool is_function;  // f^ rather than p^ (02 の 15 章)
     bool yields;       // 02 の 15.2: the body contains yield^, so calling it
