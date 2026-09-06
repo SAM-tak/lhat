@@ -193,6 +193,39 @@ static void test_roundtrip(void)
     lhat_free(bytes);
 }
 
+static void test_delegate_chain_roundtrip(void)
+{
+    LHAT_TEST("binary units preserve chained delegation and effective descriptors");
+    const char *text =
+        "let^ Leaf = def^{ self^{n = 73}, read = f^self^ -> number^ {self^.n} }\n"
+        "let^ A = def^{ self^{}, leaf = Leaf.new(), delegate^ leaf }\n"
+        "public^ let^ B = def^{ self^{}, a = A.new(), delegate^ a }\n"
+        "public^ let^ C = def^{ self^{}, b = B.new(), delegate^ b }\n"
+        "let^ o = C.new()\n"
+        "if^ (o fits^ t^{read:f^self^ -> number^;}) = false^ { return^ 0 }\n"
+        "let^ asB:B = o\n"
+        "return^ asB.read()\n";
+    uint8_t *bytes = NULL;
+    size_t length = 0;
+    int64_t answer = -1;
+    LHAT_REQUIRE(write_text(text, false, &bytes, &length, &answer), "wrote");
+    LHAT_CHECK_EQ_INT(answer, 73);
+    Disk disk = {0};
+    disk_bytes(&disk, "main.lh", bytes, length);
+    LhatProgram program;
+    lhat_program_init(&program, true, disk_load, &disk);
+    LHAT_CHECK_EQ_INT(run_root(&program, "main.lh", NULL), 73);
+    const LhatUnit *binary = lhat_program_check(&program, "main.lh");
+    const LhatRuntimeType *type = binary != NULL
+        ? lhat_unit_export_type(binary, "C") : NULL;
+    LHAT_REQUIRE(type != NULL && type->instance != NULL, "loaded descriptor");
+    LHAT_CHECK_EQ_INT(type->instance->member_count, 1);
+    LHAT_CHECK(strcmp(type->instance->members[0].name->text, "read") == 0,
+               "effective method survives serialization");
+    lhat_program_dispose(&program);
+    lhat_free(bytes);
+}
+
 static void test_refusals(void)
 {
     uint8_t *bytes = NULL;
@@ -977,6 +1010,7 @@ static void test_scripts(void)
 int main(void)
 {
     test_roundtrip();
+    test_delegate_chain_roundtrip();
     test_refusals();
     test_units();
     test_traceback();

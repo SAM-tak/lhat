@@ -2928,14 +2928,17 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         : k_right        ? chunk->constants[cc]
                                          : R(cc);
         LhatValue found = lhat_nil();
+        LhatValue actual_receiver = R(b);
+        bool receiver_on_right = false;
         OperatorLookup answer = OPERATOR_ABSENT;
         for (;;) {
             size_t length = 0;
             const char *name = vm_operator_name(op, &length);
             // 14.4 makes an operator a method: the left operand is the
             // receiver and the right one the single argument.
+            receiver_on_right = false;
             answer = vm_operator_candidate(m, R(b), name, length, R(b), rhs,
-                                        given, false, &found);
+                                        given, false, &found, &actual_receiver);
             // 11.3改: the left carries nothing that takes this right
             // operand, so the right one is asked whether it was written as
             // the receiver instead. This is what lets a value join an
@@ -2946,11 +2949,14 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // operand is the receiver by the only reading there is.
             if (!unary &&
                 (answer == OPERATOR_ABSENT || answer == OPERATOR_NO_CANDIDATE)) {
-                LhatValue other = lhat_nil();
+                LhatValue other = lhat_nil(), right_receiver = rhs;
                 OperatorLookup right = vm_operator_candidate(
-                    m, rhs, name, length, rhs, R(b), given, true, &other);
+                    m, rhs, name, length, rhs, R(b), given, true, &other,
+                    &right_receiver);
                 if (right == OPERATOR_PICKED || right == OPERATOR_NO_MEMORY) {
                     found = other;
+                    actual_receiver = right_receiver;
+                    receiver_on_right = true;
                     answer = right;
                 }
             }
@@ -3010,6 +3016,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 operands[1] = lhat_is_hostvalue(rhs)
                                   ? hostvalue_argument(m->slots, rbase + cc)
                                   : rhs;
+            }
+            if (!lhat_is_hostvalue(actual_receiver)) {
+                operands[receiver_on_right ? 1 : 0] = actual_receiver;
             }
             frame->pc = pc;  // 11.6改, as at a CALL
             size_t frames_before = m->frame_count;
@@ -3099,8 +3108,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // written: 03 の 5.1's forwarding reads an operand where it lies,
         // and a destination that is itself a local puts the window right on
         // top of one -- 's := s .. t' has t sitting at next_base.
-        LhatValue left_operand = R(b);
-        LhatValue right_operand = rhs;
+        LhatValue left_operand = receiver_on_right ? R(b) : actual_receiver;
+        LhatValue right_operand = receiver_on_right ? actual_receiver : rhs;
         lhat_slots_set(m->slots, next_base + (0), left_operand);
         // 11.8改: a unary one declares self^ and nothing else, so the one
         // slot is the whole frame.

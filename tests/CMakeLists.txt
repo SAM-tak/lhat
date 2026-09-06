@@ -68,6 +68,7 @@ lhat_add_test(test_vm_enum vm)
 lhat_add_test(test_vm_loop vm)
 lhat_add_test(test_vm_error vm)
 lhat_add_test(test_vm_def vm)
+lhat_add_test(test_delegate vm)
 lhat_add_test(test_vm_coroutine vm)
 lhat_add_test(test_vm_machine vm)
 if(LHAT_WITH_DEBUGGER)
@@ -149,6 +150,7 @@ set_tests_properties(install_smoke PROPERTIES LABELS e2e TIMEOUT 300)
 if(LHAT_BUILD_CLI)
     set(lhat_e2e_samples
         vector.lh
+        composition.lh
         # 02 の 15.14: the async layer end to end -- the scheduler is L^
         # (sample/async.lh, required by each of these), so what these prove is
         # that await^, std.async and std.thread meet where they are supposed

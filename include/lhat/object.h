@@ -993,10 +993,9 @@ LhatValue lhat_table_get_bytes(const LhatTable *table, const char *name,
 //
 // What a member cache remembers, so that a site meeting the same shape again
 // reads the place instead of walking to it.
-// 14.7改2: `through` is the value a delegate^ went through when the answer
-// was found that way, and nil^ otherwise -- what a call has to pass as the
-// receiver, since a delegated member is the delegate's own and takes no
-// other. Answered rather than bound into the value: binding it would make
+// `through` is the actual receiver of a delegated answer, across any number
+// of delegate links, and nil^ for a direct answer. It is the held value (also
+// for hostdata), not the members table or an intermediate wrapper. Answered rather than bound into the value: binding it would make
 // one forwarding procedure per delegated member, which is what writing them
 // out by hand already was.
 LhatValue lhat_table_locate(const LhatTable *table, LhatValue key,

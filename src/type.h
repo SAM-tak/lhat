@@ -17,6 +17,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "chain.h"
+
 // The build's own knobs, LHAT_WITH_RESOLUTIONS among them. Named here rather
 // than left to whoever includes this first: a member's size depends on it, so
 // a translation unit that reached this header without the answer would build
@@ -200,17 +202,8 @@ struct LhatType {
             // compared by identity (conforms_in), and what is under
             // what is the tag chain's to answer (nominal_derives).
             struct LhatType *base;
-            // 02 の 14.7改2: what this definition delegates to, as the
-            // type whose members it lends. Carried by the INSTANCE
-            // section (14.7), which is what an instance reaches, and
-            // followed one step only -- 14.2 fixes the chain at the
-            // definition, so a delegate that delegates again is not
-            // followed here any more than it is at run time.
-            //
-            // A link and not a copy, for the reason `base` is one: the
-            // machine holds a single delegate key and grows a leg on its
-            // walk (object.c), so the type that says the same thing says
-            // it the same way.
+            // The instance's delegation link. Lookup follows further links
+            // without copying members and stops when a type repeats.
             struct LhatType *delegate;
             // 14.1: def^ is the only way to make one, and 14.5 composes two
             // of them with '..' -- which 11.2's operator has to tell from a
@@ -502,6 +495,10 @@ const LhatTypeMember *lhat_type_own_member(const LhatType *table,
 const LhatTypeMember *lhat_type_find_member(const LhatType *table,
                                             const char *name,
                                             size_t length);
+
+// Unique types in lookup order. Host types have base links; wrappers have
+// delegate links. Member visibility is decided by lhat_type_find_member.
+LhatChain lhat_type_chain(const LhatType *table);
 
 // 14.7: whether an instance may reach this member, which is what decides
 // what a delegate lends.

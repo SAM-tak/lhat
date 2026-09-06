@@ -181,10 +181,9 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             // the link is how the type HOLDS it, not a reason to leave it
             // out. lhat_type_find_member decides, so this and a lookup
             // never disagree.
-            const LhatType *chains[2] = {type, type->v.table.delegate};
-            for (size_t which = 0; which < 2; which++) {
-            for (const LhatType *up = chains[which]; up != NULL;
-                 up = up->v.table.base) {
+            LhatChain walk = lhat_type_chain(type);
+            const LhatType *up;
+            while ((up = lhat_chain_next(&walk)) != NULL) {
                 // 05 の 8.8改: a host type on the chain is named, not copied.
                 // Its members are the host's whole API -- every signature of
                 // every method, and twice over for a definition and its
@@ -220,7 +219,6 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
                         return NULL;
                     }
                 }
-            }
             }
             if (type->v.table.variadic != NULL) {
                 rt->variadic = rt_from_checked(heap, type->v.table.variadic, seen);

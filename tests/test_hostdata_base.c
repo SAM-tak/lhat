@@ -770,8 +770,7 @@ static void test_delegate_to_host(void)
 
     // 05 の 8.8改: the wrapper's descriptor names the host type it holds
     // rather than copying its members -- a class tree's whole API, twice --
-    // and fits^ reaches the held value the way a lookup does: one delegate
-    // step, the tag's base chain included.
+    // and fits^ follows delegation to the held value, including its base tag.
     LHAT_TEST("the wrapper's type names the host type instead of copying it");
     {
         static const File files[] = {
@@ -856,6 +855,57 @@ static void test_delegate_to_host(void)
         lhat_machine_dispose(machine);
         lhat_program_dispose(&program);
     }
+}
+
+static void test_delegate_chain_to_host(void)
+{
+    LHAT_TEST("deep delegation keeps the actual host receiver and compact tag");
+    static const File files[] = {{"main.lh",
+        "import^ scene\n"
+        "let^ H = def^{ self^{}, raw = scene.makeSprite(), delegate^ raw }\n"
+        "let^ M = def^{ self^{}, inner = H.new(), delegate^ inner }\n"
+        "public^ let^ O = def^{ self^{}, inner = M.new(), delegate^ inner }\n"
+        "let^ o = O.new()\n"
+        "return^ { object = o, value = o.id(), signature = typeof^(o).signature }\n"
+    }};
+    LhatProgram program;
+    Disk disk;
+    program_with(&program, &disk, files, 1);
+    LHAT_REQUIRE(register_scene(&program, false), "registered");
+    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    LHAT_REQUIRE(root != NULL && !lhat_program_has_errors(&program) &&
+                  lhat_program_compile(&program), "built");
+    LhatMachine *machine = lhat_machine_new();
+    lhat_program_install(&program, machine);
+    the_node.id = 42;
+    LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+    LHAT_REQUIRE(ran.status == LHAT_RUN_OK, "ran");
+    LhatValue object = field_of(machine, ran.value, "object");
+    LHAT_CHECK_EQ_INT(lhat_as_integer(field_of(machine, ran.value, "value")), 42);
+    LhatRunResult called = lhat_machine_call_member(machine, object, "id", 2, NULL, 0);
+    LHAT_CHECK_EQ_INT(called.status, LHAT_RUN_OK);
+    LHAT_CHECK_EQ_INT(lhat_as_integer(called.value), 42);
+    const LhatRuntimeType *shape = instance_type(root, "O");
+    LHAT_REQUIRE(shape != NULL, "exported instance type");
+    LHAT_CHECK_EQ_INT(shape->member_count, 0);
+    LHAT_CHECK(shape->hostdata_tag == sprite_tag, "tag, not copied host methods");
+    LHAT_CHECK(lhat_value_satisfies(object, shape), "deep host satisfies shape");
+    LhatRuntimeType asked = *shape;
+    asked.hostdata_tag = node_tag;
+    LHAT_CHECK(lhat_value_satisfies(object, &asked), "host base tag also fits");
+    asked.hostdata_tag = other_tag;
+    LHAT_CHECK(!lhat_value_satisfies(object, &asked), "unrelated tag does not fit");
+    LHAT_CHECK(!lhat_value_satisfies(lhat_integer(1), &asked),
+               "a non-object does not enter the delegation walk");
+    asked.hostdata_tag = node_tag;
+    asked.kind = LHAT_TYPE_RT_HOSTDATA;
+    LHAT_CHECK(!lhat_value_satisfies(object, &asked), "wrapper is not nominal hostdata");
+    LhatValue signature = field_of(machine, ran.value, "signature");
+    LHAT_CHECK(lhat_is_object_kind(signature, LHAT_OBJECT_STRING) &&
+                strstr(((LhatString *)lhat_as_object(signature))->text,
+                       "& scene.Sprite2D") != NULL, "typeof retains the host tag");
+    lhat_machine_dispose(machine);
+    lhat_program_dispose(&program);
 }
 
 // 05 の 8.8 with 8.8改: every value of a registered type answers through
@@ -1305,6 +1355,7 @@ int main(void)
     test_value_type();
     test_registration();
     test_delegate_to_host();
+    test_delegate_chain_to_host();
     test_the_weak_cache();
     test_values_keep_their_members();
     test_registered_sees_the_chain();

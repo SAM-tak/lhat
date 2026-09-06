@@ -4262,7 +4262,7 @@ static bool link_delegate(Checker *c, const LhatNode *node,
     // Looked for where the spelling said, and nowhere else. Finding it in the
     // other place would be answering a question that was not asked.
     const LhatTypeMember *held =
-        chk_find_member(through_self ? instance : definition, name, length);
+        lhat_type_own_member(through_self ? instance : definition, name, length);
     LhatType *from = held != NULL ? held->type : NULL;
     if (from == NULL || from->kind != LHAT_TYPE_TABLE) {
         // 14.13 gives a member no way to carry a written type, so a static

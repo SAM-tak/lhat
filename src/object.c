@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "chain.h"
 #include "code.h"  // 14.4: a proto says whether its body takes a receiver
 #include "grow.h"
 #include "lhat/port.h"
@@ -386,8 +387,7 @@ static const LhatTable *members_table_of(LhatValue value)
     return NULL;
 }
 
-static LhatValue delegate_held(const LhatTable *receiver, LhatValue key,
-                               const LhatTable **owner_out);
+static const void *delegate_next(const void *object);
 
 // 05 の 8.8: identity is the tag alone, so the value has to actually be
 // hostdata -- otherwise there is no tag to compare and the answer is about
@@ -454,20 +454,23 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                     return false;
                 }
             }
-            // 05 の 8.8改: and the host type the structure holds, which the
-            // descriptor names by its tag rather than by copying its members
-            // (rttype.c). The value is the host's own, or reaches one the
-            // way a lookup reaches a lent member -- one delegate step
-            // (14.7改2), the same reading table_get_in makes.
-            if (type->hostdata_tag != NULL &&
-                !hostdata_derives(value, type->hostdata_tag)) {
-                const LhatTable *owner = NULL;
-                LhatValue held =
-                    lhat_is_object_kind(value, LHAT_OBJECT_TABLE)
-                        ? delegate_held((const LhatTable *)lhat_as_object(value),
-                                        lhat_nil(), &owner)
-                        : lhat_nil();
-                if (!hostdata_derives(held, type->hostdata_tag)) {
+            // A structural descriptor can name a host held anywhere along
+            // delegation. This does not grant the wrapper nominal identity.
+            if (type->hostdata_tag != NULL) {
+                if (!lhat_is_object(value)) {
+                    return false;
+                }
+                bool found = false;
+                LhatChain walk = lhat_chain(lhat_as_object(value), delegate_next);
+                const void *at;
+                while ((at = lhat_chain_next(&walk)) != NULL) {
+                    if (hostdata_derives(lhat_object((LhatObject *)(void *)at),
+                                         type->hostdata_tag)) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
                     return false;
                 }
             }
@@ -1627,149 +1630,85 @@ bool lhat_takes_receiver(LhatValue value)
     return false;
 }
 
-// 03 の 5.1改: the walk both readings share. `found_in` is NULL for the
-// plain one, which asks nothing about where the answer was.
+// A delegation target is a declared slot, never another delegated lookup.
+static const void *delegate_next(const void *object)
+{
+    const LhatObject *obj = object;
+    if (obj == NULL || obj->kind != LHAT_OBJECT_TABLE) {
+        return NULL;
+    }
+    const LhatTable *receiver = (const LhatTable *)obj;
+    const LhatTable *owner = receiver->definition;
+    if (receiver->is_definition || owner == NULL ||
+        lhat_is_nil(owner->delegate_key)) {
+        return NULL;
+    }
+    const LhatTable *holder = owner->delegate_from_self ? receiver : owner;
+    if (holder->entry_capacity == 0) {
+        return NULL;
+    }
+    const LhatTableEntry *entry = probe(holder->entries, holder->entry_capacity,
+                                       owner->delegate_key,
+                                       hash_key(owner->delegate_key));
+    return !lhat_is_nil(entry->key) && members_table_of(entry->value) != NULL
+               ? lhat_as_object(entry->value) : NULL;
+}
+
+// Both public reads use this lookup. Only direct answers have a cacheable
+// location; a delegated answer instead identifies its actual receiver.
 static LhatValue table_get_in(const LhatTable *table, LhatValue key,
                               const LhatTable **found_in, uint32_t *found_at,
                               bool *inherited_out, LhatValue *through)
 {
-    if (!usable_key(key)) {
+    if (table == NULL || !usable_key(key)) {
         return lhat_nil();
     }
     key = normalise_key(key);
-
-    // 14.7改: what an instance reaches through its definition is what takes a
-    // receiver. 14.11's new and a static member are the definition's own, and
-    // calling one with an instance before the dot would hand it a receiver it
-    // never asked for. A walk that starts at a definition is the other case
-    // -- 'A.new()', 'def^.somestatic()', and 14.5's walk up to a base --
-    // and passes everything.
-    bool restricted = table != NULL && !table->is_definition;
-
-    // 14.7改2: the walk loses the receiver as it climbs, and a delegate is
-    // read off it -- so it is kept here.
-    const LhatTable *receiver = table;
-
-    // 14.7: an instance's own fields first, then the members its definition
-    // holds. 14.2 fixes the chain when the instance is made, so this walk is
-    // the one Lua's __index performs -- but written into the structure rather
-    // than left to a hook that can be swapped (14.1).
-    for (bool inherited = false; table != NULL;
-         table = table->definition, inherited = true) {
-        size_t index;
-        if (array_index(table, key, &index)) {
-            LhatValue value = lhat_slots_get(table->array, index);
-            // 04 の 11.3: nothing is there, which is what a member that was
-            // never meant to be reached this way amounts to. Calling it lands
-            // on NOT_CALLABLE rather than on a receiver going somewhere odd.
-            if (restricted && inherited && !lhat_takes_receiver(value)) {
+    const LhatTable *root = table;
+    LhatChain walk = lhat_chain(table, delegate_next);
+    const void *at;
+    while ((at = lhat_chain_next(&walk)) != NULL) {
+        bool delegated = at != (const void *)root;
+        LhatValue receiver = lhat_object((LhatObject *)(void *)at);
+        table = members_table_of(receiver);
+        bool restricted = !table->is_definition;
+        for (bool inherited = false; table != NULL;
+             table = table->definition, inherited = true) {
+            size_t index;
+            LhatValue value;
+            LhatTableEntry *entry = NULL;
+            if (array_index(table, key, &index)) {
+                value = lhat_slots_get(table->array, index);
+            } else {
+                if (table->entry_capacity == 0) {
+                    continue;
+                }
+                entry = probe(table->entries, table->entry_capacity, key,
+                              hash_key(key));
+                if (lhat_is_nil(entry->key) || lhat_is_nil(entry->value)) {
+                    continue; // A reserved declaration has no value yet.
+                }
+                value = entry->value;
+            }
+            // A nearer name blocks deeper ones even when it cannot be lent.
+            if (((restricted && inherited) || delegated) &&
+                !lhat_takes_receiver(value)) {
                 return lhat_nil();
             }
-            return value;
-        }
-        if (table->entry_capacity == 0) {
-            continue;
-        }
-        LhatTableEntry *entry =
-            probe(table->entries, table->entry_capacity, key, hash_key(key));
-        if (!lhat_is_nil(entry->key)) {
-            // 02 の 14.15: a reserved seat -- the key held with no value --
-            // reads as absent everywhere. Only the walkers show it.
-            if (lhat_is_nil(entry->value)) {
-                continue;
-            }
-            if (restricted && inherited && !lhat_takes_receiver(entry->value)) {
-                return lhat_nil();
-            }
-            // 03 の 5.1改: where it was, for a site that means to come back.
-            // Only the hash half is reported: the array half is the sequence
-            // (14 章), which a written member name never reaches.
-            if (found_in != NULL) {
+            if (delegated) {
+                if (through != NULL) {
+                    *through = receiver;
+                }
+            } else if (entry != NULL && found_in != NULL) {
                 *found_in = table;
                 *found_at = (uint32_t)(entry - table->entries);
                 *inherited_out = inherited;
             }
-            return entry->value;
-        }
-    }
-
-    // 14.7改2: and last, what the definition delegates to. A third leg of the
-    // same walk rather than forwarding procedures put on the definition: one
-    // of those per delegated member is what writing them out by hand already
-    // was, and 4.2 wants delegation to be there whether or not anything was
-    // checked -- so it is structure, not something a compiler decided.
-    const LhatTable *owner = NULL;
-    LhatValue held = delegate_held(receiver, key, &owner);
-    {
-        const LhatTable *to = members_table_of(held);
-        // And a delegate that reaches back to where the walk began is a ring
-        // of one. 14.2 fixes the chain at the definition, which keeps a
-        // writer from building a longer one, but this is the step that would
-        // not come back.
-        if (to == receiver || to == owner) {
-            to = NULL;
-        }
-        // One step. A delegate that delegates again is not followed: 14.2
-        // fixes the chain at the definition, and a chain of chains is the
-        // thing every prototype language ends up unable to say anything
-        // about.
-        if (to != NULL) {
-            LhatValue got =
-                table_get_in(to, key, found_in, found_at, inherited_out, NULL);
-            // 14.7改2: and WHO the answer belongs to. A delegated member runs
-            // with the delegate as its receiver -- it is the delegate's own
-            // member, and a host one reads the pointer off its own tag
-            // (05 の 8.8), so there is no other receiver it could take.
-            //
-            // Reported rather than bound into a value: binding it would be
-            // the forwarding procedure this design is written to avoid.
-            if (through != NULL && !lhat_is_nil(got)) {
-                *through = held;
-            }
-            // 5.1改: the place is the delegate's, and what a cache would be
-            // trusting is a chain of two tables plus a field read. Not yet --
-            // the reading is right first, and bench/ says whether the rest is
-            // worth it.
-            if (found_in != NULL) {
-                *found_in = NULL;
-            }
-            return got;
+            // Delegated answers deliberately report no cacheable location.
+            return value;
         }
     }
     return lhat_nil();
-}
-
-// 14.7改2: what the receiver's definition delegates to -- the value under
-// the delegate entry's name. Where it is read from is what the spelling
-// said: 'self^.x' means the receiver's own table, 'x' the definition's, and
-// 14.3 makes both possible for one name -- so this is a reading of what was
-// written and not a search.
-//
-// The read is UNRESTRICTED. 14.7's rule is about what an instance may call;
-// finding the delegate is not a call, and a definition's member holding a
-// plain value (a shared handle, a singleton) takes no receiver and would be
-// invisible under it.
-//
-// Nil when nothing is delegated -- or when `key`, the name a lookup is
-// after, IS the delegate's own: reading it here would come back and ask
-// again, for ever. `owner_out` answers the definition, for the ring check a
-// lookup makes.
-static LhatValue delegate_held(const LhatTable *receiver, LhatValue key,
-                               const LhatTable **owner_out)
-{
-    const LhatTable *owner = receiver != NULL ? receiver->definition : NULL;
-    if (owner == NULL && receiver != NULL && receiver->is_definition) {
-        owner = receiver;  // reached through the definition itself
-    }
-    *owner_out = owner;
-    if (owner == NULL || lhat_is_nil(owner->delegate_key) ||
-        lhat_value_equal(key, owner->delegate_key)) {
-        return lhat_nil();
-    }
-    const LhatTable *holder = owner->delegate_from_self ? receiver : owner;
-    return holder != NULL ? table_get_in(holder, owner->delegate_key, NULL,
-                                         NULL, NULL, NULL)
-                          : lhat_nil();
 }
 
 LhatValue lhat_table_locate(const LhatTable *table, LhatValue key,

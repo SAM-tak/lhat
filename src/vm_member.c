@@ -468,6 +468,22 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
             lhat_is_object_kind(on, LHAT_OBJECT_ERROR));
 }
 
+// Shared by calls that do not populate an inline member cache.
+LhatValue vm_lookup_member(const LhatTable *table, LhatValue key,
+                           LhatValue *receiver)
+{
+    const LhatTable *found_in = NULL;
+    uint32_t found_at = 0;
+    bool inherited = false;
+    LhatValue through = lhat_nil();
+    LhatValue found = lhat_table_locate(table, key, &found_in, &found_at,
+                                       &inherited, &through);
+    if (!lhat_is_nil(through)) {
+        *receiver = through;
+    }
+    return found;
+}
+
 // 02 の 14.17 with 01 の 5.4: what was written answers before the built-in
 // does, and an interpolation hole asks for the hat spelling -- the one
 // 14.17改 keeps a plain table from taking off the writer. Everywhere else
@@ -481,11 +497,11 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
 // hat-only on every table, 16.3改2 with 14.18) are then looked for under the
 // other one. Answers nil^ where neither is written, which is the path the
 // built-in answers on.
-static LhatValue member_written(Machine *m, LhatValue on, LhatValue key,
+static LhatValue member_written(Machine *m, LhatValue *on, LhatValue key,
                                 const LhatTable *members)
 {
-    LhatValue found = lhat_table_get(members, key);
-    if (!lhat_is_nil(found) || vm_plain_table(on)) {
+    LhatValue found = vm_lookup_member(members, key, on);
+    if (!lhat_is_nil(found) || vm_plain_table(*on)) {
         return found;
     }
     LhatNativeKind which;
@@ -501,7 +517,7 @@ static LhatValue member_written(Machine *m, LhatValue on, LhatValue key,
     if (spelt == NULL) {
         return found;  // the built-in is still an answer; nothing is lost here
     }
-    return lhat_table_get(members, lhat_object((LhatObject *)spelt));
+    return vm_lookup_member(members, lhat_object((LhatObject *)spelt), on);
 }
 
 // 02 の 14.12: whether this candidate takes what the call is handing over.
@@ -617,9 +633,10 @@ OperatorLookup vm_operator_candidate(Machine *m, LhatValue side,
                                          const char *name, size_t length,
                                          LhatValue receiver, LhatValue argument,
                                          uint8_t given, bool self_last,
-                                         LhatValue *picked)
+                                         LhatValue *picked, LhatValue *bound)
 {
     *picked = lhat_nil();
+    *bound = receiver;
     const LhatTable *carrier = vm_table_of(side);
     // 05 の 8.9: a host value's operators live in the members table the
     // machine bound for its type -- the value has no heap half of its own.
@@ -633,7 +650,8 @@ OperatorLookup vm_operator_candidate(Machine *m, LhatValue side,
     if (key == NULL) {
         return OPERATOR_NO_MEMORY;
     }
-    LhatValue found = lhat_table_get(carrier, lhat_object((LhatObject *)key));
+    LhatValue found = vm_lookup_member(carrier, lhat_object((LhatObject *)key),
+                                       bound);
     if (lhat_is_nil(found)) {
         return OPERATOR_ABSENT;
     }
@@ -643,7 +661,7 @@ OperatorLookup vm_operator_candidate(Machine *m, LhatValue side,
     // at most one candidate fits, so it ends at the first. 14.4's layout for
     // a method call is callee, receiver, arguments.
     LhatValue shaped[3];
-    shaped[1] = receiver;
+    shaped[1] = *bound;
     shaped[2] = argument;
     if (lhat_is_object_kind(found, LHAT_OBJECT_OVERLOAD)) {
         const LhatOverload *group = (const LhatOverload *)lhat_as_object(found);
@@ -851,7 +869,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
         if (hv_members == NULL) {
             return LHAT_RUN_TYPE_ERROR;
         }
-        lhat_slots_set(m->slots, into, member_written(m, on, member_key, hv_members));
+        lhat_slots_set(m->slots, into, member_written(m, &on, member_key, hv_members));
     on = lhat_slots_get(m->slots, receiver);
         // 02 の 14.17: and where the library registered none, the
         // built-in writes the value down -- a host value has no
@@ -994,7 +1012,11 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
             goto member_answered;
         }
     }
-    lhat_slots_set(m->slots, into, member_written(m, on, member_key, table));
+    {
+        LhatValue got = member_written(m, &on, member_key, table);
+        lhat_slots_set(m->slots, receiver, on);
+        lhat_slots_set(m->slots, into, got);
+    }
     on = lhat_slots_get(m->slots, receiver);
 member_answered:;
 

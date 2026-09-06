@@ -1044,9 +1044,9 @@ LhatRunResult lhat_machine_call_member(LhatMachine *machine,
     if (key == NULL) {
         return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
     }
-    // 14.7: an instance sees its definition's members too, and lhat_table_get
-    // is what already walks that.
-    LhatValue member = lhat_table_get(table, lhat_object((LhatObject *)key));
+    // Keep the resolved receiver together with the member, as GETMEMBER does.
+    LhatValue member = vm_lookup_member(table, lhat_object((LhatObject *)key),
+                                        &receiver);
 
     // 14.12: at most one candidate fits, so this is a search and not a
     // choice. The lineup is what an instruction has lying in its registers:

@@ -1,0 +1,143 @@
+# Object composition in current L^: cache -> logging -> storage.
+# Run: build/debug/lhat.exe --run sample/composition.lh
+# Storage is in memory; this example does not write to external storage.
+
+let^ Store = t^{
+    get : p^self^, string^ -> string^|nil^;,
+    put : p^self^, string^, string^;,
+    describe : f^self^ -> string^;
+}
+let^ LogSink = t^{ write : p^self^, string^; }
+
+let^ MemoryStore = def^{
+    self^{ values = {}, label = "memory" },
+    get = p^self^, key:string^ -> string^|nil^ {
+        # Computed-key dictionary types are not expressible yet (14.10).
+        return^ self^.values[key] as^ string^|nil^ catch^ panic^ it^
+    },
+    put = p^self^, key:string^, value:string^ {
+        self^.values[key] := value
+    },
+    describe = f^self^ -> string^ { self^.label }
+}
+
+let^ RecordingLog = def^{
+    self^{ count = 0, text = "" },
+    write = p^self^, message:string^ {
+        self^.count += 1
+        self^.text := self^.text .. message .. "\n"
+    }
+}
+
+let^ LoggedStore = def^{
+    # A layer's state remains separate even when field names coincide.
+    self^{ abstract^ inner : Store, abstract^ log : LogSink, label = "logging" },
+    override^new = f^inner:Store, log:LogSink {
+        self^{ inner = inner, log = log }
+    },
+    delegate^ self^.inner,
+    get = p^self^, key:string^ -> string^|nil^ {
+        self^.log.write($"get {key}")
+        return^ self^.inner.get(key)
+    },
+    put = p^self^, key:string^, value:string^ {
+        self^.log.write($"put {key}={value}")
+        self^.inner.put(key, value)
+    }
+}
+
+let^ CachedStore = def^{
+    self^{ abstract^ inner : Store, values = {}, label = "cache" },
+    override^new = f^inner:Store { self^{ inner = inner } },
+    get = p^self^, key:string^ -> string^|nil^ {
+        let^ cached = self^.values[key]
+        if^ cached fits^ string^ { return^ cached }
+        let^ value = self^.inner.get(key)
+        # Cache strings, including the empty string. Misses are not cached.
+        if^ value fits^ string^ { self^.values[key] := value }
+        return^ value
+    },
+    put = p^self^, key:string^, value:string^ {
+        # Write through before updating the cache. Writes through another
+        # handle are outside this example's cache coherence contract.
+        self^.inner.put(key, value)
+        self^.values[key] := value
+    },
+    # Methods not handled here keep their receiver through every layer.
+    delegate^ self^.inner
+}
+
+# Neither wrapper depends on the concrete storage or logger definition.
+let^ assemble = f^store:Store, log:LogSink -> Store {
+    CachedStore.new(LoggedStore.new(store, log))
+}
+let^ check = p^condition:bool^, message:string^ {
+    if^ condition = false^ { panic^ message }
+}
+
+let^ memory = MemoryStore.new()
+memory.put("greeting", "hello")
+memory.put("empty", "")
+let^ log = RecordingLog.new()
+let^ app = assemble(memory, log)
+
+check(app.describe() = "memory", "description forwarding failed")
+check(app.get("greeting") = "hello", "first read failed")
+check(app.get("greeting") = "hello", "cached read failed")
+check(log.count = 1, "a cache hit reached the logging layer")
+
+app.put("greeting", "bye")
+check(app.get("greeting") = "bye", "cache was stale after put")
+check(memory.get("greeting") = "bye", "put did not reach storage")
+check(log.count = 2, "write-through or cache update failed")
+
+check(app.get("missing") = nil^, "missing key was not nil")
+check(app.get("missing") = nil^, "missing key changed")
+check(log.count = 4, "missing values were unexpectedly cached")
+check(app.get("empty") = "", "empty string was lost")
+check(app.get("empty") = "", "empty string was lost on a cache hit")
+check(log.count = 5, "empty string was not cached")
+print("memory: OK; log contains only cache misses and writes")
+print(log.text)
+
+# An independent test double. It satisfies Store structurally and records
+# reads and writes; it does not inherit from MemoryStore or either wrapper.
+let^ TestStore = def^{
+    self^{
+        values = {}, label = "test", reads = 0, writes = 0,
+        last_key = "", last_value = ""
+    },
+    get = p^self^, key:string^ -> string^|nil^ {
+        self^.reads += 1
+        return^ self^.values[key] as^ string^|nil^ catch^ panic^ it^
+    },
+    put = p^self^, key:string^, value:string^ {
+        self^.writes += 1
+        self^.last_key := key
+        self^.last_value := value
+        self^.values[key] := value
+    },
+    describe = f^self^ -> string^ { self^.label }
+}
+
+let^ test_store = TestStore.new()
+test_store.put("greeting", "test value")
+let^ test_log = RecordingLog.new()
+let^ test_app = assemble(test_store, test_log)
+
+check(test_app.describe() = "test", "test storage was not substituted")
+check(test_app.get("greeting") = "test value", "test read failed")
+check(test_app.get("greeting") = "test value", "test cache hit failed")
+check(test_store.reads = 1, "cache hit reached test storage")
+check(test_log.count = 1, "cache hit was logged")
+test_app.put("greeting", "updated")
+check(test_store.writes = 2, "put did not reach test storage exactly once")
+check(test_store.last_key = "greeting", "put forwarded the wrong key")
+check(test_store.last_value = "updated", "put forwarded the wrong value")
+check(test_app.get("greeting") = "updated", "test cache was stale after put")
+check(test_store.reads = 1, "write-through failed to update the cache")
+check(test_log.count = 2, "test logging count was wrong")
+check(app.get("greeting") = "bye", "the two assembled objects shared a cache")
+check(log.count = 5, "the two assembled objects shared a logger")
+print("test: OK; reads=1, writes=2 (including fixture setup), logged=2")
+print("All composition checks passed.")

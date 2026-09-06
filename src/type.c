@@ -659,24 +659,23 @@ bool lhat_type_takes_receiver(const LhatType *type)
     return false;
 }
 
-// The one search every reader of a table's members goes through, because
-// two of the three places a member can be are links and not entries in the
-// list:
-//
-//   - the type's own members
-//   - 05 の 8.8改: what a host declared it under, all the way up
-//   - 02 の 14.7改2: what it delegates to, one step (14.2 fixes the chain
-//     at the definition), and that one's own bases
-//
-// The order is 14.7's: what is written here answers before what is lent.
-// Only a member taking a receiver is lent, which is 14.7 again -- and it
-// is asked HERE rather than when the link was made, so the answer cannot
-// drift from the machine's (03 の 4.2).
-//
-// Neither link is copied into anything. A binding declares a class per
-// engine class and a wrapper per class, and copying made every one of
-// them pay for its whole ancestry on each check -- which is what the
-// editor waits for when it saves (03 の 1.1).
+static const void *type_next(const void *node)
+{
+    const LhatType *type = node;
+    if (type == NULL || (type->kind != LHAT_TYPE_TABLE &&
+                         type->kind != LHAT_TYPE_HOSTVALUE)) {
+        return NULL;
+    }
+    // Base links belong to registered host types, delegation to wrappers.
+    return type->v.table.base != NULL ? type->v.table.base
+                                      : type->v.table.delegate;
+}
+
+LhatChain lhat_type_chain(const LhatType *table)
+{
+    return lhat_chain(table, type_next);
+}
+
 const LhatTypeMember *lhat_type_find_member(const LhatType *table,
                                             const char *name,
                                             size_t length)
@@ -685,17 +684,21 @@ const LhatTypeMember *lhat_type_find_member(const LhatType *table,
                           table->kind != LHAT_TYPE_HOSTVALUE)) {
         return NULL;
     }
-    for (const LhatType *up = table; up != NULL; up = up->v.table.base) {
-        const LhatTypeMember *m = lhat_type_own_member(up, name, length);
-        if (m != NULL) {
-            return m;
-        }
+    // Keep direct, indexed lookup independent of delegation depth.
+    const LhatTypeMember *own = lhat_type_own_member(table, name, length);
+    if (own != NULL) {
+        return own;
     }
-    for (const LhatType *up = table->v.table.delegate; up != NULL;
-         up = up->v.table.base) {
+    LhatChain walk = lhat_type_chain(table);
+    const LhatType *up;
+    bool lent = false;
+    while ((up = lhat_chain_next(&walk)) != NULL) {
         const LhatTypeMember *m = lhat_type_own_member(up, name, length);
         if (m != NULL) {
-            return lhat_type_takes_receiver(m->type) ? m : NULL;
+            return !lent || lhat_type_takes_receiver(m->type) ? m : NULL;
+        }
+        if (up->v.table.base == NULL && up->v.table.delegate != NULL) {
+            lent = true;
         }
     }
     return NULL;
@@ -1130,19 +1133,21 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             // 14.10: at least the listed members. Extra members are fine,
             // which is what lets a value with many members satisfy a small
             // structure at all.
-            for (const LhatTypeMember *want = target->v.table.members;
-                 want != NULL; want = want->next) {
-                // An ambiguous name is not part of the usable shape. Keeping
-                // its diagnostic marker must not turn it into a requirement,
-                // or let an ambiguous provider satisfy an ordinary one.
-                if (want->ambiguous) {
-                    continue;
-                }
-                const LhatTypeMember *have =
-                    find_member(value, want);
-                if (have == NULL || have->ambiguous ||
-                    !conforms_in(have->type, want->type, seen)) {
-                    return false;
+            LhatChain requirements = lhat_type_chain(target);
+            const LhatType *required;
+            while ((required = lhat_chain_next(&requirements)) != NULL) {
+                for (const LhatTypeMember *want = required->v.table.members;
+                     want != NULL; want = want->next) {
+                    if (want->ambiguous ||
+                        lhat_type_find_member(target, want->name,
+                                              want->name_length) != want) {
+                        continue;
+                    }
+                    const LhatTypeMember *have = find_member(value, want);
+                    if (have == NULL || have->ambiguous ||
+                        !conforms_in(have->type, want->type, seen)) {
+                        return false;
+                    }
                 }
             }
             // 13.7, 14.10: an unbounded tail, checked by walking the
@@ -1517,11 +1522,19 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         // with types that nothing satisfies at once. Sharing no name at all
         // leaves them overlapping, since a value may carry both sets of
         // members -- which is why 14.12 forbids overloading on shape.
-        for (const LhatTypeMember *m = a->v.table.members; m != NULL;
-             m = m->next) {
-            const LhatTypeMember *other = find_member(b, m);
-            if (other != NULL && disjoint_in(m->type, other->type, seen)) {
-                return true;
+        LhatChain members = lhat_type_chain(a);
+        const LhatType *up;
+        while ((up = lhat_chain_next(&members)) != NULL) {
+            for (const LhatTypeMember *m = up->v.table.members; m != NULL;
+                 m = m->next) {
+                if (m->ambiguous || find_member(a, m) != m) {
+                    continue;
+                }
+                const LhatTypeMember *other = find_member(b, m);
+                if (other != NULL && !other->ambiguous &&
+                    disjoint_in(m->type, other->type, seen)) {
+                    return true;
+                }
             }
         }
         return false;
@@ -1878,15 +1891,23 @@ static void write_lent_members(TypeSink *sink, const LhatType *table,
     if (table == NULL) {
         return;
     }
-    for (const LhatType *up = table->v.table.delegate; up != NULL;
-         up = up->v.table.base) {
+    bool any = table->v.table.members != NULL;
+    LhatChain walk = lhat_type_chain(table);
+    const LhatType *up;
+    while ((up = lhat_chain_next(&walk)) != NULL) {
+        if (up == table) {
+            continue;
+        }
         for (const LhatTypeMember *m = up->v.table.members; m != NULL;
              m = m->next) {
             if (!lhat_type_takes_receiver(m->type) ||
                 lhat_type_find_member(table, m->name, m->name_length) != m) {
                 continue;  // the type's own answers, or nothing lends it
             }
-            put_text(sink, ", ");
+            if (any) {
+                put_text(sink, ", ");
+            }
+            any = true;
             put(sink, m->name, m->name_length);
             put_text(sink, " : ");
             write_type(sink, m->type, depth + 1);
@@ -2028,7 +2049,8 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             // asks for none.
             if (type->v.table.members == NULL &&
                 type->v.table.variadic == NULL &&
-                type->v.table.instance == NULL) {
+                type->v.table.instance == NULL &&
+                type->v.table.delegate == NULL && type->v.table.base == NULL) {
                 put_text(sink, "t^{}");
                 return;
             }

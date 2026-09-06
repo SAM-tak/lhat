@@ -106,7 +106,9 @@ OperatorLookup vm_operator_candidate(Machine *m, LhatValue side,
                                          const char *name, size_t length,
                                          LhatValue receiver, LhatValue argument,
                                          uint8_t given, bool self_last,
-                                         LhatValue *picked);
+                                         LhatValue *picked, LhatValue *bound);
+LhatValue vm_lookup_member(const LhatTable *table, LhatValue key,
+                           LhatValue *receiver);
 LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
                             size_t key_slot, LhatValue member_key,
                             LhatMemberCache *filling);
