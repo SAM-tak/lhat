@@ -58,12 +58,12 @@ void lsp_server_log(LspServer *server, LspLogLevel level, const char *text)
 void lsp_server_load_host_config(LspServer *server)
 {
     char *looked_at = NULL;
-    LspHostConfigOutcome outcome =
+    LspConfigOutcome outcome =
         lsp_workspace_load_host_config(&server->workspace, &looked_at);
 
     char message[1024];
     switch (outcome) {
-        case LSP_HOST_CONFIG_READ: {
+        case LSP_CONFIG_READ: {
             size_t types = 0;
             size_t functions = 0;
             size_t annotations = 0;
@@ -77,7 +77,7 @@ void lsp_server_load_host_config(LspServer *server)
             lsp_server_log(server, LSP_LOG_INFO, message);
             break;
         }
-        case LSP_HOST_CONFIG_ABSENT:
+        case LSP_CONFIG_ABSENT:
             // The one that had to be said out loud: without it, 05 の 8.7
             // leaves import^ nothing to reach, and every unit that imports
             // reports against its own first line rather than against this.
@@ -88,20 +88,88 @@ void lsp_server_load_host_config(LspServer *server)
                      looked_at != NULL ? looked_at : "(nowhere)");
             lsp_server_log(server, LSP_LOG_WARNING, message);
             break;
-        case LSP_HOST_CONFIG_UNREADABLE:
+        case LSP_CONFIG_UNREADABLE:
             snprintf(message, sizeof message,
                      "host API at %s could not be read as JSON -- carrying on "
                      "with nothing registered.",
                      looked_at != NULL ? looked_at : "(nowhere)");
             lsp_server_log(server, LSP_LOG_ERROR, message);
             break;
-        case LSP_HOST_CONFIG_NO_ROOT:
+        case LSP_CONFIG_NO_ROOT:
             // 05 の 8.7 again, but nothing is wrong: a single file opened
             // with no folder around it has nowhere a config could sit.
             lsp_server_log(server, LSP_LOG_INFO,
                            "no workspace folder, so no lhat-host.json was "
                            "looked for -- import^ will reach nothing the host "
                            "registered.");
+            break;
+    }
+    free(looked_at);
+}
+
+// 8.1: force_include_files names files rather than matching them, so a
+// mistyped name matches nothing and would otherwise be silent -- the whole
+// point of naming one is that it should be checked, and nothing else says
+// it is not. Said once per load, naming the file.
+static void say_what_was_named_but_absent(LspServer *server)
+{
+    const LspSettings *settings = server->workspace.settings;
+    for (size_t i = 0; i < lsp_settings_force_count(settings); i++) {
+        char *path = lsp_workspace_path_under_root(
+            &server->workspace, lsp_settings_force_at(settings, i));
+        if (path == NULL) {
+            continue;
+        }
+        FILE *file = fopen(path, "rb");
+        if (file != NULL) {
+            fclose(file);
+        } else {
+            char message[1024];
+            snprintf(message, sizeof message,
+                     "force_include_files names %s, which is not there -- "
+                     "nothing is checked for it.",
+                     path);
+            lsp_server_log(server, LSP_LOG_WARNING, message);
+        }
+        free(path);
+    }
+}
+
+void lsp_server_load_settings(LspServer *server)
+{
+    char *looked_at = NULL;
+    LspConfigOutcome outcome =
+        lsp_workspace_load_settings(&server->workspace, &looked_at);
+
+    char message[1024];
+    switch (outcome) {
+        case LSP_CONFIG_READ:
+            snprintf(message, sizeof message,
+                     "project settings read from %s: %zu exclude patterns, "
+                     "%zu files named to keep",
+                     looked_at != NULL ? looked_at : "(nowhere)",
+                     lsp_settings_exclude_count(server->workspace.settings),
+                     lsp_settings_force_count(server->workspace.settings));
+            lsp_server_log(server, LSP_LOG_INFO, message);
+            say_what_was_named_but_absent(server);
+            break;
+        case LSP_CONFIG_ABSENT:
+        case LSP_CONFIG_NO_ROOT:
+            // Nothing is wrong, and nothing is missed: every file under the
+            // root is checked and lhat-host.json decides how strictly. The
+            // host config's absence is worth a warning because it breaks
+            // every import^; this one's is the ordinary case, and saying so
+            // in every workspace that does not need the file is noise.
+            break;
+        case LSP_CONFIG_UNREADABLE:
+            // Named with what it falls back to, so a mistyped file and the
+            // errors that did not go away are visibly the same event.
+            snprintf(message, sizeof message,
+                     "project settings at %s could not be read as JSON -- "
+                     "nothing is excluded and \"strict\" is the host "
+                     "config's.",
+                     looked_at != NULL ? looked_at : "(nowhere)");
+            lsp_server_log(server, LSP_LOG_ERROR, message);
             break;
     }
     free(looked_at);

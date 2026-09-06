@@ -279,6 +279,17 @@ static void add_lh_file(LspWorkspace *ws, const char *absolute_path)
 // root discovered by scanning fail to match the same file's path from an
 // LSP notification, and re-register it as a second, permanently duplicate
 // root.
+// 除外: whether lhat-lsp.json says this path is not one of this project's
+// (settings.h). Answers for a directory and a file alike -- a pattern names
+// a path and everything under it -- so a scan prunes and filters with the
+// one call, and the two scanners below cannot drift apart about it.
+//
+// The caller holds ws->lock: the worker swaps ws->settings under it.
+static bool path_excluded(const LspWorkspace *ws, const char *path)
+{
+    return lsp_settings_excludes_path(ws->settings, ws->root_path, path);
+}
+
 static void scan_dir(LspWorkspace *ws, const char *dir)
 {
     char pattern[MAX_PATH];
@@ -298,6 +309,9 @@ static void scan_dir(LspWorkspace *ws, const char *dir)
         if ((size_t)snprintf(child, sizeof child, "%s/%s", dir,
                              data.cFileName) >= sizeof child) {
             continue;
+        }
+        if (path_excluded(ws, child)) {
+            continue;  // lhat-lsp.json: not this project's
         }
         if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             scan_dir(ws, child);
@@ -328,6 +342,9 @@ static void scan_dir(LspWorkspace *ws, const char *dir)
         if (stat(child, &st) != 0) {
             continue;
         }
+        if (path_excluded(ws, child)) {
+            continue;  // lhat-lsp.json: not this project's
+        }
         if (S_ISDIR(st.st_mode)) {
             scan_dir(ws, child);
         } else if (is_checkable(child)) {
@@ -338,47 +355,137 @@ static void scan_dir(LspWorkspace *ws, const char *dir)
 }
 #endif
 
+// root_path joined with a workspace-relative name, defined with the two
+// configs below because that is what it was written for -- discover_roots
+// needs it too, for the files force_include_files names.
+static char *path_under_root(const LspWorkspace *ws, const char *name);
+
+// Every root the settings now exclude, taken away. Nothing else ever takes
+// a root away, so an exclusion added after a scan would otherwise leave its
+// diagnostics standing for the life of the server.
+//
+// The caller holds ws->lock.
+static void drop_excluded_roots(LspWorkspace *ws)
+{
+    LspRoot **link = &ws->roots;
+    while (*link != NULL) {
+        LspRoot *r = *link;
+        if (!path_excluded(ws, r->path)) {
+            link = &r->next;
+            continue;
+        }
+        // Reads r->path, so it goes before the free below.
+        reverse_remove_root_everywhere(ws, r->path);
+        *link = r->next;
+        if (r->checked) {
+            lhat_program_dispose(&r->program);
+        }
+        free(r->path);
+        free(r);
+    }
+}
+
 void lsp_workspace_discover_roots(LspWorkspace *ws)
 {
     if (ws->root_path == NULL) {
         return;
     }
     lhat_mutex_lock(&ws->lock);
+    // Both directions in one pass: what the settings now exclude goes, and
+    // the scan puts back whatever they no longer do (root_find_or_add makes
+    // it idempotent).
+    drop_excluded_roots(ws);
     scan_dir(ws, ws->root_path);
+    // 8.1's force_include_files, after the scan and not during it. The scan
+    // pruned the directory these stand in -- that is what an exclusion is --
+    // so they are added by the name they were written with rather than
+    // looked for. This is the whole reason they are named and not matched:
+    // a pattern would have to be searched for, and there is nothing left to
+    // search (settings.h).
+    for (size_t i = 0; i < lsp_settings_force_count(ws->settings); i++) {
+        char *named =
+            path_under_root(ws, lsp_settings_force_at(ws->settings, i));
+        if (named == NULL) {
+            continue;
+        }
+        // Naming a file the checker cannot read as L^ would register it as
+        // a root and report syntax errors over it -- the same reason
+        // recheck_affected has this test.
+        if (lsp_workspace_is_unit_path(named)) {
+            root_find_or_add(ws, named);
+        }
+        free(named);
+    }
     lhat_mutex_unlock(&ws->lock);
 }
 
 // ---------------------------------------------------------------------------
-// lhat-host.json
+// The two configs: lhat-host.json and lhat-lsp.json
 // ---------------------------------------------------------------------------
+//
+// One is written by a machine and one by a person (lsp/settings.h), but the
+// server reads them the same way -- from the same place, through the same
+// two steps, with the same four things to say about what it found. So the
+// shape below is shared and only the parse differs.
 
 #define LSP_HOST_CONFIG_NAME "lhat-host.json"
+#define LSP_SETTINGS_NAME "lhat-lsp.json"
 
-// root_path + "/" + LSP_HOST_CONFIG_NAME, malloc'd. NULL in single-file mode.
-static char *host_config_path(const LspWorkspace *ws)
+// root_path + "/" + `name`, malloc'd. NULL in single-file mode. `name` is a
+// workspace-relative path, which for the two configs is a bare filename and
+// for a force_include_files entry may have directories in it.
+static char *path_under_root(const LspWorkspace *ws, const char *name)
 {
     if (ws->root_path == NULL) {
         return NULL;
     }
     size_t root_length = strlen(ws->root_path);
-    size_t name_length = strlen(LSP_HOST_CONFIG_NAME);
+    size_t name_length = strlen(name);
     char *path = (char *)malloc(root_length + 1 + name_length + 1);
     if (path == NULL) {
         return NULL;
     }
     memcpy(path, ws->root_path, root_length);
     path[root_length] = '/';
-    memcpy(path + root_length + 1, LSP_HOST_CONFIG_NAME, name_length + 1);
+    memcpy(path + root_length + 1, name, name_length + 1);
     return path;
+}
+
+static bool is_config_path(const LspWorkspace *ws, const char *name,
+                           const char *path)
+{
+    char *expected = path_under_root(ws, name);
+    bool matches = expected != NULL && strcmp(expected, path) == 0;
+    free(expected);
+    return matches;
+}
+
+// The same two steps checking reads a unit by (lsp_program_load): the
+// editor's unsaved text when the file is open, disk otherwise -- so an edit
+// to a config takes effect without a save, like any other edit. Freed with
+// lhat_free, which is what both of those allocate with.
+static char *read_config_text(LspWorkspace *ws, const char *path,
+                              size_t *length)
+{
+    char *text = lsp_document_store_copy(&ws->documents, path, length);
+    return text != NULL ? text : lhat_load_file(NULL, path, length);
 }
 
 bool lsp_workspace_is_host_config_path(const LspWorkspace *ws,
                                        const char *path)
 {
-    char *expected = host_config_path(ws);
-    bool matches = expected != NULL && strcmp(expected, path) == 0;
-    free(expected);
-    return matches;
+    return is_config_path(ws, LSP_HOST_CONFIG_NAME, path);
+}
+
+bool lsp_workspace_is_settings_path(const LspWorkspace *ws, const char *path)
+{
+    return is_config_path(ws, LSP_SETTINGS_NAME, path);
+}
+
+char *lsp_workspace_path_under_root(const LspWorkspace *ws,
+                                    const char *relative)
+{
+    return path_under_root(ws, relative);
 }
 
 bool lsp_workspace_is_unit_path(const char *path)
@@ -404,39 +511,67 @@ bool lsp_workspace_is_binary_unit(const char *path)
     return lhat_program_is_binary_unit(head, read);
 }
 
-LspHostConfigOutcome lsp_workspace_load_host_config(LspWorkspace *ws,
-                                                    char **looked_at)
+// Told apart before the text is freed: a file that is not there and one that
+// is there and unreadable are different things to be told about, and both
+// arrive here as a NULL parse.
+static LspConfigOutcome outcome_of(const void *parsed, const char *text)
+{
+    return parsed != NULL ? LSP_CONFIG_READ
+           : text != NULL ? LSP_CONFIG_UNREADABLE
+                          : LSP_CONFIG_ABSENT;
+}
+
+LspConfigOutcome lsp_workspace_load_host_config(LspWorkspace *ws,
+                                                char **looked_at)
 {
     if (looked_at != NULL) {
         *looked_at = NULL;
     }
-    char *path = host_config_path(ws);
+    char *path = path_under_root(ws, LSP_HOST_CONFIG_NAME);
     if (path == NULL) {
-        return LSP_HOST_CONFIG_NO_ROOT;
+        return LSP_CONFIG_NO_ROOT;
     }
 
-    // The same two steps checking reads a unit by (lsp_program_load): the
-    // editor's unsaved text when the file is open, disk otherwise -- so an
-    // edit to the config takes effect without a save, like any other edit.
     size_t length = 0;
-    char *text = lsp_document_store_copy(&ws->documents, path, &length);
-    if (text == NULL) {
-        text = lhat_load_file(NULL, path, &length);
-    }
-
+    char *text = read_config_text(ws, path, &length);
     LspHostConfig *loaded =
         text != NULL ? lsp_host_config_parse(text, length) : NULL;
-    // Told apart before the text is freed: a file that is not there and one
-    // that is there and unreadable are different things to be told about,
-    // and both arrive here as a NULL config.
-    LspHostConfigOutcome outcome = loaded != NULL ? LSP_HOST_CONFIG_READ
-                                  : text != NULL ? LSP_HOST_CONFIG_UNREADABLE
-                                                 : LSP_HOST_CONFIG_ABSENT;
+    LspConfigOutcome outcome = outcome_of(loaded, text);
     lhat_free(text);
 
     lhat_mutex_lock(&ws->lock);
     lsp_host_config_free(ws->host_config);
     ws->host_config = loaded;
+    lhat_mutex_unlock(&ws->lock);
+
+    if (looked_at != NULL) {
+        *looked_at = path;
+    } else {
+        free(path);
+    }
+    return outcome;
+}
+
+LspConfigOutcome lsp_workspace_load_settings(LspWorkspace *ws,
+                                             char **looked_at)
+{
+    if (looked_at != NULL) {
+        *looked_at = NULL;
+    }
+    char *path = path_under_root(ws, LSP_SETTINGS_NAME);
+    if (path == NULL) {
+        return LSP_CONFIG_NO_ROOT;
+    }
+
+    size_t length = 0;
+    char *text = read_config_text(ws, path, &length);
+    LspSettings *loaded = text != NULL ? lsp_settings_parse(text, length) : NULL;
+    LspConfigOutcome outcome = outcome_of(loaded, text);
+    lhat_free(text);
+
+    lhat_mutex_lock(&ws->lock);
+    lsp_settings_free(ws->settings);
+    ws->settings = loaded;
     lhat_mutex_unlock(&ws->lock);
 
     if (looked_at != NULL) {
@@ -458,6 +593,7 @@ void lsp_workspace_init(LspWorkspace *ws, const char *root_path)
     ws->roots = NULL;
     ws->reverse = NULL;
     ws->host_config = NULL;
+    ws->settings = NULL;
     lhat_mutex_init(&ws->lock);
 }
 
@@ -490,6 +626,8 @@ void lsp_workspace_dispose(LspWorkspace *ws)
 
     lsp_host_config_free(ws->host_config);
     ws->host_config = NULL;
+    lsp_settings_free(ws->settings);
+    ws->settings = NULL;
 
     lsp_document_store_dispose(&ws->documents);
     free(ws->root_path);
@@ -506,6 +644,18 @@ void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path)
     }
 
     lhat_mutex_lock(&ws->lock);
+
+    // 除外: opening an excluded file must not do what the scan refused to.
+    // Tested here rather than beside the check above, which runs unlocked --
+    // ws->settings is the worker's to swap, and this is the first line that
+    // may read it. (The main thread's own gate, worth_rechecking in
+    // handlers/text_document_sync.c, deliberately does not test this: it
+    // would be a read without the lock, and all it would save is a queued
+    // path this line drops.)
+    if (path_excluded(ws, path)) {
+        lhat_mutex_unlock(&ws->lock);
+        return;
+    }
 
     // The roots that reached `path` before this change -- collected up
     // front, since recheck_one_root rebuilds the reverse index as it goes.
@@ -591,7 +741,13 @@ void lsp_workspace_collect_diagnostics(LspWorkspace *ws,
             // 03 の 3.1: no config, or one that predates the field, reads
             // as strict -- the safer default (a diagnostic stays Error
             // when the host's own mode is unknown).
-            bool relaxed = !lsp_host_config_strict(ws->host_config, true);
+            //
+            // lhat-lsp.json first: lhat-host.json says how the host runs,
+            // which is a fair default, but a project may want its editor to
+            // read the code differently and only the hand-written file can
+            // say so (settings.h).
+            bool relaxed = !lsp_settings_strict(
+                ws->settings, lsp_host_config_strict(ws->host_config, true));
             cJSON *diags = lsp_diagnostics_for_unit(unit, relaxed);
             // The compiler's one refusal, when it lies in this unit.
             const char *failed_in = NULL;

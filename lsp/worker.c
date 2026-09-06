@@ -111,20 +111,36 @@ static int worker_main(void *arg)
             break;  // lsp_queue_shutdown, nothing left pending
         }
 
-        // lhat-host.json in the batch means the registrations changed under
-        // every root at once, so the batch's per-path rechecks would be
-        // stale before they finished -- reload and re-check everything
-        // instead, which subsumes them.
-        bool config_changed = false;
+        // Either config in the batch changed something under every root at
+        // once -- what the host registers, or which files are this
+        // project's -- so the batch's per-path rechecks would be stale
+        // before they finished. Reload and re-check everything instead,
+        // which subsumes them. Both are looked for: a batch may hold both,
+        // and each has its own recovery.
+        bool host_changed = false;
+        bool settings_changed = false;
         for (size_t i = 0; i < count; i++) {
             if (lsp_workspace_is_host_config_path(&server->workspace,
                                                   paths[i])) {
-                config_changed = true;
-                break;
+                host_changed = true;
+            } else if (lsp_workspace_is_settings_path(&server->workspace,
+                                                      paths[i])) {
+                settings_changed = true;
             }
         }
-        if (config_changed) {
+        // Load, then reconcile, then check. discover_roots reads the
+        // settings it is reconciling against, and recheck_all walks the
+        // roots it leaves -- run either way round and it would check a root
+        // about to be freed, or leave a root it just restored unchecked
+        // until the next edit.
+        if (settings_changed) {
+            lsp_server_load_settings(server);
+            lsp_workspace_discover_roots(&server->workspace);
+        }
+        if (host_changed) {
             lsp_server_load_host_config(server);
+        }
+        if (settings_changed || host_changed) {
             lsp_workspace_recheck_all(&server->workspace);
         } else {
             for (size_t i = 0; i < count; i++) {

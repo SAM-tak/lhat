@@ -94,6 +94,12 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
 void lsp_handle_initialized(LspServer *server, const cJSON *params)
 {
     (void)params;
+    // The settings first, and this order is load-bearing: discover_roots
+    // reads them to decide what is a root, and nothing re-runs it until the
+    // settings themselves change -- so a scan that ran without them would
+    // leave every excluded file registered until the user next touched
+    // lhat-lsp.json. The host config has no such tie and follows.
+    lsp_server_load_settings(server);
     lsp_workspace_discover_roots(&server->workspace);
     lsp_server_load_host_config(server);
     lsp_server_start_worker(server);

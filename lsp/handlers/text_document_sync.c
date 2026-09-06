@@ -35,7 +35,8 @@ static char *path_from_text_document(const cJSON *text_document)
 static bool worth_rechecking(LspServer *server, const char *path)
 {
     return lsp_workspace_is_unit_path(path) ||
-           lsp_workspace_is_host_config_path(&server->workspace, path);
+           lsp_workspace_is_host_config_path(&server->workspace, path) ||
+           lsp_workspace_is_settings_path(&server->workspace, path);
 }
 
 // The editor's copy of `path`, kept for everything downstream to read

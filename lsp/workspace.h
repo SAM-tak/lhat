@@ -28,6 +28,7 @@
 
 #include "document_store.h"
 #include "host_config.h"
+#include "settings.h"
 
 typedef struct LspRoot {
     char *path;  // absolute, '/'-separated -- this root's own file (uri.h)
@@ -55,9 +56,14 @@ typedef struct {
     // minimum. Guarded by `lock` like roots/reverse: recheck_one_root
     // applies it, and the worker reloads it when the file changes.
     LspHostConfig *host_config;
-    LhatMutex lock;  // guards roots/reverse/host_config. Reached from the
-                 // main thread only before the worker starts
-                 // ("initialized"'s discover_roots + the first config load,
+    // lhat-lsp.json at root_path, parsed (settings.h), or NULL when there
+    // is none -- then nothing is excluded and "strict" is the host config's.
+    // Guarded by `lock` like the rest: the scan and every root registration
+    // read it, and the worker reloads it when the file changes.
+    LspSettings *settings;
+    LhatMutex lock;  // guards roots/reverse/host_config/settings. Reached
+                 // from the main thread only before the worker starts
+                 // ("initialized"'s config loads + discover_roots,
                  // handlers/initialize.c); every other access is the worker
                  // thread's own (recheck_all/recheck_affected/
                  // collect_diagnostics, worker.c). didOpen/didChange touch
@@ -69,36 +75,50 @@ typedef struct {
 void lsp_workspace_init(LspWorkspace *ws, const char *root_path);
 void lsp_workspace_dispose(LspWorkspace *ws);
 
-// Adds every *.lh under root_path as its own root, unchecked. A no-op in
+// Makes the set of roots agree with the settings: drops every root
+// lhat-lsp.json now excludes, adds every *.lh under root_path that it does
+// not, and then adds the files force_include_files names -- unchecked.
+// Idempotent, so re-running it after the settings change both takes away
+// what is newly excluded and brings back what is no longer. A no-op in
 // single-file mode (root_path == NULL).
 void lsp_workspace_discover_roots(LspWorkspace *ws);
 
-// (Re)loads lhat-host.json from under root_path -- the open document's text
-// when the editor holds it, disk otherwise, the same two steps checking
-// reads a unit by. Replaces whatever config was held before; a file that is
-// gone or will not parse leaves none, and bind falls back to the minimum.
-// A no-op in single-file mode.
+// The absolute path of a workspace-relative name, malloc'd (the caller
+// frees); NULL in single-file mode. What a force_include_files entry is
+// resolved against, for a caller that has to say whether the file is there.
+char *lsp_workspace_path_under_root(const LspWorkspace *ws,
+                                    const char *relative);
+
 // What a load found, for a caller with a connection to say it on -- the
 // workspace itself has none (server.h owns the one place stdout is written).
+// Shared by both configs: the four answers are the same four either way.
 typedef enum {
-    LSP_HOST_CONFIG_READ,        // parsed, and now in force
-    LSP_HOST_CONFIG_ABSENT,      // nothing at that path
-    LSP_HOST_CONFIG_UNREADABLE,  // there, but not JSON this reader takes
-    LSP_HOST_CONFIG_NO_ROOT,     // single-file mode: nowhere to look at all
-} LspHostConfigOutcome;
+    LSP_CONFIG_READ,        // parsed, and now in force
+    LSP_CONFIG_ABSENT,      // nothing at that path
+    LSP_CONFIG_UNREADABLE,  // there, but not JSON this reader takes
+    LSP_CONFIG_NO_ROOT,     // single-file mode: nowhere to look at all
+} LspConfigOutcome;
 
-// Reads the workspace root's lhat-host.json into `ws`, replacing whatever
-// was in force. `looked_at` is filled with the path that was tried (malloc'd,
-// the caller frees; NULL in single-file mode) so that what is said about the
-// outcome can name the file rather than describe it.
-LspHostConfigOutcome lsp_workspace_load_host_config(LspWorkspace *ws,
-                                                    char **looked_at);
+// (Re)loads a config from under root_path -- the open document's text when
+// the editor holds it, disk otherwise, the same two steps checking reads a
+// unit by. Replaces whatever was held before; a file that is gone or will
+// not parse leaves none, and the fallback stands: the print/collectgarbage
+// minimum for the host config, and nothing excluded for the settings.
+//
+// `looked_at` is filled with the path that was tried (malloc'd, the caller
+// frees; NULL in single-file mode) so that what is said about the outcome
+// can name the file rather than describe it.
+LspConfigOutcome lsp_workspace_load_host_config(LspWorkspace *ws,
+                                                char **looked_at);
+LspConfigOutcome lsp_workspace_load_settings(LspWorkspace *ws,
+                                             char **looked_at);
 
-// Whether `path` (absolute, forward-slashed) is this workspace's
-// lhat-host.json -- the worker's cue to reload the config and re-check
-// everything rather than treat it as a unit.
+// Whether `path` (absolute, forward-slashed) is one of this workspace's two
+// config files -- the worker's cue to reload it and re-check everything
+// rather than treat it as a unit.
 bool lsp_workspace_is_host_config_path(const LspWorkspace *ws,
                                        const char *path);
+bool lsp_workspace_is_settings_path(const LspWorkspace *ws, const char *path);
 
 // Whether `path` is one checking can take as a root -- a *.lh file. What
 // keeps a stray non-unit file (lhat-host.json itself, or anything else the
