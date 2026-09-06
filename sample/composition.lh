@@ -2,84 +2,84 @@
 # Run: build/debug/lhat.exe --run sample/composition.lh
 # Storage is in memory; this example does not write to external storage.
 
-let^ Store = t^{
-    get : p^self^, string^ -> string^|nil^;,
+let^Store = t^{
+    get : p^self^, string^-> string^|nil^;,
     put : p^self^, string^, string^;,
-    describe : f^self^ -> string^;
+    describe : f^self^-> string^;
 }
-let^ LogSink = t^{ write : p^self^, string^; }
+let^LogSink = t^{ write : p^self^, string^; }
 
-let^ MemoryStore = def^{
+let^MemoryStore = def^{
     self^{ values = {}, label = "memory" },
-    get = p^self^, key:string^ -> string^|nil^ {
+    get = p^self^, key:string^-> string^|nil^{
         # Computed-key dictionary types are not expressible yet (14.10).
-        return^ self^.values[key] as^ string^|nil^ catch^ panic^ it^
+        return^self^.values[key] as^string^|nil^catch^panic^it^
     },
-    put = p^self^, key:string^, value:string^ {
+    put = p^self^, key:string^, value:string^{
         self^.values[key] := value
     },
-    describe = f^self^ -> string^ { self^.label }
+    describe = f^self^-> string^{ self^.label }
 }
 
-let^ RecordingLog = def^{
+let^RecordingLog = def^{
     self^{ count = 0, text = "" },
-    write = p^self^, message:string^ {
+    write = p^self^, message:string^{
         self^.count += 1
         self^.text := self^.text .. message .. "\n"
     }
 }
 
-let^ LoggedStore = def^{
+let^LoggedStore = def^{
     # A layer's state remains separate even when field names coincide.
-    self^{ abstract^ inner : Store, abstract^ log : LogSink, label = "logging" },
+    self^{ abstract^inner : Store, abstract^log : LogSink, label = "logging" },
     override^new = f^inner:Store, log:LogSink {
         self^{ inner = inner, log = log }
     },
-    delegate^ self^.inner,
-    get = p^self^, key:string^ -> string^|nil^ {
+    delegate^self^.inner,
+    get = p^self^, key:string^-> string^|nil^{
         self^.log.write($"get {key}")
-        return^ self^.inner.get(key)
+        return^self^.inner.get(key)
     },
-    put = p^self^, key:string^, value:string^ {
+    put = p^self^, key:string^, value:string^{
         self^.log.write($"put {key}={value}")
         self^.inner.put(key, value)
     }
 }
 
-let^ CachedStore = def^{
-    self^{ abstract^ inner : Store, values = {}, label = "cache" },
+let^CachedStore = def^{
+    self^{ abstract^inner : Store, values = {}, label = "cache" },
     override^new = f^inner:Store { self^{ inner = inner } },
-    get = p^self^, key:string^ -> string^|nil^ {
-        let^ cached = self^.values[key]
-        if^ cached fits^ string^ { return^ cached }
-        let^ value = self^.inner.get(key)
+    get = p^self^, key:string^-> string^|nil^{
+        let^cached = self^.values[key]
+        if^cached fits^string^{ return^cached }
+        let^value = self^.inner.get(key)
         # Cache strings, including the empty string. Misses are not cached.
-        if^ value fits^ string^ { self^.values[key] := value }
-        return^ value
+        if^value fits^string^{ self^.values[key] := value }
+        return^value
     },
-    put = p^self^, key:string^, value:string^ {
+    put = p^self^, key:string^, value:string^{
         # Write through before updating the cache. Writes through another
         # handle are outside this example's cache coherence contract.
         self^.inner.put(key, value)
         self^.values[key] := value
     },
     # Methods not handled here keep their receiver through every layer.
-    delegate^ self^.inner
+    delegate^self^.inner
 }
 
 # Neither wrapper depends on the concrete storage or logger definition.
-let^ assemble = f^store:Store, log:LogSink -> Store {
+let^assemble = f^store:Store, log:LogSink -> Store {
     CachedStore.new(LoggedStore.new(store, log))
 }
-let^ check = p^condition:bool^, message:string^ {
-    if^ condition = false^ { panic^ message }
+let^check = p^condition:bool^, message:string^{
+    if^condition = false^{ panic^message }
 }
 
-let^ memory = MemoryStore.new()
+let^memory = MemoryStore.new()
 memory.put("greeting", "hello")
 memory.put("empty", "")
-let^ log = RecordingLog.new()
-let^ app = assemble(memory, log)
+let^log = RecordingLog.new()
+let^app = assemble(memory, log)
 
 check(app.describe() = "memory", "description forwarding failed")
 check(app.get("greeting") = "hello", "first read failed")
@@ -102,28 +102,28 @@ print(log.text)
 
 # An independent test double. It satisfies Store structurally and records
 # reads and writes; it does not inherit from MemoryStore or either wrapper.
-let^ TestStore = def^{
+let^TestStore = def^{
     self^{
         values = {}, label = "test", reads = 0, writes = 0,
         last_key = "", last_value = ""
     },
-    get = p^self^, key:string^ -> string^|nil^ {
+    get = p^self^, key:string^-> string^|nil^{
         self^.reads += 1
-        return^ self^.values[key] as^ string^|nil^ catch^ panic^ it^
+        return^self^.values[key] as^string^|nil^catch^panic^it^
     },
-    put = p^self^, key:string^, value:string^ {
+    put = p^self^, key:string^, value:string^{
         self^.writes += 1
         self^.last_key := key
         self^.last_value := value
         self^.values[key] := value
     },
-    describe = f^self^ -> string^ { self^.label }
+    describe = f^self^-> string^{ self^.label }
 }
 
-let^ test_store = TestStore.new()
+let^test_store = TestStore.new()
 test_store.put("greeting", "test value")
-let^ test_log = RecordingLog.new()
-let^ test_app = assemble(test_store, test_log)
+let^test_log = RecordingLog.new()
+let^test_app = assemble(test_store, test_log)
 
 check(test_app.describe() = "test", "test storage was not substituted")
 check(test_app.get("greeting") = "test value", "test read failed")
