@@ -15,10 +15,25 @@ import type { AstReply, FromWebview, ToWebview } from "./protocol";
 export class LhatGraphEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = "lhat.graph";
 
+    /**
+     * The live graphs, by the file each is showing. The outline (outline.ts)
+     * needs to reach into one from outside the editor, and a resource can
+     * have a graph in more than one group.
+     */
+    private readonly panels = new Map<string, Set<vscode.WebviewPanel>>();
+
     public constructor(
         private readonly context: vscode.ExtensionContext,
         private readonly client: () => LanguageClient | undefined,
     ) { }
+
+    /** Show what this span covers, in every graph open on that file. */
+    public focus(uri: vscode.Uri, start: number, end: number): void {
+        for (const panel of this.panels.get(uri.toString()) ?? []) {
+            void panel.webview.postMessage(
+                { type: "focus", start, end } satisfies ToWebview);
+        }
+    }
 
     public async resolveCustomTextEditor(
         document: vscode.TextDocument,
@@ -30,6 +45,14 @@ export class LhatGraphEditorProvider implements vscode.CustomTextEditorProvider 
             localResourceRoots: [this.context.extensionUri],
         };
         panel.webview.html = this.html(panel.webview);
+
+        const key = document.uri.toString();
+        let open = this.panels.get(key);
+        if (open === undefined) {
+            open = new Set();
+            this.panels.set(key, open);
+        }
+        open.add(panel);
 
         const post = (message: ToWebview) => void panel.webview.postMessage(message);
 
@@ -61,7 +84,11 @@ export class LhatGraphEditorProvider implements vscode.CustomTextEditorProvider 
                 void send();
             }
         });
-        panel.onDidDispose(() => changed.dispose());
+        panel.onDidDispose(() => {
+            changed.dispose();
+            open.delete(panel);
+            if (open.size === 0) this.panels.delete(key);
+        });
 
         panel.webview.onDidReceiveMessage((message: FromWebview) => {
             switch (message.type) {

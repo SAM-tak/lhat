@@ -20,6 +20,7 @@ import {
     State,
 } from "vscode-languageclient/node";
 import { LhatGraphEditorProvider } from "./graphEditor";
+import { LhatOutlineProvider, graphedUri } from "./outline";
 
 let client: LanguageClient | undefined;
 
@@ -133,12 +134,38 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // 06: the graph view. Registered whether or not the server came up -- it
     // says so itself rather than being missing from the editor list.
+    const graphs = new LhatGraphEditorProvider(context, () => client);
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider(
             LhatGraphEditorProvider.viewType,
-            new LhatGraphEditorProvider(context, () => client),
+            graphs,
             { webviewOptions: { retainContextWhenHidden: true } },
         ),
+    );
+
+    // The outline VSCode's own view cannot show over a custom editor
+    // (outline.ts says why). Rebuilt when another tab comes forward and when
+    // the file is edited -- the same two moments the real one redraws.
+    const outline = new LhatOutlineProvider();
+    context.subscriptions.push(
+        vscode.window.createTreeView(
+            "lhat.outline", { treeDataProvider: outline }),
+        vscode.window.tabGroups.onDidChangeTabs(() => outline.refresh()),
+        vscode.window.onDidChangeActiveTextEditor(() => outline.refresh()),
+        vscode.workspace.onDidChangeTextDocument((event) => {
+            if (event.document.uri.toString() === graphedUri()?.toString()) {
+                outline.refresh();
+            }
+        }),
+        vscode.commands.registerCommand(
+            "lhat.outlineReveal",
+            async (uri: vscode.Uri, range: vscode.Range) => {
+                // The graph counts in UTF-16 offsets (06 の 4.1); a Range is
+                // line and character, and the document converts.
+                const document = await vscode.workspace.openTextDocument(uri);
+                graphs.focus(uri, document.offsetAt(range.start),
+                             document.offsetAt(range.end));
+            }),
     );
 
     // 07 の 4 章: the hover shows an elided type, which reads better in a

@@ -101,6 +101,8 @@ interface BoxData extends Record<string, unknown> {
     onEnter: (data: BoxData) => void;
     /** Middle click: show what this was made from, in the text. */
     onReveal: (data: BoxData) => void;
+    /** Briefly marked, having just been picked in the outline. */
+    flashed: boolean;
     /** Whether this one can be folded shut, which is what shows the button. */
     foldable: boolean;
     /** The button: fold this one node, or open it, whatever the bar says. */
@@ -115,6 +117,7 @@ function toFlow(
     laid: ElkNode,
     slides: Slides,
     viewWidth: number,
+    flashKey: string | undefined,
     onSlide: BoxData["onSlide"],
     onSnap: BoxData["onSnap"],
     onEnter: BoxData["onEnter"],
@@ -257,6 +260,8 @@ function toFlow(
                     // a DOWN container slides horizontally, of a RIGHT one
                     // vertically.
                     slideAxis: dirOf(parent) === "RIGHT" ? "y" : "x",
+                    flashed: c.lhat !== undefined &&
+                        slideKeyOf(c.lhat) === flashKey,
                     snapStops,
                     slideDx: ownDx,
                     slideMin: isContainer && dirOf(parent) !== "RIGHT"
@@ -526,6 +531,7 @@ function BoxNode({ data }: NodeProps<BoxNodeType>) {
     };
 
     const classes = ["box"];
+    if (data.flashed) classes.push("flash");
     if (data.collapsed) classes.push("folded");
     else if (data.isContainer) classes.push(`container d${Math.min(data.depth, 6)}`);
     else classes.push("leaf");
@@ -672,6 +678,10 @@ function App() {
     const [viewWidth, setViewWidth] = useState(0);
     const [viewHeight, setViewHeight] = useState(0);
     const flowRef = useRef<HTMLDivElement | null>(null);
+    // What the outline last asked to be shown, and the box it landed on.
+    const [wanted, setWanted] = useState<{ start: number; end: number }>();
+    const [flashKey, setFlashKey] = useState<string>();
+    const flashTimer = useRef<number | undefined>(undefined);
     // Briefly on after a snap, so the settling glides instead of jumping.
     const [snapAnim, setSnapAnim] = useState(false);
     const snapTimer = useRef<number | undefined>(undefined);
@@ -705,6 +715,9 @@ function App() {
                     break;
                 case "error":
                     setNote(message.message);
+                    break;
+                case "focus":
+                    setWanted({ start: message.start, end: message.end });
                     break;
             }
         };
@@ -829,10 +842,11 @@ function App() {
 
     const flow = useMemo(
         () => (laid !== undefined
-            ? toFlow(laid, slides, viewWidth,
+            ? toFlow(laid, slides, viewWidth, flashKey,
                      onSlide, onSnap, onEnter, onReveal, onFold)
             : { nodes: [], exec: [] }),
-        [laid, slides, viewWidth, onSlide, onSnap, onEnter, onReveal, onFold]);
+        [laid, slides, viewWidth, flashKey,
+            onSlide, onSnap, onEnter, onReveal, onFold]);
     const nodes = flow.nodes;
 
     // What the wheel needs to know about the node under the pointer, by node
@@ -1023,6 +1037,49 @@ function App() {
         place.current = true;
     }, [flowKey]);
     const paneReady = readyKey === flowKey;
+
+    // The outline picked something: scroll to the box that covers it and mark
+    // it. Not necessarily the box for that node -- what the outline names may
+    // be inside a folded definition, and a folded box covers the whole span it
+    // stands for. The deepest box whose span contains the target is therefore
+    // always the right one to show, whatever is open.
+    useEffect(() => {
+        if (wanted === undefined || laid === undefined) return;
+        setWanted(undefined);
+        let best: { key: string; y: number; span: number } | undefined;
+        const walk = (n: ElkNode, absY: number): void => {
+            for (const c of n.children ?? []) {
+                const y = absY + (c.y ?? 0);
+                const l = c.lhat;
+                if (l !== undefined &&
+                    l.start <= wanted.start && wanted.end <= l.end) {
+                    const span = l.end - l.start;
+                    if (best === undefined || span <= best.span) {
+                        best = { key: slideKeyOf(l), y, span };
+                    }
+                }
+                walk(c, y);
+            }
+        };
+        walk(laid, 0);
+        if (best === undefined) return;
+        const found = best;
+        // A third of the way down rather than at the very top: what comes
+        // before a definition is part of reading it.
+        const height = flowRef.current?.clientHeight ?? 0;
+        paneFling.current?.();
+        paneFling.current = null;
+        const b = scrollBounds.current;
+        const v = getViewport();
+        setViewport({
+            ...v,
+            y: Math.min(Math.max(-found.y + height / 3, b.min), b.max),
+        });
+        setFlashKey(found.key);
+        window.clearTimeout(flashTimer.current);
+        flashTimer.current = window.setTimeout(
+            () => setFlashKey(undefined), 1600);
+    }, [wanted, laid, getViewport, setViewport]);
 
     const onConnect = useCallback((connection: Connection) => {
         // Edges render in an svg layer below the nodes unless told otherwise,

@@ -38,7 +38,9 @@ export type ToWebview =
     | { type: "tree"; reply: AstReply; uri: string }
     /** The unit is not part of any checked root yet (06 の 4.3). */
     | { type: "pending" }
-    | { type: "error"; message: string };
+    | { type: "error"; message: string }
+    /** Bring what this span covers into view -- the outline was clicked. */
+    | { type: "focus"; start: number; end: number };
 
 /** Webview -> host. */
 export type FromWebview =

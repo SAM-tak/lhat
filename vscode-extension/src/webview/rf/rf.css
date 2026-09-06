@@ -140,6 +140,23 @@ html, body, #root {
 .container.d5 { background: color-mix(in srgb, var(--vscode-editor-foreground) 16%, var(--vscode-editor-background)); }
 .container.d6 { background: color-mix(in srgb, var(--vscode-editor-foreground) 19%, var(--vscode-editor-background)); }
 
+/* Picked in the outline: marked long enough to be found by eye, then let
+   go. A ring rather than a fill -- what is inside the box is what the reader
+   came to look at. */
+.box.flash {
+    border-color: var(--vscode-focusBorder);
+    box-shadow: 0 0 0 calc(2px * var(--lhat-scale, 1))
+        color-mix(in srgb, var(--vscode-focusBorder) 45%, transparent);
+    animation: lhat-flash 1.6s ease-out;
+}
+
+@keyframes lhat-flash {
+    0%, 60% { box-shadow: 0 0 0 calc(3px * var(--lhat-scale, 1))
+        color-mix(in srgb, var(--vscode-focusBorder) 70%, transparent); }
+    100% { box-shadow: 0 0 0 calc(2px * var(--lhat-scale, 1))
+        color-mix(in srgb, var(--vscode-focusBorder) 0%, transparent); }
+}
+
 /* A folded definition (V15): a way in. */
 .folded {
     border-color: var(--vscode-charts-green, #6a6);

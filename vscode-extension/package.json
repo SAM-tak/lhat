@@ -68,6 +68,17 @@
         "priority": "option"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "comment": "VSCode's own Outline view cannot be filled over a custom editor (microsoft/vscode#101476), so the graph tab gets this one instead -- the same tree, in the same place, shown only while a graph is up so the two never appear together.",
+          "id": "lhat.outline",
+          "name": "L^ Graph Outline",
+          "when": "activeCustomEditorId == lhat.graph",
+          "icon": "$(symbol-class)"
+        }
+      ]
+    },
     "commands": [
       {
         "comment": "\"Show\" rather than \"Open\": the two views take turns in one tab, so nothing new is opened. The exception is lhat.graph.openBeside, where a second tab is the point.",
@@ -81,6 +92,11 @@
         "title": "Show Source",
         "category": "L^",
         "icon": "$(file-code)"
+      },
+      {
+        "command": "lhat.outlineReveal",
+        "title": "Show in Graph",
+        "category": "L^"
       },
       {
         "command": "lhat.copySignature",
@@ -127,6 +143,10 @@
         {
           "command": "lhat.copySignature",
           "when": "resourceLangId == lhat"
+        },
+        {
+          "command": "lhat.outlineReveal",
+          "when": "false"
         }
       ]
     },
