@@ -84,10 +84,9 @@ LhatType *chk_environment_type(Checker *c)
     return env;
 }
 
-// 02 の 14.16: the one nominal type every typeof^(...) has, whatever the
-// operand's own type is -- the descriptive payload is a runtime concern
-// (reflect_type, in vm.c), resolved at the call and not something a second
-// checker pass could see (03 の 4.2).
+// Every descriptor has this value type, independently of the type it names.
+// The marker distinguishes descriptors from type-bearing tables even when
+// another unit's checker constructed them.
 LhatType *chk_typeinfo_type(Checker *c)
 {
     if (c->typeinfo_type != NULL) {
@@ -98,6 +97,7 @@ LhatType *chk_typeinfo_type(Checker *c)
         return NULL;
     }
     info->v.table.nominal = true;
+    info->v.table.is_typeinfo = true;
     lhat_type_add_member(c->result->types, info, "signature", 9,
                          chk_simple(c, LHAT_TYPE_STRING));
     c->typeinfo_type = info;
@@ -369,6 +369,7 @@ void chk_check_define(Checker *c, const LhatNode *node)
         }
 
         LhatType *actual;
+        LhatType *named_type = NULL;
         if (tuple != NULL) {
             // 13.8改: the positions of what the one value answered with.
             actual = lhat_type_tuple_at(tuple, position - 1);
@@ -386,7 +387,8 @@ void chk_check_define(Checker *c, const LhatNode *node)
             // yield context above is.
             LhatType *outer_expected = c->expected_func;
             c->expected_func = annotated;
-            actual = value != NULL ? chk_infer(c, value)
+            actual = value != NULL ? chk_infer_with_named_type(c, value,
+                                                               &named_type)
                                    : chk_simple(c, LHAT_TYPE_PENDING);
             c->expected_func = outer_expected;
 
@@ -505,26 +507,12 @@ void chk_check_define(Checker *c, const LhatNode *node)
                                         value->kind == LHAT_NODE_FUNC
                                     ? value
                                     : NULL;
-                // 02 の 13.14: a let^ bound to a written type names it in
-                // type positions. Only a let^'s -- a var^ may come to hold
-                // some other descriptor -- and the flag is beside the type
-                // rather than in it, since what a read of the name answers
-                // (the typeinfo above) is not what the name stands for.
-                //
-                // 13.14改: and to X.ReturnType, which the checker read as one
-                // and stamped on the name the access ends in.
-                const LhatNode *spelling =
-                    value == NULL                            ? NULL
-                    : value->kind == LHAT_NODE_TYPE_VALUE    ? value
-                    : value->kind == LHAT_NODE_MEMBER &&
-                            value->v.access.type_spelling
-                        ? value->v.access.argument
-                        : NULL;
+                // A let^ preserves both meanings of an alias: its runtime
+                // descriptor and the type named in annotations. A var^ or
+                // an ordinary descriptor expression carries only the value.
                 b->names_type = node->v.binding.immutable && tuple == NULL &&
-                                spelling != NULL &&
-                                spelling->checked_type != NULL;
-                b->named_type =
-                    b->names_type ? (LhatType *)spelling->checked_type : NULL;
+                                named_type != NULL;
+                b->named_type = b->names_type ? named_type : NULL;
                 // 15.1改. A destructuring bind takes pieces out of something
                 // that was already there (13.10), so nothing it binds is new
                 // whatever the source looks like.
@@ -2068,7 +2056,11 @@ void chk_check_statements(Checker *c, const LhatNode *statements)
                                          : (c->scope != NULL ? c->scope->bindings
                                                              : NULL);
              b != NULL; b = b->next) {
-            if (rounds.round == 0 || !lhat_type_equal(b->seed, b->type)) {
+            bool alias_changed = b->seed_named_type != b->named_type &&
+                (b->seed_named_type == NULL || b->named_type == NULL ||
+                 !lhat_type_equal(b->seed_named_type, b->named_type));
+            if (rounds.round == 0 || !lhat_type_equal(b->seed, b->type) ||
+                alias_changed) {
                 rounds.changed = true;
             }
         }
@@ -2090,6 +2082,7 @@ void chk_check_statements(Checker *c, const LhatNode *statements)
             // comes back from the body it is read off.
             b->type = lhat_type_without_gaps(c->result->types, b->type);
             b->seed = b->type;
+            b->seed_named_type = b->named_type;
         }
     } while (true);
 

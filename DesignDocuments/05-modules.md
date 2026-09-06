@@ -616,6 +616,19 @@ g.dist(p, "text")                    # 型の誤りとして報告される
 値（記述子）とともに「何を名指すか」を運ぶので、`f^…;` の別名——値の型の
 形だけでは型と読めないもの——も届く。
 
+公開型を別の名前で束ねても、値と型名の両方の意味を引き継ぐ。
+さらに `public^ let^` で再公開できる。
+
+```lhat
+let^ geometry = require^ "lib/geometry.lt"
+let^ Vec = geometry.Vec
+public^ let^ Vector = Vec
+let^ v : Vector = {1, 2}
+```
+
+この単位を `m` として読み込んだ側では、`m.Vector` が元の `geometry.Vec` と
+同じ型を意味する。実行時の値も元の型記述子である。
+
 ### 6.2 処理の順序
 
 03 の 1.1 の段階構成に、単位の依存順が加わる。

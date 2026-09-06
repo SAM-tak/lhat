@@ -78,6 +78,100 @@ static void test_aliases(void)
     unit_dispose(&u);
 }
 
+static void test_alias_rebinding(void)
+{
+    Unit u;
+    LHAT_TEST("aliases preserve union, structure and signature types in chains");
+    check_text(&u,
+        "let^T = string^|nil^\n"
+        "let^U = T\n"
+        "let^V = (U)\n"
+        "let^Shape = t^{value:V}\n"
+        "let^Record = Shape\n"
+        "let^Sig = f^Record -> V;\n"
+        "let^Read = Sig\n"
+        "let^f:Read = f^x:Record -> V { return^ x.value }\n"
+        "let^s:V = f({value = \"aaa\"})\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a rebound alias checks values, arguments and results");
+    check_text(&u,
+        "let^T = string^|nil^\nlet^U = T\n"
+        "let^n:U = 1\n"
+        "let^f = f^x:U -> U { return^ 2 }\n"
+        "let^v = f(3)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 3);
+    unit_dispose(&u);
+
+    LHAT_TEST("shadowed, scoped and simultaneous bindings read the old aliases");
+    check_text(&u,
+        "let^A = string^|nil^\nlet^B = number^|nil^\n"
+        "do^{\n"
+        "  let^A, B = B, A\n"
+        "  let^Outer = $^A\n"
+        "  let^a:A = 1\nlet^b:B = \"b\"\nlet^c:Outer = \"c\"\n"
+        "}\n"
+        "do^{ let^A = A\nlet^a:A = \"a\" }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a deferred body learns the alias target on a later round");
+    check_text(&u,
+        "let^f = f^ { let^U = T\nlet^x:U = \"x\"\nreturn^ x }\n"
+        "let^T = string^|nil^\nlet^x = f()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("narrowing the descriptor does not discard its alias target");
+    check_text(&u,
+        "let^T = string^|nil^\n"
+        "if^ T fits^ t^{signature:string^} {\n"
+        "  let^U = T\nlet^x:U = \"x\"\n}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an alias read before its binding is still refused");
+    check_text(&u, "let^U = T\nlet^T = string^|nil^\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
+    unit_dispose(&u);
+
+    LHAT_TEST("rebinding a descriptor still captures its runtime value");
+    check_text(&u,
+        "let^T = string^|nil^\n"
+        "let^f = closed^f^ { let^U = T\nreturn^ U.signature }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_CLOSED_CAPTURES);
+    unit_dispose(&u);
+
+    static const char *const ordinary[] = {
+        "var^T = string^|nil^\nlet^U = T\n",
+        "let^T = string^|nil^\nvar^U = T\n",
+        "let^T = typeof^(0)\nlet^U = T\n",
+        "let^T = string^|nil^\nlet^id = f^x { return^ x }\nlet^U = id(T)\n",
+        "let^make = f^ { string^|nil^ }\nlet^U = make()\n",
+        "let^T = string^|nil^\nlet^U = if^ true^: T el^: T;\n",
+        "let^T = string^|nil^\nlet^box = {T}\nlet^U = box[1]\n",
+    };
+    for (size_t i = 0; i < sizeof ordinary / sizeof *ordinary; i++) {
+        LHAT_TEST("ordinary descriptor values do not acquire an alias target");
+        char text[512];
+        snprintf(text, sizeof text, "%slet^x:U = \"x\"\n", ordinary[i]);
+        check_text(&u, text);
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+        unit_dispose(&u);
+    }
+
+    Run r;
+    LHAT_TEST("rebinding keeps runtime descriptors and fits checks working");
+    run_checked_text(&r,
+        "let^T = string^|nil^\nlet^U = T\nlet^V = U\n"
+        "let^x:V = \"aaa\"\n"
+        "return^ (T = V) and^ (U.signature = T.signature) and^ (x fits^ V)\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+}
+
 static void test_parse_discrimination(void)
 {
     Unit u;
@@ -251,6 +345,7 @@ static void test_runtime(void)
 int main(void)
 {
     test_aliases();
+    test_alias_rebinding();
     test_parse_discrimination();
     test_return_type();
     test_runtime();

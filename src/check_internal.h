@@ -71,12 +71,13 @@ typedef struct Binding {
     // stands says only that there is a name, and the type says only what it
     // holds. Which of the two declared it is known here and nowhere else.
     bool is_parameter;
-    // 02 の 13.14: the name a let^ bound to a type^ value stands for that
-    // type where a type is written. `named_type` is what it stands for
+    // 02 Section 13.14: a let^ binding a written type or an existing alias
+    // names that type in annotations. `named_type` is what it stands for
     // there; `type` above stays the value's own (the typeinfo table), so a
     // read of the name as a value keeps answering the descriptor.
     bool names_type;
     LhatType *named_type;
+    LhatType *seed_named_type;  // The preceding inference round's alias target.
     // 03 の 3.4改4: the f^ literal this let^ bound, when it bound one --
     // what lets a call site say which body its argument shapes belong to.
     // NULL for every other value, and for a var^, whose name may come to
@@ -678,7 +679,8 @@ bool chk_rounds_next(Checker *c, Rounds *r);
 void chk_rounds_end(Checker *c, Rounds *r);
 void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
                 LhatType *target, LhatCheckErrorCode code);
-LhatType *chk_infer_name(Checker *c, const LhatNode *node);
+LhatType *chk_infer_name(Checker *c, const LhatNode *node,
+                         LhatType **named_type);
 LhatType *chk_infer_binary(Checker *c, const LhatNode *node);
 bool chk_signature_accepts(const LhatType *func, LhatType *const *args,
                            size_t count, bool through_member);
@@ -686,7 +688,8 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node);
 LhatType *chk_table_walk_tuple(Checker *c, const LhatType *over);
 LhatType *chk_table_element_type(Checker *c, const LhatType *over);
 LhatType *chk_without_nil_arm(Checker *c, LhatType *target);
-LhatType *chk_infer_member(Checker *c, const LhatNode *node);
+LhatType *chk_infer_member(Checker *c, const LhatNode *node,
+                           LhatType **named_type);
 void chk_unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
                      LhatType *candidate);
 LhatType *chk_infer_func(Checker *c, const LhatNode *node);
@@ -708,6 +711,9 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
 LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base);
 bool chk_is_hostvalue(const LhatType *type);
 LhatType *chk_infer(Checker *c, const LhatNode *node);
+// Infer once, also returning the alias target of a spelling or name path.
+LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
+                                    LhatType **named_type);
 LhatType *chk_environment_type(Checker *c);
 LhatType *chk_typeinfo_type(Checker *c);
 // 15.5 with 13.2: what a call of this signature answers -- the coroutine a

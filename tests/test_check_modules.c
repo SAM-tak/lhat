@@ -98,6 +98,71 @@ static void test_exported_alias(void)
     check_against_dispose(&u, &lib);
 }
 
+static void test_rebound_exports(void)
+{
+    Unit u;
+    Library lib;
+    memset(&lib, 0, sizeof lib);
+    lib.expected_path = "lib/shapes.lh";
+    const char *provider =
+        "let^Original = string^|nil^\npublic^ let^T = Original\n"
+        "let^Sig = f^number^ -> string^;\npublic^ let^F = Sig\n";
+    LHAT_TEST("renamed exports preserve aliases through nested name paths");
+    check_against(&u, &lib, provider,
+        "let^m = require^ \"lib/shapes.lh\"\n"
+        "let^ns = {inner = m}\n"
+        "let^T = ns.inner.T\nlet^F = (m.F)\n"
+        "let^x:T = \"x\"\nlet^f:F = f^n:number^ -> string^ { \"x\" }\n"
+        "if^ m.T fits^ t^{signature:string^} {\n"
+        "  let^U = m.T\nlet^y:U = nil^\n}\n"
+        "do^{ let^m = 1\nlet^U = $^ns.inner.T\nlet^y:U = \"y\" }\n");
+    CHECK_CLEAN(&u);
+    check_against_dispose(&u, &lib);
+
+    static const char *const expressions[] = {"m?.T", "get().T"};
+    for (size_t i = 0; i < sizeof expressions / sizeof *expressions; i++) {
+        LHAT_TEST("optional and computed module accesses do not make aliases");
+        char text[512];
+        snprintf(text, sizeof text,
+            "let^m = require^ \"lib/shapes.lh\"\n"
+            "let^get = f^ { return^ m }\nlet^U = %s\nlet^x:U = \"x\"\n",
+            expressions[i]);
+        check_against(&u, &lib, provider, text);
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+        check_against_dispose(&u, &lib);
+    }
+}
+
+static void test_session_aliases(void)
+{
+    Unit u;
+    LhatCheckSession *s = lhat_check_session_new();
+    static const char *const inputs[] = {
+        "let^T = string^|nil^\n",
+        "let^U = T\n",
+        "let^V = U\nlet^x:V = \"x\"\n",
+        "let^T = number^|nil^\n",
+        "let^n:T = 1\nlet^y:U = \"y\"\n",
+        "let^U = 42\n",
+    };
+    LHAT_TEST("session aliases persist and keep their original targets");
+    for (size_t i = 0; i < sizeof inputs / sizeof *inputs; i++) {
+        check_next_text(&u, s, inputs[i]);
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+    }
+    check_next_text(&u, s, "let^bad:U = \"x\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+    unit_dispose(&u);
+    check_next_text(&u, s, "var^V = string^|nil^\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+    check_next_text(&u, s, "let^Copy = V\nlet^bad:Copy = \"x\"\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
+    unit_dispose(&u);
+    lhat_check_session_dispose(s);
+}
+
 static void test_modules(void)
 {
     Unit u;
@@ -500,6 +565,8 @@ int main(void)
 {
     test_modules();
     test_exported_alias();
+    test_rebound_exports();
+    test_session_aliases();
     test_session();
     test_named_diagnostics();
     return lhat_test_report("test_check_modules");

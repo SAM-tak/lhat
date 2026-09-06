@@ -715,7 +715,8 @@ void chk_error_leaves(Checker *c, const LhatNode *at, LhatType *escaping)
         lhat_type_union(c->result->types, c->inferred_result, escaping);
 }
 
-LhatType *chk_infer_name(Checker *c, const LhatNode *node)
+LhatType *chk_infer_name(Checker *c, const LhatNode *node,
+                         LhatType **named_type)
 {
     const char *name = NULL;
     size_t length = 0;
@@ -915,6 +916,9 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node)
 #if LHAT_WITH_RESOLUTIONS
     chk_record_resolution(c, node, b);
 #endif
+    if (named_type != NULL && b->names_type) {
+        *named_type = b->named_type;
+    }
     return b->type;
 }
 
@@ -2137,9 +2141,9 @@ static bool all_error_arms(const LhatType *type)
     return true;
 }
 
-// 02 の 13.14改: a run of names and nothing else -- parser.c's names_only,
-// asked again of what stands before a ReturnType.
-static bool run_of_names(const LhatNode *node)
+// A name path, excluding computed and nil-safe accesses. Alias rebinding
+// also accepts scope specifiers; ReturnType keeps its existing grammar.
+static bool run_of_names(const LhatNode *node, bool allow_scope)
 {
     while (node != NULL && node->kind == LHAT_NODE_MEMBER &&
            !node->v.access.nil_safe) {
@@ -2151,10 +2155,12 @@ static bool run_of_names(const LhatNode *node)
         node = node->v.access.target;
     }
     return node != NULL && (node->kind == LHAT_NODE_IDENT ||
-                            node->kind == LHAT_NODE_HAT_IDENT);
+                            node->kind == LHAT_NODE_HAT_IDENT ||
+                            (allow_scope && node->kind == LHAT_NODE_SCOPE));
 }
 
-LhatType *chk_infer_member(Checker *c, const LhatNode *node)
+LhatType *chk_infer_member(Checker *c, const LhatNode *node,
+                           LhatType **named_type)
 {
     // 02 の 14.8改2: number^ carries a few static members -- the constants.
     // The word is no value of its own (a bare number^ stays an unknown
@@ -2226,7 +2232,7 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
     // it; the flag is what says the stamp is there.
     if (target->kind == LHAT_TYPE_FUNC &&
         chk_name_is(name, length, "ReturnType")) {
-        if (!run_of_names(node->v.access.target)) {
+        if (!run_of_names(node->v.access.target, false)) {
             chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
@@ -2237,6 +2243,9 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
         }
         ((LhatNode *)node->v.access.argument)->checked_type = answer;
         ((LhatNode *)node)->v.access.type_spelling = true;
+        if (named_type != NULL) {
+            *named_type = answer;
+        }
         return chk_typeinfo_type(c);
     }
 
@@ -2637,6 +2646,9 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node)
 #if LHAT_WITH_RESOLUTIONS
                 c->resolved_member = m;
 #endif
+                if (named_type != NULL && m->names_type) {
+                    *named_type = m->named_type;
+                }
                 return m->type;
             }
         }
@@ -5291,7 +5303,8 @@ bool chk_is_hostvalue(const LhatType *type)
     return lhat_type_hostvalue_arm(type) != NULL;
 }
 
-static LhatType *infer_node(Checker *c, const LhatNode *node);
+static LhatType *infer_node(Checker *c, const LhatNode *node,
+                            LhatType **named_type);
 
 // The one door every expression's type leaves through. 05 の 8.9 with 03 の
 // 5.11a: the compiler is otherwise type-blind, and a host value changes what
@@ -5300,9 +5313,19 @@ static LhatType *infer_node(Checker *c, const LhatNode *node);
 // checked_type channel infer_func already uses for a signature. Stamping only
 // host values keeps the FUNC and TYPEOF stamps (whose kinds are never
 // HOSTVALUE) untouched.
-LhatType *chk_infer(Checker *c, const LhatNode *node)
+LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
+                                    LhatType **named_type)
 {
-    LhatType *type = infer_node(c, node);
+    if (named_type != NULL) {
+        *named_type = NULL;
+        // Only a spelling or a name path carries an alias. Nested calls to
+        // chk_infer do not request this output, so a child cannot leak one.
+        if (node == NULL || (node->kind != LHAT_NODE_TYPE_VALUE &&
+                             !run_of_names(node, true))) {
+            named_type = NULL;
+        }
+    }
+    LhatType *type = infer_node(c, node, named_type);
     // 8.6.4: the place a '?op=' reads answers what is there. 04 の 11.3 puts
     // a nil^ arm on everything a key reaches, and the '?' spelling is how a
     // writer says the write is skipped rather than that the arm is gone --
@@ -5328,7 +5351,13 @@ LhatType *chk_infer(Checker *c, const LhatNode *node)
     return type;
 }
 
-static LhatType *infer_node(Checker *c, const LhatNode *node)
+LhatType *chk_infer(Checker *c, const LhatNode *node)
+{
+    return chk_infer_with_named_type(c, node, NULL);
+}
+
+static LhatType *infer_node(Checker *c, const LhatNode *node,
+                           LhatType **named_type)
 {
     if (node == NULL) {
         return NULL;
@@ -5376,16 +5405,16 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
         case LHAT_NODE_FOCUS: {
             // 13.11: a branch may know more about this path than the binding.
             LhatType *narrowed = chk_narrowed_type(c, node);
-            if (narrowed == NULL) {
-                return chk_infer_name(c, node);
+            if (narrowed == NULL || named_type != NULL) {
+                LhatType *held = chk_infer_name(c, node, named_type);
+                if (narrowed == NULL) {
+                    return held;
+                }
             }
 #if LHAT_WITH_RESOLUTIONS
-            // 07 の 4 章: chk_infer_name is what records a name, and a
-            // narrowed one never reaches it -- so inside the branch that
-            // knows most about it, a name was the one thing no tool could
-            // say anything about. It is still the same binding: 8.9's word
-            // and 13.1's declaration are the binding's to answer, and only
-            // the type is the branch's.
+            // Record the narrowed value type at the same declaration. An
+            // alias lookup above may also have recorded the original value
+            // type; settling the records keeps this more precise answer.
             //
             // The binding is looked up rather than reported on: an
             // undefined name has no narrowing to reach this with, since
@@ -5548,18 +5577,21 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_MEMBER: {
             LhatType *narrowed = chk_narrowed_type(c, node);
-            LhatType *answer =
-                narrowed != NULL
-                    ? narrowed
-                    : nil_propagated(c, node, chk_infer_member(c, node));
+            LhatType *answer = narrowed;
+            if (narrowed == NULL || named_type != NULL) {
+                LhatType *held = chk_infer_member(c, node, named_type);
+                if (narrowed == NULL) {
+                    answer = nil_propagated(c, node, held);
+                }
+            }
 #if LHAT_WITH_RESOLUTIONS
             // 07 の 4 章: recorded here rather than inside chk_infer_member,
             // which answers from a dozen places -- the built-in members of a
             // coroutine (15.6改), an error's own two (04 の 2.3), a
             // definition's, a table's. What every one of them has in common
             // is that it came back through here.
-            // A narrowed path answered without a lookup (13.11), so the
-            // member left over is whatever ran before it -- not this one.
+            // Only use a lookup record when it supplied the value type.
+            // A narrowed path may have skipped the lookup entirely.
             const LhatTypeMember *found =
                 narrowed != NULL ? NULL : c->resolved_member;
             // 02 の 19 章: an enum's member read in value position answers
@@ -5765,6 +5797,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node)
             LhatType *named = chk_resolve_type(c, node->v.jump.value);
             c->in_type_value = outer_in_type_value;
             ((LhatNode *)node)->checked_type = named;
+            if (named_type != NULL) {
+                *named_type = named;
+            }
             return chk_typeinfo_type(c);
         }
 

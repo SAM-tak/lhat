@@ -204,6 +204,16 @@ static void test_the_name_ends_where_the_name_ends(void)
 
 int main(void)
 {
+    {
+        LHAT_TEST("a copied alias's type use points to the new declaration");
+        Checked c;
+        check_text(&c,
+            "let^T = string^|nil^\nlet^U = T\nlet^x:U = \"x\"\n");
+        LHAT_CHECK_EQ_INT(c.checked.diagnostic_count, 0);
+        expect_definition(&c, "U = \"x\"", "U = T");
+        expect_definition(&c, "T\n", "T = string^");
+        check_dispose(&c);
+    }
     test_a_name_a_scope_holds();
     test_a_member_found_in_a_type();
     test_a_written_type_name();

@@ -576,6 +576,21 @@ static void test_across_units(void)
 
 int main(void)
 {
+    {
+        LHAT_TEST("a copied alias shows its target in a type position");
+        Checked c;
+        check_text(&c,
+            "let^T = string^|nil^\nlet^U = T\nlet^x:U = \"x\"\n"
+            "let^signature = U.signature\n");
+        LHAT_CHECK_EQ_INT(c.checked.diagnostic_count, 0);
+        char *text = hover_text(&c, last_offset(&c, "U = \"x\""));
+        expect_contains(text, "string^|nil^");
+        free(text);
+        text = hover_text(&c, last_offset(&c, "U.signature"));
+        expect_contains(text, "signature : string^");
+        free(text);
+        check_dispose(&c);
+    }
     test_definition();
     test_member();
     test_declaration();

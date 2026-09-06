@@ -687,6 +687,44 @@ static void test_reloading_with_a_pending_cleanup(void)
     lhat_program_dispose(&program);
 }
 
+static void test_reexported_aliases(void)
+{
+    static const File files[] = {
+        {"base.lh",
+         "module^ ns.base\n"
+         "public^ let^T = string^|nil^\n"
+         "public^ let^Sig = f^number^ -> string^;\n"},
+        {"facade.lh",
+         "module^ ns.facade\nlet^base = require^ \"base.lh\"\n"
+         "public^ let^Text = base.T\npublic^ let^Read = base.Sig\n"},
+        {"main.lh",
+         "require^ \"facade.lh\"\nlet^base = require^ \"base.lh\"\n"
+         "let^T = ns.facade.Text\nlet^U = T\nlet^F = ns.facade.Read\n"
+         "let^read:F = f^n:number^ -> string^ { \"aaa\" }\n"
+         "let^x:U = read(1)\n"
+         "return^ (x fits^ U) and^ (U = base.T) and^"
+         " (U.signature = \"string^|nil^\")\n"},
+    };
+    LHAT_TEST("reexported aliases keep types and runtime descriptors across units");
+    LhatProgram program;
+    Disk disk;
+    program_with(&program, &disk, files, 3);
+    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+               "the aliases checked across all three units");
+    bool compiled = lhat_program_compile(&program);
+    LHAT_CHECK(compiled, "the aliases compiled");
+    if (compiled && root != NULL) {
+        LhatMachine *machine = lhat_machine_new();
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_bool(ran.value) && lhat_as_bool(ran.value),
+                   "the descriptors and runtime type checks agree");
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+}
+
 static void test_running(void)
 {
     LhatProgram program;
@@ -5157,6 +5195,7 @@ int main(void)
     test_documentation();
 #endif
     test_running();
+    test_reexported_aliases();
     test_reloading();
     test_reloading_with_a_pending_cleanup();
     test_reload_call();

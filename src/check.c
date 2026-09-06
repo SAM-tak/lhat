@@ -823,8 +823,32 @@ static LhatType *as_written_type(LhatType *bound)
 // Without this the lookup answered with whatever the name was worth, which
 // made every binding a type meaning "what this value is". 'let^ x = 1' then
 // admitted 'y : x' for number^, which 2.2 does not say and nothing relies on.
+static bool contains_typeinfo(const LhatType *type)
+{
+    if (type == NULL) {
+        return false;
+    }
+    if (type->kind == LHAT_TYPE_TABLE) {
+        return type->v.table.is_typeinfo;
+    }
+    if (type->kind == LHAT_TYPE_UNION || type->kind == LHAT_TYPE_INTERSECT) {
+        for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (contains_typeinfo(arm->type)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 static bool names_a_type(const LhatType *bound)
 {
+    // A descriptor, including one imported or made optional by '?.', only
+    // names a type when its binding explicitly carries the alias target.
+    if (contains_typeinfo(bound)) {
+        return false;
+    }
     if (bound == NULL) {
         return true;  // 3.4's gap; nothing here says it is wrong
     }
@@ -1311,15 +1335,6 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
                 record_type_name(c, node, declared->named_type);
 #endif
                 return declared->named_type;
-            }
-
-            // 02 の 13.14: a descriptor that is only a value -- typeof^'s
-            // answer, a var^'s hold -- names nothing. Only the let^-bound
-            // spelling above does; without the refusal the typeinfo table
-            // itself would read as a type here.
-            if (declared->type == c->typeinfo_type) {
-                chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
-                return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
 
             // 2.2 gives a type to a def^ and an errordef^, and to nothing
@@ -3232,6 +3247,7 @@ struct LhatCheckSession {
         char *name;
         size_t length;
         LhatType *type;
+        LhatType *named_type;
         // 8.9: which word bound it, so that a let^ in one input is still a
         // let^ when a later one writes ':=' -- and a var^ over it makes the
         // name writable again, the way 03 の 4.3 makes a redefinition the
@@ -3338,13 +3354,15 @@ void lhat_check_session_dispose(LhatCheckSession *session)
 // same name -- 8.7 makes a second let^ a new name, and at the top level of a
 // REPL that is what a writer means by it.
 static void session_keep(LhatCheckSession *session, const char *name,
-                         size_t length, LhatType *type, bool immutable)
+                         size_t length, LhatType *type, bool immutable,
+                         LhatType *named_type)
 {
     for (size_t i = 0; i < session->count; i++) {
         if (session->names[i].length == length &&
             memcmp(session->names[i].name, name, length) == 0) {
             session->names[i].type = type;
             session->names[i].immutable = immutable;
+            session->names[i].named_type = named_type;
             return;
         }
     }
@@ -3359,6 +3377,7 @@ static void session_keep(LhatCheckSession *session, const char *name,
     session->names[session->count].length = length;
     session->names[session->count].type = type;
     session->names[session->count].immutable = immutable;
+    session->names[session->count].named_type = named_type;
     session->count++;
 }
 
@@ -3426,6 +3445,8 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
             b->reached = true;
             b->from_session = true;
             b->immutable = session->names[i].immutable;
+            b->named_type = session->names[i].named_type;
+            b->names_type = b->named_type != NULL;
         }
     }
 
@@ -3445,7 +3466,8 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     // bound under the same name. The types are in the session's arena
     // already, so only the names are copied.
     for (Binding *b = scope.bindings; b != NULL; b = b->next) {
-        session_keep(session, b->name, b->name_length, b->type, b->immutable);
+        session_keep(session, b->name, b->name_length, b->type, b->immutable,
+                     b->named_type);
     }
     session->environment = checker.environment;
     session->typeinfo_type = checker.typeinfo_type;

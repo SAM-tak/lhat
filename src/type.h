@@ -115,8 +115,8 @@ typedef struct LhatTypeMember {
     const char *name;
     size_t name_length;
     LhatType *type;
-    // 02 の 13.14: this member names a type -- a type^ value a let^ bound
-    // and a public^ exported. `named_type` is what the name stands for in a
+    // 02 Section 13.14: this member names a type -- a written or inherited
+    // alias exported by public^ let^. `named_type` is its meaning in a
     // type position; `type` above stays the value's own (a typeinfo), so
     // reading the member as a value is unchanged. Nothing in the relations
     // reads these.
@@ -233,6 +233,9 @@ struct LhatType {
             // would make every one of them the same type and hand a pointer
             // to the C that expects another.
             bool nominal;
+            // The runtime descriptor's own type, never an instance type to
+            // infer from a value binding. Kept across module boundaries.
+            bool is_typeinfo;
             // 05 の 8.6: a table the machine made rather than the program --
             // L^ itself, its module registry, and what require^ or import^
             // answers with. Nothing written in L^ may change one. The host
