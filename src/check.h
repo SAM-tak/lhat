@@ -399,6 +399,35 @@ typedef struct {
     // is valid for as long as the result is.
     LhatType *type;
 } LhatResolution;
+
+// 07 の 4 章: a place a member name may stand -- the '.' of an access, with
+// the type of whatever stands to its left.
+//
+// Kept apart from LhatResolution because a resolution is keyed by a name's
+// span, and this is wanted exactly when there is no name: the parser leaves
+// a member with nothing under it for a dot at the end of what has been typed
+// so far (parser.c), and a tool asked what may stand there needs the
+// receiver rather than the answer. Working the receiver out from the names
+// around it would be a second reading of 14.10's lookup, which is the thing
+// this file exists to avoid.
+typedef struct {
+    uint32_t dot;  // where the '.' or '?.' stands: the member node's own
+                   // offset, which is the operator rather than the whole
+    uint32_t end;  // one past the member name, or one past the dot when
+                   // nothing was written -- so a cursor inside a half-typed
+                   // name finds the site the same way
+    bool nil_safe;  // 11.7改2: written '?.'
+    // 02 の 14.8改2: the receiver was written as the WORD number^, which is
+    // no value of its own -- what stands after the dot there is one of the
+    // constants and nothing else. `receiver` is number^ either way, so this
+    // is the only thing that tells the two apart.
+    bool number_word;
+    // What stands to the left, as the checker settled it, with the nil^ arm
+    // set aside where the lookup sets it aside -- so what a tool offers and
+    // what a member access would accept are the one answer. Belongs to the
+    // result's type arena, so it is valid for as long as the result is.
+    LhatType *receiver;
+} LhatMemberSite;
 #endif  // LHAT_WITH_RESOLUTIONS
 
 // 05 の 8.7: a host registers what it provides by writing the type out, so
@@ -437,6 +466,12 @@ typedef struct {
     LhatResolution *resolutions;
     size_t resolution_count;
     size_t resolution_capacity;
+
+    // Every '.' the walk met, ordered by `dot` for the same reason and by
+    // the same settling.
+    LhatMemberSite *member_sites;
+    size_t member_site_count;
+    size_t member_site_capacity;
 #endif
 
     // 05 の 4 章: the structure of what this unit publishes, or NULL when it
@@ -454,6 +489,41 @@ typedef struct {
 // `offset` may fall anywhere within the name, not only on its first byte.
 const LhatResolution *lhat_check_resolution_at(const LhatCheckResult *result,
                                                uint32_t offset);
+
+// The member access whose '.' stands before `offset`, or NULL when none
+// does. Open at the bottom and closed at the top: a cursor on the dot itself
+// is still before it and answers nothing, and one just past it -- which is
+// where it stands when the dot has only now been typed -- answers this one.
+// For 'a.b.c' the two sites meet without overlapping, so a cursor between
+// 'b' and the second dot finds the access that answered b and no other.
+const LhatMemberSite *lhat_check_member_site_at(const LhatCheckResult *result,
+                                                uint32_t offset);
+
+// 07 の 4 章 with 14.19: the built-in members `receiver` answers -- `length`
+// on a string, `push^` on a plain table, `resume` on a coroutine. No member
+// list holds them; they are the checker's own answers, and this asks the
+// checker for each of them rather than describing them a second time.
+//
+// The sink gets the spelling that answered (bare or hatted -- 01 の 2.3 makes
+// those different names) and the type the access would have. Written members
+// are NOT included: those are the type's own, and lhat_type_find_member is
+// what lists them.
+//
+// Types are made in `result`'s arena as the walk would make them, so they
+// live as long as the result does -- and the arena grows by one signature per
+// member offered. Nothing is reported and nothing is recorded: the question
+// is asked with no place for a diagnostic to stand.
+typedef void (*LhatBuiltinSink)(void *context, const char *name, size_t length,
+                                LhatType *type);
+void lhat_check_builtin_members(LhatCheckResult *result, LhatType *receiver,
+                                LhatBuiltinSink sink, void *context);
+
+// 02 の 14.8改2: the constants number^ carries, for a site written as the
+// word (LhatMemberSite's number_word). Nothing else stands there, so this is
+// the whole answer rather than an addition to the one above.
+void lhat_check_number_constants(LhatCheckResult *result,
+                                 LhatBuiltinSink sink, void *context);
+
 #endif
 
 // 05 の 5 章. Asked for the unit at `path`, relative to whatever the resolver

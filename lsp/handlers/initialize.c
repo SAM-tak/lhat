@@ -76,6 +76,16 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     // 07 の 4 章: the checker recorded where every name it resolved was
     // declared, which is the whole of what going to one needs.
     cJSON_AddBoolToObject(capabilities, "definitionProvider", true);
+    // 07 の 4 章: what may stand where the cursor is. The dot is the one
+    // character that starts it on its own; the quote is what opens a
+    // require^'s path. Anything else is the editor asking on demand.
+    cJSON *completion = cJSON_CreateObject();
+    cJSON_AddItemToObject(capabilities, "completionProvider", completion);
+    cJSON_AddBoolToObject(completion, "resolveProvider", false);
+    static const char *const triggers[] = {".", "\""};
+    cJSON_AddItemToObject(completion, "triggerCharacters",
+                          string_array(triggers, 2));
+
     // The outline, from the tree alone (document_symbol.h).
     cJSON_AddBoolToObject(capabilities, "documentSymbolProvider", true);
 

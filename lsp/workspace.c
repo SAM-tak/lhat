@@ -763,6 +763,83 @@ void lsp_workspace_collect_diagnostics(LspWorkspace *ws,
     lhat_mutex_unlock(&ws->lock);
 }
 
+
+// 07 の 4 章: the editor's current text, checked into a program of its own,
+// handed to `sink` while it stands.
+//
+// The workspace's own copy is no use for this one question. A completion is
+// asked on the very keystroke that made the text, and the worker waits out
+// LSP_DEBOUNCE_MS (worker.c) before it re-checks -- so the unit the roots
+// hold has never seen the '.' being asked about, and neither has the
+// document store's text been through the checker yet. Reading it would
+// answer about the file as it stood a moment ago.
+//
+// No compile: nothing here runs, and a tree with a half-written member in it
+// is the normal case rather than the exception.
+void lsp_workspace_with_fresh_unit(LspWorkspace *ws, const char *path,
+                                   LspUnitSink sink, void *context)
+{
+    if (path == NULL) {
+        return;
+    }
+    // The host config is swapped under this lock, and lsp_program_load reads
+    // the document store as the loader does everywhere else.
+    lhat_mutex_lock(&ws->lock);
+    LhatProgram program;
+    lhat_program_init(&program, true, lsp_program_load, ws);
+    bind_host_names(ws, &program);
+    const LhatUnit *unit = lhat_program_check(&program, path);
+    if (unit != NULL && unit->loaded) {
+        sink(context, unit);
+    }
+    lhat_program_dispose(&program);
+    lhat_mutex_unlock(&ws->lock);
+}
+
+// The paths of every root, copied. What require^ may name -- discover_roots
+// has already applied lhat-lsp.json's exclude, so nothing here has to.
+char **lsp_workspace_copy_unit_paths(LspWorkspace *ws, size_t *count)
+{
+    *count = 0;
+    lhat_mutex_lock(&ws->lock);
+    size_t total = 0;
+    for (const LspRoot *r = ws->roots; r != NULL; r = r->next) {
+        total++;
+    }
+    char **paths = total > 0 ? (char **)calloc(total, sizeof *paths) : NULL;
+    if (paths != NULL) {
+        for (const LspRoot *r = ws->roots; r != NULL; r = r->next) {
+            char *copy = lsp_strdup(r->path);
+            if (copy != NULL) {
+                paths[(*count)++] = copy;
+            }
+        }
+    }
+    lhat_mutex_unlock(&ws->lock);
+    return paths;
+}
+
+// The distinct modules the host config names, copied. The strings belong to
+// the parsed JSON, which the worker may replace under the lock.
+char **lsp_workspace_copy_module_names(LspWorkspace *ws, size_t *count)
+{
+    lhat_mutex_lock(&ws->lock);
+    char **modules = lsp_host_config_modules(ws->host_config, count);
+    lhat_mutex_unlock(&ws->lock);
+    return modules;
+}
+
+void lsp_workspace_free_strings(char **strings, size_t count)
+{
+    if (strings == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        free(strings[i]);
+    }
+    free(strings);
+}
+
 void lsp_workspace_with_unit(LspWorkspace *ws, const char *path,
                              LspUnitSink sink, void *context)
 {

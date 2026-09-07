@@ -2159,6 +2159,41 @@ static bool run_of_names(const LhatNode *node, bool allow_scope)
                             (allow_scope && node->kind == LHAT_NODE_SCOPE));
 }
 
+// 14.19 with 15.6改 and the rest: the words the cascade below answers to.
+//
+// Spellings to TRY, and nothing more -- no hat, no receiver, no condition.
+// Which of them a given type actually answers, and under which spelling, is
+// what chk_member_of decides, and asking it is how a tool lists them
+// (lhat_check_builtin_members). Writing the conditions out a second time
+// here is exactly what this arrangement exists to avoid: they are the hard
+// part (plain_table_type, the hat-only families, a written member winning
+// first), and a copy of them would disagree where they are hardest.
+//
+// So a word too many costs nothing -- it simply answers nowhere. A word
+// missing costs one completion that is not offered, and never a wrong one.
+// Adding a built-in to the cascade means adding its bare word here.
+//
+// Bare, because the enumeration tries "word" and "word^" for each and keeps
+// whichever answers (01 の 2.3: the hat is part of the name).
+const char *const chk_builtin_words[] = {
+    "ReturnType", "abs", "at", "cause",
+    "ceil", "clamp", "clear", "clone",
+    "contains", "count", "dispose", "done",
+    "enum", "eq", "extend", "find",
+    "findall", "floor", "get", "indexof",
+    "insert", "iterate", "join", "keys",
+    "len", "length", "message", "move",
+    "pop", "push", "remove", "replace",
+    "resume", "reverse", "round", "self",
+    "set", "sign", "size", "slice",
+    "sort", "split", "stablesort", "start",
+    "started", "sub", "substr", "substring",
+    "tolower", "tonumber", "tostring", "toupper",
+    "value", "values",
+};
+const size_t chk_builtin_word_count =
+    sizeof chk_builtin_words / sizeof chk_builtin_words[0];
+
 LhatType *chk_infer_member(Checker *c, const LhatNode *node,
                            LhatType **named_type)
 {
@@ -2173,6 +2208,12 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
         chk_name_is(on_name, on_length, "number^")) {
         const char *constant = NULL;
         size_t constant_length = 0;
+#if LHAT_WITH_RESOLUTIONS
+        // 07 の 4 章: the dot is recorded here too, and marked as the word's
+        // -- a tool asked what may stand after 'number^.' is owed the
+        // constants, and this branch answers before any type exists to ask.
+        chk_record_member_site(c, node, chk_simple(c, LHAT_TYPE_NUMBER), true);
+#endif
         if (chk_node_name(c, node->v.access.argument, &constant,
                           &constant_length) &&
             lhat_number_constant(constant, constant_length) != NULL) {
@@ -2190,6 +2231,17 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
     // b's record standing where c's was asked for.
     c->resolved_member = NULL;
     c->resolved_kind = NULL;
+    // 07 の 4 章: what stands to the left of the dot, controlled here rather
+    // than where the answer comes back. This one is wanted exactly when the
+    // name below is missing -- a dot at the end of what has been typed so
+    // far -- so it is taken before that bail, and the nil^ arm is set aside
+    // by the same rule the lookup further down applies, so that what a tool
+    // offers and what an access would accept are the one answer.
+    chk_record_member_site(c, node,
+                           (!c->strict || node->v.access.nil_safe)
+                               ? chk_without_nil_arm(c, target)
+                               : target,
+                           false);
 #endif
     const char *name = NULL;
     size_t length = 0;
@@ -2224,6 +2276,30 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
         target = chk_without_nil_arm(c, target);
     }
 
+    return chk_member_of(c, target, name, length, node, named_type);
+}
+
+// 14.10 with 14.19: what `target` answers for a member of this name. Split
+// out of chk_infer_member so that it can be ASKED rather than only walked
+// into -- a tool listing what may stand after a '.' has a type and a spelling
+// and nothing else, and working the answer out for itself would be a second
+// reading of everything below (07 の 4 章 refuses that for the same reason it
+// refuses re-deriving 8 章's scoping).
+//
+// `node` is where a diagnostic would stand, and NULL asks the question
+// quietly: chk_report already bails on a NULL position (check.c) and so does
+// every report_named through it, so a probe reports nothing and mutates
+// nothing. The three places that read the node for something other than a
+// position guard on it themselves.
+//
+// What the caller must have done first, because the prologue does it and a
+// probe cannot: settled the target (this refuses UNKNOWN and PENDING above),
+// and set aside the nil^ arm under 11.4's rule -- which for a probe means
+// handing in the receiver LhatMemberSite already recorded.
+LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
+                        size_t length, const LhatNode *node,
+                        LhatType **named_type)
+{
     // 02 の 13.14改: X.ReturnType -- what a call of X answers, as the
     // descriptor a written type is (13.14). Only a run of names may stand
     // for X: the compiler folds the whole access into a constant, so a call
@@ -2232,7 +2308,10 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
     // it; the flag is what says the stamp is there.
     if (target->kind == LHAT_TYPE_FUNC &&
         chk_name_is(name, length, "ReturnType")) {
-        if (!run_of_names(node->v.access.target, false)) {
+        // A probe has no tree to read the run off, and no name to stamp the
+        // answer on -- what it wants to know is only whether the member is
+        // there, which for ReturnType it is whenever the receiver is an f^.
+        if (node != NULL && !run_of_names(node->v.access.target, false)) {
             chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
@@ -2241,8 +2320,10 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
             chk_report(c, node, LHAT_CHECK_ERR_NO_RESULT_TYPE);
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
-        ((LhatNode *)node->v.access.argument)->checked_type = answer;
-        ((LhatNode *)node)->v.access.type_spelling = true;
+        if (node != NULL) {
+            ((LhatNode *)node->v.access.argument)->checked_type = answer;
+            ((LhatNode *)node)->v.access.type_spelling = true;
+        }
         if (named_type != NULL) {
             *named_type = answer;
         }
@@ -2296,7 +2377,7 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
         const LhatTypeMember *field = chk_find_member(held, name, length);
         if (field != NULL && field->type != NULL &&
             field->type->kind != LHAT_TYPE_FUNC) {
-            if (c->writing_to == node) {
+            if (node != NULL && c->writing_to == node) {
                 chk_report(c, node, LHAT_CHECK_ERR_BOX_FIELD_WRITE);
             }
 #if LHAT_WITH_RESOLUTIONS
@@ -2419,6 +2500,7 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
             (chk_name_is(name, length, "start") ||
              chk_name_is(name, length, "resume") ||
              chk_name_is(name, length, "dispose")) &&
+            node != NULL &&
             !chk_receiver_is_own_coroutine(c, node->v.access.target)) {
             chk_report(c, node, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
         }

@@ -10,6 +10,8 @@
 #include "lhat/object.h"  // LhatHostValueFieldKind, LhatValue for the stub
 #include "lhat/vm.h"      // LhatMachine, LhatHostFn's shape
 
+#include "util.h"
+
 struct LspHostConfig {
     cJSON *root;  // the parsed file; entries are read straight off it
 };
@@ -144,6 +146,62 @@ void lsp_host_config_counts(const LspHostConfig *config, size_t *types,
         *annotations =
             config != NULL ? array_length(config->root, "annotations") : 0;
     }
+}
+
+// 05 の 8.7: a module is not an entry of its own -- every registration names
+// the module it belongs to, so the set of them is read off those names. The
+// nested ones come with it: "std.math.vector3" names three, and what
+// completion offers is a segment at a time (lsp/completion.h).
+static bool already_named(char **modules, size_t count, const char *name)
+{
+    for (size_t i = 0; i < count; i++) {
+        if (strcmp(modules[i], name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void gather_modules(const cJSON *entries, char ***modules,
+                           size_t *count, size_t *capacity)
+{
+    const cJSON *entry = NULL;
+    cJSON_ArrayForEach(entry, entries) {
+        const char *module = string_of(entry, "module");
+        if (module == NULL || *module == '\0' ||
+            already_named(*modules, *count, module)) {
+            continue;
+        }
+        if (*count == *capacity) {
+            size_t wanted = *capacity == 0 ? 16 : *capacity * 2;
+            char **grown = (char **)realloc(*modules, wanted * sizeof **modules);
+            if (grown == NULL) {
+                return;
+            }
+            *modules = grown;
+            *capacity = wanted;
+        }
+        char *copy = lsp_strdup(module);
+        if (copy != NULL) {
+            (*modules)[(*count)++] = copy;
+        }
+    }
+}
+
+char **lsp_host_config_modules(const LspHostConfig *config, size_t *count)
+{
+    *count = 0;
+    if (config == NULL) {
+        return NULL;
+    }
+    char **modules = NULL;
+    size_t capacity = 0;
+    // Both halves: a module may register only types, or only functions.
+    gather_modules(cJSON_GetObjectItemCaseSensitive(config->root, "types"),
+                   &modules, count, &capacity);
+    gather_modules(cJSON_GetObjectItemCaseSensitive(config->root, "functions"),
+                   &modules, count, &capacity);
+    return modules;
 }
 
 static void apply_type(const cJSON *entry, LhatProgram *program)

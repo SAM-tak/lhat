@@ -614,19 +614,40 @@ bool lhat_name_is(const char *text, size_t length, const char *literal)
 // 02 の 14.8改2: the constants number^ carries as static members. One
 // table read by the checker (the name is a member) and the compiler (its
 // value), so the two cannot disagree.
+// An array rather than a run of tests, so that the one table can be read
+// three ways rather than two: which name is one (the checker), what its
+// value is (the compiler), and what they all are (07 の 4 章, listing what
+// may stand after 'number^.').
+static const struct {
+    const char *name;
+    size_t length;
+    double value;
+} NUMBER_CONSTANTS[] = {
+    { "pi", 2, 3.14159265358979323846 },
+    { "tau", 3, 6.28318530717958647692 },
+    { "e", 1, 2.71828182845904523536 },
+    { "inf", 3, HUGE_VAL },
+    { "nan", 3, NAN },
+};
+
 const double *lhat_number_constant(const char *name, size_t length)
 {
-    static const double pi = 3.14159265358979323846;
-    static const double tau = 6.28318530717958647692;
-    static const double e = 2.71828182845904523536;
-    static const double inf = HUGE_VAL;
-    static const double nan = NAN;
-    if (lhat_name_is(name, length, "pi")) return &pi;
-    if (lhat_name_is(name, length, "tau")) return &tau;
-    if (lhat_name_is(name, length, "e")) return &e;
-    if (lhat_name_is(name, length, "inf")) return &inf;
-    if (lhat_name_is(name, length, "nan")) return &nan;
+    for (size_t i = 0; i < sizeof NUMBER_CONSTANTS / sizeof *NUMBER_CONSTANTS;
+         i++) {
+        if (lhat_name_is(name, length, NUMBER_CONSTANTS[i].name)) {
+            return &NUMBER_CONSTANTS[i].value;
+        }
+    }
     return NULL;
+}
+
+const char *lhat_number_constant_at(size_t index, size_t *length)
+{
+    if (index >= sizeof NUMBER_CONSTANTS / sizeof *NUMBER_CONSTANTS) {
+        return NULL;
+    }
+    *length = NUMBER_CONSTANTS[index].length;
+    return NUMBER_CONSTANTS[index].name;
 }
 
 bool lhat_node_is_environment(const LhatNode *node, const char *source_text,

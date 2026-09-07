@@ -201,6 +201,7 @@ typedef struct {
     size_t diagnostics;
 #if LHAT_WITH_RESOLUTIONS
     size_t resolutions;
+    size_t member_sites;
 #endif
     size_t round;
     // One walk per element plus one: an element settles no later than the one
@@ -556,7 +557,14 @@ void chk_record_kind_resolution(Checker *c, const LhatNode *at, LhatType *type,
 void chk_record_unit_resolution(Checker *c, const LhatNode *at,
                                 LhatType *exports, const char *unit_path);
 
+// 07 の 4 章: the '.' of a member access and what stands to its left.
+// Made where the receiver is inferred rather than where the answer comes
+// back -- see check.h's LhatMemberSite.
+void chk_record_member_site(Checker *c, const LhatNode *node,
+                            LhatType *receiver, bool number_word);
+
 void chk_settle_resolutions(LhatCheckResult *result);
+void chk_settle_member_sites(LhatCheckResult *result);
 #endif
 // Marks where `member` was written, for the record above to point at.
 // Outside the guard and a no-op without it: the sites that call this hold a
@@ -688,6 +696,17 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node);
 LhatType *chk_table_walk_tuple(Checker *c, const LhatType *over);
 LhatType *chk_table_element_type(Checker *c, const LhatType *over);
 LhatType *chk_without_nil_arm(Checker *c, LhatType *target);
+// 14.19: the bare spellings the built-in cascade answers to, for the one
+// caller that lists them rather than looking one up. See check_expr.c, where
+// it stands next to the cascade it belongs to.
+extern const char *const chk_builtin_words[];
+extern const size_t chk_builtin_word_count;
+
+// 14.10 with 14.19: what a type answers for a member of this name, asked
+// rather than walked into. `node` NULL asks it quietly -- see check_expr.c.
+LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
+                        size_t length, const LhatNode *node,
+                        LhatType **named_type);
 LhatType *chk_infer_member(Checker *c, const LhatNode *node,
                            LhatType **named_type);
 void chk_unify_yield(Checker *c, const LhatNode *at, LhatType **slot,

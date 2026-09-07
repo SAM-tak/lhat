@@ -3658,6 +3658,85 @@ static void test_recovery(void)
     parse_dispose(&p);
 }
 
+
+// 07 の 4 章: a dot with nothing after it is a writer asking what may stand
+// there, and the answer needs a node to hang off. So the member is kept with
+// nothing under it -- the one shape completion reads, and the one the
+// checker records a receiver type against.
+static void test_a_dot_with_nothing_after_it(void)
+{
+    Parse p;
+
+    LHAT_TEST("07 の 4 章: a trailing dot is a member with nothing under it");
+    parse_text(&p, "x := foo.");
+    LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 1);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK_EQ_INT(value->kind, LHAT_NODE_MEMBER);
+        LHAT_CHECK(value->v.access.argument == NULL,
+                   "expected nothing under the dot");
+        LHAT_CHECK_EQ_INT(value->v.access.target->kind, LHAT_NODE_IDENT);
+        // The node stands at the dot and ends just past it, which is exactly
+        // where the cursor is when the question is asked.
+        LHAT_CHECK_EQ_INT((int)value->offset, 8);
+        LHAT_CHECK_EQ_INT((int)value->end, 9);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and '?.' keeps its guard and its two characters");
+    parse_text(&p, "x := foo?.");
+    LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 1);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK_EQ_INT(value->kind, LHAT_NODE_MEMBER);
+        LHAT_CHECK(value->v.access.argument == NULL,
+                   "expected nothing under the dot");
+        LHAT_CHECK(value->v.access.nil_safe, "expected the '?' to be kept");
+        // 11.7改2: the run ends here, so this is where the nil^ arm goes.
+        LHAT_CHECK(value->v.access.nil_chain_end,
+                   "expected the guarded run to end here");
+        LHAT_CHECK_EQ_INT((int)value->end, (int)value->offset + 2);
+    }
+    parse_dispose(&p);
+
+    // 8.2 refuses a bare expression where a statement belongs, and replacing
+    // it with an ERROR throws the run away. A half-written member is the one
+    // exception: the dot has been reported, and the node is what the question
+    // is about. This is the commonest place the question is asked from.
+    LHAT_TEST("a dot standing alone as a statement keeps its run");
+    parse_text(&p, "foo.\n");
+    LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 1);
+    {
+        const LhatNode *statement = first_statement(&p);
+        LHAT_CHECK_EQ_INT(statement->kind, LHAT_NODE_CALL_STMT);
+        if (statement->kind == LHAT_NODE_CALL_STMT) {
+            const LhatNode *value = statement->v.jump.value;
+            LHAT_CHECK_EQ_INT(value->kind, LHAT_NODE_MEMBER);
+            LHAT_CHECK(value->kind != LHAT_NODE_MEMBER ||
+                           value->v.access.argument == NULL,
+                       "expected nothing under the dot");
+        }
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and does not gain a second diagnostic inside a body");
+    parse_text(&p, "let^ f = p^ {\n    let^ a = 1\n    a.\n}\n");
+    LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 1);
+    parse_dispose(&p);
+
+    // 10.1's integer key and 01 の 2.3's hat spelling both still stand: what
+    // changed is only what happens when nothing was written at all.
+    LHAT_TEST("a dot with something after it is unchanged");
+    parse_text(&p, "x := foo.bar\n");
+    LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 0);
+    {
+        const LhatNode *value = first_value(&p);
+        LHAT_CHECK_EQ_INT(value->kind, LHAT_NODE_MEMBER);
+        LHAT_CHECK(value->v.access.argument != NULL, "expected the name");
+    }
+    parse_dispose(&p);
+}
+
 static void test_realistic(void)
 {
     Parse p;
@@ -4093,6 +4172,7 @@ int main(void)
     test_try_block();
     test_incomplete();
     test_recovery();
+    test_a_dot_with_nothing_after_it();
     test_realistic();
     test_stacked_hats();
     return lhat_test_report("test_parser");

@@ -99,6 +99,7 @@ static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
                                const LhatToken *at, LhatNode *targets);
 static bool is_binary_op(const LhatNode *node, LhatOpKind op);
 static bool is_call_statement(const LhatNode *node);  // 8.2
+static bool ends_in_truncated_member(const LhatNode *node);
 static bool starts_expression(const LhatToken *token);
 static bool is_statement_keyword(const Parser *p);
 
@@ -1484,10 +1485,12 @@ static void answer_with_body(Parser *p, LhatNode *body)
     }
 
     // More than one statement, so 8.2 holds and a bare expression was never
-    // allowed here. A call standing alone still is.
+    // allowed here. A call standing alone still is, and so does 07 の 4 章's
+    // half-written member -- see ends_in_truncated_member.
     for (LhatNode *s = body->v.list.items; s != NULL; s = s->next) {
         if (s->kind != LHAT_NODE_CALL_STMT ||
-            is_call_statement(s->v.jump.value)) {
+            is_call_statement(s->v.jump.value) ||
+            ends_in_truncated_member(s->v.jump.value)) {
             continue;
         }
         LhatToken at;
@@ -2121,6 +2124,19 @@ static bool names_only(const LhatNode *node)
                             node->kind == LHAT_NODE_HAT_IDENT);
 }
 
+// 07 の 4 章: a member with nothing under it, which is what parse_postfix
+// leaves for a dot at the end of what has been typed so far. 8.2 refuses a
+// bare expression where a statement belongs, but this one is a writer asking
+// what may follow the dot rather than an expression written for its value --
+// and the dot has been reported already. Refusing it a second time would say
+// nothing new, and replacing the run with an ERROR would throw away the very
+// node the tools are meant to read.
+static bool ends_in_truncated_member(const LhatNode *node)
+{
+    return node != NULL && node->kind == LHAT_NODE_MEMBER &&
+           node->v.access.argument == NULL;
+}
+
 static LhatNode *parse_postfix(Parser *p)
 {
     LhatToken start = p->current;
@@ -2151,8 +2167,21 @@ static LhatNode *parse_postfix(Parser *p)
             // 10.1: digits after a '.' are an integer key.
             LhatNode *name = simple_node(p);
             if (name == NULL) {
+                // 07 の 4 章: the dot is kept as a member with nothing under
+                // it, so that a tool asked what may stand here has a node to
+                // ask about -- and the checker, which walks whatever tree
+                // came out, records what stands to its left. The name is
+                // still missing and still reported.
+                //
+                // Left by `break` rather than `return`: the nil^ bookkeeping
+                // below is what makes 'a?.' guard its run, and the union
+                // tail after the loop reads the node this leaves.
                 report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
-                return node;
+                node = access_node(p, LHAT_NODE_MEMBER, &at, node, NULL,
+                                   nil_safe);
+                guarded = guarded || nil_safe;
+                last_access = node;
+                break;
             }
             node = access_node(p, LHAT_NODE_MEMBER, &at, node, name, nil_safe);
             guarded = guarded || nil_safe;
@@ -3497,7 +3526,8 @@ static LhatNode *expression_as_statement(Parser *p, LhatToken start,
     if (value != NULL && value->kind == LHAT_NODE_ERROR) {
         return value;
     }
-    if (is_call_statement(value) || may_stand_alone(p)) {
+    if (is_call_statement(value) || ends_in_truncated_member(value) ||
+        may_stand_alone(p)) {
         LhatNode *node = make(p, LHAT_NODE_CALL_STMT, &start);
         if (node == NULL) {
             return NULL;
@@ -4772,8 +4802,11 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         return make(p, LHAT_NODE_ERROR, &start);
     }
 
-    // 8.2: only a call may stand alone as a statement.
-    if (head != NULL && head->next == NULL && is_call_statement(head)) {
+    // 8.2: only a call may stand alone as a statement -- and 07 の 4 章's
+    // half-written member, which is a question rather than an expression
+    // written for its value (ends_in_truncated_member).
+    if (head != NULL && head->next == NULL &&
+        (is_call_statement(head) || ends_in_truncated_member(head))) {
         LhatNode *node = make(p, LHAT_NODE_CALL_STMT, &start);
         if (node == NULL) {
             return NULL;

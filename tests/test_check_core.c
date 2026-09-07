@@ -11,6 +11,9 @@
 #include <string.h>
 
 #include "fixture.h"
+// chk_builtin_words: the list the built-in enumeration tries, so that a
+// test can say every word in it is answered by something.
+#include "check_internal.h"
 
 static void test_names(void)
 {
@@ -2612,6 +2615,392 @@ static void test_a_written_definition_is_one(void)
     }
     unit_dispose(&u);
 }
+// 07 の 4 章: what stands to the left of a '.', controlled where the checker
+// infers it. A tool asked what may follow the dot reads this rather than
+// working the receiver out from the names around it -- which for anything
+// but a plain name it could not do at all.
+
+// 14.19 と 15.6改: the built-in members, listed by asking the checker rather
+// than by describing them a second time. What is pinned here is that the
+// answer tracks the cascade's own conditions -- the hat rules especially,
+// since those are what a hand-written list would get wrong.
+typedef struct {
+    char names[128][32];
+    size_t count;
+} Offered;
+
+static void remember(void *context, const char *name, size_t length,
+                     LhatType *type)
+{
+    Offered *seen = (Offered *)context;
+    LHAT_CHECK(type != NULL, "a member offered with no type: %.*s",
+               (int)length, name);
+    if (seen->count >= 128 || length >= 32) {
+        return;
+    }
+    memcpy(seen->names[seen->count], name, length);
+    seen->names[seen->count][length] = '\0';
+    seen->count++;
+}
+
+// The built-ins of whatever `text` binds to `subject`, which every case here
+// writes as its last top-level name.
+static void builtins_of(Unit *u, Offered *seen, const char *text)
+{
+    check_text(u, text);
+    memset(seen, 0, sizeof *seen);
+
+    const char *use = strstr(u->source.text, "subject.");
+    LHAT_CHECK(use != NULL, "expected the source to end in 'subject.'");
+    if (use == NULL) {
+        return;
+    }
+    uint32_t dot = (uint32_t)(use - u->source.text) + 7;
+    const LhatMemberSite *site = lhat_check_member_site_at(&u->checked, dot + 1);
+    LHAT_CHECK(site != NULL, "expected a member site at the dot");
+    if (site != NULL) {
+        lhat_check_builtin_members(&u->checked, site->receiver, remember, seen);
+    }
+}
+
+static bool was_offered(const Offered *seen, const char *name)
+{
+    for (size_t i = 0; i < seen->count; i++) {
+        if (strcmp(seen->names[i], name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void expect_offered(const Offered *seen, const char *name, bool wanted)
+{
+    LHAT_CHECK(was_offered(seen, name) == wanted, "expected %s to be %s", name,
+               wanted ? "offered" : "left out");
+}
+
+static void test_the_built_ins_are_asked_for(void)
+{
+    Unit u;
+    Offered seen;
+
+    // 14.19: a string^ is not a value a writer can add a name to, so its
+    // built-ins take no hat at all.
+    LHAT_TEST("14.19: a string offers its own, bare and only bare");
+    builtins_of(&u, &seen,
+                "let^ subject = \"text\"\n"
+                "let^ n = subject.\n");
+    expect_offered(&seen, "length", true);
+    expect_offered(&seen, "len", true);
+    expect_offered(&seen, "size", true);
+    expect_offered(&seen, "at", true);
+    expect_offered(&seen, "split", true);
+    expect_offered(&seen, "replace", true);
+    expect_offered(&seen, "tostring", true);
+    expect_offered(&seen, "length^", false);
+    // A string is not a collection, so the table's counting word is not one
+    // of its own.
+    expect_offered(&seen, "count", false);
+    expect_offered(&seen, "push^", false);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a number^ offers its own");
+    builtins_of(&u, &seen,
+                "let^ subject = 1\n"
+                "let^ n = subject.\n");
+    expect_offered(&seen, "floor", true);
+    expect_offered(&seen, "clamp", true);
+    expect_offered(&seen, "abs", true);
+    expect_offered(&seen, "length", false);
+    unit_dispose(&u);
+
+    // 14.10改 with 14.17改: on a plain table the bare spellings stay the
+    // writer's, so every built-in there wears the hat.
+    LHAT_TEST("14.17改: a plain table's built-ins wear the hat");
+    builtins_of(&u, &seen,
+                "let^ subject = { 1, 2 }\n"
+                "let^ n = subject.\n");
+    expect_offered(&seen, "push^", true);
+    expect_offered(&seen, "length^", true);
+    expect_offered(&seen, "iterate^", true);
+    expect_offered(&seen, "keys^", true);
+    expect_offered(&seen, "clear^", true);
+    expect_offered(&seen, "push", false);
+    expect_offered(&seen, "iterate", false);
+    expect_offered(&seen, "length", false);
+    unit_dispose(&u);
+
+    // 14.17改 again, the other way: a def^ made it, so the bare spelling is
+    // not the writer's to claim and iterate answers under both.
+    LHAT_TEST("but a def^'s instance takes either spelling of iterate");
+    builtins_of(&u, &seen,
+                "let^ Held = def^{ self^{ n = 0 } }\n"
+                "let^ subject = Held.new()\n"
+                "let^ n = subject.\n");
+    expect_offered(&seen, "iterate", true);
+    expect_offered(&seen, "iterate^", true);
+    expect_offered(&seen, "tostring", true);
+    // 14.10改: the sequence operations are a plain table's alone.
+    expect_offered(&seen, "push^", false);
+    unit_dispose(&u);
+
+    LHAT_TEST("15.6改: a coroutine offers what advances it");
+    builtins_of(&u, &seen,
+                "let^ made = f^ -> c^{ f^ -> number^ } {\n"
+                "    return^ c^{ f^ -> number^ } { yield^ 1 }\n"
+                "}\n"
+                "let^ subject = made()\n"
+                "let^ n = subject.\n");
+    expect_offered(&seen, "resume", true);
+    expect_offered(&seen, "done", true);
+    expect_offered(&seen, "started", true);
+    expect_offered(&seen, "dispose", true);
+    expect_offered(&seen, "push^", false);
+    unit_dispose(&u);
+
+    LHAT_TEST("02 の 19 章: an enum offers its members and its own two");
+    builtins_of(&u, &seen,
+                "enum^ Mode { Idle, Walk }\n"
+                "let^ subject = Mode.Idle\n"
+                "let^ n = subject.\n");
+    expect_offered(&seen, "value", true);
+    expect_offered(&seen, "enum^", true);
+    unit_dispose(&u);
+
+    // 05 の 8.9改's box, where get and set live, needs a host value type --
+    // which needs a registration, which a standalone unit has none of. That
+    // pair is pinned in tests/test_program.c instead, where a program can be
+    // built with one.
+}
+
+// The contract that makes the question safe to ask: a probe carries no place
+// for a diagnostic to stand, so it says nothing and records nothing.
+static void test_asking_says_nothing(void)
+{
+    Unit u;
+    Offered seen;
+
+    LHAT_TEST("07 の 4 章: asking what a type answers is silent");
+    check_text(&u, "let^ subject = \"text\"\nlet^ n = subject.length\n");
+    size_t diagnostics = u.checked.diagnostic_count;
+    size_t sites = u.checked.member_site_count;
+
+    const LhatMemberSite *site = NULL;
+    const char *use = strstr(u.source.text, "subject.length");
+    if (use != NULL) {
+        site = lhat_check_member_site_at(
+            &u.checked, (uint32_t)(use - u.source.text) + 8);
+    }
+    LHAT_CHECK(site != NULL, "expected a member site");
+    if (site != NULL) {
+        memset(&seen, 0, sizeof seen);
+        lhat_check_builtin_members(&u.checked, site->receiver, remember, &seen);
+        LHAT_CHECK(seen.count > 0, "expected the string's built-ins");
+    }
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, (int)diagnostics);
+    LHAT_CHECK_EQ_INT(u.checked.member_site_count, (int)sites);
+    unit_dispose(&u);
+}
+
+// A word nothing answers to is dead weight in the list -- harmless, but it
+// means the cascade moved on and the list did not. Every word should be
+// reachable on at least one of the receivers this walks.
+static void test_every_word_answers_somewhere(void)
+{
+    static const char *const receivers[] = {
+        "let^ subject = \"text\"\n",
+        "let^ subject = 1\n",
+        "let^ subject = { 1, 2 }\n",
+        "let^ subject = { a = 1 }\n",
+        "let^ Held = def^{ self^{ n = 0 } }\nlet^ subject = Held.new()\n",
+        "let^ Held = def^{ self^{ n = 0 } }\nlet^ subject = Held\n",
+        "let^ subject = f^ -> number^ { return^ 1 }\n",
+        "enum^ Mode { Idle }\nlet^ subject = Mode.Idle\n",
+        "errordef^ E { Bad }\nlet^ subject = error^E.Bad{}\n",
+        "let^ made = f^ -> c^{ f^ -> number^ } {\n"
+        "    return^ c^{ f^ -> number^ } { yield^ 1 }\n"
+        "}\nlet^ subject = made()\n",
+    };
+    size_t count = sizeof receivers / sizeof receivers[0];
+
+    // 05 の 8.9改: a box is made from a registered host value type, and a
+    // standalone unit registers nothing -- so these two are unreachable
+    // here and are pinned where a program can be built instead.
+    static const char *const needs_a_host[] = { "get", "set" };
+
+    LHAT_TEST("14.19: every word in the list is answered by something");
+    bool answered[64];
+    memset(answered, 0, sizeof answered);
+    for (size_t i = 0; i < chk_builtin_word_count && i < 64; i++) {
+        for (size_t k = 0; k < sizeof needs_a_host / sizeof needs_a_host[0];
+             k++) {
+            if (strcmp(chk_builtin_words[i], needs_a_host[k]) == 0) {
+                answered[i] = true;
+            }
+        }
+    }
+    LHAT_CHECK(chk_builtin_word_count <= 64, "the list outgrew this test");
+
+    for (size_t r = 0; r < count; r++) {
+        Unit u;
+        Offered seen;
+        char text[512];
+        snprintf(text, sizeof text, "%slet^ n = subject.\n", receivers[r]);
+        builtins_of(&u, &seen, text);
+        for (size_t i = 0; i < chk_builtin_word_count && i < 64; i++) {
+            char hatted[64];
+            snprintf(hatted, sizeof hatted, "%s^", chk_builtin_words[i]);
+            if (was_offered(&seen, chk_builtin_words[i]) ||
+                was_offered(&seen, hatted)) {
+                answered[i] = true;
+            }
+        }
+        unit_dispose(&u);
+    }
+    for (size_t i = 0; i < chk_builtin_word_count && i < 64; i++) {
+        LHAT_CHECK(answered[i], "no receiver here answers \"%s\" -- either the "
+                   "cascade dropped it or this test needs another receiver",
+                   chk_builtin_words[i]);
+    }
+}
+
+static void test_a_dot_says_what_stands_to_its_left(void)
+{
+    Unit u;
+
+    LHAT_TEST("07 の 4 章: a written member records its receiver");
+    check_text(&u,
+               "let^ point = { x = 1, y = 2 }\n"
+               "let^ n = point.x\n");
+    CHECK_CLEAN(&u);
+    {
+        const char *dot = strstr(u.source.text, ".x\n");
+        LHAT_CHECK(dot != NULL, "expected the access to be there");
+        if (dot != NULL) {
+            uint32_t at = (uint32_t)(dot - u.source.text);
+            // On the dot itself nothing has been asked yet; one past it is
+            // where the cursor stands when it has only now been typed.
+            LHAT_CHECK(lhat_check_member_site_at(&u.checked, at) == NULL,
+                       "expected the dot itself to answer nothing");
+            const LhatMemberSite *site =
+                lhat_check_member_site_at(&u.checked, at + 1);
+            LHAT_CHECK(site != NULL, "expected a site just past the dot");
+            if (site != NULL) {
+                LHAT_CHECK_EQ_INT(site->dot, at);
+                LHAT_CHECK(site->receiver != NULL &&
+                               site->receiver->kind == LHAT_TYPE_TABLE,
+                           "expected the table that stands to the left");
+                LHAT_CHECK(!site->nil_safe, "written '.', not '?.'");
+            }
+        }
+    }
+    unit_dispose(&u);
+
+    // The case the record exists for: nothing is written after the dot, so
+    // there is no name to look anything up by.
+    LHAT_TEST("and so does one with nothing written after it");
+    check_text(&u,
+               "let^ point = { x = 1 }\n"
+               "let^ n = point.\n");
+    {
+        const char *dot = strstr(u.source.text, "point.\n");
+        LHAT_CHECK(dot != NULL, "expected the truncated access");
+        if (dot != NULL) {
+            uint32_t at = (uint32_t)(dot - u.source.text) + 5;
+            const LhatMemberSite *site =
+                lhat_check_member_site_at(&u.checked, at + 1);
+            LHAT_CHECK(site != NULL, "expected a site at the bare dot");
+            if (site != NULL) {
+                LHAT_CHECK(site->receiver != NULL &&
+                               site->receiver->kind == LHAT_TYPE_TABLE,
+                           "expected the table that stands to the left");
+            }
+        }
+    }
+    // And the checker says nothing new about it. The member answers
+    // unknown^ rather than a gap, so 03 の 3.1's "nothing decided this name"
+    // does not fire -- the line carries the one diagnostic the missing name
+    // already earned, and keeping the node cost no second squiggle.
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 0);
+    LHAT_CHECK_EQ_INT(syntax_errors(&u), 1);
+    unit_dispose(&u);
+
+    // What the record is for: a receiver that is not a name at all, which no
+    // amount of reading the resolutions could answer.
+    LHAT_TEST("a receiver that is not a name records the same way");
+    check_text(&u,
+               "let^ make = f^ -> t^{ x : number^ } { return^ { x = 1 } }\n"
+               "let^ n = make().\n");
+    {
+        const char *dot = strstr(u.source.text, "make().");
+        LHAT_CHECK(dot != NULL, "expected the call access");
+        if (dot != NULL) {
+            uint32_t at = (uint32_t)(dot - u.source.text) + 6;
+            const LhatMemberSite *site =
+                lhat_check_member_site_at(&u.checked, at + 1);
+            LHAT_CHECK(site != NULL, "expected a site after the call");
+            if (site != NULL) {
+                LHAT_CHECK(site->receiver != NULL &&
+                               site->receiver->kind == LHAT_TYPE_TABLE,
+                           "expected what the call answers");
+            }
+        }
+    }
+    unit_dispose(&u);
+
+    // 11.7改2: '?.' steps past the nil^ arm, and the record says so -- what
+    // is offered there is what the access would accept.
+    LHAT_TEST("11.7改2: '?.' records the receiver without its nil^ arm");
+    check_text(&u,
+               "let^ hold = f^ v:t^{ x : number^ }|nil^ {\n"
+               "    return^ v?.\n"
+               "}\n");
+    {
+        const char *dot = strstr(u.source.text, "v?.");
+        LHAT_CHECK(dot != NULL, "expected the guarded access");
+        if (dot != NULL) {
+            uint32_t at = (uint32_t)(dot - u.source.text) + 1;
+            const LhatMemberSite *site =
+                lhat_check_member_site_at(&u.checked, at + 1);
+            LHAT_CHECK(site != NULL, "expected a site at the guarded dot");
+            if (site != NULL) {
+                LHAT_CHECK(site->nil_safe, "expected the '?' to be recorded");
+                LHAT_CHECK(site->receiver != NULL &&
+                               site->receiver->kind == LHAT_TYPE_TABLE,
+                           "expected the nil^ arm to have been set aside");
+            }
+        }
+    }
+    unit_dispose(&u);
+
+    // The sites of one chain meet without overlapping, so a cursor finds the
+    // access it is actually standing after.
+    LHAT_TEST("a chain's dots do not run into one another");
+    check_text(&u,
+               "let^ deep = { a = { b = 2 } }\n"
+               "let^ n = deep.a.b\n");
+    CHECK_CLEAN(&u);
+    {
+        const char *first = strstr(u.source.text, "deep.a.b");
+        LHAT_CHECK(first != NULL, "expected the chain");
+        if (first != NULL) {
+            uint32_t at = (uint32_t)(first - u.source.text);
+            const LhatMemberSite *outer =
+                lhat_check_member_site_at(&u.checked, at + 5);   // just past '.'
+            const LhatMemberSite *inner =
+                lhat_check_member_site_at(&u.checked, at + 7);   // past the second
+            LHAT_CHECK(outer != NULL && inner != NULL,
+                       "expected both accesses to be recorded");
+            if (outer != NULL && inner != NULL) {
+                LHAT_CHECK(outer != inner, "expected two distinct sites");
+                LHAT_CHECK_EQ_INT(outer->dot, at + 4);
+                LHAT_CHECK_EQ_INT(inner->dot, at + 6);
+            }
+        }
+    }
+    unit_dispose(&u);
+}
+
 #endif
 
 // 04 の 8.3: a failure is not a thing to drop.
@@ -2696,6 +3085,7 @@ static void test_dropped_errors(void)
     unit_dispose(&u);
 }
 
+
 int main(void)
 {
     test_names();
@@ -2706,6 +3096,10 @@ int main(void)
     test_a_member_use_says_where_it_was_written();
     test_a_written_type_name_resolves();
     test_a_written_definition_is_one();
+    test_a_dot_says_what_stands_to_its_left();
+    test_the_built_ins_are_asked_for();
+    test_asking_says_nothing();
+    test_every_word_answers_somewhere();
 #endif
     test_expressions();
     test_results();

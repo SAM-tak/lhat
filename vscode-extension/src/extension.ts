@@ -1,9 +1,9 @@
 // L^ (lhat) -- VSCode extension: a thin client that spawns lhatls (the
 // language server binary; source lives under lsp/, built as target
-// lhat_lsp) and speaks LSP to it over stdio. Diagnostics and semantic
-// tokens for now -- no hover, completion or go-to-definition; textDocumentSync
-// is Full, matching lhatls's own capabilities response
-// (lsp/handlers/initialize.c).
+// lhat_lsp) and speaks LSP to it over stdio. What lhatls answers is what
+// the client offers -- diagnostics, semantic tokens, hover, go-to-definition,
+// the outline and completion -- and textDocumentSync is Full, matching
+// lhatls's own capabilities response (lsp/handlers/initialize.c).
 //
 // It also hosts the graph view of 06 (graphEditor.ts), which reaches lhatls
 // through this same client.

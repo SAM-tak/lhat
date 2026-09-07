@@ -164,4 +164,21 @@ typedef void (*LspUnitSink)(void *context, const LhatUnit *unit);
 void lsp_workspace_with_unit(LspWorkspace *ws, const char *path,
                              LspUnitSink sink, void *context);
 
+// The same, but checked here and now from the editor's current text rather
+// than found among the roots -- the one question that cannot wait for the
+// worker. A completion is asked on the keystroke that made the text, and the
+// worker debounces (worker.c), so the roots' copy has never seen the '.'
+// being asked about. Costs one check of this unit and whatever it require^s,
+// on the calling thread, holding the lock.
+void lsp_workspace_with_fresh_unit(LspWorkspace *ws, const char *path,
+                                   LspUnitSink sink, void *context);
+
+// Owned copies of what a completion offers as paths and as module names.
+// Copies rather than pointers because both live behind the lock and the
+// worker may replace them: the roots on a settings change, the host config
+// when lhat-host.json does. NULL with a zero count when there are none.
+char **lsp_workspace_copy_unit_paths(LspWorkspace *ws, size_t *count);
+char **lsp_workspace_copy_module_names(LspWorkspace *ws, size_t *count);
+void lsp_workspace_free_strings(char **strings, size_t count);
+
 #endif  // LSP_WORKSPACE_H

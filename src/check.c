@@ -185,6 +185,26 @@ void chk_record_unit_resolution(Checker *c, const LhatNode *at,
     record_placed(c, at, exports, 0, unit_path, false);
 }
 
+void chk_record_member_site(Checker *c, const LhatNode *node,
+                            LhatType *receiver, bool number_word)
+{
+    LhatCheckResult *r = c->result;
+    if (node == NULL) {
+        return;
+    }
+    LHAT_GROW(r->member_sites, r->member_site_count, r->member_site_capacity,
+              32, return);
+
+    LhatMemberSite *site = &r->member_sites[r->member_site_count++];
+    // access_node (parser.c) makes the node from the dot's own token, so the
+    // offset is the operator and the end is one past whatever followed it.
+    site->dot = node->offset;
+    site->end = node->end;
+    site->nil_safe = node->v.access.nil_safe;
+    site->number_word = number_word;
+    site->receiver = receiver;
+}
+
 static int compare_resolutions(const void *a, const void *b)
 {
     const LhatResolution *ra = (const LhatResolution *)a;
@@ -229,6 +249,40 @@ void chk_settle_resolutions(LhatCheckResult *result)
         }
     }
     result->resolution_count = kept;
+}
+
+static int compare_member_sites(const void *a, const void *b)
+{
+    const LhatMemberSite *sa = (const LhatMemberSite *)a;
+    const LhatMemberSite *sb = (const LhatMemberSite *)b;
+    if (sa->dot != sb->dot) {
+        return sa->dot < sb->dot ? -1 : 1;
+    }
+    return 0;
+}
+
+// The same ordering and the same reason as chk_settle_resolutions, on the
+// same two-pass repeat: 14.7改 walks a def^ twice and the second walk knows
+// the receiver the first could only guess at.
+void chk_settle_member_sites(LhatCheckResult *result)
+{
+    if (result->member_site_count < 2) {
+        return;
+    }
+    qsort(result->member_sites, result->member_site_count,
+          sizeof *result->member_sites, compare_member_sites);
+
+    size_t kept = 0;
+    for (size_t i = 0; i < result->member_site_count; i++) {
+        bool same_as_kept = kept > 0 && result->member_sites[kept - 1].dot ==
+                                            result->member_sites[i].dot;
+        if (same_as_kept) {
+            result->member_sites[kept - 1] = result->member_sites[i];
+        } else {
+            result->member_sites[kept++] = result->member_sites[i];
+        }
+    }
+    result->member_site_count = kept;
 }
 #endif  // LHAT_WITH_RESOLUTIONS
 
@@ -2895,6 +2949,7 @@ void chk_rounds_begin(Checker *c, Rounds *r, size_t count)
     r->diagnostics = c->result->diagnostic_count;
 #if LHAT_WITH_RESOLUTIONS
     r->resolutions = c->result->resolution_count;
+    r->member_sites = c->result->member_site_count;
 #endif
     r->round = 0;
     r->cap = count + 1;
@@ -2920,6 +2975,10 @@ bool chk_rounds_next(Checker *c, Rounds *r)
     c->result->diagnostic_count = r->diagnostics;
 #if LHAT_WITH_RESOLUTIONS
     c->result->resolution_count = r->resolutions;
+    // Rolled back with the rest: a site left by a walk that was thrown
+    // away carries the receiver that walk guessed at, and qsort being
+    // unstable the settle could keep either of the two.
+    c->result->member_site_count = r->member_sites;
 #endif
     return true;
 }
@@ -3228,6 +3287,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     // what lhat_check_resolution_at's binary search needs is an order the
     // walk itself does not quite give.
     chk_settle_resolutions(result);
+    chk_settle_member_sites(result);
 #endif
 
     chk_dispose_operator_carriers(&checker);
@@ -3459,6 +3519,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     result->exports = chk_collect_exports(&checker, unit->v.list.items);
 
 #if LHAT_WITH_RESOLUTIONS
+    chk_settle_member_sites(result);
     chk_settle_resolutions(result);  // as lhat_check_unit does, and why
 #endif
 
@@ -3580,6 +3641,128 @@ const LhatResolution *lhat_check_resolution_at(const LhatCheckResult *result,
     }
     return NULL;
 }
+
+const LhatMemberSite *lhat_check_member_site_at(const LhatCheckResult *result,
+                                                uint32_t offset)
+{
+    if (result == NULL) {
+        return NULL;
+    }
+    size_t low = 0;
+    size_t high = result->member_site_count;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        const LhatMemberSite *entry = &result->member_sites[mid];
+        // Open below and closed above -- the cursor after a freshly typed
+        // '.' stands exactly on `end`, and a cursor on the dot itself has
+        // not yet asked about it.
+        if (offset <= entry->dot) {
+            high = mid;
+        } else if (offset > entry->end) {
+            low = mid + 1;
+        } else {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+
+// 07 の 4 章: the built-ins, asked for one spelling at a time.
+//
+// A probe Checker: zeroed but for the result, which is every field the
+// cascade reads that a question needs. `strict` stays false and costs
+// nothing -- 11.4's nil^ rule is applied by whoever settled the receiver
+// (LhatMemberSite records it already stripped), not here. `lexer` stays NULL
+// because a name arrives as a spelling rather than as a node to read one off.
+static LhatType *probe(Checker *c, LhatType *receiver, const char *name,
+                       size_t length)
+{
+    LhatType *answer = chk_member_of(c, receiver, name, length, NULL, NULL);
+    // Everything the cascade refuses comes back as one of these two, so this
+    // is the whole of "does it answer".
+    if (answer == NULL || answer->kind == LHAT_TYPE_UNKNOWN ||
+        answer->kind == LHAT_TYPE_PENDING) {
+        return NULL;
+    }
+    return answer;
+}
+
+void lhat_check_builtin_members(LhatCheckResult *result, LhatType *receiver,
+                                LhatBuiltinSink sink, void *context)
+{
+    if (result == NULL || receiver == NULL || sink == NULL) {
+        return;
+    }
+    // The same refusal chk_infer_member makes before it reaches the cascade:
+    // a receiver nothing decided answers nothing. Asking anyway would reach
+    // the tail, where tostring answers for every type -- an answer a real
+    // access never gets, because it never gets that far.
+    if (receiver->kind == LHAT_TYPE_UNKNOWN ||
+        receiver->kind == LHAT_TYPE_PENDING) {
+        return;
+    }
+    Checker checker;
+    memset(&checker, 0, sizeof checker);
+    checker.result = result;
+
+    // 02 の 19 章: an enum's members are its own names rather than words from
+    // the list, and the declaration holds them -- so they are read off the
+    // type instead of guessed at. What each answers is the wide type, which
+    // is what a member access there answers too.
+    if (receiver->kind == LHAT_TYPE_ENUM) {
+        for (const LhatTypeList *k = receiver->v.error.kinds; k != NULL;
+             k = k->next) {
+            sink(context, k->type->v.error.name, k->type->v.error.name_length,
+                 receiver);
+        }
+    }
+
+    for (size_t i = 0; i < chk_builtin_word_count; i++) {
+        const char *word = chk_builtin_words[i];
+        size_t length = strlen(word);
+
+        LhatType *bare = probe(&checker, receiver, word, length);
+        if (bare != NULL) {
+            sink(context, word, length, bare);
+        }
+        // 01 の 2.3: 'length' and 'length^' are two names, and which of them
+        // a receiver answers is the cascade's to say -- a plain table takes
+        // the hatted spelling of iterate and a def^ takes both. Both are
+        // tried and whichever answers is offered, so no rule is repeated.
+        char hatted[64];
+        if (length + 2 > sizeof hatted) {
+            continue;
+        }
+        memcpy(hatted, word, length);
+        hatted[length] = '^';
+        hatted[length + 1] = '\0';
+        LhatType *worn = probe(&checker, receiver, hatted, length + 1);
+        if (worn != NULL) {
+            sink(context, hatted, length + 1, worn);
+        }
+    }
+}
+
+void lhat_check_number_constants(LhatCheckResult *result,
+                                 LhatBuiltinSink sink, void *context)
+{
+    if (result == NULL || sink == NULL) {
+        return;
+    }
+    Checker checker;
+    memset(&checker, 0, sizeof checker);
+    checker.result = result;
+    for (size_t i = 0;; i++) {
+        size_t length = 0;
+        const char *name = lhat_number_constant_at(i, &length);
+        if (name == NULL) {
+            break;
+        }
+        sink(context, name, length, chk_simple(&checker, LHAT_TYPE_NUMBER));
+    }
+}
+
 #endif  // LHAT_WITH_RESOLUTIONS
 
 void lhat_check_result_dispose(LhatCheckResult *result)
@@ -3593,6 +3776,10 @@ void lhat_check_result_dispose(LhatCheckResult *result)
     result->resolutions = NULL;
     result->resolution_count = 0;
     result->resolution_capacity = 0;
+    lhat_free(result->member_sites);
+    result->member_sites = NULL;
+    result->member_site_count = 0;
+    result->member_site_capacity = 0;
 #endif
     lhat_free(result->module_name);
     result->module_name = NULL;

@@ -6,6 +6,7 @@
 #include "dispatch.h"
 
 #include "handlers/ast.h"
+#include "handlers/completion.h"
 #include "handlers/definition.h"
 #include "handlers/document_symbol.h"
 #include "handlers/hover.h"
@@ -21,6 +22,7 @@ const LspRequestEntry LSP_REQUEST_TABLE[] = {
     {"textDocument/hover", lsp_handle_hover},
     {"textDocument/definition", lsp_handle_definition},
     {"textDocument/documentSymbol", lsp_handle_document_symbol},
+    {"textDocument/completion", lsp_handle_completion},
     // 07 の 6 章: an extension of our own, so it is named under "lhat/".
     {"lhat/ast", lsp_handle_ast},
     {"lhat/signature", lsp_handle_signature},

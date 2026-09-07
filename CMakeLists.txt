@@ -437,6 +437,8 @@ if(LHAT_BUILD_LSP)
         lsp/workspace.c
         lsp/host_config.c
         lsp/settings.c
+        lsp/completion.c
+        lsp/handlers/completion.c
         lsp/diagnostics.c
         lsp/position.c
         lsp/semantic_tokens.c

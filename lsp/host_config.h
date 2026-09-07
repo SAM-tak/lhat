@@ -51,4 +51,10 @@ void lsp_host_config_apply(const LspHostConfig *config, LhatProgram *program);
 void lsp_host_config_counts(const LspHostConfig *config, size_t *types,
                             size_t *functions, size_t *annotations);
 
+// Every distinct module the file names, once each, in the order it names
+// them -- what 05 の 8.7's import^ may reach. Owned copies (the strings in
+// the parsed file go when the config does); the caller frees the array and
+// each entry. NULL with a zero count when there are none.
+char **lsp_host_config_modules(const LspHostConfig *config, size_t *count);
+
 #endif  // LSP_HOST_CONFIG_H
