@@ -48,8 +48,11 @@ static bool socket_write(void *context, const char *bytes, size_t size);
 
 // How a source line and the file it is in name one breakpoint.
 typedef struct {
-    char *source;  // normalized absolute path, owned
-    int line;
+    char *source;  // path-map unit spelling or normalized path, owned
+    uint32_t line;
+    // D8: NULL is unconditional. A condition is evaluated in the frame
+    // which reached this line, and only true^ lets the breakpoint stop it.
+    char *condition;
 } DapBreak;
 
 typedef enum {
@@ -68,6 +71,11 @@ typedef struct {
     DapMode mode;
     size_t step_depth;
     bool parked;  // its thread waits on the session's condition
+    // D5: a fault is terminal, but the debugger parks here first so its
+    // frames and bindings can be read. Keep its text: evaluating while
+    // stopped is a nested run and may clear the machine's transient record.
+    bool faulted;
+    char fault_text[256];
 } DapThread;
 
 // A value a variables request handed a reference out for, with the machine
@@ -87,6 +95,9 @@ struct DapSession {
     // 09 の 5.2: the host's spelling map, zeroed when none was given --
     // both sides are filesystem paths then, and are normalized to compare.
     DapPathMap paths;
+    // D8: compiled, before the DAP handshake starts, and alive until after
+    // the run. Its line tables tell setBreakpoints where code can run.
+    const LhatProgram *program;
 
     // Everything below is under `lock`; `changed` is broadcast whenever
     // stopping/ended/thread_count moves.
@@ -264,7 +275,64 @@ static const char *normal_of(DapSession *s, const char *source)
     return s->cached_normal;
 }
 
-static bool at_breakpoint(DapSession *s, const LhatFrameInfo *where)
+static bool source_equal(const DapSession *s, const char *left,
+                         const char *right)
+{
+    return s->paths.to_unit != NULL ? strcmp(left, right) == 0
+                                    : path_equal(left, right);
+}
+
+// The compiled unit tree is the authority on what an editor line can mean.
+// A path-map's key is already the unit spelling; without one both unit and
+// editor paths are normalised before this comparison.
+static uint32_t next_executable_line(DapSession *s, const char *key,
+                                     uint32_t requested)
+{
+    if (s->program == NULL) {
+        return 0;
+    }
+    for (const LhatUnit *unit = lhat_program_units(s->program); unit != NULL;
+         unit = lhat_unit_next(unit)) {
+        const char *path = lhat_unit_path(unit);
+        if (path == NULL) {
+            continue;
+        }
+        bool matches = false;
+        if (s->paths.to_unit != NULL) {
+            matches = strcmp(path, key) == 0;
+        } else {
+            // This runs only during setBreakpoints, never at every VM
+            // instruction, so a per-unit normalization needs no cache.
+            char *normal = normalize(path);
+            matches = normal != NULL && path_equal(normal, key);
+            free(normal);
+        }
+        if (matches) {
+            return lhat_proto_next_instruction_line(lhat_unit_proto(unit),
+                                                    requested);
+        }
+    }
+    return 0;
+}
+
+static bool condition_is_true(LhatMachine *machine, const char *condition)
+{
+    if (condition == NULL) {
+        return true;
+    }
+    LhatValue answer = lhat_nil();
+    char error[256];
+    // Evaluating from a hook is what lhat_machine_evaluate is designed for:
+    // it suppresses nested line/fault events and restores its own failures.
+    // A DAP condition is a boolean; bad or non-boolean expressions simply do
+    // not match, rather than turning a filtered breakpoint unconditional.
+    return lhat_machine_evaluate(machine, 0, condition, strlen(condition),
+                                 &answer, error, sizeof error) &&
+           lhat_is_bool(answer) && lhat_as_bool(answer);
+}
+
+static bool at_breakpoint(DapSession *s, LhatMachine *machine,
+                          const LhatFrameInfo *where)
 {
     if (s->break_count == 0 || where->source == NULL) {
         return false;
@@ -279,9 +347,9 @@ static bool at_breakpoint(DapSession *s, const LhatFrameInfo *where)
         return false;
     }
     for (size_t i = 0; i < s->break_count; i++) {
-        if (s->breaks[i].line == (int)where->line &&
-            (mapped ? strcmp(s->breaks[i].source, here) == 0
-                    : path_equal(s->breaks[i].source, here))) {
+        if (s->breaks[i].line == where->line &&
+            source_equal(s, s->breaks[i].source, here) &&
+            condition_is_true(machine, s->breaks[i].condition)) {
             return true;
         }
     }
@@ -554,15 +622,33 @@ static bool write_variable(DapSession *s, int reference, const char *name,
 // Events
 
 // Under `lock`; takes the write lock inside, which is the one order.
-static void send_stopped(DapSession *s, int thread_id, const char *reason)
+static void send_stopped(DapSession *s, int thread_id, const char *reason,
+                         const char *description)
 {
     cJSON *body = cJSON_CreateObject();
     cJSON_AddStringToObject(body, "reason", reason);
+    if (description != NULL && description[0] != '\0') {
+        cJSON_AddStringToObject(body, "description", description);
+        cJSON_AddStringToObject(body, "text", description);
+    }
     cJSON_AddNumberToObject(body, "threadId", thread_id);
     cJSON_AddBoolToObject(body, "allThreadsStopped", true);
     lhat_mutex_lock(&s->write_lock);
     dap_event(&s->peer, "stopped", body);
     lhat_mutex_unlock(&s->write_lock);
+}
+
+static void fault_text(LhatMachine *machine, char *out, size_t capacity)
+{
+    LhatRunStatus status = lhat_machine_fault_status(machine);
+    if (status == LHAT_RUN_PANIC) {
+        char value[192];
+        lhat_value_text(lhat_machine_fault_value(machine), value,
+                        sizeof value);
+        snprintf(out, capacity, "panic^ %s", value);
+    } else {
+        snprintf(out, capacity, "%s", lhat_run_status_message(status));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -586,13 +672,76 @@ static bool refuse(DapSession *s, const cJSON *request, const char *message)
     return ok;
 }
 
+static void dispose_break(DapBreak *point)
+{
+    free(point->source);
+    free(point->condition);
+}
+
+// DAP replaces a source's breakpoints, not every breakpoint in a session.
+static void clear_breakpoints_for(DapSession *s, const char *source)
+{
+    if (source == NULL) {
+        return;
+    }
+    size_t kept = 0;
+    for (size_t i = 0; i < s->break_count; i++) {
+        if (source_equal(s, s->breaks[i].source, source)) {
+            dispose_break(&s->breaks[i]);
+        } else {
+            if (kept != i) {
+                s->breaks[kept] = s->breaks[i];
+            }
+            kept++;
+        }
+    }
+    s->break_count = kept;
+}
+
+static bool add_breakpoint(DapSession *s, const char *source, uint32_t line,
+                           const char *condition)
+{
+    if (s->break_count == s->break_capacity) {
+        size_t grown = s->break_capacity ? s->break_capacity * 2 : 8;
+        DapBreak *bigger =
+            (DapBreak *)realloc(s->breaks, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            return false;
+        }
+        s->breaks = bigger;
+        s->break_capacity = grown;
+    }
+    DapBreak point = {0};
+    point.source = own_text(source);
+    point.condition = condition != NULL && condition[0] != '\0'
+                          ? own_text(condition)
+                          : NULL;
+    if (point.source == NULL ||
+        (condition != NULL && condition[0] != '\0' && point.condition == NULL)) {
+        dispose_break(&point);
+        return false;
+    }
+    point.line = line;
+    s->breaks[s->break_count++] = point;
+    return true;
+}
+
+static void add_breakpoint_response(cJSON *list, bool verified, uint32_t line,
+                                    const char *message)
+{
+    cJSON *mark = cJSON_CreateObject();
+    cJSON_AddBoolToObject(mark, "verified", verified);
+    if (verified) {
+        cJSON_AddNumberToObject(mark, "line", line);
+    }
+    if (message != NULL) {
+        cJSON_AddStringToObject(mark, "message", message);
+    }
+    cJSON_AddItemToArray(list, mark);
+}
+
 static void set_breakpoints(DapSession *s, const cJSON *arguments, cJSON *body)
 {
-    for (size_t i = 0; i < s->break_count; i++) {
-        free(s->breaks[i].source);
-    }
-    s->break_count = 0;
-
     const cJSON *source = cJSON_GetObjectItem(arguments, "source");
     const cJSON *path = cJSON_GetObjectItem(source, "path");
     // The key a line event will be matched against: the unit spelling the
@@ -610,35 +759,38 @@ static void set_breakpoints(DapSession *s, const cJSON *arguments, cJSON *body)
             key = normalize(path->valuestring);
         }
     }
+    clear_breakpoints_for(s, key);
 
     cJSON *verified = cJSON_CreateArray();
     const cJSON *lines = cJSON_GetObjectItem(arguments, "breakpoints");
     const cJSON *one = NULL;
     cJSON_ArrayForEach(one, lines) {
         const cJSON *line = cJSON_GetObjectItem(one, "line");
-        if (!cJSON_IsNumber(line) || key == NULL) {
-            continue;
-        }
-        if (s->break_count == s->break_capacity) {
-            size_t grown = s->break_capacity ? s->break_capacity * 2 : 8;
-            DapBreak *bigger =
-                (DapBreak *)realloc(s->breaks, grown * sizeof *bigger);
-            if (bigger == NULL) {
-                break;
+        const cJSON *condition = cJSON_GetObjectItem(one, "condition");
+        const char *why = NULL;
+        const char *condition_text = NULL;
+        uint32_t requested = 0;
+        uint32_t actual = 0;
+        if (!cJSON_IsNumber(line) || line->valuedouble < 1 ||
+            line->valuedouble > UINT32_MAX ||
+            (uint32_t)line->valuedouble != line->valuedouble) {
+            why = "a breakpoint line must be a positive whole number";
+        } else if (key == NULL) {
+            why = "the source is not part of this program";
+        } else if (condition != NULL && !cJSON_IsString(condition)) {
+            why = "a breakpoint condition must be an expression";
+        } else {
+            requested = (uint32_t)line->valuedouble;
+            actual = next_executable_line(s, key, requested);
+            condition_text = cJSON_IsString(condition) ? condition->valuestring
+                                                        : NULL;
+            if (actual == 0) {
+                why = "there is no executable line at or after this line";
+            } else if (!add_breakpoint(s, key, actual, condition_text)) {
+                why = "out of memory while setting the breakpoint";
             }
-            s->breaks = bigger;
-            s->break_capacity = grown;
         }
-        s->breaks[s->break_count].source = own_text(key);
-        s->breaks[s->break_count].line = (int)line->valuedouble;
-        s->break_count++;
-
-        // v1 verifies every line it was given (09 の 5; D8 leaves checking
-        // the line against the code for later).
-        cJSON *mark = cJSON_CreateObject();
-        cJSON_AddBoolToObject(mark, "verified", true);
-        cJSON_AddNumberToObject(mark, "line", (int)line->valuedouble);
-        cJSON_AddItemToArray(verified, mark);
+        add_breakpoint_response(verified, why == NULL, actual, why);
     }
     free(key);
     cJSON_AddItemToObject(body, "breakpoints", verified);
@@ -663,6 +815,8 @@ static void dispatch(DapSession *s, const cJSON *request)
         cJSON_AddBoolToObject(body, "supportsConfigurationDoneRequest", true);
         cJSON_AddBoolToObject(body, "supportsSetVariable", true);
         cJSON_AddBoolToObject(body, "supportsEvaluateForHovers", true);
+        cJSON_AddBoolToObject(body, "supportsConditionalBreakpoints", true);
+        cJSON_AddBoolToObject(body, "supportsExceptionInfoRequest", true);
         respond(s, request, true, body);
         lhat_mutex_lock(&s->write_lock);
         dap_event(&s->peer, "initialized", NULL);
@@ -685,6 +839,9 @@ static void dispatch(DapSession *s, const cJSON *request)
         return;
     }
     if (strcmp(command, "setExceptionBreakpoints") == 0) {
+        // D5: an L^ runtime fault is always terminal, so every one stops for
+        // inspection. There are no separate caught/uncaught classes for the
+        // client to select; accepting this standard request says exactly that.
         respond(s, request, true, NULL);
         return;
     }
@@ -718,6 +875,21 @@ static void dispatch(DapSession *s, const cJSON *request)
             s, cJSON_IsNumber(thread_id) ? (int)thread_id->valuedouble : 1);
         cJSON *body = cJSON_CreateObject();
         stack_trace(s, t, body);
+        respond(s, request, true, body);
+        return;
+    }
+    if (strcmp(command, "exceptionInfo") == 0) {
+        const cJSON *thread_id = cJSON_GetObjectItem(arguments, "threadId");
+        DapThread *t = thread_by_id(
+            s, cJSON_IsNumber(thread_id) ? (int)thread_id->valuedouble : 1);
+        if (t == NULL || !t->parked || !t->faulted) {
+            refuse(s, request, "that machine did not stop on a runtime fault");
+            return;
+        }
+        cJSON *body = cJSON_CreateObject();
+        cJSON_AddStringToObject(body, "exceptionId", "lhat.runtimeFault");
+        cJSON_AddStringToObject(body, "description", t->fault_text);
+        cJSON_AddStringToObject(body, "breakMode", "always");
         respond(s, request, true, body);
         return;
     }
@@ -928,7 +1100,6 @@ static int reader_main(void *argument)
 static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
                      const LhatFrameInfo *where)
 {
-    (void)event;
     DapThread *t = (DapThread *)context;
     DapSession *s = t->session;
 
@@ -940,11 +1111,16 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
     }
 
     size_t depth = lhat_machine_fault_depth(machine);
+    bool fault = event == LHAT_DEBUG_FAULT;
+    if (fault) {
+        t->faulted = true;
+        fault_text(machine, t->fault_text, sizeof t->fault_text);
+    }
     bool stop =
-        s->stopping || s->pause_all || t->mode == DAP_STEP_IN ||
+        fault || s->stopping || s->pause_all || t->mode == DAP_STEP_IN ||
         (t->mode == DAP_STEP_OVER && depth <= t->step_depth) ||
         (t->mode == DAP_STEP_OUT && depth < t->step_depth) ||
-        at_breakpoint(s, where);
+        at_breakpoint(s, machine, where);
     if (!stop) {
         lhat_mutex_unlock(&s->lock);
         return;
@@ -952,7 +1128,8 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
 
     // The first to park is the stop the debugger hears about; the rest park
     // silently -- allThreadsStopped said it all.
-    const char *reason = s->pause_all ? "pause"
+    const char *reason = fault ? "exception"
+                         : s->pause_all ? "pause"
                          : t->mode != DAP_RUN ? "step"
                                               : "breakpoint";
     t->mode = DAP_RUN;
@@ -960,7 +1137,7 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
         s->stopping = true;
         s->pause_all = false;
         clear_vars(s);
-        send_stopped(s, t->id, reason);
+        send_stopped(s, t->id, reason, fault ? t->fault_text : NULL);
     }
     t->parked = true;
     while (s->stopping && !s->ended) {
@@ -977,7 +1154,8 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
 // ---------------------------------------------------------------------------
 // Lifecycle
 
-bool dap_session_begin(DapSession **out, LhatMachine *machine, uint16_t port,
+bool dap_session_begin(DapSession **out, LhatMachine *machine,
+                       const LhatProgram *program, uint16_t port,
                        const DapPathMap *paths)
 {
     *out = NULL;
@@ -992,6 +1170,7 @@ bool dap_session_begin(DapSession **out, LhatMachine *machine, uint16_t port,
     if (paths != NULL) {
         s->paths = *paths;
     }
+    s->program = program;
     s->peer.seq = 1;
     s->next_id = 1;
     lhat_mutex_init(&s->lock);
@@ -1094,7 +1273,7 @@ void dap_session_end(DapSession *session, int exit_code)
     lhat_socket_cleanup();
 
     for (size_t i = 0; i < s->break_count; i++) {
-        free(s->breaks[i].source);
+        dispose_break(&s->breaks[i]);
     }
     free(s->breaks);
     free(s->vars);

@@ -130,6 +130,11 @@ static void std_print(LhatMachine *machine, void *context,
     }
     if (written > 0) {
         fputc('\n', stdout);
+        // stdout is line-buffered at a terminal, but fully buffered when a
+        // debugger (or another host) reads it through a pipe. A print that
+        // has reached a breakpoint must be visible there before the program
+        // eventually exits and closes the pipe.
+        fflush(stdout);
     }
 }
 

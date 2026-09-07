@@ -54,7 +54,7 @@ static void hook(LhatMachine *machine, void *context, LhatDebugEvent event,
                  const LhatFrameInfo *where)
 {
     Trace *t = (Trace *)context;
-    LHAT_CHECK(event == LHAT_DEBUG_LINE, "the only event v1 sends");
+    LHAT_CHECK(event == LHAT_DEBUG_LINE, "a normal run sends line events");
     if (t->count < 256) {
         t->events[t->count].line = where->line;
         t->events[t->count].depth = lhat_machine_fault_depth(machine);
@@ -129,6 +129,30 @@ static bool has_capture(const Trace *t, const char *spelt)
         }
     }
     return false;
+}
+
+static void test_next_instruction_line(void)
+{
+    LHAT_TEST("a source breakpoint moves to its next instruction line");
+    {
+        Run r;
+        compile_text(&r,
+                     "# the first two lines do not run\n"
+                     "\n"
+                     "var^ f = f^ -> number^ {\n"
+                     "    # nor does this comment\n"
+                     "    return^ 1\n"
+                     "}\n"
+                     "return^ f()\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        // Line 4 has no instruction of its own. The line table search walks
+        // nested bodies too, so it lands on the return inside f^ at line 5.
+        LHAT_CHECK_EQ_INT(lhat_proto_next_instruction_line(r.proto, 1), 3);
+        LHAT_CHECK_EQ_INT(lhat_proto_next_instruction_line(r.proto, 4), 5);
+        LHAT_CHECK_EQ_INT(lhat_proto_next_instruction_line(r.proto, 6), 7);
+        LHAT_CHECK_EQ_INT(lhat_proto_next_instruction_line(r.proto, 8), 0);
+        run_dispose(&r);
+    }
 }
 
 static void test_line_events(void)
@@ -739,6 +763,71 @@ static void test_evaluating(void)
     }
 }
 
+// D5: a runtime fault has no next line at which the ordinary hook could stop.
+// It is instead announced after its record is made and before the run gives
+// its result back, so the hook reads the error line and its live bindings.
+typedef struct {
+    size_t count;
+    uint32_t line;
+    size_t depth;
+    LhatRunStatus status;
+    char value[64];
+    char local[64];
+} FaultTrace;
+
+static void fault_hook(LhatMachine *machine, void *context,
+                       LhatDebugEvent event, const LhatFrameInfo *where)
+{
+    FaultTrace *fault = (FaultTrace *)context;
+    if (event != LHAT_DEBUG_FAULT) {
+        return;
+    }
+    fault->count++;
+    fault->line = where->line;
+    fault->depth = lhat_machine_fault_depth(machine);
+    fault->status = lhat_machine_fault_status(machine);
+    lhat_value_text(lhat_machine_fault_value(machine), fault->value,
+                    sizeof fault->value);
+    size_t locals = lhat_frame_local_count(machine, 0);
+    for (size_t i = 0; i < locals; i++) {
+        LhatBindingInfo binding;
+        if (lhat_frame_local(machine, 0, i, &binding) &&
+            strcmp(binding.name, "kept") == 0) {
+            spell(fault->local, sizeof fault->local, binding.name,
+                  binding.value);
+            break;
+        }
+    }
+}
+
+static void test_fault_event(void)
+{
+    LHAT_TEST("a fault sounds once while its frames and value are readable");
+    {
+        Run r;
+        FaultTrace fault = {0};
+        compile_text(&r, "var^ kept = 42\n"
+                         "panic^ \"broken\"\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new();
+        lhat_machine_set_debug_hook(r.machine, fault_hook, &fault);
+        r.ran = lhat_run(r.machine, r.proto);
+
+        LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
+        LHAT_CHECK_EQ_INT(fault.count, 1);
+        LHAT_CHECK_EQ_INT(fault.line, 2);
+        LHAT_CHECK_EQ_INT(fault.depth, 1);
+        LHAT_CHECK_EQ_INT(fault.status, LHAT_RUN_PANIC);
+        LHAT_CHECK_EQ_STR(fault.value, strlen(fault.value), "broken");
+        LHAT_CHECK_EQ_STR(fault.local, strlen(fault.local), "kept=42");
+        // The public fault accessors keep answering after the hook returns,
+        // just as the traceback readers do, until this machine runs again.
+        LHAT_CHECK_EQ_INT(lhat_machine_fault_status(r.machine),
+                          LHAT_RUN_PANIC);
+        run_dispose(&r);
+    }
+}
+
 // 09 の 5.1: a watcher hears of every machine made and disposed while it
 // stands, and of none after it is taken away.
 static void count_born(void *context, LhatMachine *machine)
@@ -781,12 +870,14 @@ static void test_machine_watcher(void)
 
 int main(void)
 {
+    test_next_instruction_line();
     test_line_events();
     test_coroutine_events();
     test_reentry();
     test_frame_reading();
     test_writing();
     test_evaluating();
+    test_fault_event();
     test_machine_watcher();
     return lhat_test_report("test_debug_hook");
 }

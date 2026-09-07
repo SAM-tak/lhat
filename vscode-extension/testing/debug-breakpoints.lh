@@ -1,0 +1,7 @@
+# Lines 1 and 2 have no instructions; a source breakpoint there moves to 3.
+
+var^ counter = 0
+repeat^ 5 {
+    counter := counter + 1
+}
+return^ counter

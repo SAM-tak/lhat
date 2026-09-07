@@ -14,7 +14,7 @@
 | [06-visual-editor.md](06-visual-editor.md) | ビジュアルエディタ（`lhat/ast`、AST からグラフへの写像、ELK レイアウト、描画層、`*.lhl`） | V2・V7〜V13・V16・V18 が未決。描画層は React Flow に確定 |
 | [07-language-server.md](07-language-server.md) | 言語サーバとエディタ統合（`lhatls` の機能、ホバー、VSCode 拡張の構成） | L2・L5・L8 が未決 |
 | [08-lton.md](08-lton.md) | LTON（L^ のテーブルをテキストで書く綴り、`std.lton`、読み込み、ホストからの入口） | T1〜T3 が未決 |
-| [09-debugger.md](09-debugger.md) | デバッガ（機械の行フック、フレームと束縛の内観、コンパイラの名前の表、`lhat --dap` の DAP アダプタ、Godot 連携） | D1〜D8 が未決 |
+| [09-debugger.md](09-debugger.md) | デバッガ（機械の行フック、フレームと束縛の内観、コンパイラの名前の表、`lhat --dap` の DAP アダプタ、Godot 連携） | D3・D4・D6 が未決 |
 
 ## Memo.md との関係
 

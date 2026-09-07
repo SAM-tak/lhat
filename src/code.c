@@ -70,6 +70,32 @@ bool lhat_proto_has_variadic(const LhatProto *proto)
     return proto->has_variadic;
 }
 
+uint32_t lhat_proto_next_instruction_line(const LhatProto *proto,
+                                          uint32_t at_or_after)
+{
+    if (proto == NULL) {
+        return 0;
+    }
+    uint32_t found = 0;
+    for (size_t i = 0; i < proto->chunk.count; i++) {
+        uint32_t line = proto->chunk.lines[i];
+        if (line >= at_or_after && line != 0 &&
+            (found == 0 || line < found)) {
+            found = line;
+        }
+    }
+    // A breakpoint in the source of a nested f^ belongs to its child body,
+    // not to the CLOSURE instruction on the outer declaration alone.
+    for (size_t i = 0; i < proto->proto_count; i++) {
+        uint32_t child = lhat_proto_next_instruction_line(proto->protos[i],
+                                                           at_or_after);
+        if (child != 0 && (found == 0 || child < found)) {
+            found = child;
+        }
+    }
+    return found;
+}
+
 // Moves every object one heap holds onto another, leaving the first with
 // nothing to free.
 static void give_heap(LhatHeap *from, LhatHeap *into)

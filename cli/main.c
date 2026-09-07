@@ -622,6 +622,10 @@ static void host_print(LhatMachine *machine, void *context,
     }
     if (written > 0) {
         fputc('\n', stdout);
+        // The VSCode debugger reads the program's stdout through a pipe.
+        // Make a completed print observable before the next debug stop, not
+        // only when the C runtime closes the stream at process exit.
+        fflush(stdout);
     }
 }
 
@@ -986,7 +990,8 @@ static int check_program(const char *path, bool run, bool strict,
             if (dap_port != 0) {
                 // NULL: the cli's units are files, so the debugger's paths
                 // and the program's are the same thing (09 の 5.2).
-                dap_session_begin(&dap, machine, (uint16_t)dap_port, NULL);
+                dap_session_begin(&dap, machine, &program, (uint16_t)dap_port,
+                                  NULL);
             }
 #endif
             LhatValue *handed = argument_count > 0

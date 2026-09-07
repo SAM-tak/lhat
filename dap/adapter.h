@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "lhat/program.h"
 #include "lhat/vm.h"
 
 #ifdef __cplusplus
@@ -49,11 +50,13 @@ typedef struct {
 // it has said configurationDone -- installing the hook on `machine` (and,
 // through lhat_debug_watch_machines, on every machine born after) before
 // returning, so the run the caller starts next is under the debugger's
-// control. `paths` maps the debugger's file spellings to the program's unit
-// spellings; NULL takes both as filesystem paths. false (and `*out` NULL)
-// when no debugger could be reached, which the caller treats as "run
-// without one".
-bool dap_session_begin(DapSession **out, LhatMachine *machine, uint16_t port,
+// control. `program` stays alive for the session and supplies compiled line
+// tables for breakpoint verification. `paths` maps the debugger's file
+// spellings to the program's unit spellings; NULL takes both as filesystem
+// paths. false (and `*out` NULL) when no debugger could be reached, which
+// the caller treats as "run without one".
+bool dap_session_begin(DapSession **out, LhatMachine *machine,
+                       const LhatProgram *program, uint16_t port,
                        const DapPathMap *paths);
 
 // After the run: tells the debugger the program is over (with `exit_code`),

@@ -2,16 +2,15 @@
 //
 // 09 の 7 章. The adapter is the runtime itself: `lhat --dap=PORT FILE` binds
 // that port on loopback, waits for one debugger, and speaks DAP over it
-// (dap/adapter.c). So the extension contributes no adapter of its own. It
-// picks the port, starts the process, and hands VSCode a socket to it.
+// (dap/adapter.c). The extension picks the port and starts the process.
 //
 // Two things follow from the adapter being the program:
 //
 //   * the program's own stdout and stderr are the process's, not `output`
-//     events -- 09 の D2 leaves that event unimplemented on purpose, since
-//     the run is what a debugger drives rather than something it wraps -- so
-//     this drains both pipes into the debug console, which is what makes a
-//     print visible
+//     events. The small inline adapter below relays the runtime's DAP socket
+//     and makes those two pipes DAP output events. That is deliberately the
+//     only protocol work here: VSCode consequently associates the output
+//     with this session rather than whichever debug console is active
 //   * the socket goes up only once the program has been loaded and checked,
 //     and a program with a type error never gets that far. So VSCode must
 //     not be handed a port before there is something listening on it: the
@@ -32,6 +31,41 @@ const LISTENING = /^lhat: dap listening on (\d+)\r?\n/m;
 // happens first, so this is generous -- what it is really guarding against is
 // a runtime that never listens at all.
 const LISTEN_TIMEOUT_MS = 60000;
+
+type OutputCategory = "stdout" | "stderr";
+
+interface ProgramOutputChunk {
+    category: OutputCategory;
+    text: string;
+}
+
+// The runtime can print while startRuntime is still waiting for its listening
+// line. Keep that output until there is an inline adapter to send it through;
+// a DebugSession does not exist before then, so it cannot safely go to one.
+class ProgramOutput {
+    private sink: ((chunk: ProgramOutputChunk) => void) | undefined;
+    private pending: ProgramOutputChunk[] = [];
+
+    write(category: OutputCategory, text: string): void {
+        const chunk = { category, text };
+        if (this.sink === undefined) {
+            this.pending.push(chunk);
+        } else {
+            this.sink(chunk);
+        }
+    }
+
+    attach(sink: (chunk: ProgramOutputChunk) => void): void {
+        if (this.sink !== undefined) {
+            throw new Error("a runtime's output already has a DAP session");
+        }
+        this.sink = sink;
+        for (const chunk of this.pending) {
+            sink(chunk);
+        }
+        this.pending = [];
+    }
+}
 
 function resolveRuntimeCommand(): string {
     const configured = vscode.workspace
@@ -68,15 +102,6 @@ function freePort(): Promise<number> {
     });
 }
 
-// 09 の 7 章: the program's output belongs in the debug console. There is no
-// per-session console in the stable API, only the active one -- so two
-// sessions running at once share it. That is the whole of what is lost by
-// not proxying the protocol to add `output` events, and it is not worth a
-// second implementation of the wire format to get back.
-function say(text: string): void {
-    vscode.debug.activeDebugConsole.append(text);
-}
-
 // Starts the runtime and answers where to connect. Rejects with whatever the
 // process said, which for the usual failure -- a type error -- is the
 // diagnostics themselves.
@@ -84,8 +109,9 @@ function startRuntime(
     command: string,
     args: string[],
     options: { cwd?: string; env?: NodeJS.ProcessEnv },
-): Promise<{ child: ChildProcess; port: number }> {
+): Promise<{ child: ChildProcess; port: number; output: ProgramOutput }> {
     return new Promise((resolve, reject) => {
+        const output = new ProgramOutput();
         let child: ChildProcess;
         try {
             child = spawn(command, args, {
@@ -120,7 +146,8 @@ function startRuntime(
             });
         }, LISTEN_TIMEOUT_MS);
 
-        child.stdout?.on("data", (chunk: Buffer) => say(chunk.toString()));
+        child.stdout?.on("data", (chunk: Buffer) =>
+            output.write("stdout", chunk.toString()));
 
         // The announcement shares stderr with the runtime's own messages --
         // a --relaxed warning, a panic's traceback -- so the line is taken
@@ -130,7 +157,7 @@ function startRuntime(
         // this rejects with.
         child.stderr?.on("data", (chunk: Buffer) => {
             if (settled) {
-                say(chunk.toString());
+                output.write("stderr", chunk.toString());
                 return;
             }
             said += chunk.toString();
@@ -142,9 +169,10 @@ function startRuntime(
                 said.slice(0, found.index) +
                 said.slice(found.index + found[0].length);
             said = "";
-            finish(() => resolve({ child, port: Number(found[1]) }));
+            finish(() =>
+                resolve({ child, port: Number(found[1]), output }));
             if (rest.length > 0) {
-                say(rest);
+                output.write("stderr", rest);
             }
         });
 
@@ -172,6 +200,161 @@ function startRuntime(
             );
         });
     });
+}
+
+// The protocol endpoint is still the runtime. This proxy only frames messages
+// on its way to and from that endpoint, replaces its outbound sequence values
+// with one sequence space that also includes injected output events, and never
+// interprets a request or response. Inline adapters are the stable VSCode API
+// that lets an extension add such session-owned events.
+class LhatDapOutputProxy implements vscode.DebugAdapter {
+    private readonly sent = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
+    readonly onDidSendMessage = this.sent.event;
+
+    private socket: net.Socket | undefined;
+    private connected = false;
+    private disposed = false;
+    private received = Buffer.alloc(0);
+    private readonly waitingForSocket: vscode.DebugProtocolMessage[] = [];
+    private readonly waitingForInitialize: ProgramOutputChunk[] = [];
+    private outputReady = false;
+    private nextSequence = 1;
+
+    constructor(port: number, output: ProgramOutput) {
+        output.attach((chunk) => this.sendOutput(chunk));
+
+        const socket = net.createConnection({ host: "127.0.0.1", port });
+        this.socket = socket;
+        socket.on("connect", () => {
+            this.connected = true;
+            for (const message of this.waitingForSocket.splice(0)) {
+                this.writeMessage(message);
+            }
+        });
+        socket.on("data", (chunk: Buffer) => this.readMessages(chunk));
+        // A listening socket went away between startRuntime and connect. The
+        // debug service learns that its inline adapter ended just as it does
+        // for a DebugAdapterServer whose socket dies.
+        socket.on("error", () => socket.destroy());
+    }
+
+    handleMessage(message: vscode.DebugProtocolMessage): void {
+        if (this.disposed) {
+            return;
+        }
+        if (!this.connected) {
+            this.waitingForSocket.push(message);
+            return;
+        }
+        this.writeMessage(message);
+    }
+
+    dispose(): void {
+        if (this.disposed) {
+            return;
+        }
+        this.disposed = true;
+        this.socket?.destroy();
+        this.sent.dispose();
+    }
+
+    private writeMessage(message: vscode.DebugProtocolMessage): void {
+        if (this.socket === undefined || this.disposed) {
+            return;
+        }
+        const body = JSON.stringify(message);
+        const framed = Buffer.from(
+            `Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n${body}`,
+            "utf8",
+        );
+        this.socket.write(framed);
+    }
+
+    private readMessages(chunk: Buffer): void {
+        this.received = Buffer.concat([this.received, chunk]);
+        for (;;) {
+            const crlfEnd = this.received.indexOf("\r\n\r\n");
+            const lfEnd = this.received.indexOf("\n\n");
+            const headerEnd = crlfEnd >= 0 ? crlfEnd : lfEnd;
+            if (headerEnd < 0) {
+                return;
+            }
+            const separatorLength = crlfEnd >= 0 ? 4 : 2;
+            const header = this.received
+                .subarray(0, headerEnd).toString("ascii");
+            const length = /^Content-Length:\s*(\d+)\s*$/im.exec(header);
+            if (length === null) {
+                this.socket?.destroy(new Error("DAP peer sent no Content-Length"));
+                return;
+            }
+            const bodyLength = Number(length[1]);
+            const bodyStart = headerEnd + separatorLength;
+            if (!Number.isSafeInteger(bodyLength) || bodyLength < 0) {
+                this.socket?.destroy(new Error("DAP peer sent an invalid Content-Length"));
+                return;
+            }
+            if (this.received.length < bodyStart + bodyLength) {
+                return;
+            }
+            const body = this.received
+                .subarray(bodyStart, bodyStart + bodyLength).toString("utf8");
+            this.received = this.received.subarray(bodyStart + bodyLength);
+            let parsed: unknown;
+            try {
+                parsed = JSON.parse(body);
+            } catch {
+                this.socket?.destroy(new Error("DAP peer sent invalid JSON"));
+                return;
+            }
+            if (typeof parsed !== "object" || parsed === null ||
+                Array.isArray(parsed)) {
+                this.socket?.destroy(new Error("DAP peer sent a non-object message"));
+                return;
+            }
+            this.sendRuntimeMessage(parsed as Record<string, unknown>);
+        }
+    }
+
+    private sendRuntimeMessage(message: Record<string, unknown>): void {
+        this.sendMessage(message);
+        if (message.type === "event" && message.event === "initialized") {
+            this.outputReady = true;
+            for (const chunk of this.waitingForInitialize.splice(0)) {
+                this.sendOutput(chunk);
+            }
+        }
+    }
+
+    private sendOutput(chunk: ProgramOutputChunk): void {
+        if (this.disposed) {
+            return;
+        }
+        if (!this.outputReady) {
+            this.waitingForInitialize.push(chunk);
+            return;
+        }
+        this.sendMessage({
+            type: "event",
+            event: "output",
+            body: {
+                category: chunk.category,
+                output: chunk.text,
+            },
+        });
+    }
+
+    private sendMessage(message: Record<string, unknown>): void {
+        if (this.disposed) {
+            return;
+        }
+        // DAP requires each side's seq to be one increasing sequence. The
+        // runtime owns its sequence, while the proxy owns injected output;
+        // assigning at this boundary keeps them in one unambiguous space.
+        this.sent.fire({
+            ...message,
+            seq: this.nextSequence++,
+        } as vscode.DebugProtocolMessage);
+    }
 }
 
 // Fills in what a bare F5 leaves out, so a .lh file can be run without a
@@ -240,7 +423,12 @@ export class LhatDebugAdapterFactory
         });
         this.running.add(started.child);
         started.child.once("exit", () => this.running.delete(started.child));
-        return new vscode.DebugAdapterServer(started.port, "127.0.0.1");
+        // This is not a second debugger: LhatDapOutputProxy relays every
+        // request and runtime reply unchanged, adding only per-session
+        // output events for the process pipes it already owns.
+        return new vscode.DebugAdapterInlineImplementation(
+            new LhatDapOutputProxy(started.port, started.output),
+        );
     }
 
     dispose(): void {

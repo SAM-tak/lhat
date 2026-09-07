@@ -39,6 +39,14 @@ bool lhat_proto_has_variadic(const LhatProto *proto);
 // closure of it cannot be handed to another.
 bool lhat_proto_is_owned(const LhatProto *proto);
 
+// 09 の D8: the first source line at or after `at_or_after` which has an
+// instruction in this body or in a body written inside it. Zero says there
+// is none (and instruction lines numbered zero are never candidates). This
+// lets a debugger move a source breakpoint from a comment or blank line to
+// the next place code can actually run without exposing bytecode itself.
+uint32_t lhat_proto_next_instruction_line(const LhatProto *proto,
+                                          uint32_t at_or_after);
+
 // Why a compile stopped. lhat_program_compile answers NULL and leaves the
 // reason here (lhat_program_compile_status), since it compiles unit by unit
 // and stops at the first that will not -- so what a reader has to be told is

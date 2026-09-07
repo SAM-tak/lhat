@@ -1,10 +1,11 @@
 // L^ (lhat) -- what a debugger asks of a machine (09 章).
 //
-// Two things: to be told when the machine reaches a new line, and, while it
-// is being told, to read the frames standing and what their registers were
-// called. That is the whole of it. Breakpoints, stepping and the pause are a
-// debugger's own, built on these -- the DAP adapter in cli/ is one, a Godot
-// script debugger another -- and the machine keeps none of them.
+// Two things: to be told when the machine reaches a new line or terminal
+// fault, and, while it is being told, to read the frames standing and what
+// their registers were called. That is the whole of it. Breakpoints, stepping
+// and the pause are a debugger's own, built on these -- the DAP adapter in
+// cli/ is one, a Godot script debugger another -- and the machine keeps none
+// of them.
 //
 // Section numbers refer to DesignDocuments/09-debugger.md unless prefixed.
 
@@ -21,14 +22,19 @@ typedef enum {
     // 2.1: the next instruction begins a line -- a line other than the last
     // one the machine was on, or the same one reached by a jump back (a
     // loop), or the first of a body just entered.
-    LHAT_DEBUG_LINE
+    LHAT_DEBUG_LINE,
+    // D5: the current run reached an unrecoverable runtime fault. Its fault
+    // record and every frame are still standing, so a debugger can inspect
+    // them before it lets the run return its error. OK and SUSPENDED never
+    // send this event.
+    LHAT_DEBUG_FAULT
 } LhatDebugEvent;
 
-// 2.3: called on the machine's own thread, between two instructions, and
+// 2.3: called on the machine's own thread, at a safe execution boundary, and
 // the machine waits for it to return -- a debugger that wants to stop the
 // program stops here. `where` is level 0 of lhat_machine_fault_frame,
-// already read. Every register holds what the program sees, so the frame
-// API below reads them as they are.
+// already read. Every register holds what the program sees, so the frame API
+// below reads them as they are.
 //
 // 2.4: the hook may call back into L^ (lhat_machine_call and friends); it is
 // not told about the lines those calls run. A fault in such a call, or
@@ -42,6 +48,13 @@ typedef void (*LhatDebugHook)(LhatMachine *machine, void *context,
 // not taken. NULL takes it away -- from inside the hook too.
 void lhat_machine_set_debug_hook(LhatMachine *machine, LhatDebugHook hook,
                                  void *context);
+
+// D5: what the fault event reports. These answer LHAT_RUN_OK and nil^ when
+// no fault is recorded. The value is meaningful for LHAT_RUN_PANIC, where it
+// is the value the program (or host) panicked with; it is nil^ for the other
+// runtime faults. Both remain readable until the machine next runs.
+LhatRunStatus lhat_machine_fault_status(const LhatMachine *machine);
+LhatValue lhat_machine_fault_value(const LhatMachine *machine);
 
 // 3.2: one name of a frame. A local is a written binding, a parameter, or a
 // name the language binds (self^, it^, def^, super^, '...'); a capture is a

@@ -194,6 +194,29 @@ bool vm_host_faulted(Machine *m, size_t frames_before,
     }
     return false;
 }
+
+#if LHAT_WITH_DEBUGGER
+// D5: a fault has no following instruction at which the line hook could
+// stop. vm_finish has just recorded it, while all of this run's frames and
+// registers are still live, so this is the one equivalent safe boundary.
+// As for hook_line, calls the hook makes back into L^ must stay silent.
+static void hook_fault(Machine *m)
+{
+    if (m->hook_live == NULL) {
+        return;
+    }
+    LhatFrameInfo where;
+    if (!lhat_machine_fault_frame((LhatMachine *)m, 0, &where)) {
+        return;  // a host-side boundary fault has no L^ frame to inspect
+    }
+    m->hook_live = NULL;
+    m->hook((LhatMachine *)m, m->hook_context, LHAT_DEBUG_FAULT, &where);
+    // The hook may have removed itself while it ran; restore precisely that
+    // current choice rather than the one that was live when it entered.
+    m->hook_live = m->hook;
+}
+#endif  // LHAT_WITH_DEBUGGER
+
 LhatRunResult vm_finish(Machine *m, const LhatChunk *chunk,
                             LhatRunStatus status, LhatValue value, size_t at)
 {
@@ -219,6 +242,9 @@ LhatRunResult vm_finish(Machine *m, const LhatChunk *chunk,
         m->fault_at = at;
         m->fault_status = status;
         m->fault_value = value;
+#if LHAT_WITH_DEBUGGER
+        hook_fault(m);
+#endif
     } else {
         m->fault_depth = m->fault_base = 0;
         m->fault_status = LHAT_RUN_OK;

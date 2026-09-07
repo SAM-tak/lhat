@@ -38,6 +38,9 @@ static void debug_log(LhatMachine *machine, void *context,
             (const LhatString *)lhat_as_object(arguments[0]);
         fwrite(text->text, 1, text->length, stdout);
         fputc('\n', stdout);
+        // See std.io.print: a debugger receives stdout through a pipe, where
+        // the C stream is otherwise fully buffered until program exit.
+        fflush(stdout);
     }
 }
 

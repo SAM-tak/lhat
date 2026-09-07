@@ -30,8 +30,9 @@ Lua は `debug` ライブラリとして同じことをスクリプトから操�
 
 機械はデバッガのフックを一つ持つ（machine ごと。proto ではない——一つの
 proto は `std.thread` で複数の機械に共有されうる）。フックが立っている間、
-機械は命令の合間ごとに「新しい行に達した」ことをフックに知らせる。止まる・
-歩く・中断するの判断はフックの側にあり、機械はブレークポイントの表を持たない。
+機械は命令の合間ごとに「新しい行に達した」、または run がフォルトしたことを
+フックに知らせる。止まる・歩く・中断するの判断はフックの側にあり、機械は
+ブレークポイントの表を持たない。
 
 ```c
 typedef void (*LhatDebugHook)(LhatMachine *, void *context,
@@ -68,6 +69,27 @@ void lhat_machine_set_debug_hook(LhatMachine *, LhatDebugHook, void *context);
 
 戻り先が呼び出しと同じ行なら鳴らないので、`step over` が同じ行に二度
 止まらない。
+
+#### フォルトイベント（D5）
+
+`LHAT_DEBUG_FAULT` は **run が失敗するときに一度だけ**鳴る。`OK` と、再開を
+待つだけで失敗ではない `SUSPENDED` は鳴らさない。`vm_finish` がフォルトの
+フレーム範囲・命令位置・状態を記録した直後、run が結果を返す前に呼ぶので、
+フックの中では通常のフレーム・束縛 API で原因行の状態を読める。
+
+```c
+LhatRunStatus lhat_machine_fault_status(const LhatMachine *);
+LhatValue     lhat_machine_fault_value(const LhatMachine *);
+```
+
+状態は `LhatRunStatus`、値は `panic^` が運んだ値（それ以外は `nil^`）であり、
+次に machine を走らせるまで残る。デバッガがフックで待機してから続行を受ける
+ことはできるが、**復旧ではない**——続行すると元のフォルト結果を返して run は
+終わる。
+
+`CALL` / `RETURN` のイベントは足さない。step in / over / out は既に行イベントと
+フレーム深さの変化で区別でき、末尾呼び出し・コルーチン・cleanup に別のイベント
+意味論を持ち込む利益がない。
 
 ### 2.2 費用
 
@@ -133,6 +155,8 @@ run の開始で前の run のフォルト記録を消す。
 size_t lhat_machine_fault_depth(const LhatMachine *);
 bool   lhat_machine_fault_frame(const LhatMachine *, size_t level, LhatFrameInfo *);
 size_t lhat_machine_traceback(const LhatMachine *, char *out, size_t capacity);
+LhatRunStatus lhat_machine_fault_status(const LhatMachine *);
+LhatValue     lhat_machine_fault_value(const LhatMachine *);
 ```
 
 名前に `fault` と付くのは、これがフォルトの巻き戻さないフレームを読むために
@@ -238,12 +262,23 @@ bool lhat_machine_evaluate(LhatMachine *, size_t level,
 名前を空の `nil^` に落とす前置きは、行 0 ではなく本体の最初の行に属す——
 そうしないとデバッガが宣言の行を二度歩くことになる。
 
+### 4.1 実行できる次の行
+
+```c
+uint32_t lhat_proto_next_instruction_line(const LhatProto *,
+                                          uint32_t at_or_after);
+```
+
+本体とその内側に書かれた本体の命令表を読み、指定行以後で最小の行を返す。
+命令が無ければ 0。バイトコードを公開せずに、DAP がコメントや空行に置かれた
+ブレークポイントを次の実行可能行へ寄せるための問いである。
+
 ## 5. デバッグアダプタ（`lhat --dap=PORT`）
 
 `lhat --dap=PORT` は 127.0.0.1 のそのポートで待ち、一つのデバッガを受けて
 プログラムを走らせる。VSCode 拡張が空きポートを選んで `lhat` を起動し、
-`DebugAdapterServer` で繋ぐ。スクリプトの標準出力は端末のまま（拡張が
-プロセスを捕まえる）。
+インライン中継で繋ぐ。中継はスクリプトの標準出力・標準エラーもプロセスから
+捕まえ、セッション固有の `output` イベントにする（§7.2）。
 
 構成:
 
@@ -279,7 +314,8 @@ machine が一つならスレッドは一つ。
 錠越しに行う。動いている machine の stackTrace は空で答える。
 
 - **ライフサイクル**——`lhat_program_install` の後にセッションを始め、
-  initialize / setBreakpoints / launch / configurationDone を同期に受けて
+  initialize / setBreakpoints / setExceptionBreakpoints / launch /
+  configurationDone を同期に受けて
   観測とフックを据え、受信スレッドを起こしてから run を走らせる。run の後に
   終える（`terminated` と `exited`）——終わりはワーカーの machine が全部
   去るのを待つ。
@@ -287,6 +323,19 @@ machine が一つならスレッドは一つ。
   要求された、その machine の `stepIn`、`stepOver` で深さが戻った、`stepOut`
   で深さが減った、あるいは行がブレークポイント——のいずれかで駐機する。
   歩きは machine ごと（`next` の `threadId` の1台に効き、resume は全台）。
+- **ソースブレークポイント**（D8）——`setBreakpoints` はコンパイル済みの
+  program の行表で、要求行以後の最初の命令行を探す。見つけたものは
+  `verified: true` と実際の `line` を返し、以後に命令が無ければ
+  `verified: false` と理由を返す。要求はその source の古い表だけを置換し、
+  他のファイルのブレークポイントは残す。`condition` はヒットした machine の
+  level 0 で evaluate と同じ写しの環境に評価され、`true^` のときだけ止まる。
+  `false^`、bool 以外、構文・実行の失敗は不一致であり、走行中のプログラムを
+  フォルトさせない。
+- **フォルト停止**——`LHAT_DEBUG_FAULT` は行を待たず、その machine を
+  `stopped(reason: "exception")` で駐機する。全 runtime fault は停止対象で、
+  `exceptionInfo` は状態（`panic^` ならその値）を返す。フックの中にいる間は
+  フレーム・Locals・evaluate が通常の停止と同じように使え、continue はその
+  フォルトを返して run を終える。
 - **中断（pause）**——受信スレッドが旗を立て、各 machine は次の行イベントで
   止まる。ホスト呼び出しの中にいる machine はその境界まで止まらない（D3）。
 - **変数の参照**——frameId は `threadId * 1000 + level`。scopes はフレーム
@@ -303,7 +352,8 @@ machine が一つならスレッドは一つ。
 （`LhatFrameInfo.source`）で、両者は同じものとは限らない——アーカイブや仮想
 ファイルシステム（PhysFS の `.love` など）から単位を読むホストの単位名は、
 ディスクのどこにも無い。対応を知っているのはホストだけなので、
-`dap_session_begin` は写像（`DapPathMap`）を受け取る:
+`dap_session_begin` は、行を照合するコンパイル済み `LhatProgram` と写像
+（`DapPathMap`）を受け取る:
 
 - `to_unit`——エディタのパス → 単位の綴り。setBreakpoints はこれ越しに
   照合され、以後の行イベントは**単位の綴りどうしの完全一致**（正規化なし）
@@ -315,10 +365,11 @@ machine が一つならスレッドは一つ。
 ファイルにはブレークポイントが結ばれない。呼び出しはセッションのスレッドから
 錠の下で来る——速く、スレッド安全に。
 
-対応する要求（v1）: initialize, launch, attach, setBreakpoints（行はすべて
-`verified` 固定）, configurationDone, threads, stackTrace, scopes, variables,
-setVariable, evaluate, continue, next, stepIn, stepOut, pause, disconnect,
-terminate。イベント: initialized, stopped, terminated, exited。
+対応する要求（v1）: initialize, launch, attach, setBreakpoints（次の命令行へ
+移動して検証、`condition` 対応）, setExceptionBreakpoints, configurationDone, threads, stackTrace,
+scopes, variables, setVariable, evaluate, exceptionInfo, continue, next, stepIn,
+stepOut, pause, disconnect, terminate。イベント: initialized, stopped, terminated,
+exited。
 
 - **setVariable**——パネルが打った文字列を L^ の綴りで読む（`nil^` /
   `true^` / `false^` / 数 / 引用符の文字列。式は evaluate の側）。行き先は
@@ -328,6 +379,12 @@ terminate。イベント: initialized, stopped, terminated, exited。
   （`supportsEvaluateForHovers`）。答えは描画した文字列だけで、展開の
   参照は配らない——評価の答えはフレームが畳まれた後は何にも根を張られて
   おらず、後から読む参照は腐りうる。
+- **条件付きブレークポイント**——`supportsConditionalBreakpoints` を返す。
+  条件の `:=` は evaluate と同様に写しへ書くだけだが、呼び出したホスト関数の
+  副作用までは抑えない。これはデバッグコンソールの式評価と同じ範囲である。
+- **例外ブレークポイント**——`setExceptionBreakpoints` は受理するが、L^ の
+  runtime fault は catch^ で捕捉する error^ ではなく run を終える失敗なので、
+  caught / uncaught のフィルタはまだ分けない。常に停止する。
 
 `dap/` は `src/` の何も名指ししない——デバッガは `lhat.h` の公開面だけで動く。
 
@@ -344,8 +401,9 @@ API で埋まる。詳細は別リポジトリの godot バインディングに
 `contributes.debuggers` に `{ type: "lhat", languages: ["lhat"] }` を持ち、
 `DebugAdapterDescriptorFactory`（`vscode-extension/src/debug.ts`）が
 空きポートを選んで `lhat --dap=PORT <program>` を起動し
-`DebugAdapterServer(port)` を返す。**アダプタを自前で持たない** ——
-アダプタは実行時そのものである。
+インラインの中継を返す。中継が実装するのは DAP の枠とメッセージをそのまま
+通すこと、それに標準出力・標準エラーを `output` イベントとして差し込むことだけで、
+要求・応答・デバッグの意味を実装しない。**アダプタは実行時そのもの**である。
 
 `contributes.breakpoints` に `lhat` を挙げるので、`.lh` の行に赤丸が置ける。
 `launch.json` を書かなくても F5 で開いている `.lh` が走る
@@ -374,22 +432,23 @@ lhat: dap listening on 51234
 
 ### 7.2 出力はデバッグコンソールへ
 
-プログラム自身の標準出力・標準エラーは `output` イベントではなく**プロセスの
-ものである**（D2 はそのまま）。起動した側がどちらの管も汲んでデバッグコンソール
-へ流す。安定 API にセッションごとのコンソールは無く `activeDebugConsole` だけ
-なので、二つのセッションを同時に走らせると混ざる。プロトコルを中継して `output`
-を足せば直るが、そのために線上の綴りを二つ目実装する価値は無い。
+プログラム自身の標準出力・標準エラーは実行時の `output` イベントではなく、
+**起動したプロセスの管**である。拡張のインライン中継が両方を汲み、`stdout` /
+`stderr` の `output` イベントにして VSCode へ渡す。イベントはデバッグセッションに
+結び付くので、同時に二つ走らせても出力は混ざらない。中継が実行時から来た DAP の
+`seq` を自分の連番に置き換えるので、差し込んだイベントとも一つの送信列になる。
+
+パイプ相手の C の `stdout` は全バッファになるため、`print`、`std.io.print`、
+`std.debug.log` は各行を `fflush(stdout)` する。止まった行までの出力を、終了時まで
+待たずに読めるようにするためである。
 
 ## 8. 未決事項一覧
 
 | 番号 | 内容 |
 | --- | --- |
-| D2 | `output` イベント（スクリプトの出力をコンソールへ）。起動側が捕まえる（§7.2）。セッションを同時に二つ走らせると混ざるのが、残っている実害 |
 | D3 | ホスト呼び出しの中にいる machine は `pause` も全台停止も次の行まで効かず、そこで止まったままだとセッションの終わりも待たされる |
 | D4 | 列（column）の情報。行の表に列は無い |
-| D5 | ［提案］`CALL` / `RETURN` / フォルトのイベント。フォルトで止まる |
 | D6 | 写像なしの照合でのシンボリックリンク等の同一視（§5.2 の正規化は fullpath どまり） |
-| D8 | ブレークポイントの行の検証（実在する命令の行か）と条件付き |
 
 ## 改定履歴（要約）
 
@@ -403,3 +462,11 @@ lhat: dap listening on 51234
   のための editor↔unit の両方向解決。
 - `LHAT_WITH_DEBUGGER`（2026-08-31）。出荷ビルドがデバッガを前処理で消す
   ノブ。トレースバックは残る——フォルト報告はデバッガではない。
+- D2 閉鎖。VSCode 拡張のインライン中継が子プロセスの標準出力・標準エラーを
+  セッションごとの DAP `output` イベントにする。`print` 系はパイプでもその場で
+  見えるよう行ごとに stdout をフラッシュする。
+- D5 閉鎖。`LHAT_DEBUG_FAULT` はフォルト記録後・run の返却前に一度鳴り、
+  DAP は `exception` 停止と `exceptionInfo` でフレームと理由を見せる。CALL /
+  RETURN のイベントは、既存の行と深さで歩けるため採らない。
+- D8 閉鎖。ブレークポイントは次の命令行へ寄せ、無ければ未検証として理由を
+  返す。条件は現在フレームで評価し、`true^` のヒットだけを停止にする。

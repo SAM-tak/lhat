@@ -64,6 +64,16 @@ size_t lhat_machine_fault_depth(const LhatMachine *machine)
     return depth - base;
 }
 
+LhatRunStatus lhat_machine_fault_status(const LhatMachine *machine)
+{
+    return machine != NULL ? machine->fault_status : LHAT_RUN_OK;
+}
+
+LhatValue lhat_machine_fault_value(const LhatMachine *machine)
+{
+    return machine != NULL ? machine->fault_value : lhat_nil();
+}
+
 bool lhat_machine_fault_frame(const LhatMachine *machine, size_t level,
                               LhatFrameInfo *out)
 {
