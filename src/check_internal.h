@@ -102,6 +102,15 @@ typedef struct Scope {
     // outlives the iteration without '$^' finding an extra step on the way
     // out. compile.c counts the same one scope for a loop body.
     bool transparent;
+    // 07 の 4 章: the source the scope covers, taken from the construct it
+    // belongs to. Both zero for a layer that is a lookup table rather than a
+    // piece of a program -- a def^'s members while its entries are read, a
+    // session's one scope across many inputs -- and nothing is recorded for
+    // those. What is recorded is every binding, as the scope closes
+    // (chk_scope_close): a tool asked what names may stand at a position
+    // reads the record rather than reading 8 章 a second time.
+    uint32_t from;
+    uint32_t to;
 } Scope;
 
 // 13.11. What a branch knows about a value that the binding does not: inside
@@ -202,6 +211,7 @@ typedef struct {
 #if LHAT_WITH_RESOLUTIONS
     size_t resolutions;
     size_t member_sites;
+    size_t binding_sites;
 #endif
     size_t round;
     // One walk per element plus one: an element settles no later than the one
@@ -591,7 +601,16 @@ Binding *chk_scope_find_skipping(Scope *scope, const char *name,
 Scope *chk_scope_from(Scope *scope, const LhatNode *node);
 Binding *chk_scope_add(Scope *scope, const char *name, size_t length,
                        LhatType *type, uint32_t offset);
-void chk_scope_dispose(Scope *scope);
+
+// Opens a layer under `parent`, covering the source `node` was written
+// across. `node` is NULL for a layer that is not a piece of a program -- the
+// members of a def^ while its entries are read, a session's one scope, the
+// names a host registered -- and such a layer records nothing.
+void chk_scope_open(Scope *scope, Scope *parent, const LhatNode *node,
+                    bool transparent);
+
+// Closes it, recording what it held (07 の 4 章) before freeing it.
+void chk_scope_close(Checker *c, Scope *scope);
 LhatType *chk_simple(Checker *c, LhatTypeKind kind);
 
 // 04 の 2.7: 'error^|localerror^' -- what the operators mean by "an error"

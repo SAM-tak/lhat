@@ -7,11 +7,10 @@
 // document store and checked here, on this thread
 // (lsp_workspace_with_fresh_unit).
 //
-// Three of the four questions never get that far: a module path, a
-// require^'s string and a word of the language are read off the text,
-// because none has a tree worth asking (a half-written path resolves to
-// nothing, an unterminated string is one error token running to the end of
-// the file, and a word half typed is not yet the word it will be).
+// Two of the four questions never get that far: a module path and a
+// require^'s string are read off the text, because neither has a tree
+// worth asking (a half-written path resolves to nothing, and an
+// unterminated string is one error token running to the end of the file).
 
 #include "completion.h"
 
@@ -42,14 +41,13 @@ static void collect(void *context, const LhatUnit *unit)
     // (lsp/lton.h), so a position and an offset are not the same thing there.
     uint32_t offset =
         lsp_unit_offset_at(unit, request->line, request->character);
-    request->items = lsp_completion_members_for_unit(unit, offset);
+    request->items = lsp_completion_for_unit(unit, offset);
 }
 
-// What the textual questions answer with, or NULL when none applies. `text`
-// is the whole document and `offset` the cursor.
-//
-// The word question is asked last of the three, since the other two are also
-// words being typed and each has a better answer than the language's own.
+// What the two textual questions answer with, or NULL when neither applies.
+// `text` is the whole document and `offset` the cursor. They are asked
+// before the tree because each is a word being typed that has a better
+// answer than the language's own words would be.
 static cJSON *answer_from_the_text(LspServer *server, const char *path,
                                    const char *text, size_t length,
                                    uint32_t offset)
@@ -72,9 +70,6 @@ static cJSON *answer_from_the_text(LspServer *server, const char *path,
             (const char *const *)modules, count, text + from, offset - from);
         lsp_workspace_free_strings(modules, count);
         return items;
-    }
-    if (lsp_completion_word_prefix(text, length, offset, &from)) {
-        return lsp_completion_word_items();
     }
     return NULL;
 }

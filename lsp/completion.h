@@ -6,19 +6,19 @@
 //   foo.            the members of whatever foo answers
 //   import^ std.    the modules the host registered under std
 //   require^ "li    the units of this workspace
-//   le              the words of the language
+//   le              the words of the language, and the names in scope
 //
-// Only the first needs the checker, and it does not work the receiver out
-// for itself: the parser leaves a member with nothing under it for a
-// trailing dot, the checker records what stands to its left against that
-// dot (check.h's LhatMemberSite), and this reads the record. A second
-// reading of 14.10's lookup here would disagree with the checker exactly
-// where the rules are hard, which is what 4 章 already refused for hover.
+// Two of them ask the checker, and neither works anything out for itself.
+// The receiver of a dot is read off the record the checker left as it
+// settled it (check.h's LhatMemberSite); the names in scope are read off the
+// record each scope left as it closed (LhatBindingSite). Reading 14.10's
+// lookup or 8 章's scoping a second time here would disagree with the
+// checker exactly where the rules are hard, which is what 4 章 already
+// refused for hover.
 //
-// The other three are text. A half-written module path resolves to nothing,
-// an unterminated string is one error token running to the end of the file
-// (lexer.c), and a word being typed is whatever it will be once it is
-// finished -- so none of the three has a tree worth asking.
+// The other two are text alone. A half-written module path resolves to
+// nothing and an unterminated string is one error token running to the end
+// of the file (lexer.c), so neither has a tree worth asking.
 
 #ifndef LSP_COMPLETION_H
 #define LSP_COMPLETION_H
@@ -37,6 +37,12 @@
 // `offset` is a byte offset into the unit's source, standing just past the
 // dot: that is where the cursor is when the dot has only now been typed.
 cJSON *lsp_completion_members_for_unit(const LhatUnit *unit, uint32_t offset);
+
+// What may stand at `offset` in `unit`, whichever of the two questions the
+// text there asks: the members of a receiver where a dot stands before the
+// cursor, and otherwise the words and the names. Empty where neither
+// applies -- inside a comment, inside a string, or between two operators.
+cJSON *lsp_completion_for_unit(const LhatUnit *unit, uint32_t offset);
 
 // The members of `receiver` on their own, for a caller that already has the
 // type. Every member the checker would accept and no other, from two sources:
@@ -69,10 +75,21 @@ bool lsp_completion_require_prefix(const char *text, size_t length,
 bool lsp_completion_word_prefix(const char *text, size_t length,
                                 uint32_t offset, uint32_t *from);
 
-// Every word the language has, whatever is written so far: the editor
-// filters the list down as more of the word arrives, which is what the
-// answer's isIncomplete says it may do.
-cJSON *lsp_completion_word_items(void);
+// Everything that may stand where a word is being written, whatever of it
+// has been typed: the editor filters the list down as more of the word
+// arrives, which is what the answer's isIncomplete says it may do.
+//
+// Two sources, and the names come first so that one of them shadowing a
+// word of the language keeps the type it holds:
+//
+//   the names in scope  -- asked of lhat_check_bindings_at, so 8 章's
+//                          lookup is read once and not twice
+//   the words           -- WORDS (completion.c), which no other list holds
+//
+// `result` may be NULL, which leaves the names out. `offset` says where in
+// its source the cursor stands.
+cJSON *lsp_completion_word_items(const LhatCheckResult *result,
+                                 uint32_t offset);
 
 // The next segment of every module that begins with `prefix`, once each --
 // "std." offers "io" and "math", not "std.io" and "std.math.vector3". The

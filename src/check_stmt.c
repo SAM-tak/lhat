@@ -2182,27 +2182,21 @@ static void check_block(Checker *c, const LhatNode *node)
     Scope carried;
     bool layered = node->v.list.extra != NULL;
     if (layered) {
-        carried.bindings = NULL;
-        carried.tail = NULL;
-        carried.parent = c->scope;
-        carried.transparent = true;
+        chk_scope_open(&carried, c->scope, node, true);
         c->scope = &carried;
     }
 
     Scope scope;
-    scope.bindings = NULL;
-    scope.tail = NULL;
-    scope.parent = c->scope;
-    scope.transparent = false;
+    chk_scope_open(&scope, c->scope, node, false);
 
     c->scope = &scope;
 
     chk_check_block_in_scope(c, node);
 
     c->scope = outer;
-    chk_scope_dispose(&scope);
+    chk_scope_close(c, &scope);
     if (layered) {
-        chk_scope_dispose(&carried);
+        chk_scope_close(c, &carried);
     }
 }
 
@@ -2269,9 +2263,7 @@ static void check_try_block(Checker *c, const LhatNode *node)
         LhatType *here = want != NULL ? chk_only(c, left, want) : left;
 
         Scope scope;
-        scope.bindings = NULL;
-        scope.tail = NULL;
-        scope.parent = c->scope;
+        chk_scope_open(&scope, c->scope, arm, false);
         Scope *outer = c->scope;
         c->scope = &scope;
         Binding *caught =
@@ -2286,7 +2278,7 @@ static void check_try_block(Checker *c, const LhatNode *node)
         chk_check_statement(c, arm->v.clause.body);
         c->conditional--;
         c->scope = outer;
-        chk_scope_dispose(&scope);
+        chk_scope_close(c, &scope);
 
         if (want != NULL) {
             left = chk_without(c, left, want);
@@ -2605,9 +2597,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             // otherwise a bare ':=' reaches out through this scope to an
             // existing name instead of defining one here (8.6改, 16.3改).
             Scope scope;
-            scope.bindings = NULL;
-            scope.tail = NULL;
-            scope.parent = c->scope;
+            chk_scope_open(&scope, c->scope, node, false);
 
             Scope *outer = c->scope;
             c->scope = &scope;
@@ -2700,7 +2690,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             }
 
             c->scope = outer;
-            chk_scope_dispose(&scope);
+            chk_scope_close(c, &scope);
             break;
         }
 

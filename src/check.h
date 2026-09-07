@@ -428,6 +428,32 @@ typedef struct {
     // result's type arena, so it is valid for as long as the result is.
     LhatType *receiver;
 } LhatMemberSite;
+
+// 07 の 4 章: a name a scope held, and the source that scope covered.
+//
+// A resolution says where a name that was written got its meaning, which
+// answers "what is this" and nothing else. This answers the other question a
+// tool asks -- "what may I write here" -- for which no name has been written
+// yet. Reading 8 章 a second time to work it out is what this file exists to
+// avoid, so the scope says what it held as it is disposed of.
+//
+// 8.7 makes a name visible throughout the scope that binds it, so the span
+// is the scope's own and not the part of it after the let^.
+typedef struct {
+    uint32_t from;  // where the construct the scope belongs to begins
+    uint32_t to;    // one past its end
+    // Borrowed from the source or from the lexer's string storage, both of
+    // which outlive the result -- the same loan a Binding takes.
+    const char *name;
+    uint32_t name_length;
+    // What the name holds. Belongs to the result's type arena, so it is
+    // valid for as long as the result is. NULL where the scope closed before
+    // anything settled it.
+    LhatType *type;
+    bool is_parameter;  // 13.1: declared by a signature rather than bound
+    bool immutable;     // 8.9: a let^ rather than a var^
+    bool names_type;    // 13.14: the name stands for a type in annotations
+} LhatBindingSite;
 #endif  // LHAT_WITH_RESOLUTIONS
 
 // 05 の 8.7: a host registers what it provides by writing the type out, so
@@ -472,6 +498,14 @@ typedef struct {
     LhatMemberSite *member_sites;
     size_t member_site_count;
     size_t member_site_capacity;
+
+    // Every name every scope held, in the order the scopes closed -- which
+    // is innermost first, since a scope is disposed of before the one around
+    // it. lhat_check_bindings_at leans on that and nothing else, so no
+    // settling is needed here.
+    LhatBindingSite *binding_sites;
+    size_t binding_site_count;
+    size_t binding_site_capacity;
 #endif
 
     // 05 の 4 章: the structure of what this unit publishes, or NULL when it
@@ -523,6 +557,18 @@ void lhat_check_builtin_members(LhatCheckResult *result, LhatType *receiver,
 // the whole answer rather than an addition to the one above.
 void lhat_check_number_constants(LhatCheckResult *result,
                                  LhatBuiltinSink sink, void *context);
+
+typedef void (*LhatBindingSink)(void *context, const LhatBindingSite *site);
+
+// Every name in scope at `offset`, innermost first: a name that shadows
+// another is passed on before the one it shadows, so a reader keeping the
+// first of each name is left with what 8 章's lookup would have found.
+//
+// The scopes a host or a session opened are not among them -- those cover no
+// source and so contain no position. What a tool wants beside these is the
+// names the language itself carries, which no scope holds either (05 の 8.6).
+void lhat_check_bindings_at(const LhatCheckResult *result, uint32_t offset,
+                            LhatBindingSink sink, void *context);
 
 #endif
 

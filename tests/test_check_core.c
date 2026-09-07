@@ -2864,6 +2864,122 @@ static void test_every_word_answers_somewhere(void)
     }
 }
 
+// 07 の 4 章: what names may stand at a position, which is the other half of
+// what a tool asks -- a resolution answers about a name that was written, and
+// this answers where none has been.
+typedef struct {
+    const char *wanted;
+    int seen;
+    int first;      // how many names came before the first one that matched
+    int total;
+} Seen;
+
+static void note_binding(void *context, const LhatBindingSite *site)
+{
+    Seen *seen = (Seen *)context;
+    if (site->name_length == strlen(seen->wanted) &&
+        memcmp(site->name, seen->wanted, site->name_length) == 0) {
+        if (seen->seen == 0) {
+            seen->first = seen->total;
+        }
+        seen->seen++;
+    }
+    seen->total++;
+}
+
+static Seen bindings_at(Unit *u, const char *needle, const char *wanted)
+{
+    Seen seen;
+    memset(&seen, 0, sizeof seen);
+    seen.wanted = wanted;
+    seen.first = -1;
+    const char *at = strstr(u->source.text, needle);
+    LHAT_CHECK(at != NULL, "expected \"%s\" to be in the source", needle);
+    if (at == NULL) {
+        return seen;
+    }
+    lhat_check_bindings_at(&u->checked,
+                           (uint32_t)(at - u->source.text) + (uint32_t)strlen(needle),
+                           note_binding, &seen);
+    return seen;
+}
+
+static void test_what_names_may_stand_here(void)
+{
+    Unit u;
+
+    LHAT_TEST("07 の 4 章: the names a unit bound stand throughout it");
+    check_text(&u,
+               "let^ counter = 1\n"
+               "var^ tally = 0\n"
+               "let^ twice = f^ n:number^ -> number^ { return^ n * 2 }\n");
+    CHECK_CLEAN(&u);
+    LHAT_CHECK(bindings_at(&u, "var^ ", "counter").seen == 1,
+               "expected counter in scope");
+    // 8.7: a name is in scope throughout the scope that binds it, so one
+    // written later stands here too.
+    LHAT_CHECK(bindings_at(&u, "let^ counter", "twice").seen == 1,
+               "expected twice in scope before its own let^");
+    unit_dispose(&u);
+
+    // The parameters and the body's own names, which no outer scope holds.
+    LHAT_TEST("13.1: and a body's parameters stand inside it and not outside");
+    check_text(&u,
+               "let^ twice = f^ n:number^ -> number^ {\n"
+               "    let^ doubled = n * 2\n"
+               "    return^ doubled\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    {
+        Seen inside = bindings_at(&u, "let^ doubled = ", "n");
+        LHAT_CHECK(inside.seen == 1, "expected the parameter inside the body");
+        Seen local = bindings_at(&u, "let^ doubled = ", "doubled");
+        LHAT_CHECK(local.seen == 1, "expected the body's own name");
+        Seen outside = bindings_at(&u, "let^ twice", "n");
+        LHAT_CHECK(outside.seen == 0, "expected it not to reach outside");
+    }
+    unit_dispose(&u);
+
+    // The rule the whole record leans on: a scope closes before the one
+    // around it, so a shadowing name is passed on first and a reader keeping
+    // the first of each spelling has what 8 章 would have found.
+    LHAT_TEST("8 章: a shadowing name is passed on before the one it shadows");
+    check_text(&u,
+               "let^ v = \"outer\"\n"
+               "let^ f = p^ {\n"
+               "    let^ v = 1\n"
+               "    _^ = v\n"
+               "}\n");
+    {
+        Seen inside = bindings_at(&u, "    _^ = ", "v");
+        LHAT_CHECK(inside.seen == 2, "expected both to be in scope, got %d",
+                   inside.seen);
+        LHAT_CHECK_EQ_INT(inside.first, 0);  // the inner one came first
+    }
+    unit_dispose(&u);
+
+    // A scope that covers no source is a lookup table rather than a piece of
+    // a program: the members of a def^ while its entries are read.
+    LHAT_TEST("and a scope that is a lookup table records nothing");
+    check_text(&u,
+               "let^ Reader = def^{\n"
+               "    self^{ at = 1 },\n"
+               "    peek = f^self^ -> number^ { return^ self^.at },\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    {
+        // 'def^' is bound in that table so a member may name the definition;
+        // it is no name a writer may use, and no span holds it.
+        Seen table = bindings_at(&u, "return^ self^", "def^");
+        LHAT_CHECK(table.seen == 0, "expected the lookup table to be passed over");
+        // self^ is the receiver, and it is bound in the entry's own table --
+        // also no source. What does stand there is the unit's own name.
+        Seen outer = bindings_at(&u, "return^ self^", "Reader");
+        LHAT_CHECK(outer.seen == 1, "expected the unit's name");
+    }
+    unit_dispose(&u);
+}
+
 static void test_a_dot_says_what_stands_to_its_left(void)
 {
     Unit u;
@@ -3135,6 +3251,7 @@ int main(void)
     test_a_written_type_name_resolves();
     test_a_written_definition_is_one();
     test_a_dot_says_what_stands_to_its_left();
+    test_what_names_may_stand_here();
     test_the_built_ins_are_asked_for();
     test_asking_says_nothing();
     test_every_word_answers_somewhere();

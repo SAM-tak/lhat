@@ -151,6 +151,20 @@ static void add_written_members(cJSON *items, const LhatType *receiver)
     }
 }
 
+// Whether one of these labels is on the list already.
+static bool already_offered(cJSON *items, const char *label, size_t length)
+{
+    const cJSON *item = NULL;
+    cJSON_ArrayForEach(item, items) {
+        const cJSON *at = cJSON_GetObjectItemCaseSensitive(item, "label");
+        if (cJSON_IsString(at) && strlen(at->valuestring) == length &&
+            memcmp(at->valuestring, label, length) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // The built-in half (14.19, 15.6改). Nothing holds these as members: they are
 // what the checker answers, so the checker is asked -- once per spelling it
 // knows of, with the conditions (which receiver, bare or hatted, whether a
@@ -161,13 +175,8 @@ static void offer_builtin(void *context, const char *name, size_t length,
     cJSON *items = (cJSON *)context;
     // 14.17改: a written member wins, and it has already been added. Adding
     // the built-in of the same spelling would show one member twice.
-    const cJSON *item = NULL;
-    cJSON_ArrayForEach(item, items) {
-        const cJSON *at = cJSON_GetObjectItemCaseSensitive(item, "label");
-        if (cJSON_IsString(at) && strlen(at->valuestring) == length &&
-            memcmp(at->valuestring, name, length) == 0) {
-            return;
-        }
+    if (already_offered(items, name, length)) {
+        return;
     }
 
     char written[LSP_COMPLETION_TYPE_BUFFER];
@@ -223,6 +232,24 @@ cJSON *lsp_completion_members_for_unit(const LhatUnit *unit, uint32_t offset)
     // exactly as long as the unit the answer is about.
     return lsp_completion_members_of((LhatCheckResult *)&unit->checked,
                                      site->receiver);
+}
+
+cJSON *lsp_completion_for_unit(const LhatUnit *unit, uint32_t offset)
+{
+    if (unit == NULL) {
+        return cJSON_CreateArray();
+    }
+    // A dot before the cursor settles it: what may stand there is the
+    // receiver's to say and nothing else's.
+    if (lhat_check_member_site_at(&unit->checked, offset) != NULL) {
+        return lsp_completion_members_for_unit(unit, offset);
+    }
+    uint32_t from = 0;
+    if (!lsp_completion_word_prefix(unit->source.text, unit->source.length,
+                                    offset, &from)) {
+        return cJSON_CreateArray();
+    }
+    return lsp_completion_word_items((LhatCheckResult *)&unit->checked, offset);
 }
 
 // ---------------------------------------------------------------------------
@@ -510,15 +537,68 @@ static const Word WORDS[] = {
     {"_^", ITEM_VARIABLE},
 };
 
-cJSON *lsp_completion_word_items(void)
+// 13.14 with 05 の 8.7 and 13.4: what the name holds is what says how to draw
+// it. A binding that names a type is the one the type cannot say for itself.
+static int kind_of_binding(const LhatBindingSite *site)
+{
+    if (site->names_type) {
+        return ITEM_CLASS;
+    }
+    if (site->type != NULL && site->type->kind == LHAT_TYPE_TABLE &&
+        site->type->v.table.is_module) {
+        return ITEM_MODULE;
+    }
+    if (site->type != NULL && (site->type->kind == LHAT_TYPE_FUNC ||
+                               site->type->kind == LHAT_TYPE_INTERSECT)) {
+        return ITEM_FUNCTION;
+    }
+    return ITEM_VARIABLE;
+}
+
+// 07 の 4 章: a name some scope around the cursor holds. The checker walks the
+// record innermost first, so the first of any spelling is the one 8 章's
+// lookup would have found and every later one is shadowed.
+static void offer_binding(void *context, const LhatBindingSite *site)
+{
+    cJSON *items = (cJSON *)context;
+    if (site->name_length == 0 ||
+        already_offered(items, site->name, site->name_length)) {
+        return;
+    }
+    // 13.7: the collector a script's top level takes. It is a name no one
+    // writes as one -- 'p^...' spells it -- so offering it offers nothing.
+    if (site->name_length == 3 && memcmp(site->name, "...", 3) == 0) {
+        return;
+    }
+    char written[LSP_COMPLETION_TYPE_BUFFER];
+    size_t room = lhat_type_write(site->type, written, sizeof written);
+    if (room > sizeof written - 1) {
+        room = strlen(written);
+    }
+    (void)room;
+    add_item(items, site->name, site->name_length, kind_of_binding(site),
+             written);
+}
+
+cJSON *lsp_completion_word_items(const LhatCheckResult *result, uint32_t offset)
 {
     cJSON *items = cJSON_CreateArray();
     if (items == NULL) {
         return NULL;
     }
+    // What the program itself put there, before what the language carries:
+    // a name is worth more to the writer than a word they could have typed
+    // without asking, and going first is also what lets a binding named
+    // 'self^' show with the type it actually holds.
+    if (result != NULL) {
+        lhat_check_bindings_at(result, offset, offer_binding, items);
+    }
     for (size_t i = 0; i < sizeof WORDS / sizeof WORDS[0]; i++) {
-        add_item(items, WORDS[i].word, strlen(WORDS[i].word), WORDS[i].kind,
-                 NULL);
+        size_t length = strlen(WORDS[i].word);
+        if (already_offered(items, WORDS[i].word, length)) {
+            continue;
+        }
+        add_item(items, WORDS[i].word, length, WORDS[i].kind, NULL);
     }
     return items;
 }
@@ -526,19 +606,6 @@ cJSON *lsp_completion_word_items(void)
 // ---------------------------------------------------------------------------
 // Modules and paths
 // ---------------------------------------------------------------------------
-
-static bool already_offered(cJSON *items, const char *label, size_t length)
-{
-    const cJSON *item = NULL;
-    cJSON_ArrayForEach(item, items) {
-        const cJSON *at = cJSON_GetObjectItemCaseSensitive(item, "label");
-        if (cJSON_IsString(at) && strlen(at->valuestring) == length &&
-            memcmp(at->valuestring, label, length) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
 
 cJSON *lsp_completion_module_items(const char *const *modules, size_t count,
                                    const char *prefix, size_t prefix_length)

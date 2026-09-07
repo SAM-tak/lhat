@@ -596,7 +596,7 @@ static void test_reading_a_word(void)
 
 static void test_the_words_offered(void)
 {
-    cJSON *items = lsp_completion_word_items();
+    cJSON *items = lsp_completion_word_items(NULL, 0);
     LHAT_CHECK(items != NULL, "expected a list of words");
 
     LHAT_TEST("the words of each part of the language are offered");
@@ -639,6 +639,118 @@ static void test_the_words_offered(void)
     LHAT_CHECK_EQ_INT(kind_of(items, "_^"), VARIABLE);
 
     cJSON_Delete(items);
+}
+
+// ---------------------------------------------------------------------------
+// The names in scope
+// ---------------------------------------------------------------------------
+
+// What is offered where `needle` ends, which is a position no dot stands
+// before -- so the word question is the one being asked.
+static cJSON *offered_at(Checked *c, const char *needle)
+{
+    const char *found = strstr(c->source.text, needle);
+    LHAT_CHECK(found != NULL, "expected \"%s\" to be in the source", needle);
+    if (found == NULL) {
+        return cJSON_CreateArray();
+    }
+    uint32_t at = (uint32_t)(found - c->source.text) + (uint32_t)strlen(needle);
+    return lsp_completion_for_unit(&c->unit, at);
+}
+
+static void test_the_names_in_scope(void)
+{
+    Checked c;
+
+    LHAT_TEST("07 の 4 章: what a unit bound is offered where a word may go");
+    check_text(&c,
+               "let^ counter = 1\n"
+               "var^ tally = 0\n"
+               "let^ twice = f^ n:number^ -> number^ { return^ n * 2 }\n"
+               "co\n");
+    {
+        cJSON *items = offered_at(&c, "co");
+        expect_offers(items, "counter", true);
+        expect_offers(items, "tally", true);
+        expect_offers(items, "twice", true);
+        // The words are still there, and each name is drawn as what it holds.
+        expect_offers(items, "let^", true);
+        LHAT_CHECK_EQ_INT(kind_of(items, "counter"), VARIABLE);
+        LHAT_CHECK_EQ_INT(kind_of(items, "twice"), FUNCTION);
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
+
+    LHAT_TEST("13.1: and a body's parameters and locals inside it");
+    check_text(&c,
+               "let^ outer = 1\n"
+               "let^ twice = f^ n:number^ -> number^ {\n"
+               "    let^ doubled = n * 2\n"
+               "    d\n"
+               "    return^ doubled\n"
+               "}\n");
+    {
+        cJSON *items = offered_at(&c, "    d");
+        expect_offers(items, "n", true);
+        expect_offers(items, "doubled", true);
+        expect_offers(items, "outer", true);  // the unit's, from further out
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
+
+    LHAT_TEST("and not outside it");
+    check_text(&c,
+               "let^ twice = f^ n:number^ -> number^ { return^ n * 2 }\n"
+               "d\n");
+    {
+        cJSON *items = offered_at(&c, "\nd");
+        expect_offers(items, "twice", true);
+        expect_offers(items, "n", false);
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
+
+    // 8 章: the inner one is what the name means there, and it is the one
+    // whose type is shown -- which is what the checker's innermost-first
+    // ordering buys.
+    LHAT_TEST("a shadowed name is offered once, as the inner one");
+    check_text(&c,
+               "let^ v = \"outer\"\n"
+               "let^ f = p^ {\n"
+               "    let^ v = 1\n"
+               "    v\n"
+               "}\n");
+    {
+        cJSON *items = offered_at(&c, "    v");
+        LHAT_CHECK_EQ_INT(times_offered(items, "v"), 1);
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
+
+    LHAT_TEST("14.10: but after a dot the receiver still answers alone");
+    check_text(&c,
+               "let^ counter = 1\n"
+               "let^ point = { x = 1 }\n"
+               "let^ n = point.\n");
+    {
+        cJSON *items = offered_at(&c, "point.");
+        expect_offers(items, "x", true);
+        expect_offers(items, "counter", false);
+        expect_offers(items, "let^", false);
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
+
+    LHAT_TEST("01 の 6.1: and nothing at all inside a comment");
+    check_text(&c,
+               "let^ counter = 1\n"
+               "# co\n");
+    {
+        cJSON *items = offered_at(&c, "# co");
+        LHAT_CHECK_EQ_INT(cJSON_GetArraySize(items), 0);
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
 }
 
 static void test_module_items(void)
@@ -721,6 +833,7 @@ int main(void)
     test_reading_an_import();
     test_reading_a_word();
     test_the_words_offered();
+    test_the_names_in_scope();
     test_module_items();
     test_relative_paths();
     return lhat_test_report("test_completion");

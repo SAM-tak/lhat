@@ -1012,10 +1012,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
         LhatType *right = NULL;
         if (op == LHAT_OP_CATCH) {
             Scope scope;
-            scope.bindings = NULL;
-            scope.tail = NULL;
-            scope.parent = c->scope;
-            scope.transparent = false;
+            chk_scope_open(&scope, c->scope, node, false);
 
             Scope *outer = c->scope;
             c->scope = &scope;
@@ -1031,7 +1028,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
                                  (LhatType *)NULL)
                               : chk_infer(c, node->v.binary.right);
             c->scope = outer;
-            chk_scope_dispose(&scope);
+            chk_scope_close(c, &scope);
         } else {
             right = chk_infer(c, node->v.binary.right);
         }
@@ -3177,10 +3174,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
         Scope receiver;
         bool method = declares_self(c, entry->v.entry.value);
         if (method) {
-            receiver.bindings = NULL;
-            receiver.tail = NULL;
-            receiver.parent = outer;
-            receiver.transparent = false;
+            chk_scope_open(&receiver, outer, NULL, false);
             Binding *bound =
                 chk_scope_add(&receiver, "self^", 5, table, node->offset);
             if (bound != NULL) {
@@ -3192,7 +3186,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
                                             chk_infer(c, entry->v.entry.value));
         if (method) {
             c->scope = outer;
-            chk_scope_dispose(&receiver);
+            chk_scope_close(c, &receiver);
         }
 
         // 05 の 8.9: a table lives on the heap and a host value does not
@@ -3489,10 +3483,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     ParamVar *param_mark = c->param_vars;
 
     Scope body;
-    body.bindings = NULL;
-    body.tail = NULL;
-    body.parent = c->scope;
-    body.transparent = false;
+    chk_scope_open(&body, c->scope, node, false);
 
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
@@ -3844,7 +3835,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     c->closed_scope = outer_closed_scope;
     c->catch_frame = outer_catch_frame;
 
-    chk_scope_dispose(&body);
+    chk_scope_close(c, &body);
     // The compiler reads this back instead of re-deriving the signature from
     // written annotations alone, so a result left to inference (no return^
     // type written) still reaches typeof^ and overload dispatch precisely.
@@ -4967,10 +4958,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     // one that wrote it among its parameters is handed a receiver, so only
     // there does the name mean anything.
     Scope members;
-    members.bindings = NULL;
-    members.tail = NULL;
-    members.parent = c->scope;
-    members.transparent = false;
+    chk_scope_open(&members, c->scope, NULL, false);
     Binding *owner = chk_scope_add(&members, "def^", 4, definition, node->offset);
     if (owner != NULL) {
         owner->reached = true;
@@ -5234,10 +5222,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             bool method = declares_self(c, entry->v.entry.value) ||
                           constructor_entry;
             if (method) {
-                receiver.bindings = NULL;
-                receiver.tail = NULL;
-                receiver.parent = c->scope;
-                receiver.transparent = false;
+                chk_scope_open(&receiver, c->scope, NULL, false);
                 Binding *bound = chk_scope_add(&receiver, "self^", 5, instance,
                                                node->offset);
                 if (bound != NULL) {
@@ -5253,7 +5238,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             c->new_func = outer_new;
             if (method) {
                 c->scope = &members;
-                chk_scope_dispose(&receiver);
+                chk_scope_close(c, &receiver);
             }
             c->super_type = outer_super;
             // 14.12: two members of one name in a single def^ need a marker
@@ -5319,7 +5304,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     chk_rounds_end(c, &rounds);
 
     c->scope = outer;
-    chk_scope_dispose(&members);
+    chk_scope_close(c, &members);
 
     // 14.15改3: a template field the written new gives a value to is provided,
     // the same as one a composition fills. 14.12改2 makes an override^ new
@@ -5919,10 +5904,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             // like any other focus, so it needs the scope 16.1 implies, and
             // the body is already the if-chain of 17.9.
             Scope scope;
-            scope.bindings = NULL;
-            scope.tail = NULL;
-            scope.parent = c->scope;
-            scope.transparent = false;
+            chk_scope_open(&scope, c->scope, node, false);
 
             Scope *outer = c->scope;
             c->scope = &scope;
@@ -6055,7 +6037,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             }
 
             c->scope = outer;
-            chk_scope_dispose(&scope);
+            chk_scope_close(c, &scope);
             return result;
         }
 

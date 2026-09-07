@@ -477,8 +477,51 @@ Binding *chk_scope_add(Scope *scope, const char *name, size_t length,
     return b;
 }
 
-void chk_scope_dispose(Scope *scope)
+void chk_scope_open(Scope *scope, Scope *parent, const LhatNode *node,
+                    bool transparent)
 {
+    scope->bindings = NULL;
+    scope->tail = NULL;
+    scope->parent = parent;
+    scope->transparent = transparent;
+    scope->from = node != NULL ? node->offset : 0;
+    scope->to = node != NULL ? node->end : 0;
+}
+
+#if LHAT_WITH_RESOLUTIONS
+// 07 の 4 章: what the scope held, taken as it closes -- the one moment every
+// name it ever had is in hand at once. A scope covering no source is a
+// lookup table rather than a piece of a program and is passed over.
+static void record_bindings(Checker *c, const Scope *scope)
+{
+    if (scope->to == 0) {
+        return;
+    }
+    LhatCheckResult *r = c->result;
+    for (const Binding *b = scope->bindings; b != NULL; b = b->next) {
+        LHAT_GROW(r->binding_sites, r->binding_site_count,
+                  r->binding_site_capacity, 32, return);
+
+        LhatBindingSite *site = &r->binding_sites[r->binding_site_count++];
+        site->from = scope->from;
+        site->to = scope->to;
+        site->name = b->name;
+        site->name_length = (uint32_t)b->name_length;
+        site->type = b->type;
+        site->is_parameter = b->is_parameter;
+        site->immutable = b->immutable;
+        site->names_type = b->names_type;
+    }
+}
+#endif
+
+void chk_scope_close(Checker *c, Scope *scope)
+{
+#if LHAT_WITH_RESOLUTIONS
+    record_bindings(c, scope);
+#else
+    (void)c;
+#endif
     Binding *b = scope->bindings;
     while (b != NULL) {
         Binding *next = b->next;
@@ -2950,6 +2993,7 @@ void chk_rounds_begin(Checker *c, Rounds *r, size_t count)
 #if LHAT_WITH_RESOLUTIONS
     r->resolutions = c->result->resolution_count;
     r->member_sites = c->result->member_site_count;
+    r->binding_sites = c->result->binding_site_count;
 #endif
     r->round = 0;
     r->cap = count + 1;
@@ -2979,6 +3023,7 @@ bool chk_rounds_next(Checker *c, Rounds *r)
     // away carries the receiver that walk guessed at, and qsort being
     // unstable the settle could keep either of the two.
     c->result->member_site_count = r->member_sites;
+    c->result->binding_site_count = r->binding_sites;
 #endif
     return true;
 }
@@ -3219,10 +3264,12 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     }
 
     Scope scope;
-    scope.bindings = NULL;
-    scope.tail = NULL;
-    scope.parent = NULL;
-    scope.transparent = false;
+    chk_scope_open(&scope, NULL, unit, false);
+    // 07 の 4 章: the file's scope is the file and not the last statement in
+    // it. A cursor being typed at is past every node there is, and the names
+    // the unit bound are in scope there as much as anywhere.
+    scope.from = 0;
+    scope.to = (uint32_t)lexer->source->length + 1;
 
     Checker checker;
     memset(&checker, 0, sizeof checker);
@@ -3293,7 +3340,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     chk_dispose_operator_carriers(&checker);
     chk_dispose_instantiations(&checker);
     lhat_free(checker.annotation_seen);
-    chk_scope_dispose(&scope);
+    chk_scope_close(&checker, &scope);
 }
 
 // 03 の 4.3: the names the inputs so far have bound, with their types. The
@@ -3456,10 +3503,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     // the same place written again, so the top level of a prompt keeps the
     // slot it had rather than taking another.
     Scope scope;
-    scope.bindings = NULL;
-    scope.tail = NULL;
-    scope.parent = NULL;
-    scope.transparent = false;
+    chk_scope_open(&scope, NULL, NULL, false);
 
     Checker checker;
     memset(&checker, 0, sizeof checker);
@@ -3535,7 +3579,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
 
     chk_dispose_operator_carriers(&checker);
     chk_dispose_instantiations(&checker);
-    chk_scope_dispose(&scope);
+    chk_scope_close(&checker, &scope);
 }
 
 void lhat_check(const LhatNode *unit, const LhatLexer *lexer, bool strict,
@@ -3571,10 +3615,7 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
         result.types = arena;
 
         Scope scope;
-        scope.bindings = NULL;
-        scope.tail = NULL;
-        scope.parent = NULL;
-        scope.transparent = false;
+        chk_scope_open(&scope, NULL, NULL, false);
 
         Checker checker;
         memset(&checker, 0, sizeof checker);
@@ -3607,8 +3648,11 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
             (type->kind == LHAT_TYPE_UNKNOWN || result.diagnostic_count > 0)) {
             type = NULL;
         }
+        // The scope first: closing one records into the result (07 の 4 章),
+        // and this one has no source to record against -- but the order is
+        // what makes that a fact rather than a thing to be checked.
+        chk_scope_close(&checker, &scope);
         lhat_check_result_dispose(&result);
-        chk_scope_dispose(&scope);
     }
 
     lhat_parse_result_dispose(&parsed);
@@ -3667,6 +3711,24 @@ const LhatMemberSite *lhat_check_member_site_at(const LhatCheckResult *result,
     return NULL;
 }
 
+void lhat_check_bindings_at(const LhatCheckResult *result, uint32_t offset,
+                            LhatBindingSink sink, void *context)
+{
+    if (result == NULL || sink == NULL) {
+        return;
+    }
+    // A scan rather than a search: these spans nest instead of dividing the
+    // source between them, so no order over them puts the ones holding a
+    // position together. What the recording order does give is the one thing
+    // that matters -- a scope closes before the one around it, so the
+    // innermost holder of any position comes first.
+    for (size_t i = 0; i < result->binding_site_count; i++) {
+        const LhatBindingSite *site = &result->binding_sites[i];
+        if (offset >= site->from && offset < site->to) {
+            sink(context, site);
+        }
+    }
+}
 
 // 07 の 4 章: the built-ins, asked for one spelling at a time.
 //
@@ -3780,6 +3842,10 @@ void lhat_check_result_dispose(LhatCheckResult *result)
     result->member_sites = NULL;
     result->member_site_count = 0;
     result->member_site_capacity = 0;
+    lhat_free(result->binding_sites);
+    result->binding_sites = NULL;
+    result->binding_site_count = 0;
+    result->binding_site_capacity = 0;
 #endif
     lhat_free(result->module_name);
     result->module_name = NULL;
