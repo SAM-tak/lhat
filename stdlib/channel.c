@@ -21,8 +21,11 @@
 #include "async.h"
 #include "carry.h"
 #include "error.h"
+#include "lhat/debug.h"
 #include "lhat/port.h"
 #include "port/thread.h"
+
+#define HOST_PAUSE_MS 20
 
 // One "tell me when something arrives". `waits` is the std.async module of
 // the program the asking machine belongs to -- a channel may be shared by
@@ -257,22 +260,22 @@ static void clear_locked(Channel *channel)
     lhat_condition_broadcast(&channel->changed);
 }
 
-// One wait of at most what is left of `until`, in the loop the caller keeps
-// over the thing actually being waited for (port/thread.h). `until` is a
-// monotonic deadline (lhat_now_ms), or -1 to wait without one. Answers
-// false when the deadline has passed.
+// One wait of at most the shorter of 20ms and what is left of `until`, in the
+// loop the caller keeps over the thing actually being waited for
+// (port/thread.h). `until` is a monotonic deadline (lhat_now_ms), or -1 to
+// wait without one. The short wake lets the caller release this lock for D3's
+// host pause point. Answers false when the deadline has passed.
 static bool wait_a_while(Channel *channel, int64_t until)
 {
-    if (until < 0) {
-        lhat_condition_wait(&channel->changed, &channel->lock);
-        return true;
-    }
-    int64_t left = until - lhat_now_ms();
+    int64_t left = until < 0 ? HOST_PAUSE_MS : until - lhat_now_ms();
     if (left <= 0) {
         return false;
     }
+    if (left > HOST_PAUSE_MS) {
+        left = HOST_PAUSE_MS;
+    }
     lhat_condition_wait_for(&channel->changed, &channel->lock,
-                            left > INT_MAX ? INT_MAX : (int)left);
+                            (int)left);
     return true;
 }
 
@@ -565,6 +568,15 @@ static void channel_supply(LhatMachine *machine, void *context,
         if (!wait_a_while(channel, until)) {
             break;
         }
+        // wait_a_while returned with the channel locked. A DAP pause may
+        // wait indefinitely, so give the channel back before consulting it.
+        leave(channel, machine);
+        bool continue_run = lhat_machine_debug_pause_point(machine);
+        enter(channel, machine);
+        if (!continue_run) {
+            leave(channel, machine);
+            return;
+        }
     }
     leave(channel, machine);
     answers[0] = lhat_bool(taken);
@@ -621,6 +633,13 @@ static void channel_demand(LhatMachine *machine, void *context,
             }
             if (!wait_a_while(channel, until)) {
                 break;
+            }
+            leave(channel, machine);
+            bool continue_run = lhat_machine_debug_pause_point(machine);
+            enter(channel, machine);
+            if (!continue_run) {
+                leave(channel, machine);
+                return;
             }
         }
         leave(channel, machine);

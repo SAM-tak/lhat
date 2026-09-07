@@ -21,6 +21,7 @@
 
 #include "lhat/debug.h"
 #include "lhat/object.h"
+#include "lhat/source.h"
 #include "port/socket.h"
 #include "port/thread.h"
 #include "protocol.h"
@@ -282,6 +283,58 @@ static bool source_equal(const DapSession *s, const char *left,
                                     : path_equal(left, right);
 }
 
+uint32_t dap_column_of_line(const char *text, size_t length, uint32_t line)
+{
+    if (text == NULL || line == 0) {
+        return 1;
+    }
+    // To the start of the line the frame is on. Lines are 1-based, and the
+    // text has been normalised to LF, so one '\n' is one line boundary.
+    size_t at = 0;
+    for (uint32_t seen = 1; seen < line; seen++) {
+        while (at < length && text[at] != '\n') {
+            at++;
+        }
+        if (at == length) {
+            return 1;  // past the end: no line to read a column off
+        }
+        at++;
+    }
+    // Past the blanks. A line that is blank or all blanks answers 1 rather
+    // than the column of its own end, which would put the mark past what a
+    // reader can see.
+    size_t first = at;
+    while (first < length && (text[first] == ' ' || text[first] == '\t')) {
+        first++;
+    }
+    if (first == length || text[first] == '\n') {
+        return 1;
+    }
+    return (uint32_t)(first - at) + 1;
+}
+
+// The text of the unit `path` names. `path` is the runtime's own spelling --
+// proto->source_name, stamped from the unit's path by program.c -- so the
+// two compare directly, and 5.2's map does not come into it: that one is for
+// showing a file to the editor. NULL when the program holds no such unit, or
+// it came from bytecode with no text behind it.
+static const LhatSource *text_of(const DapSession *s, const char *path)
+{
+    if (s->program == NULL || path == NULL) {
+        return NULL;
+    }
+    for (const LhatUnit *unit = lhat_program_units(s->program); unit != NULL;
+         unit = lhat_unit_next(unit)) {
+        const char *held = lhat_unit_path(unit);
+        if (held == NULL || strcmp(held, path) != 0) {
+            continue;
+        }
+        const LhatSource *source = lhat_unit_source(unit);
+        return source != NULL && source->text != NULL ? source : NULL;
+    }
+    return NULL;
+}
+
 // The compiled unit tree is the authority on what an editor line can mean.
 // A path-map's key is already the unit spelling; without one both unit and
 // editor paths are normalised before this comparison.
@@ -475,7 +528,16 @@ static void stack_trace(DapSession *s, DapThread *t, cJSON *body)
                 cJSON_AddItemToObject(frame, "source", source);
             }
             cJSON_AddNumberToObject(frame, "line", info.line);
-            cJSON_AddNumberToObject(frame, "column", 1);
+            // 09 の 5.3: the column is read off the source rather than kept
+            // per instruction. One pass over the text per frame -- this runs
+            // when a person asked where they are, never at an instruction,
+            // so the scan is not worth a cache.
+            const LhatSource *text = text_of(s, info.source);
+            cJSON_AddNumberToObject(
+                frame, "column",
+                text != NULL
+                    ? dap_column_of_line(text->text, text->length, info.line)
+                    : 1);
             cJSON_AddItemToArray(frames, frame);
         }
     }
@@ -1095,7 +1157,8 @@ static int reader_main(void *argument)
 }
 
 // ---------------------------------------------------------------------------
-// The hook: every machine's thread comes through here at each new line.
+// The hook: every machine's thread comes through here at each new line and
+// at a host function's explicitly reported cooperative boundary.
 
 static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
                      const LhatFrameInfo *where)
@@ -1106,21 +1169,28 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
     lhat_mutex_lock(&s->lock);
     if (s->ended) {
         lhat_mutex_unlock(&s->lock);
-        lhat_machine_panic_text(machine, "stopped by the debugger");
+        if (!lhat_machine_panic_text(machine, "stopped by the debugger")) {
+            lhat_machine_panic(machine, lhat_nil());
+        }
         return;
     }
 
     size_t depth = lhat_machine_fault_depth(machine);
     bool fault = event == LHAT_DEBUG_FAULT;
+    bool host_point = event == LHAT_DEBUG_HOST_PAUSE_POINT;
     if (fault) {
         t->faulted = true;
         fault_text(machine, t->fault_text, sizeof t->fault_text);
     }
-    bool stop =
-        fault || s->stopping || s->pause_all || t->mode == DAP_STEP_IN ||
-        (t->mode == DAP_STEP_OVER && depth <= t->step_depth) ||
-        (t->mode == DAP_STEP_OUT && depth < t->step_depth) ||
-        at_breakpoint(s, machine, where);
+    // A host point is a boundary a host selected, not a source instruction:
+    // it completes a requested/all-thread pause and observes session end,
+    // but cannot consume a step or hit a source breakpoint.
+    bool stop = fault || s->stopping || s->pause_all ||
+                (!host_point &&
+                 (t->mode == DAP_STEP_IN ||
+                  (t->mode == DAP_STEP_OVER && depth <= t->step_depth) ||
+                  (t->mode == DAP_STEP_OUT && depth < t->step_depth) ||
+                  at_breakpoint(s, machine, where)));
     if (!stop) {
         lhat_mutex_unlock(&s->lock);
         return;
@@ -1147,7 +1217,9 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
     bool over = s->ended;
     lhat_mutex_unlock(&s->lock);
     if (over) {
-        lhat_machine_panic_text(machine, "stopped by the debugger");
+        if (!lhat_machine_panic_text(machine, "stopped by the debugger")) {
+            lhat_machine_panic(machine, lhat_nil());
+        }
     }
 }
 

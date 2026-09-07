@@ -32,8 +32,11 @@
 #include "async.h"
 #include "carry.h"
 #include "error.h"
+#include "lhat/debug.h"
 #include "lhat/port.h"
 #include "port/thread.h"
+
+#define HOST_PAUSE_MS 20
 
 typedef struct Task Task;
 
@@ -856,21 +859,33 @@ static void task_await(LhatMachine *machine, void *context,
 {
     const TaskModule *module = (const TaskModule *)context;
     (void)count;
-    *answer_count = 1;
+    *answer_count = 0;
     Task *task = self_of(module, arguments[0]);
     if (task == NULL) {
         answers[0] = fail_with(machine, module->not_started,
                                "not a task of this program");
+        *answer_count = 1;
         return;
     }
     lhat_mutex_lock(&task->lock);
     while (!task->finished) {
-        lhat_condition_wait(&task->done, &task->lock);
+        lhat_condition_wait_for(&task->done, &task->lock, HOST_PAUSE_MS);
+        if (task->finished) {
+            break;
+        }
+        // A DAP hook may wait. `task->lock` protects completion and must not
+        // remain held while it does.
+        lhat_mutex_unlock(&task->lock);
+        if (!lhat_machine_debug_pause_point(machine)) {
+            return;
+        }
+        lhat_mutex_lock(&task->lock);
     }
     LhatRunStatus status = task->status;
     LhatCarried *result = task->result;
     lhat_mutex_unlock(&task->lock);
 
+    *answer_count = 1;
     if (status != LHAT_RUN_OK) {
         char *said = failure_text(task);
         answers[0] = fail_with(

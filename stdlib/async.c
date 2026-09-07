@@ -17,9 +17,12 @@
 
 #include "async.h"
 
+#include "lhat/debug.h"
 #include "port/thread.h"
 
 #include <stdint.h>
+
+#define HOST_PAUSE_MS 20
 
 typedef struct {
     int64_t id;
@@ -238,6 +241,11 @@ static void async_wait(LhatMachine *machine, void *context,
     int64_t give_up_at = lhat_now_ms() + milliseconds_of(arguments[0]);
 
     for (;;) {
+        // The lock below protects this module's table. Do the debugger's
+        // potentially blocking work before taking it.
+        if (!lhat_machine_debug_pause_point(machine)) {
+            return;
+        }
         lhat_mutex_lock(&module->lock);
         int64_t now = lhat_now_ms();
         int64_t id = 0;
@@ -263,8 +271,10 @@ static void async_wait(LhatMachine *machine, void *context,
             until = now + soonest;
         }
         int64_t nap = until - now;
-        if (nap > 20) {
-            nap = 20;  // 20ms is the longest anything waits to notice a push
+        if (nap > HOST_PAUSE_MS) {
+            // This is also the longest a debugger waits for the next host
+            // pause point.
+            nap = HOST_PAUSE_MS;
         }
         lhat_thread_sleep(nap > INT32_MAX ? INT32_MAX : (int)nap);
     }

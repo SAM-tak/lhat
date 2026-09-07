@@ -828,6 +828,83 @@ static void test_fault_event(void)
     }
 }
 
+// D3: a host call is outside the instruction loop, so it explicitly names a
+// safe boundary. The hook may end the run there; the host sees false and must
+// leave without answering, exactly as a DAP disconnect asks it to.
+typedef struct {
+    size_t count;
+    uint32_t line;
+    bool point_returned;
+    bool host_returned;
+} HostPauseTrace;
+
+static void host_pause_point(LhatMachine *machine, void *context,
+                             const LhatValue *arguments, size_t count,
+                             LhatValue *answers, int *answer_count)
+{
+    (void)arguments;
+    (void)count;
+    (void)answers;
+    (void)answer_count;
+    HostPauseTrace *trace = (HostPauseTrace *)context;
+    trace->point_returned = lhat_machine_debug_pause_point(machine);
+    trace->host_returned = true;
+}
+
+static void host_pause_hook(LhatMachine *machine, void *context,
+                            LhatDebugEvent event,
+                            const LhatFrameInfo *where)
+{
+    HostPauseTrace *trace = (HostPauseTrace *)context;
+    if (event != LHAT_DEBUG_HOST_PAUSE_POINT) {
+        return;
+    }
+    trace->count++;
+    trace->line = where->line;
+    LHAT_CHECK(lhat_machine_panic_text(machine, "host stop"),
+               "the hook can end the host call");
+}
+
+static void test_host_pause_point(void)
+{
+    LHAT_TEST("a host pause point reports its call site and aborts cleanly");
+    {
+        Run r;
+        HostPauseTrace trace = {0};
+        compile_text(&r, "L^.Point()\nreturn^ 0\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new();
+        LhatValue point = lhat_nil();
+        LHAT_CHECK(lhat_machine_make_host(r.machine, host_pause_point, &trace,
+                                          0, false, false, false, NULL,
+                                          &point),
+                   "the host point was made");
+        LHAT_CHECK(lhat_machine_set_global(r.machine, "Point", point),
+                   "and registered under L^");
+        lhat_machine_set_debug_hook(r.machine, host_pause_hook, &trace);
+        r.ran = lhat_run(r.machine, r.proto);
+
+        LHAT_CHECK_EQ_INT(trace.count, 1);
+        LHAT_CHECK_EQ_INT(trace.line, 1);
+        LHAT_CHECK(!trace.point_returned,
+                   "a hook ending the run tells the host to return");
+        LHAT_CHECK(trace.host_returned, "the host cleaned up and returned");
+        LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
+        char fault_text[64];
+        lhat_value_text(r.ran.value, fault_text, sizeof fault_text);
+        LHAT_CHECK_EQ_STR(fault_text, strlen(fault_text), "host stop");
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("a pause point with no hook is a harmless continue");
+    {
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_CHECK(lhat_machine_debug_pause_point(machine),
+                   "an unhooked machine continues");
+        lhat_machine_dispose(machine);
+    }
+}
+
 // 09 の 5.1: a watcher hears of every machine made and disposed while it
 // stands, and of none after it is taken away.
 static void count_born(void *context, LhatMachine *machine)
@@ -878,6 +955,7 @@ int main(void)
     test_writing();
     test_evaluating();
     test_fault_event();
+    test_host_pause_point();
     test_machine_watcher();
     return lhat_test_report("test_debug_hook");
 }

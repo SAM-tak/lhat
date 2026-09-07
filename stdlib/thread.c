@@ -35,6 +35,7 @@
 #include "error.h"
 #include "thread.h"
 
+#include "lhat/debug.h"
 #include "port/thread.h"
 
 #include <limits.h>
@@ -43,6 +44,8 @@
 #include <string.h>
 
 #include "async.h"
+
+#define HOST_PAUSE_MS 20
 
 // What lhatstdlib_thread_register made, threaded through as every registration's
 // `context` (05 の 8.7) rather than kept in file-scope statics -- a second
@@ -539,6 +542,16 @@ static void thread_join(LhatMachine *machine, void *context,
         return;
     }
 
+    // `finished` is published under done_lock by the worker after all fields
+    // join reads are written. Polling it first gives a debugger a cooperative
+    // boundary, and the actual OS join remains the ordering barrier before
+    // those fields are read below.
+    while (!has_finished(handle)) {
+        if (!lhat_machine_debug_pause_point(machine)) {
+            return;
+        }
+        lhat_thread_sleep(HOST_PAUSE_MS);
+    }
     lhat_thread_join(&handle->os);
     handle->joined = true;
 
@@ -572,7 +585,6 @@ static void thread_sleep(LhatMachine *machine, void *context,
                          const LhatValue *arguments, size_t count,
                          LhatValue *answers, int *answer_count)
 {
-    (void)machine;
     (void)context;
     (void)count;
     (void)answers;
@@ -588,7 +600,18 @@ static void thread_sleep(LhatMachine *machine, void *context,
     if (milliseconds > 0.0) {
         wait = milliseconds >= (double)INT_MAX ? INT_MAX : (int)milliseconds;
     }
-    lhat_thread_sleep(wait);
+    // Do not make a debugger wait for the whole requested duration. There is
+    // no lock held here, so each boundary may park safely.
+    do {
+        if (!lhat_machine_debug_pause_point(machine)) {
+            return;
+        }
+        int nap = wait > HOST_PAUSE_MS ? HOST_PAUSE_MS : wait;
+        // Sleeping zero was the old implementation's yield-to-another-OS-
+        // thread behavior, so retain it after the one safe boundary.
+        lhat_thread_sleep(nap);
+        wait -= nap;
+    } while (wait > 0);
 }
 
 // 02 の 15.14: the question a scheduler asks in place of waiting. join()

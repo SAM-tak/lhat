@@ -13,6 +13,8 @@
 
 #include "stdlibutil.h"
 
+#include "lhat/version.h"
+
 #include <stdio.h>
 
 #ifdef _WIN32
@@ -69,8 +71,9 @@ void lhat_test_ran_dispose(LhatTestRan *ran)
     ran->text = NULL;
 }
 
-LhatTestRan lhat_test_run(const LhatTestRegister *regs, size_t count,
-                          const char *text)
+LhatTestRan lhat_test_run_hooked(const LhatTestRegister *regs, size_t count,
+                                 const char *text, LhatDebugHook hook,
+                                 void *context)
 {
     LhatTestFile file = {"main.lh", text};
 
@@ -96,6 +99,14 @@ LhatTestRan lhat_test_run(const LhatTestRegister *regs, size_t count,
     if (compiled) {
         LhatMachine *machine = lhat_machine_new();
         if (lhat_program_install(program, machine)) {
+#if LHAT_WITH_DEBUGGER
+            if (hook != NULL) {
+                lhat_machine_set_debug_hook(machine, hook, context);
+            }
+#else
+            (void)hook;
+            (void)context;
+#endif
             LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             out.ok = true;
             out.status = ran.status;
@@ -115,6 +126,12 @@ LhatTestRan lhat_test_run(const LhatTestRegister *regs, size_t count,
     }
     lhat_program_free(program);
     return out;
+}
+
+LhatTestRan lhat_test_run(const LhatTestRegister *regs, size_t count,
+                          const char *text)
+{
+    return lhat_test_run_hooked(regs, count, text, NULL, NULL);
 }
 
 bool lhat_test_check_text(const LhatTestRegister *regs, size_t count,

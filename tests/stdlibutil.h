@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "lhat/program.h"
+#include "lhat/debug.h"
 #include "testutil.h"
 #include "lhat/vm.h"
 
@@ -44,6 +45,13 @@ void lhat_test_ran_dispose(LhatTestRan *ran);
 // Checks, compiles and runs one unit with the named modules registered.
 LhatTestRan lhat_test_run(const LhatTestRegister *regs, size_t count,
                           const char *text);
+
+// The same run with a debugger hook installed after the program and its
+// modules have been made but before its first instruction. Stdlib tests use
+// this to assert that a blocking host operation reaches a D3 pause point.
+LhatTestRan lhat_test_run_hooked(const LhatTestRegister *regs, size_t count,
+                                 const char *text, LhatDebugHook hook,
+                                 void *context);
 
 // Whether the unit checks at all. A refusal is a type error rather than a
 // run-time one wherever the checker can see it, so this is what those cases

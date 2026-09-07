@@ -163,6 +163,40 @@ size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
 // away in a shipping build (LHAT_WITH_DEBUGGER 0). The traceback readers
 // above stay: a fault report is not a debugger.
 // ---------------------------------------------------------------------------
+
+bool lhat_machine_debug_pause_point(LhatMachine *machine)
+{
+#if LHAT_WITH_DEBUGGER
+    Machine *m = (Machine *)machine;
+    if (m == NULL) {
+        return false;
+    }
+    // A hook's own call back into L^ must stay as silent as its instruction
+    // events do. A host point outside an L^ call has no useful call site to
+    // show, so it too simply carries on.
+    if (m->hook_live == NULL || m->frame_count == 0) {
+        return true;
+    }
+    LhatFrameInfo where;
+    if (!lhat_machine_fault_frame(machine, 0, &where)) {
+        return true;
+    }
+    size_t frames_before = m->frame_count;
+    m->hook_live = NULL;
+    m->hook(machine, m->hook_context, LHAT_DEBUG_HOST_PAUSE_POINT, &where);
+    // Match line and fault delivery: a hook may have removed or replaced
+    // itself while it ran.
+    m->hook_live = m->hook;
+    // A panic is deliberately left for vm_host_faulted to consume when this
+    // host returns. A failed nested call leaves frames behind by the same
+    // convention, and cannot safely be continued either.
+    return !m->host_panicked && m->frame_count == frames_before;
+#else
+    (void)machine;
+    return true;
+#endif
+}
+
 #if LHAT_WITH_DEBUGGER
 
 // 09 の 5.1. Written here, read by vm.c at the two points every machine

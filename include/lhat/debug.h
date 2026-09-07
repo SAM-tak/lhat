@@ -27,7 +27,13 @@ typedef enum {
     // record and every frame are still standing, so a debugger can inspect
     // them before it lets the run return its error. OK and SUSPENDED never
     // send this event.
-    LHAT_DEBUG_FAULT
+    LHAT_DEBUG_FAULT,
+    // D3: a host function called lhat_machine_debug_pause_point at a place
+    // where it can safely wait. `where` is the L^ call site, not an
+    // instruction newly about to run, so debuggers use this for a requested
+    // pause, an all-thread stop, or ending a session -- never for a source
+    // breakpoint or a step.
+    LHAT_DEBUG_HOST_PAUSE_POINT
 } LhatDebugEvent;
 
 // 2.3: called on the machine's own thread, at a safe execution boundary, and
@@ -48,6 +54,19 @@ typedef void (*LhatDebugHook)(LhatMachine *machine, void *context,
 // not taken. NULL takes it away -- from inside the hook too.
 void lhat_machine_set_debug_hook(LhatMachine *machine, LhatDebugHook hook,
                                  void *context);
+
+// D3: a long-running LhatHostFn calls this between pieces of work that it may
+// safely stop between. It tells the installed hook that a host boundary was
+// reached, then waits until that hook returns. True means work may continue;
+// false means the hook ended the current run (normally a debugger's
+// disconnect or terminate), and the host must promptly clean up and return
+// without writing answers. It must not be called while holding a lock that a
+// debugger or another machine may need.
+//
+// No hook, or calling it while a hook is already running, is a harmless true.
+// The API remains available in a build without the debugger and is true
+// there as well, so a host need not conditionalize its polling.
+bool lhat_machine_debug_pause_point(LhatMachine *machine);
 
 // D5: what the fault event reports. These answer LHAT_RUN_OK and nil^ when
 // no fault is recorded. The value is meaningful for LHAT_RUN_PANIC, where it

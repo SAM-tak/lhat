@@ -100,6 +100,11 @@ if(LHAT_BUILD_STDLIB)
     lhat_add_test(test_task stdlib)
     target_link_libraries(test_task PRIVATE lhatstdlib lhatthread)
 
+    if(LHAT_WITH_DEBUGGER)
+        lhat_add_test(test_debug_pause stdlib)
+        target_link_libraries(test_debug_pause PRIVATE lhatstdlib lhatthread)
+    endif()
+
     lhat_add_test(test_io stdlib)
     target_link_libraries(test_io PRIVATE lhatstdlib)
 

@@ -67,6 +67,19 @@ void dap_session_end(DapSession *session, int exit_code);
 // the caller shows no error of its own for the panic that stopped it.
 bool dap_session_ended_run(const DapSession *session);
 
+// 09 の 5.3: where the first thing written on `line` stands, 1-based -- the
+// column a stack frame reports. 1 when the line is blank, is past the end of
+// the text, or there is no text at all.
+//
+// The count is the lexer's (01 の 3 章 counts code points) without having to
+// be told so: only ' ' and '\t' are stepped over and both are one byte, so
+// everything before the answer is ASCII and bytes, code points and UTF-16
+// units are the one number. `text` is a unit's, which LhatSource has already
+// normalised to LF (lhat/source.h), so no '\r' is met.
+//
+// Public for its own test -- it is the one piece here with arithmetic in it.
+uint32_t dap_column_of_line(const char *text, size_t length, uint32_t line);
+
 #ifdef __cplusplus
 }
 #endif

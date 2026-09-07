@@ -18,3 +18,10 @@ function(lhat_dap_add_test name)
 endfunction()
 
 lhat_dap_add_test(test_dap_protocol ${CMAKE_SOURCE_DIR}/dap/protocol.c)
+
+# The column a stack frame reports is read off the source (09 の 5.3), so its
+# arithmetic answers on its own. It links the built adapter rather than a copy
+# of adapter.c: that one function is all this needs, and the library already
+# carries the ports the rest of the file wants.
+lhat_dap_add_test(test_dap_column)
+target_link_libraries(test_dap_column PRIVATE lhatdap)
