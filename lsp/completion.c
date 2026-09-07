@@ -17,10 +17,13 @@
 enum {
     ITEM_METHOD = 2,
     ITEM_FUNCTION = 3,
+    ITEM_VARIABLE = 6,
     ITEM_FIELD = 5,
     ITEM_CLASS = 7,
     ITEM_MODULE = 9,
+    ITEM_KEYWORD = 14,
     ITEM_FILE = 17,
+    ITEM_CONSTANT = 21,
 };
 
 // A type written out for one item. Past this a reader is helped by opening
@@ -244,18 +247,26 @@ static uint32_t line_start(const char *text, uint32_t offset)
     return at;
 }
 
-// 01 の 6.1: a '#' begins a comment, so a word after one on the same line is
-// prose rather than a path. Only the line matters -- a block comment would
-// take the lexer to say, and a request inside one answers nothing worse than
-// a list nobody asked for.
-static bool commented(const char *text, uint32_t from, uint32_t to)
+// Whether `to` stands in code, judged from `from` -- which is the start of
+// its line. A '#' begins a comment and a '"' a string, and each closes what
+// the other would have begun, so the two are read in the one pass.
+//
+// Only the line matters: a string running over one would take the lexer to
+// say, and a request inside one answers nothing worse than a list nobody
+// asked for.
+static bool in_code(const char *text, uint32_t from, uint32_t to)
 {
+    bool quoted = false;
     for (uint32_t at = from; at < to; at++) {
-        if (text[at] == '#') {
-            return true;
+        if (quoted && text[at] == '\\') {
+            at++;  // whatever it escapes is not the quote that closes
+        } else if (text[at] == '"') {
+            quoted = !quoted;
+        } else if (!quoted && text[at] == '#') {
+            return false;
         }
     }
-    return false;
+    return !quoted;
 }
 
 // Whether `word` stands immediately before `at`, with only spaces between.
@@ -289,7 +300,7 @@ bool lsp_completion_import_prefix(const char *text, size_t length,
     }
     uint32_t word = 0;
     if (!word_before(text, start, at, "import^", &word) ||
-        commented(text, start, word)) {
+        !in_code(text, start, word)) {
         return false;
     }
     *from = at;
@@ -314,11 +325,202 @@ bool lsp_completion_require_prefix(const char *text, size_t length,
     }
     uint32_t word = 0;
     if (!word_before(text, start, at - 1, "require^", &word) ||
-        commented(text, start, word)) {
+        !in_code(text, start, word)) {
         return false;
     }
     *from = at;
     return true;
+}
+
+// 01 の 3.1 with 2.3: what a word is made of. A '.' is not here -- it ends
+// the word and begins a member, which is a different question.
+static bool is_word_byte(unsigned char c)
+{
+    return isalnum(c) || c == '_' || c == '^' || c >= 0x80;
+}
+
+bool lsp_completion_word_prefix(const char *text, size_t length,
+                                uint32_t offset, uint32_t *from)
+{
+    if (text == NULL || offset > length) {
+        return false;
+    }
+    uint32_t start = line_start(text, offset);
+    uint32_t at = offset;
+    while (at > start && is_word_byte((unsigned char)text[at - 1])) {
+        at--;
+    }
+    // A member name is written in a word too, and the receiver decides what
+    // may stand there -- so the dot hands the question on rather than
+    // answering it. 11.7改2's '?.' ends in the same byte.
+    if (at > 0 && text[at - 1] == '.') {
+        return false;
+    }
+    // 01 の 3.1: a name never begins with a digit, so what does is a number
+    // being written and no word can follow it.
+    if (at < offset && isdigit((unsigned char)text[at])) {
+        return false;
+    }
+    if (!in_code(text, start, at)) {
+        return false;
+    }
+    *from = at;
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// The words of the language
+// ---------------------------------------------------------------------------
+
+// 01 の 2.1: the lexer keeps no keyword table -- every hatted word is the one
+// token kind and the parser decides which of them each is (parser.c's
+// is_statement_keyword carries its own half of that knowledge for the same
+// reason). So there is no list anywhere to read, and this is one.
+//
+// It is a list of candidates, not an authority. Nothing is checked against
+// it and nothing is refused by it: a word missing here is one suggestion
+// that does not appear, and a word here that the language no longer takes is
+// one the checker reports the moment it is written. When the language gains
+// a word, add it -- the same bargain chk_builtin_words[] (src/check_expr.c)
+// strikes for members.
+typedef struct {
+    const char *word;
+    int kind;
+} Word;
+
+static const Word WORDS[] = {
+    // 8.9 with 12 章: what binds a name.
+    {"let^", ITEM_KEYWORD},
+    {"var^", ITEM_KEYWORD},
+    {"with^", ITEM_KEYWORD},
+
+    // 6 章 and 9 章: the shapes a body takes. The else marker is written six
+    // ways, and which of them a writer likes is not the server's to decide.
+    {"if^", ITEM_KEYWORD},
+    {"el^", ITEM_KEYWORD},
+    {"ei^", ITEM_KEYWORD},
+    {"else^", ITEM_KEYWORD},
+    {"elif^", ITEM_KEYWORD},
+    {"elseif^", ITEM_KEYWORD},
+    {"elsif^", ITEM_KEYWORD},
+    {"do^", ITEM_KEYWORD},
+    {"when^", ITEM_KEYWORD},
+    {"other^", ITEM_KEYWORD},
+    {"for^", ITEM_KEYWORD},
+    {"while^", ITEM_KEYWORD},
+    {"repeat^", ITEM_KEYWORD},
+    {"until^", ITEM_KEYWORD},
+
+    // 16.3: the clauses of a for^ -- what it walks and how far.
+    {"in^", ITEM_KEYWORD},
+    {"from^", ITEM_KEYWORD},
+    {"to^", ITEM_KEYWORD},
+    {"downto^", ITEM_KEYWORD},
+    {"step^", ITEM_KEYWORD},
+
+    // 9.4: the parts a loop body divides into.
+    {"prolog^", ITEM_KEYWORD},
+    {"prologue^", ITEM_KEYWORD},
+    {"pre^", ITEM_KEYWORD},
+    {"premain^", ITEM_KEYWORD},
+    {"first^", ITEM_KEYWORD},
+    {"main^", ITEM_KEYWORD},
+    {"last^", ITEM_KEYWORD},
+    {"epilog^", ITEM_KEYWORD},
+    {"epilogue^", ITEM_KEYWORD},
+
+    // 9.11 with 15.8 and 15.14: what leaves, and what suspends.
+    {"return^", ITEM_KEYWORD},
+    {"break^", ITEM_KEYWORD},
+    {"next^", ITEM_KEYWORD},
+    {"skip^", ITEM_KEYWORD},
+    {"continue^", ITEM_KEYWORD},
+    {"panic^", ITEM_KEYWORD},
+    {"yield^", ITEM_KEYWORD},
+    {"_yield^", ITEM_KEYWORD},
+    {"await^", ITEM_KEYWORD},
+
+    // 04 の 2 章: what an error is declared and caught with. 2.7 has two
+    // tops, so it has two of the word that declares one.
+    {"try^", ITEM_KEYWORD},
+    {"catch^", ITEM_KEYWORD},
+    {"finally^", ITEM_KEYWORD},
+    {"errordef^", ITEM_KEYWORD},
+    {"localerrordef^", ITEM_KEYWORD},
+
+    // 13 章 with 14 章: what makes a subroutine and what makes a definition.
+    {"f^", ITEM_KEYWORD},
+    {"p^", ITEM_KEYWORD},
+    {"def^", ITEM_KEYWORD},
+    {"enum^", ITEM_KEYWORD},
+    {"op^", ITEM_KEYWORD},
+    {"id^", ITEM_KEYWORD},
+    {"abstract^", ITEM_KEYWORD},
+    {"override^", ITEM_KEYWORD},
+    {"overload^", ITEM_KEYWORD},
+    {"delegate^", ITEM_KEYWORD},
+    {"public^", ITEM_KEYWORD},
+    {"mutable^", ITEM_KEYWORD},
+    {"closed^", ITEM_KEYWORD},
+    {"fresh^", ITEM_KEYWORD},
+    {"pack^", ITEM_KEYWORD},
+    {"box^", ITEM_KEYWORD},
+    {"constbox^", ITEM_KEYWORD},
+
+    // 05 の 6.1 and 8.7: what brings another unit or a host's module in.
+    {"import^", ITEM_KEYWORD},
+    {"require^", ITEM_KEYWORD},
+    {"module^", ITEM_KEYWORD},
+
+    // 4.1 with 13.11: the operators that are words.
+    {"and^", ITEM_KEYWORD},
+    {"or^", ITEM_KEYWORD},
+    {"is^", ITEM_KEYWORD},
+    {"as^", ITEM_KEYWORD},
+    {"fits^", ITEM_KEYWORD},
+    {"typeof^", ITEM_KEYWORD},
+
+    // The types a name is not needed for (check.c's builtin_type), with
+    // 13.13's word for the literal being written inside.
+    {"number^", ITEM_CLASS},
+    {"int^", ITEM_CLASS},
+    {"float^", ITEM_CLASS},
+    {"string^", ITEM_CLASS},
+    {"bool^", ITEM_CLASS},
+    {"any^", ITEM_CLASS},
+    {"error^", ITEM_CLASS},
+    {"localerror^", ITEM_CLASS},
+    {"t^", ITEM_CLASS},
+    {"c^", ITEM_CLASS},
+    {"Self^", ITEM_CLASS},
+
+    // The values no binding holds.
+    {"nil^", ITEM_CONSTANT},
+    {"true^", ITEM_CONSTANT},
+    {"false^", ITEM_CONSTANT},
+
+    // 14 章 with 05 の 8.6: the names a construct puts there, and the one the
+    // language itself carries. 8.1 keeps them out of what a host can bind,
+    // so no scope holds them and nothing else would offer them.
+    {"self^", ITEM_VARIABLE},
+    {"this^", ITEM_VARIABLE},
+    {"it^", ITEM_VARIABLE},
+    {"super^", ITEM_VARIABLE},
+    {"L^", ITEM_VARIABLE},
+    {"_^", ITEM_VARIABLE},
+};
+
+cJSON *lsp_completion_word_items(void)
+{
+    cJSON *items = cJSON_CreateArray();
+    if (items == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < sizeof WORDS / sizeof WORDS[0]; i++) {
+        add_item(items, WORDS[i].word, strlen(WORDS[i].word), WORDS[i].kind,
+                 NULL);
+    }
+    return items;
 }
 
 // ---------------------------------------------------------------------------

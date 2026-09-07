@@ -121,7 +121,10 @@ static void expect_offers(const cJSON *items, const char *label, bool expected)
 }
 
 // LSP's CompletionItemKind numbers, the ones used.
-enum { METHOD = 2, FUNCTION = 3, FIELD = 5, CLASS = 7, MODULE = 9, UNIT_FILE = 17 };
+enum {
+    METHOD = 2, FUNCTION = 3, FIELD = 5, VARIABLE = 6, CLASS = 7, MODULE = 9,
+    KEYWORD = 14, UNIT_FILE = 17, CONSTANT = 21,
+};
 
 static void test_a_dot_with_nothing_after_it(void)
 {
@@ -503,6 +506,105 @@ static void test_reading_an_import(void)
     }
 }
 
+// ---------------------------------------------------------------------------
+// The words of the language
+// ---------------------------------------------------------------------------
+
+// Whether a word may be written at the end of `text`, and what of it stands
+// there already.
+static void expect_word(const char *text, bool expected, const char *prefix)
+{
+    uint32_t from = 0;
+    bool found = lsp_completion_word_prefix(text, strlen(text),
+                                            (uint32_t)strlen(text), &from);
+    LHAT_CHECK(found == expected, "\"%s\": expected %s", text,
+               expected ? "a word" : "none");
+    if (found && expected && prefix != NULL) {
+        LHAT_CHECK(strcmp(text + from, prefix) == 0,
+                   "\"%s\": expected the word to begin \"%s\", got \"%s\"",
+                   text, prefix, text + from);
+    }
+}
+
+static void test_reading_a_word(void)
+{
+    LHAT_TEST("a word being written is one, however much of it there is");
+    expect_word("le", true, "le");
+    expect_word("let^", true, "let^");
+    expect_word("let^ x = 1\nre", true, "re");
+    expect_word("x1", true, "x1");
+    // Nothing typed yet: the whole list stands there, which is what an
+    // editor asked outright (rather than by a keystroke) wants.
+    expect_word("", true, "");
+    expect_word("let^ ", true, "");
+
+    LHAT_TEST("14.10: but a member name is the receiver's to answer");
+    expect_word("foo.", false, NULL);
+    expect_word("foo.le", false, NULL);
+    // 11.7改2: the guarded dot ends in the same byte.
+    expect_word("foo?.le", false, NULL);
+
+    LHAT_TEST("01 の 6.1 with 4 章: and neither prose nor text is code");
+    expect_word("# le", false, NULL);
+    expect_word("let^ x = 1  # wh", false, NULL);
+    expect_word("let^ s = \"hello wo", false, NULL);
+    // The string closed, so what follows it is code again.
+    expect_word("let^ s = \"a\" ; wh", true, "wh");
+    // And a quote the string escaped did not close it.
+    expect_word("let^ s = \"a\\\" wh", false, NULL);
+
+    LHAT_TEST("01 の 3.1: a number is not a word half written");
+    expect_word("let^ x = 1e", false, NULL);
+    expect_word("1", false, NULL);
+}
+
+static void test_the_words_offered(void)
+{
+    cJSON *items = lsp_completion_word_items();
+    LHAT_CHECK(items != NULL, "expected a list of words");
+
+    LHAT_TEST("the words of each part of the language are offered");
+    expect_offers(items, "let^", true);
+    expect_offers(items, "if^", true);
+    expect_offers(items, "for^", true);
+    expect_offers(items, "downto^", true);  // 16.3's clauses, not only its head
+    expect_offers(items, "f^", true);
+    expect_offers(items, "def^", true);
+    expect_offers(items, "errordef^", true);
+    expect_offers(items, "await^", true);
+    expect_offers(items, "fits^", true);
+    expect_offers(items, "override^", true);
+
+    LHAT_TEST("01 の 2.3: with the hat, since the hat is part of the name");
+    expect_offers(items, "let", false);
+    expect_offers(items, "if", false);
+
+    LHAT_TEST("and a spelling the language dropped is not offered");
+    // 14.4改: the word for a definition is def^, and class^ was not kept
+    // even as another spelling of it.
+    expect_offers(items, "class^", false);
+    // 15.6改: the maker is new, so new^ is a member and not a word.
+    expect_offers(items, "new^", false);
+
+    LHAT_TEST("each word once, so the editor's filter has one of each");
+    LHAT_CHECK_EQ_INT(times_offered(items, "let^"), 1);
+    LHAT_CHECK_EQ_INT(times_offered(items, "error^"), 1);
+    LHAT_CHECK_EQ_INT(times_offered(items, "finally^"), 1);
+
+    LHAT_TEST("and is drawn as what it is");
+    LHAT_CHECK_EQ_INT(kind_of(items, "let^"), KEYWORD);
+    LHAT_CHECK_EQ_INT(kind_of(items, "number^"), CLASS);
+    LHAT_CHECK_EQ_INT(kind_of(items, "Self^"), CLASS);
+    LHAT_CHECK_EQ_INT(kind_of(items, "nil^"), CONSTANT);
+    LHAT_CHECK_EQ_INT(kind_of(items, "true^"), CONSTANT);
+    // 05 の 8.6 with 8.1: no scope holds these, so nothing else offers them.
+    LHAT_CHECK_EQ_INT(kind_of(items, "self^"), VARIABLE);
+    LHAT_CHECK_EQ_INT(kind_of(items, "L^"), VARIABLE);
+    LHAT_CHECK_EQ_INT(kind_of(items, "_^"), VARIABLE);
+
+    cJSON_Delete(items);
+}
+
 static void test_module_items(void)
 {
     static const char *const modules[] = {
@@ -581,6 +683,8 @@ int main(void)
     test_what_is_never_offered();
     test_a_guarded_dot();
     test_reading_an_import();
+    test_reading_a_word();
+    test_the_words_offered();
     test_module_items();
     test_relative_paths();
     return lhat_test_report("test_completion");
