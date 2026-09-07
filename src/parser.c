@@ -283,6 +283,25 @@ static LhatNode *finish_at(LhatNode *node, const LhatNode *last)
     return node;
 }
 
+// An expression a statement position turned down. The diagnostic has been
+// reported already; all this settles is what becomes of the tree.
+//
+// 07 の 4 章: the run stays under the ERROR rather than being thrown away.
+// Nothing downstream reads it for meaning -- the checker walks it with its
+// reports silenced, and the compiler refuses an ERROR whatever hangs below
+// it -- but a writer half through 'r.peek()' has a statement the tools can
+// still answer about, and there is no other copy of what they would answer
+// from. `value` may be NULL, for a refusal met before anything was read.
+static LhatNode *refused(Parser *p, LhatToken start, LhatNode *value)
+{
+    LhatNode *node = make(p, LHAT_NODE_ERROR, &start);
+    if (node == NULL) {
+        return NULL;
+    }
+    node->v.jump.value = value;
+    return finish_at(node, value);
+}
+
 // Moves a node's start back to `at`, for the words that lead a construct
 // without belonging to any node under it -- 'do^' before its braces, and the
 // 'public^' that marks the declaration it precedes. Without this the span
@@ -3536,7 +3555,7 @@ static LhatNode *expression_as_statement(Parser *p, LhatToken start,
         return finish(p, node);
     }
     report(p, &start, LHAT_PARSE_ERR_BARE_EXPRESSION);
-    return make(p, LHAT_NODE_ERROR, &start);
+    return refused(p, start, value);
 }
 
 // 16.3. The focus is a list of bindings, of destructuring targets, or one
@@ -4791,7 +4810,7 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         report(p, &p->current, LHAT_PARSE_ERR_RESERVED_SHIFT);
         advance(p);
         parse_expression(p);
-        return make(p, LHAT_NODE_ERROR, &start);
+        return refused(p, start, head);
     }
 
     // 2.1: 'foo 1 2 3' is only a call in command mode. What follows here is
@@ -4799,7 +4818,7 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
     // since there is no separator to tell the two apart.
     if (starts_expression(&p->current) && !can_begin_statement(p)) {
         report(p, &p->current, LHAT_PARSE_ERR_JUXTAPOSITION);
-        return make(p, LHAT_NODE_ERROR, &start);
+        return refused(p, start, head);
     }
 
     // 8.2: only a call may stand alone as a statement -- and 07 の 4 章's
@@ -4831,11 +4850,11 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
     // generic one, since the writer meant one of two different things.
     if (head != NULL && head->next == NULL && is_binary_op(head, LHAT_OP_EQ)) {
         report(p, &start, LHAT_PARSE_ERR_EQUALS_IS_COMPARISON);
-        return make(p, LHAT_NODE_ERROR, &start);
+        return refused(p, start, head);
     }
 
     report(p, &start, LHAT_PARSE_ERR_BARE_EXPRESSION);
-    return make(p, LHAT_NODE_ERROR, &start);
+    return refused(p, start, head);
 }
 
 // ---------------------------------------------------------------------------

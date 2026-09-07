@@ -3724,6 +3724,52 @@ static void test_a_dot_with_nothing_after_it(void)
     LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 1);
     parse_dispose(&p);
 
+    // 07 の 4 章: and one keystroke later the run is kept too, though the
+    // statement is now refused. The refusal stands -- 'r.peek' really is an
+    // expression written where a statement belongs -- but the ERROR carries
+    // what was read, so the tools have the same run to answer about that
+    // they had while the dot stood alone.
+    LHAT_TEST("a statement the parser refuses keeps what it read");
+    parse_text(&p, "foo.bar\n");
+    LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 1);
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_BARE_EXPRESSION);
+    {
+        const LhatNode *statement = first_statement(&p);
+        LHAT_CHECK_EQ_INT(statement->kind, LHAT_NODE_ERROR);
+        if (statement->kind == LHAT_NODE_ERROR) {
+            const LhatNode *value = statement->v.jump.value;
+            LHAT_CHECK(value != NULL, "expected the run to be kept");
+            if (value != NULL) {
+                LHAT_CHECK_EQ_INT(value->kind, LHAT_NODE_MEMBER);
+                // The span has to reach the child, or a tool that shows the
+                // source of the node loses the end of it (ast.h's rule,
+                // which `refused` keeps with finish_at).
+                LHAT_CHECK(statement->end >= value->end,
+                           "the refusal ends at %u but its run ends at %u",
+                           statement->end, value->end);
+            }
+        }
+    }
+    parse_dispose(&p);
+
+    // 8.6 gives 'x = 1' its own message, and it takes the same treatment:
+    // one refusal, one diagnostic, and the comparison kept underneath.
+    LHAT_TEST("and so does the one 8.6 has a better message for");
+    parse_text(&p, "x = 1\n");
+    LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 1);
+    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                      LHAT_PARSE_ERR_EQUALS_IS_COMPARISON);
+    {
+        const LhatNode *statement = first_statement(&p);
+        LHAT_CHECK_EQ_INT(statement->kind, LHAT_NODE_ERROR);
+        if (statement->kind == LHAT_NODE_ERROR) {
+            LHAT_CHECK(statement->v.jump.value != NULL,
+                       "expected the comparison to be kept");
+        }
+    }
+    parse_dispose(&p);
+
     // 10.1's integer key and 01 の 2.3's hat spelling both still stand: what
     // changed is only what happens when nothing was written at all.
     LHAT_TEST("a dot with something after it is unchanged");

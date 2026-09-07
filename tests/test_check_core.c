@@ -2925,6 +2925,44 @@ static void test_a_dot_says_what_stands_to_its_left(void)
     LHAT_CHECK_EQ_INT(syntax_errors(&u), 1);
     unit_dispose(&u);
 
+    // 8.2 refuses this outright -- 'point.zz' is an expression standing
+    // where a statement belongs -- but the parser keeps the run under the
+    // refusal and the checker walks it for the record alone.
+    LHAT_TEST("07 の 4 章: a refused statement still records its dot");
+    check_text(&u,
+               "let^ point = { x = 1 }\n"
+               "point.zz\n");
+    LHAT_CHECK_EQ_INT(syntax_errors(&u), 1);
+    {
+        const char *dot = strstr(u.source.text, "point.zz");
+        LHAT_CHECK(dot != NULL, "expected the refused access");
+        if (dot != NULL) {
+            uint32_t at = (uint32_t)(dot - u.source.text) + 5;
+            const LhatMemberSite *site =
+                lhat_check_member_site_at(&u.checked, at + 1);
+            LHAT_CHECK(site != NULL, "expected a site in the refused run");
+            if (site != NULL) {
+                LHAT_CHECK(site->receiver != NULL &&
+                               site->receiver->kind == LHAT_TYPE_TABLE,
+                           "expected the table that stands to the left");
+            }
+        }
+    }
+    // The contract the walk is silent for: one mistake is one diagnostic,
+    // and the parser has already had its say. 'zz' is no member of that
+    // table, and in any other position that would be reported -- here it is
+    // not, because the statement it stands in was turned down already.
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 0);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the same access is still reported where it stands alone");
+    check_text(&u,
+               "let^ point = { x = 1 }\n"
+               "let^ n = point.zz\n");
+    LHAT_CHECK_EQ_INT(syntax_errors(&u), 0);
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 1);
+    unit_dispose(&u);
+
     // What the record is for: a receiver that is not a name at all, which no
     // amount of reading the resolutions could answer.
     LHAT_TEST("a receiver that is not a name records the same way");

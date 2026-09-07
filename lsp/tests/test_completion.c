@@ -178,6 +178,42 @@ static void test_a_dot_with_nothing_after_it(void)
         cJSON_Delete(items);
     }
     check_dispose(&c);
+
+    // 8.2 refuses this statement outright and the writer will see that, but
+    // the run is kept under the refusal and walked for the record
+    // (parser.c's `refused`, check_stmt.c's ERROR arm). Without that, a
+    // writer one keystroke into a member name -- which is where a request
+    // made by hand rather than by the dot arrives -- would be answered with
+    // nothing at all.
+    LHAT_TEST("and a statement the parser refused still answers");
+    check_text(&c,
+               "let^ Reader = def^{\n"
+               "    self^{ at = 1, text = \"\" },\n"
+               "    peek = f^self^ -> number^ { return^ self^.at },\n"
+               "}\n"
+               "let^ r = Reader.new()\n"
+               "r.pe\n");
+    {
+        cJSON *items = offered_after(&c, "r.");
+        expect_offers(items, "peek", true);
+        expect_offers(items, "at", true);
+        // The built-ins come through the same walk, so they are there too.
+        expect_offers(items, "tostring", true);
+        cJSON_Delete(items);
+    }
+    // A cursor at the end of the half-written name finds the same site --
+    // LhatMemberSite's end reaches one past the name.
+    {
+        const char *at = strstr(c.source.text, "r.pe");
+        LHAT_CHECK(at != NULL, "expected the refused access");
+        if (at != NULL) {
+            cJSON *items = lsp_completion_members_for_unit(
+                &c.unit, (uint32_t)(at - c.source.text) + 4);
+            expect_offers(items, "peek", true);
+            cJSON_Delete(items);
+        }
+    }
+    check_dispose(&c);
 }
 
 // A receiver that is not a name at all. Reading the resolutions could not

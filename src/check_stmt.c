@@ -2704,6 +2704,21 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             break;
         }
 
+        // 07 の 4 章: a statement the parser turned down keeps the run it had
+        // read (parser.c's `refused`). Walking it is for the record and
+        // nothing else -- the mistake has been reported once already, so
+        // `rereading` silences chk_report while the resolutions and the
+        // member sites are still taken. Without this a writer half through
+        // 'r.peek()' has no answer for what may follow the dot, since the
+        // types those answers are made of are worked out only here.
+        case LHAT_NODE_ERROR:
+            if (node->v.jump.value != NULL) {
+                c->rereading++;
+                chk_infer(c, node->v.jump.value);
+                c->rereading--;
+            }
+            break;
+
         default:
             break;
     }

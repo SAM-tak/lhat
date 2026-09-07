@@ -121,7 +121,13 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_FOCUS:
         case LHAT_NODE_INTERP_TEXT:
         case LHAT_NODE_TYPE_NAME:
+            break;
+
+        // 07 の 4 章: the expression a statement position refused, when the
+        // parser had one to keep (parser.c's `refused`). NULL for every
+        // other way an ERROR is made, which visit_one passes over.
         case LHAT_NODE_ERROR:
+            visit_one("value", node->v.jump.value, visit, context);
             break;
 
         case LHAT_NODE_SCOPE:

@@ -115,6 +115,13 @@ typedef enum {
     LHAT_NODE_TYPE_UNION,    // A | B
     LHAT_NODE_TYPE_INTERSECT,// A & B
 
+    // What a parse function leaves where it could not build the construct.
+    // 07 の 4 章: where the construct failed but an expression under it had
+    // already been read, that expression stays in `v.jump.value` -- the
+    // borrowed slot CALL_STMT and RETURN use, and NULL when there was
+    // nothing to keep. Everything downstream refuses this node either way;
+    // what the value buys is a tool that can still answer about the run
+    // inside a statement the parser turned down (parser.c's `refused`).
     LHAT_NODE_ERROR,
 
     LHAT_NODE_KIND_COUNT
