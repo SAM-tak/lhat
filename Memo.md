@@ -88,6 +88,26 @@ hash^ ユーザー定義のハッシュ。これがないと値比較でテー�
 
 インスタンス検査が入ったことで実質パラメトリック多相を実現している、という認識。
 
+#### comptime^
+
+Zigのあれ、なんていうんだろう…
+
+L^でもコンプタイムというしか無いか？
+
+```lhat
+let^ListType = comptime^f^type: type^, length: number^ {
+    def^ {
+        self^ {
+            type[length]
+        }
+    }
+}
+
+let^ListTypeA = SomeBase .. ListType(SomeDef, 3)
+
+let^t = ListTypeA.new() # t => { SomeDef[3] }
+```
+
 #### std.task
 
 ```lhat

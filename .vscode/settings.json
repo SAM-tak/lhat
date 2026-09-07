@@ -24,5 +24,6 @@
     "cmake.configureOnOpen": false,
     "cmake.configureOnEdit": false,
 
-    "lhat.serverAutoRestart": false
+    "lhat.serverAutoRestart": false,
+    "C_Cpp.errorSquiggles": "disabled"
 }

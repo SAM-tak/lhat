@@ -25,7 +25,7 @@ let^RecordingLog = def^{
     self^{ count = 0, text = "" },
     write = p^self^, message:string^{
         self^.count += 1
-        self^.text := self^.text .. message .. "\n"
+        self^.text ..= message .. "\n"
     }
 }
 
