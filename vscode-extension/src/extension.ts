@@ -6,7 +6,8 @@
 // lhatls's own capabilities response (lsp/handlers/initialize.c).
 //
 // It also hosts the graph view of 06 (graphEditor.ts), which reaches lhatls
-// through this same client.
+// through this same client, and the debug side of 09 (debug.ts), which does
+// not -- the debugger is the runtime, on a socket of its own.
 
 import * as vscode from "vscode";
 import {
@@ -19,6 +20,10 @@ import {
     ServerOptions,
     State,
 } from "vscode-languageclient/node";
+import {
+    LhatDebugAdapterFactory,
+    LhatDebugConfigurationProvider,
+} from "./debug";
 import { LhatGraphEditorProvider } from "./graphEditor";
 import { LhatOutlineProvider, graphedUri } from "./outline";
 
@@ -130,6 +135,18 @@ export function activate(context: vscode.ExtensionContext): void {
             await client?.stop();
             client = startClient(resolveServerCommand());
         }),
+    );
+
+    // 09 の 7 章: the debugger. `lhat --dap=PORT` is the adapter, so what is
+    // registered here only starts it and says where to connect.
+    const debugging = new LhatDebugAdapterFactory();
+    context.subscriptions.push(
+        debugging,
+        vscode.debug.registerDebugAdapterDescriptorFactory("lhat", debugging),
+        vscode.debug.registerDebugConfigurationProvider(
+            "lhat",
+            new LhatDebugConfigurationProvider(),
+        ),
     );
 
     // 06: the graph view. Registered whether or not the server came up -- it

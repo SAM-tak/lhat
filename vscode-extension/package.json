@@ -167,6 +167,11 @@
           "type": "boolean",
           "default": false,
           "description": "Open the graph view in a split beside the current editor, so the source and the graph can be read side by side. When off, the graph replaces the source in the same tab and the button switches back."
+        },
+        "lhat.runtimePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the L^ runtime (lhat/lhat.exe). It is the debug adapter as well as the interpreter (09 の 7 章). Empty resolves it off PATH."
         }
       }
     },
@@ -211,7 +216,85 @@
           }
         ]
       }
-    }
+    },
+    "breakpoints": [
+      {
+        "language": "lhat"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "lhat",
+        "label": "L^",
+        "languages": [
+          "lhat"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "The .lh file to run.",
+                "default": "${file}"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "What the program receives as its own '...' (02 の 13.7).",
+                "default": []
+              },
+              "cwd": {
+                "type": "string",
+                "description": "The directory to run in.",
+                "default": "${workspaceFolder}"
+              },
+              "env": {
+                "type": "object",
+                "description": "Environment variables to add.",
+                "default": {}
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Stop at the first line.",
+                "default": false
+              },
+              "relaxed": {
+                "type": "boolean",
+                "description": "Leave an undecided type to a runtime check (--relaxed). A file is checked strictly by default.",
+                "default": false
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "lhat",
+            "request": "launch",
+            "name": "Run this L^ file",
+            "program": "${file}",
+            "cwd": "${workspaceFolder}"
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "L^: run a file",
+            "description": "Run an L^ program under the debugger.",
+            "body": {
+              "type": "lhat",
+              "request": "launch",
+              "name": "${2:Run this L^ file}",
+              "program": "^\"\\${1:\\${file}}\"",
+              "cwd": "^\"\\${workspaceFolder}\""
+            }
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

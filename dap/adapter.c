@@ -15,6 +15,7 @@
 
 #include "adapter.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -997,8 +998,18 @@ bool dap_session_begin(DapSession **out, LhatMachine *machine, uint16_t port,
     lhat_mutex_init(&s->write_lock);
     lhat_condition_init(&s->changed);
 
-    if (!lhat_socket_listen(&s->listener, port) ||
-        !lhat_socket_accept(s->listener, &s->socket)) {
+    if (lhat_socket_listen(&s->listener, port)) {
+        // 09 の 7 章: whoever started this process has no other way to know
+        // when to connect. The socket goes up after the program is loaded
+        // and checked, which takes as long as the program is large, and the
+        // accept below then blocks until a debugger arrives -- so an editor
+        // that guessed the moment would guess wrong on a big program and
+        // race on a small one. One line, on the stream the protocol does not
+        // use, before anything can block.
+        fprintf(stderr, "lhat: dap listening on %u\n", (unsigned)port);
+        fflush(stderr);
+    }
+    if (s->listener.handle == 0 || !lhat_socket_accept(s->listener, &s->socket)) {
         if (s->listener.handle != 0) {
             lhat_socket_close(s->listener);
         }
