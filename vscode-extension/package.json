@@ -182,7 +182,6 @@
       "editor.tokenColorCustomizations": {
         "textMateRules": [
           {
-            "comment": "01-lexical-structure.md 2章: every keyword is a '^'-suffixed word. The hat itself carries no meaning of its own beyond marking the word, so it stays out of the way -- a translucent grey that the editor's own background (dark or light) tints, rather than a fixed colour picked per theme.",
             "scope": "punctuation.definition.hat.lhat",
             "settings": {
               "foreground": "#88888899"
