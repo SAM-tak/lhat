@@ -840,6 +840,49 @@ void lsp_workspace_free_strings(char **strings, size_t count)
     free(strings);
 }
 
+void lsp_workspace_with_every_unit(LspWorkspace *ws, LspUnitSink sink,
+                                   void *context)
+{
+    lhat_mutex_lock(&ws->lock);
+    // The same dedupe collect_diagnostics makes, with the path as the
+    // identity: a unit several roots reached is one unit.
+    char **seen = NULL;
+    size_t count = 0;
+    size_t capacity = 0;
+    for (const LspRoot *r = ws->roots; r != NULL; r = r->next) {
+        if (!r->checked) {
+            continue;
+        }
+        for (const LhatUnit *unit = r->program.units; unit != NULL;
+             unit = unit->next) {
+            if (!unit->loaded || unit->path == NULL) {
+                continue;
+            }
+            bool already = false;
+            for (size_t i = 0; i < count && !already; i++) {
+                already = strcmp(seen[i], unit->path) == 0;
+            }
+            if (already) {
+                continue;
+            }
+            if (count == capacity) {
+                size_t grown = capacity != 0 ? capacity * 2 : 16;
+                char **bigger =
+                    (char **)realloc(seen, grown * sizeof *bigger);
+                if (bigger == NULL) {
+                    continue;  // walked twice rather than not at all
+                }
+                seen = bigger;
+                capacity = grown;
+            }
+            seen[count++] = unit->path;  // borrowed: the lock is held
+            sink(context, unit);
+        }
+    }
+    free(seen);
+    lhat_mutex_unlock(&ws->lock);
+}
+
 void lsp_workspace_free_exports(LspUnitExports *units, size_t count)
 {
     if (units == NULL) {

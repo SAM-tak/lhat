@@ -12,6 +12,7 @@
 #include "handlers/hover.h"
 #include "handlers/initialize.h"
 #include "handlers/semantic_tokens.h"
+#include "handlers/references.h"
 #include "handlers/signature.h"
 #include "handlers/text_document_sync.h"
 
@@ -22,8 +23,11 @@ const LspRequestEntry LSP_REQUEST_TABLE[] = {
     {"textDocument/hover", lsp_handle_hover},
     {"textDocument/definition", lsp_handle_definition},
     {"textDocument/documentSymbol", lsp_handle_document_symbol},
+    {"textDocument/references", lsp_handle_references},
+    {"textDocument/prepareRename", lsp_handle_prepare_rename},
+    {"textDocument/rename", lsp_handle_rename},
     {"textDocument/completion", lsp_handle_completion},
-    // 07 の 6 章: an extension of our own, so it is named under "lhat/".
+    // 07 の 7 章: an extension of our own, so it is named under "lhat/".
     {"lhat/ast", lsp_handle_ast},
     {"lhat/signature", lsp_handle_signature},
     {NULL, NULL},

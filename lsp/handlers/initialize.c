@@ -89,6 +89,16 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     // The outline, from the tree alone (document_symbol.h).
     cJSON_AddBoolToObject(capabilities, "documentSymbolProvider", true);
 
+    // 07 の 5 章: the same record read the other way round -- every use
+    // pointing at one declaration rather than one use pointing at its.
+    cJSON_AddBoolToObject(capabilities, "referencesProvider", true);
+    // prepareRename is answered too, so a client asks whether a rename is
+    // possible before it opens a box: what the host registered and what
+    // the language answers itself were declared nowhere this can edit.
+    cJSON *rename = cJSON_CreateObject();
+    cJSON_AddItemToObject(capabilities, "renameProvider", rename);
+    cJSON_AddBoolToObject(rename, "prepareProvider", true);
+
     cJSON_AddItemToObject(result, "capabilities", capabilities);
 
     cJSON *info = cJSON_CreateObject();

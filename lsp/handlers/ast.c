@@ -1,6 +1,6 @@
 // L^ (lhat) -- LSP server: lhat/ast.
 //
-// An extension of our own, so it is named under "lhat/" (07 の 6 章). The
+// An extension of our own, so it is named under "lhat/" (07 の 7 章). The
 // visual editor asks for the tree of one unit rather than parsing L^ itself.
 
 #include "ast.h"

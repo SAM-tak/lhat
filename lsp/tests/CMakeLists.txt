@@ -59,6 +59,13 @@ lhat_lsp_add_test(test_settings
     ${CMAKE_SOURCE_DIR}/lsp/util.c
 )
 lhat_lsp_add_test(test_definition ${CMAKE_SOURCE_DIR}/lsp/definition.c)
+# 07 の 5 章: the same record read the other way round -- every use of one
+# declaration rather than one use's own.
+lhat_lsp_add_test(test_references
+    ${CMAKE_SOURCE_DIR}/lsp/references.c
+    ${CMAKE_SOURCE_DIR}/lsp/resolution.c
+    ${CMAKE_SOURCE_DIR}/lsp/definition.c
+)
 lhat_lsp_add_test(test_completion
     ${CMAKE_SOURCE_DIR}/lsp/completion.c
     ${CMAKE_SOURCE_DIR}/lsp/util.c

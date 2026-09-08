@@ -1,7 +1,7 @@
 // L^ (lhat) -- LSP server: textDocument/documentSymbol.
 //
 // The outline of one unit: what it declares, nested the way it was written.
-// 07 の 5 章 said this could be made from the syntax tree alone, and it can --
+// 07 の 6 章 said this could be made from the syntax tree alone, and it can --
 // a let^, a def^'s entries, an errordef^'s kinds and a module^ all spell
 // their names in the source, and none of them waits on the checker. So the
 // tree is the whole of what this reads, and a unit that will not check still

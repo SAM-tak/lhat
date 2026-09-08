@@ -173,6 +173,16 @@ void lsp_workspace_with_unit(LspWorkspace *ws, const char *path,
 void lsp_workspace_with_fresh_unit(LspWorkspace *ws, const char *path,
                                    LspUnitSink sink, void *context);
 
+// Every unit of every checked root, once each -- what a question about
+// the whole workspace has to ask, since a name written in one file is
+// used in others (07 の 5 章). One unit may stand in several roots'
+// graphs, and the path is its identity.
+//
+// Under the lock throughout, so the sink does its reading and keeps
+// nothing -- the same terms lsp_workspace_with_unit sets.
+void lsp_workspace_with_every_unit(LspWorkspace *ws, LspUnitSink sink,
+                                   void *context);
+
 // Owned copies of what a completion offers as paths and as module names.
 // Copies rather than pointers because both live behind the lock and the
 // worker may replace them: the roots on a settings change, the host config

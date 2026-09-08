@@ -454,6 +454,8 @@ if(LHAT_BUILD_LSP)
         lsp/signature.c
         lsp/handlers/definition.c
         lsp/definition.c
+        lsp/handlers/references.c
+        lsp/references.c
         lsp/handlers/document_symbol.c
         lsp/document_symbol.c
         lsp/lton.c
