@@ -22,6 +22,9 @@ typedef struct {
     // two possible reasons -- it never waited, or it waited in one
     // uninterruptible call -- and only the clock tells them apart.
     int64_t took_ms;
+    // Every event, of whatever kind. Zero means the hook was never live at
+    // all, which is a different fault from a wait that offered no boundary.
+    size_t events;
 } PauseTrace;
 
 static void pause_hook(LhatMachine *machine, void *context,
@@ -30,6 +33,7 @@ static void pause_hook(LhatMachine *machine, void *context,
     (void)machine;
     (void)where;
     PauseTrace *trace = (PauseTrace *)context;
+    trace->events++;
     if (event == LHAT_DEBUG_HOST_PAUSE_POINT) {
         trace->points++;
         if (where->line < sizeof trace->at_line / sizeof *trace->at_line) {
@@ -57,10 +61,10 @@ static void check_wait(const char *name, PauseTrace *trace, LhatTestRan ran,
 {
     LHAT_CHECK_RAN_INTEGER(ran, 1);
     LHAT_CHECK(trace->points > 0,
-               "%s reached a host pause point (the run took %lldms; a wait "
-               "that waits outlasts the 20ms pause interval several times "
-               "over, so a short run means nothing waited)",
-               name, (long long)trace->took_ms);
+               "%s reached a host pause point (the run took %lldms and the "
+               "hook saw %zu events of any kind; a wait that waits outlasts "
+               "the 20ms pause interval several times over)",
+               name, (long long)trace->took_ms, trace->events);
     for (size_t i = 0; i < line_count; i++) {
         LHAT_CHECK(lines[i] < sizeof trace->at_line / sizeof *trace->at_line &&
                        trace->at_line[lines[i]],
