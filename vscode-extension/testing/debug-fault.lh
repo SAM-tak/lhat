@@ -1,3 +1,0 @@
-# A deliberately failing program for exercising the DAP exception stop.
-var^ kept = 42
-panic^ "debug fault"

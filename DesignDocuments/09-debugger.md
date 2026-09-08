@@ -480,7 +480,7 @@ API で埋まる。詳細は別リポジトリの godot バインディングに
 ## 7. VSCode 拡張
 
 `contributes.debuggers` に `{ type: "lhat", languages: ["lhat"] }` を持ち、
-`DebugAdapterDescriptorFactory`（`vscode-extension/src/debug.ts`）が
+`DebugAdapterDescriptorFactory`（拡張リポジトリの `src/debug.ts`）が
 空きポートを選んで `lhat --dap=PORT <program>` を起動し
 インラインの中継を返す。中継が実装するのは DAP の枠とメッセージをそのまま
 通すこと、それに標準出力・標準エラーを `output` イベントとして差し込むことだけで、

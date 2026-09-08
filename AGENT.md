@@ -30,6 +30,12 @@ L^ソースをシンタックスハイライト済みのSVGに変換するツー
 
 @../lhat-svg-tools/
 
+### lhat-vscode-extension
+
+L^ の VSCode 拡張（言語クライアント・グラフ表示・デバッグクライアント）
+
+@../lhat-vscode-extension/
+
 ### lhat-gdextension
 
 L^ のGodotエンジン向けバインディング

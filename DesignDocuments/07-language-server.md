@@ -1,6 +1,8 @@
 # 言語サーバとエディタ統合
 
-`L^` の言語サーバ `lhatls`（`lsp/`）と、それを利用する VSCode 拡張（`vscode-extension/`）の設計。
+`L^` の言語サーバ `lhatls`（`lsp/`）と、それを利用する VSCode 拡張の設計。
+拡張は別リポジトリ [lhat-vscode-extension](https://github.com/SAM-tak/lhat-vscode-extension)
+にあり、本文で拡張側のファイルを指すパスはそのリポジトリのルートからの相対。
 
 ビジュアルエディタは同じ拡張の中に載るが、設計は [06-visual-editor.md](06-visual-editor.md) に分けてある。
 本文書はその土台にあたる部分を扱う。
@@ -18,7 +20,7 @@
 
 ```text
   VSCode
-   └ vscode-extension (拡張、TypeScript)
+   └ lhat-vscode-extension (拡張、TypeScript、別リポジトリ)
       ├ 言語クライアント (vscode-languageclient) ──► lhatls (子プロセス、stdio)
       ├ 構文強調の文法定義 (syntaxes/lhat.tmLanguage.json)
       ├ ビジュアルエディタ (webview)             ──► lhatls (同じ接続)
