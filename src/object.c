@@ -594,6 +594,11 @@ static int compare_members(const void *a, const void *b)
 
 void lhat_type_rt_sort_members(LhatRuntimeType *type)
 {
+    // qsort declares its base non-null whatever the count says, and a type
+    // with no members has no array to name.
+    if (type->member_count == 0) {
+        return;
+    }
     qsort(type->members, type->member_count, sizeof *type->members,
          compare_members);
 }

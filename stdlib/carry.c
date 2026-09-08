@@ -189,7 +189,11 @@ static bool add_node(Carrier *c, NodeKind kind, size_t *index)
         if (grown == NULL) {
             return refuse(c, "out of memory");
         }
-        memcpy(grown, carried->nodes, carried->count * sizeof *grown);
+        // The first growth copies from nothing: memcpy declares its
+        // source non-null even for a length of zero.
+        if (carried->count > 0) {
+            memcpy(grown, carried->nodes, carried->count * sizeof *grown);
+        }
         lhat_free(carried->nodes);
         carried->nodes = grown;
         carried->capacity = wider;

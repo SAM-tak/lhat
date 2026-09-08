@@ -1377,8 +1377,13 @@ static void load_string_bytes(Compiler *c, uint8_t into, const char *text,
 // them.
 static void load_string(Compiler *c, uint8_t into, const LhatNode *node)
 {
-    load_string_bytes(c, into, c->lexer->strings + node->v.string.offset,
-                      node->v.string.length);
+    // A unit whose only string is the empty one leaves the lexer with no
+    // buffer at all, and offsetting a null pointer is undefined however
+    // plainly zero the offset is.
+    const char *bytes = c->lexer->strings != NULL
+                            ? c->lexer->strings + node->v.string.offset
+                            : "";
+    load_string_bytes(c, into, bytes, node->v.string.length);
 }
 
 // The key of a member access or an index. 01 の 10.1 makes digits after a '.'
