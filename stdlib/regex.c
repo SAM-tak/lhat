@@ -87,7 +87,11 @@ static void buffer_put(Buffer *b, const char *bytes, size_t count)
             b->failed = true;
             return;
         }
-        memcpy(grown, b->bytes, b->count);
+        // The first growth copies from nothing, and memcpy declares its
+        // source non-null even for a length of zero.
+        if (b->count > 0) {
+            memcpy(grown, b->bytes, b->count);
+        }
         lhat_free(b->bytes);
         b->bytes = grown;
         b->capacity = wider;

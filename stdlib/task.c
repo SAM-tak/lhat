@@ -869,10 +869,13 @@ static void task_await(LhatMachine *machine, void *context,
     }
     lhat_mutex_lock(&task->lock);
     while (!task->finished) {
-        lhat_condition_wait_for(&task->done, &task->lock, HOST_PAUSE_MS);
-        if (task->finished) {
-            break;
-        }
+        // D3: the boundary comes before the wait, which is how
+        // std.thread.join does it ("polling it first gives a debugger a
+        // cooperative boundary"). Waiting first offers nothing at all when
+        // the first notification ends the wait -- the task finishes, the
+        // loop breaks, and a debugger never saw a chance to stop. That is
+        // exactly what a macOS run showed: 51ms waited, no boundary given.
+        //
         // A DAP hook may wait. `task->lock` protects completion and must not
         // remain held while it does.
         lhat_mutex_unlock(&task->lock);
@@ -880,6 +883,10 @@ static void task_await(LhatMachine *machine, void *context,
             return;
         }
         lhat_mutex_lock(&task->lock);
+        if (task->finished) {
+            break;
+        }
+        lhat_condition_wait_for(&task->done, &task->lock, HOST_PAUSE_MS);
     }
     LhatRunStatus status = task->status;
     LhatCarried *result = task->result;
