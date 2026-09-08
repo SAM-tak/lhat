@@ -70,7 +70,11 @@ if(MSVC)
     add_compile_options(/W4 /utf-8)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic)
+    # -fno-trigraphs: ISO C11 still translates ??' to ^ before anything else
+    # reads the source, and -std=c11 (CMAKE_C_EXTENSIONS OFF) leaves that on.
+    # MSVC has had them off by default for years and C23 removed them; the
+    # only thing they do here is rewrite '??' in a message about '??'.
+    add_compile_options(-Wall -Wextra -Wpedantic -fno-trigraphs)
 endif()
 
 # ---- Sanitizers ------------------------------------------------------------

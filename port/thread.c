@@ -12,9 +12,14 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 // _SC_NPROCESSORS_ONLN is X/Open rather than base POSIX, so the feature test
-// above hides it on glibc unless this is asked for too.
+// above hides it on glibc unless this is asked for too. Apple's libc reads a
+// different name for the same request, and asking for _POSIX_C_SOURCE alone
+// there lowers __DARWIN_C_LEVEL far enough to hide it.
 #if !defined(_WIN32) && !defined(_DEFAULT_SOURCE)
 #define _DEFAULT_SOURCE 1
+#endif
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE 1
 #endif
 
 #include "thread.h"
