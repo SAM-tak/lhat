@@ -44,6 +44,20 @@ static char *normalise_path(const char *path)
     size_t written = 0;
     size_t depth = 0;
     size_t i = 0;
+
+    // A POSIX absolute path opens with the separator, and the empty segment
+    // in front of it is the one this loop must not drop -- without this,
+    // /home/x normalises to home/x and the unit never opens. A Windows
+    // absolute path opens with a drive letter instead, which is why this
+    // went unseen. `root` is then the floor '..' cannot step below, and the
+    // point after which a separator is already there.
+    size_t root = 0;
+    if (length > 0 && (path[0] == '/' || path[0] == '\\')) {
+        out[written++] = '/';
+        root = 1;
+        i = 1;
+    }
+
     while (i <= length) {
         size_t begin = i;
         while (i < length && path[i] != '/' && path[i] != '\\') {
@@ -56,11 +70,11 @@ static char *normalise_path(const char *path)
         } else if (segment == 2 && path[begin] == '.' && path[begin + 1] == '.' &&
                    depth > 0) {
             written = starts[--depth];
-            if (written > 0) {
+            if (written > root) {
                 written--;  // drop the separator that led into the segment
             }
         } else {
-            if (written > 0) {
+            if (written > root) {
                 out[written++] = '/';
             }
             starts[depth++] = written;

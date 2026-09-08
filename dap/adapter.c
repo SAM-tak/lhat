@@ -33,6 +33,7 @@
 #define path_equal(a, b) (_stricmp((a), (b)) == 0)
 #else
 #include <limits.h>
+#include <unistd.h>  // getcwd, for the textual normalisation below
 #define path_equal(a, b) (strcmp((a), (b)) == 0)
 #endif
 
@@ -318,6 +319,64 @@ static char *resolve_links(const char *path)
 }
 #endif
 
+#ifndef _WIN32
+// What _fullpath settles for the Windows branch: an absolute path with '.'
+// and '..' taken out, decided by reading the spelling. realpath does that
+// and follows links besides, but answers only for a path that is on this
+// disk -- and 09 の 5.2 asks for two spellings of one file to compare equal
+// whether or not either is. This is what stands in when realpath declines.
+static char *absolute_textual(const char *path)
+{
+    char cwd[PATH_MAX];
+    char joined[PATH_MAX * 2];
+    if (path[0] == '/') {
+        if (snprintf(joined, sizeof joined, "%s", path) >= (int)sizeof joined) {
+            return strdup(path);
+        }
+    } else if (getcwd(cwd, sizeof cwd) == NULL ||
+               snprintf(joined, sizeof joined, "%s/%s", cwd, path) >=
+                   (int)sizeof joined) {
+        return strdup(path);
+    }
+
+    // The answer is never longer than what it reads, so it is written back
+    // over the same buffer, one segment behind the cursor reading them.
+    char *w = joined + 1;  // past the root, which every answer here keeps
+    const char *r = joined + 1;
+    while (*r != '\0') {
+        const char *begin = r;
+        while (*r != '\0' && *r != '/') {
+            r++;
+        }
+        size_t segment = (size_t)(r - begin);
+        if (segment == 0 || (segment == 1 && begin[0] == '.')) {
+            // An empty segment or a '.' is no step.
+        } else if (segment == 2 && begin[0] == '.' && begin[1] == '.') {
+            while (w > joined + 1 && w[-1] != '/') {
+                w--;
+            }
+            if (w > joined + 1) {
+                w--;  // and the separator that led into it
+            }
+        } else {
+            if (w[-1] != '/') {
+                *w++ = '/';
+            }
+            memmove(w, begin, segment);
+            w += segment;
+        }
+        if (*r == '/') {
+            r++;
+        }
+    }
+    if (w > joined + 1 && w[-1] == '/') {
+        w--;  // no trailing separator, so that a directory reads as a name
+    }
+    *w = '\0';
+    return strdup(joined);
+}
+#endif
+
 char *dap_normalize_path(const char *path)
 {
     if (path == NULL) {
@@ -339,7 +398,10 @@ char *dap_normalize_path(const char *path)
     if (realpath(path, resolved) != NULL) {
         return strdup(resolved);
     }
-    return strdup(path);
+    // No such path on this disk -- which a debugger meets whenever the
+    // program it is following was compiled somewhere else. What the spelling
+    // settles is still settled.
+    return absolute_textual(path);
 #endif
 }
 
