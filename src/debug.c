@@ -182,11 +182,11 @@ bool lhat_machine_debug_pause_point(LhatMachine *machine)
         return true;
     }
     size_t frames_before = m->frame_count;
-    m->hook_live = NULL;
+    machine_set_hook_live(m, NULL);
     m->hook(machine, m->hook_context, LHAT_DEBUG_HOST_PAUSE_POINT, &where);
     // Match line and fault delivery: a hook may have removed or replaced
     // itself while it ran.
-    m->hook_live = m->hook;
+    machine_set_hook_live(m, m->hook);
     // A panic is deliberately left for vm_host_faulted to consume when this
     // host returns. A failed nested call leaves frames behind by the same
     // convention, and cannot safely be continued either.
@@ -217,7 +217,7 @@ void lhat_machine_set_debug_hook(LhatMachine *machine, LhatDebugHook hook,
                                  void *context)
 {
     machine->hook = hook;
-    machine->hook_live = hook;
+    machine_set_hook_live(machine, hook);
     machine->hook_context = context;
     // No frame has been looked at yet, so the next instruction counts as
     // one just entered and sounds whatever line it is on.
@@ -466,12 +466,12 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
                 // 2.4's silence, by hand: the evaluation's own lines are not
                 // the hook's to hear -- and the hook is usually what called.
                 LhatDebugHook live = machine->hook_live;
-                machine->hook_live = NULL;
+                machine_set_hook_live(machine, NULL);
                 LhatRunResult ran = lhat_machine_run_seeded(
                     machine,
                     (const LhatClosure *)lhat_as_object(script), seeds,
                     seeded);
-                machine->hook_live = live;
+                machine_set_hook_live(machine, live);
                 if (ran.status != LHAT_RUN_OK) {
                     say(error, error_capacity,
                         lhat_run_status_message(ran.status), ran.line);

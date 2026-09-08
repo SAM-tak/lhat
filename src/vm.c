@@ -330,9 +330,10 @@ static bool hook_line(Machine *m, Frame *frame, size_t at,
     LhatFrameInfo where;
     lhat_machine_fault_frame((LhatMachine *)m, 0, &where);
     size_t frames_before = m->frame_count;
-    m->hook_live = NULL;  // a call the hook makes is not itself hooked
+    // a call the hook makes is not itself hooked
+    machine_set_hook_live(m, NULL);
     m->hook((LhatMachine *)m, m->hook_context, LHAT_DEBUG_LINE, &where);
-    m->hook_live = m->hook;  // which the hook may have cleared
+    machine_set_hook_live(m, m->hook);  // which the hook may have cleared
     return vm_host_faulted(m, frames_before, status, value);
 }
 #endif  // LHAT_WITH_DEBUGGER
@@ -394,6 +395,94 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
         }                                                                   \
     } while (0)
 
+// 03 の 5.2改: how the loop gets from one instruction to the next. GCC and
+// Clang can take the address of a label, which lets every instruction end
+// with its own jump to the next one. The branch predictor then keeps a
+// history per opcode instead of one shared by every instruction in the
+// program, which is the whole of what this buys. MSVC has no such extension
+// and reads the same body as a switch -- one indirect jump for all of them.
+//
+// clang-cl defines __clang__ but not __GNUC__: it is the MSVC-compatible
+// driver over the same Clang, and it takes label addresses like any other.
+// Asking only for __GNUC__ (as Lua's LUA_USE_JUMPTABLE does) would drop it
+// onto the switch for no reason.
+// Definable from the build to force either form, which is what measuring
+// one against the other needs. Lua leaves LUA_USE_JUMPTABLE open the same way.
+#if !defined(LHAT_VM_CGOTO)
+#if defined(__GNUC__) || defined(__clang__)
+#define LHAT_VM_CGOTO 1
+#else
+#define LHAT_VM_CGOTO 0
+#endif
+#endif
+
+#if LHAT_VM_CGOTO
+// __extension__ so that -Wpedantic (which this build turns on) does not
+// object to the address of a label, which ISO C has no word for.
+#define VM_LABEL(op) [op] = __extension__ &&L_##op
+#define VM_CASE(op) L_##op:
+// Where a byte that names no instruction goes. lhat_op is one byte and there
+// are 79 instructions, so a table lookup has to be told about the other 177
+// -- the switch was, by missing every case.
+#define VM_CASE_UNKNOWN() L_vm_unknown:
+#define VM_DISPATCH()                                                       \
+    do {                                                                    \
+        if (op >= LHAT_BC_COUNT) {                                          \
+            goto L_vm_unknown;                                              \
+        }                                                                   \
+        goto *dispatch[op];                                                 \
+    } while (0)
+#else
+#define VM_CASE(op) case op:
+#define VM_CASE_UNKNOWN() default:
+#endif
+
+// What must be looked at before an instruction can run: a coroutine the
+// collector held back (02 の 10.7), the debugger's line hook, and the drain
+// that ends a run. Rare, all of them, so they are asked as one test and
+// answered by going back to the top of the loop, which is where they are
+// written out.
+//
+// `traps` is the machine's own word for the first two (machine.h); `ending`
+// is this loop's. Two loads would be two too many here -- computed goto pays
+// this at every instruction, not once at the top of a loop. The paranoid
+// build polls the collector here as well, which is the one case that costs
+// a second test.
+#ifdef LHAT_GC_PARANOID
+#define VM_SLOW_GC() (m->objects.count >= m->threshold)
+#else
+#define VM_SLOW_GC() false
+#endif
+#define VM_SLOW_PATH() (VM_SLOW_GC() || m->traps || ending)
+
+// Ends an instruction. Under the switch this is the loop's own `continue`
+// -- a switch does not capture one, so it means the loop either way, and a
+// `break` would have meant the same thing. Under computed goto it is the
+// fetch and the jump, written out here so that every instruction carries
+// its own copy of the indirect branch.
+#if LHAT_VM_CGOTO
+#define VM_NEXT()                                                           \
+    do {                                                                    \
+        if (pc >= chunk->count) {                                           \
+            goto vm_done;                                                   \
+        }                                                                   \
+        if (VM_SLOW_PATH()) {                                               \
+            goto vm_top;                                                    \
+        }                                                                   \
+        instruction = chunk->code[pc];                                      \
+        at = pc++;                                                          \
+        a = lhat_a(instruction);                                            \
+        b = lhat_b(instruction);                                            \
+        cc = lhat_c(instruction);                                           \
+        op = lhat_op(instruction);                                          \
+        derive_from = LHAT_FRAME_NO_DERIVE;                                 \
+        k_right = false;                                                    \
+        VM_DISPATCH();                                                      \
+    } while (0)
+#else
+#define VM_NEXT() continue
+#endif
+
 static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                      bool draining)
 {
@@ -411,11 +500,126 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
     bool ending = false;
     size_t at = 0;
 
+    // 5.2改: the instruction being run, and what it decodes to. Out here
+    // rather than in the loop because a computed goto lands on a label
+    // inside it -- a jump may not cross a declaration that initialises.
+    LhatInstruction instruction = 0;
+    uint8_t a = 0;
+    uint8_t b = 0;
+    uint8_t cc = 0;
+    LhatOpcode op = LHAT_BC_LOADK;
+    // 02 の 11.9: the comparison that sent control to call_operator, when one
+    // did. `op` becomes SPACESHIP there -- that is the member to look for --
+    // and this is what the answer gets read against zero with.
+    LhatOpcode derive_from = LHAT_FRAME_NO_DERIVE;
+    // Whether call_operator's right operand is K[cc] rather than R(cc)
+    // -- set only by the ADDK family's fallback below.
+    bool k_right = false;
+    // 03 の 5.1改: what GETINDEX and GETMEMBER share. Declared out here
+    // because the second jumps into the first's body having settled them
+    // -- the key it asks by, and the cache to fill on the way out (NULL
+    // for a GETINDEX, which remembers nothing).
+    //
+    // Left unwritten on purpose: both cases set both before jumping in,
+    // and every other instruction would pay for the stores.
+    LhatValue member_key;
+    LhatMemberCache *filling;
+
+#if LHAT_VM_CGOTO
+    // One entry per opcode, written by designated initialiser so that the
+    // table cannot drift out of the enum's order. An instruction added
+    // without a label here is a compile error, not a jump into nothing.
+    static const void *const dispatch[LHAT_BC_COUNT] = {
+        VM_LABEL(LHAT_BC_LOADK),
+        VM_LABEL(LHAT_BC_LOADNIL),
+        VM_LABEL(LHAT_BC_LOADBOOL),
+        VM_LABEL(LHAT_BC_MOVE),
+        VM_LABEL(LHAT_BC_ADD),
+        VM_LABEL(LHAT_BC_SUB),
+        VM_LABEL(LHAT_BC_MUL),
+        VM_LABEL(LHAT_BC_DIV),
+        VM_LABEL(LHAT_BC_IDIV),
+        VM_LABEL(LHAT_BC_MOD),
+        VM_LABEL(LHAT_BC_POW),
+        VM_LABEL(LHAT_BC_ADDK),
+        VM_LABEL(LHAT_BC_SUBK),
+        VM_LABEL(LHAT_BC_MULK),
+        VM_LABEL(LHAT_BC_DIVK),
+        VM_LABEL(LHAT_BC_CONCAT),
+        VM_LABEL(LHAT_BC_NEG),
+        VM_LABEL(LHAT_BC_NOT),
+        VM_LABEL(LHAT_BC_TYPEOF),
+        VM_LABEL(LHAT_BC_EQ),
+        VM_LABEL(LHAT_BC_SAME),
+        VM_LABEL(LHAT_BC_NE),
+        VM_LABEL(LHAT_BC_LT),
+        VM_LABEL(LHAT_BC_LE),
+        VM_LABEL(LHAT_BC_GT),
+        VM_LABEL(LHAT_BC_GE),
+        VM_LABEL(LHAT_BC_SPACESHIP),
+        VM_LABEL(LHAT_BC_JUMP),
+        VM_LABEL(LHAT_BC_JUMP_FALSE),
+        VM_LABEL(LHAT_BC_CLOSURE),
+        VM_LABEL(LHAT_BC_CALL),
+        VM_LABEL(LHAT_BC_PICKARM),
+        VM_LABEL(LHAT_BC_GETUPVAL),
+        VM_LABEL(LHAT_BC_SETUPVAL),
+        VM_LABEL(LHAT_BC_CLOSE),
+        VM_LABEL(LHAT_BC_CLOSEONE),
+        VM_LABEL(LHAT_BC_THIS),
+        VM_LABEL(LHAT_BC_ENV),
+        VM_LABEL(LHAT_BC_UNIT),
+        VM_LABEL(LHAT_BC_NEWTABLE),
+        VM_LABEL(LHAT_BC_RESERVE),
+        VM_LABEL(LHAT_BC_GETINDEX),
+        VM_LABEL(LHAT_BC_GETMEMBER),
+        VM_LABEL(LHAT_BC_SETINDEX),
+        VM_LABEL(LHAT_BC_CHECKRUN),
+        VM_LABEL(LHAT_BC_PACK),
+        VM_LABEL(LHAT_BC_MAKERUN),
+        VM_LABEL(LHAT_BC_ADDOVERLOAD),
+        VM_LABEL(LHAT_BC_OVERRIDEINDEX),
+        VM_LABEL(LHAT_BC_OVERRIDEARM),
+        VM_LABEL(LHAT_BC_NEWERROR),
+        VM_LABEL(LHAT_BC_ISERROR),
+        VM_LABEL(LHAT_BC_FITS),
+        VM_LABEL(LHAT_BC_ISNIL),
+        VM_LABEL(LHAT_BC_NEWINSTANCE),
+        VM_LABEL(LHAT_BC_SETPROTO),
+        VM_LABEL(LHAT_BC_SETDELEGATE),
+        VM_LABEL(LHAT_BC_BOX),
+        VM_LABEL(LHAT_BC_CALLMETHOD),
+        VM_LABEL(LHAT_BC_TAILCALL),
+        VM_LABEL(LHAT_BC_TAILCALLMETHOD),
+        VM_LABEL(LHAT_BC_PUSHCLEANUP),
+        VM_LABEL(LHAT_BC_POPCLEANUP),
+        VM_LABEL(LHAT_BC_ENDCLEANUP),
+        VM_LABEL(LHAT_BC_YIELD),
+        VM_LABEL(LHAT_BC_RESUME),
+        VM_LABEL(LHAT_BC_ISDONE),
+        VM_LABEL(LHAT_BC_RETURN),
+        VM_LABEL(LHAT_BC_RETURN_NIL),
+        VM_LABEL(LHAT_BC_PANIC),
+        VM_LABEL(LHAT_BC_SEAL),
+        VM_LABEL(LHAT_BC_ASCAST),
+        VM_LABEL(LHAT_BC_CALLMEMBER),
+        VM_LABEL(LHAT_BC_NEWENUM),
+        VM_LABEL(LHAT_BC_NEWENUMERATOR),
+        VM_LABEL(LHAT_BC_FORPREP),
+        VM_LABEL(LHAT_BC_FORLOOP),
+        VM_LABEL(LHAT_BC_FORPREPD),
+        VM_LABEL(LHAT_BC_FORLOOPD),
+    };
+#endif
+
     if (draining) {
         goto drain;
     }
 
     while (pc < chunk->count) {
+#if LHAT_VM_CGOTO
+    vm_top:
+#endif
         // Between instructions, where every live value is in a register, a
         // frame or the open list. Inside one there is a half-built object the
         // roots do not name yet -- which is also why a write made in the same
@@ -478,7 +682,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             goto drain;
         }
 
-        LhatInstruction instruction = chunk->code[pc];
+        instruction = chunk->code[pc];
         at = pc++;
 
         // 09 の 2 章: the debugger's line hook, at the same boundary as the
@@ -496,54 +700,44 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         }
 #endif
 
-        uint8_t a = lhat_a(instruction);
-        uint8_t b = lhat_b(instruction);
-        uint8_t cc = lhat_c(instruction);
-        LhatOpcode op = lhat_op(instruction);
-        // 02 の 11.9: the comparison that sent control to call_operator,
-        // when one did. `op` becomes SPACESHIP there -- that is the member to
-        // look for -- and this is what the answer gets read against zero with.
-        LhatOpcode derive_from = LHAT_FRAME_NO_DERIVE;
-        // Whether call_operator's right operand is K[cc] rather than R(cc)
-        // -- set only by the ADDK family's fallback below.
-        bool k_right = false;
-        // 03 の 5.1改: what GETINDEX and GETMEMBER share. Declared out here
-        // because the second jumps into the first's body having settled them
-        // -- the key it asks by, and the cache to fill on the way out (NULL
-        // for a GETINDEX, which remembers nothing).
-        //
-        // Left unwritten on purpose: both cases set both before jumping in,
-        // and every other instruction would pay for the stores.
-        LhatValue member_key;
-        LhatMemberCache *filling;
+        a = lhat_a(instruction);
+        b = lhat_b(instruction);
+        cc = lhat_c(instruction);
+        op = lhat_op(instruction);
+        derive_from = LHAT_FRAME_NO_DERIVE;
+        k_right = false;
 
+#if LHAT_VM_CGOTO
+        VM_DISPATCH();
+#else
         switch (op) {
-            case LHAT_BC_LOADK:
+#endif
+            VM_CASE(LHAT_BC_LOADK)
                 SET_R(a, chunk->constants[lhat_bx(instruction)]);
-                break;
-            case LHAT_BC_LOADNIL:
+                VM_NEXT();
+            VM_CASE(LHAT_BC_LOADNIL)
                 SET_R(a, lhat_nil());
-                break;
-            case LHAT_BC_LOADBOOL:
+                VM_NEXT();
+            VM_CASE(LHAT_BC_LOADBOOL)
                 SET_R(a, lhat_bool(b != 0));
-                break;
-            case LHAT_BC_MOVE:
+                VM_NEXT();
+            VM_CASE(LHAT_BC_MOVE)
                 SET_R(a, R(b));
-                break;
+                VM_NEXT();
 
-            case LHAT_BC_ADD:
-            case LHAT_BC_SUB:
-            case LHAT_BC_MUL:
-            case LHAT_BC_DIV:
-            case LHAT_BC_IDIV:
-            case LHAT_BC_MOD:
-            case LHAT_BC_POW: {
+            VM_CASE(LHAT_BC_ADD)
+            VM_CASE(LHAT_BC_SUB)
+            VM_CASE(LHAT_BC_MUL)
+            VM_CASE(LHAT_BC_DIV)
+            VM_CASE(LHAT_BC_IDIV)
+            VM_CASE(LHAT_BC_MOD)
+            VM_CASE(LHAT_BC_POW) {
                 LhatValue out;
                 LhatRunStatus status = LHAT_RUN_OK;
                 if (arithmetic(op, R(b), R(cc), &out,
                                &status)) {
                     SET_R(a, out);
-                    break;
+                    VM_NEXT();
                 }
                 // 02 の 11.3: numbers answer built in; anything else answers
                 // with the member 11.8 names, or not at all.
@@ -565,17 +759,17 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // The same four with the right operand a constant. A constant is
             // a number by construction (compile.c emits these for numeric
             // literals alone), so only the left can carry an operator.
-            case LHAT_BC_ADDK:
-            case LHAT_BC_SUBK:
-            case LHAT_BC_MULK:
-            case LHAT_BC_DIVK: {
+            VM_CASE(LHAT_BC_ADDK)
+            VM_CASE(LHAT_BC_SUBK)
+            VM_CASE(LHAT_BC_MULK)
+            VM_CASE(LHAT_BC_DIVK) {
                 LhatValue out;
                 LhatRunStatus status = LHAT_RUN_OK;
                 op = (LhatOpcode)(op - LHAT_BC_ADDK + LHAT_BC_ADD);
                 if (arithmetic(op, R(b), chunk->constants[cc], &out,
                                &status)) {
                     SET_R(a, out);
-                    break;
+                    VM_NEXT();
                 }
                 if (status != LHAT_RUN_TYPE_ERROR ||
                     (vm_table_of(R(b)) == NULL && !lhat_is_hostvalue(R(b)))) {
@@ -585,7 +779,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 goto call_operator;
             }
 
-            case LHAT_BC_NEG: {
+            VM_CASE(LHAT_BC_NEG) {
                 // 02 の 11.8改: number^ carries its own negation and pays
                 // nothing for the search, the same posture the binary
                 // instructions take. Anything else asks for the member.
@@ -601,26 +795,26 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                            &negated)
                         ? lhat_integer(negated)
                         : lhat_real(-lhat_number_as_real(R(b))));
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_NOT: {
+            VM_CASE(LHAT_BC_NOT) {
                 // 02 の 5.4's condition rule: only a bool is a truth value,
                 // so this refuses anything else rather than inventing one.
                 if (!lhat_is_bool(R(b))) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 SET_R(a, lhat_bool(!lhat_as_bool(R(b))));
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_TYPEOF: {
+            VM_CASE(LHAT_BC_TYPEOF) {
                 LhatRuntimeType *type = vm_tag_type(&m->objects, R(b));
                 if (type == NULL) {
                     return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
                 SET_R(a, lhat_object((LhatObject *)type));
-                break;
+                VM_NEXT();
             }
 
             // 11.9 with 11.9改: a type saying what equals what is asked
@@ -629,8 +823,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // falls back on what the value was already the same as -- 14.2's
             // identity for a table, 05 の 8.9's bytes for a host value. That
             // is what leaves every other value exactly as it was.
-            case LHAT_BC_EQ:
-            case LHAT_BC_NE:
+            VM_CASE(LHAT_BC_EQ)
+            VM_CASE(LHAT_BC_NE)
                 if (vm_table_of(R(b)) != NULL || vm_table_of(R(cc)) != NULL ||
                     lhat_is_hostvalue(R(b)) || lhat_is_hostvalue(R(cc))) {
                     derive_from = op;
@@ -661,24 +855,24 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         }
                     }
                 }
-                break;
-            case LHAT_BC_SAME:
+                VM_NEXT();
+            VM_CASE(LHAT_BC_SAME)
                 // 05 の 8.9: a value type has no identity apart from its
                 // bytes, so "the same" is the equality above.
                 if (lhat_is_hostvalue(R(b)) || lhat_is_hostvalue(R(cc))) {
                     SET_R(a, lhat_bool(lhat_is_hostvalue(R(b)) &&
                                        vm_hostvalue_equal(m->slots, rbase + b,
                                                        rbase + cc)));
-                    break;
+                    VM_NEXT();
                 }
                 SET_R(a, lhat_bool(
                     lhat_value_same(R(b), R(cc))));
-                break;
+                VM_NEXT();
 
-            case LHAT_BC_LT:
-            case LHAT_BC_LE:
-            case LHAT_BC_GT:
-            case LHAT_BC_GE: {
+            VM_CASE(LHAT_BC_LT)
+            VM_CASE(LHAT_BC_LE)
+            VM_CASE(LHAT_BC_GT)
+            VM_CASE(LHAT_BC_GE) {
                 bool out = false;
                 LhatRunStatus status = LHAT_RUN_OK;
                 if (ordering(op, R(b), R(cc), &out, &status)) {
@@ -699,7 +893,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             }
                         }
                     }
-                    break;
+                    VM_NEXT();
                 }
                 // 11.9: numbers order themselves; anything else says
                 // how it orders with a '<=>', and this reads the answer.
@@ -710,13 +904,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
 
             // 11.9: written out. number^ and string^ each order their
             // own; anything else answers with the member 11.8 names.
-            case LHAT_BC_SPACESHIP: {
+            VM_CASE(LHAT_BC_SPACESHIP) {
                 int outcome = 0;
                 if (!vm_three_way(R(b), R(cc), &outcome)) {
                     goto call_operator;
                 }
                 SET_R(a, lhat_integer(outcome));
-                break;
+                VM_NEXT();
             }
 
             // 02 の 15.15: a jump back is where every loop turns, and a
@@ -724,16 +918,16 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // long as the body and recursion runs out of frames. So this is
             // the one place a slice has to be counted, and an instruction
             // between two of them costs nothing.
-            case LHAT_BC_JUMP: {
+            VM_CASE(LHAT_BC_JUMP) {
                 int32_t offset = lhat_jump_offset(instruction);
                 pc = (size_t)((int64_t)pc + offset);
                 if (offset < 0) {
                     LHAT_TURN_BACK();
                 }
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_JUMP_FALSE: {
+            VM_CASE(LHAT_BC_JUMP_FALSE) {
                 if (!lhat_is_bool(R(a))) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
@@ -744,10 +938,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         LHAT_TURN_BACK();
                     }
                 }
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_CLOSURE: {
+            VM_CASE(LHAT_BC_CLOSURE) {
                 LHAT_GC_POLL();  // this case allocates
                 const LhatProto *nested =
                     frame->closure->proto->protos[lhat_bx(instruction)];
@@ -801,7 +995,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                 }
                 SET_R(a, lhat_object((LhatObject *)closure));
-                break;
+                VM_NEXT();
             }
 
             // 03 の 5.11c: strict already found the one arm that fits (14.12
@@ -809,7 +1003,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // asking every candidate again. Nothing else is touched: a value
             // that is not a group reached here some way the checker did not
             // read, and the ordinary call is still right for it.
-            case LHAT_BC_PICKARM: {
+            VM_CASE(LHAT_BC_PICKARM) {
                 if (lhat_is_object_kind(R(a), LHAT_OBJECT_OVERLOAD)) {
                     const LhatOverload *group =
                         (const LhatOverload *)lhat_as_object(R(a));
@@ -818,14 +1012,14 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         SET_R(a, group->candidates[which]);
                     }
                 }
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_GETUPVAL:
+            VM_CASE(LHAT_BC_GETUPVAL)
                 SET_R(a, lhat_ref_get(frame->closure->upvalues[b]->location));
-                break;
+                VM_NEXT();
 
-            case LHAT_BC_SETUPVAL: {
+            VM_CASE(LHAT_BC_SETUPVAL) {
                 // 5.12: an open upvalue's place is a stack slot and the
                 // stack is a root, so only a closed one gains anything the
                 // collector has not seen. The barrier asks which it is by
@@ -833,13 +1027,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 LhatUpvalue *upvalue = frame->closure->upvalues[b];
                 lhat_ref_set(upvalue->location, R(a));
                 lhat_gc_barrier(m, (LhatObject *)upvalue, R(a));
-                break;
+                VM_NEXT();
             }
 
             // 02 の 11.2: '..' is concatenation in general, and strings are
             // the case that is settled. 11.3 leaves the rest to the
             // operator's own definition, which needs op^.
-            case LHAT_BC_CONCAT: {
+            VM_CASE(LHAT_BC_CONCAT) {
                 LHAT_GC_POLL();  // this case allocates
                 if (lhat_is_object_kind(R(b), LHAT_OBJECT_STRING) &&
                     lhat_is_object_kind(R(cc), LHAT_OBJECT_STRING)) {
@@ -853,7 +1047,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
                     SET_R(a, lhat_object((LhatObject *)joined));
-                    break;
+                    VM_NEXT();
                 }
 
                 // 02 の 11.2改: two plain tables concatenate, built in the
@@ -873,7 +1067,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                       lhat_nil(), at);
                     }
                     SET_R(a, lhat_object((LhatObject *)joined));
-                    break;
+                    VM_NEXT();
                 }
 
                 // 02 の 11.3: a string answers above, built in. Anything else
@@ -885,30 +1079,30 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 goto call_operator;
             }
 
-            case LHAT_BC_CLOSE:
+            VM_CASE(LHAT_BC_CLOSE)
                 vm_close_upvalues(m, rbase + a);
-                break;
+                VM_NEXT();
 
-            case LHAT_BC_CLOSEONE:
+            VM_CASE(LHAT_BC_CLOSEONE)
                 vm_close_one_upvalue(m, rbase + a);
-                break;
+                VM_NEXT();
 
             // 02 の 15.10: the frame already holds it, so naming it costs a
             // move rather than a vm_capture.
-            case LHAT_BC_THIS:
+            VM_CASE(LHAT_BC_THIS)
                 SET_R(a,
                     lhat_object((LhatObject *)(void *)frame->closure));
-                break;
+                VM_NEXT();
 
             // 05 の 8.6: one table per machine, so naming it is a move too.
-            case LHAT_BC_ENV:
+            VM_CASE(LHAT_BC_ENV)
                 SET_R(a, lhat_object((LhatObject *)m->environment));
-                break;
+                VM_NEXT();
 
             // 05 の 5.3: a unit is a body like any other, so requiring it is
             // making a closure of it and calling that. What makes it load
             // once is the guard the unit itself begins with, not this.
-            case LHAT_BC_UNIT: {
+            VM_CASE(LHAT_BC_UNIT) {
                 LHAT_GC_POLL();  // this case allocates
                 // The number indexes the table of the unit this body was
                 // written in (LhatUnitTable), not anything of the machine's
@@ -928,10 +1122,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 closure->upvalues = NULL;
                 closure->upvalue_count = 0;
                 SET_R(a, lhat_object((LhatObject *)closure));
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_NEWTABLE: {
+            VM_CASE(LHAT_BC_NEWTABLE) {
                 LHAT_GC_POLL();  // this case allocates
                 LhatTable *table = lhat_table_new(&m->objects);
                 if (table == NULL) {
@@ -939,7 +1133,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 }
                 table->is_definition = b != 0;  // 14.9
                 SET_R(a, lhat_object((LhatObject *)table));
-                break;
+                VM_NEXT();
             }
 
             // 05 の 8.6: what require^ answers is the machine's record
@@ -947,13 +1141,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // requiring unit cannot add to it or write over it -- not even by
             // passing it to a p^ whose parameter is written t^{ … }, which is
             // the one path check.c cannot name.
-            case LHAT_BC_SEAL: {
+            VM_CASE(LHAT_BC_SEAL) {
                 LhatTable *table = vm_table_of(R(a));
                 if (table == NULL) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 table->sealed = true;
-                break;
+                VM_NEXT();
             }
 
             // 04 の 11.3: a key that is not there answers nil^, so the only
@@ -970,7 +1164,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // and fills it on the way out. That way there is one place that
             // decides what a member read means, and this is only about how
             // long it takes (4.2).
-            case LHAT_BC_GETMEMBER: {
+            VM_CASE(LHAT_BC_GETMEMBER) {
                 LhatMemberCache *cache = &chunk->member_caches[cc];
                 const LhatTable *start = vm_readable_table(R(b));
                 if (cache->answered != NULL && start != NULL &&
@@ -991,7 +1185,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     cached_here(cache->answered, cache->index,
                                 chunk->constants[cache->key])) {
                     SET_R(a, cache->answered->entries[cache->index].value);
-                    break;
+                    VM_NEXT();
                 }
                 member_key = chunk->constants[cache->key];
                 filling = cache;
@@ -1002,7 +1196,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // the member and walks straight into the paired call
             // instruction; a miss is GETMEMBER to the letter, and the pair
             // runs as itself on the next turn.
-            case LHAT_BC_CALLMEMBER: {
+            VM_CASE(LHAT_BC_CALLMEMBER) {
                 LhatMemberCache *cache = &chunk->member_caches[cc];
                 const LhatTable *start = vm_readable_table(R(b));
                 if (cache->answered != NULL && start != NULL &&
@@ -1028,7 +1222,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 goto member_body;
             }
 
-            case LHAT_BC_GETINDEX:
+            VM_CASE(LHAT_BC_GETINDEX)
                 LHAT_GC_POLL();  // string cuts, written-down members
                 member_key = R(cc);
                 filling = NULL;
@@ -1040,7 +1234,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (status != LHAT_RUN_OK) {
                     return vm_finish(m, chunk, status, lhat_nil(), at);
                 }
-                break;
+                VM_NEXT();
             }
 
             // 02 の 13.10: the position a destructuring bind just read.
@@ -1053,7 +1247,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // 02 の 13.8改: what stands between an error (or a plain value)
             // arriving where a run was expected and the slots after it being
             // read as positions that were never written.
-            case LHAT_BC_CHECKRUN: {
+            VM_CASE(LHAT_BC_CHECKRUN) {
                 LhatValue head = R(a);
                 // 13.8改: the short side of a widened fold arrives narrow --
                 // one value, or a run of fewer positions -- and the missing
@@ -1079,11 +1273,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         SET_R(a + i, lhat_nil());
                     }
                     SET_R(a, lhat_run_head((size_t)b));
-                    break;
+                    VM_NEXT();
                 }
                 size_t width = lhat_run_width(head);
                 if (width == (size_t)b) {
-                    break;
+                    VM_NEXT();
                 }
                 if (width > (size_t)b ||
                     rbase + a + (size_t)b >= m->slot_capacity) {
@@ -1094,26 +1288,26 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     SET_R(a + i, lhat_nil());
                 }
                 SET_R(a, lhat_run_head((size_t)b));
-                break;
+                VM_NEXT();
             }
 
             // 02 の 13.8改: a tuple written as a value. The positions are in
             // the slots above already -- the head goes down over them, and
             // from here the run is the one every other path produces.
-            case LHAT_BC_MAKERUN: {
+            VM_CASE(LHAT_BC_MAKERUN) {
                 if (b < 2 || (size_t)b > LHAT_MAX_TUPLE ||
                     rbase + a + (size_t)b >= m->slot_capacity) {
                     return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
                                   at);
                 }
                 SET_R(a, lhat_run_head((size_t)b));
-                break;
+                VM_NEXT();
             }
 
             // 02 の 13.8改: pack^ -- the one bridge from a tuple to a table.
             // 14.10 numbers positions from 1, which is what a destructuring
             // and 't[1]' both read.
-            case LHAT_BC_PACK: {
+            VM_CASE(LHAT_BC_PACK) {
                 LHAT_GC_POLL();  // this case allocates
                 if (!lhat_is_run(R(a)) || lhat_run_width(R(a)) != (size_t)b) {
                     return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
@@ -1135,11 +1329,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                 }
                 SET_R(a, lhat_object((LhatObject *)packed));
-                break;
+                VM_NEXT();
             }
 
             // 02 の 14.15: the declaration's seat -- the key, no value.
-            case LHAT_BC_RESERVE: {
+            VM_CASE(LHAT_BC_RESERVE) {
                 LhatTable *table = vm_table_of(R(a));
                 if (table == NULL) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(),
@@ -1150,10 +1344,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                   lhat_nil(), at);
                 }
                 lhat_gc_barrier_back(m, (LhatObject *)table, R(b));
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_SETINDEX: {
+            VM_CASE(LHAT_BC_SETINDEX) {
             set_index:;
                 // 05 の 8.9: 'v.x := n' writes the field's bytes in place --
                 // the owner register IS the value, so the write lands in the
@@ -1168,7 +1362,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR,
                                       lhat_nil(), at);
                     }
-                    break;
+                    VM_NEXT();
                 }
                 LhatTable *table = vm_table_of(R(a));
                 if (table == NULL) {
@@ -1191,13 +1385,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (refused) {
                     return vm_finish(m, chunk, LHAT_RUN_BAD_KEY, lhat_nil(), at);
                 }
-                break;
+                VM_NEXT();
             }
 
             // 14.12: the name keeps what it had and gains another way to be
             // called. What was there may already be a group, or the first of
             // two, or nothing when the base did not define it.
-            case LHAT_BC_ADDOVERLOAD: {
+            VM_CASE(LHAT_BC_ADDOVERLOAD) {
                 LhatTable *table = vm_table_of(R(a));
                 if (table == NULL) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
@@ -1227,13 +1421,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // an earlier step. A group gains arms one at a time, so the
                 // forward barrier is the cheaper of the two.
                 lhat_gc_barrier(m, (LhatObject *)group, R(cc));
-                break;
+                VM_NEXT();
             }
 
             // 14.12: an override^ replaces the one arm it overlaps, and the
             // arms an overload^ put there are otherwise untouched. A plain
             // write would take the whole group with them.
-            case LHAT_BC_OVERRIDEINDEX: {
+            VM_CASE(LHAT_BC_OVERRIDEINDEX) {
                 LhatTable *table = vm_table_of(R(a));
                 if (table == NULL) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
@@ -1254,7 +1448,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                       at);
                     }
-                    break;
+                    VM_NEXT();
                 }
                 goto set_index;
             }
@@ -1264,7 +1458,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // the checker's type says the name carries -- which is what makes
             // an arm index mean the same thing on both sides. super^ is
             // unaffected: it was bound from the old group before this ran.
-            case LHAT_BC_OVERRIDEARM: {
+            VM_CASE(LHAT_BC_OVERRIDEARM) {
                 LhatTable *table = vm_table_of(R(a));
                 if (table == NULL) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
@@ -1292,7 +1486,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                       at);
                     }
-                    break;
+                    VM_NEXT();
                 }
                 // Nothing overloaded under the name, so this is a plain write.
                 // set_index cannot be jumped to for it: that reads the value
@@ -1307,10 +1501,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (refused) {
                     return vm_finish(m, chunk, LHAT_RUN_BAD_KEY, lhat_nil(), at);
                 }
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_NEWERROR: {
+            VM_CASE(LHAT_BC_NEWERROR) {
                 if (!lhat_is_object_kind(R(b), LHAT_OBJECT_ERROR_KIND)) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
@@ -1321,16 +1515,16 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
                 SET_R(a, lhat_object((LhatObject *)error));
-                break;
+                VM_NEXT();
             }
 
             // 04 の 2.6: an error satisfies no type but an error's, so asking
             // whether a value is one is a question about the value alone.
-            case LHAT_BC_ISERROR:
+            VM_CASE(LHAT_BC_ISERROR)
                 SET_R(a,
                     lhat_bool(lhat_is_object_kind(R(b),
                                                   LHAT_OBJECT_ERROR)));
-                break;
+                VM_NEXT();
 
             // 02 の 13.11 with 03 の 5.13: R[C] is always a type the
             // compiler lowered -- a written type, never a runtime value --
@@ -1338,7 +1532,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // vm_fits_call already trust. (A fallback that read a shape off a
             // definition table at run time: a value that only arrives while
             // the program runs carries no type to ask about.)
-            case LHAT_BC_FITS: {
+            VM_CASE(LHAT_BC_FITS) {
                 LhatValue wanted = R(cc);
                 if (!lhat_is_object_kind(wanted, LHAT_OBJECT_TYPE)) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
@@ -1347,12 +1541,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     (const LhatRuntimeType *)lhat_as_object(wanted);
                 SET_R(a,
                     lhat_bool(lhat_value_satisfies(R(b), type)));
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_ISNIL:
+            VM_CASE(LHAT_BC_ISNIL)
                 SET_R(a, lhat_bool(lhat_is_nil(R(b))));
-                break;
+                VM_NEXT();
 
             // 14.11: construction is the machine's -- a copy of the
             // prototype the definition's self^ holds, which is where every
@@ -1361,7 +1555,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // shared. 14.3 and 14.7: the copy holds its own fields and
             // reads the shared members through the link; 14.2 fixes it
             // here and gives no way to change it afterwards.
-            case LHAT_BC_NEWINSTANCE: {
+            VM_CASE(LHAT_BC_NEWINSTANCE) {
                 LHAT_GC_POLL();  // this case allocates
                 if (!lhat_is_object_kind(R(b), LHAT_OBJECT_TABLE)) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
@@ -1389,7 +1583,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 }
                 instance->definition = definition;
                 SET_R(a, lhat_object((LhatObject *)instance));
-                break;
+                VM_NEXT();
             }
 
             // 14.11: the prototype goes under the definition's self^, sealed
@@ -1403,7 +1597,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // 14.7改2: what the definition delegates to. The key is a chunk
             // constant, so nothing is written into the machine's heap here
             // and no barrier is owed.
-            case LHAT_BC_SETDELEGATE: {
+            VM_CASE(LHAT_BC_SETDELEGATE) {
                 LhatTable *table = vm_table_of(R(a));
                 if (table == NULL ||
                     !lhat_is_object_kind(R(b), LHAT_OBJECT_STRING)) {
@@ -1411,10 +1605,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 }
                 table->delegate_key = R(b);
                 table->delegate_from_self = cc != 0;
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_SETPROTO: {
+            VM_CASE(LHAT_BC_SETPROTO) {
                 LHAT_GC_POLL();  // this case allocates
                 LhatTable *table = vm_table_of(R(a));
                 LhatTable *proto = vm_table_of(R(b));
@@ -1465,13 +1659,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                   at);
                 }
-                break;
+                VM_NEXT();
             }
 
             // 05 の 8.9: the host value at R[B..], boxed. The head slot
             // carries the tag, and the tag the width, so the copy is the
             // whole run.
-            case LHAT_BC_BOX: {
+            VM_CASE(LHAT_BC_BOX) {
                 LHAT_GC_POLL();  // this case allocates
                 // 8.9改: C bit 0 seals the box (constbox^); bit 1 reads
                 // R[B] as a box to copy rather than a value laid out.
@@ -1505,13 +1699,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 }
                 box->sealed = (cc & 1) != 0;
                 SET_R(a, lhat_object((LhatObject *)box));
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_CALL:
-            case LHAT_BC_CALLMETHOD:
-            case LHAT_BC_TAILCALL:
-            case LHAT_BC_TAILCALLMETHOD: {
+            VM_CASE(LHAT_BC_CALL)
+            VM_CASE(LHAT_BC_CALLMETHOD)
+            VM_CASE(LHAT_BC_TAILCALL)
+            VM_CASE(LHAT_BC_TAILCALLMETHOD) {
             call_entry:;
                 // 14.4: whether the receiver was laid out below the arguments.
                 // 5.3: and whether the call may take this frame over rather
@@ -1730,7 +1924,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR,
                                           lhat_nil(), at);
                         }
-                        break;
+                        VM_NEXT();
                     }
                     // 02 の 13.8改: and the several values a host answers
                     // with go down the same way. Until this, the host path
@@ -1744,7 +1938,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                           lhat_nil(), at);
                         }
-                        break;
+                        VM_NEXT();
                     }
                     // Whatever the host may have staged, it did not answer
                     // with it, so the room is free again.
@@ -1765,7 +1959,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                       lhat_nil(), at);
                     }
                     SET_R(a, answered);
-                    break;
+                    VM_NEXT();
                 }
 
                 // 02 の 12.6 and 15.6: resume and dispose are the runtime's,
@@ -1786,7 +1980,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         if (status != LHAT_RUN_OK) {
                             return vm_finish(m, chunk, status, lhat_nil(), at);
                         }
-                        break;
+                        VM_NEXT();
                     }
 
                     if (!lhat_is_object_kind(native->bound,
@@ -1809,7 +2003,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             native->kind == LHAT_NATIVE_DONE
                                 ? co->state == LHAT_COROUTINE_DONE
                                 : co->state != LHAT_COROUTINE_FRESH));
-                        break;
+                        VM_NEXT();
                     }
 
                     // 15.2: the machine holds this itself rather than
@@ -1877,7 +2071,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             // the disposal. Nothing on any other source.
                             lhat_coroutine_release((LhatObject *)co, m);
                             SET_R(a, lhat_nil());
-                            break;
+                            VM_NEXT();
                         }
                         return vm_finish(m, chunk, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
                     }
@@ -1894,7 +2088,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         if (dispose) {
                             co->state = LHAT_COROUTINE_DONE;
                             SET_R(a, lhat_nil());
-                            break;
+                            VM_NEXT();
                         }
                         unsigned room = lhat_call_prepared(cc);
                         // 16.3改2: a projection yields one value, so one slot
@@ -1907,7 +2101,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             }
                             vm_step_table_walk(m, co, WALK_AS_VALUE, rbase + a,
                                             frame);
-                            break;
+                            VM_NEXT();
                         }
                         // 16.3 with 13.8改: hand-driven start()/resume()
                         // answer the pair as the tuple every walk yields.
@@ -1928,7 +2122,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             }
                             vm_step_table_walk(m, co, WALK_AS_RUN, rbase + a,
                                             frame);
-                            break;
+                            VM_NEXT();
                         }
                         // One slot reserved: the step still advances, and
                         // the walk ending still answers nil^; a pair coming
@@ -1937,7 +2131,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         if (!lhat_table_walk(co, &key, &value)) {
                             co->state = LHAT_COROUTINE_DONE;
                             SET_R(a, lhat_nil());
-                            break;
+                            VM_NEXT();
                         }
                         co->state = LHAT_COROUTINE_SUSPENDED;
                         return vm_finish(m, chunk, LHAT_RUN_TUPLE_UNEXPECTED,
@@ -1953,7 +2147,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             co->state = LHAT_COROUTINE_DONE;
                             lhat_coroutine_release((LhatObject *)co, m);
                             SET_R(a, lhat_nil());
-                            break;
+                            VM_NEXT();
                         }
                         unsigned room = lhat_call_prepared(cc);
                         if (room > 1 &&
@@ -1981,7 +2175,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         if (fault != LHAT_RUN_OK) {
                             return vm_finish(m, chunk, fault, lhat_nil(), at);
                         }
-                        break;
+                        VM_NEXT();
                     }
 
                     if (m->frame_count >= m->frame_capacity) {
@@ -2047,7 +2241,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     rbase = frame->base;
                     chunk = &co->closure->proto->chunk;
                     pc = frame->pc;
-                    break;
+                    VM_NEXT();
                 }
 
                 if (!lhat_is_object_kind(R(a), LHAT_OBJECT_SUBROUTINE)) {
@@ -2187,7 +2381,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         lhat_slots_set(co->registers, required, collected_variadic);
                     }
                     SET_R(a, lhat_object((LhatObject *)co));
-                    break;
+                    VM_NEXT();
                 }
 
                 // 5.3: a tail call runs in this frame rather than one above
@@ -2274,7 +2468,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                     chunk = &callee->proto->chunk;
                     pc = 0;
-                    break;
+                    VM_NEXT();
                 }
 
                 frame->pc = pc;
@@ -2285,31 +2479,31 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 rbase = frame->base;
                 chunk = &callee->proto->chunk;
                 pc = 0;
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_PUSHCLEANUP:
+            VM_CASE(LHAT_BC_PUSHCLEANUP)
                 if (frame->cleanup_count >= LHAT_MAX_CLEANUPS) {
                     return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
                 frame->cleanups[frame->cleanup_count++] = lhat_bx(instruction);
-                break;
+                VM_NEXT();
 
             // 10.2 and 12.3: leaving the block runs what it entered. The two
             // cases differ only in where control goes afterwards.
-            case LHAT_BC_POPCLEANUP:
+            VM_CASE(LHAT_BC_POPCLEANUP)
                 frame->drain_target = a;
                 frame->resume = pc;
                 frame->returning = false;
                 goto drain;
 
-            case LHAT_BC_ENDCLEANUP:
+            VM_CASE(LHAT_BC_ENDCLEANUP)
                 goto drain;
 
             // 10.4: leaving the procedure leaves every block inside it, so
             // the drain runs everything still pending before the frame goes.
-            case LHAT_BC_RETURN:
-            case LHAT_BC_RETURN_NIL:
+            VM_CASE(LHAT_BC_RETURN)
+            VM_CASE(LHAT_BC_RETURN_NIL)
                 frame->drain_target = 0;
                 frame->returning = true;
                 frame->answer = op == LHAT_BC_RETURN ? R(a) : lhat_nil();
@@ -2352,7 +2546,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // value is the program's own -- carried through to the host
             // exactly as lhat_run always has, rather than discarded like
             // every other vm_finish() here discards its nil^.
-            case LHAT_BC_PANIC:
+            VM_CASE(LHAT_BC_PANIC)
                 return vm_finish(m, chunk, LHAT_RUN_PANIC, R(a), at);
 
             // 11.6: 14.12's own runtime check (vm_fits_call already
@@ -2368,7 +2562,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             //
             // 03 の 4.2: this runs whether or not anything was checked. A
             // relaxed build makes the same value the strict one promised.
-            case LHAT_BC_ASCAST: {
+            VM_CASE(LHAT_BC_ASCAST) {
                 const LhatRuntimeType *wanted =
                     (const LhatRuntimeType *)lhat_as_object(R(b));
                 if (!lhat_value_satisfies(R(a), wanted)) {
@@ -2381,13 +2575,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                     SET_R(a, lhat_object((LhatObject *)failure));
                 }
-                break;
+                VM_NEXT();
             }
 
             // 02 の 15.4: the frame stops here and the value goes out. 5.11
             // keeps the one frame rather than a stack, which 15.5 is what
             // makes possible -- a yield^ is always in the body it suspends.
-            case LHAT_BC_YIELD: {
+            VM_CASE(LHAT_BC_YIELD) {
                 LhatCoroutine *co = frame->coroutine;
                 // 10.7: nothing is waiting for a yield^ during disposal.
                 if (co == NULL || frame->disposing) {
@@ -2634,23 +2828,23 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 } else {
                     SET_R(into, value);
                 }
-                break;
+                VM_NEXT();
             }
 
             // 02 の 15.8: the delegation loop asks whether the inner one is
             // finished, since 13.9 makes what a resume answers the union of
             // its yield type and its return type.
-            case LHAT_BC_ISDONE: {
+            VM_CASE(LHAT_BC_ISDONE) {
                 if (!lhat_is_object_kind(R(b), LHAT_OBJECT_COROUTINE)) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 const LhatCoroutine *co =
                     (const LhatCoroutine *)lhat_as_object(R(b));
                 SET_R(a, lhat_bool(co->state == LHAT_COROUTINE_DONE));
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_RESUME: {
+            VM_CASE(LHAT_BC_RESUME) {
                 if (!lhat_is_object_kind(R(b), LHAT_OBJECT_COROUTINE)) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
@@ -2686,7 +2880,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                       lhat_nil(), at);
                     }
                     vm_step_table_walk(m, co, mode, rbase + a, frame);
-                    break;
+                    VM_NEXT();
                 }
                 // 05 の 8.8: and so is a host's -- one C call. The loops
                 // send nothing in; the delegation loop forwards R(a), which
@@ -2731,7 +2925,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     if (fault != LHAT_RUN_OK) {
                         return vm_finish(m, chunk, fault, lhat_nil(), at);
                     }
-                    break;
+                    VM_NEXT();
                 }
                 if (m->frame_count >= m->frame_capacity) {
                     return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
@@ -2810,7 +3004,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 rbase = frame->base;
                 chunk = &co->closure->proto->chunk;
                 pc = frame->pc;
-                break;
+                VM_NEXT();
             }
 
 
@@ -2818,7 +3012,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // stands. NEWENUM reads the descriptor constant the compiler
             // made; NEWENUMERATOR evaluates nothing itself -- the value
             // arrived in R[C], put there by the member's own expression.
-            case LHAT_BC_NEWENUM: {
+            VM_CASE(LHAT_BC_NEWENUM) {
                 LHAT_GC_POLL();  // this case allocates
                 LhatValue held = chunk->constants[lhat_bx(instruction)];
                 if (!lhat_is_object_kind(held, LHAT_OBJECT_TYPE)) {
@@ -2833,10 +3027,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                   at);
                 }
                 SET_R(a, lhat_object((LhatObject *)made));
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_NEWENUMERATOR: {
+            VM_CASE(LHAT_BC_NEWENUMERATOR) {
                 LHAT_GC_POLL();  // this case allocates
                 if (!lhat_is_object_kind(R(a), LHAT_OBJECT_ENUM) ||
                     !lhat_is_object_kind(R(b), LHAT_OBJECT_STRING) ||
@@ -2859,7 +3053,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(),
                                   at);
                 }
-                break;
+                VM_NEXT();
             }
 
             // 03 の 5.1改3: the counted loop fused. The three registers are
@@ -2867,8 +3061,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // focus and reads the bound and step^ before the loop, so nothing
             // can change their kind while it runs (an addition may widen the
             // focus to real, which both helpers speak).
-            case LHAT_BC_FORPREP:
-            case LHAT_BC_FORPREPD: {
+            VM_CASE(LHAT_BC_FORPREP)
+            VM_CASE(LHAT_BC_FORPREPD) {
                 if (!lhat_is_number(R(a)) || !lhat_is_number(R(a + 1)) ||
                     !lhat_is_number(R(a + 2))) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
@@ -2880,11 +3074,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (!enter) {
                     pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction));
                 }
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_FORLOOP:
-            case LHAT_BC_FORLOOPD: {
+            VM_CASE(LHAT_BC_FORLOOP)
+            VM_CASE(LHAT_BC_FORLOOPD) {
                 bool down = op == LHAT_BC_FORLOOPD;
                 LhatValue moved = lhat_nil();
                 LhatRunStatus status = LHAT_RUN_OK;
@@ -2900,13 +3094,19 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction));
                     LHAT_TURN_BACK();
                 }
-                break;
+                VM_NEXT();
             }
 
-            case LHAT_BC_COUNT:
+            // A byte that names no instruction. Reachable only from a
+            // chunk that did not come from this compiler, which is a type
+            // error like any other -- and the one answer that is not a jump
+            // into what follows the table.
+            VM_CASE_UNKNOWN()
                 return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+#if !LHAT_VM_CGOTO
         }
         continue;
+#endif
 
     // 02 の 11.1: an operator is a function the left operand carries, named
     // by 11.8 after the operator itself. The instructions above take their
@@ -2995,7 +3195,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 equal = lhat_value_equal(R(b), rhs);
             }
             SET_R(a, lhat_bool(equal == (derive_from == LHAT_BC_EQ)));
-            continue;  // the label sits in the loop, not in the switch
+            VM_NEXT();  // the label sits in the loop, not in the switch
         }
         if (answer == OPERATOR_NO_CANDIDATE) {
             return vm_finish(m, chunk, LHAT_RUN_NO_CANDIDATE, lhat_nil(), at);
@@ -3057,7 +3257,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     return vm_finish(m, chunk, status, lhat_nil(), at);
                 }
                 SET_R(a, lhat_bool(held));
-                continue;
+                VM_NEXT();
             }
             // 02 の 13.8改: an operator answers one value, whoever wrote it
             // -- 11.8's shape gives it no room for several, and the frame
@@ -3072,10 +3272,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(),
                                   at);
                 }
-                continue;
+                VM_NEXT();
             }
             SET_R(a, answered);
-            continue;
+            VM_NEXT();
         }
         const LhatClosure *carried =
             (const LhatClosure *)lhat_as_object(found);
@@ -3144,7 +3344,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         rbase = frame->base;
         chunk = &carried->proto->chunk;
         pc = 0;
-        continue;
+        VM_NEXT();
     }
 
     drain:
@@ -3152,11 +3352,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // which comes back here for the next.
         if (frame->cleanup_count > frame->drain_target) {
             pc = frame->cleanups[--frame->cleanup_count];
-            continue;
+            VM_NEXT();
         }
         if (!frame->returning) {
             pc = frame->resume;
-            continue;
+            VM_NEXT();
         }
 
         // 5.4: whatever still points into this frame takes its value with it,
@@ -3209,7 +3409,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (m->pending_dispose != NULL) {
                     ending = true;
                     pc = at;
-                    continue;
+                    VM_NEXT();
                 }
             }
             m->frame_count--;
@@ -3339,5 +3539,19 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         }
     }
 
+#if LHAT_VM_CGOTO
+vm_done:
+#endif
     return vm_finish(m, chunk, LHAT_RUN_OK, lhat_nil(), chunk->count);
 }
+
+#undef VM_NEXT
+#undef VM_SLOW_PATH
+#undef VM_SLOW_HOOK
+#undef VM_SLOW_GC
+#undef VM_CASE_UNKNOWN
+#undef VM_CASE
+#if LHAT_VM_CGOTO
+#undef VM_DISPATCH
+#undef VM_LABEL
+#endif

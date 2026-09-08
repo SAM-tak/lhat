@@ -343,7 +343,7 @@ static void hold_pending_disposals(Machine *m)
         }
         lhat_gc_reach(&m->gray, lhat_object(object));
         co->next_pending = m->pending_dispose;
-        m->pending_dispose = co;
+        machine_set_pending_dispose(m, co);
     }
 }
 
@@ -585,7 +585,7 @@ LhatCoroutine *lhat_gc_take_pending(Machine *m)
 {
     LhatCoroutine *co = m->pending_dispose;
     if (co != NULL) {
-        m->pending_dispose = co->next_pending;
+        machine_set_pending_dispose(m, co->next_pending);
         co->next_pending = NULL;
     }
     return co;

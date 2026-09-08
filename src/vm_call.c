@@ -209,11 +209,11 @@ static void hook_fault(Machine *m)
     if (!lhat_machine_fault_frame((LhatMachine *)m, 0, &where)) {
         return;  // a host-side boundary fault has no L^ frame to inspect
     }
-    m->hook_live = NULL;
+    machine_set_hook_live(m, NULL);
     m->hook((LhatMachine *)m, m->hook_context, LHAT_DEBUG_FAULT, &where);
     // The hook may have removed itself while it ran; restore precisely that
     // current choice rather than the one that was live when it entered.
-    m->hook_live = m->hook;
+    machine_set_hook_live(m, m->hook);
 }
 #endif  // LHAT_WITH_DEBUGGER
 

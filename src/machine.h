@@ -200,6 +200,14 @@ struct LhatMachine {
     // middle of a collection is no place to run any.
     LhatCoroutine *pending_dispose;
 
+    // 03 の 5.2改: whether anything must be looked at before the next
+    // instruction runs -- a coroutine held back above, or the debugger's
+    // hook below. The dispatch asks this one word instead of loading both,
+    // which matters because computed goto pays that test at every
+    // instruction rather than once at the top of a loop. Written only by
+    // machine_set_pending_dispose / machine_set_hook_live.
+    bool traps;
+
     // 02 の 10.7: how many suspended coroutines are carrying pending
     // cleanups right now. The end-of-run collection exists only to find
     // such a coroutine dropped too late for any other cycle -- when this
@@ -315,6 +323,32 @@ struct LhatMachine {
 };
 
 typedef struct LhatMachine Machine;
+
+// The two things `traps` stands for. Assigning either field directly would
+// leave the flag behind, so these are the way in -- and the flag is derived
+// from both every time rather than counted up and down, which cannot drift.
+static inline void machine_note_traps(Machine *m)
+{
+#if LHAT_WITH_DEBUGGER
+    m->traps = m->pending_dispose != NULL || m->hook_live != NULL;
+#else
+    m->traps = m->pending_dispose != NULL;
+#endif
+}
+
+static inline void machine_set_pending_dispose(Machine *m, LhatCoroutine *co)
+{
+    m->pending_dispose = co;
+    machine_note_traps(m);
+}
+
+#if LHAT_WITH_DEBUGGER
+static inline void machine_set_hook_live(Machine *m, LhatDebugHook hook)
+{
+    m->hook_live = hook;
+    machine_note_traps(m);
+}
+#endif
 
 // 09 の 5.1: the one process-wide machine watcher, owned by debug.c and read
 // by vm.c at lhat_machine_new / lhat_machine_dispose. Zeroed = none.
