@@ -11,12 +11,17 @@
 #include "../stdlib/channel.h"
 #include "../stdlib/task.h"
 #include "../stdlib/thread.h"
+#include "port/thread.h"  // lhat_now_ms, for the timing a failure reports
 
 #include <stdint.h>
 
 typedef struct {
     size_t points;
     bool at_line[32];
+    // How long the whole run took. A wait that reaches no pause point has
+    // two possible reasons -- it never waited, or it waited in one
+    // uninterruptible call -- and only the clock tells them apart.
+    int64_t took_ms;
 } PauseTrace;
 
 static void pause_hook(LhatMachine *machine, void *context,
@@ -40,15 +45,22 @@ static const LhatTestRegister regs[] = {lhatstdlib_async_register,
 
 static LhatTestRan run_waiting(PauseTrace *trace, const char *text)
 {
-    return lhat_test_run_hooked(regs, sizeof regs / sizeof *regs, text,
-                                pause_hook, trace);
+    int64_t began = lhat_now_ms();
+    LhatTestRan ran = lhat_test_run_hooked(regs, sizeof regs / sizeof *regs,
+                                           text, pause_hook, trace);
+    trace->took_ms = lhat_now_ms() - began;
+    return ran;
 }
 
 static void check_wait(const char *name, PauseTrace *trace, LhatTestRan ran,
                        const uint32_t *lines, size_t line_count)
 {
     LHAT_CHECK_RAN_INTEGER(ran, 1);
-    LHAT_CHECK(trace->points > 0, "%s reached a host pause point", name);
+    LHAT_CHECK(trace->points > 0,
+               "%s reached a host pause point (the run took %lldms; a wait "
+               "that waits outlasts the 20ms pause interval several times "
+               "over, so a short run means nothing waited)",
+               name, (long long)trace->took_ms);
     for (size_t i = 0; i < line_count; i++) {
         LHAT_CHECK(lines[i] < sizeof trace->at_line / sizeof *trace->at_line &&
                        trace->at_line[lines[i]],
