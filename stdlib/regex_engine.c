@@ -97,7 +97,11 @@ static void *arena_alloc(Compiler *c, size_t size)
             lhat_free(taken);
             return NULL;
         }
-        memcpy(grown, c->out->held, c->out->held_count * sizeof *grown);
+        // The first growth copies from nothing, and memcpy declares its
+        // source non-null even for a length of zero.
+        if (c->out->held_count > 0) {
+            memcpy(grown, c->out->held, c->out->held_count * sizeof *grown);
+        }
         lhat_free(c->out->held);
         c->out->held = grown;
         c->out->held_capacity = wider;

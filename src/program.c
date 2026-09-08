@@ -4049,6 +4049,10 @@ void lhat_program_dispose(LhatProgram *program)
     program->host_entries = NULL;
     program->host_entry_count = 0;
     program->host_entry_capacity = 0;
+    lhat_free(program->host_enums);
+    program->host_enums = NULL;
+    program->host_enum_count = 0;
+    program->host_enum_capacity = 0;
 
     // 02 の 18.5: the declaration owns the two names it points at, and the
     // text sits beside it.
