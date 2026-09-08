@@ -94,9 +94,47 @@ endif()
 # the instrumentation in the compile, so their USE phase rebuilds -- and
 # Clang wants the training output merged by llvm-profdata first, handed in
 # as LHAT_PGO_PROFILE (a .profdata path).
+#
+# The compiler is asked for before MSVC is, because CMake sets MSVC for
+# clang-cl too: it targets the MSVC ABI, but the instrumentation is Clang's
+# and /GENPROFILE would leave it with nothing to write.
 set(LHAT_PGO "OFF" CACHE STRING "PGO phase: OFF, GENERATE, USE")
 if(NOT LHAT_PGO STREQUAL "OFF")
-    if(MSVC)
+    if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+        if(LHAT_PGO STREQUAL "GENERATE")
+            add_compile_options(-fprofile-generate)
+            add_link_options(-fprofile-generate)
+        elseif(LHAT_PGO STREQUAL "USE")
+            # Clang reads one merged file and names no default worth having,
+            # so say which rather than let it look for default.profdata and
+            # stop. Forward slashes: a Windows path with backslashes does not
+            # survive being handed in on the command line.
+            if(NOT LHAT_PGO_PROFILE)
+                message(FATAL_ERROR "LHAT_PGO=USE under Clang needs "
+                    "LHAT_PGO_PROFILE -- the .profdata that llvm-profdata "
+                    "merge wrote from the training run.")
+            endif()
+            add_compile_options(-fprofile-use=${LHAT_PGO_PROFILE})
+            add_link_options(-fprofile-use=${LHAT_PGO_PROFILE})
+        endif()
+    elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        if(LHAT_PGO STREQUAL "GENERATE")
+            add_compile_options(-fprofile-generate)
+            add_link_options(-fprofile-generate)
+        elseif(LHAT_PGO STREQUAL "USE")
+            # GCC reads the .gcda the training left beside the objects, or a
+            # directory named here. -fprofile-correction is for a training
+            # run that used threads, which this one does.
+            if(LHAT_PGO_PROFILE)
+                add_compile_options(-fprofile-use=${LHAT_PGO_PROFILE})
+                add_link_options(-fprofile-use=${LHAT_PGO_PROFILE})
+            else()
+                add_compile_options(-fprofile-use)
+                add_link_options(-fprofile-use)
+            endif()
+            add_compile_options(-fprofile-correction)
+        endif()
+    elseif(MSVC)
         add_compile_options(/GL)
         add_link_options(/LTCG)
         if(LHAT_PGO STREQUAL "GENERATE")
@@ -105,18 +143,8 @@ if(NOT LHAT_PGO STREQUAL "OFF")
             add_link_options(/USEPROFILE)
         endif()
     else()
-        if(LHAT_PGO STREQUAL "GENERATE")
-            add_compile_options(-fprofile-generate)
-            add_link_options(-fprofile-generate)
-        elseif(LHAT_PGO STREQUAL "USE")
-            if(LHAT_PGO_PROFILE)
-                add_compile_options(-fprofile-use=${LHAT_PGO_PROFILE})
-                add_link_options(-fprofile-use=${LHAT_PGO_PROFILE})
-            else()
-                add_compile_options(-fprofile-use -fprofile-correction)
-                add_link_options(-fprofile-use)
-            endif()
-        endif()
+        message(FATAL_ERROR "LHAT_PGO: no profile-guided build is defined for "
+            "${CMAKE_C_COMPILER_ID}")
     endif()
 endif()
 
