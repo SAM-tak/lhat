@@ -3,24 +3,11 @@
 // Two implementations of one header, chosen by the preprocessor and nothing
 // else. See port/thread.h for why neither of them is C11's <threads.h>.
 
-// clock_gettime and CLOCK_REALTIME are the one thing below that <time.h>
-// keeps behind a feature test, and CMAKE_C_EXTENSIONS is OFF (-std=c11, not
-// -std=gnu11) so nothing defines one for us. It is asked for here rather than
-// on the target because port/thread.h itself needs none of it: pthread.h's own
-// declarations are not guarded this way.
-#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
-#define _POSIX_C_SOURCE 200809L
-#endif
-// _SC_NPROCESSORS_ONLN is X/Open rather than base POSIX, so the feature test
-// above hides it on glibc unless this is asked for too. Apple's libc reads a
-// different name for the same request, and asking for _POSIX_C_SOURCE alone
-// there lowers __DARWIN_C_LEVEL far enough to hide it.
-#if !defined(_WIN32) && !defined(_DEFAULT_SOURCE)
-#define _DEFAULT_SOURCE 1
-#endif
-#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
-#define _DARWIN_C_SOURCE 1
-#endif
+// clock_gettime, CLOCK_REALTIME and _SC_NPROCESSORS_ONLN are all declared
+// by default under -std=gnu11 (CMAKE_C_EXTENSIONS ON): asking for the GNU
+// dialect is what tells libc not to hide POSIX behind a feature test. Under
+// -std=c11 this file had to ask for _POSIX_C_SOURCE and _DEFAULT_SOURCE by
+// hand, and Apple's libc wanted a third name of its own.
 
 #include "thread.h"
 

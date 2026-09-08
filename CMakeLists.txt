@@ -61,7 +61,13 @@ option(LHAT_SANITIZE "Build with AddressSanitizer (+UBSan where available)" OFF)
 # ---- Language level -------------------------------------------------------
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_EXTENSIONS OFF)  # -std=c11, not -std=gnu11
+# -std=gnu11. What the extensions buy is not the GNU additions -- the sources
+# ask for those by name where they use one (vm.c's computed goto) -- but what
+# comes off: -std=c11 defines __STRICT_ANSI__, which is the flag libc reads to
+# decide whether POSIX is declared at all, and which keeps ISO C's trigraphs
+# alive. The first build on Linux and macOS met both. MSVC has no dialect to
+# choose here, so this changes nothing there.
+set(CMAKE_C_EXTENSIONS ON)
 
 # ---- Warnings -------------------------------------------------------------
 if(MSVC)
@@ -70,11 +76,7 @@ if(MSVC)
     add_compile_options(/W4 /utf-8)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
-    # -fno-trigraphs: ISO C11 still translates ??' to ^ before anything else
-    # reads the source, and -std=c11 (CMAKE_C_EXTENSIONS OFF) leaves that on.
-    # MSVC has had them off by default for years and C23 removed them; the
-    # only thing they do here is rewrite '??' in a message about '??'.
-    add_compile_options(-Wall -Wextra -Wpedantic -fno-trigraphs)
+    add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
 # ---- Sanitizers ------------------------------------------------------------

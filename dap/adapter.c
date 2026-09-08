@@ -13,14 +13,6 @@
 // thread started. A DAP "thread" is a machine, whatever OS thread machinery
 // the host runs it on.
 
-// realpath, strdup and PATH_MAX are POSIX rather than ISO C, and
-// CMAKE_C_EXTENSIONS is OFF (-std=c11, not -std=gnu11), so nothing asks for
-// them on our behalf -- <limits.h> below keeps PATH_MAX behind exactly this.
-// port/thread.c does the same for clock_gettime.
-#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
-#define _POSIX_C_SOURCE 200809L
-#endif
-
 #include "adapter.h"
 
 #include <stdio.h>

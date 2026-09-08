@@ -270,6 +270,20 @@ static void add_lh_file(LspWorkspace *ws, const char *absolute_path)
     root_find_or_add(ws, absolute_path);
 }
 
+// 除外: whether lhat-lsp.json says this path is not one of this project's
+// (settings.h). Answers for a directory and a file alike -- a pattern names
+// a path and everything under it -- so a scan prunes and filters with the
+// one call, and the two scanners below cannot drift apart about it.
+//
+// Ahead of the platform split because both scanners call it, as do the two
+// readers further down.
+//
+// The caller holds ws->lock: the worker swaps ws->settings under it.
+static bool path_excluded(const LspWorkspace *ws, const char *path)
+{
+    return lsp_settings_excludes_path(ws->settings, ws->root_path, path);
+}
+
 #ifdef _WIN32
 // FindFirstFileA/FindNextFileA accept forward slashes as readily as
 // backslashes, so this builds every path with '/' -- every other path key
@@ -279,17 +293,6 @@ static void add_lh_file(LspWorkspace *ws, const char *absolute_path)
 // root discovered by scanning fail to match the same file's path from an
 // LSP notification, and re-register it as a second, permanently duplicate
 // root.
-// 除外: whether lhat-lsp.json says this path is not one of this project's
-// (settings.h). Answers for a directory and a file alike -- a pattern names
-// a path and everything under it -- so a scan prunes and filters with the
-// one call, and the two scanners below cannot drift apart about it.
-//
-// The caller holds ws->lock: the worker swaps ws->settings under it.
-static bool path_excluded(const LspWorkspace *ws, const char *path)
-{
-    return lsp_settings_excludes_path(ws->settings, ws->root_path, path);
-}
-
 static void scan_dir(LspWorkspace *ws, const char *dir)
 {
     char pattern[MAX_PATH];
