@@ -181,4 +181,25 @@ char **lsp_workspace_copy_unit_paths(LspWorkspace *ws, size_t *count);
 char **lsp_workspace_copy_module_names(LspWorkspace *ws, size_t *count);
 void lsp_workspace_free_strings(char **strings, size_t count);
 
+// 05 の 5.5: a unit of this workspace that declared a module^, with what
+// it publishes. What a completion offers to take in with a bare require^,
+// which binds the unit under the path it declared for itself.
+//
+// A unit that declared none is left out. 5.5 refuses the short form for
+// one, and the long form picks a name -- which is the writer's to pick,
+// not the server's.
+//
+// Only roots the worker has already checked answer, so a workspace whose
+// first pass has not finished offers nothing rather than something stale.
+// Copies, for the reason above.
+typedef struct {
+    char *path;         // absolute; a require^ names it relative to itself
+    char *module_name;  // what module^ declared
+    char **exports;
+    size_t export_count;
+} LspUnitExports;
+
+LspUnitExports *lsp_workspace_copy_exports(LspWorkspace *ws, size_t *count);
+void lsp_workspace_free_exports(LspUnitExports *units, size_t count);
+
 #endif  // LSP_WORKSPACE_H

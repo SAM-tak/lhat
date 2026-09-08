@@ -28,7 +28,9 @@
 #include <stdint.h>
 
 #include "cJSON.h"
+#include "position.h"
 #include "program_internal.h"
+#include "workspace.h"
 
 // The members that may stand after the '.' at `offset` -- a CompletionItem[],
 // empty when nothing there is a member access or the receiver answers no
@@ -42,7 +44,8 @@ cJSON *lsp_completion_members_for_unit(const LhatUnit *unit, uint32_t offset);
 // text there asks: the members of a receiver where a dot stands before the
 // cursor, and otherwise the words and the names. Empty where neither
 // applies -- inside a comment, inside a string, or between two operators.
-cJSON *lsp_completion_for_unit(const LhatUnit *unit, uint32_t offset);
+cJSON *lsp_completion_for_unit(const LhatUnit *unit, uint32_t offset,
+                               const LspUnitExports *others, size_t count);
 
 // The members of `receiver` on their own, for a caller that already has the
 // type. Every member the checker would accept and no other, from two sources:
@@ -79,17 +82,27 @@ bool lsp_completion_word_prefix(const char *text, size_t length,
 // has been typed: the editor filters the list down as more of the word
 // arrives, which is what the answer's isIncomplete says it may do.
 //
-// Two sources, and the names come first so that one of them shadowing a
-// word of the language keeps the type it holds:
+// Three sources, in the order a writer wants them:
 //
 //   the names in scope  -- asked of lhat_check_bindings_at, so 8 章's
 //                          lookup is read once and not twice
 //   the words           -- WORDS (completion.c), which no other list holds
+//   what could be taken in -- 05 の 8.7's registered modules and 5.5's
+//                          other units, offered with the import^ or
+//                          require^ line that would reach them
 //
-// `result` may be NULL, which leaves the names out. `offset` says where in
-// its source the cursor stands.
-cJSON *lsp_completion_word_items(const LhatCheckResult *result,
-                                 uint32_t offset);
+// The third comes last so the first two have already claimed their
+// spellings: a name the writer can reach is the one they meant, and only
+// what is out of reach is worth an extra line.
+//
+// `unit` may be NULL, which leaves everything but the words out. `offset`
+// is where the cursor stands and `word_from` where the word being typed
+// began -- an item that writes a whole path replaces all of it. `others`
+// is what lsp_workspace_copy_exports answered, and may be NULL.
+cJSON *lsp_completion_word_items(const LhatUnit *unit, uint32_t offset,
+                                 uint32_t word_from,
+                                 const LspUnitExports *others,
+                                 size_t count);
 
 // The next segment of every module that begins with `prefix`, once each --
 // "std." offers "io" and "math", not "std.io" and "std.math.vector3". The

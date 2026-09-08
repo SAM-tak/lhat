@@ -16,6 +16,7 @@
 
 #include "completion.h"
 #include "testutil.h"
+#include "workspace.h"
 
 typedef struct {
     LhatSource source;
@@ -596,7 +597,7 @@ static void test_reading_a_word(void)
 
 static void test_the_words_offered(void)
 {
-    cJSON *items = lsp_completion_word_items(NULL, 0);
+    cJSON *items = lsp_completion_word_items(NULL, 0, 0, NULL, 0);
     LHAT_CHECK(items != NULL, "expected a list of words");
 
     LHAT_TEST("the words of each part of the language are offered");
@@ -655,7 +656,7 @@ static cJSON *offered_at(Checked *c, const char *needle)
         return cJSON_CreateArray();
     }
     uint32_t at = (uint32_t)(found - c->source.text) + (uint32_t)strlen(needle);
-    return lsp_completion_for_unit(&c->unit, at);
+    return lsp_completion_for_unit(&c->unit, at, NULL, 0);
 }
 
 static void test_the_names_in_scope(void)
@@ -753,6 +754,186 @@ static void test_the_names_in_scope(void)
     check_dispose(&c);
 }
 
+// ---------------------------------------------------------------------------
+// Taking another unit in
+// ---------------------------------------------------------------------------
+
+// The rows lsp_workspace_copy_exports would have answered, written out here
+// so the offering can be asked without a workspace to build -- the same
+// bargain lsp_completion_module_items and _path_items already take.
+static char *published[] = { (char *)"greet", (char *)"tally" };
+static LspUnitExports ELSEWHERE[] = {
+    { (char *)"/w/lib/helpers.lh", (char *)"demo.helpers", published, 2 },
+};
+
+static const cJSON *item_named(const cJSON *items, const char *label)
+{
+    const cJSON *item = NULL;
+    cJSON_ArrayForEach(item, items) {
+        const cJSON *at = cJSON_GetObjectItemCaseSensitive(item, "label");
+        if (cJSON_IsString(at) && strcmp(at->valuestring, label) == 0) {
+            return item;
+        }
+    }
+    return NULL;
+}
+
+// The one line an item would add, or NULL when it adds none.
+static const char *extra_text(const cJSON *item)
+{
+    const cJSON *edits =
+        cJSON_GetObjectItemCaseSensitive(item, "additionalTextEdits");
+    const cJSON *text = cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetArrayItem(edits, 0), "newText");
+    return cJSON_IsString(text) ? text->valuestring : NULL;
+}
+
+static int extra_line(const cJSON *item)
+{
+    const cJSON *edits =
+        cJSON_GetObjectItemCaseSensitive(item, "additionalTextEdits");
+    const cJSON *range =
+        cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(edits, 0), "range");
+    const cJSON *line = cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetObjectItemCaseSensitive(range, "start"), "line");
+    return cJSON_IsNumber(line) ? line->valueint : -1;
+}
+
+static const char *written_by(const cJSON *item)
+{
+    const cJSON *text = cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetObjectItemCaseSensitive(item, "textEdit"), "newText");
+    return cJSON_IsString(text) ? text->valuestring : NULL;
+}
+
+// What is offered where `needle` ends, with the workspace's other units in
+// hand. ELSEWHERE's path is what this unit's own is relative to.
+static cJSON *offered_with_others(Checked *c, const char *needle)
+{
+    const char *found = strstr(c->source.text, needle);
+    LHAT_CHECK(found != NULL, "expected \"%s\" to be in the source", needle);
+    if (found == NULL) {
+        return cJSON_CreateArray();
+    }
+    c->unit.path = (char *)"/w/main.lh";
+    uint32_t at = (uint32_t)(found - c->source.text) + (uint32_t)strlen(needle);
+    return lsp_completion_for_unit(&c->unit, at, ELSEWHERE, 1);
+}
+
+static void test_taking_another_unit_in(void)
+{
+    Checked c;
+
+    LHAT_TEST("05 の 5.5: a name another unit publishes comes with the "
+              "require^ that reaches it");
+    check_text(&c, "let^ a = 1\ngre\n");
+    {
+        cJSON *items = offered_with_others(&c, "gre");
+        const cJSON *greet = item_named(items, "greet");
+        LHAT_CHECK(greet != NULL, "expected greet to be offered");
+        if (greet != NULL) {
+            // The path is the one that unit declared for itself: nothing
+            // here picks a name.
+            const char *whole = written_by(greet);
+            LHAT_CHECK(whole != NULL &&
+                           strcmp(whole, "demo.helpers.greet") == 0,
+                       "expected the declared path, got %s",
+                       whole != NULL ? whole : "nothing");
+            // 5.1: the path is written from the unit that writes it.
+            const char *line = extra_text(greet);
+            LHAT_CHECK(line != NULL &&
+                           strcmp(line, "require^ \"lib/helpers.lh\"\n") == 0,
+                       "expected a relative require^, got %s",
+                       line != NULL ? line : "nothing");
+            LHAT_CHECK_EQ_INT(extra_line(greet), 0);
+        }
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
+
+    // 05 の 3 章 puts module^ first and the parser refuses a second one, so a
+    // line written above it would stop the file parsing.
+    LHAT_TEST("and the line goes under module^, never above it");
+    check_text(&c, "module^ demo.here\nlet^ a = 1\ngre\n");
+    {
+        cJSON *items = offered_with_others(&c, "gre");
+        const cJSON *greet = item_named(items, "greet");
+        LHAT_CHECK(greet != NULL, "expected greet to be offered");
+        if (greet != NULL) {
+            LHAT_CHECK_EQ_INT(extra_line(greet), 1);
+        }
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
+
+    // 01 の 6.4: a block at the head of a file belongs to what follows it,
+    // and 07 の 4 章 makes that block the unit's own description. Writing
+    // into the middle of it would hand it to the new line instead.
+    LHAT_TEST("01 の 6.4: and under the comment block at the head of a file");
+    check_text(&c, "# What this is for.\n# A second line.\nlet^ a = 1\ngre\n");
+    {
+        cJSON *items = offered_with_others(&c, "gre");
+        const cJSON *greet = item_named(items, "greet");
+        LHAT_CHECK(greet != NULL, "expected greet to be offered");
+        if (greet != NULL) {
+            LHAT_CHECK_EQ_INT(extra_line(greet), 2);
+        }
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
+
+    // A second bare require^ of one file is a redefinition (05 の 5.5 through
+    // 8.8's last-segment rule), so this has to be right rather than tidy.
+    LHAT_TEST("05 の 5.5: a unit already required gains no second line");
+    check_text(&c, "require^ \"lib/helpers.lh\"\nlet^ a = 1\ngre\n");
+    {
+        cJSON *items = offered_with_others(&c, "gre");
+        const cJSON *greet = item_named(items, "greet");
+        LHAT_CHECK(greet != NULL, "expected greet to still be offered");
+        LHAT_CHECK(greet == NULL || extra_text(greet) == NULL,
+                   "expected no second require^");
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
+
+    LHAT_TEST("and neither does one bound with a let^");
+    check_text(&c,
+               "let^ helpers = require^ \"lib/helpers.lh\"\n"
+               "let^ a = 1\ngre\n");
+    {
+        cJSON *items = offered_with_others(&c, "gre");
+        const cJSON *greet = item_named(items, "greet");
+        LHAT_CHECK(greet == NULL || extra_text(greet) == NULL,
+                   "expected no require^ for a file already bound");
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
+
+    LHAT_TEST("8 章: and a name already in scope is left to the scope");
+    check_text(&c, "let^ greet = 1\ngre\n");
+    {
+        cJSON *items = offered_with_others(&c, "gre");
+        LHAT_CHECK_EQ_INT(times_offered(items, "greet"), 1);
+        const cJSON *greet = item_named(items, "greet");
+        LHAT_CHECK(greet == NULL || extra_text(greet) == NULL,
+                   "expected the binding, not the other unit's");
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
+
+    LHAT_TEST("5.1: and a unit is never offered its own names");
+    check_text(&c, "let^ a = 1\ngre\n");
+    {
+        c.unit.path = (char *)"/w/lib/helpers.lh";
+        const char *found = strstr(c.source.text, "gre");
+        cJSON *items = lsp_completion_for_unit(
+            &c.unit, (uint32_t)(found - c.source.text) + 3, ELSEWHERE, 1);
+        expect_offers(items, "greet", false);
+        cJSON_Delete(items);
+    }
+    check_dispose(&c);
+}
+
 static void test_module_items(void)
 {
     static const char *const modules[] = {
@@ -834,6 +1015,7 @@ int main(void)
     test_reading_a_word();
     test_the_words_offered();
     test_the_names_in_scope();
+    test_taking_another_unit_in();
     test_module_items();
     test_relative_paths();
     return lhat_test_report("test_completion");

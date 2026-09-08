@@ -840,6 +840,95 @@ void lsp_workspace_free_strings(char **strings, size_t count)
     free(strings);
 }
 
+void lsp_workspace_free_exports(LspUnitExports *units, size_t count)
+{
+    if (units == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        free(units[i].path);
+        free(units[i].module_name);
+        lsp_workspace_free_strings(units[i].exports, units[i].export_count);
+    }
+    free(units);
+}
+
+// One unit's row. False leaves nothing behind to free.
+static bool copy_exports_of(const LhatUnit *unit, LspUnitExports *into)
+{
+    const char *module = lhat_unit_module_name(unit);
+    if (module == NULL || *module == '\0') {
+        return false;  // 05 の 5.5: nothing to bind it under
+    }
+    size_t count = lhat_unit_export_count(unit);
+    memset(into, 0, sizeof *into);
+    into->path = lsp_strdup(unit->path);
+    into->module_name = lsp_strdup(module);
+    into->exports = count > 0 ? (char **)calloc(count, sizeof *into->exports)
+                              : NULL;
+    if (into->path == NULL || into->module_name == NULL ||
+        (count > 0 && into->exports == NULL)) {
+        free(into->path);
+        free(into->module_name);
+        free(into->exports);
+        memset(into, 0, sizeof *into);
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        LhatUnitText name = lhat_unit_export_name(unit, i);
+        char *copy = name.text != NULL
+                         ? lsp_strndup(name.text, name.length)
+                         : NULL;
+        if (copy != NULL) {
+            into->exports[into->export_count++] = copy;
+        }
+    }
+    return true;
+}
+
+LspUnitExports *lsp_workspace_copy_exports(LspWorkspace *ws, size_t *count)
+{
+    *count = 0;
+    lhat_mutex_lock(&ws->lock);
+    LspUnitExports *units = NULL;
+    size_t capacity = 0;
+    // One unit may stand in several roots' graphs, so the same walk
+    // collect_diagnostics makes is made here, with the path as the identity.
+    for (const LspRoot *r = ws->roots; r != NULL; r = r->next) {
+        if (!r->checked) {
+            continue;
+        }
+        for (const LhatUnit *unit = r->program.units; unit != NULL;
+             unit = unit->next) {
+            if (!unit->loaded || unit->path == NULL) {
+                continue;
+            }
+            bool already = false;
+            for (size_t i = 0; i < *count && !already; i++) {
+                already = strcmp(units[i].path, unit->path) == 0;
+            }
+            if (already) {
+                continue;
+            }
+            if (*count == capacity) {
+                size_t grown = capacity != 0 ? capacity * 2 : 8;
+                LspUnitExports *bigger = (LspUnitExports *)realloc(
+                    units, grown * sizeof *bigger);
+                if (bigger == NULL) {
+                    continue;
+                }
+                units = bigger;
+                capacity = grown;
+            }
+            if (copy_exports_of(unit, &units[*count])) {
+                (*count)++;
+            }
+        }
+    }
+    lhat_mutex_unlock(&ws->lock);
+    return units;
+}
+
 void lsp_workspace_with_unit(LspWorkspace *ws, const char *path,
                              LspUnitSink sink, void *context)
 {

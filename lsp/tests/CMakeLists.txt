@@ -45,6 +45,15 @@ lhat_lsp_add_test(test_host_config
     ${CMAKE_SOURCE_DIR}/lsp/host_config.c
     ${CMAKE_SOURCE_DIR}/lsp/util.c
 )
+# The auto-import half that needs a real program: what import^ would reach
+# is program->hosted, which only registrations fill.
+lhat_lsp_add_test(test_completion_host
+    ${CMAKE_SOURCE_DIR}/lsp/completion.c
+    ${CMAKE_SOURCE_DIR}/lsp/host_config.c
+    ${CMAKE_SOURCE_DIR}/lsp/position.c
+    ${CMAKE_SOURCE_DIR}/lsp/lton.c
+    ${CMAKE_SOURCE_DIR}/lsp/util.c
+)
 lhat_lsp_add_test(test_settings
     ${CMAKE_SOURCE_DIR}/lsp/settings.c
     ${CMAKE_SOURCE_DIR}/lsp/util.c
@@ -53,6 +62,9 @@ lhat_lsp_add_test(test_definition ${CMAKE_SOURCE_DIR}/lsp/definition.c)
 lhat_lsp_add_test(test_completion
     ${CMAKE_SOURCE_DIR}/lsp/completion.c
     ${CMAKE_SOURCE_DIR}/lsp/util.c
+    # An auto-import item carries the range of the text it replaces.
+    ${CMAKE_SOURCE_DIR}/lsp/position.c
+    ${CMAKE_SOURCE_DIR}/lsp/lton.c
 )
 lhat_lsp_add_test(test_signature
     ${CMAKE_SOURCE_DIR}/lsp/signature.c

@@ -31,6 +31,10 @@
 typedef struct {
     int line;
     int character;
+    // 05 の 5.5: what the other units of this workspace publish, taken
+    // before the fresh check because both walks want the same lock.
+    const LspUnitExports *others;
+    size_t other_count;
     cJSON *items;
 } CompletionRequest;
 
@@ -41,7 +45,8 @@ static void collect(void *context, const LhatUnit *unit)
     // (lsp/lton.h), so a position and an offset are not the same thing there.
     uint32_t offset =
         lsp_unit_offset_at(unit, request->line, request->character);
-    request->items = lsp_completion_for_unit(unit, offset);
+    request->items = lsp_completion_for_unit(unit, offset, request->others,
+                                             request->other_count);
 }
 
 // What the two textual questions answer with, or NULL when neither applies.
@@ -116,12 +121,20 @@ cJSON *lsp_handle_completion(LspServer *server, const cJSON *params)
     lhat_free(text);
 
     if (items == NULL) {
+        // Before the check, not during it: lsp_workspace_with_fresh_unit
+        // holds the same lock for the whole of its own work.
+        size_t others = 0;
+        LspUnitExports *published =
+            lsp_workspace_copy_exports(&server->workspace, &others);
         CompletionRequest request;
         request.line = line->valueint;
         request.character = character->valueint;
+        request.others = published;
+        request.other_count = others;
         request.items = NULL;
         lsp_workspace_with_fresh_unit(&server->workspace, path, collect,
                                       &request);
+        lsp_workspace_free_exports(published, others);
         items = request.items;
     }
     free(path);
