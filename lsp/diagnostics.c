@@ -8,14 +8,6 @@
 
 #include "position.h"
 
-static cJSON *make_position(LspPosition pos)
-{
-    cJSON *obj = cJSON_CreateObject();
-    cJSON_AddNumberToObject(obj, "line", pos.line);
-    cJSON_AddNumberToObject(obj, "character", pos.character);
-    return obj;
-}
-
 // LSP's DiagnosticSeverity: 1 Error, 2 Warning.
 #define LSP_SEVERITY_ERROR 1
 #define LSP_SEVERITY_WARNING 2
@@ -28,13 +20,9 @@ static cJSON *make_diagnostic(const LhatUnit *unit, uint32_t offset,
 {
     uint32_t marked = span > 0 ? span : 1;
     // 08-lton.md: a .lton's text is the file's own inside a wrapper, so what
-    // is marked is the file's position and not the wrapped text's.
-    LspPosition start = lsp_unit_position_at(unit, offset);
-    LspPosition end = lsp_unit_position_at(unit, offset + marked);
-
-    cJSON *range = cJSON_CreateObject();
-    cJSON_AddItemToObject(range, "start", make_position(start));
-    cJSON_AddItemToObject(range, "end", make_position(end));
+    // is marked is the file's position and not the wrapped text's --
+    // which lsp_unit_range_json applies to both ends.
+    cJSON *range = lsp_unit_range_json(unit, offset, offset + marked);
 
     cJSON *diag = cJSON_CreateObject();
     cJSON_AddItemToObject(diag, "range", range);

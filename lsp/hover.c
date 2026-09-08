@@ -454,16 +454,8 @@ cJSON *lsp_hover_render(const LspHoverPart *part)
     free(joined);
 
     if (part->has_range) {
-        cJSON *range = cJSON_CreateObject();
-        cJSON *start = cJSON_CreateObject();
-        cJSON *end = cJSON_CreateObject();
-        cJSON_AddItemToObject(hover, "range", range);
-        cJSON_AddItemToObject(range, "start", start);
-        cJSON_AddItemToObject(range, "end", end);
-        cJSON_AddNumberToObject(start, "line", part->from.line);
-        cJSON_AddNumberToObject(start, "character", part->from.character);
-        cJSON_AddNumberToObject(end, "line", part->to.line);
-        cJSON_AddNumberToObject(end, "character", part->to.character);
+        cJSON_AddItemToObject(hover, "range",
+                              lsp_range_json(part->from, part->to));
     }
     return hover;
 }

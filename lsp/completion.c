@@ -689,34 +689,13 @@ static bool already_imports(const LhatUnit *unit, const char *path,
     return false;
 }
 
-static cJSON *position_json(LspPosition at)
-{
-    cJSON *object = cJSON_CreateObject();
-    if (object != NULL) {
-        cJSON_AddNumberToObject(object, "line", at.line);
-        cJSON_AddNumberToObject(object, "character", at.character);
-    }
-    return object;
-}
-
-static cJSON *range_json(const LhatUnit *unit, uint32_t from, uint32_t to)
-{
-    cJSON *range = cJSON_CreateObject();
-    if (range != NULL) {
-        cJSON_AddItemToObject(range, "start",
-                              position_json(lsp_unit_position_at(unit, from)));
-        cJSON_AddItemToObject(range, "end",
-                              position_json(lsp_unit_position_at(unit, to)));
-    }
-    return range;
-}
-
 static cJSON *text_edit(const LhatUnit *unit, uint32_t from, uint32_t to,
                         const char *replacement)
 {
     cJSON *edit = cJSON_CreateObject();
     if (edit != NULL) {
-        cJSON_AddItemToObject(edit, "range", range_json(unit, from, to));
+        cJSON_AddItemToObject(edit, "range",
+                              lsp_unit_range_json(unit, from, to));
         cJSON_AddStringToObject(edit, "newText", replacement);
     }
     return edit;

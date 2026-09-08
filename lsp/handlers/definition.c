@@ -63,14 +63,6 @@ static void measure(void *context, const LhatUnit *unit)
     range->ready = true;
 }
 
-static void add_position(cJSON *into, const char *field, LspPosition at)
-{
-    cJSON *position = cJSON_CreateObject();
-    cJSON_AddItemToObject(into, field, position);
-    cJSON_AddNumberToObject(position, "line", at.line);
-    cJSON_AddNumberToObject(position, "character", at.character);
-}
-
 cJSON *lsp_handle_definition(LspServer *server, const cJSON *params)
 {
     if (params == NULL) {
@@ -130,9 +122,7 @@ cJSON *lsp_handle_definition(LspServer *server, const cJSON *params)
     cJSON *location = cJSON_CreateObject();
     cJSON_AddStringToObject(location, "uri", uri);
     free(uri);
-    cJSON *span = cJSON_CreateObject();
-    cJSON_AddItemToObject(location, "range", span);
-    add_position(span, "start", range.start);
-    add_position(span, "end", range.end);
+    cJSON_AddItemToObject(location, "range",
+                          lsp_range_json(range.start, range.end));
     return location;
 }

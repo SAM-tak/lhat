@@ -124,3 +124,33 @@ uint32_t lsp_unit_offset_at(const LhatUnit *unit, int line, int character)
     return lsp_offset_at(unit->source.text, unit->source.length, line,
                          character);
 }
+
+// ---------------------------------------------------------------------------
+// The wire form
+// ---------------------------------------------------------------------------
+
+cJSON *lsp_position_json(LspPosition at)
+{
+    cJSON *object = cJSON_CreateObject();
+    if (object != NULL) {
+        cJSON_AddNumberToObject(object, "line", at.line);
+        cJSON_AddNumberToObject(object, "character", at.character);
+    }
+    return object;
+}
+
+cJSON *lsp_range_json(LspPosition from, LspPosition to)
+{
+    cJSON *range = cJSON_CreateObject();
+    if (range != NULL) {
+        cJSON_AddItemToObject(range, "start", lsp_position_json(from));
+        cJSON_AddItemToObject(range, "end", lsp_position_json(to));
+    }
+    return range;
+}
+
+cJSON *lsp_unit_range_json(const LhatUnit *unit, uint32_t from, uint32_t to)
+{
+    return lsp_range_json(lsp_unit_position_at(unit, from),
+                          lsp_unit_position_at(unit, to));
+}

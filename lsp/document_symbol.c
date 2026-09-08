@@ -50,23 +50,12 @@ static void text_of(const Outline *o, const LhatNode *node, const char **text,
     *length = end > start ? end - start : 0;
 }
 
-static void add_position(cJSON *into, const char *field, const Outline *o,
-                         uint32_t offset)
-{
-    LspPosition at = lsp_unit_position_at(o->unit, offset);
-    cJSON *position = cJSON_CreateObject();
-    cJSON_AddItemToObject(into, field, position);
-    cJSON_AddNumberToObject(position, "line", at.line);
-    cJSON_AddNumberToObject(position, "character", at.character);
-}
-
 static void add_range(cJSON *into, const char *field, const Outline *o,
                       const LhatNode *node)
 {
-    cJSON *range = cJSON_CreateObject();
-    cJSON_AddItemToObject(into, field, range);
-    add_position(range, "start", o, lhat_node_span_start(node));
-    add_position(range, "end", o, node->end);
+    cJSON_AddItemToObject(
+        into, field,
+        lsp_unit_range_json(o->unit, lhat_node_span_start(node), node->end));
 }
 
 // One DocumentSymbol appended to `into`. `whole` is what the symbol spans,

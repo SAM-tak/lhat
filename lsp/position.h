@@ -1,11 +1,16 @@
-// L^ (lhat) -- LSP server: byte offset -> LSP Position.
+// L^ (lhat) -- LSP server: a place in a file, as a client wants it.
 //
 // lhat's line/column count Unicode code points (src/lexer.c). LSP's
 // Position.character counts UTF-16 code units. 03-compilation-pipeline.md's
 // 1.3節 already keeps two counts of a column apart -- what a diagnostic
 // names (code points) and where a terminal's mark lands (cells, UAX #11).
-// This is the third, shared by diagnostics.c and semantic_tokens.c since
-// both turn a byte offset into a client-visible position.
+// This is the third, and every byte offset the server hands out passes
+// through it.
+//
+// The wire form is here too. Every request that names a place says it the
+// one way -- a diagnostic, a symbol, a definition, a hover, the edit a
+// completion carries -- so the shape is written once rather than assembled
+// at each of them.
 
 #ifndef LSP_POSITION_H
 #define LSP_POSITION_H
@@ -13,6 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cJSON.h"
 #include "program_internal.h"
 
 typedef struct {
@@ -37,5 +43,16 @@ uint32_t lsp_offset_at(const char *text, size_t text_length, int line,
 // the first, and every one an editor hands in comes back through the second.
 LspPosition lsp_unit_position_at(const LhatUnit *unit, uint32_t byte_offset);
 uint32_t lsp_unit_offset_at(const LhatUnit *unit, int line, int character);
+
+// The caller owns what comes back, which in practice means handing it
+// straight to cJSON_AddItemToObject.
+cJSON *lsp_position_json(LspPosition at);
+cJSON *lsp_range_json(LspPosition from, LspPosition to);
+
+// The same range from two byte offsets into a unit's source, which is
+// what a caller with a node or a diagnostic actually holds. Both ends go
+// through lsp_unit_position_at, so a .lton's own shift is applied.
+cJSON *lsp_unit_range_json(const LhatUnit *unit, uint32_t from,
+                           uint32_t to);
 
 #endif  // LSP_POSITION_H
