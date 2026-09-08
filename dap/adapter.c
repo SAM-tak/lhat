@@ -28,6 +28,8 @@
 
 #ifdef _WIN32
 #include <string.h>
+// CreateFileA and GetFinalPathNameByHandleA, for D6's link resolution.
+#include <windows.h>
 #define path_equal(a, b) (_stricmp((a), (b)) == 0)
 #else
 #include <limits.h>
@@ -245,14 +247,93 @@ static char *own_text(const char *text)
     return copy;
 }
 
-static char *normalize(const char *path)
+#ifdef _WIN32
+// 09 の D6: _fullpath canonicalises a spelling -- '.', '..', a relative
+// start, the separators -- but walks no reparse point, so a junction or a
+// symbolic link keeps its own name and two spellings of one file compare
+// unequal. A breakpoint set through the link then binds to nothing. POSIX
+// has had this for free all along: realpath resolves links.
+//
+// Opening the file is what resolves them, since the filesystem does the walk
+// on the way in. No elevation is involved -- reading where a link points is
+// not a privileged act, only making one is -- and a desired access of 0 asks
+// for metadata alone, so no read permission is needed either.
+// FILE_FLAG_BACKUP_SEMANTICS is what lets a directory be opened at all.
+//
+// Narrow on purpose. Every other path in the tree goes through fopen
+// (src/source.c, lsp/workspace.c), so this reads a path the same way the
+// rest of the program does; a wide call here would resolve names nothing
+// else could then open.
+//
+// NULL when the path names nothing that can be opened -- an editor may well
+// ask about a file that has since been moved -- and the caller keeps
+// _fullpath's spelling for it.
+static char *resolve_links(const char *path)
+{
+    HANDLE handle = CreateFileA(
+        path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return NULL;
+    }
+    // The documented two-call shape: a short answer fits, and a long one
+    // reports the room it needs (that count includes the terminator, the
+    // successful one does not).
+    const DWORD kind = FILE_NAME_NORMALIZED | VOLUME_NAME_DOS;
+    char small[MAX_PATH];
+    char *answer = small;
+    DWORD room = (DWORD)sizeof small;
+    DWORD wrote = GetFinalPathNameByHandleA(handle, small, room, kind);
+    if (wrote >= room) {
+        answer = (char *)malloc(wrote);
+        room = answer != NULL ? wrote : 0;
+        wrote = answer != NULL
+                    ? GetFinalPathNameByHandleA(handle, answer, room, kind)
+                    : 0;
+    }
+    CloseHandle(handle);
+    if (wrote == 0 || wrote >= room) {
+        if (answer != small) {
+            free(answer);
+        }
+        return NULL;
+    }
+    // What comes back wears the extended prefix. Every other path here is
+    // written the way a person writes one, and the two must compare equal.
+    const char *shown = answer;
+    char unc[MAX_PATH * 4];
+    if (strncmp(answer, "\\\\?\\UNC\\", 8) == 0) {
+        // \\?\UNC\server\share -> \\server\share
+        if (snprintf(unc, sizeof unc, "\\\\%s", answer + 8) < (int)sizeof unc) {
+            shown = unc;
+        }
+    } else if (strncmp(answer, "\\\\?\\", 4) == 0) {
+        shown = answer + 4;
+    }
+    char *copy = _strdup(shown);
+    if (answer != small) {
+        free(answer);
+    }
+    return copy;
+}
+#endif
+
+char *dap_normalize_path(const char *path)
 {
     if (path == NULL) {
         return NULL;
     }
 #ifdef _WIN32
     char *full = _fullpath(NULL, path, 0);
-    return full != NULL ? full : _strdup(path);
+    if (full == NULL) {
+        return _strdup(path);
+    }
+    char *resolved = resolve_links(full);
+    if (resolved == NULL) {
+        return full;
+    }
+    free(full);
+    return resolved;
 #else
     char resolved[PATH_MAX];
     if (realpath(path, resolved) != NULL) {
@@ -270,7 +351,7 @@ static const char *normal_of(DapSession *s, const char *source)
     }
     if (source != s->cached_source) {
         free(s->cached_normal);
-        s->cached_normal = normalize(source);
+        s->cached_normal = dap_normalize_path(source);
         s->cached_source = source;
     }
     return s->cached_normal;
@@ -356,7 +437,7 @@ static uint32_t next_executable_line(DapSession *s, const char *key,
         } else {
             // This runs only during setBreakpoints, never at every VM
             // instruction, so a per-unit normalization needs no cache.
-            char *normal = normalize(path);
+            char *normal = dap_normalize_path(path);
             matches = normal != NULL && path_equal(normal, key);
             free(normal);
         }
@@ -818,7 +899,7 @@ static void set_breakpoints(DapSession *s, const cJSON *arguments, cJSON *body)
                 key = own_text(unit);
             }
         } else {
-            key = normalize(path->valuestring);
+            key = dap_normalize_path(path->valuestring);
         }
     }
     clear_breakpoints_for(s, key);

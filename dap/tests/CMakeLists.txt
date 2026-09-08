@@ -25,3 +25,8 @@ lhat_dap_add_test(test_dap_protocol ${CMAKE_SOURCE_DIR}/dap/protocol.c)
 # carries the ports the rest of the file wants.
 lhat_dap_add_test(test_dap_column)
 target_link_libraries(test_dap_column PRIVATE lhatdap)
+
+# How two spellings of one file are compared (09 の 5.2 with D6). It makes a
+# link on the filesystem, so it links the built adapter the same way.
+lhat_dap_add_test(test_dap_path)
+target_link_libraries(test_dap_path PRIVATE lhatdap)

@@ -80,6 +80,21 @@ bool dap_session_ended_run(const DapSession *session);
 // Public for its own test -- it is the one piece here with arithmetic in it.
 uint32_t dap_column_of_line(const char *text, size_t length, uint32_t line);
 
+// 09 の 5.2 with D6: `path` written the one way this session compares paths,
+// malloc'd for the caller. Absolute, with '.' and '..' taken out, and with
+// every symbolic link and junction walked through, so two spellings of one
+// file answer the same string. What names nothing that can be opened is
+// still canonicalised as far as its spelling allows -- an editor may ask
+// about a file that has since been moved.
+//
+// This is for comparing, never for reporting: a frame says its source the
+// way the program spelt it (or the way `to_editor` asks for), so an editor
+// is not sent to a second copy of the file it already has open.
+//
+// Public for its own test -- what a link resolves to is not something a
+// session-level test could set up.
+char *dap_normalize_path(const char *path);
+
 #ifdef __cplusplus
 }
 #endif
