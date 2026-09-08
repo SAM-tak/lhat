@@ -1,0 +1,87 @@
+# Builds and runs the suite on the three platforms the language targets.
+#
+# Everything so far was built with MSVC on one machine, so this is the first
+# thing that compiles these sources with GCC and with Apple Clang at all --
+# as much a portability check as a regression one. The warnings differ too:
+# /W4 and -Wall -Wextra -Wpedantic do not object to the same things.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push on the same branch supersedes the run before it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      # One platform failing should not hide what the other two would say.
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows / msvc
+            os: windows-latest
+          - name: linux / gcc
+            os: ubuntu-latest
+          - name: macos / clang
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # What scripts/devshell.ps1 does locally: the Ninja presets invoke the
+      # compiler directly, so INCLUDE / LIB / PATH must come from vcvars.
+      - name: MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Ninja (apt)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Ninja (brew)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Configure
+        run: cmake --preset release
+
+      - name: Build
+        run: cmake --build --preset release
+
+      - name: Test
+        run: ctest --preset release
+
+  # MSVC has AddressSanitizer but no UBSan, so this is the only place the
+  # undefined-behaviour checks run at all -- which is most of what a Clang
+  # or GCC build is worth to this project beyond portability.
+  sanitize:
+    name: linux / clang + asan,ubsan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ASAN_OPTIONS: abort_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Ninja and Clang
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang
+
+      # The asan preset only turns LHAT_SANITIZE on; which compiler reads it
+      # decides whether UBSan comes along, so it is named here rather than
+      # written into the preset.
+      - name: Configure
+        run: cmake --preset asan -DCMAKE_C_COMPILER=clang
+
+      - name: Build
+        run: cmake --build --preset asan
+
+      - name: Test
+        run: ctest --preset asan
