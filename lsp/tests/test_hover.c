@@ -11,6 +11,7 @@
 
 #include "hover.h"
 #include "testutil.h"
+#include "util.h"
 
 typedef struct {
     LhatSource source;
@@ -67,7 +68,7 @@ static char *hover_text(const Checked *c, uint32_t offset)
     cJSON *contents = cJSON_GetObjectItemCaseSensitive(hover, "contents");
     cJSON *value = cJSON_GetObjectItemCaseSensitive(contents, "value");
     char *copy = value != NULL && cJSON_IsString(value)
-        ? _strdup(value->valuestring) : NULL;
+        ? lsp_strdup(value->valuestring) : NULL;
     cJSON_Delete(hover);
     return copy;
 }
@@ -493,7 +494,7 @@ static char *hover_across(const LhatProgram *program, const LhatUnit *asked,
         cJSON *hover = lsp_hover_render(&part);
         cJSON *contents = cJSON_GetObjectItemCaseSensitive(hover, "contents");
         cJSON *value = cJSON_GetObjectItemCaseSensitive(contents, "value");
-        copy = cJSON_IsString(value) ? _strdup(value->valuestring) : NULL;
+        copy = cJSON_IsString(value) ? lsp_strdup(value->valuestring) : NULL;
         cJSON_Delete(hover);
     }
     lsp_hover_part_dispose(&part);

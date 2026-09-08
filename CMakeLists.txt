@@ -268,6 +268,14 @@ target_include_directories(lhatport PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # otherwise. PUBLIC so it carries through to whatever links lhat.
 target_link_libraries(lhat PUBLIC lhatport)
 
+# floor and pow, which 02 の 11.2's division and 14.8's ordinals reach for.
+# Unix keeps the maths out of the C library and wants it named; the Windows
+# CRT has it inside, and macOS's libSystem does too -- naming it there is
+# harmless but says something untrue, so it is asked for where it is real.
+if(UNIX AND NOT APPLE)
+    target_link_libraries(lhat PUBLIC m)
+endif()
+
 # ---- Threads --------------------------------------------------------------
 # As port/thread.h says at its head, this is not something the core asks
 # for -- the language runs on one thread. Only what stands beside the core
