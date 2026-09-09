@@ -357,6 +357,11 @@ static void channel_make(LhatMachine *machine, void *context,
         answers[0] = fail_with(machine, module->out_of_memory,
                                "a channel could not be made");
     } else {
+        // The value carries 8.8改2's wrapper hold now, and gives it back
+        // through dispose^ or the collector. What channel_new left is this
+        // call's own, and this call is done with it -- an anonymous channel
+        // has no table standing behind it the way a named one does.
+        channel_let_go(channel, NULL);
         answers[0] = out;
     }
     *answer_count = 1;
