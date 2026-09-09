@@ -1,6 +1,6 @@
 # The Programming Language L^
 
-![L^ Logo](lhat-logo.svg)
+![L^ Logo](media/lhat-logo.svg)
 
 `L^` (elhat) — Modern & Better Lua with Visual Programming.
 
@@ -24,7 +24,7 @@ registers what it provides by writing the type out in C.
 
 ### Factorial
 
-![import^std.io — let^print=std.io.print — let^factorial = f^n:number^{ if^ n < 2: 1 el^: n * this^(n - 1); } — print($"{factorial(10)}")](readme-example.svg)
+![import^std.io — let^print=std.io.print — let^factorial = f^n:number^{ if^ n < 2: 1 el^: n * this^(n - 1); } — print($"{factorial(10)}")](media/readme-example.svg)
 
 ### 24 Game
 
@@ -32,7 +32,7 @@ registers what it provides by writing the type out in C.
 dealt, and the player writes an expression using each of them once that comes
 to 24. The source is [sample/24.lh](sample/24.lh).
 
-![sample/24.lh — a recursive-descent reader written as a def^, and the loop that deals four digits and checks what the player typed](readme-24game.svg)
+![sample/24.lh — a recursive-descent reader written as a def^, and the loop that deals four digits and checks what the player typed](media/readme-24game.svg)
 
 ## Requirements
 
