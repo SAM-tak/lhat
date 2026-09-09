@@ -145,10 +145,15 @@ endif()
 # The installed tree, proven end to end: install into a scratch prefix,
 # then configure, build and run tests/install_smoke against it through
 # find_package. See scripts/install_smoke.cmake.
+# The compiler and the sanitizer go down with it: a host that links a
+# sanitized library has to be built the same way, or the link is the thing
+# that fails rather than anything about the install.
 add_test(NAME install_smoke
          COMMAND ${CMAKE_COMMAND}
              -DBUILD_DIR=${CMAKE_BINARY_DIR}
              -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+             -DHOST_COMPILER=${CMAKE_C_COMPILER}
+             -DHOST_SANITIZE=${LHAT_SANITIZE}
              -P ${CMAKE_SOURCE_DIR}/scripts/install_smoke.cmake)
 set_tests_properties(install_smoke PROPERTIES LABELS e2e TIMEOUT 300)
 

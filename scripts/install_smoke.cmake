@@ -20,11 +20,24 @@ if(NOT result EQUAL 0)
     message(FATAL_ERROR "cmake --install failed")
 endif()
 
+# Match the tree being linked against. The compiler is handed down because
+# find_package answers with libraries that compiler built; the sanitizer,
+# because ASan instruments the whole program or none of it.
+set(host_args
+    -S ${SOURCE_DIR}/tests/install_smoke -B ${hostbuild}
+    -G Ninja -DCMAKE_BUILD_TYPE=Debug
+    -DCMAKE_PREFIX_PATH=${prefix})
+if(HOST_COMPILER)
+    list(APPEND host_args -DCMAKE_C_COMPILER=${HOST_COMPILER})
+endif()
+if(HOST_SANITIZE AND NOT MSVC)
+    list(APPEND host_args
+        "-DCMAKE_C_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer"
+        "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined")
+endif()
+
 execute_process(
-    COMMAND ${CMAKE_COMMAND}
-        -S ${SOURCE_DIR}/tests/install_smoke -B ${hostbuild}
-        -G Ninja -DCMAKE_BUILD_TYPE=Debug
-        -DCMAKE_PREFIX_PATH=${prefix}
+    COMMAND ${CMAKE_COMMAND} ${host_args}
     RESULT_VARIABLE result)
 if(NOT result EQUAL 0)
     message(FATAL_ERROR "configuring the host against the install failed")
