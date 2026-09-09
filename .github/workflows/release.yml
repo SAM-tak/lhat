@@ -36,7 +36,11 @@ jobs:
           # and the one for darwin-arm64 carry the same universal binaries.
           - slug: darwin-universal
             os: macos-latest
-            extra: -DCMAKE_OSX_ARCHITECTURES=arm64;x86_64
+            # Passed through the environment, not interpolated into the
+            # command: the ';' that separates a CMake list is also the
+            # shell's command separator, and unquoted it runs "x86_64" as a
+            # command of its own.
+            extra: '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'
     steps:
       - uses: actions/checkout@v5
 
@@ -53,7 +57,13 @@ jobs:
         run: brew install ninja
 
       - name: Configure
-        run: cmake --preset release ${{ matrix.extra }}
+        shell: bash
+        # ${VAR:+"$VAR"} is "this argument, quoted, or no argument at all" --
+        # every target but macOS names no extra, and an empty string would be
+        # an argument of its own.
+        run: cmake --preset release ${EXTRA:+"$EXTRA"}
+        env:
+          EXTRA: ${{ matrix.extra }}
 
       - name: Build
         run: cmake --build --preset release
