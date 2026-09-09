@@ -5110,16 +5110,35 @@ void lhat_parse_type_only(LhatLexer *lexer, LhatParseResult *result)
 // call of x.
 bool lhat_parse_is_command(const LhatLexer *lexer)
 {
+    // Two tokens are read and the reading is thrown away. The copy is
+    // shallow, so the buffers a lexer grows as it reads would be the
+    // caller's: a string literal in what this reads would realloc the
+    // caller's `strings` out from under it -- leaving a pointer that goes on
+    // being used -- and leave what it grew behind besides. The probe gets
+    // its own of each instead, and gives them back on the way out.
     LhatLexer probe = *lexer;
-    LhatToken first = lhat_lexer_next(&probe);
-    if (first.kind != LHAT_TOKEN_IDENT) {
-        return false;
-    }
+    probe.strings = NULL;
+    probe.strings_length = 0;
+    probe.strings_capacity = 0;
+    probe.diagnostics = NULL;
+    probe.diagnostic_count = 0;
+    probe.diagnostic_capacity = 0;
+#if LHAT_WITH_COMMENTS
+    probe.comments = NULL;
+    probe.comment_count = 0;
+    probe.comment_capacity = 0;
+#endif
 
-    Parser p;
-    p.lexer = &probe;
-    LhatToken second = lhat_lexer_next(&probe);
-    return !continues_expression(&p, &second);
+    bool answer = false;
+    LhatToken first = lhat_lexer_next(&probe);
+    if (first.kind == LHAT_TOKEN_IDENT) {
+        Parser p;
+        p.lexer = &probe;
+        LhatToken second = lhat_lexer_next(&probe);
+        answer = !continues_expression(&p, &second);
+    }
+    lhat_lexer_dispose(&probe);
+    return answer;
 }
 
 void lhat_parse_command(LhatLexer *lexer, LhatParseResult *result)
