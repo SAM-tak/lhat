@@ -311,6 +311,7 @@ static void test_edges(void)
             LHAT_CHECK(strncmp(out, "ab\n  ~\n", 7) == 0, "past the last byte");
             free(out);
         }
+        lhat_source_dispose(&source);
     }
 }
 

@@ -1020,6 +1020,9 @@ static void dispose_module(void *raw)
     TaskModule *module = (TaskModule *)raw;
     stop_pool(module);
     lhat_free(module->queue);
+    // park() grows this one the way the queue grows, and it is the module's
+    // for just as long.
+    lhat_free(module->parked);
     lhat_condition_destroy(&module->work);
     lhat_mutex_destroy(&module->lock);
     lhat_free(module);
