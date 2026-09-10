@@ -1,10 +1,9 @@
 # Builds the binaries a release consists of, and attaches them to it.
 #
-# What ships is the runtime (lhat, which is also the debug adapter of 09) and
-# the language server (lhatls). The VSCode extension's own release workflow
-# reads these archives and packs them into a platform-specific .vsix, so the
-# names here are what it looks for -- lhat-<platform>.zip on Windows and
-# lhat-<platform>.tar.gz everywhere else.
+# The command-line runtime (lhat) and language server (lhatls) are separate
+# products. The VSCode extension downloads only lhatls-<platform>, while lhat
+# stays available as a small standalone way to try the language and as the
+# debugger runtime. Both are built and tested from the same source revision.
 name: release
 
 on:
@@ -76,30 +75,39 @@ jobs:
       - name: Collect
         shell: bash
         run: |
-          mkdir dist
+          mkdir -p dist/lhat dist/lhatls
           for name in lhat lhatls; do
             if [ -f "build/release/$name.exe" ]; then
-              cp "build/release/$name.exe" dist/
+              cp "build/release/$name.exe" "dist/$name/"
             else
-              cp "build/release/$name" dist/
+              cp "build/release/$name" "dist/$name/"
             fi
+            cp LICENSE "dist/$name/"
           done
-          cp LICENSE dist/
           ls -l dist
+          ls -l dist/lhat dist/lhatls
 
       - name: Pack
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
-            (cd dist && 7z a "../lhat-${{ matrix.slug }}.zip" .)
+            for product in lhat lhatls; do
+              (cd "dist/$product" && \
+                7z a "../../$product-${{ matrix.slug }}.zip" .)
+            done
           else
-            tar -C dist -czf "lhat-${{ matrix.slug }}.tar.gz" .
+            for product in lhat lhatls; do
+              tar -C "dist/$product" -czf \
+                "$product-${{ matrix.slug }}.tar.gz" .
+            done
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: lhat-${{ matrix.slug }}
-          path: lhat-${{ matrix.slug }}.*
+          name: binaries-${{ matrix.slug }}
+          path: |
+            lhat-${{ matrix.slug }}.*
+            lhatls-${{ matrix.slug }}.*
           if-no-files-found: error
 
   publish:
@@ -111,7 +119,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -119,6 +127,10 @@ jobs:
       - name: Attach to the release
         run: |
           ls -l dist
-          gh release create "$GITHUB_REF_NAME" --generate-notes dist/*
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" --generate-notes dist/*
+          fi
         env:
           GH_TOKEN: ${{ github.token }}

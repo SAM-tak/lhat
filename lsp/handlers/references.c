@@ -219,7 +219,6 @@ cJSON *lsp_handle_references(LspServer *server, const cJSON *params)
     if (!target_at(server, params, &asked, &path)) {
         return NULL;
     }
-    free(path);
 
     const cJSON *context = cJSON_GetObjectItemCaseSensitive(params, "context");
     const cJSON *wants = cJSON_GetObjectItemCaseSensitive(
@@ -231,8 +230,9 @@ cJSON *lsp_handle_references(LspServer *server, const cJSON *params)
     walk.with_declaration = !cJSON_IsBool(wants) || cJSON_IsTrue(wants);
     walk.flat = cJSON_CreateArray();
     if (walk.flat != NULL) {
-        lsp_workspace_with_every_unit(&server->workspace, walk_unit, &walk);
+        lsp_workspace_with_every_unit(&server->workspace, path, walk_unit, &walk);
     }
+    free(path);
     asked_dispose(&asked);
     return walk.flat;
 }
@@ -266,8 +266,6 @@ cJSON *lsp_handle_rename(LspServer *server, const cJSON *params)
     if (!target_at(server, params, &asked, &path)) {
         return NULL;
     }
-    free(path);
-
     Walk walk;
     memset(&walk, 0, sizeof walk);
     walk.asked = &asked;
@@ -277,8 +275,9 @@ cJSON *lsp_handle_rename(LspServer *server, const cJSON *params)
     walk.grouped = edit != NULL ? cJSON_AddObjectToObject(edit, "changes")
                                 : NULL;
     if (walk.grouped != NULL) {
-        lsp_workspace_with_every_unit(&server->workspace, walk_unit, &walk);
+        lsp_workspace_with_every_unit(&server->workspace, path, walk_unit, &walk);
     }
+    free(path);
     asked_dispose(&asked);
     return edit;
 }

@@ -28,15 +28,13 @@ static char *path_from_text_document(const cJSON *text_document)
     return lsp_uri_to_absolute_path(uri->valuestring);
 }
 
-// A path worth waking the worker for: a unit, or the workspace's
-// lhat-host.json, which the worker answers by reloading the host config
-// (worker.c). Anything else the editor opens -- a README, this server's
-// own sources -- has nothing for the checker and stays out of the queue.
+// A path worth waking the worker for: a unit, or either configuration name
+// under a workspace folder. The latter may create or remove a project
+// boundary, so it is recognized even before that project exists.
 static bool worth_rechecking(LspServer *server, const char *path)
 {
     return lsp_workspace_is_unit_path(path) ||
-           lsp_workspace_is_host_config_path(&server->workspace, path) ||
-           lsp_workspace_is_settings_path(&server->workspace, path);
+           lsp_workspace_is_config_path(&server->workspace, path);
 }
 
 // The editor's copy of `path`, kept for everything downstream to read

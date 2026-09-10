@@ -58,6 +58,16 @@ lhat_lsp_add_test(test_settings
     ${CMAKE_SOURCE_DIR}/lsp/settings.c
     ${CMAKE_SOURCE_DIR}/lsp/util.c
 )
+lhat_lsp_add_test(test_workspace_projects
+    ${CMAKE_SOURCE_DIR}/lsp/workspace.c
+    ${CMAKE_SOURCE_DIR}/lsp/document_store.c
+    ${CMAKE_SOURCE_DIR}/lsp/host_config.c
+    ${CMAKE_SOURCE_DIR}/lsp/settings.c
+    ${CMAKE_SOURCE_DIR}/lsp/diagnostics.c
+    ${CMAKE_SOURCE_DIR}/lsp/position.c
+    ${CMAKE_SOURCE_DIR}/lsp/lton.c
+    ${CMAKE_SOURCE_DIR}/lsp/util.c
+)
 lhat_lsp_add_test(test_definition ${CMAKE_SOURCE_DIR}/lsp/definition.c)
 # 07 の 5 章: the same record read the other way round -- every use of one
 # declaration rather than one use's own.

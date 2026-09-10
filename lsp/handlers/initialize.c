@@ -3,6 +3,7 @@
 #include "initialize.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "../semantic_tokens.h"  // LSP_SEMANTIC_TOKEN_TYPES/MODIFIERS
 
@@ -19,36 +20,85 @@ static cJSON *string_array(const char *const *items, size_t count)
     return array;
 }
 
-static char *read_root_path(const cJSON *params)
+typedef struct {
+    char **paths;
+    size_t count;
+    size_t capacity;
+} WorkspacePaths;
+
+static void workspace_paths_dispose(WorkspacePaths *paths)
 {
-    if (params == NULL) {
-        return NULL;
+    for (size_t i = 0; i < paths->count; i++) {
+        free(paths->paths[i]);
     }
-    const cJSON *root_uri = cJSON_GetObjectItemCaseSensitive(params, "rootUri");
-    if (cJSON_IsString(root_uri)) {
-        return lsp_uri_to_absolute_path(root_uri->valuestring);
+    free(paths->paths);
+}
+
+static void workspace_paths_add(WorkspacePaths *paths, const char *uri)
+{
+    char *path = lsp_uri_to_absolute_path(uri);
+    if (path == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < paths->count; i++) {
+        if (strcmp(paths->paths[i], path) == 0) {
+            free(path);
+            return;
+        }
+    }
+    if (paths->count == paths->capacity) {
+        size_t grown = paths->capacity ? paths->capacity * 2 : 4;
+        char **bigger = (char **)realloc(paths->paths, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            free(path);
+            return;
+        }
+        paths->paths = bigger;
+        paths->capacity = grown;
+    }
+    paths->paths[paths->count++] = path;
+}
+
+// workspaceFolders is the current LSP representation: rootUri is only the
+// older single-folder fallback. Keep every valid folder, rather than silently
+// treating the first one as the whole editor workspace.
+static WorkspacePaths read_workspace_paths(const cJSON *params)
+{
+    WorkspacePaths paths = {0};
+    if (params == NULL) {
+        return paths;
     }
     const cJSON *folders =
         cJSON_GetObjectItemCaseSensitive(params, "workspaceFolders");
-    if (cJSON_IsArray(folders) && cJSON_GetArraySize(folders) > 0) {
-        const cJSON *first = cJSON_GetArrayItem(folders, 0);
-        const cJSON *uri = cJSON_GetObjectItemCaseSensitive(first, "uri");
-        if (cJSON_IsString(uri)) {
-            return lsp_uri_to_absolute_path(uri->valuestring);
+    if (cJSON_IsArray(folders)) {
+        cJSON *folder = NULL;
+        cJSON_ArrayForEach(folder, folders) {
+            const cJSON *uri = cJSON_GetObjectItemCaseSensitive(folder, "uri");
+            if (cJSON_IsString(uri)) {
+                workspace_paths_add(&paths, uri->valuestring);
+            }
         }
     }
-    return NULL;
+    if (paths.count == 0) {
+        const cJSON *root_uri =
+            cJSON_GetObjectItemCaseSensitive(params, "rootUri");
+        if (cJSON_IsString(root_uri)) {
+            workspace_paths_add(&paths, root_uri->valuestring);
+        }
+    }
+    return paths;
 }
 
 cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
 {
-    char *root_path = read_root_path(params);
+    WorkspacePaths paths = read_workspace_paths(params);
 
-    // lsp_server_init already gave the workspace an empty (root_path ==
-    // NULL) start; this is the one point a real root can replace it.
+    // lsp_server_init already gave the workspace an empty start; this is the
+    // one point the client folders replace it.
     lsp_workspace_dispose(&server->workspace);
-    lsp_workspace_init(&server->workspace, root_path);
-    free(root_path);
+    lsp_workspace_init(&server->workspace, (const char *const *)paths.paths,
+                       paths.count);
+    workspace_paths_dispose(&paths);
 
     cJSON *result = cJSON_CreateObject();
     cJSON *capabilities = cJSON_CreateObject();
@@ -99,6 +149,15 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     cJSON_AddItemToObject(capabilities, "renameProvider", rename);
     cJSON_AddBoolToObject(rename, "prepareProvider", true);
 
+    cJSON *workspace = cJSON_CreateObject();
+    cJSON *folders = cJSON_CreateObject();
+    cJSON_AddBoolToObject(folders, "supported", true);
+    // Folder changes are not registered yet; the initialized list is fully
+    // supported, and the capability must not promise more than that.
+    cJSON_AddBoolToObject(folders, "changeNotifications", false);
+    cJSON_AddItemToObject(workspace, "workspaceFolders", folders);
+    cJSON_AddItemToObject(capabilities, "workspace", workspace);
+
     cJSON_AddItemToObject(result, "capabilities", capabilities);
 
     cJSON *info = cJSON_CreateObject();
@@ -107,21 +166,13 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     return result;
 }
 
-// Everything slow happens on the worker (worker.c), not here: this walks
-// the workspace only to find *.lh files and read lhat-host.json (I/O, but
-// no lhat_program_check). The worker checks them all
-// (lsp_workspace_recheck_all) as its first act once started.
+// Everything slow happens on the worker (worker.c), not here: this walks the
+// folders only to find project boundaries and roots (I/O, but no
+// lhat_program_check). The worker checks them all as its first act.
 void lsp_handle_initialized(LspServer *server, const cJSON *params)
 {
     (void)params;
-    // The settings first, and this order is load-bearing: discover_roots
-    // reads them to decide what is a root, and nothing re-runs it until the
-    // settings themselves change -- so a scan that ran without them would
-    // leave every excluded file registered until the user next touched
-    // lhat-lsp.json. The host config has no such tie and follows.
-    lsp_server_load_settings(server);
-    lsp_workspace_discover_roots(&server->workspace);
-    lsp_server_load_host_config(server);
+    lsp_workspace_discover_projects(&server->workspace);
     lsp_server_start_worker(server);
 }
 

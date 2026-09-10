@@ -31,20 +31,20 @@
 // freely as before and the path is added to the roots afterwards, by name.
 // So the two features do not meet at all.
 //
-// Each is a path relative to the workspace root, and one that stays inside
+// Each is a path relative to the project root, and one that stays inside
 // it: an absolute path could not be committed to the repository this file
 // lives in, and a ".." would arrive unfolded where every other path key in
 // this server is folded (lsp/uri.h) and register a second root for one file.
 //
 // THE PATTERNS ARE NOT GITIGNORE. A pattern is matched against the path
-// relative to the workspace root, '/'-separated:
+// relative to the project root, '/'-separated:
 //
 //   *      any run of characters that does not cross '/'
 //   **     any run, '/' included; "**/" also matches no segments at all
 //   rest   literal -- '!', '?' and '[' included, so there is no negation
 //
 // A pattern matches the path it names and everything under it, which makes
-// "build" and "build/" the same pattern. Anchored at the workspace root
+// "build" and "build/" the same pattern. Anchored at the project root
 // unless it begins with "**/".
 
 #ifndef LSP_SETTINGS_H
@@ -75,12 +75,12 @@ bool lsp_settings_strict(const LspSettings *settings, bool fallback);
 size_t lsp_settings_exclude_count(const LspSettings *settings);
 
 // The named files, in the order they were written -- workspace.c joins each
-// to the workspace root and adds it as a root of its own. `at` answers NULL
+// to the project root and adds it as a root of its own. `at` answers NULL
 // past the end. The strings live as long as `settings`.
 size_t lsp_settings_force_count(const LspSettings *settings);
 const char *lsp_settings_force_at(const LspSettings *settings, size_t index);
 
-// Whether `relative` (workspace-relative, '/'-separated, no leading '/')
+// Whether `relative` (project-relative, '/'-separated, no leading '/')
 // is excluded. False when there are no settings, when there are no patterns,
 // and for a file force_include_files names -- which is what makes a forced
 // file behave like any other from there on: the scan keeps it, the sweep
@@ -92,7 +92,7 @@ bool lsp_settings_excludes_relative(const LspSettings *settings,
 // server takes (lsp/uri.h). False when `settings` or `root_path` is NULL
 // (single-file mode has no project to be outside of), and false for a path
 // that is not under `root_path` -- an exclusion is a statement about this
-// workspace and says nothing about anything else.
+// project and says nothing about anything else.
 //
 // Compared byte for byte, not case-folded: root_find and the document store
 // already identify paths with strcmp, and a second notion of when two paths

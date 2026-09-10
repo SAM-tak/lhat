@@ -90,7 +90,7 @@ static void test_what_the_language_does_not_have(void)
     expect_match("a[bc].lh", "ab.lh", false);
 }
 
-// Every path key in this server is absolute (lsp/uri.h), so the workspace
+// Every path key in this server is absolute (lsp/uri.h), so the project
 // asks about one of those and the relative form is cut here.
 static void test_an_absolute_path(void)
 {
@@ -99,7 +99,7 @@ static void test_an_absolute_path(void)
         return;
     }
 
-    LHAT_TEST("an absolute path is cut against the workspace root");
+    LHAT_TEST("an absolute path is cut against the project root");
     LHAT_CHECK_EQ_BOOL(
         lsp_settings_excludes_path(settings, "c:/repo", "c:/repo/build/x.lh"),
         true);
@@ -306,7 +306,7 @@ static void test_reading_the_file(void)
 }
 
 // A pattern is written by a person, who may write it the way their own
-// shell does. Both spellings mean the workspace-relative path.
+// shell does. Both spellings mean the project-relative path.
 static void test_a_pattern_is_tidied_once(void)
 {
     LHAT_TEST("a backslash is a separator too");

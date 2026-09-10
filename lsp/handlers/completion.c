@@ -61,7 +61,7 @@ static cJSON *answer_from_the_text(LspServer *server, const char *path,
     if (lsp_completion_require_prefix(text, length, offset, &from)) {
         size_t count = 0;
         char **paths =
-            lsp_workspace_copy_unit_paths(&server->workspace, &count);
+            lsp_workspace_copy_unit_paths(&server->workspace, path, &count);
         cJSON *items = lsp_completion_path_items(
             path, (const char *const *)paths, count);
         lsp_workspace_free_strings(paths, count);
@@ -70,7 +70,7 @@ static cJSON *answer_from_the_text(LspServer *server, const char *path,
     if (lsp_completion_import_prefix(text, length, offset, &from)) {
         size_t count = 0;
         char **modules =
-            lsp_workspace_copy_module_names(&server->workspace, &count);
+            lsp_workspace_copy_module_names(&server->workspace, path, &count);
         cJSON *items = lsp_completion_module_items(
             (const char *const *)modules, count, text + from, offset - from);
         lsp_workspace_free_strings(modules, count);
@@ -125,7 +125,7 @@ cJSON *lsp_handle_completion(LspServer *server, const cJSON *params)
         // holds the same lock for the whole of its own work.
         size_t others = 0;
         LspUnitExports *published =
-            lsp_workspace_copy_exports(&server->workspace, &others);
+            lsp_workspace_copy_exports(&server->workspace, path, &others);
         CompletionRequest request;
         request.line = line->valueint;
         request.character = character->valueint;

@@ -56,20 +56,6 @@ typedef enum {
 // same lock every other write to stdout does (rpc.h).
 void lsp_server_log(LspServer *server, LspLogLevel level, const char *text);
 
-// Reads the workspace's lhat-host.json and says on the log which file it
-// read, or that there was nothing at the path it tried -- 05 の 8.7's
-// registrations are the whole of what import^ can reach, so a workspace
-// missing them has every import^ fail, and the reason is not in the file
-// being edited. Both call sites (initialize.c at startup, worker.c when the
-// file itself changes) want the same sentence.
-void lsp_server_load_host_config(LspServer *server);
-
-// The same for lhat-lsp.json (settings.h), which is the other half of what
-// a workspace tells this server. Says less: a workspace without one is the
-// ordinary case, so only a file that was read, or one that would not read,
-// is worth a line.
-void lsp_server_load_settings(LspServer *server);
-
 // worker.c: starts the one recheck worker thread. Called once, from the
 // "initialized" notification.
 void lsp_server_start_worker(LspServer *server);
