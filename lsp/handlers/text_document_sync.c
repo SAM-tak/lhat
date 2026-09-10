@@ -1,4 +1,4 @@
-// L^ (lhat) -- LSP server: didOpen / didChange / didClose.
+// L^ (lhat) -- LSP server: text-document and file-watch notifications.
 //
 // Every handler here only updates document_store and marks a path dirty --
 // lhat_program_check never runs on this (the main) thread. The worker
@@ -135,4 +135,35 @@ void lsp_handle_did_close(LspServer *server, const cJSON *params)
         lsp_queue_mark_dirty(&server->queue, path);  // re-evaluate off disk
     }
     free(path);
+}
+
+// Configuration files are usually JSON documents, outside the client's L^
+// document selector. The client watches them separately and sends this
+// standard notification after a create, change, delete, or rename. Keeping
+// the queue entry is enough: worker.c recognises the config name, rebuilds
+// the project list, and reads the current file state from disk.
+void lsp_handle_did_change_watched_files(LspServer *server,
+                                         const cJSON *params)
+{
+    const cJSON *changes = params != NULL
+        ? cJSON_GetObjectItemCaseSensitive(params, "changes") : NULL;
+    if (!cJSON_IsArray(changes)) {
+        return;
+    }
+    int count = cJSON_GetArraySize(changes);
+    for (int i = 0; i < count; i++) {
+        const cJSON *change = cJSON_GetArrayItem(changes, i);
+        const cJSON *uri = change != NULL
+            ? cJSON_GetObjectItemCaseSensitive(change, "uri") : NULL;
+        if (!cJSON_IsString(uri) || uri->valuestring == NULL) {
+            continue;
+        }
+        char *path = lsp_uri_to_absolute_path(uri->valuestring);
+        if (path != NULL) {
+            if (lsp_workspace_is_config_path(&server->workspace, path)) {
+                lsp_queue_mark_dirty(&server->queue, path);
+            }
+            free(path);
+        }
+    }
 }

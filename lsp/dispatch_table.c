@@ -39,5 +39,6 @@ const LspNotificationEntry LSP_NOTIFICATION_TABLE[] = {
     {"textDocument/didOpen", lsp_handle_did_open},
     {"textDocument/didChange", lsp_handle_did_change},
     {"textDocument/didClose", lsp_handle_did_close},
+    {"workspace/didChangeWatchedFiles", lsp_handle_did_change_watched_files},
     {NULL, NULL},
 };
