@@ -45,7 +45,18 @@ jobs:
 
       - name: MSVC environment
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        shell: pwsh
+        run: |
+          . ./scripts/devshell.ps1
+          $variables = 'PATH', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR',
+            'VCToolsInstallDir', 'VSINSTALLDIR', 'WindowsSdkDir',
+            'WindowsSDKVersion', 'UniversalCRTSdkDir', 'UCRTVersion'
+          foreach ($variable in $variables) {
+            $value = [Environment]::GetEnvironmentVariable($variable, 'Process')
+            if ($null -ne $value) {
+              "$variable=$value" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
 
       - name: Ninja (apt)
         if: runner.os == 'Linux'
