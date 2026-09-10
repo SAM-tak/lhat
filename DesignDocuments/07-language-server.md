@@ -4,7 +4,9 @@
 拡張は別リポジトリ [lhat-vscode-extension](https://github.com/SAM-tak/lhat-vscode-extension)
 にあり、本文で拡張側のファイルを指すパスはそのリポジトリのルートからの相対。
 
-ビジュアルエディタは同じ拡張の中に載るが、設計は [06-visual-editor.md](06-visual-editor.md) に分けてある。
+ビジュアルエディタは同じ拡張の中に載る。その設計は
+[拡張リポジトリの 06-visual-editor.md](https://github.com/SAM-tak/lhat-vscode-extension/blob/main/devdocs/06-visual-editor.md)
+に分けてある。
 本文書はその土台にあたる部分を扱う。
 
 節番号のない参照（`14.17` など）は [02-syntax.md](02-syntax.md) を指す。

@@ -1,6 +1,8 @@
 // L^ (lhat) -- LSP server: the syntax tree as JSON, for lhat/ast.
 //
-// Defined in DesignDocuments/06-visual-editor.md の 4 章. The visual editor
+// Defined in the Visual Editor design document, section 4:
+// https://github.com/SAM-tak/lhat-vscode-extension/blob/main/devdocs/06-visual-editor.md
+// The visual editor
 // reads this instead of parsing L^ for itself, so that one parser -- the
 // language's own -- decides what a unit means.
 
