@@ -31,3 +31,4 @@ compile_commands.json
 # driver registers, so it goes stale the moment stdlib/ changes -- generate
 # it rather than track it (see the extension repository's README).
 lhat-host.json
+lhat-lsp.json
