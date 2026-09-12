@@ -11,6 +11,7 @@
 
 #include "check.h"
 #include "hosted.h"
+#include "lhat/completion.h"
 #include "lhat/lexer.h"
 #include "parser.h"
 #include "lhat/program.h"
@@ -246,6 +247,44 @@ typedef struct LhatGlobalEntry {
     LhatRuntimeType **parameter_types;  // 14.12, as on LhatHostEntry
 } LhatGlobalEntry;
 
+// 05 の 8.11: the host's lock. Declared because 07 の 4 章's remembered
+// completions are read and written from src/completion.c, which is not the
+// file that defines them.
+void lhat_program_hold(LhatProgram *program);
+void lhat_program_release(LhatProgram *program);
+
+// 07 の 4 章: what a member completion answered for one receiver.
+//
+// Listing a receiver's members asks the checker for every built-in spelling
+// it knows of, one at a time (lhat_check_builtin_members), and that is nine
+// tenths of what the request costs. A popup asks again on every keystroke,
+// so the same receiver is listed over and over.
+//
+// Keyed by the receiver's type, compared by address and never read through.
+// The address is a key worth holding because a program's types all live in
+// its one arena (lhat_check_unit's shared `arena`) and that arena is never
+// emptied while the program lives: a recheck allocates its types beside the
+// old ones rather than over them. So an address stands for the same type for
+// as long as the program does, and an entry for a type no unit refers to any
+// more answers no question rather than the wrong one.
+typedef struct {
+    const LhatType *receiver;  // NULL for a slot holding nothing
+    LhatCompletionItem *items;
+    size_t count;
+} LhatCompletionCached;
+
+// The slots, direct-mapped by the receiver's address. An entry holds a whole
+// answer -- a type as wide as a game engine's node is some 85 KB of it -- so
+// the table is small and a collision simply replaces what was there. A
+// receiver a recheck made afresh (every def^, whose type is built again each
+// time) lands in one slot and turns over there, which is what keeps it from
+// pushing out the registered types that do answer to the same address twice.
+#define LHAT_COMPLETION_REMEMBERED 16
+
+// Drops every remembered completion. Called where the program is torn down,
+// and where a registration has arrived since they were made.
+void lhat_program_forget_completions(LhatProgram *program);
+
 // 05 の 8.7改5: one registered module's table, on the program's own heap.
 typedef struct {
     const char *path;  // borrowed from the registration that named it
@@ -384,6 +423,20 @@ struct LhatProgram {
     size_t shared_from_entries;
     size_t shared_from_types;
     size_t shared_from_enums;
+
+    // 07 の 4 章: what a member completion last answered, by receiver.
+    // LHAT_COMPLETION_REMEMBERED slots, allocated at the first answer worth
+    // keeping. Emptied when a registration has arrived since they were
+    // filled, which is the one thing that changes what a receiver answers --
+    // the same reading `shared` above takes of the three counts.
+    LhatCompletionCached *completions;
+    size_t completion_from_entries;
+    size_t completion_from_types;
+    size_t completion_from_enums;
+    // How many asks were answered out of the slots. Nothing reads it but the
+    // tests, which have no other way to tell an answer that was kept from one
+    // that was built again.
+    size_t completion_hits;
 
     LhatHostErrorKind *host_error_entries;
     size_t host_error_entry_count;

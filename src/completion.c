@@ -16,6 +16,7 @@
 #include "lhat/completion.h"
 
 #include <ctype.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -551,6 +552,161 @@ static const Word WORDS[] = {
 };
 
 // ---------------------------------------------------------------------------
+// Remembering what a receiver answers
+// ---------------------------------------------------------------------------
+//
+// Members are the expensive question: written_members walks a list, but
+// lhat_check_builtin_members asks after every built-in spelling the language
+// knows of, one at a time, and each of those does work that grows with the
+// receiver. A popup asks on every keystroke and the receiver does not change
+// between them, so the same answer is built over and over -- milliseconds
+// apiece for a host type as wide as a game engine's node.
+//
+// What is remembered hangs off the program rather than off the check result,
+// because a keystroke rechecks the unit: a check-result cache would be thrown
+// away exactly as often as it would be read. program_internal.h says why the
+// receiver's address is a key worth holding.
+
+// The registrations an answer was built against.
+typedef struct {
+    size_t entries;
+    size_t types;
+    size_t enums;
+} Registered;
+
+static Registered registered_now(const LhatProgram *program)
+{
+    Registered at;
+    at.entries = program->host_entry_count;
+    at.types = program->host_type_entry_count;
+    at.enums = program->host_enum_count;
+    return at;
+}
+
+static bool same_registrations(Registered a, Registered b)
+{
+    return a.entries == b.entries && a.types == b.types && a.enums == b.enums;
+}
+
+// Empties the slots if a registration has arrived since they were filled,
+// which is the one thing that changes what a receiver answers: a member
+// registered onto a host type is written into the very type these are keyed
+// by. Called holding the program's lock.
+static void drop_if_stale(LhatProgram *program)
+{
+    Registered now = registered_now(program);
+    Registered then;
+    then.entries = program->completion_from_entries;
+    then.types = program->completion_from_types;
+    then.enums = program->completion_from_enums;
+    if (same_registrations(now, then)) {
+        return;
+    }
+    lhat_program_forget_completions(program);
+    program->completion_from_entries = now.entries;
+    program->completion_from_types = now.types;
+    program->completion_from_enums = now.enums;
+}
+
+// Which slot a receiver belongs in.
+//
+// Types made one after another sit at addresses that run consecutively, and
+// the receivers a file asks about are made one after another -- so the raw
+// address would put a run of them in a run of slots and leave the rest
+// empty. Mixing is what spreads them.
+static size_t slot_of(const LhatType *receiver)
+{
+    uintptr_t bits = (uintptr_t)receiver;
+    bits ^= bits >> 13;
+    bits *= (uintptr_t)0x9E3779B1u;
+    bits ^= bits >> 15;
+    return (size_t)(bits % LHAT_COMPLETION_REMEMBERED);
+}
+
+// What was remembered for this receiver, copied into `fill`; false if nothing
+// was. `seen` comes back with the registrations the answer would be built
+// against, for remember() to check it is still building against them.
+static bool recall(LhatProgram *program, const LhatType *receiver, Fill *fill,
+                   Registered *seen)
+{
+    bool found = false;
+    lhat_program_hold(program);
+    drop_if_stale(program);
+    *seen = registered_now(program);
+    if (program->completions != NULL) {
+        const LhatCompletionCached *entry =
+            &program->completions[slot_of(receiver)];
+        if (entry->receiver == receiver) {
+            // Copied rather than handed over: hand_over frees what the Fill
+            // holds, and this has to survive being answered many times.
+            found = true;
+            if (entry->count > 0) {
+                size_t bytes = entry->count * sizeof *entry->items;
+                LhatCompletionItem *items =
+                    (LhatCompletionItem *)lhat_alloc(bytes);
+                if (items == NULL) {
+                    found = false;  // as though nothing was kept; it is rebuilt
+                } else {
+                    memcpy(items, entry->items, bytes);
+                    lhat_free(fill->items);
+                    fill->items = items;
+                    fill->capacity = entry->count;
+                }
+            }
+            if (found) {
+                fill->count = entry->count;
+                program->completion_hits++;
+            }
+        }
+    }
+    lhat_program_release(program);
+    return found;
+}
+
+// Keeps this receiver's answer, if it is still an answer to the question that
+// was asked. Failing to keep it costs only the time to build it again.
+static void remember(LhatProgram *program, const LhatType *receiver,
+                     const Fill *fill, Registered seen)
+{
+    if (fill->failed) {
+        return;  // an answer cut short is not the answer
+    }
+    LhatCompletionItem *items = NULL;
+    if (fill->count > 0) {
+        size_t bytes = fill->count * sizeof *fill->items;
+        items = (LhatCompletionItem *)lhat_alloc(bytes);
+        if (items == NULL) {
+            return;
+        }
+        memcpy(items, fill->items, bytes);
+    }
+    lhat_program_hold(program);
+    drop_if_stale(program);
+    // A registration that arrived while this was being built makes it the
+    // answer to an older program's question. Let it go rather than keep it.
+    if (!same_registrations(registered_now(program), seen)) {
+        lhat_program_release(program);
+        lhat_free(items);
+        return;
+    }
+    if (program->completions == NULL) {
+        program->completions = (LhatCompletionCached *)lhat_calloc(
+            LHAT_COMPLETION_REMEMBERED, sizeof *program->completions);
+        if (program->completions == NULL) {
+            lhat_program_release(program);
+            lhat_free(items);
+            return;
+        }
+    }
+    LhatCompletionCached *entry = &program->completions[slot_of(receiver)];
+    lhat_free(entry->items);
+    entry->receiver = receiver;
+    entry->items = items;
+    entry->count = fill->count;
+    lhat_program_release(program);
+}
+
+// ---------------------------------------------------------------------------
 // What the four questions answer
 // ---------------------------------------------------------------------------
 
@@ -572,9 +728,18 @@ static void member_items(Fill *fill, const LhatUnit *unit, uint32_t offset)
     if (site->receiver == NULL) {
         return;
     }
+    LhatProgram *program = unit->program;
+    Registered seen;
+    memset(&seen, 0, sizeof seen);
+    if (program != NULL && recall(program, site->receiver, fill, &seen)) {
+        return;
+    }
     // The written ones first, so the dedupe above has them to compare with.
     written_members(fill, site->receiver);
     lhat_check_builtin_members(result, site->receiver, offer_builtin, fill);
+    if (program != NULL) {
+        remember(program, site->receiver, fill, seen);
+    }
 }
 
 static void add_words(Fill *fill)

@@ -12,6 +12,7 @@
 #include "check.h"
 #include "lhat/completion.h"
 #include "lhat/lexer.h"
+#include "lhat/value.h"
 #include "lhat/source.h"
 #include "parser.h"
 #include "program_internal.h"
@@ -359,10 +360,161 @@ static void test_words(void)
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// What a registered receiver answers, remembered (07 の 4 章)
+
+typedef struct {
+    const char *path;
+    const char *text;
+} File;
+
+static char *disk_load(void *context, const char *path, size_t *length)
+{
+    const File *file = (const File *)context;
+    if (strcmp(file->path, path) != 0) {
+        return NULL;
+    }
+    size_t size = strlen(file->text);
+    char *copy = (char *)malloc(size + 1);
+    if (copy != NULL) {
+        memcpy(copy, file->text, size + 1);
+        *length = size;
+    }
+    return copy;
+}
+
+// Never called: nothing here runs, it only checks.
+static void stub(struct LhatMachine *machine, void *context,
+                 const LhatValue *arguments, size_t count, LhatValue *answers,
+                 int *answer_count)
+{
+    (void)machine;
+    (void)context;
+    (void)arguments;
+    (void)count;
+    (void)answers;
+    *answer_count = 0;
+}
+
+static void register_k(LhatProgram *program)
+{
+    lhat_register_hostdata_type(program, "k", "T");
+    lhat_register_member(program, "k", "T", "alpha", "f^self^ -> number^;",
+                         stub, NULL);
+    lhat_register_member(program, "k", "T", "beta", "f^self^ -> number^;",
+                         stub, NULL);
+    lhat_register_func(program, "k", "make", "f^ -> k.T;", stub, NULL);
+}
+
+// Just past `needle` in a unit the program checked.
+static uint32_t after_in(const LhatUnit *unit, const char *needle)
+{
+    const char *at = strstr(unit->source.text, needle);
+    return at == NULL ? 0 : (uint32_t)(at - unit->source.text + strlen(needle));
+}
+
+static size_t items_of(const LhatUnit *unit, uint32_t offset,
+                       LhatCompletionItem **into)
+{
+    size_t wanted = lhat_unit_completion_items(unit, offset, NULL, 0);
+    *into = wanted > 0 ? (LhatCompletionItem *)calloc(wanted, sizeof **into)
+                       : NULL;
+    if (*into == NULL) {
+        return wanted;
+    }
+    return lhat_unit_completion_items(unit, offset, *into, wanted);
+}
+
+static void test_remembered(void)
+{
+    LHAT_TEST("a receiver's members are answered out of what was kept");
+    {
+        File file = {"main.lh",
+                     "import^ k\n"
+                     "let^ t = k.make()\n"
+                     "let^ n = t.\n"};
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &file);
+        register_k(&program);
+        const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL, "the unit checked");
+
+        uint32_t where = after_in(unit, "t.");
+        LhatCompletionItem *items = NULL;
+        size_t count = items_of(unit, where, &items);
+        LHAT_CHECK(offers(items, count, "alpha"), "alpha is offered");
+        LHAT_CHECK(offers(items, count, "beta"), "beta is offered");
+        // items_of asks twice, to measure and to fill; the second is the
+        // first one's answer given back.
+        LHAT_CHECK_EQ_INT(program.completion_hits, 1);
+
+        LhatCompletionItem *again = NULL;
+        size_t twice = items_of(unit, where, &again);
+        LHAT_CHECK_EQ_INT(twice, count);
+        LHAT_CHECK(offers(again, twice, "alpha"), "alpha again");
+        LHAT_CHECK(offers(again, twice, "beta"), "beta again");
+        LHAT_CHECK_EQ_INT(program.completion_hits, 3);
+
+        // A registration is the one thing that writes into a type already
+        // answered for, so what was kept goes and the next ask builds again.
+        lhat_register_func(&program, "k", "other", "f^ -> number^;", stub,
+                           NULL);
+        free(again);
+        again = NULL;
+        twice = items_of(unit, where, &again);
+        LHAT_CHECK_EQ_INT(twice, count);
+        LHAT_CHECK_EQ_INT(program.completion_hits, 4);
+
+        free(items);
+        free(again);
+        lhat_program_dispose(&program);
+    }
+
+    // The hazard the address key has to survive: a def^'s type is built again
+    // by every recheck, so an answer kept under the old one must not be given
+    // for the new. It is not, because the program's arena never hands the
+    // same address out twice while it lives.
+    LHAT_TEST("a recheck that changed a def^ is answered afresh");
+    {
+        File file = {"main.lh",
+                     "let^ D = def^{ self^{ alef : number^ } }\n"
+                     "let^ d = D.new()\n"
+                     "let^ n = d.\n"};
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &file);
+        const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL, "the unit checked");
+
+        LhatCompletionItem *items = NULL;
+        size_t count = items_of(unit, after_in(unit, "d."), &items);
+        LHAT_CHECK(offers(items, count, "alef"), "alef is offered");
+        free(items);
+        items = NULL;
+
+        file.text =
+            "let^ D = def^{ self^{ bet : number^ } }\n"
+            "let^ d = D.new()\n"
+            "let^ n = d.\n";
+        LHAT_CHECK(lhat_program_invalidate(&program, "main.lh") > 0,
+                   "the unit was invalidated");
+        unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL, "the unit checked again");
+
+        count = items_of(unit, after_in(unit, "d."), &items);
+        LHAT_CHECK(offers(items, count, "bet"), "bet is offered");
+        LHAT_CHECK(!offers(items, count, "alef"), "alef is not");
+
+        free(items);
+        lhat_program_dispose(&program);
+    }
+}
+
 int main(void)
 {
     test_which_question();
     test_members();
     test_words();
+    test_remembered();
     return lhat_test_report("test_completion_core");
 }

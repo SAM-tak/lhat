@@ -3054,17 +3054,35 @@ void lhat_program_set_lock(LhatProgram *program, LhatProgramLockFn lock,
 
 // 05 の 8.11: taken at the public entries and nowhere else, so the pair
 // never has to nest. A program with no lock pays a branch.
-static void hold(LhatProgram *program)
+void lhat_program_hold(LhatProgram *program)
 {
     if (program != NULL && program->lock != NULL) {
         program->lock(program->lock_context);
     }
 }
 
-static void release(LhatProgram *program)
+void lhat_program_release(LhatProgram *program)
 {
     if (program != NULL && program->unlock != NULL) {
         program->unlock(program->lock_context);
+    }
+}
+
+// 07 の 4 章. Freed here rather than where they are made, since the program
+// is what outlives them. The three counts are left alone: what they say is
+// which registrations the cache was emptied against, and an empty cache
+// against the current ones is exactly what this leaves behind.
+void lhat_program_forget_completions(LhatProgram *program)
+{
+    if (program == NULL) {
+        return;
+    }
+    if (program->completions != NULL) {
+        for (size_t i = 0; i < LHAT_COMPLETION_REMEMBERED; i++) {
+            lhat_free(program->completions[i].items);
+        }
+        lhat_free(program->completions);
+        program->completions = NULL;
     }
 }
 
@@ -3099,9 +3117,9 @@ static bool compile_all(LhatProgram *program)
 
 bool lhat_program_compile(LhatProgram *program)
 {
-    hold(program);
+    lhat_program_hold(program);
     bool ok = compile_all(program);
-    release(program);
+    lhat_program_release(program);
     return ok;
 }
 
@@ -3560,9 +3578,9 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
     // under the lock -- those are what a check or a load writes, and
     // std.thread's worker is the caller this exists for.
     LhatProgram *writable = (LhatProgram *)program;
-    hold(writable);
+    lhat_program_hold(writable);
     bool ok = install_all(program, machine);
-    release(writable);
+    lhat_program_release(writable);
     return ok;
 }
 
@@ -3912,10 +3930,10 @@ LhatLoadStatus lhat_program_load_text_with(LhatProgram *program,
                                            const LhatLoadOptions *options,
                                            LhatProto **out)
 {
-    hold(program);
+    lhat_program_hold(program);
     LhatLoadStatus status =
         load_text_held(program, name, text, length, options, out);
-    release(program);
+    lhat_program_release(program);
     return status;
 }
 
@@ -3927,10 +3945,10 @@ LhatLoadStatus lhat_program_write_text(LhatProgram *program, const char *name,
 {
     *out = NULL;
     *out_length = 0;
-    hold(program);
+    lhat_program_hold(program);
     LhatUnit *unit = place(program, name, options);
     if (unit == NULL) {
-        release(program);
+        lhat_program_release(program);
         return LHAT_LOAD_OUT_OF_MEMORY;
     }
     lhat_source_init_from_string(&unit->source, unit->path, text, length);
@@ -3942,7 +3960,7 @@ LhatLoadStatus lhat_program_write_text(LhatProgram *program, const char *name,
         status = LHAT_LOAD_REJECTED;
     }
     forget(unit);
-    release(program);
+    lhat_program_release(program);
     return status;
 }
 
@@ -3957,10 +3975,10 @@ LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,
 {
     LhatLoadOptions options;
     options.initial_bindings = true;  // 8.2, as it always was
-    hold(program);
+    lhat_program_hold(program);
     LhatLoadStatus status =
         load_text_held(program, name, text, length, &options, out);
-    release(program);
+    lhat_program_release(program);
     return status;
 }
 
@@ -3984,10 +4002,10 @@ LhatLoadStatus lhat_program_load_file(LhatProgram *program, const char *path,
         // host gave, not the program.
         LhatLoadOptions options;
         options.initial_bindings = true;
-        hold(program);
+        lhat_program_hold(program);
         status =
             load_text_held(program, resolved, text, length, &options, out);
-        release(program);
+        lhat_program_release(program);
         lhat_free(text);
     }
     lhat_free(resolved);
@@ -4106,6 +4124,7 @@ void lhat_program_dispose(LhatProgram *program)
     program->host_error_entries = NULL;
     program->host_error_entry_count = 0;
     program->host_error_entry_capacity = 0;
+    lhat_program_forget_completions(program);
     // 05 の 8.7改5: the frontier itself. What it points at is on host_heap
     // and goes with it below.
     lhat_free(program->shared);
@@ -4415,9 +4434,9 @@ static size_t invalidate_held(LhatProgram *program, const char *path)
 
 size_t lhat_program_invalidate(LhatProgram *program, const char *path)
 {
-    hold(program);
+    lhat_program_hold(program);
     size_t retired = invalidate_held(program, path);
-    release(program);
+    lhat_program_release(program);
     return retired;
 }
 
@@ -4426,9 +4445,9 @@ void lhat_program_discard_retired(LhatProgram *program)
     if (program == NULL) {
         return;
     }
-    hold(program);
+    lhat_program_hold(program);
     discard_retired_held(program);
-    release(program);
+    lhat_program_release(program);
 }
 
 static void discard_retired_held(LhatProgram *program)
@@ -4548,9 +4567,9 @@ static size_t reload_held(LhatProgram *program, const char *path,
 size_t lhat_reload(LhatProgram *program, const char *path,
                    LhatMachine *const *machines, size_t machine_count)
 {
-    hold(program);
+    lhat_program_hold(program);
     size_t retired = reload_held(program, path, machines, machine_count);
-    release(program);
+    lhat_program_release(program);
     return retired;
 }
 
@@ -4769,9 +4788,9 @@ static const LhatUnit *check_held(LhatProgram *program, const char *path)
 
 const LhatUnit *lhat_program_check(LhatProgram *program, const char *path)
 {
-    hold(program);
+    lhat_program_hold(program);
     const LhatUnit *unit = check_held(program, path);
-    release(program);
+    lhat_program_release(program);
     return unit;
 }
 
