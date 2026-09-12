@@ -1133,6 +1133,98 @@ static void test_boundary_host_values(void)
     lhat_program_dispose(&program);
 }
 
+// 15.3改 with 05 の 8.8: what a host type declares is not what this body
+// made, so the walk that keeps an f^ coroutine from leaving stops at one.
+//
+// It has to. A registered member's type is settled in C before any body
+// runs, so a c^ found through it is the host's own -- an iterate^, say --
+// and calling that an escape refuses an f^ for answering a host object at
+// all. It is also what the walk costs: an engine's API re-enters its own
+// few hundred types along every path, and an f^ answering the widest of
+// them took 94 ms of this before the stop was put in.
+static void test_host_type_is_an_atom(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    LHAT_TEST("an f^ may answer a host type that declares an f^ coroutine");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ seq\n"
+             "let^ hold = f^ -> seq.Range { seq.make(1, 2) }\n"
+             "return^ 0\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        range_tag = lhat_register_hostdata_type(&program, "seq", "Range");
+        lhat_register_member(&program, "seq", "Range", "stream",
+                             "f^self^ -> c^{f^ -> number^};", range_iterate,
+                             NULL);
+        lhat_register_func(&program, "seq", "make",
+                           "f^number^, number^ -> seq.Range;", range_make,
+                           NULL);
+        const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL, "the unit checked");
+        LHAT_CHECK(!has_check_error(unit, LHAT_CHECK_ERR_COROUTINE_ESCAPES),
+                   "the host's own coroutine is not this body's to lose");
+    }
+    lhat_program_dispose(&program);
+
+    // The other half stays as it was: a structure this body built is walked,
+    // because a coroutine it made can be in one.
+    LHAT_TEST("a structural table carrying one is still refused");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ seq\n"
+             "let^ gen = f^ { yield^ 1 }\n"
+             "let^ out = f^ {\n"
+             "    let^ co = gen()\n"
+             "    return^ { c = co }\n"
+             "}\n"
+             "return^ 0\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        range_tag = lhat_register_hostdata_type(&program, "seq", "Range");
+        const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL, "the unit checked");
+        LHAT_CHECK(has_check_error(unit, LHAT_CHECK_ERR_COROUTINE_ESCAPES),
+                   "a table this body built is still read through");
+    }
+    lhat_program_dispose(&program);
+
+    // The same stop is in the walk that keeps an inference demand from
+    // naming the very slot it is settling (check.c's demand_mentions), and
+    // for a reason stronger still: 05 の 8.7 resolves every registration
+    // before the first check, so a type the registrations built cannot hold
+    // a node this check has only just made. What the stop must not do is
+    // stop the inference itself -- so it is asked for here.
+    LHAT_TEST("a wrapper's untyped constructor parameter still infers");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ seq\n"
+             "let^ P = def^{\n"
+             "  self^{ abstract^ held : seq.Range },\n"
+             "  override^new = f^ obj { self^{ held = obj } },\n"
+             "}\n"
+             "let^ made = P.new(1)\n"
+             "return^ 0\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        range_tag = lhat_register_hostdata_type(&program, "seq", "Range");
+        lhat_register_member(&program, "seq", "Range", "span",
+                             "f^self^ -> number^;", range_iterate, NULL);
+        const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL, "the unit checked");
+        // `obj` is the host type, read off what it is put into -- so a
+        // number in its place is refused rather than let through.
+        LHAT_CHECK(unit != NULL && unit->checked.diagnostic_count > 0,
+                   "a number where the host type was inferred is refused");
+    }
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     test_walks_hostdata();
@@ -1142,5 +1234,6 @@ int main(void)
     test_call_member_hostdata();
     test_walk_yields_host_values();
     test_boundary_host_values();
+    test_host_type_is_an_atom();
     return lhat_test_report("test_host_coroutine");
 }

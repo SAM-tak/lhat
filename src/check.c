@@ -2664,6 +2664,21 @@ ParamVar *chk_param_var_for(Checker *c, const LhatType *type)
 // 15.3改: whether an f^ coroutine is reachable anywhere in this type. The
 // result of an f^ is read with this, since one reaches the outside through a
 // member or a nested signature as readily as by being the result itself.
+//
+// A HOST TYPE IS AN ATOM, for the reason chk_type_touches_local gives above
+// and one more. 05 の 8.8's members are signatures the host registered in C,
+// settled before any body ran; a coroutine THIS body made is a value, and no
+// value becomes part of a registered declaration. So a c^ found in there was
+// the host's own (an iterate^, say) and never an escape -- walking in can
+// only answer wrongly.
+//
+// It is also the whole cost. A host type's member is a signature whose result
+// is another host type, whose members are signatures again, and the bound
+// below is a bound on depth, not on work: an engine's API re-enters the same
+// few hundred types along every path that reaches them. An f^ answering
+// godot.Node took 94 ms of this, and one answering godot.Node3D under a
+// millisecond -- the difference being only how soon a path happened to find a
+// coroutine and stop, which is no difference a writer could have predicted.
 bool chk_mentions_function_coroutine(const LhatType *type, unsigned depth)
 {
     if (type == NULL || depth > 8) {
@@ -2674,6 +2689,11 @@ bool chk_mentions_function_coroutine(const LhatType *type, unsigned depth)
             return type->v.coroutine.is_function;
 
         case LHAT_TYPE_TABLE:
+            if (type->v.table.nominal) {
+                return false;
+            }
+            // A def^'s instance is walked: 14.1 lets a field be written c^,
+            // and a body may put its own coroutine in one and answer that.
             for (const LhatTypeMember *m = type->v.table.members; m != NULL;
                  m = m->next) {
                 if (chk_mentions_function_coroutine(m->type, depth + 1)) {
@@ -2710,6 +2730,15 @@ bool chk_mentions_function_coroutine(const LhatType *type, unsigned depth)
 
 // Whether a demand would contain the very variable it is about, which would
 // leave the settled type pointing at itself.
+//
+// A HOST TYPE IS AN ATOM, as it is for the walk above and for one reason more
+// exact: `slot` is a node THIS check made for a name it has not settled yet,
+// and 05 の 8.7 has every registration resolved before the first check runs.
+// A type the registrations built cannot hold a node that did not exist when
+// they ran, so the answer under one is always no -- and it is the whole cost
+// of asking, since an engine's API re-enters its own few hundred types along
+// every path down to the bound. Inferring one parameter of a def^ that wraps
+// godot.Node asked this 4.9 million times.
 static bool demand_mentions(const LhatType *type, const LhatType *slot,
                             unsigned depth)
 {
@@ -2721,6 +2750,9 @@ static bool demand_mentions(const LhatType *type, const LhatType *slot,
     }
     switch (type->kind) {
         case LHAT_TYPE_TABLE:
+            if (type->v.table.nominal) {
+                return false;
+            }
             for (const LhatTypeMember *m = type->v.table.members; m != NULL;
                  m = m->next) {
                 if (demand_mentions(m->type, slot, depth + 1)) {
