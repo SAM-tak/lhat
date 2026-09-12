@@ -137,6 +137,54 @@ static void test_which_question(void)
         check_dispose(&c);
     }
 
+    // 01 の 2.3: the hat is part of a name, so a path written straight after
+    // the word is one run of name bytes -- which is how this repository
+    // writes it, and how it read as a name being typed.
+    LHAT_TEST("import^ takes the path with no space between");
+    {
+        check_text(&c, "import^godot\n");
+        uint32_t from = 0;
+        uint32_t at = after(&c, "import^godot");
+        LHAT_CHECK_EQ_INT(lhat_unit_completion_ask(&c.unit, at, &from),
+                          LHAT_COMPLETION_MODULE);
+        LHAT_CHECK_EQ_INT(from, at - 5);  // just past the word
+        check_dispose(&c);
+    }
+
+    LHAT_TEST("and with a dot after it, still the module question");
+    {
+        check_text(&c, "import^godot.\n");
+        uint32_t from = 0;
+        uint32_t at = after(&c, "import^godot.");
+        LHAT_CHECK_EQ_INT(lhat_unit_completion_ask(&c.unit, at, &from),
+                          LHAT_COMPLETION_MODULE);
+        LHAT_CHECK_EQ_INT(from, at - 6);
+        check_dispose(&c);
+    }
+
+    LHAT_TEST("the word alone, with nothing typed after it");
+    {
+        check_text(&c, "import^\n");
+        uint32_t from = 0;
+        uint32_t at = after(&c, "import^");
+        LHAT_CHECK_EQ_INT(lhat_unit_completion_ask(&c.unit, at, &from),
+                          LHAT_COMPLETION_MODULE);
+        LHAT_CHECK_EQ_INT(from, at);
+        check_dispose(&c);
+    }
+
+    // A name that merely ends the same way is a name.
+    LHAT_TEST("a word that is not import^ is not the module question");
+    {
+        check_text(&c, "let^ notimport^x = 1\n"
+                   "let^ n = notimport^x\n");
+        LHAT_CHECK(lhat_unit_completion_ask(&c.unit,
+                                            after(&c, "= notimport^x"), NULL)
+                       != LHAT_COMPLETION_MODULE,
+                   "not the module question");
+        check_dispose(&c);
+    }
+
     LHAT_TEST("a require^ string is the unit question");
     {
         check_text(&c, "require^ \"lib/\n");

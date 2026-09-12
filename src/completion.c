@@ -315,13 +315,30 @@ static bool import_prefix(const char *text, size_t length,
     if (text == NULL || offset > length) {
         return false;
     }
+    static const char WORD[] = "import^";
+    const size_t spelt = sizeof WORD - 1;
+
     uint32_t start = line_start(text, offset);
     uint32_t at = offset;
     while (at > start && is_path_byte((unsigned char)text[at - 1])) {
         at--;
     }
+    // 01 の 2.3: the hat is part of a name, so the walk above runs straight
+    // through `import^` where nothing separates it from the path --
+    // 'import^godot' is one run of name bytes and reads as a name being
+    // written. The word is a fixed spelling, so where the run begins with it
+    // the path begins just past it. A space puts the word behind the run
+    // instead, and then it is looked for there.
+    if ((size_t)(offset - at) >= spelt &&
+        memcmp(text + at, WORD, spelt) == 0) {
+        if (!in_code(text, start, at)) {
+            return false;
+        }
+        *from = at + (uint32_t)spelt;
+        return true;
+    }
     uint32_t word = 0;
-    if (!word_before(text, start, at, "import^", &word) ||
+    if (!word_before(text, start, at, WORD, &word) ||
         !in_code(text, start, word)) {
         return false;
     }
@@ -602,6 +619,55 @@ size_t lhat_completion_words(LhatCompletionItem *into, size_t capacity)
     return hand_over(&fill, into, capacity);
 }
 
+// The module a registration named, by number over both lists -- an enum may
+// be the only thing registered under its module, so the entries alone do not
+// name every module there is.
+static const char *registered_module(const LhatProgram *program, size_t at)
+{
+    if (at < program->host_entry_count) {
+        return program->host_entries[at].module;
+    }
+    at -= program->host_entry_count;
+    return at < program->host_enum_count ? program->host_enums[at].module
+                                         : NULL;
+}
+
+size_t lhat_program_completion_modules(const LhatProgram *program,
+                                       const char *prefix,
+                                       size_t prefix_length,
+                                       LhatCompletionItem *into,
+                                       size_t capacity)
+{
+    Fill fill;
+    memset(&fill, 0, sizeof fill);
+    if (program == NULL) {
+        return 0;
+    }
+    if (prefix == NULL) {
+        prefix_length = 0;
+    }
+    size_t all = program->host_entry_count + program->host_enum_count;
+    for (size_t i = 0; i < all; i++) {
+        const char *module = registered_module(program, i);
+        if (module == NULL || strlen(module) <= prefix_length ||
+            (prefix_length > 0 &&
+             memcmp(module, prefix, prefix_length) != 0)) {
+            continue;
+        }
+        // The one segment after the prefix, so "std." offers "io" rather
+        // than "std.io" -- what is written next is a segment, and the rest
+        // of the path is offered again once its own dot is typed.
+        const char *rest = module + prefix_length;
+        const char *dot = strchr(rest, '.');
+        size_t length = dot != NULL ? (size_t)(dot - rest) : strlen(rest);
+        if (length == 0 || already(&fill, rest, length)) {
+            continue;
+        }
+        add(&fill, rest, length, LHAT_COMPLETION_MODULE_NAME, NULL);
+    }
+    return hand_over(&fill, into, capacity);
+}
+
 LhatCompletionAsk lhat_completion_ask_text(const char *text, size_t length,
                                            uint32_t offset, uint32_t *from)
 {
@@ -707,6 +773,20 @@ size_t lhat_unit_completion_items(const LhatUnit *unit, uint32_t offset,
 
 size_t lhat_completion_words(LhatCompletionItem *into, size_t capacity)
 {
+    (void)into;
+    (void)capacity;
+    return 0;
+}
+
+size_t lhat_program_completion_modules(const LhatProgram *program,
+                                       const char *prefix,
+                                       size_t prefix_length,
+                                       LhatCompletionItem *into,
+                                       size_t capacity)
+{
+    (void)program;
+    (void)prefix;
+    (void)prefix_length;
     (void)into;
     (void)capacity;
     return 0;

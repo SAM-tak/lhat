@@ -19,10 +19,11 @@
 // embedded in an engine wants completion as much as a language server does,
 // and neither can reach LhatMemberSite or LhatBindingSite.
 //
-// The other two are the host's own. A module list is what the host
-// registered and a unit list is what its filesystem holds; this says only
-// WHICH question the cursor is asking and where what is being typed began,
-// so that a host offering its own candidates offers them in the right place.
+// Of the other two, the modules are here as well: a program knows what was
+// registered on it, so a host holding one has no list of its own to keep.
+// The units are not -- what files a workspace holds is the host's to say,
+// and this only tells it WHICH question the cursor is asking and where what
+// is being typed began, so the candidates land in the right place.
 //
 // Not reached by lhat.h, which is the header for running a program.
 
@@ -148,6 +149,25 @@ size_t lhat_unit_completion_items(const LhatUnit *unit, uint32_t offset,
 // and a word here the language no longer takes is one the checker reports
 // the moment it is written.
 size_t lhat_completion_words(LhatCompletionItem *into, size_t capacity);
+
+// The modules registered on `program` that could follow `prefix`, filled and
+// counted the same way. For the import^ question.
+//
+// One segment at a time, and once each: under "std." this answers "io" and
+// "math", not "std.io" and "std.math.vector3". What is written next is a
+// segment, and the rest of the path is offered again once its own dot is
+// typed. `prefix` is what stands between the word and the cursor, which is
+// lhat_unit_completion_ask's `from` to the cursor; it may be empty, and then
+// the top segment of every module is what comes back.
+//
+// Answers what the program was registered with rather than what a machine
+// ended up holding: a host asks this while editing, and 05 の 8.7 puts every
+// registration before anything runs.
+size_t lhat_program_completion_modules(const LhatProgram *program,
+                                       const char *prefix,
+                                       size_t prefix_length,
+                                       LhatCompletionItem *into,
+                                       size_t capacity);
 
 #ifdef __cplusplus
 }
