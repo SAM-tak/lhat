@@ -46,7 +46,7 @@
 | 文書シンボル | `textDocument/documentSymbol` | 構文木だけから作る。`lsp/document_symbol.c` |
 | 参照の検索 | `textDocument/references` | 5 章。解決の記録を定義位置で引く。`lsp/references.c` |
 | 名前の変更 | `textDocument/rename`（`prepareRename` 付き） | 同じ答えをファイルごとに束ねる。`lsp/handlers/references.c` |
-| 補完 | `textDocument/completion` | 4 章の「点の記録」「言語の語と、スコープにある名前」「まだ取り込んでいない名前」。`lsp/completion.c` |
+| 補完 | `textDocument/completion` | 4 章の「点の記録」「言語の語と、スコープにある名前」「まだ取り込んでいない名前」。答えは `lhat/completion.h`、整形と取り込み行は `lsp/completion.c` |
 
 検査はワーカースレッドで動く。プロジェクト内の `*.lh` はそれぞれが独立した根であり、
 1つの編集は「その根」と「最後の検査でその文書を通過した根」だけを検査し直す
@@ -108,7 +108,7 @@ let^ twice = f^n:number^ -> number^ {
 ### 点の記録 — メンバの補完が読むもの
 
 `.` の後に何が書けるかは、**検査器が控えたレシーバの型**から答える
-（`check.h` の `LhatMemberSite`、`lsp/completion.c`）。
+（`check.h` の `LhatMemberSite`、`src/completion.c`）。
 
 構文解析器は末尾の `.` に**中身の無いメンバ**を残す（`parse_postfix`）。
 8.2 が文の位置で拒む「裸の式」からもこの形だけは除いてある — 点は既に報せて
@@ -155,6 +155,40 @@ let^ twice = f^n:number^ -> number^ {
 `number^` だけ形が違う。語であって値ではないので型から訊けず、点の記録が
 `number_word` を立て、`lhat_check_number_constants` が定数だけを流す。
 
+### 4.x改 補完はコアが答える［重要］
+
+> **四つの問いのうち、検査器に訊く二つは `include/lhat/completion.h` が答える。
+> 語の一覧と「いまどの問いの中か」の判別も同じ所に在る。**
+
+`lhat/semantic.h` を公開した理由がそのまま当てはまる——**ホストには計算できない**。
+点のレシーバは検査器が確定したときに残した記録であり、スコープにある名前は各
+スコープが閉じたときに残した記録である。どちらも `src/` を出ない。渡るのは
+答えであって仕掛けではない。
+
+エンジンに組み込まれたエディタは言語サーバと同じだけ補完を欲しがるが、
+`LhatMemberSite` にも `LhatBindingSite` にも手が届かない。cJSON を渡すのも違う——
+LSP の都合であって言語の都合ではない。だから素の構造体の配列で渡す。
+
+```c
+LhatCompletionAsk lhat_unit_completion_ask(unit, offset, &from);
+LhatCompletionAsk lhat_completion_ask_text(text, length, offset, &from);
+size_t lhat_unit_completion_items(unit, offset, into, capacity);
+size_t lhat_completion_words(into, capacity);
+```
+
+- **残る二つはホストのもの。** モジュールの一覧はホストが登録したもので、単位の
+  一覧はホストのファイル系が持つ。コアは**どの問いか**と**書きかけがどこから
+  始まるか**だけを答え、候補はホストが並べる
+- `ask_text` は単位を要らない。木を訊く価値の無い二つ（書きかけのモジュール経路は
+  何にも解決せず、閉じていない文字列は末尾まで走る一つの誤りトークン）を、
+  検査を1回払う前に答えられる
+- **測って埋める**のは `lhat_unit_semantic_names` と同じ。ただし内部では一度
+  組み上げてから写す——四つの源のうち三つが「既に出た綴りを落とす」ので、
+  比べる相手の無い測り回と埋め回で答えが食い違ってしまう
+
+`lsp/completion.c` に残るのは、cJSON への整形と、**まだ取り込んでいない名前**に
+付ける `import^` / `require^` の行（`additionalTextEdits`）だけである。
+
 ### 言語の語と、スコープにある名前
 
 `l` と打ったところに `let^` と `counter` を出すのは、点の後の補完とは別の問いで
@@ -162,9 +196,9 @@ let^ twice = f^n:number^ -> number^ {
 
 位置がその問いであることは本文だけで判る — カーソルの左を語の字で遡り、その手前が
 `.` なら（メンバの問いのものなので）答えず、行頭から見て註釈や文字列の中なら
-答えない（`lsp_completion_word_prefix`）。答えは二つの源から来る。
+答えない（`lhat_completion_ask_text`）。答えは二つの源から来る。
 
-一覧は `lsp/completion.c` の `WORDS[]` に置く。01 の 2.1 のとおり**字句層は
+一覧は `src/completion.c` の `WORDS[]` に置き、`lhat_completion_words` で渡す。01 の 2.1 のとおり**字句層は
 キーワード表を持たない** — ハットの付いた語は全て一つの字種で、どれが何かは
 構文解析器が決める（`parser.c` の `is_statement_keyword` が、同じ理由で自分の
 分の知識を抱えている）。だから読める一覧はどこにも無く、これが一覧である。
@@ -514,6 +548,16 @@ rename の通知を受けると読み直し、根の集合を作り直し、全�
 | L5 | 説明文の中の書き分け記法（`@Return` など）。当分後回し |
 
 ## 改定履歴（要約）
+
+- **補完をコアへ出した（4.x改）。** 検査器に訊く二つ——点のレシーバのメンバと、
+  スコープにある名前——と、言語の語の一覧、そして「いまどの問いの中か」の判別を
+  `include/lhat/completion.h` に移した。`lhat/semantic.h` と同じ理由で、
+  ホストには計算できないものだからである。Godot バインディングからの要望が
+  きっかけで、cJSON ではなく素の構造体の配列で渡す。`lsp/completion.c` は
+  1,033 行から 566 行になり、残ったのは cJSON への整形と取り込み行だけ。
+  実装中に穴が2つ出た: 測り回では重複除去の比べる相手が無く答えが食い違うので
+  内部で組んでから写す形にしたことと、**言語の語は単位が無くても答えられる
+  べき**で、空のバッファにはそれしか出せないこと
 
 - L2（補完に必要な誤り回復の水準。文の水準は現状のまま、末尾の `.` にだけ
   節点を残す）は決定済み。5 章に取り込み欠番

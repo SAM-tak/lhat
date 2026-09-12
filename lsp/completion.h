@@ -47,21 +47,6 @@ cJSON *lsp_completion_members_for_unit(const LhatUnit *unit, uint32_t offset);
 cJSON *lsp_completion_for_unit(const LhatUnit *unit, uint32_t offset,
                                const LspUnitExports *others, size_t count);
 
-// The members of `receiver` on their own, for a caller that already has the
-// type. Every member the checker would accept and no other, from two sources:
-//
-//   what the type holds  -- asked of lhat_type_find_member, so shadowing and
-//                           14.7改2's delegation are the one search a member
-//                           access uses
-//   what the checker answers -- 14.19's built-ins, which no list holds; asked
-//                           of lhat_check_builtin_members one spelling at a
-//                           time, so which receiver takes which spelling is
-//                           never written down twice
-//
-// `result` is where the built-ins' types are made and may be NULL, which
-// leaves them out.
-cJSON *lsp_completion_members_of(LhatCheckResult *result, LhatType *receiver);
-
 // Whether the cursor stands in an `import^` path, and if so where the path
 // began. Text only: `text` is the whole document, `offset` the cursor.
 bool lsp_completion_import_prefix(const char *text, size_t length,

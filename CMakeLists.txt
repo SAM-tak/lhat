@@ -191,6 +191,7 @@ set(LHAT_FRONTEND_SOURCES
     src/check_expr.c
     src/check_stmt.c
     src/semantic.c
+    src/completion.c
     src/compile.c
 )
 if(LHAT_WITH_FRONTEND)
