@@ -9,7 +9,7 @@
 | [01-lexical-structure.md](01-lexical-structure.md) | 字句構造（トークンの定義、字句的曖昧性の解決） | 未決事項なし |
 | [02-syntax.md](02-syntax.md) | 構文（入力形式、コマンドモード、REPL 統合、条件分岐、文の構成、繰り返し、`finally^`、演算子、`with^`、型の文法、オブジェクトモデル、サブルーチン、パターンマッチ） | 未決事項なし |
 | [03-compilation-pipeline.md](03-compilation-pipeline.md) | 処理の構成（段階構成、実行時の値表現、型検査の厳格度、推論の範囲、バイトコード、ガベージコレクション） | P4・P6・P7・P8 が未決 |
-| [04-errors.md](04-errors.md) | 誤りの表現と伝播（`errordef^`、`catch^`、`try^`、網羅性、取りこぼしの検出） | E8（多値への `catch^`）が未決 |
+| [04-errors.md](04-errors.md) | 誤りの表現と伝播（`errordef^`、`catch^`、`try^`、網羅性、取りこぼしの検出） | 未決事項なし |
 | [05-modules.md](05-modules.md) | 名前空間とモジュール（`module^`、`public^`、`require^`、型のラベル、初期束縛、ホスト API） | M2・M4・M7・M8 が未決 |
 | [07-language-server.md](07-language-server.md) | 言語サーバとエディタ統合（`lhatls` の機能、ホバー、VSCode 拡張の構成） | L5 が未決 |
 | [08-lton.md](08-lton.md) | LTON（L^ のテーブルをテキストで書く綴り、`std.lton`、読み込み、ホストからの入口） | T1〜T3 が未決 |
