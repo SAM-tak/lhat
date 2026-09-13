@@ -32,7 +32,7 @@
 static const uint8_t MAGIC[4] = { 0x89, 'L', 'H', '^' };
 // 10.7: the signature table's, told apart from a unit's by the last byte.
 static const uint8_t TABLE_MAGIC[4] = { 0x89, 'L', 'H', 'S' };
-#define FORMAT_VERSION 2u
+#define FORMAT_VERSION 3u
 #define FLAG_DEBUG_NAMES 1u
 #define FLAG_STRICT 2u
 #define HEADER_BYTES 24u  // magic, format, flags, fingerprint, hash
@@ -594,6 +594,8 @@ static uint32_t intern_rt(Writer *w, const LhatRuntimeType *rt)
     intern_rt(w, rt->receive);
     intern_rt(w, rt->produce);
     intern_rt(w, rt->variadic);
+    intern_rt(w, rt->index_key);
+    intern_rt(w, rt->index_value);
     intern_rt(w, rt->instance);
     for (size_t i = 0; i < rt->member_count; i++) {
         intern_string(w, rt->members[i].name->text,
@@ -740,6 +742,8 @@ static void emit_rt(Writer *w, Out *o, const LhatRuntimeType *rt)
     put_u32(o, obj_ref(w, rt->receive));
     put_u32(o, obj_ref(w, rt->produce));
     put_u32(o, obj_ref(w, rt->variadic));
+    put_u32(o, obj_ref(w, rt->index_key));
+    put_u32(o, obj_ref(w, rt->index_value));
     put_u32(o, (uint32_t)rt->member_count);
     for (size_t i = 0; i < rt->member_count; i++) {
         put_u32(o, lstr_ref(w, rt->members[i].name));
@@ -1680,6 +1684,8 @@ static void read_rt(Reader *r)
     rt->receive = rt_at(r, get_u32(in));
     rt->produce = rt_at(r, get_u32(in));
     rt->variadic = rt_at(r, get_u32(in));
+    rt->index_key = rt_at(r, get_u32(in));
+    rt->index_value = rt_at(r, get_u32(in));
     uint32_t members = get_u32(in);
     for (uint32_t i = 0; i < members && !in->failed; i++) {
         LhatString *name = lstring_at(r, get_u32(in));

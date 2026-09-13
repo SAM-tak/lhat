@@ -27,6 +27,12 @@ void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
     if (!ok) {
         chk_report(c, at, code);
     }
+    // Another view may write entries the literal did not originally contain.
+    if (value != NULL && target != NULL && value != target &&
+        value->kind == LHAT_TYPE_TABLE &&
+        (target->kind == LHAT_TYPE_ANY || target->kind == LHAT_TYPE_TABLE)) {
+        value->v.table.entries_known = false;
+    }
 }
 
 // 04 の 11.3: a table answers nil^ for a key that is not there, so what a key
@@ -932,6 +938,24 @@ static bool concatenable_table(const LhatType *type)
            !type->v.table.nominal && type->v.table.hostvalue_tag == NULL;
 }
 
+static void join_table_entry_types(Checker *c, const LhatType *table,
+                                   LhatType **keys, LhatType **values)
+{
+    for (const LhatTypeMember *m = table->v.table.members; m != NULL;
+         m = m->next) {
+        *keys = lhat_type_union(c->result->types, *keys,
+                                chk_simple(c, lhat_type_member_key_kind(m)));
+        *values = lhat_type_union(c->result->types, *values, m->type);
+    }
+    if (table->v.table.variadic != NULL) {
+        *keys = lhat_type_union(c->result->types, *keys,
+                                chk_simple(c, LHAT_TYPE_NUMBER));
+        *values = lhat_type_union(c->result->types, *values, table->v.table.variadic);
+    }
+    *keys = lhat_type_union(c->result->types, *keys, table->v.table.index_key);
+    *values = lhat_type_union(c->result->types, *values, table->v.table.index_value);
+}
+
 // 02 の 11.2改: what '..' between two plain tables answers. The sequence
 // halves in order -- the left's positions, then the right's renumbered after
 // them -- and the named keys from both sides, a name both carry reported
@@ -982,6 +1006,19 @@ static LhatType *concat_table_types(Checker *c, const LhatNode *node,
         }
     }
     joined->v.table.variadic = element;
+    joined->v.table.entries_known = true;
+    for (size_t s = 0; s < 2; s++) {
+        const LhatType *side = sides[s];
+        if (!side->v.table.entries_known &&
+            (side->v.table.index_key == NULL || side->v.table.inferred_index)) {
+            joined->v.table.entries_known = false;
+        }
+        if (left->v.table.index_key != NULL || right->v.table.index_key != NULL) {
+            join_table_entry_types(c, side, &joined->v.table.index_key,
+                                    &joined->v.table.index_value);
+        }
+    }
+    joined->v.table.inferred_index = !joined->v.table.entries_known;
     return joined;
 }
 
@@ -1831,15 +1868,7 @@ LhatType *chk_call_answer(Checker *c, const LhatType *callee)
 // half, reached by a name -- and by 14 章 that is the same door 't.a' uses.
 static bool member_is_positional(const LhatTypeMember *m)
 {
-    if (m == NULL || m->name_length == 0) {
-        return false;
-    }
-    for (size_t i = 0; i < m->name_length; i++) {
-        if (m->name[i] < '0' || m->name[i] > '9') {
-            return false;
-        }
-    }
-    return true;
+    return m != NULL && lhat_type_member_key_kind(m) == LHAT_TYPE_NUMBER;
 }
 
 static void table_walk_halves(Checker *c, const LhatType *over,
@@ -1848,26 +1877,10 @@ static void table_walk_halves(Checker *c, const LhatType *over,
     LhatType *keys = NULL;
     LhatType *values = NULL;
     if (over != NULL && over->kind == LHAT_TYPE_TABLE) {
-        for (const LhatTypeMember *m = over->v.table.members; m != NULL;
-             m = m->next) {
-            bool positional = member_is_positional(m);
-            keys = lhat_type_union(
-                c->result->types, keys,
-                chk_simple(c, positional ? LHAT_TYPE_NUMBER : LHAT_TYPE_STRING));
-            values = lhat_type_union(c->result->types, values, m->type);
-        }
-        // 13.7: an unbounded tail is walked as more positions beyond any
-        // listed, every one of the same element type.
-        if (over->v.table.variadic != NULL) {
-            keys = lhat_type_union(c->result->types, keys,
-                                   chk_simple(c, LHAT_TYPE_NUMBER));
-            values = lhat_type_union(c->result->types, values,
-                                     over->v.table.variadic);
-        }
+        join_table_entry_types(c, over, &keys, &values);
     }
-
-    // 14.10 lets a table carry more than its type lists, so what is written
-    // down only ever adds to what a walk may hand over -- it never bounds it.
+    // An unconstrained table may carry more than its listed members.
+    // An explicit index constraint supplies the bound on the entire walk.
     *out_keys = keys != NULL ? keys : chk_simple(c, LHAT_TYPE_UNKNOWN);
     *out_values = values != NULL ? values : chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
@@ -1904,6 +1917,12 @@ LhatType *chk_table_element_type(Checker *c, const LhatType *over)
     if (over->v.table.variadic != NULL) {
         values = lhat_type_union(c->result->types, values,
                                  over->v.table.variadic);
+    }
+    if (over->v.table.index_key != NULL &&
+        !lhat_type_disjoint(over->v.table.index_key,
+                            chk_simple(c, LHAT_TYPE_NUMBER))) {
+        values = lhat_type_union(c->result->types, values,
+                                 over->v.table.index_value);
     }
     return values != NULL ? values : chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
@@ -2695,6 +2714,19 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
+    if (target->kind == LHAT_TYPE_TABLE && node != NULL && c->writing_to == node) {
+        target->v.table.entries_known = false;
+    }
+    if (target->kind == LHAT_TYPE_TABLE && target->v.table.index_key != NULL &&
+        !target->v.table.inferred_index && length > 0 && name[length - 1] != '^') {
+        chk_expect(c, node, chk_simple(c, LHAT_TYPE_STRING),
+                   target->v.table.index_key, LHAT_CHECK_ERR_MISMATCH);
+        const LhatTypeMember *known = chk_find_member(target, name, length);
+        if (known == NULL) {
+            return lhat_type_union(c->result->types, target->v.table.index_value,
+                                   chk_simple(c, LHAT_TYPE_NIL));
+        }
+    }
     // 14.17改: everywhere but a plain table the two spellings of tostring
     // and iterate are one member, so where the written one misses, the other
     // spelling is searched before any built-in answers -- what was written
@@ -2877,13 +2909,28 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             policy->v.func.result = any;
             LhatType *with_policy = lhat_type_func(c->result->types, true);
             lhat_type_add_param(c->result->types, with_policy, policy);
-            with_policy->v.func.result = self_type;
+            LhatType *mapped = lhat_type_table(c->result->types);
+            mapped->v.table.index_key = target->v.table.index_key;
+            if (mapped->v.table.index_key != NULL) {
+                mapped->v.table.index_value = any;
+            }
+            with_policy->v.func.result = mapped;
             with_policy->v.func.answers_fresh = true;
             return lhat_type_intersect(c->result->types, bare, with_policy);
         }
         // 15.1改2: the mutating half write through the receiver alone, so
         // they are f^mutable^self^ -- an f^ body calls them on what it made
         // itself, a p^ anywhere.
+        if (builtin_named(name, length, "push", true) ||
+            builtin_named(name, length, "insert", true) ||
+            builtin_named(name, length, "extend", true) ||
+            builtin_named(name, length, "move", true)) {
+            target->v.table.entries_known = false;
+            if (target->v.table.index_key != NULL && !target->v.table.inferred_index) {
+                chk_expect(c, node, number, target->v.table.index_key,
+                           LHAT_CHECK_ERR_MISMATCH);
+            }
+        }
         if (builtin_named(name, length, "push", true)) {
             LhatType *signature = mutable_method(c);
             lhat_type_add_param(c->result->types, signature, element);
@@ -2973,17 +3020,19 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
     return chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
 
-// 04 の 11.3 with 14 章: what a key of this kind reaches. A number^ names a
-// position, a string^ names a member -- and 14 章 makes that the same door
-// 't.a' goes through, so the two halves answer separate questions. A key
-// whose own type is not decided may be either, which is the safe reading
-// rather than the narrow one: 3.5 leaves a gap to the machine, and picking
-// one half here would be claiming to know which.
-//
-// NULL when the type declares nothing a key of that kind could reach. There
-// is no T for 'T|nil^' to be made of, and 14.10 leaves what an undeclared
-// table holds unsaid -- so nothing is claimed. A bool^ key lands here too:
-// what it reaches is in the hash part, which no table type describes.
+static bool string_member_key(Checker *c, const LhatNode *key)
+{
+    if (key == NULL || key->kind != LHAT_NODE_STRING) {
+        return false;
+    }
+    LhatTypeMember probe = {0};
+    probe.name = c->lexer->strings + key->v.string.offset;
+    probe.name_length = key->v.string.length;
+    return lhat_type_member_key_kind(&probe) == LHAT_TYPE_STRING;
+}
+
+// Without an explicit index constraint, collect the declared members a key
+// can reach. NULL leaves the result unknown, as ordinary width subtyping does.
 static LhatType *reachable_by_key(Checker *c, const LhatType *over,
                                   const LhatType *key)
 {
@@ -3037,6 +3086,45 @@ static LhatType *within_declared_positions(Checker *c, const LhatType *over,
     return reached;
 }
 
+static LhatType *dictionary_index_type(Checker *c, const LhatNode *node,
+                                        LhatType *over, LhatType *key)
+{
+    if (over == NULL) {
+        return NULL;
+    }
+    if (over->kind == LHAT_TYPE_TABLE && over->v.table.index_key != NULL &&
+        !over->v.table.inferred_index) {
+        chk_expect(c, node->v.access.argument, key, over->v.table.index_key,
+                   LHAT_CHECK_ERR_MISMATCH);
+        if (key != NULL && key->kind == LHAT_TYPE_NIL) {
+            chk_report(c, node->v.access.argument, LHAT_CHECK_ERR_BAD_KEY);
+        }
+        return lhat_type_union(c->result->types, over->v.table.index_value,
+                               chk_simple(c, LHAT_TYPE_NIL));
+    }
+    if (over->kind != LHAT_TYPE_UNION && over->kind != LHAT_TYPE_INTERSECT) {
+        return NULL;
+    }
+    LhatType *answer = NULL;
+    bool unspecified = false;
+    for (const LhatTypeList *arm = over->v.composite.arms; arm != NULL;
+         arm = arm->next) {
+        LhatType *part = dictionary_index_type(c, node, arm->type, key);
+        if (part == NULL) {
+            unspecified = true;
+            continue;
+        }
+        bool all = over->kind == LHAT_TYPE_INTERSECT || c->writing_to == node;
+        answer = all ? lhat_type_intersect(c->result->types, answer, part)
+                     : lhat_type_union(c->result->types, answer, part);
+    }
+    if (answer != NULL && unspecified && over->kind == LHAT_TYPE_UNION &&
+        c->writing_to != node) {
+        return chk_simple(c, LHAT_TYPE_UNKNOWN);
+    }
+    return answer;
+}
+
 // The '[' half of the same. Lifted out of infer's switch so that it reads
 // beside infer_member, which it now shares its nil^ handling with.
 static LhatType *infer_index(Checker *c, const LhatNode *node)
@@ -3062,6 +3150,10 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
     // arm, and '?[' steps past it under strict as well.
     if (!c->strict || node->v.access.nil_safe) {
         over = chk_without_nil_arm(c, over);
+    }
+    LhatType *dictionary = dictionary_index_type(c, node, over, asked);
+    if (dictionary != NULL && over->kind != LHAT_TYPE_TABLE) {
+        return dictionary;
     }
     // 04 の 11.3: only a table holds keys. A settled type that is not one
     // answers a key with nothing -- the machine refuses it, so the checker
@@ -3095,18 +3187,24 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
     // mention says nothing, since 14.10 lets a table carry more than
     // it declares.
     const LhatNode *key = node->v.access.argument;
+    if (over != NULL && over->kind == LHAT_TYPE_TABLE && c->writing_to == node) {
+        over->v.table.entries_known = false;
+    }
     if (over != NULL && over->kind == LHAT_TYPE_TABLE && key != NULL &&
         key->next == NULL) {
         const LhatTypeMember *found = NULL;
         if (key->kind == LHAT_NODE_INT) {
             found = lhat_type_member_at(over, (size_t)key->v.integer.value);
-        } else if (key->kind == LHAT_NODE_STRING) {
+        } else if (string_member_key(c, key)) {
             found = chk_find_member(over, c->lexer->strings + key->v.string.offset,
                                     key->v.string.length);
         }
         if (found != NULL) {
             return found->type;
         }
+    }
+    if (dictionary != NULL) {
+        return dictionary;
     }
     // 13.11改: a key the branch bounded, standing where the type declares
     // every position it could reach. 14.10 makes a table type "at least
@@ -3142,6 +3240,7 @@ static LhatType *declared_signature(Checker *c, const LhatNode *value);
 static LhatType *infer_table(Checker *c, const LhatNode *node)
 {
     LhatType *table = lhat_type_table(c->result->types);
+    table->v.table.entries_known = true;
 
     // 14.4: a method written in the literal reaches the table through its
     // self^ receiver, the same receiver a def^'s method takes -- 8.7改 took
@@ -3233,10 +3332,19 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
             if (chk_is_hostvalue(asked)) {
                 chk_report(c, key, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
             }
-            if (key != NULL && key->kind == LHAT_NODE_INT) {
+            if (value != NULL && value->kind == LHAT_TYPE_NIL) {
+                continue;
+            }
+            table->v.table.inferred_index = true;
+            table->v.table.index_key = lhat_type_union(
+                c->result->types, table->v.table.index_key, asked);
+            table->v.table.index_value = lhat_type_union(
+                c->result->types, table->v.table.index_value, value);
+            if (key != NULL && key->kind == LHAT_NODE_INT &&
+                key->v.integer.value >= 0) {
                 lhat_type_add_index_member(c->result->types, table,
                                            (size_t)key->v.integer.value, value);
-            } else if (key != NULL && key->kind == LHAT_NODE_STRING) {
+            } else if (string_member_key(c, key)) {
                 lhat_type_add_member(c->result->types, table,
                                      c->lexer->strings + key->v.string.offset,
                                      key->v.string.length, value);
@@ -3263,6 +3371,10 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
             lhat_type_add_index_member(c->result->types, table, ++position,
                                        value);
         }
+    }
+    if (table->v.table.index_key != NULL) {
+        join_table_entry_types(c, table, &table->v.table.index_key,
+                                &table->v.table.index_value);
     }
     return table;
 }

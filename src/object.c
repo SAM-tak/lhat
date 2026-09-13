@@ -444,6 +444,23 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
             if (table == NULL) {
                 return false;
             }
+            for (size_t i = 0; i < type->part_count; i++) {
+                LhatValue held = lhat_table_get(table, lhat_integer((int64_t)i + 1));
+                if (lhat_is_nil(held) || !lhat_value_satisfies(held, type->parts[i])) {
+                    return false;
+                }
+            }
+            if (type->variadic != NULL) {
+                for (size_t i = type->part_count + 1;; i++) {
+                    LhatValue held = lhat_table_get(table, lhat_integer((int64_t)i));
+                    if (lhat_is_nil(held)) {
+                        break;
+                    }
+                    if (!lhat_value_satisfies(held, type->variadic)) {
+                        return false;
+                    }
+                }
+            }
             for (size_t i = 0; i < type->member_count; i++) {
                 LhatValue held = lhat_table_get(
                     table, lhat_object((LhatObject *)(void *)
@@ -452,6 +469,31 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                 if (lhat_is_nil(held) ||
                     !lhat_value_satisfies(held, type->members[i].type)) {
                     return false;
+                }
+            }
+            if (type->index_key != NULL) {
+                // Indexing addresses a table's own storage, not delegated
+                // members or a host object's properties.
+                if (!lhat_is_object_kind(value, LHAT_OBJECT_TABLE) ||
+                    table->definition != NULL) {
+                    return false;
+                }
+                for (size_t i = 0; i < table->array_count; i++) {
+                    LhatValue held = lhat_slots_get(table->array, i);
+                    if (!lhat_is_nil(held) &&
+                        (!lhat_value_satisfies(lhat_integer((int64_t)i + 1),
+                                               type->index_key) ||
+                         !lhat_value_satisfies(held, type->index_value))) {
+                        return false;
+                    }
+                }
+                for (size_t i = 0; i < table->entry_capacity; i++) {
+                    const LhatTableEntry *entry = &table->entries[i];
+                    if (!lhat_is_nil(entry->key) &&
+                        (!lhat_value_satisfies(entry->key, type->index_key) ||
+                         !lhat_value_satisfies(entry->value, type->index_value))) {
+                        return false;
+                    }
                 }
             }
             // A structural descriptor can name a host held anywhere along
@@ -700,6 +742,21 @@ static void write_structure_body(TypeWriter *w, const LhatRuntimeType *type)
         type_put(w, type->members[i].name->text, type->members[i].name->length);
         type_put_text(w, " : ");
         write_runtime_type(w, type->members[i].type);
+    }
+    if (type->variadic != NULL) {
+        type_put_text(w, first ? " " : ", ");
+        first = false;
+        bool wrap = type->variadic->kind == LHAT_TYPE_RT_UNION;
+        if (wrap) type_put_text(w, "(");
+        write_runtime_type(w, type->variadic);
+        type_put_text(w, wrap ? ")[]" : "[]");
+    }
+    if (type->index_key != NULL) {
+        type_put_text(w, first ? " [" : ", [");
+        first = false;
+        write_runtime_type(w, type->index_key);
+        type_put_text(w, "] : ");
+        write_runtime_type(w, type->index_value);
     }
     type_put_text(w, first ? "}" : " }");
 }
@@ -1091,7 +1148,12 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
             // member-by-member without a search.
             if (a->part_count != b->part_count ||
                 a->member_count != b->member_count ||
-                a->hostdata_tag != b->hostdata_tag) {
+                a->hostdata_tag != b->hostdata_tag ||
+                (a->variadic == NULL) != (b->variadic == NULL) ||
+                !lhat_runtime_type_equal(a->variadic, b->variadic) ||
+                (a->index_key == NULL) != (b->index_key == NULL) ||
+                !lhat_runtime_type_equal(a->index_key, b->index_key) ||
+                !lhat_runtime_type_equal(a->index_value, b->index_value)) {
                 return false;
             }
             for (size_t i = 0; i < a->part_count; i++) {

@@ -10,10 +10,9 @@ let^Store = t^{
 let^LogSink = t^{ write : p^self^, string^; }
 
 let^MemoryStore = def^{
-    self^{ values = {}, label = "memory" },
+    self^{ values : t^{[string^]:string^} = {}, label = "memory" },
     get = p^self^, key:string^-> string^|nil^{
-        # Computed-key dictionary types are not expressible yet (14.10).
-        return^self^.values[key] as^string^|nil^catch^panic^it^
+        return^self^.values[key]
     },
     put = p^self^, key:string^, value:string^{
         self^.values[key] := value
@@ -47,7 +46,7 @@ let^LoggedStore = def^{
 }
 
 let^CachedStore = def^{
-    self^{ abstract^inner : Store, values = {}, label = "cache" },
+    self^{ abstract^inner : Store, values : t^{[string^]:string^} = {}, label = "cache" },
     override^new = f^inner:Store { self^{ inner = inner } },
     get = p^self^, key:string^-> string^|nil^{
         let^cached = self^.values[key]
@@ -104,12 +103,12 @@ print(log.text)
 # reads and writes; it does not inherit from MemoryStore or either wrapper.
 let^TestStore = def^{
     self^{
-        values = {}, label = "test", reads = 0, writes = 0,
+        values : t^{[string^]:string^} = {}, label = "test", reads = 0, writes = 0,
         last_key = "", last_value = ""
     },
     get = p^self^, key:string^-> string^|nil^{
         self^.reads += 1
-        return^self^.values[key] as^string^|nil^catch^panic^it^
+        return^self^.values[key]
     },
     put = p^self^, key:string^, value:string^{
         self^.writes += 1

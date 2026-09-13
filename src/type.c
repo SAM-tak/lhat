@@ -500,8 +500,21 @@ LhatTypeMember *lhat_type_add_member(LhatTypeArena *arena, LhatType *owner,
     return member;
 }
 
-// The digits of a one-based index, written into the arena so the member can
-// borrow them the way an ordinary one borrows the source text.
+// The internal spelling of a position contains digits only.
+LhatTypeKind lhat_type_member_key_kind(const LhatTypeMember *member)
+{
+    if (member->name_length == 0) {
+        return LHAT_TYPE_STRING;
+    }
+    for (size_t i = 0; i < member->name_length; i++) {
+        if (member->name[i] < '0' || member->name[i] > '9') {
+            return LHAT_TYPE_STRING;
+        }
+    }
+    return LHAT_TYPE_NUMBER;
+}
+
+// The digits of a one-based index, stored like an ordinary member name.
 static size_t index_digits(size_t index, char *out, size_t capacity)
 {
     size_t length = 0;
@@ -989,6 +1002,24 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
     return true;
 }
 
+static bool stored_conforms(const LhatType *value, const LhatType *target,
+                            const Assumed *seen)
+{
+    if (value != NULL && value->kind == LHAT_TYPE_NIL) {
+        return true;
+    }
+    if (value != NULL && value->kind == LHAT_TYPE_UNION) {
+        for (const LhatTypeList *arm = value->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (!stored_conforms(arm->type, target, seen)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return conforms_in(value, target, seen);
+}
+
 static bool conforms_in(const LhatType *value, const LhatType *target,
                         const Assumed *seen)
 {
@@ -1206,12 +1237,71 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                     }
                 }
             }
+            if (target->v.table.index_key != NULL) {
+                // A structural list is a lower bound, not a complete list of
+                // entries. Only a literal or another index constraint can
+                // establish a bound on every key and value.
+                if (!target->v.table.inferred_index &&
+                    (value->v.table.index_key == NULL || value->v.table.inferred_index) &&
+                    !value->v.table.entries_known) {
+                    return false;
+                }
+                const LhatType *key = target->v.table.index_key;
+                const LhatType *item = target->v.table.index_value;
+                if (value->v.table.index_key != NULL &&
+                    (!conforms_in(value->v.table.index_key, key, seen) ||
+                     !stored_conforms(value->v.table.index_value, item, seen))) {
+                    return false;
+                }
+                LhatChain entries = lhat_type_chain(value);
+                const LhatType *part;
+                while ((part = lhat_chain_next(&entries)) != NULL) {
+                    for (const LhatTypeMember *m = part->v.table.members;
+                         m != NULL; m = m->next) {
+                        if (lhat_type_find_member(value, m->name,
+                                                  m->name_length) != m) {
+                            continue;
+                        }
+                        if (m->type != NULL && m->type->kind == LHAT_TYPE_NIL) {
+                            continue;
+                        }
+                        LhatType member_key = {0};
+                        member_key.kind = lhat_type_member_key_kind(m);
+                        if (m->ambiguous ||
+                            !conforms_in(&member_key, key, seen) ||
+                            !stored_conforms(m->type, item, seen)) {
+                            return false;
+                        }
+                    }
+                }
+                if (value->v.table.variadic != NULL) {
+                    LhatType number = {0};
+                    number.kind = LHAT_TYPE_NUMBER;
+                    if (!conforms_in(&number, key, seen) ||
+                        !stored_conforms(value->v.table.variadic, item, seen)) {
+                        return false;
+                    }
+                }
+            }
             // 13.7, 14.10: an unbounded tail, checked by walking the
             // positions after the named ones the way 14.10 counts them --
             // from 1, since a variadic type here is not written mixed with
             // fixed positions in practice. Stops at the first position
             // value does not have; 13.7 asks for zero or more, not a count.
             if (target->v.table.variadic != NULL) {
+                if (value->v.table.variadic != NULL &&
+                    !conforms_in(value->v.table.variadic,
+                                  target->v.table.variadic, seen)) {
+                    return false;
+                }
+                LhatType number = {0};
+                number.kind = LHAT_TYPE_NUMBER;
+                if (value->v.table.index_key != NULL &&
+                    !lhat_type_disjoint(value->v.table.index_key, &number) &&
+                    !stored_conforms(value->v.table.index_value,
+                                     target->v.table.variadic, seen)) {
+                    return false;
+                }
                 for (size_t i = 1;; i++) {
                     char digits[24];
                     size_t length = index_digits(i, digits, sizeof digits);
@@ -1402,6 +1492,11 @@ bool lhat_type_conforms_strict(const LhatType *value, const LhatType *target)
 
 bool lhat_type_equal(const LhatType *a, const LhatType *b)
 {
+    if (a != NULL && b != NULL && a->kind == LHAT_TYPE_TABLE &&
+        b->kind == LHAT_TYPE_TABLE &&
+        ((a->v.table.index_key == NULL) != (b->v.table.index_key == NULL))) {
+        return false;
+    }
     // 03 の 7 章、P6: lhat_type_conforms treats unknown^ and pending^ as
     // fitting anywhere -- a gap in inference, not a claim about sameness.
     // Two-way conforms would call either one "equal" to whatever it is
@@ -2105,6 +2200,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             // asks for none.
             if (type->v.table.members == NULL &&
                 type->v.table.variadic == NULL &&
+                type->v.table.index_key == NULL &&
                 type->v.table.instance == NULL &&
                 type->v.table.delegate == NULL && type->v.table.base == NULL) {
                 put_text(sink, "t^{}");
@@ -2157,6 +2253,17 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 }
                 write_type(sink, type->v.table.variadic, depth + 1);
                 put_text(sink, wrap ? ")[]" : "[]");
+            }
+            if (type->v.table.index_key != NULL) {
+                if (type->v.table.members != NULL ||
+                    type->v.table.variadic != NULL ||
+                    type->v.table.instance != NULL) {
+                    put_text(sink, ", ");
+                }
+                put_text(sink, "[");
+                write_type(sink, type->v.table.index_key, depth + 1);
+                put_text(sink, "] : ");
+                write_type(sink, type->v.table.index_value, depth + 1);
             }
             put_text(sink, " }");
             sink->seen = here.outer;

@@ -463,6 +463,9 @@ typedef struct LhatRuntimeType {
     // kept apart from `params` -- a call owes at least `part_count`, not
     // exactly it. NULL wherever nothing is variadic.
     struct LhatRuntimeType *variadic;
+    // TABLE: the types of every stored key and value, when constrained.
+    struct LhatRuntimeType *index_key;
+    struct LhatRuntimeType *index_value;
 
     // STRUCTURE. A member with no type asks only that the name is there.
     LhatRuntimeTypeMember *members;

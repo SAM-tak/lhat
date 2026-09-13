@@ -2093,6 +2093,26 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
                     type->instance = lower_type(c, member->v.entry.value);
                     continue;
                 }
+                if (member->v.entry.variadic) {
+                    type->variadic = lower_type(c, member->v.entry.value);
+                    continue;
+                }
+                if (member->v.entry.key == NULL) {
+                    uint32_t repeat = member->v.entry.repeat > 0
+                                          ? member->v.entry.repeat : 1;
+                    LhatRuntimeType *item = lower_type(c, member->v.entry.value);
+                    for (uint32_t i = 0; i < repeat; i++) {
+                        if (!lhat_type_rt_add_part(type, item)) {
+                            return NULL;
+                        }
+                    }
+                    continue;
+                }
+                if (member->v.entry.computed) {
+                    type->index_key = lower_type(c, member->v.entry.key);
+                    type->index_value = lower_type(c, member->v.entry.value);
+                    continue;
+                }
                 if (!node_name(c, member->v.entry.key, &name, &length)) {
                     continue;
                 }

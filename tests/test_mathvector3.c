@@ -459,16 +459,12 @@ static void test_boxing(void)
                        "let^ x = f(std.math.vector3.new(1, 2, 3))\n"),
                "box it to pass it");
 
-    // 8.9改 with 03 の 3.1③: a table of computed keys cannot say its walk's
-    // K and V (the dictionary type is still an open design), so strict asks
-    // the focus for annotations -- which is what keeps the host value
-    // k.get() answers visible to every later rule. The width guard at the
-    // placements stays as the unchecked run's backstop.
-    LHAT_TEST("an undescribed walk cannot hide a wide answer");
-    LHAT_CHECK(!checks("import^ std.math.vector3\n"
-                       "let^ t = { [constbox^std.math.vector3.new(1, 2, 3)] = \"a\" }\n"
-                       "for^ k, v in^ t { let^ g = k.get() }\n"),
-               "the focus asks for annotations first");
+    // Computed keys retain the box type, including the width of get().
+    LHAT_TEST("an inferred dictionary walk preserves a boxed host value's type");
+    LHAT_CHECK(checks("import^ std.math.vector3\n"
+                      "let^ t = { [constbox^std.math.vector3.new(1, 2, 3)] = \"a\" }\n"
+                      "for^ k, v in^ t { let^ g = k.get()\nlet^ x:number^ = g.x }\n"),
+               "the inferred focus exposes the complete host value");
     LHAT_CHECK(!checks("import^ std.math.vector3\n"
                        "let^ t = { [constbox^std.math.vector3.new(1, 2, 3)] = \"a\" }\n"
                        "for^ k:std.math.vector3.Vector3.ConstBox^, v:string^ in^ t {\n"

@@ -619,7 +619,9 @@ bool chk_type_touches_local(const LhatType *type, unsigned depth)
                     return true;
                 }
             }
-            return chk_type_touches_local(type->v.table.variadic, depth + 1);
+            return chk_type_touches_local(type->v.table.variadic, depth + 1) ||
+                   chk_type_touches_local(type->v.table.index_key, depth + 1) ||
+                   chk_type_touches_local(type->v.table.index_value, depth + 1);
 
         // 15.5: what a call to one of these is worth is what a caller
         // receives, so a signature carrying one out is caught here too.
@@ -729,6 +731,20 @@ static void resolve_members_into(Checker *c, LhatType *table,
             chk_report(c, m->v.entry.value != NULL ? m->v.entry.value : node,
                        LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
         }
+        if (m->v.entry.computed) {
+            table->v.table.index_key = chk_resolve_type(c, m->v.entry.key);
+            table->v.table.index_value = member;
+            chk_check_tuple_position(c, m->v.entry.value, member);
+            LhatType *key = table->v.table.index_key;
+            if (key->kind == LHAT_TYPE_NIL || key->kind == LHAT_TYPE_NONE ||
+                lhat_type_tuple_width(key) > 0) {
+                chk_report(c, m->v.entry.key, LHAT_CHECK_ERR_BAD_KEY);
+            }
+            if (chk_is_hostvalue(key)) {
+                chk_report(c, m->v.entry.key, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+            }
+            continue;
+        }
         // 13.7, 14.10: the unbounded tail. 'value' is NULL for an untyped
         // '...', which 13.7 makes any^.
         if (m->v.entry.variadic) {
@@ -754,6 +770,13 @@ static void resolve_members_into(Checker *c, LhatType *table,
             c, lhat_type_add_member(c->result->types, table, name, length,
                                     member),
             m->v.entry.key);
+    }
+    if (table->v.table.index_key != NULL) {
+        LhatType *entries = lhat_type_table(c->result->types);
+        entries->v.table.entries_known = true;
+        entries->v.table.members = table->v.table.members;
+        entries->v.table.variadic = table->v.table.variadic;
+        chk_expect(c, node, entries, table, LHAT_CHECK_ERR_MISMATCH);
     }
 }
 
@@ -2701,6 +2724,10 @@ bool chk_mentions_function_coroutine(const LhatType *type, unsigned depth)
                 }
             }
             return chk_mentions_function_coroutine(type->v.table.variadic,
+                                                   depth + 1) ||
+                   chk_mentions_function_coroutine(type->v.table.index_key,
+                                                   depth + 1) ||
+                   chk_mentions_function_coroutine(type->v.table.index_value,
                                                    depth + 1);
 
         case LHAT_TYPE_FUNC:
@@ -2759,7 +2786,9 @@ static bool demand_mentions(const LhatType *type, const LhatType *slot,
                     return true;
                 }
             }
-            return demand_mentions(type->v.table.variadic, slot, depth + 1);
+            return demand_mentions(type->v.table.variadic, slot, depth + 1) ||
+                   demand_mentions(type->v.table.index_key, slot, depth + 1) ||
+                   demand_mentions(type->v.table.index_value, slot, depth + 1);
 
         case LHAT_TYPE_FUNC:
             for (const LhatTypeList *p = type->v.func.params; p != NULL;
@@ -2801,7 +2830,8 @@ static LhatType *merge_demand(Checker *c, LhatType *a, LhatType *b)
     }
     if (a->kind != LHAT_TYPE_TABLE || b->kind != LHAT_TYPE_TABLE ||
         a->v.table.is_definition || b->v.table.is_definition ||
-        a->v.table.nominal || b->v.table.nominal) {
+        a->v.table.nominal || b->v.table.nominal ||
+        a->v.table.index_key != NULL || b->v.table.index_key != NULL) {
         return lhat_type_intersect(c->result->types, a, b);
     }
 

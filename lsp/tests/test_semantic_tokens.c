@@ -305,6 +305,9 @@ static void test_every_name_is_reached(void)
         // holding one, this test had nothing to say about it.
         "let^ Shape : t^{ self^{ side : number^ }, new : f^ -> Self^; }"
         " = def^{ self^{ side = 1 }, }\n"
+        // 02 の 13.14: a type written where a value stands, which the parser
+        // wraps in a kind of its own -- the third to fall into `default`.
+        "let^ Sink = t^{ write : p^self^, string^; }\n"
         // 02 の 18: a declaration wearing an annotation. What the annotation
         // holds is skipped above, but the declaration under it is not -- an
         // annotation must not swallow the name it was written over.
@@ -346,6 +349,38 @@ static void test_every_name_is_reached(void)
 // ---------------------------------------------------------------------------
 // What each place says a name means
 // ---------------------------------------------------------------------------
+
+// 02 の 13.14: the same type spelling reads the same wherever it is written.
+// In an annotation the walk reaches it through the binding; written where a
+// value stands, the parser wraps it (LHAT_NODE_TYPE_VALUE), and a wrap the
+// walk did not know left every name inside it to the grammar's default --
+// which is what drew `string^` in an interface as a plain identifier.
+static void test_a_type_written_as_a_value(void)
+{
+    LHAT_TEST("13.14: a type written as a value colours as one");
+    static const char *source =
+        "let^ Store = t^{\n"
+        "    get : p^self^, string^ -> string^|nil^;,\n"
+        "    describe : f^self^ -> number^;\n"
+        "}\n";
+    Checked c;
+    check_text(&c, source);
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    // The names the type spells, in each place they can stand: a parameter,
+    // a result, one arm of a union, and a member whose type is a function.
+    expect_token(&tokens, source, "string^ ->", "type", false);
+    expect_token(&tokens, source, "string^|", "type", false);
+    expect_token(&tokens, source, "number^;", "type", false);
+    // And the members the table declares, which read as they do anywhere.
+    expect_token(&tokens, source, "get :", "property", false);
+    expect_token(&tokens, source, "describe :", "property", false);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
 
 static void test_try_block(void)
 {
@@ -1018,6 +1053,7 @@ int main(void)
     test_definition_reads_as_a_type();
     test_an_inherited_definition_is_a_type();
     test_a_written_definition_reads_as_a_type();
+    test_a_type_written_as_a_value();
     test_module_path_reads_the_same_everywhere();
     test_compound_assignment_is_one_token();
     test_try_block();

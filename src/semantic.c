@@ -338,7 +338,9 @@ static void walk_table_entries(SemCollector *out, const LhatNode *entries)
             continue;
         }
         if (e->v.entry.key != NULL) {
-            if (e->v.entry.computed) {
+            if (e->v.entry.computed && e->kind == LHAT_NODE_MEMBER_DECL) {
+                walk_type(out, e->v.entry.key);
+            } else if (e->v.entry.computed) {
                 walk_value(out, e->v.entry.key);
             } else if (e->v.entry.key->kind == LHAT_NODE_IDENT) {
                 emit_name(out, e->v.entry.key, SEM_PROPERTY, 0);
@@ -595,6 +597,15 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         // 13.8改: a tuple holds plain values, not table entries.
         case LHAT_NODE_TUPLE:
             walk_list(out, node->v.list.items);
+            break;
+        // 02 の 13.14: a type written where a value stands -- 'let^ Store =
+        // t^{ … }' -- is wrapped so typeof^ has something to answer, and what
+        // is inside the wrap is a type like any in an annotation. The checker
+        // resolves it the same way (chk_resolve_type records each name), so
+        // the walk is the type one. Without this case the wrap fell to
+        // `default`, and every name under it went uncoloured.
+        case LHAT_NODE_TYPE_VALUE:
+            walk_type(out, node->v.jump.value);
             break;
         case LHAT_NODE_ERROR_NEW:
             // 04 の 2.5: 'error^Kind{ ... }' -- Kind is a qualified path.

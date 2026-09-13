@@ -573,6 +573,7 @@ static LhatNode *parse_member_decls(Parser *p)
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
     bool has_template = false;
+    bool has_indexer = false;
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
         LhatNode *member = make(p, LHAT_NODE_MEMBER_DECL, &p->current);
@@ -613,6 +614,22 @@ static LhatNode *parse_member_decls(Parser *p)
         // makes a table a sequence as well as a mapping, and the sequence
         // half is described by writing its types in order. One token of
         // lookahead separates them: only a name followed by ':' is a member.
+        if (match_op(p, LHAT_OP_LBRACKET)) {
+            if (has_indexer) {
+                report(p, &p->current, LHAT_PARSE_ERR_DUPLICATE_INDEXER);
+            }
+            has_indexer = true;
+            member->v.entry.computed = true;
+            member->v.entry.key = parse_type(p);
+            expect_op(p, LHAT_OP_RBRACKET);
+            expect_op(p, LHAT_OP_COLON);
+            member->v.entry.value = parse_type(p);
+            lhat_node_append(&head, &tail, finish(p, member));
+            if (!match_op(p, LHAT_OP_COMMA)) {
+                break;
+            }
+            continue;
+        }
         bool named = (p->current.kind == LHAT_TOKEN_IDENT ||
                       p->current.kind == LHAT_TOKEN_HAT_IDENT) &&
                      is_op(&p->ahead, LHAT_OP_COLON);
@@ -5324,6 +5341,8 @@ const char *lhat_parse_error_message(LhatParseErrorCode code)
         case LHAT_PARSE_ERR_BAD_POSITION_COUNT:
             return "'[ ... ]' after a type says how many positions it takes, "
                    "which is a positive integer written out";
+        case LHAT_PARSE_ERR_DUPLICATE_INDEXER:
+            return "a table type takes one [key type]:value type constraint";
         case LHAT_PARSE_ERR_NAMED_TAKES_NO_COUNT:
             return "a name holds one value; '[ ... ]' says how many positions "
                    "a type takes, so it goes on one written without a name";

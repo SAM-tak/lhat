@@ -601,14 +601,13 @@ static void test_table_methods(void)
 {
     Unit u;
 
-    // 03 の 3.1③ at the focus: a walk the table's type cannot describe
-    // (computed keys -- the dictionary type is still unwritten) leaves the
-    // names undecided, so strict asks the focus to say them.
-    LHAT_TEST("an undescribed walk asks the focus for annotations");
+    // Computed-key literals retain their key and value types for iteration.
+    LHAT_TEST("a computed-key walk infers the focus types");
     check_text(&u,
                "var^ t = { [1 + 1] = \"a\" }\n"
-               "for^ k, v in^ t { }\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TYPE_UNDECIDED);
+               "for^ k, v in^ t { let^ key:number^ = k\n"
+               "let^ value:string^ = v }\n");
+    CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and the annotations settle it");

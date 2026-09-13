@@ -183,6 +183,8 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             }
             reach(gray, (LhatObject *)type->result);
             reach(gray, (LhatObject *)type->variadic);
+            reach(gray, (LhatObject *)type->index_key);
+            reach(gray, (LhatObject *)type->index_value);
             reach(gray, (LhatObject *)type->instance);  // 02 の 14.7改
             reach(gray, (LhatObject *)(void *)type->error_kind);
             return;

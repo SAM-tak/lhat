@@ -223,6 +223,10 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             if (type->v.table.variadic != NULL) {
                 rt->variadic = rt_from_checked(heap, type->v.table.variadic, seen);
             }
+            if (type->v.table.index_key != NULL) {
+                rt->index_key = rt_from_checked(heap, type->v.table.index_key, seen);
+                rt->index_value = rt_from_checked(heap, type->v.table.index_value, seen);
+            }
             lhat_type_rt_sort_members(rt);
             return rt;
         }
@@ -371,8 +375,9 @@ static bool mentions_error(const LhatType *type, const RtSeen *seen)
                     return true;
                 }
             }
-            return type->v.table.variadic != NULL &&
-                   mentions_error(type->v.table.variadic, seen);
+            return mentions_error(type->v.table.variadic, seen) ||
+                   mentions_error(type->v.table.index_key, seen) ||
+                   mentions_error(type->v.table.index_value, seen);
 
         case LHAT_TYPE_FUNC:
             for (LhatTypeList *p = type->v.func.params; p != NULL;

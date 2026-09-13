@@ -116,7 +116,8 @@ typedef enum {
     LHAT_PARSE_ERR_ANNOTATION_NEEDS_DECLARATION,
     // 02 の 18.3: an argument is a literal, since an annotation never runs.
     LHAT_PARSE_ERR_ANNOTATION_ARG_NOT_LITERAL,
-    LHAT_PARSE_ERR_NAMED_TAKES_NO_COUNT       // 14.10改: a name holds one
+    LHAT_PARSE_ERR_NAMED_TAKES_NO_COUNT,      // 14.10改: a name holds one
+    LHAT_PARSE_ERR_DUPLICATE_INDEXER         // One key/value constraint per table.
                                               // value, and 'type[n]' is how
                                               // several positions are
                                               // written

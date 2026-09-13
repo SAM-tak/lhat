@@ -164,6 +164,9 @@ typedef struct LhatTypeMember {
     struct LhatTypeMember *next;
 } LhatTypeMember;
 
+// The key category encoded by a member's internal name.
+LhatTypeKind lhat_type_member_key_kind(const LhatTypeMember *member);
+
 // Types appear in more than one list (union arms, parameters), so the link
 // lives in a separate node rather than on the type itself.
 typedef struct LhatTypeList {
@@ -268,6 +271,13 @@ struct LhatType {
             // of it T. NULL everywhere else -- mirrors func.variadic below,
             // which is the same idea for a parameter list instead of members.
             LhatType *variadic;
+            // Every stored entry must satisfy these types. Inferred computed
+            // keys record their possible entries here without restricting writes.
+            LhatType *index_key;
+            LhatType *index_value;
+            bool inferred_index;
+            // A literal's contents stay known until a write or a wider alias.
+            bool entries_known;
             // 05 の 8.9: set exactly when the kind is LHAT_TYPE_HOSTVALUE.
             // Identity is this pointer, for 8.8's reason sharpened by value
             // semantics: the C reading the bytes back must never read them

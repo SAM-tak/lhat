@@ -358,6 +358,7 @@ struct LhatNode {
             // 14.14改: the key was written '[ ... ]', so it is an expression
             // rather than the name it would otherwise be read as.
             bool computed;
+            // MEMBER_DECL: computed means '[key type]:value type'.
             // 14.15: written 'abstract^ name : type', so `value` is a type
             // and the definition provides nothing under the name. What is
             // composed onto it has to. Set on a template field too, where
