@@ -2088,6 +2088,64 @@ static void test_composition_requirements(void)
     }
 }
 
+
+// 02 の 14.17改: on anything but a plain table the two spellings of tostring
+// and iterate are ONE member. So every rule that compares names sees one --
+// 14.12's "already a member" here, 14.5改's collision at '..' below.
+static void test_two_spellings_are_one_member(void)
+{
+    Unit u;
+
+    LHAT_TEST("writing both spellings in one def^ is writing it twice");
+    check_text(&u,
+               "let^ D = def^{ self^{},\n"
+               "  tostring = f^self^ -> string^ { return^ \"a\" },\n"
+               "  tostring^ = f^self^ -> string^ { return^ \"b\" } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so is the other pair");
+    check_text(&u,
+               "let^ D = def^{ self^{},\n"
+               "  iterate = f^self^ -> number^ { return^ 1 },\n"
+               "  iterate^ = f^self^ -> number^ { return^ 2 } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
+    unit_dispose(&u);
+
+    // 14.5改: two parts carrying one name leave it reaching no one answer.
+    // The spellings must not let a composition slip past that.
+    LHAT_TEST("one spelling on each side of a '..' still collides");
+    check_text(&u,
+               "let^ A = def^{ self^{},\n"
+               "  tostring = f^self^ -> string^ { return^ \"a\" } }\n"
+               "let^ B = def^{ self^{},\n"
+               "  tostring^ = f^self^ -> string^ { return^ \"b\" } }\n"
+               "let^ Both = A .. B\n"
+               "let^ s = Both.new().tostring()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER);
+    unit_dispose(&u);
+
+    LHAT_TEST("under the other spelling too");
+    check_text(&u,
+               "let^ A = def^{ self^{},\n"
+               "  tostring = f^self^ -> string^ { return^ \"a\" } }\n"
+               "let^ B = def^{ self^{},\n"
+               "  tostring^ = f^self^ -> string^ { return^ \"b\" } }\n"
+               "let^ Both = A .. B\n"
+               "let^ s = Both.new().tostring^()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER);
+    unit_dispose(&u);
+
+    // 14.17改 keeps the two apart on a plain table, where the bare name is
+    // the writer's -- that is the whole reason the hat spelling exists.
+    LHAT_TEST("a plain table still holds the two apart");
+    check_text(&u,
+               "let^ t = { tostring = f^self^ -> string^ { return^ \"mine\" },\n"
+               "           tostring^ = f^self^ -> string^ { return^ \"shown\" } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_definitions();
@@ -2099,5 +2157,6 @@ int main(void)
     test_new_fills_fields();
     test_prototype();
     test_delegate();
+    test_two_spellings_are_one_member();
     return lhat_test_report("test_check_def");
 }

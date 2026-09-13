@@ -2094,6 +2094,51 @@ static void test_reserved_seats(void)
     run_dispose(&r);
 }
 
+
+// 02 の 14.17改 with 14.7: the two spellings are one member, so what the
+// wrapper wrote beats what its delegate holds under the other one -- and the
+// machine has to say so too (03 の 4.2). Walking the whole chain for the
+// spelling asked for before trying the other is what let the delegate answer.
+static void test_two_spellings_are_one_member(void)
+{
+    Run r;
+
+    LHAT_TEST("the wrapper's own tostring answers the hat spelling too");
+    run_text(&r,
+             "var^ Inner = def^{ self^{},\n"
+             "  tostring^ = f^self^ -> string^ { return^ \"inner\" } }\n"
+             "var^ Wrap = def^{ self^{ abstract^ held : Inner },\n"
+             "  override^new = f^ i:Inner { self^{ held = i } },\n"
+             "  delegate^ self^.held,\n"
+             "  tostring = f^self^ -> string^ { return^ \"wrapper\" } }\n"
+             "var^ o = Wrap.new(Inner.new())\n"
+             "return^ o.tostring^()\n");
+    CHECK_STRING(&r, "wrapper");
+    run_dispose(&r);
+
+    LHAT_TEST("and an interpolation hole reaches the same one");
+    run_text(&r,
+             "var^ Inner = def^{ self^{},\n"
+             "  tostring^ = f^self^ -> string^ { return^ \"inner\" } }\n"
+             "var^ Wrap = def^{ self^{ abstract^ held : Inner },\n"
+             "  override^new = f^ i:Inner { self^{ held = i } },\n"
+             "  delegate^ self^.held,\n"
+             "  tostring = f^self^ -> string^ { return^ \"wrapper\" } }\n"
+             "var^ o = Wrap.new(Inner.new())\n"
+             "return^ $\"{o}\"\n");
+    CHECK_STRING(&r, "wrapper");
+    run_dispose(&r);
+
+    // The other direction: written under the hat, asked for bare.
+    LHAT_TEST("a def^ writing only the hat spelling answers the bare one");
+    run_text(&r,
+             "var^ D = def^{ self^{},\n"
+             "  tostring^ = f^self^ -> string^ { return^ \"mine\" } }\n"
+             "return^ D.new().tostring()\n");
+    CHECK_STRING(&r, "mine");
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_definitions();
@@ -2102,5 +2147,6 @@ int main(void)
     test_takes_receiver();
     test_delegate();
     test_reserved_seats();
+    test_two_spellings_are_one_member();
     return lhat_test_report("test_vm_def");
 }

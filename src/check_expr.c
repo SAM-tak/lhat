@@ -2039,10 +2039,15 @@ static bool plain_table_type(const LhatType *type)
            !type->v.table.is_definition && !type->v.table.from_definition;
 }
 
-// 14.17改: everywhere but a plain table the two spellings of tostring and
-// iterate name one member -- these are the only two words with two
-// spellings at all (keys^ and values^ are hat-only, 14.18's line). The
-// machine's member_written makes the same crossover.
+// 14.17改: the two words that have two spellings at all (keys^ and values^ are
+// hat-only, 14.18's line).
+//
+// This is a fallback and not what makes the two one member -- lhat_member_held_as
+// does that, by taking the hat off at the door wherever the names are not the
+// writer's, so that every comparison downstream is an ordinary one. What is
+// left here answers for a member still held under the hat: a session's or a
+// prompt's type, built by a path that did not go through an owner this could
+// be asked of. The machine's member_written keeps the same fallback.
 static const char *other_spelling(const char *name, size_t length)
 {
     if (chk_name_is(name, length, "iterate")) {

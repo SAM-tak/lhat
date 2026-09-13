@@ -2975,6 +2975,10 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 break;
             }
+            // 14.17改: a def^ is not the writer's namespace, so the two
+            // spellings of tostring and iterate are one member -- held under
+            // the bare one, which is what the checker settled the name to.
+            length = lhat_member_held_as(name, length);
             // 14.15: a declaration carries a type and no value; what it
             // leaves is the seat, so the definition shows the member before
             // a later part gives it. RESERVE lays one only where nothing

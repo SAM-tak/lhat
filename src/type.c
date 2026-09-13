@@ -368,6 +368,58 @@ static void index_added(LhatTypeArena *arena, LhatType *owner,
     index_put(index, member);
 }
 
+// 02 の 14.17改: the writer's namespace is the plain table and nothing else.
+// 14 章 reserves names on a def^, and 05 の 8.8/8.9 make every name on a host
+// type or host value the library's -- vm_member.c's vm_plain_table asks the
+// same of the value, and the two have to answer alike (03 の 4.2).
+static bool writers_namespace(const LhatType *table)
+{
+    return table->kind == LHAT_TYPE_TABLE &&
+           !table->v.table.is_definition && !table->v.table.from_definition &&
+           !table->v.table.nominal;
+}
+
+// The name a member is held under here.
+//
+// 14.17改: `tostring` and `iterate` are the only two words with two spellings
+// at all, and everywhere but a plain table the two spell ONE member rather
+// than two. So the hat comes off at the door -- once, on the way in and on
+// the way out -- and every comparison downstream is an ordinary comparison of
+// names: 14.12's "already a member", 14.5改's collision at `..`, 14.7's
+// written-beats-delegated, conformance, and what a reader is shown.
+//
+// Reading the spelling instead, at the point of asking, is what this replaces.
+// That made the two one member only while just one was written: writing both
+// gave two, `..` saw no collision, and a wrapper's own `tostring` did not
+// shadow a delegate's `tostring^` -- the search walked the whole chain for the
+// spelling asked for before trying the other, so the delegate answered first.
+//
+// The bare spelling is the same bytes one shorter, so nothing is copied.
+size_t lhat_member_held_as(const char *name, size_t length)
+{
+    static const char *const BOTH[] = {"tostring^", "iterate^"};
+    if (length < 2 || name[length - 1] != '^') {
+        return length;
+    }
+    for (size_t i = 0; i < sizeof BOTH / sizeof BOTH[0]; i++) {
+        size_t n = strlen(BOTH[i]);
+        if (length == n && memcmp(name, BOTH[i], n) == 0) {
+            return length - 1;
+        }
+    }
+    return length;
+}
+
+static size_t held_as(const LhatType *table, const char *name, size_t length)
+{
+    if ((table->kind != LHAT_TYPE_TABLE &&
+         table->kind != LHAT_TYPE_HOSTVALUE) ||
+        writers_namespace(table)) {
+        return length;
+    }
+    return lhat_member_held_as(name, length);
+}
+
 const LhatTypeMember *lhat_type_own_member(const LhatType *table,
                                            const char *name, size_t length)
 {
@@ -375,6 +427,7 @@ const LhatTypeMember *lhat_type_own_member(const LhatType *table,
                           table->kind != LHAT_TYPE_HOSTVALUE)) {
         return NULL;
     }
+    length = held_as(table, name, length);
     const LhatTypeIndex *index = table->v.table.index;
     if (index == NULL) {
         for (const LhatTypeMember *m = table->v.table.members; m != NULL;
@@ -408,6 +461,9 @@ LhatTypeMember *lhat_type_add_member(LhatTypeArena *arena, LhatType *owner,
     LhatTypeMember **slot = owner->kind == LHAT_TYPE_ERROR_KIND
                                 ? &owner->v.error.fields
                                 : &owner->v.table.members;
+    if (owner->kind != LHAT_TYPE_ERROR_KIND) {
+        name_length = held_as(owner, name, name_length);
+    }
 
     LhatTypeMember *member = (LhatTypeMember *)arena_alloc(arena, sizeof *member);
     // The name is the arena's own copy: what it was read from -- a unit's

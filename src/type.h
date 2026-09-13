@@ -486,6 +486,18 @@ bool lhat_type_carries_error(const LhatType *type);
 // (is this name already here?) and what the checker asks before it puts a
 // member down: finding a base's would make either of them refuse a name
 // that is free. Indexed where the list is long.
+// 02 の 14.17改: the name a member is held under where the names are not the
+// writer's -- a def^ (14 章 reserves them) or a host type or host value (05 の
+// 8.8, 8.9). `tostring` and `iterate` are the only two words with two
+// spellings at all, and on those values the two spell ONE member rather than
+// two: so the hat comes off at the door and every comparison downstream is an
+// ordinary comparison of names. Answers a length into the same bytes -- the
+// bare spelling is the hatted one, one shorter -- so nothing is copied.
+//
+// The compiler asks it for the key it writes a member under, so what the
+// machine holds is what the checker settled (03 の 4.2).
+size_t lhat_member_held_as(const char *name, size_t length);
+
 const LhatTypeMember *lhat_type_own_member(const LhatType *table,
                                            const char *name,
                                            size_t length);
