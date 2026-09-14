@@ -11,13 +11,13 @@ let^LogSink = t^{ write : p^self^, string^; }
 
 let^MemoryStore = def^{
     self^{ values : t^{[string^]:string^} = {}, label = "memory" },
-    get = p^self^, key:string^-> string^|nil^{
+    get = p^self^, key:string^{
         return^self^.values[key]
     },
     put = p^self^, key:string^, value:string^{
         self^.values[key] := value
     },
-    describe = f^self^-> string^{ self^.label }
+    describe = f^self^{ self^.label }
 }
 
 let^RecordingLog = def^{
@@ -35,7 +35,7 @@ let^LoggedStore = def^{
         self^{ inner = inner, log = log }
     },
     delegate^self^.inner,
-    get = p^self^, key:string^-> string^|nil^{
+    get = p^self^, key:string^{
         self^.log.write($"get {key}")
         return^self^.inner.get(key)
     },
@@ -48,7 +48,7 @@ let^LoggedStore = def^{
 let^CachedStore = def^{
     self^{ abstract^inner : Store, values : t^{[string^]:string^} = {}, label = "cache" },
     override^new = f^inner:Store { self^{ inner = inner } },
-    get = p^self^, key:string^-> string^|nil^{
+    get = p^self^, key:string^{
         let^cached = self^.values[key]
         if^cached fits^string^{ return^cached }
         let^value = self^.inner.get(key)
@@ -67,7 +67,7 @@ let^CachedStore = def^{
 }
 
 # Neither wrapper depends on the concrete storage or logger definition.
-let^assemble = f^store:Store, log:LogSink -> Store {
+let^assemble = f^store:Store, log:LogSink {
     CachedStore.new(LoggedStore.new(store, log))
 }
 let^check = p^condition:bool^, message:string^{
@@ -106,7 +106,7 @@ let^TestStore = def^{
         values : t^{[string^]:string^} = {}, label = "test", reads = 0, writes = 0,
         last_key = "", last_value = ""
     },
-    get = p^self^, key:string^-> string^|nil^{
+    get = p^self^, key:string^{
         self^.reads += 1
         return^self^.values[key]
     },
@@ -116,7 +116,7 @@ let^TestStore = def^{
         self^.last_value := value
         self^.values[key] := value
     },
-    describe = f^self^-> string^{ self^.label }
+    describe = f^self^{ self^.label }
 }
 
 let^test_store = TestStore.new()

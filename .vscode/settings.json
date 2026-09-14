@@ -25,5 +25,6 @@
     "cmake.configureOnEdit": false,
 
     "lhat.serverAutoRestart": false,
+    "lhat.serverPath": "C:\\Users\\Owner\\source\\repos\\lhat\\build\\release\\lhatls.exe",
     "C_Cpp.errorSquiggles": "disabled"
 }
