@@ -4917,6 +4917,10 @@ typedef struct {
     LhatComment *comments;  // the lexer's table, threaded as it is handed out
     size_t count;
     size_t cursor;
+    // The unit. It is the one node no line opens -- its span starts at the
+    // top of the file whatever is written there -- so a comment is never
+    // taken to trail it the way it trails a brace a line opened.
+    const LhatNode *root;
 } CommentWalk;
 
 // Whether a comment sits on the same line as the code before it -- a trailing
@@ -4954,19 +4958,35 @@ static void take_comments(CommentWalk *walk, LhatNode *node, uint32_t limit)
 
 static void attach_within(CommentWalk *walk, LhatNode *node);
 
-// Hands out every comment before `limit`, choosing for each between what it
-// follows and what it precedes: the one before it when it ends that line, and
-// otherwise the one it was written above.
-static void split_comments(CommentWalk *walk, LhatNode *previous,
-                           LhatNode *following, uint32_t limit)
+// Hands out every comment before `limit`, choosing for each whose it is: the
+// sibling before it when it ends that sibling's line; the parent when there is
+// no such sibling and the parent was opened on the comment's own line
+// ('if^ c {  # why', 'def^{  # why'); and otherwise the node it was written
+// above.
+//
+// The parent is asked by where it starts, not by whether anything stands
+// before the comment on its line. An annotation hangs off the declaration it
+// is written over and is not walked as a child, so a note after one
+// ('@x  # note') has code before it on a line that opened nothing -- and that
+// note belongs to the declaration below.
+static void split_comments(CommentWalk *walk, LhatNode *parent,
+                           LhatNode *previous, LhatNode *following,
+                           uint32_t limit)
 {
     while (walk->cursor < walk->count &&
            walk->comments[walk->cursor].offset < limit) {
         const LhatComment *c = &walk->comments[walk->cursor];
-        bool trailing =
-            previous != NULL && same_line(walk, previous->end, c->offset);
-        // One at a time: whether the next is trailing is its own question.
-        take_comments(walk, trailing ? previous : following, c->offset + 1);
+        LhatNode *owner = following;
+        if (previous != NULL) {
+            if (same_line(walk, previous->end, c->offset)) {
+                owner = previous;
+            }
+        } else if (parent != NULL && parent != walk->root &&
+                   same_line(walk, lhat_node_span_start(parent), c->offset)) {
+            owner = parent;
+        }
+        // One at a time: whose the next one is, is its own question.
+        take_comments(walk, owner, c->offset + 1);
     }
 }
 
@@ -4986,7 +5006,7 @@ static void attach_child(void *context, const char *field, bool in_list,
     // Where the child's construct begins, not where its own node does: a
     // comment written before 'a' in 'a + b' belongs to the sum, and the sum's
     // own offset is the '+'.
-    split_comments(state->walk, state->previous, mutable_child,
+    split_comments(state->walk, state->parent, state->previous, mutable_child,
                    lhat_node_span_start(child));
 
     attach_within(state->walk, mutable_child);
@@ -5003,7 +5023,7 @@ static void attach_within(CommentWalk *walk, LhatNode *node)
     }
     AttachContext state = {walk, node, NULL};
     lhat_node_visit_children(node, attach_child, &state);
-    split_comments(walk, state.previous, node, node->end);
+    split_comments(walk, node, state.previous, node, node->end);
 }
 
 static void attach_comments(LhatLexer *lexer, LhatParseResult *result)
@@ -5011,7 +5031,8 @@ static void attach_comments(LhatLexer *lexer, LhatParseResult *result)
     if (result->root == NULL || lexer->comment_count == 0) {
         return;
     }
-    CommentWalk walk = {lexer->source, lexer->comments, lexer->comment_count, 0};
+    CommentWalk walk = {lexer->source, lexer->comments, lexer->comment_count, 0,
+                        result->root};
     attach_within(&walk, result->root);
     // Anything past the end of the tree -- a comment on the last line of the
     // file, after every statement -- still belongs to the unit.

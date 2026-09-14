@@ -303,6 +303,53 @@ static void check_attached_once(const char *text)
     parse_dispose(&p);
 }
 
+// The kind of the node a comment was given, found by the comment's own text,
+// so a test can say where one went without spelling out the path down to it.
+typedef struct {
+    const Parse *p;
+    const char *text;
+    const char *kind;
+} Holder;
+
+static void find_holder(void *context, const char *field, bool in_list,
+                        const LhatNode *child);
+
+static void find_holder_in(Holder *holder, const LhatNode *node)
+{
+    size_t wanted = strlen(holder->text);
+    for (const LhatComment *c = node->comments; c != NULL;
+         c = c->next_for_node) {
+        if (c->end - c->offset == wanted &&
+            memcmp(holder->p->source.text + c->offset, holder->text,
+                   wanted) == 0) {
+            holder->kind = lhat_node_kind_name(node->kind);
+        }
+    }
+    lhat_node_visit_children(node, find_holder, holder);
+}
+
+static void find_holder(void *context, const char *field, bool in_list,
+                        const LhatNode *child)
+{
+    (void)field;
+    (void)in_list;
+    find_holder_in((Holder *)context, child);
+}
+
+static void expect_holder(const char *text, const char *comment,
+                          const char *kind)
+{
+    Parse p;
+    parse_text(&p, text);
+    Holder holder = {&p, comment, "nothing"};
+    if (p.result.root != NULL) {
+        find_holder_in(&holder, p.result.root);
+    }
+    LHAT_CHECK(strcmp(holder.kind, kind) == 0, "\"%s\" went to %s, want %s",
+               comment, holder.kind, kind);
+    parse_dispose(&p);
+}
+
 static void test_comments(void)
 {
     // 01 の 6.4: the lexer keeps them rather than dropping them as trivia.
@@ -382,6 +429,33 @@ static void test_comments(void)
                         "  # second\n"
                         "  2\n"
                         "}  # after\n");
+
+    // 6.4's third rule: a comment ending a line that opened a construct, with
+    // no sibling before it at that depth, was written against what the line
+    // opened -- not against the first thing inside it on the next line.
+    LHAT_TEST("a comment on a line that opened a construct belongs to it");
+    expect_holder("if^ true^ {  # why\n    f()\n}\n", "# why", "block");
+    expect_holder("let^ a = def^{  # why\n    self^{ n = 1 },\n}\n", "# why",
+                  "def");
+    expect_holder("let^ t = {  # why\n    x = 1,\n}\n", "# why", "table");
+    expect_holder("let^ f = f^x{  # why\n    return^ x\n}\n", "# why", "block");
+    check_attached_once("if^ true^ {  # why\n  f()  # after\n}\n");
+
+    // The two rules on either side of it still answer as they did.
+    LHAT_TEST("and a comment above a statement or ending one is unchanged");
+    expect_holder("# comment\nlet^ a = def^{\n    self^{ n = 1 },\n}\n",
+                  "# comment", "define");
+    expect_holder("let^ f = f^x{\n    return^ x # comment\n}\n", "# comment",
+                  "return");
+
+    // An annotation hangs off its declaration and is not walked as a child,
+    // so the code before a note on its line opened nothing. Inside a block,
+    // the block was opened on an earlier line; at the top, the unit is never
+    // counted as opened by a line at all.
+    LHAT_TEST("a note after an annotation stays with the declaration");
+    expect_holder("do^ {\n    @sample(1)  # note\n    let^ y = 1\n}\n", "# note",
+                  "define");
+    expect_holder("@sample(1)  # note\nlet^ y = 1\n", "# note", "define");
 }
 
 #endif  // LHAT_WITH_COMMENTS
