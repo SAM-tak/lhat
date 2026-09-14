@@ -876,7 +876,13 @@ static void test_taking_another_unit_in(void)
         const cJSON *greet = item_named(items, "greet");
         LHAT_CHECK(greet != NULL, "expected greet to be offered");
         if (greet != NULL) {
+#if LHAT_WITH_COMMENTS
             LHAT_CHECK_EQ_INT(extra_line(greet), 2);
+#else
+            // No comments are attached, so there is no description to keep
+            // whole: the line goes at the head of the file.
+            LHAT_CHECK_EQ_INT(extra_line(greet), 0);
+#endif
         }
         cJSON_Delete(items);
     }
