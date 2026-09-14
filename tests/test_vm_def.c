@@ -2139,6 +2139,66 @@ static void test_two_spellings_are_one_member(void)
     run_dispose(&r);
 }
 
+
+// 02 の 14.15 with 14.7: a definition that declares a member beside a
+// delegate^ lending it, completed by a composition. The provider answers,
+// not the delegate -- what the checker lets through has to run that way.
+static void test_declared_beside_a_delegate(void)
+{
+    Run r;
+
+    LHAT_TEST("a composed provider answers over what the delegate^ lends");
+    run_text(&r,
+             "var^ Inner = def^{ self^{}, override^new = f^ { self^{} },\n"
+             "  step = f^self^ -> number^ { return^ 5 } }\n"
+             "var^ W = def^{ self^{ abstract^ held : Inner },\n"
+             "  override^new = f^ i:Inner { self^{ held = i } },\n"
+             "  delegate^ self^.held,\n"
+             "  abstract^ step : f^self^ -> number^; }\n"
+             "var^ Done = W .. def^{ self^{},\n"
+             "  step = f^self^ -> number^ { return^ 99 } }\n"
+             "return^ Done.new(Inner.new()).step()\n");
+    CHECK_INTEGER(&r, 99);
+    run_dispose(&r);
+}
+
+
+// 02 の 14.7改2 with 14.5: what the checker now lets through after a
+// name-form '..' has to be what the machine lends -- and when both parts
+// delegate, the last part's link is the one that answers.
+static void test_composition_keeps_delegation(void)
+{
+    Run r;
+
+    LHAT_TEST("a name-form composition lends what its part delegated");
+    run_text(&r,
+             "var^ Inner = def^{ self^{}, override^new = f^ { self^{} },\n"
+             "  ping = f^self^ -> number^ { return^ 7 } }\n"
+             "var^ inner = Inner.new()\n"
+             "var^ Host = def^{ self^{}, held = inner, delegate^ held }\n"
+             "var^ Empty = def^{ self^{},\n"
+             "  other = f^self^ -> number^ { return^ 1 } }\n"
+             "var^ ByName = Host .. Empty\n"
+             "return^ ByName.new().ping()\n");
+    CHECK_INTEGER(&r, 7);
+    run_dispose(&r);
+
+    LHAT_TEST("the last part to delegate is the one that answers");
+    run_text(&r,
+             "var^ One = def^{ self^{}, override^new = f^ { self^{} },\n"
+             "  ping = f^self^ -> number^ { return^ 1 } }\n"
+             "var^ Two = def^{ self^{}, override^new = f^ { self^{} },\n"
+             "  ping = f^self^ -> number^ { return^ 2 } }\n"
+             "var^ one = One.new()\n"
+             "var^ two = Two.new()\n"
+             "var^ A = def^{ self^{}, a = one, delegate^ a }\n"
+             "var^ B = def^{ self^{}, b = two, delegate^ b }\n"
+             "var^ D = A .. B\n"
+             "return^ D.new().ping()\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_definitions();
@@ -2148,5 +2208,7 @@ int main(void)
     test_delegate();
     test_reserved_seats();
     test_two_spellings_are_one_member();
+    test_declared_beside_a_delegate();
+    test_composition_keeps_delegation();
     return lhat_test_report("test_vm_def");
 }

@@ -2251,6 +2251,98 @@ static void test_method_over_a_field(void)
     unit_dispose(&u);
 }
 
+
+// 02 の 14.15 and 14.15改 with 14.7改2: a delegate^ lends a name and does not
+// give it, so what it lends neither answers an abstract^ nor stands under a
+// waiting override^. new is refused where it was, and says that is why.
+static void test_lent_names(void)
+{
+    Unit u;
+
+    LHAT_TEST("what a delegate^ lends does not provide a declaration");
+    check_text(&u,
+               "let^ Inner = def^{ self^{}, override^new = f^ { self^{} },\n"
+               "  step = f^self^ -> number^ { return^ 5 } }\n"
+               "let^ W = def^{ self^{ abstract^ held : Inner },\n"
+               "  override^new = f^ i:Inner { self^{ held = i } },\n"
+               "  delegate^ self^.held,\n"
+               "  abstract^ step : f^self^ -> number^; }\n"
+               "let^ o = W.new(Inner.new())\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_LENT_DOES_NOT_PROVIDE);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor stands under a waiting override^");
+    check_text(&u,
+               "let^ Inner = def^{ self^{}, override^new = f^ { self^{} },\n"
+               "  run = p^self^ { } }\n"
+               "let^ inner = Inner.new()\n"
+               "let^ Host = def^{ self^{}, held = inner, delegate^ held }\n"
+               "let^ Wrap = def^{ self^{}, override^ run = p^self^ { super^() } }\n"
+               "let^ App = Host .. Wrap\n"
+               "let^ o = App.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_LENT_IS_NOT_REPLACED);
+    unit_dispose(&u);
+
+    // Writing the two together is not itself the mistake: a later
+    // composition provides the member, and what it provides wins over what
+    // the delegate lends (14.7).
+    LHAT_TEST("a declaration beside a delegate^ is composition material");
+    check_text(&u,
+               "let^ Inner = def^{ self^{}, override^new = f^ { self^{} },\n"
+               "  step = f^self^ -> number^ { return^ 5 } }\n"
+               "let^ W = def^{ self^{ abstract^ held : Inner },\n"
+               "  override^new = f^ i:Inner { self^{ held = i } },\n"
+               "  delegate^ self^.held,\n"
+               "  abstract^ step : f^self^ -> number^; }\n"
+               "let^ Done = W .. def^{ self^{},\n"
+               "  step = f^self^ -> number^ { return^ 99 } }\n"
+               "let^ o = Done.new(Inner.new())\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // Where nothing is lent, the refusal says what it always said.
+    LHAT_TEST("with no delegate^ the refusal is the plain one");
+    check_text(&u,
+               "let^ W = def^{ self^{}, abstract^ step : f^self^ -> number^; }\n"
+               "let^ o = W.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
+    unit_dispose(&u);
+}
+
+
+// 02 の 14.7改2 with 14.5: a composition keeps what its parts delegate to --
+// the last part to declare one wins -- in the name form as in the literal
+// one. The compiler has always read it so; the name form's type dropped the
+// link, and called missing a member the machine would lend.
+static void test_composition_keeps_delegation(void)
+{
+    Unit u;
+
+    LHAT_TEST("a member lent before a name-form '..' is still lent after it");
+    check_text(&u,
+               "let^ Inner = def^{ self^{}, override^new = f^ { self^{} },\n"
+               "  ping = f^self^ -> number^ { return^ 7 } }\n"
+               "let^ inner = Inner.new()\n"
+               "let^ Host = def^{ self^{}, held = inner, delegate^ held }\n"
+               "let^ Empty = def^{ self^{}, other = f^self^ -> number^ { return^ 1 } }\n"
+               "let^ ByName = Host .. Empty\n"
+               "let^ n = ByName.new().ping()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and one lent by the right side alone");
+    check_text(&u,
+               "let^ Inner = def^{ self^{}, override^new = f^ { self^{} },\n"
+               "  ping = f^self^ -> number^ { return^ 7 } }\n"
+               "let^ inner = Inner.new()\n"
+               "let^ Host = def^{ self^{}, held = inner, delegate^ held }\n"
+               "let^ Empty = def^{ self^{}, other = f^self^ -> number^ { return^ 1 } }\n"
+               "let^ ByName = Empty .. Host\n"
+               "let^ n = ByName.new().ping()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_definitions();
@@ -2265,5 +2357,7 @@ int main(void)
     test_two_spellings_are_one_member();
     test_requirement_survives_ambiguity();
     test_method_over_a_field();
+    test_lent_names();
+    test_composition_keeps_delegation();
     return lhat_test_report("test_check_def");
 }

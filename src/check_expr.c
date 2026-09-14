@@ -1413,6 +1413,28 @@ static const LhatNode *instantiable_callee(Checker *c, const LhatNode *node,
     return unwritten ? literal : NULL;
 }
 
+// 02 の 14.15 with 14.7改2: whether what this definition's delegate^ lends
+// carries the name. A delegate lends a name without giving it: the link hangs
+// off the instance (link_delegate), and what it reaches is the value in a
+// field, which the program may swap between one lookup and the next. So
+// nothing lent answers an abstract^, and nothing lent stands under an
+// override^ for super^ to reach -- a declaration is asked of the definition,
+// and a lent member is not the definition's. Asked only when new is refused,
+// to say which of those it was.
+static bool lent_by_delegate(const LhatType *definition, const char *name,
+                             size_t length)
+{
+    const LhatType *instance = chk_instance_of(definition);
+    if (instance == NULL || instance->kind != LHAT_TYPE_TABLE ||
+        instance->v.table.delegate == NULL) {
+        return false;
+    }
+    const LhatTypeMember *m =
+        lhat_type_find_member(instance->v.table.delegate, name, length);
+    return m != NULL && !m->abstract && !m->pending && !m->ambiguous &&
+           lhat_type_takes_receiver(m->type);
+}
+
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
     // 3.4改: the arguments first where the callee is a literal, so what they
@@ -1564,10 +1586,19 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             if (hole != NULL) {
                 // 14.15改3: a field has two ways to be given a value and a
                 // member has one, so the two are not told the same thing.
-                chk_report_named(c, node,
-                                 field ? LHAT_CHECK_ERR_FIELD_UNPROVIDED
-                                       : LHAT_CHECK_ERR_STILL_ABSTRACT,
-                                 hole->name, hole->name_length);
+                LhatCheckErrorCode code = field
+                                              ? LHAT_CHECK_ERR_FIELD_UNPROVIDED
+                                              : LHAT_CHECK_ERR_STILL_ABSTRACT;
+                // 14.15 and 14.15改: a member the delegate lends is missing
+                // for a reason the writer cannot see from where they stand --
+                // the name is right there through the delegate -- so the
+                // reason is what they are told.
+                if (!field &&
+                    lent_by_delegate(owner, hole->name, hole->name_length)) {
+                    code = hole->abstract ? LHAT_CHECK_ERR_LENT_DOES_NOT_PROVIDE
+                                          : LHAT_CHECK_ERR_LENT_IS_NOT_REPLACED;
+                }
+                chk_report_named(c, node, code, hole->name, hole->name_length);
             }
         }
     }
@@ -4892,6 +4923,22 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
 
     copy_members(c, definition, left);
     copy_members(c, instance, chk_instance_of(left));
+    // 14.7改2: and what the parts delegate to, which is a link and so carries
+    // over whole. The last part to declare one wins, the way a member written
+    // later does -- which is how the compiler reads a composition (it walks
+    // every part of the chain for a delegate^), and how the literal form of
+    // '..' below already carried its base's. This form carried none, so a
+    // member the machine lends through the composition was one the checker
+    // called missing.
+    const LhatType *left_instance = chk_instance_of(left);
+    const LhatType *lent_right = chk_instance_of(right);
+    if (lent_right != NULL && lent_right->kind == LHAT_TYPE_TABLE &&
+        lent_right->v.table.delegate != NULL) {
+        instance->v.table.delegate = lent_right->v.table.delegate;
+    } else if (left_instance != NULL &&
+               left_instance->kind == LHAT_TYPE_TABLE) {
+        instance->v.table.delegate = left_instance->v.table.delegate;
+    }
     for (const LhatTypeMember *m = right->v.table.members; m != NULL;
          m = m->next) {
         // Every definition has new; it is rebuilt for the composed instance.

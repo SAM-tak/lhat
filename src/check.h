@@ -103,6 +103,11 @@ typedef enum {
     LHAT_CHECK_ERR_FIELD_UNPROVIDED,    // 14.15改3: the same for a template
                                         // field, which a written new may also
                                         // give a value to
+    LHAT_CHECK_ERR_LENT_DOES_NOT_PROVIDE,  // 14.15: new where the declared
+                                           // member is one the delegate^ lends
+    LHAT_CHECK_ERR_LENT_IS_NOT_REPLACED,   // 14.15改: new where a waiting
+                                           // override^ has only a lent member
+                                           // under it
     LHAT_CHECK_ERR_ALREADY_PROVIDED,    // 14.15: abstract^ over a member that
                                         // something in the chain provides
     LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE, // 14.15改2: abstract^ over one this

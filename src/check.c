@@ -4122,6 +4122,15 @@ const char *lhat_check_error_message(LhatCheckErrorCode code)
             return "this field is declared with no value, so an instance "
                    "would hold nothing under it; a composition has to give it "
                    "one, or an override^ new has to write it";
+        case LHAT_CHECK_ERR_LENT_DOES_NOT_PROVIDE:
+            return "this member is declared with abstract^, and what a "
+                   "delegate^ lends does not provide it -- to use the "
+                   "delegate's, drop the abstract^; otherwise compose "
+                   "something that provides it";
+        case LHAT_CHECK_ERR_LENT_IS_NOT_REPLACED:
+            return "this override^ has nothing to replace -- what a delegate^ "
+                   "lends is not a member to replace, so super^ would reach "
+                   "nothing; compose what it replaces, or drop the override^";
         case LHAT_CHECK_ERR_AMBIGUOUS_MEMBER:
             return "both sides of the composition carry this name, so it "
                    "reaches no one answer; name the side you mean";
