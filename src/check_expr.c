@@ -4306,18 +4306,6 @@ static LhatTypeMember *set_member(Checker *c, LhatType *table,
     return set_member_marked(c, table, name, length, type, false, false);
 }
 
-// 14.5改: the name is carried by both sides of a composition and reaches no
-// one answer through it. Marked rather than dropped, so an access can say
-// what went wrong rather than that the name is not there.
-static void mark_ambiguous(LhatType *table, const char *name, size_t length)
-{
-    LhatTypeMember *m =
-        (LhatTypeMember *)lhat_type_own_member(table, name, length);
-    if (m != NULL) {
-        m->ambiguous = true;
-    }
-}
-
 // 14.15: whether the definition is still waiting on a composition. 14.11's
 // new is what this stands in the way of -- an abstract^ would leave a name
 // with nothing under it, and 14.15改's pending override^ would leave a super^
@@ -4371,6 +4359,7 @@ static LhatTypeMember *copy_member(Checker *c, LhatType *into,
         from->abstract, from->pending);
     if (copy != NULL) {
         copy->ambiguous = from->ambiguous;
+        copy->demanded = from->demanded;
     }
     return copy;
 }
@@ -4832,7 +4821,11 @@ static void compose_member(Checker *c, const LhatNode *node, LhatType *into,
                 ? lhat_type_intersect(c->result->types, left->type, right->type)
                 : right->type;
         }
-        left->abstract = left->abstract || right->abstract;
+        // A requirement a side had already met is open again: what met it is
+        // one of the two answers that reach no one.
+        left->abstract = left->abstract || right->abstract ||
+                         left->demanded || right->demanded;
+        left->demanded = left->demanded || right->demanded;
         left->pending = left->pending || right->pending;
         left->ambiguous = true;
         return;
@@ -4850,7 +4843,10 @@ static void compose_member(Checker *c, const LhatNode *node, LhatType *into,
             chk_report_named(c, node, LHAT_CHECK_ERR_MISMATCH,
                              right->name, right->name_length);
         }
-        copy_member(c, into, give);
+        LhatTypeMember *met = copy_member(c, into, give);
+        if (met != NULL) {
+            met->demanded = true;
+        }
         return;
     }
     if (right->pending) {
@@ -4859,15 +4855,25 @@ static void compose_member(Checker *c, const LhatNode *node, LhatType *into,
                              right->name, right->name_length);
         }
         bool pending = left->pending;
+        bool demanded = left->demanded || right->demanded;
         LhatTypeMember *written = copy_member(c, into, right);
         if (written != NULL) {
             written->pending = pending;
+            written->demanded = demanded;
         }
     } else if (field) {
         chk_report_named(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES,
                          right->name, right->name_length);
     } else {
-        mark_ambiguous(into, right->name, right->name_length);
+        // 14.5改: carried by both sides, so it reaches no one answer. Marked
+        // rather than dropped, so an access can say what went wrong rather
+        // than that the name is not there -- and a requirement either side
+        // had met is open again, as above.
+        left->ambiguous = true;
+        if (left->demanded || right->demanded) {
+            left->abstract = true;
+            left->demanded = true;
+        }
     }
 }
 
@@ -4899,9 +4905,16 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
              m != NULL; m = m->next) {
             const LhatTypeMember *shared =
                 lhat_type_own_member(definition, m->name, m->name_length);
-            if (shared != NULL && member_takes_receiver(m->type)) {
-                // A method is in both tables. Mirror the result rather than
-                // checking it twice and reporting the same mismatch twice.
+            const LhatTypeMember *held =
+                lhat_type_own_member(instance, m->name, m->name_length);
+            // A method is in both tables. Mirror the result rather than
+            // checking it twice and reporting the same mismatch twice -- but
+            // only over the method's own mirror. A name the left instance
+            // holds that is not a method is a field, declared or given, and
+            // only the instance holds a field: the definition's side never
+            // met it, so nothing has asked whether a method may stand there.
+            if (shared != NULL && member_takes_receiver(m->type) &&
+                (held == NULL || member_takes_receiver(held->type))) {
                 copy_member(c, instance, shared);
             } else {
                 compose_member(c, node, instance, m, true);
@@ -5376,19 +5389,47 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             // Landing on another one that is waiting settles neither.
             bool pending = entry->v.entry.modifier == LHAT_DEF_OVERRIDE &&
                            (hidden == NULL || hidden->pending);
-            chk_member_declared_at(
-                c,
-                set_member_marked(c, definition, name, length, type, false,
-                                  pending),
-                entry->v.entry.key);
+            // 14.15: what answers an abstract^ keeps saying so, for the
+            // composition that might make the name ambiguous later.
+            bool demanded =
+                hidden != NULL && (hidden->abstract || hidden->demanded);
+            LhatTypeMember *written = set_member_marked(
+                c, definition, name, length, type, false, pending);
+            if (written != NULL) {
+                written->demanded = written->demanded || demanded;
+            }
+            chk_member_declared_at(c, written, entry->v.entry.key);
             // 14.7改: only what is handed a receiver is reachable through an
             // instance. new and a static member stay the definition's.
             if (chk_takes_receiver(type)) {
-                chk_member_declared_at(
-                    c,
-                    set_member_marked(c, instance, name, length, type, false,
-                                      pending),
-                    entry->v.entry.key);
+                // A name the instance holds and the definition does not is a
+                // field -- only a field lives on the instance alone -- and
+                // `hidden` above asked the definition. So the question 14.12
+                // and 14.15 ask of a member is asked of the field here: a
+                // declared one takes a method only if the method fits what it
+                // declared, and a given one does not take one at all. Left
+                // as it was when refused, so every round meets it again.
+                const LhatTypeMember *held =
+                    lhat_type_own_member(instance, name, length);
+                bool refused = false;
+                if (hidden == NULL && held != NULL && !held->provisional &&
+                    !chk_takes_receiver(held->type)) {
+                    if (!held->abstract) {
+                        chk_report(c, entry, LHAT_CHECK_ERR_MEMBER_EXISTS);
+                        refused = true;
+                    } else if (!lhat_type_conforms(type, held->type)) {
+                        chk_report(c, entry, LHAT_CHECK_ERR_MISMATCH);
+                        refused = true;
+                    }
+                }
+                if (!refused) {
+                    LhatTypeMember *mirrored = set_member_marked(
+                        c, instance, name, length, type, false, pending);
+                    if (mirrored != NULL) {
+                        mirrored->demanded = mirrored->demanded || demanded;
+                    }
+                    chk_member_declared_at(c, mirrored, entry->v.entry.key);
+                }
             }
             if (seen != NULL) {
                 if (round == 0 || !lhat_type_equal(seen[index].inferred, type)) {

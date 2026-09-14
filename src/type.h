@@ -141,6 +141,14 @@ typedef struct LhatTypeMember {
     // reachable through the composed type -- what each side wrote is still
     // reachable through that side.
     bool ambiguous;
+    // 02 の 14.15: provided in answer to an abstract^. The requirement is met
+    // rather than gone -- so if the name later becomes ambiguous (14.5改), the
+    // requirement is open again, since an ambiguous name provides nothing.
+    // Without the mark the fill forgets it was ever asked for: `..` is right-
+    // associative (11.5 の (1)), so `X .. Y .. Need` meets Need's declaration
+    // with Y first and only then meets X, and new went through to call a name
+    // the machine never wrote. The relations do not read this.
+    bool demanded;
     // 02 の 14.7改: put there by a def^'s first pass, from the signature the
     // member was written with, so a body checked before it can reach it. The
     // second pass writes the inferred type over it. 14.12's "a second member

@@ -2146,6 +2146,111 @@ static void test_two_spellings_are_one_member(void)
     unit_dispose(&u);
 }
 
+
+// 02 の 14.15 with 14.5改: an ambiguous name provides nothing, and that holds
+// whenever the ambiguity arrives -- including after the declaration was met.
+// `..` is right-associative (11.5 の (1)), so written without brackets the
+// declaration meets its provider first; every grouping is asked here.
+static void test_requirement_survives_ambiguity(void)
+{
+    const char *orders[] = {
+        "(X .. Y) .. Need",   // the ambiguity first
+        "X .. (Y .. Need)",   // the fill first, then the ambiguity
+        "X .. Y .. Need",     // the same, unbracketed
+        "(Y .. Need) .. X",
+        "Need .. X .. Y",
+        "X .. (Need .. def^{ self^{}, m = f^ -> number^ { return^ 3 } })",
+    };
+    char source[1024];
+    char label[256];
+    Unit u;
+    for (size_t i = 0; i < sizeof orders / sizeof *orders; i++) {
+        snprintf(label, sizeof label,
+                 "an ambiguous name leaves the declaration open: %s",
+                 orders[i]);
+        LHAT_TEST(label);
+        snprintf(source, sizeof source,
+                 "let^ X = def^{ self^{}, m = f^ -> number^ { return^ 1 } }\n"
+                 "let^ Y = def^{ self^{}, m = f^ -> number^ { return^ 2 } }\n"
+                 "let^ Need = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
+                 "let^ D = %s\n"
+                 "let^ o = D.new()\n",
+                 orders[i]);
+        check_text(&u, source);
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
+        unit_dispose(&u);
+    }
+
+    // The mark must not reopen anything where no ambiguity came.
+    LHAT_TEST("a met declaration stays met through an unrelated part");
+    check_text(&u,
+               "let^ Y = def^{ self^{}, m = f^ -> number^ { return^ 2 } }\n"
+               "let^ Z = def^{ self^{}, other = f^ -> number^ { return^ 9 } }\n"
+               "let^ Need = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
+               "let^ D = Z .. (Y .. Need)\n"
+               "let^ o = D.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
+// 02 の 14.15 and 14.12, asked of a field: a method written under a field's
+// name. Only the instance holds a field, and both forms of '..' used to look
+// for the name on the definition alone -- so the method was written over the
+// field with nothing compared, and strict passed a program the machine then
+// faulted in.
+static void test_method_over_a_field(void)
+{
+    Unit u;
+
+    LHAT_TEST("a method does not fill a declared field it does not fit (literal)");
+    check_text(&u,
+               "let^ Greet = def^{ self^{ abstract^ n : number^ },\n"
+               "  hello = f^self^ -> number^ { return^ self^.n + 1 } }\n"
+               "let^ Thing = Greet .. def^{ self^{},\n"
+               "  n = f^self^ -> number^ { return^ 41 } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor in the name form");
+    check_text(&u,
+               "let^ Greet = def^{ self^{ abstract^ n : number^ },\n"
+               "  hello = f^self^ -> number^ { return^ self^.n + 1 } }\n"
+               "let^ Meth = def^{ self^{}, n = f^self^ -> number^ { return^ 41 } }\n"
+               "let^ Thing = Greet .. Meth\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a method under a given field's name is a same name (literal)");
+    check_text(&u,
+               "let^ Base = def^{ self^{ n = 1 },\n"
+               "  twice = f^self^ -> number^ { return^ self^.n * 2 } }\n"
+               "let^ Thing = Base .. def^{ self^{},\n"
+               "  n = f^self^ -> number^ { return^ 41 } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a collision in the name form");
+    check_text(&u,
+               "let^ Base = def^{ self^{ n = 1 },\n"
+               "  twice = f^self^ -> number^ { return^ self^.n * 2 } }\n"
+               "let^ Meth = def^{ self^{}, n = f^self^ -> number^ { return^ 41 } }\n"
+               "let^ Thing = Base .. Meth\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
+    unit_dispose(&u);
+
+    // What the shortcut exists for must still go through: a method over the
+    // same method is the mirror, and a declared method met by one is a fill.
+    LHAT_TEST("a method over its own mirror still composes");
+    check_text(&u,
+               "let^ Need = def^{ self^{},\n"
+               "  abstract^ m : f^self^ -> number^; }\n"
+               "let^ Give = def^{ self^{}, m = f^self^ -> number^ { return^ 1 } }\n"
+               "let^ D = Need .. Give\n"
+               "let^ o = D.new()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_definitions();
@@ -2158,5 +2263,7 @@ int main(void)
     test_prototype();
     test_delegate();
     test_two_spellings_are_one_member();
+    test_requirement_survives_ambiguity();
+    test_method_over_a_field();
     return lhat_test_report("test_check_def");
 }
