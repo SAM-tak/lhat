@@ -283,6 +283,32 @@ static LhatNode *finish_at(LhatNode *node, const LhatNode *last)
     return node;
 }
 
+// `finish`, for a body closed by whatever follows it rather than by a brace
+// of its own -- an if^ clause's, a try^{ } arm's, one of 9 章's clauses. Its
+// last token is its last statement's, so a comment written under that
+// statement would fall outside it and 01 の 6.4 would give the comment to the
+// next clause. It ends where what is written in it does, comments included.
+static LhatNode *finish_body(Parser *p, LhatNode *node)
+{
+    finish(p, node);
+#if LHAT_WITH_COMMENTS
+    // Newest first. The lexer may have read past the token that closes the
+    // body, so what lies beyond that is passed over.
+    const LhatLexer *lexer = p->lexer;
+    for (size_t i = lexer->comment_count; node != NULL && i > 0; i--) {
+        const LhatComment *c = &lexer->comments[i - 1];
+        if (c->end <= node->end) {
+            break;
+        }
+        if (c->end <= p->current.offset) {
+            node->end = c->end;
+            break;
+        }
+    }
+#endif
+    return node;
+}
+
 // An expression a statement position turned down. The diagnostic has been
 // reported already; all this settles is what becomes of the tree.
 //
@@ -3026,7 +3052,7 @@ static LhatNode *parse_block_body(Parser *p, const LhatToken *at)
         return NULL;
     }
     block->v.list.items = parse_statement_list(p);
-    return finish(p, block);
+    return finish_body(p, block);
 }
 
 // A body that may carry the clauses of 9 章. Outside a loop only finally^ is
@@ -3087,7 +3113,7 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
         }
         clause->v.loop_clause.kind = (LhatClauseKind)index;
         clause->v.loop_clause.body = statements;
-        lhat_node_append(&head, &tail, finish(p, clause));
+        lhat_node_append(&head, &tail, finish_body(p, clause));
     }
 
     // 9.3: first^, pre^, main^ and last^ are the body. Once the braces are
@@ -3416,7 +3442,8 @@ static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
     }
     first->v.clause.condition = condition;
     first->v.clause.body = parse_block_body(p, &brace);
-    lhat_node_append(&head, &tail, finish(p, first));
+    lhat_node_append(&head, &tail,
+                     finish_at(finish(p, first), first->v.clause.body));
 
     while (is_else_marker(p)) {
         LhatToken at = p->current;
@@ -3434,7 +3461,8 @@ static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
         // two spans identical, and a tool showing a clause could not tell what
         // the clause itself says from what its body does.
         clause->v.clause.body = parse_block_body(p, &p->current);
-        lhat_node_append(&head, &tail, finish(p, clause));
+        lhat_node_append(&head, &tail,
+                         finish_at(finish(p, clause), clause->v.clause.body));
     }
 
     expect_op(p, LHAT_OP_RBRACE);
@@ -3486,7 +3514,8 @@ static LhatNode *parse_try_block(Parser *p)
     // showing the clause could not tell what it is from what it does -- the
     // same reason an el^ clause's body starts after its ':' (parse_if_body).
     body->v.clause.body = parse_block_body(p, &p->current);
-    lhat_node_append(&head, &tail, finish(p, body));
+    lhat_node_append(&head, &tail,
+                     finish_at(finish(p, body), body->v.clause.body));
 
     // Inside these braces every catch^ is an arm, so the word alone is the
     // test here -- at_catch_arm asks a question about the list's own depth,
@@ -3530,7 +3559,8 @@ static LhatNode *parse_try_block(Parser *p)
         advance(p);  // ':'
         // From after the ':', for the reason parse_if_body gives.
         arm->v.clause.body = parse_block_body(p, &p->current);
-        lhat_node_append(&head, &tail, finish(p, arm));
+        lhat_node_append(&head, &tail,
+                         finish_at(finish(p, arm), arm->v.clause.body));
     }
 
     p->catch_depth = enclosing_catch;

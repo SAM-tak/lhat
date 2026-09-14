@@ -416,12 +416,17 @@ let^ other = require^ "lib/util.lh"
 | 要求 | 用途 | 定義 | 実装 |
 | --- | --- | --- | --- |
 | `lhat/ast` | ビジュアルエディタに構文木を渡す | 06 の 4 章 | `lsp/ast_json.c`、`lsp/handlers/ast.c` |
+| `lhat/toggleDisabledCode` | 選択を文の単位に広げて `#[~ … ]#` で囲む・外す | 01 の 6.5 | `lsp/disabled_code.c`、`lsp/handlers/disabled_code.c` |
 
 独自拡張は `lhat/` を接頭辞とする。
 
 直列化と受け口を分けるのは `semantic_tokens` と同じ形。
-直列化の側にはノード種ごとの場合分けが1つもない
+直列化の側にノード種ごとの場合分けは、どの並びが文を持つか（06 の 4.1）の1つしかない
 （`lhat_node_visit_children` が子とその名前を渡す）。
+
+`lhat/toggleDisabledCode` は `{ textDocument, range }` を受け、`{ edits: TextEdit[] }` か、
+囲めない理由の `{ refusal: string }` を答える。文書シンボルと同じく検査を待たず、
+文書ストアのテキストをその場で構文解析する——押されるのは編集の直後である。
 
 ## 8. VSCode 拡張
 

@@ -4393,7 +4393,17 @@ static void test_documentation(void)
          "}\n"
          "\n"
          "#[ 上限 ]#\n"
-         "let^ cap = 9\n"},
+         "let^ cap = 9\n"
+         "\n"
+         "# 古い説明\n"
+         "#[~\n"
+         "let^ old = 1\n"
+         "]#\n"
+         "let^ fresh = 2\n"
+         "\n"
+         "#[~ let^ gone = 3 ]#\n"
+         "# 新しい説明\n"
+         "let^ kept = 4\n"},
     };
 
     LHAT_TEST("the block above a thing is what it says about itself");
@@ -4421,6 +4431,11 @@ static void test_documentation(void)
         // And what has nothing above it says nothing -- the trailing comment
         // belongs to the member whose line it ends.
         expect_documentation(root, "Thing", "quiet", "");
+
+        // 01 の 6.5: code switched off is not prose, and it ends a block the
+        // way the statement it holds would.
+        expect_documentation(root, NULL, "fresh", "");
+        expect_documentation(root, NULL, "kept", "新しい説明");
 
         // An address that names nothing answers the same way.
         expect_documentation(root, "Thing", "nosuch", "");

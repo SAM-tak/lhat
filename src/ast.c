@@ -403,6 +403,16 @@ static bool comment_text(const LhatComment *c, const char *source,
     *out_length = span;
     return span > 0;
 }
+
+bool lhat_comment_is_disabled_code(const LhatComment *comment,
+                                   const char *source, size_t source_length)
+{
+    return comment != NULL && source != NULL && comment->block &&
+           comment->end <= source_length &&
+           comment->end - comment->offset >= 5 &&
+           source[comment->offset + 2] == '~' &&
+           source[comment->end - 2] == ']' && source[comment->end - 1] == '#';
+}
 #endif  // LHAT_WITH_COMMENTS
 
 size_t lhat_node_documentation(const LhatNode *node, const char *source,
@@ -435,6 +445,14 @@ size_t lhat_node_documentation(const LhatNode *node, const char *source,
          c = c->next_for_node) {
         if (c->end > head) {
             break;  // written after the construct began: a trailing one
+        }
+        // 01 の 6.5: code switched off is not prose. It stands between what
+        // is above it and the node the way a statement would, so it ends the
+        // block rather than joining it.
+        if (lhat_comment_is_disabled_code(c, source, source_length)) {
+            start = NULL;
+            last = NULL;
+            continue;
         }
         if (last == NULL || blank_line_between(source, last->end, c->offset)) {
             start = c;

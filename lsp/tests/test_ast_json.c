@@ -256,6 +256,82 @@ static void test_absent(void)
     LHAT_CHECK(lsp_ast_json_for_unit(NULL) == NULL, "expected no reply for NULL");
 }
 
+#if LHAT_WITH_COMMENTS
+static cJSON *item(cJSON *array, int index)
+{
+    return cJSON_GetArrayItem(array, index);
+}
+
+static void check_kind(cJSON *node, const char *expected)
+{
+    LHAT_CHECK_EQ_STR(kind_of(node), strlen(kind_of(node)), expected);
+}
+
+// 01 の 6.5: code switched off with '#[~ ... ]#' is listed where it stands
+// among statements, holding the statements it would be.
+static void test_disabled_code(void)
+{
+    Tree t;
+
+    LHAT_TEST("disabled code is listed among the statements, holding its own");
+    tree_of(&t, "f()\n#[~\ng()\n]#\nh()\n");
+    cJSON *items = field(root_of(&t), "items");
+    LHAT_CHECK_EQ_INT(cJSON_GetArraySize(items), 3);
+    cJSON *off = item(items, 1);
+    check_kind(off, "disabled");
+    check_span(&t, off, "#[~\ng()\n]#");
+    check_span(&t, item(field(off, "items"), 0), "g()");
+    // Listed once: not a comment of the statement below it as well.
+    LHAT_CHECK(cJSON_GetObjectItemCaseSensitive(item(items, 2), "comments") ==
+                   NULL,
+               "the disabled code was given as a comment too");
+    tree_dispose(&t);
+
+    LHAT_TEST("in a body, after the last statement");
+    tree_of(&t, "if^ true^ {\n    f()\n    #[~\n    g()\n    ]#\n}\n");
+    cJSON *body = field(item(field(first_statement(&t), "items"), 0), "body");
+    items = field(body, "items");
+    LHAT_CHECK_EQ_INT(cJSON_GetArraySize(items), 2);
+    check_kind(item(items, 1), "disabled");
+    check_span(&t, item(field(item(items, 1), "items"), 0), "g()");
+    tree_dispose(&t);
+
+    LHAT_TEST("nested, each level lists its own");
+    tree_of(&t, "#[~\n#[~\nf()\n]#\n]#\n");
+    off = first_statement(&t);
+    check_kind(off, "disabled");
+    cJSON *inner = item(field(off, "items"), 0);
+    check_kind(inner, "disabled");
+    check_span(&t, item(field(inner, "items"), 0), "f()");
+    tree_dispose(&t);
+
+    LHAT_TEST("a body that does not parse is listed with nothing under it");
+    tree_of(&t, "#[~ this is ( not code ]#\n");
+    off = first_statement(&t);
+    check_kind(off, "disabled");
+    LHAT_CHECK(cJSON_GetObjectItemCaseSensitive(off, "fields") == NULL,
+               "an unparsed body listed a tree");
+    tree_dispose(&t);
+
+    LHAT_TEST("a block comment without the '~' is still a comment");
+    tree_of(&t, "#[ note ]#\nf()\n");
+    LHAT_CHECK_EQ_INT(cJSON_GetArraySize(field(root_of(&t), "items")), 1);
+    LHAT_CHECK(cJSON_GetObjectItemCaseSensitive(first_statement(&t),
+                                                "comments") != NULL,
+               "the comment went missing");
+    tree_dispose(&t);
+
+    LHAT_TEST("away from statements, disabled code stays a comment");
+    tree_of(&t, "let^ x = #[~ 1 ]# 2\n");
+    char *printed = cJSON_PrintUnformatted(t.json);
+    LHAT_CHECK(printed != NULL && strstr(printed, "disabled") == NULL &&
+                   strstr(printed, "comments") != NULL,
+               "listed code that stands among no statements");
+    free(printed);
+    tree_dispose(&t);
+}
+#endif
+
 int main(void)
 {
     test_shape();
@@ -263,6 +339,7 @@ int main(void)
     test_spans();
 #if LHAT_WITH_COMMENTS
     test_comments();
+    test_disabled_code();
 #endif
     test_absent();
     return lhat_test_report("test_ast_json");

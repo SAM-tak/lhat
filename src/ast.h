@@ -595,6 +595,15 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
 // construct while [n->offset, n->end) is only the part from the operator on.
 uint32_t lhat_node_span_start(const LhatNode *node);
 
+// 01 の 6.5: a block comment whose body opens with '~' -- '#[~ ... ]#' -- is
+// code switched off rather than prose. The language reads it as the comment
+// it lexes as; the tools read what it holds as statements. Only a closed one
+// counts, since an unterminated comment has no ']#' to take away.
+#if LHAT_WITH_COMMENTS
+bool lhat_comment_is_disabled_code(const LhatComment *comment,
+                                   const char *source, size_t source_length);
+#endif
+
 // 01 の 6.4: the comment block written directly above this node -- what the
 // language calls the thing's description, with the markers stripped so it
 // reads as prose and the lines joined by newlines.

@@ -8,6 +8,7 @@
 #include "handlers/ast.h"
 #include "handlers/completion.h"
 #include "handlers/definition.h"
+#include "handlers/disabled_code.h"
 #include "handlers/document_symbol.h"
 #include "handlers/hover.h"
 #include "handlers/initialize.h"
@@ -30,6 +31,7 @@ const LspRequestEntry LSP_REQUEST_TABLE[] = {
     // 07 の 7 章: an extension of our own, so it is named under "lhat/".
     {"lhat/ast", lsp_handle_ast},
     {"lhat/signature", lsp_handle_signature},
+    {"lhat/toggleDisabledCode", lsp_handle_toggle_disabled_code},
     {NULL, NULL},
 };
 

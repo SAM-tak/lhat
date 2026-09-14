@@ -171,6 +171,9 @@ static void test_spans(void)
     check_spans_enclose("let^ g = p^ { yield^ 1 }\n");
     check_spans_enclose("let^ ty = x as^ f^number^ -> string^ ;\n");
     check_spans_enclose("let^ co = x as^ c^{ f^number^ -> string^ -> nil^ }\n");
+    // A clause body reaching past its last token, to a comment under it.
+    check_spans_enclose("if^ x {\n  f()\n  # tail\nel^:\n  g()\n  # tail\n}\n");
+    check_spans_enclose("for^ i from^ 1 to^ 3 {\n  f()\nlast^:\n  g()\n  # t\n}\n");
 
     // The whole of a construct, closing token included.
     LHAT_TEST("a span reaches the token that closes the construct");
@@ -456,6 +459,18 @@ static void test_comments(void)
     expect_holder("do^ {\n    @sample(1)  # note\n    let^ y = 1\n}\n", "# note",
                   "define");
     expect_holder("@sample(1)  # note\nlet^ y = 1\n", "# note", "define");
+
+    // An if^ clause's body, a try^{ } arm's, and 9 章's clauses are closed by
+    // what follows them rather than by a brace of their own. They end where
+    // what is written in them does, so a comment under the last statement is
+    // theirs -- not the next clause's.
+    LHAT_TEST("a comment under a clause body's last statement stays in it");
+    expect_holder("if^ true^ {\n    f()\n    # tail\nel^:\n    g()\n}\n",
+                  "# tail", "block");
+    expect_holder("try^{\n    f()\n    # tail\ncatch^:\n    g()\n}\n", "# tail",
+                  "block");
+    check_attached_once(
+        "for^ i from^ 1 to^ 3 {\n    f()\nlast^:\n    g()\n    # tail\n}\n");
 }
 
 #endif  // LHAT_WITH_COMMENTS
