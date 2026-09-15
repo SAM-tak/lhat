@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "lhat/debug.h"
+#include "lhat/error.h"
 #include "lhat/object.h"
 #include "lhat/source.h"
 #include "port/socket.h"
@@ -843,6 +844,58 @@ static void send_stopped(DapSession *s, int thread_id, const char *reason,
     lhat_mutex_unlock(&s->write_lock);
 }
 
+// 10 §4: what the adapter tells the debugger, with what goes into it in holes
+// (§5.1). The reason a stop gives is the protocol's word, and the line that
+// says the socket is up is read by the editor that started this process, so
+// neither is one of these.
+enum {
+    DAP_PANIC,
+    DAP_THREAD_MAIN,
+    DAP_THREAD_MACHINE,
+    DAP_BREAKPOINT_LINE,
+    DAP_BREAKPOINT_SOURCE,
+    DAP_BREAKPOINT_CONDITION,
+    DAP_BREAKPOINT_NO_LINE,
+    DAP_BREAKPOINT_OUT_OF_MEMORY,
+    DAP_NOT_FAULTED,
+    DAP_NO_EXPRESSION,
+    DAP_NOT_STOPPED,
+    DAP_STOPPED_BY_DEBUGGER,
+};
+
+static const struct {
+    const char *id;
+    const char *text;
+} DAP_MESSAGES[] = {
+    [DAP_PANIC] = {"dap.panic", "panic^ {value}"},
+    [DAP_THREAD_MAIN] = {"dap.thread-main", "main"},
+    [DAP_THREAD_MACHINE] = {"dap.thread-machine", "machine {id}"},
+    [DAP_BREAKPOINT_LINE] = {"dap.breakpoint-line",
+        "a breakpoint line must be a positive whole number"},
+    [DAP_BREAKPOINT_SOURCE] = {"dap.breakpoint-source",
+        "the source is not part of this program"},
+    [DAP_BREAKPOINT_CONDITION] = {"dap.breakpoint-condition",
+        "a breakpoint condition must be an expression"},
+    [DAP_BREAKPOINT_NO_LINE] = {"dap.breakpoint-no-line",
+        "there is no executable line at or after this line"},
+    [DAP_BREAKPOINT_OUT_OF_MEMORY] = {"dap.breakpoint-out-of-memory",
+        "out of memory while setting the breakpoint"},
+    [DAP_NOT_FAULTED] = {"dap.not-faulted",
+        "that machine did not stop on a runtime fault"},
+    [DAP_NO_EXPRESSION] = {"dap.no-expression", "no expression"},
+    [DAP_NOT_STOPPED] = {"dap.not-stopped", "that machine is not stopped"},
+    [DAP_STOPPED_BY_DEBUGGER] =
+        {"dap.stopped-by-debugger", "stopped by the debugger"},
+};
+
+// The text `id` makes with one argument in its hole, into `out`.
+static void dap_say(size_t id, const char *name, const char *value,
+                    char *out, size_t capacity)
+{
+    const LhatMessageArg arg = {name, value, strlen(value)};
+    lhat_message_render(DAP_MESSAGES[id].text, &arg, 1, out, capacity);
+}
+
 static void fault_text(LhatMachine *machine, char *out, size_t capacity)
 {
     LhatRunStatus status = lhat_machine_fault_status(machine);
@@ -850,7 +903,7 @@ static void fault_text(LhatMachine *machine, char *out, size_t capacity)
         char value[192];
         lhat_value_text(lhat_machine_fault_value(machine), value,
                         sizeof value);
-        snprintf(out, capacity, "panic^ %s", value);
+        dap_say(DAP_PANIC, "value", value, out, capacity);
     } else {
         snprintf(out, capacity, "%s", lhat_run_status_message(status));
     }
@@ -979,20 +1032,20 @@ static void set_breakpoints(DapSession *s, const cJSON *arguments, cJSON *body)
         if (!cJSON_IsNumber(line) || line->valuedouble < 1 ||
             line->valuedouble > UINT32_MAX ||
             (uint32_t)line->valuedouble != line->valuedouble) {
-            why = "a breakpoint line must be a positive whole number";
+            why = DAP_MESSAGES[DAP_BREAKPOINT_LINE].text;
         } else if (key == NULL) {
-            why = "the source is not part of this program";
+            why = DAP_MESSAGES[DAP_BREAKPOINT_SOURCE].text;
         } else if (condition != NULL && !cJSON_IsString(condition)) {
-            why = "a breakpoint condition must be an expression";
+            why = DAP_MESSAGES[DAP_BREAKPOINT_CONDITION].text;
         } else {
             requested = (uint32_t)line->valuedouble;
             actual = next_executable_line(s, key, requested);
             condition_text = cJSON_IsString(condition) ? condition->valuestring
                                                         : NULL;
             if (actual == 0) {
-                why = "there is no executable line at or after this line";
+                why = DAP_MESSAGES[DAP_BREAKPOINT_NO_LINE].text;
             } else if (!add_breakpoint(s, key, actual, condition_text)) {
-                why = "out of memory while setting the breakpoint";
+                why = DAP_MESSAGES[DAP_BREAKPOINT_OUT_OF_MEMORY].text;
             }
         }
         add_breakpoint_response(verified, why == NULL, actual, why);
@@ -1061,12 +1114,12 @@ static void dispatch(DapSession *s, const cJSON *request)
         for (size_t i = 0; i < s->thread_count; i++) {
             cJSON *one = cJSON_CreateObject();
             cJSON_AddNumberToObject(one, "id", s->threads[i]->id);
-            char name[32];
-            if (s->threads[i]->id == 1) {
-                snprintf(name, sizeof name, "main");
-            } else {
-                snprintf(name, sizeof name, "machine %d", s->threads[i]->id);
-            }
+            char id[16];
+            char name[64];
+            snprintf(id, sizeof id, "%d", s->threads[i]->id);
+            dap_say(s->threads[i]->id == 1 ? DAP_THREAD_MAIN
+                                           : DAP_THREAD_MACHINE,
+                    "id", id, name, sizeof name);
             cJSON_AddStringToObject(one, "name", name);
             cJSON_AddItemToArray(threads, one);
         }
@@ -1088,7 +1141,7 @@ static void dispatch(DapSession *s, const cJSON *request)
         DapThread *t = thread_by_id(
             s, cJSON_IsNumber(thread_id) ? (int)thread_id->valuedouble : 1);
         if (t == NULL || !t->parked || !t->faulted) {
-            refuse(s, request, "that machine did not stop on a runtime fault");
+            refuse(s, request, DAP_MESSAGES[DAP_NOT_FAULTED].text);
             return;
         }
         cJSON *body = cJSON_CreateObject();
@@ -1172,11 +1225,11 @@ static void dispatch(DapSession *s, const cJSON *request)
                                              : 1000;  // main, level 0
         DapThread *t = thread_by_id(s, frame / 1000);
         if (!cJSON_IsString(expression)) {
-            refuse(s, request, "no expression");
+            refuse(s, request, DAP_MESSAGES[DAP_NO_EXPRESSION].text);
             return;
         }
         if (t == NULL || !t->parked) {
-            refuse(s, request, "that machine is not stopped");
+            refuse(s, request, DAP_MESSAGES[DAP_NOT_STOPPED].text);
             return;
         }
         char why[256];
@@ -1312,7 +1365,8 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
     lhat_mutex_lock(&s->lock);
     if (s->ended) {
         lhat_mutex_unlock(&s->lock);
-        if (!lhat_machine_panic_text(machine, "stopped by the debugger")) {
+        if (!lhat_machine_panic_text(
+                machine, DAP_MESSAGES[DAP_STOPPED_BY_DEBUGGER].text)) {
             lhat_machine_panic(machine, lhat_nil());
         }
         return;
@@ -1360,7 +1414,8 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
     bool over = s->ended;
     lhat_mutex_unlock(&s->lock);
     if (over) {
-        if (!lhat_machine_panic_text(machine, "stopped by the debugger")) {
+        if (!lhat_machine_panic_text(
+                machine, DAP_MESSAGES[DAP_STOPPED_BY_DEBUGGER].text)) {
             lhat_machine_panic(machine, lhat_nil());
         }
     }
@@ -1399,7 +1454,8 @@ bool dap_session_begin(DapSession **out, LhatMachine *machine,
         // accept below then blocks until a debugger arrives -- so an editor
         // that guessed the moment would guess wrong on a big program and
         // race on a small one. One line, on the stream the protocol does not
-        // use, before anything can block.
+        // use, before anything can block. The editor finds it by its words,
+        // so it is not a text a translation replaces (10 §3.2).
         fprintf(stderr, "lhat: dap listening on %u\n", (unsigned)port);
         fflush(stderr);
     }

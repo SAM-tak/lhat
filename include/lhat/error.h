@@ -80,6 +80,27 @@ size_t lhat_report_write(const LhatReport *report, const LhatSource *source,
                          const char *name, bool rich, char *out,
                          size_t capacity);
 
+// 10 §5.1: one argument of a message -- the hole it fills, by name, and the
+// text that fills it, exactly as it is to be written.
+typedef struct {
+    const char *name;
+    const char *value;
+    size_t length;
+} LhatMessageArg;
+
+// The sentence `text` makes with `args` in its holes. A hole is `{`, a name
+// -- a lower-case ASCII letter, then letters, digits and '-' -- and `}`;
+// every other brace is a brace, and `\{`, `\}` and `\\` write a brace or a
+// backslash. What fills a hole goes in as it is and is not read for holes
+// again, and a hole with no argument of its name is written as it stands. A
+// phrase (10 §5.2) is looked up by whoever hands it over.
+//
+// Follows lhat_report_write: answers how many bytes the whole sentence
+// wants, not counting the terminating NUL, and fills up to `capacity`
+// including it. So measuring is a call with (NULL, 0).
+size_t lhat_message_render(const char *text, const LhatMessageArg *args,
+                           size_t count, char *out, size_t capacity);
+
 #ifdef __cplusplus
 }
 #endif
