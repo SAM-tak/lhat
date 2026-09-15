@@ -3728,6 +3728,34 @@ static void say(Said *s, const char *text, size_t length)
     s->text[s->length] = '\0';
 }
 
+// 10 §5.1: a failure a load says, about the unit it names.
+static const LhatMessageEntry PROGRAM_PARTS[] = {
+    {"program.failed", "{path}: error: {message}"},
+};
+
+const char *lhat_program_part_id(size_t index)
+{
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(PROGRAM_PARTS, index);
+    return entry != NULL ? entry->id : NULL;
+}
+
+static void say_failed(Said *s, const char *path, const char *message)
+{
+    const LhatMessageArg args[] = {
+        {"path", path, strlen(path)},
+        {"message", message, strlen(message)},
+    };
+    const char *text = PROGRAM_PARTS[0].text;
+    size_t needed = lhat_message_render(text, args, 2, NULL, 0);
+    char *line = (char *)lhat_alloc(needed + 1);
+    if (line == NULL) {
+        return;
+    }
+    lhat_message_render(text, args, 2, line, needed + 1);
+    say(s, line, needed);
+    lhat_free(line);
+}
+
 static void say_unit(Said *s, const LhatUnit *unit)
 {
     size_t count = lhat_unit_diagnostic_count(unit);
@@ -3753,13 +3781,10 @@ static void say_program(Said *s, const LhatProgram *program, size_t from)
 {
     for (size_t i = from; i < program->diagnostic_count; i++) {
         const LhatProgramDiagnostic *d = &program->diagnostics[i];
-        const char *message = lhat_program_error_message(d->code);
         if (s->length > 0) {
             say(s, "\n", 1);
         }
-        say(s, d->path, strlen(d->path));
-        say(s, ": error: ", 9);
-        say(s, message, strlen(message));
+        say_failed(s, d->path, lhat_program_error_message(d->code));
     }
 }
 
@@ -3771,11 +3796,8 @@ static LhatLoadStatus settle_placed(LhatProgram *program,
                                     bool built)
 {
     if (!built && said->length == 0) {
-        const char *message =
-            lhat_compile_status_message(program->compile_status);
-        say(said, unit->path, strlen(unit->path));
-        say(said, ": error: ", 9);
-        say(said, message, strlen(message));
+        say_failed(said, unit->path,
+                   lhat_compile_status_message(program->compile_status));
     }
     program->load_failure = said->text;
     if (built) {

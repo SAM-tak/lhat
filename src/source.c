@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "lhat/port.h"
+#include "message.h"
 
 static char *duplicate(const char *s)
 {
@@ -18,12 +19,30 @@ static char *duplicate(const char *s)
     return copy;
 }
 
-static char *format_error(const char *prefix, const char *detail)
+// 10 §5.1: why a file did not become a source.
+enum { SOURCE_CANNOT_OPEN, SOURCE_CANNOT_READ, SOURCE_OUT_OF_MEMORY };
+
+static const LhatMessageEntry SOURCE_PARTS[] = {
+    [SOURCE_CANNOT_OPEN] = {"source.cannot-open", "cannot open: {path}"},
+    [SOURCE_CANNOT_READ] = {"source.cannot-read", "cannot read: {path}"},
+    [SOURCE_OUT_OF_MEMORY] = {"source.out-of-memory", "out of memory"},
+};
+
+const char *lhat_source_part_id(size_t index)
 {
-    size_t n = strlen(prefix) + strlen(detail) + 3;
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(SOURCE_PARTS, index);
+    return entry != NULL ? entry->id : NULL;
+}
+
+// The error lhat_source_init_from_file hands its caller to free.
+static char *error_text(size_t part, const char *path)
+{
+    const LhatMessageArg arg = {"path", path, strlen(path)};
+    const char *text = SOURCE_PARTS[part].text;
+    size_t n = lhat_message_render(text, &arg, 1, NULL, 0) + 1;
     char *msg = (char *)lhat_alloc(n);
     if (msg != NULL) {
-        snprintf(msg, n, "%s: %s", prefix, detail);
+        lhat_message_render(text, &arg, 1, msg, n);
     }
     return msg;
 }
@@ -92,7 +111,7 @@ bool lhat_source_init_from_file(LhatSource *src, const char *path, char **error)
     FILE *fp = fopen(path, "rb");
     if (fp == NULL) {
         if (error != NULL) {
-            *error = format_error("cannot open", path);
+            *error = error_text(SOURCE_CANNOT_OPEN, path);
         }
         return false;
     }
@@ -105,7 +124,7 @@ bool lhat_source_init_from_file(LhatSource *src, const char *path, char **error)
     if (buffer == NULL) {
         fclose(fp);
         if (error != NULL) {
-            *error = duplicate("out of memory");
+            *error = error_text(SOURCE_OUT_OF_MEMORY, path);
         }
         return false;
     }
@@ -118,7 +137,7 @@ bool lhat_source_init_from_file(LhatSource *src, const char *path, char **error)
                 lhat_free(buffer);
                 fclose(fp);
                 if (error != NULL) {
-                    *error = duplicate("out of memory");
+                    *error = error_text(SOURCE_OUT_OF_MEMORY, path);
                 }
                 return false;
             }
@@ -139,7 +158,7 @@ bool lhat_source_init_from_file(LhatSource *src, const char *path, char **error)
     if (failed) {
         lhat_free(buffer);
         if (error != NULL) {
-            *error = format_error("cannot read", path);
+            *error = error_text(SOURCE_CANNOT_READ, path);
         }
         return false;
     }
@@ -148,7 +167,7 @@ bool lhat_source_init_from_file(LhatSource *src, const char *path, char **error)
     lhat_free(buffer);
 
     if (!ok && error != NULL) {
-        *error = duplicate("out of memory");
+        *error = error_text(SOURCE_OUT_OF_MEMORY, path);
     }
     return ok;
 }

@@ -96,6 +96,19 @@ static const Table TABLES[] = {
      "unknown"},
 };
 
+// The texts a source has besides the ones its codes index: phrases, fixed
+// words, and the sentences that wrap another.
+typedef struct {
+    const char *source;
+    const char *(*id)(size_t index);
+} Parts;
+
+static const Parts PARTS[] = {
+    {"parse", lhat_parse_part_id},   {"trace", lhat_trace_part_id},
+    {"report", lhat_report_part_id}, {"program", lhat_program_part_id},
+    {"source", lhat_source_part_id},
+};
+
 // Every ID met, for the check that no two entries share one.
 static const char *all_ids[512];
 static size_t seen;
@@ -152,8 +165,8 @@ static size_t holes_in(const char *text, const char *const *allowed,
         bool known = false;
         for (size_t i = 0; i < allowed_count; i++) {
             size_t n = strlen(allowed[i]);
-            known = known ||
-                    ((size_t)(end + 1 - p) == n && memcmp(p, allowed[i], n) == 0);
+            known = known || ((size_t)(end + 1 - p) == n &&
+                              memcmp(p, allowed[i], n) == 0);
         }
         *all_allowed = *all_allowed && known;
     }
@@ -188,21 +201,18 @@ static void test_ids(void)
                    table->source);
     }
 
-    LHAT_TEST("parse: the texts besides the codes'");
-    size_t parts = 0;
-    for (const char *id; (id = lhat_parse_part_id(parts)) != NULL; parts++) {
-        LHAT_CHECK(well_formed(id, "parse"), "'%s' is well formed", id);
-        remember(id);
+    for (size_t t = 0; t < sizeof PARTS / sizeof PARTS[0]; t++) {
+        const Parts *parts = &PARTS[t];
+        LHAT_TEST(parts->source);
+        size_t index = 0;
+        for (const char *id; (id = parts->id(index)) != NULL; index++) {
+            LHAT_CHECK(well_formed(id, parts->source), "'%s' is well formed",
+                       id);
+            remember(id);
+        }
+        LHAT_CHECK(index > 0, "%s has texts besides its codes'",
+                   parts->source);
     }
-    LHAT_CHECK(parts > 0, "there are some");
-
-    LHAT_TEST("trace: a traceback's fixed words");
-    parts = 0;
-    for (const char *id; (id = lhat_trace_part_id(parts)) != NULL; parts++) {
-        LHAT_CHECK(well_formed(id, "trace"), "'%s' is well formed", id);
-        remember(id);
-    }
-    LHAT_CHECK(parts > 0, "there are some");
 
     LHAT_TEST("parse: a code's text holds no hole but {found}");
     static const char *const FOUND_HOLE[] = {"{found}"};

@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "message.h"
+
 // The same moving cursor value.c writes with: `used` keeps growing past the
 // buffer so the caller can measure with a NULL one and ask again.
 typedef struct {
@@ -202,6 +204,20 @@ static void put_flattened(Writer *w, const char *line, size_t length)
     }
 }
 
+// 10 §5.1: what a report is, said ahead of its message.
+enum { REPORT_ERROR, REPORT_NOTE };
+
+static const LhatMessageEntry REPORT_PARTS[] = {
+    [REPORT_ERROR] = {"report.error", "error: {message}"},
+    [REPORT_NOTE] = {"report.note", "note: {message}"},
+};
+
+const char *lhat_report_part_id(size_t index)
+{
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(REPORT_PARTS, index);
+    return entry != NULL ? entry->id : NULL;
+}
+
 size_t lhat_report_write(const LhatReport *report, const LhatSource *source,
                          const char *name, bool rich, char *out,
                          size_t capacity)
@@ -220,8 +236,9 @@ size_t lhat_report_write(const LhatReport *report, const LhatSource *source,
 
     const char *where = name != NULL ? name
                         : (source != NULL ? source->name : NULL);
-    const char *label =
-        report->kind == LHAT_REPORT_NOTE ? "note: " : "error: ";
+    const LhatMessageEntry *label =
+        &REPORT_PARTS[report->kind == LHAT_REPORT_NOTE ? REPORT_NOTE
+                                                         : REPORT_ERROR];
 
     size_t begin = 0;
     size_t end = 0;
@@ -306,8 +323,12 @@ size_t lhat_report_write(const LhatReport *report, const LhatSource *source,
     put(&w, ":", 1);
     put_number(&w, report->column);
     put(&w, ": ", 2);
-    put_text(&w, label);
-    put_text(&w, report->message);
+    const char *message = report->message != NULL ? report->message : "";
+    const LhatMessageArg said = {"message", message, strlen(message)};
+    bool room = w.out != NULL && w.used < w.capacity;
+    w.used += lhat_message_render(label->text, &said, 1,
+                                  room ? w.out + w.used : NULL,
+                                  room ? w.capacity - w.used : 0);
 
     if (w.out != NULL && w.capacity > 0) {
         w.out[w.used < w.capacity ? w.used : w.capacity - 1] = '\0';
