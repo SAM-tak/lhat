@@ -14,7 +14,7 @@
 | [07-language-server.md](07-language-server.md) | 言語サーバとエディタ統合（`lhatls` の機能、ホバー、VSCode 拡張の構成） | L5 が未決 |
 | [08-lton.md](08-lton.md) | LTON（L^ のテーブルをテキストで書く綴り、`std.lton`、読み込み、ホストからの入口） | T1〜T3 が未決 |
 | [09-debugger.md](09-debugger.md) | デバッガ（機械の行フック、フレームと束縛の内観、コンパイラの名前の表、`lhat --dap` の DAP アダプタ、Godot 連携） | 未決事項なし |
-| [10-localization.md](10-localization.md) | 多言語化（プログラムが観測できる文は変えない原則、メッセージの ID と穴、カタログと英語の書き出し、言語の選択、L^ プログラム自身の多言語化） | 提案段階。I1・I2 が未決 |
+| [10-localization.md](10-localization.md) | 多言語化（プログラムが観測できる文は変えない原則、メッセージの ID と穴、カタログと英語の書き出し、言語の選択、L^ プログラム自身の多言語化） | 提案段階。I2 が未決 |
 
 06 は欠番である。ビジュアルエディタの設計は拡張のリポジトリへ移した
 （`../lhat-vscode-extension/devdocs/06-visual-editor.md`）。
