@@ -1,5 +1,6 @@
 // L^ (lhat) -- parser.
 
+#include "message.h"
 #include "parser.h"
 
 #include <stdio.h>
@@ -5260,173 +5261,186 @@ void lhat_parse_result_dispose(LhatParseResult *result)
     result->root = NULL;
 }
 
+// 10 §4: the ID and the English text of every LhatParseErrorCode, indexed by
+// the code. The ID is the one a translation is written against and never
+// changes meaning; the English is the reference every other language translates
+// (10 §2.2).
+static const LhatMessageEntry PARSE_MESSAGES[] = {
+    [LHAT_PARSE_ERR_NONE] = {"parse.none", "no error"},
+    [LHAT_PARSE_ERR_UNEXPECTED] = {"parse.unexpected", "unexpected token"},
+    [LHAT_PARSE_ERR_EXPECTED_EXPRESSION] =
+        {"parse.expected-expression", "expected an expression"},
+    [LHAT_PARSE_ERR_EXPECTED_TYPE] = {"parse.expected-type", "expected a type"},
+    [LHAT_PARSE_ERR_EXPECTED_NAME] = {"parse.expected-name", "expected a name"},
+    [LHAT_PARSE_ERR_EXPECTED_TOKEN] =
+        {"parse.expected-token", "expected a different token here"},
+    // return^ is legal in every position this fires at (a unit's top
+    // level, a p^, an f^ with more than one statement), so the hint
+    // never points at something the writer cannot do.
+    [LHAT_PARSE_ERR_BARE_EXPRESSION] = {"parse.bare-expression",
+        "an expression on its own is not a statement; "
+        "did you mean return^?"},
+    [LHAT_PARSE_ERR_JUXTAPOSITION] = {"parse.juxtaposition",
+        "arguments without parentheses are only accepted in command "
+        "mode; did you mean foo(1, 2, 3)?"},
+    [LHAT_PARSE_ERR_RESERVED_SHIFT] = {"parse.reserved-shift",
+        "'<<' and '>>' are reserved and not part of the language; "
+        "a bit operation is a function"},
+    [LHAT_PARSE_ERR_ID_NEEDS_NAME] = {"parse.id-needs-name",
+        "id^ answers the spelling of a name; write the name after "
+        "it"},
+    [LHAT_PARSE_ERR_BINDING_ARITY] = {"parse.binding-arity",
+        "the number of targets and values does not match"},
+    [LHAT_PARSE_ERR_CLAUSE_ORDER] = {"parse.clause-order",
+        "loop clauses run prolog^, pre^, first^, main^, last^, "
+        "epilog^, finally^ and must be written in that order"},
+    [LHAT_PARSE_ERR_MAIN_REQUIRED] = {"parse.main-required",
+        "statements before prolog^, pre^ or first^ need 'main^:' "
+        "to say they are the body"},
+    [LHAT_PARSE_ERR_NO_BODY_CLAUSE] = {"parse.no-body-clause",
+        "a loop needs a body: one of first^, pre^, main^ or last^, "
+        "or statements with no clause heading at all"},
+    [LHAT_PARSE_ERR_PRE_IN_WALK] = {"parse.pre-in-walk",
+        "pre^ runs before the walk answers, so there is nothing "
+        "bound for it to read; use main^"},
+    [LHAT_PARSE_ERR_CLAUSE_NOT_IN_LOOP] =
+        {"parse.clause-not-in-loop", "only finally^ may appear outside a loop"},
+    [LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE] = {"parse.for-needs-clause",
+        "for^ needs one of to^, downto^, in^, while^, until^ or if^"},
+    [LHAT_PARSE_ERR_REPEAT_TAKES_NO_NEXT] = {"parse.repeat-takes-no-next",
+        "next^ belongs to for^; repeat^ declares no focus to advance"},
+    [LHAT_PARSE_ERR_NEXT_NOT_HERE] = {"parse.next-not-here",
+        "next^ updates the focus of a while^ or until^ loop; this "
+        "form advances its own"},
+    [LHAT_PARSE_ERR_FROM_NOT_HERE] = {"parse.from-not-here",
+        "from^ opens the counted range of a to^ or downto^ loop; "
+        "this form takes 'var^ i = 1' or 'let^ i = 1'"},
+    [LHAT_PARSE_ERR_FOCUS_NEEDS_FROM] = {"parse.focus-needs-from",
+        "a to^ or downto^ loop advances a focus of its own; write "
+        "'for^ i from^ 1 to^ 10', or a while^ loop to count with a "
+        "name that is already there"},
+    [LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE] = {"parse.operator-not-definable",
+        "op^ defines '..' and the arithmetic operators; and^, or^, "
+        "'!' and the comparisons are the language's own"},
+    [LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE] = {"parse.compound-not-definable",
+        "a compound assignment has no definition of its own: "
+        "'a += b' is 'a := a + b', so it is op^+ that decides what "
+        "it does"},
+    [LHAT_PARSE_ERR_COMPARISON_NOT_DEFINABLE] =
+        {"parse.comparison-not-definable",
+         "the orderings are not written one by one: op^<=> "
+         "answers with a number^, and '<', '>', '\xE2\x89\xA6' and "
+         "'\xE2\x89\xA7' are all read off it. A type that knows what "
+         "equals what but puts its values in no order writes op^= "
+         "instead, which answers a bool^; '\xE2\x89\xA0' is read off "
+         "whichever of the two it has"},
+    [LHAT_PARSE_ERR_FRESH_TUPLE] = {"parse.fresh-tuple",
+        "fresh^ promises one new answer; a tuple result cannot "
+        "carry it"},
+    [LHAT_PARSE_ERR_SIGNATURE_NAMED] = {"parse.signature-named",
+        "a written signature carries no parameter names (13.3); "
+        "the names belong to a literal, whose body a '{' opens"},
+    [LHAT_PARSE_ERR_PARAM_NEEDS_NAME] = {"parse.param-needs-name",
+        "a type stands where a parameter name is wanted; bare "
+        "types belong to a written signature, which a ';' closes"},
+    [LHAT_PARSE_ERR_EXPECTED_MEMBER] = {"parse.expected-member",
+        "a def^ holds 'name := value' members and one self^{ ... }"},
+    [LHAT_PARSE_ERR_FIELD_NEEDS_NAME] = {"parse.field-needs-name",
+        "every field of self^{ ... } needs a name and a value"},
+    [LHAT_PARSE_ERR_DUPLICATE_TEMPLATE] = {"parse.duplicate-template",
+        "a def^ declares its fields once; write one self^{ ... }"},
+    [LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE] = {"parse.modifier-on-template",
+        "override^ and overload^ mark a member, not the fields"},
+    [LHAT_PARSE_ERR_DUPLICATE_DELEGATE] = {"parse.duplicate-delegate",
+        "a def^ delegates to one thing; write one delegate^"},
+    [LHAT_PARSE_ERR_DELEGATE_TARGET] = {"parse.delegate-target",
+        "delegate^ names what this def^ declares: self^.field for "
+        "one of the template's, or a bare name for one of its own"},
+    [LHAT_PARSE_ERR_CLOSED_NEEDS_BODY] = {"parse.closed-needs-body",
+        "closed^ marks a body: write closed^f^ ... or closed^p^ ..."},
+    [LHAT_PARSE_ERR_CATCH_AFTER_BARE] = {"parse.catch-after-bare",
+        "a bare catch^: takes whatever is left, so nothing follows "
+        "it -- write the narrower arms first"},
+    [LHAT_PARSE_ERR_CATCH_ARM_NEEDS_TYPE] = {"parse.catch-arm-needs-type",
+        "an arm of a try^{ } is written 'catch^ Kind:' or bare as "
+        "'catch^:'. A fallback value is the other reading of the "
+        "word and is written with parentheses here: "
+        "'let^ n = (f() catch^ 0)'"},
+    [LHAT_PARSE_ERR_MODULE_MISPLACED] = {"parse.module-misplaced",
+        "module^ goes first, and only once in a file"},
+    [LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION] =
+        {"parse.public-needs-declaration",
+         "public^ marks a let^ or an errordef^"},
+    [LHAT_PARSE_ERR_REQUIRE_NEEDS_LITERAL] = {"parse.require-needs-literal",
+        "require^ takes a written path, since the checker follows it"},
+    [LHAT_PARSE_ERR_ELSE_NEEDS_COLON] = {"parse.else-needs-colon",
+        "this needs a ':' after it; what follows was read as the "
+        "condition of a further test, and no ':' came"},
+    [LHAT_PARSE_ERR_IF_EXPR_NEEDS_ELSE] = {"parse.if-expr-needs-else",
+        "an if^ written as an expression answers in every case; "
+        "write 'el^: ...' before the ';', or the statement form "
+        "with braces"},
+    [LHAT_PARSE_ERR_MATCH_OPENS_AFTER_SUBJECT] =
+        {"parse.match-opens-after-subject",
+         "a match is opened by the ':' after its subject; write "
+         "'for^ e: when^ ...;' -- a do^: answers with the "
+         "expression that follows it"},
+    [LHAT_PARSE_ERR_SPREAD_NOT_LAST] = {"parse.spread-not-last",
+        "'...' forwards the whole collected tail, so nothing can "
+        "follow it here"},
+    [LHAT_PARSE_ERR_HATS_DONT_STACK] = {"parse.hats-dont-stack",
+        "a second hat counts levels, which this word does not "
+        "take here"},
+    [LHAT_PARSE_ERR_BAD_POSITION_COUNT] = {"parse.bad-position-count",
+        "'[ ... ]' after a type says how many positions it takes, "
+        "which is a positive integer written out"},
+    [LHAT_PARSE_ERR_DUPLICATE_INDEXER] = {"parse.duplicate-indexer",
+        "a table type takes one [key type]:value type constraint"},
+    [LHAT_PARSE_ERR_NAMED_TAKES_NO_COUNT] = {"parse.named-takes-no-count",
+        "a name holds one value; '[ ... ]' says how many positions "
+        "a type takes, so it goes on one written without a name"},
+    [LHAT_PARSE_ERR_ANNOTATION_NEEDS_DECLARATION] =
+        {"parse.annotation-needs-declaration",
+         "an annotation is written above a declaration -- a let^, a "
+         "var^, a field, a member, or the unit itself"},
+    [LHAT_PARSE_ERR_ANNOTATION_ARG_NOT_LITERAL] =
+        {"parse.annotation-arg-not-literal",
+         "an annotation never runs, so an argument of one is a "
+         "number, a string, a name or a boolean written out"},
+    [LHAT_PARSE_ERR_FIELD_NEEDS_TYPE] =
+        {"parse.field-needs-type", "a field needs a type, a default, or both"},
+    [LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME] = {"parse.errordef-needs-name",
+        "errordef^ needs a name; an error kind has no anonymous form"},
+    [LHAT_PARSE_ERR_ENUMDEF_NEEDS_NAME] = {"parse.enumdef-needs-name",
+        "enum^ needs a name; an enum has no anonymous form"},
+    [LHAT_PARSE_ERR_ERROR_NEEDS_KIND] = {"parse.error-needs-kind",
+        "write the kind, as in error^IOError.NotFound{ ... }"},
+    [LHAT_PARSE_ERR_LET_NEEDS_VALUE] = {"parse.let-needs-value",
+        "a definition needs a value; write 'var^ x = 0'"},
+    [LHAT_PARSE_ERR_FOCUS_TAKES_ONE] = {"parse.focus-takes-one",
+        "a for^ introduces one binding; write another for^ for "
+        "the next one"},
+    [LHAT_PARSE_ERR_LET_NEEDS_EQUALS] = {"parse.let-needs-equals",
+        "let^ defines and never reassigns; write 'let^ x = 0', or "
+        "'var^ x = 0' for a name that may be reassigned"},
+    [LHAT_PARSE_ERR_LET_NEEDS_NAME] = {"parse.let-needs-name",
+        "let^ binds a name; write 'var^ t.a = 1' for a member of a "
+        "table"},
+    [LHAT_PARSE_ERR_EQUALS_IS_COMPARISON] = {"parse.equals-is-comparison",
+        "'=' compares; write 'x := 1' to reassign or 'var^ x = 1' "
+        "to make a new name"},
+};
+
 const char *lhat_parse_error_message(LhatParseErrorCode code)
 {
-    switch (code) {
-        case LHAT_PARSE_ERR_NONE:
-            return "no error";
-        case LHAT_PARSE_ERR_UNEXPECTED:
-            return "unexpected token";
-        case LHAT_PARSE_ERR_EXPECTED_EXPRESSION:
-            return "expected an expression";
-        case LHAT_PARSE_ERR_EXPECTED_TYPE:
-            return "expected a type";
-        case LHAT_PARSE_ERR_EXPECTED_NAME:
-            return "expected a name";
-        case LHAT_PARSE_ERR_EXPECTED_TOKEN:
-            return "expected a different token here";
-        case LHAT_PARSE_ERR_BARE_EXPRESSION:
-            // return^ is legal in every position this fires at (a unit's top
-            // level, a p^, an f^ with more than one statement), so the hint
-            // never points at something the writer cannot do.
-            return "an expression on its own is not a statement; "
-                   "did you mean return^?";
-        case LHAT_PARSE_ERR_JUXTAPOSITION:
-            return "arguments without parentheses are only accepted in command "
-                   "mode; did you mean foo(1, 2, 3)?";
-        case LHAT_PARSE_ERR_RESERVED_SHIFT:
-            return "'<<' and '>>' are reserved and not part of the language; "
-                   "a bit operation is a function";
-        case LHAT_PARSE_ERR_ID_NEEDS_NAME:
-            return "id^ answers the spelling of a name; write the name after "
-                   "it";
-        case LHAT_PARSE_ERR_BINDING_ARITY:
-            return "the number of targets and values does not match";
-        case LHAT_PARSE_ERR_CLAUSE_ORDER:
-            return "loop clauses run prolog^, pre^, first^, main^, last^, "
-                   "epilog^, finally^ and must be written in that order";
-        case LHAT_PARSE_ERR_MAIN_REQUIRED:
-            return "statements before prolog^, pre^ or first^ need 'main^:' "
-                   "to say they are the body";
-        case LHAT_PARSE_ERR_NO_BODY_CLAUSE:
-            return "a loop needs a body: one of first^, pre^, main^ or last^, "
-                   "or statements with no clause heading at all";
-        case LHAT_PARSE_ERR_PRE_IN_WALK:
-            return "pre^ runs before the walk answers, so there is nothing "
-                   "bound for it to read; use main^";
-        case LHAT_PARSE_ERR_CLAUSE_NOT_IN_LOOP:
-            return "only finally^ may appear outside a loop";
-        case LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE:
-            return "for^ needs one of to^, downto^, in^, while^, until^ or if^";
-        case LHAT_PARSE_ERR_REPEAT_TAKES_NO_NEXT:
-            return "next^ belongs to for^; repeat^ declares no focus to advance";
-        case LHAT_PARSE_ERR_NEXT_NOT_HERE:
-            return "next^ updates the focus of a while^ or until^ loop; this "
-                   "form advances its own";
-        case LHAT_PARSE_ERR_FROM_NOT_HERE:
-            return "from^ opens the counted range of a to^ or downto^ loop; "
-                   "this form takes 'var^ i = 1' or 'let^ i = 1'";
-        case LHAT_PARSE_ERR_FOCUS_NEEDS_FROM:
-            return "a to^ or downto^ loop advances a focus of its own; write "
-                   "'for^ i from^ 1 to^ 10', or a while^ loop to count with a "
-                   "name that is already there";
-        case LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE:
-            return "op^ defines '..' and the arithmetic operators; and^, or^, "
-                   "'!' and the comparisons are the language's own";
-        case LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE:
-            return "a compound assignment has no definition of its own: "
-                   "'a += b' is 'a := a + b', so it is op^+ that decides what "
-                   "it does";
-        case LHAT_PARSE_ERR_COMPARISON_NOT_DEFINABLE:
-            return "the orderings are not written one by one: op^<=> "
-                   "answers with a number^, and '<', '>', '\xE2\x89\xA6' and "
-                   "'\xE2\x89\xA7' are all read off it. A type that knows what "
-                   "equals what but puts its values in no order writes op^= "
-                   "instead, which answers a bool^; '\xE2\x89\xA0' is read off "
-                   "whichever of the two it has";
-        case LHAT_PARSE_ERR_FRESH_TUPLE:
-            return "fresh^ promises one new answer; a tuple result cannot "
-                   "carry it";
-        case LHAT_PARSE_ERR_SIGNATURE_NAMED:
-            return "a written signature carries no parameter names (13.3); "
-                   "the names belong to a literal, whose body a '{' opens";
-        case LHAT_PARSE_ERR_PARAM_NEEDS_NAME:
-            return "a type stands where a parameter name is wanted; bare "
-                   "types belong to a written signature, which a ';' closes";
-        case LHAT_PARSE_ERR_EXPECTED_MEMBER:
-            return "a def^ holds 'name := value' members and one self^{ ... }";
-        case LHAT_PARSE_ERR_FIELD_NEEDS_NAME:
-            return "every field of self^{ ... } needs a name and a value";
-        case LHAT_PARSE_ERR_DUPLICATE_TEMPLATE:
-            return "a def^ declares its fields once; write one self^{ ... }";
-        case LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE:
-            return "override^ and overload^ mark a member, not the fields";
-        case LHAT_PARSE_ERR_DUPLICATE_DELEGATE:
-            return "a def^ delegates to one thing; write one delegate^";
-        case LHAT_PARSE_ERR_DELEGATE_TARGET:
-            return "delegate^ names what this def^ declares: self^.field for "
-                   "one of the template's, or a bare name for one of its own";
-        case LHAT_PARSE_ERR_CLOSED_NEEDS_BODY:
-            return "closed^ marks a body: write closed^f^ ... or closed^p^ ...";
-        case LHAT_PARSE_ERR_CATCH_AFTER_BARE:
-            return "a bare catch^: takes whatever is left, so nothing follows "
-                   "it -- write the narrower arms first";
-        case LHAT_PARSE_ERR_CATCH_ARM_NEEDS_TYPE:
-            return "an arm of a try^{ } is written 'catch^ Kind:' or bare as "
-                   "'catch^:'. A fallback value is the other reading of the "
-                   "word and is written with parentheses here: "
-                   "'let^ n = (f() catch^ 0)'";
-        case LHAT_PARSE_ERR_MODULE_MISPLACED:
-            return "module^ goes first, and only once in a file";
-        case LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION:
-            return "public^ marks a let^ or an errordef^";
-        case LHAT_PARSE_ERR_REQUIRE_NEEDS_LITERAL:
-            return "require^ takes a written path, since the checker follows it";
-        case LHAT_PARSE_ERR_ELSE_NEEDS_COLON:
-            return "this needs a ':' after it; what follows was read as the "
-                   "condition of a further test, and no ':' came";
-        case LHAT_PARSE_ERR_IF_EXPR_NEEDS_ELSE:
-            return "an if^ written as an expression answers in every case; "
-                   "write 'el^: ...' before the ';', or the statement form "
-                   "with braces";
-        case LHAT_PARSE_ERR_MATCH_OPENS_AFTER_SUBJECT:
-            return "a match is opened by the ':' after its subject; write "
-                   "'for^ e: when^ ...;' -- a do^: answers with the "
-                   "expression that follows it";
-        case LHAT_PARSE_ERR_SPREAD_NOT_LAST:
-            return "'...' forwards the whole collected tail, so nothing can "
-                   "follow it here";
-        case LHAT_PARSE_ERR_HATS_DONT_STACK:
-            return "a second hat counts levels, which this word does not "
-                   "take here";
-        case LHAT_PARSE_ERR_BAD_POSITION_COUNT:
-            return "'[ ... ]' after a type says how many positions it takes, "
-                   "which is a positive integer written out";
-        case LHAT_PARSE_ERR_DUPLICATE_INDEXER:
-            return "a table type takes one [key type]:value type constraint";
-        case LHAT_PARSE_ERR_NAMED_TAKES_NO_COUNT:
-            return "a name holds one value; '[ ... ]' says how many positions "
-                   "a type takes, so it goes on one written without a name";
-        case LHAT_PARSE_ERR_ANNOTATION_NEEDS_DECLARATION:
-            return "an annotation is written above a declaration -- a let^, a "
-                   "var^, a field, a member, or the unit itself";
-        case LHAT_PARSE_ERR_ANNOTATION_ARG_NOT_LITERAL:
-            return "an annotation never runs, so an argument of one is a "
-                   "number, a string, a name or a boolean written out";
-        case LHAT_PARSE_ERR_FIELD_NEEDS_TYPE:
-            return "a field needs a type, a default, or both";
-        case LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME:
-            return "errordef^ needs a name; an error kind has no anonymous form";
-        case LHAT_PARSE_ERR_ENUMDEF_NEEDS_NAME:
-            return "enum^ needs a name; an enum has no anonymous form";
-        case LHAT_PARSE_ERR_ERROR_NEEDS_KIND:
-            return "write the kind, as in error^IOError.NotFound{ ... }";
-        case LHAT_PARSE_ERR_LET_NEEDS_VALUE:
-            return "a definition needs a value; write 'var^ x = 0'";
-        case LHAT_PARSE_ERR_FOCUS_TAKES_ONE:
-            return "a for^ introduces one binding; write another for^ for "
-                   "the next one";
-        case LHAT_PARSE_ERR_LET_NEEDS_EQUALS:
-            return "let^ defines and never reassigns; write 'let^ x = 0', or "
-                   "'var^ x = 0' for a name that may be reassigned";
-        case LHAT_PARSE_ERR_LET_NEEDS_NAME:
-            return "let^ binds a name; write 'var^ t.a = 1' for a member of a "
-                   "table";
-        case LHAT_PARSE_ERR_EQUALS_IS_COMPARISON:
-            return "'=' compares; write 'x := 1' to reassign or 'var^ x = 1' "
-                   "to make a new name";
-    }
-    return "unknown error";
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(PARSE_MESSAGES, code);
+    return entry != NULL ? entry->text : "unknown error";
+}
+
+const char *lhat_parse_error_id(LhatParseErrorCode code)
+{
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(PARSE_MESSAGES, code);
+    return entry != NULL ? entry->id : NULL;
 }
 
 // What the token that was there is called, for a message to name it by. An

@@ -1,5 +1,6 @@
 // L^ (lhat) -- host registration and value construction.
 
+#include "message.h"
 #include "vm_internal.h"
 #include <string.h>
 #include <stdlib.h>
@@ -980,47 +981,66 @@ bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
     return true;
 }
 
+// 10 §4: the ID and the English text of every LhatRunStatus, indexed by the
+// code. The ID is the one a translation is written against and never changes
+// meaning; the English is the reference every other language translates (10
+// §2.2).
+static const LhatMessageEntry RUN_MESSAGES[] = {
+    [LHAT_RUN_OK] = {"run.ok", "ran"},
+    [LHAT_RUN_TYPE_ERROR] =
+        {"run.type-error", "an instruction was given the wrong type"},
+    [LHAT_RUN_NOT_CALLABLE] = {"run.not-callable", "this is not a subroutine"},
+    [LHAT_RUN_ARITY] = {"run.arity", "the wrong number of arguments"},
+    [LHAT_RUN_STACK_OVERFLOW] =
+        {"run.stack-overflow", "the calls went too deep"},
+    [LHAT_RUN_OUT_OF_MEMORY] = {"run.out-of-memory", "out of memory"},
+    [LHAT_RUN_BAD_KEY] = {"run.bad-key", "this cannot be a key"},
+    [LHAT_RUN_SEALED] = {"run.sealed",
+        "this table belongs to the machine; what it holds is "
+        "written by the host, not from here"},
+    // 02 の 14.11
+    [LHAT_RUN_MUTABLE_DEFAULT] = {"run.mutable-default",
+        "a field's default lives on the prototype: an immutable "
+        "value, a table of its own (each instance is given a "
+        "copy), or a definition; what something else made is "
+        "given inside new"},
+    [LHAT_RUN_BAD_FORMAT] = {"run.bad-format",
+        "a number^ is written through one numeric conversion; "
+        "write '%d' or '%g' and no length of your own"},
+    [LHAT_RUN_DEAD_COROUTINE] =
+        {"run.dead-coroutine", "this coroutine has finished"},
+    [LHAT_RUN_NO_SUCH_UNIT] = {"run.no-such-unit",
+        "this machine was not given the unit this require^ asks for"},
+    [LHAT_RUN_YIELD_OUTSIDE] =
+        {"run.yield-outside", "nothing is waiting for this yield^"},
+    [LHAT_RUN_NO_CANDIDATE] = {"run.no-candidate",
+        "no way of calling this member takes these arguments"},
+    [LHAT_RUN_COROUTINE_NOT_STARTED] =
+        {"run.coroutine-not-started", "resume needs start() first"},
+    [LHAT_RUN_COROUTINE_ALREADY_STARTED] = {"run.coroutine-already-started",
+        "start() only works before the first resume"},
+    // 04 の 11.6: a placeholder for a caller that only wants this
+    // status's own name -- the actual message is what the program
+    // panicked with, in LhatRunResult.value, which this cannot see.
+    [LHAT_RUN_PANIC] = {"run.panic", "panic^"},
+    [LHAT_RUN_SUSPENDED] = {"run.suspended", "the slice ran out"},
+    // 02 の 13.8改
+    [LHAT_RUN_TUPLE_ARITY] = {"run.tuple-arity",
+        "this call and what it called disagree on how many values "
+        "come back"},
+    [LHAT_RUN_TUPLE_UNEXPECTED] = {"run.tuple-unexpected",
+        "this answered several values where one was expected; "
+        "pack^ makes a table of them"},
+};
+
 const char *lhat_run_status_message(LhatRunStatus status)
 {
-    switch (status) {
-        case LHAT_RUN_OK:              return "ran";
-        case LHAT_RUN_TYPE_ERROR:      return "an instruction was given the wrong type";
-        case LHAT_RUN_NOT_CALLABLE:    return "this is not a subroutine";
-        case LHAT_RUN_ARITY:           return "the wrong number of arguments";
-        case LHAT_RUN_STACK_OVERFLOW:  return "the calls went too deep";
-        case LHAT_RUN_OUT_OF_MEMORY:   return "out of memory";
-        case LHAT_RUN_BAD_KEY:         return "this cannot be a key";
-        case LHAT_RUN_SEALED:
-            return "this table belongs to the machine; what it holds is "
-                   "written by the host, not from here";
-        // 02 の 14.11
-        case LHAT_RUN_MUTABLE_DEFAULT:
-            return "a field's default lives on the prototype: an immutable "
-                   "value, a table of its own (each instance is given a "
-                   "copy), or a definition; what something else made is "
-                   "given inside new";
-        case LHAT_RUN_BAD_FORMAT:
-            return "a number^ is written through one numeric conversion; "
-                   "write '%d' or '%g' and no length of your own";
-        case LHAT_RUN_DEAD_COROUTINE:  return "this coroutine has finished";
-        case LHAT_RUN_NO_SUCH_UNIT:
-            return "this machine was not given the unit this require^ asks for";
-        case LHAT_RUN_YIELD_OUTSIDE:   return "nothing is waiting for this yield^";
-        case LHAT_RUN_NO_CANDIDATE:    return "no way of calling this member takes these arguments";
-        case LHAT_RUN_COROUTINE_NOT_STARTED:     return "resume needs start() first";
-        case LHAT_RUN_COROUTINE_ALREADY_STARTED: return "start() only works before the first resume";
-        // 04 の 11.6: a placeholder for a caller that only wants this
-        // status's own name -- the actual message is what the program
-        // panicked with, in LhatRunResult.value, which this cannot see.
-        case LHAT_RUN_PANIC:                     return "panic^";
-        case LHAT_RUN_SUSPENDED:                 return "the slice ran out";
-        // 02 の 13.8改
-        case LHAT_RUN_TUPLE_ARITY:
-            return "this call and what it called disagree on how many values "
-                   "come back";
-        case LHAT_RUN_TUPLE_UNEXPECTED:
-            return "this answered several values where one was expected; "
-                   "pack^ makes a table of them";
-    }
-    return "unknown";
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(RUN_MESSAGES, status);
+    return entry != NULL ? entry->text : "unknown";
+}
+
+const char *lhat_run_status_id(LhatRunStatus status)
+{
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(RUN_MESSAGES, status);
+    return entry != NULL ? entry->id : NULL;
 }

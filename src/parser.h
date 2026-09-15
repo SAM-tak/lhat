@@ -195,6 +195,9 @@ void lhat_parse_type_only(LhatLexer *lexer, LhatParseResult *result);
 void lhat_parse_result_dispose(LhatParseResult *result);
 
 const char *lhat_parse_error_message(LhatParseErrorCode code);
+// 10 §4: the stable ID of the same message; NULL for a code the table
+// does not hold.
+const char *lhat_parse_error_id(LhatParseErrorCode code);
 
 // The message for one diagnostic, which for some of them says more than the
 // code alone can -- "a ';' was expected here" rather than "expected a

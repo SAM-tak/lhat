@@ -2,6 +2,7 @@
 
 
 #include "check_internal.h"
+#include "message.h"
 
 // ---------------------------------------------------------------------------
 // Diagnostics
@@ -3928,339 +3929,347 @@ const LhatTypeMember *lhat_check_unimplemented_member(const LhatType *type)
     return chk_unimplemented_member(type);
 }
 
+// 10 §4: the ID and the English text of every LhatCheckErrorCode, indexed by
+// the code. The ID is the one a translation is written against and never
+// changes meaning; the English is the reference every other language translates
+// (10 §2.2).
+static const LhatMessageEntry CHECK_MESSAGES[] = {
+    [LHAT_CHECK_ERR_NONE] = {"check.none", "no error"},
+    [LHAT_CHECK_ERR_UNDEFINED] = {"check.undefined", "no such name in scope"},
+    [LHAT_CHECK_ERR_USED_BEFORE_DEFINED] = {"check.used-before-defined",
+        "this name is read before its let^ has run"},
+    [LHAT_CHECK_ERR_REDEFINED] =
+        {"check.redefined", "this name is already defined in this scope"},
+    [LHAT_CHECK_ERR_UNKNOWN_TYPE] = {"check.unknown-type", "no such type"},
+    [LHAT_CHECK_ERR_NO_SUCH_ANNOTATION] = {"check.no-such-annotation",
+        "no host registered an annotation of this name"},
+    [LHAT_CHECK_ERR_ANNOTATION_MISPLACED] = {"check.annotation-misplaced",
+        "this annotation was not registered for what it is "
+        "written above"},
+    [LHAT_CHECK_ERR_ANNOTATION_REPEATED] = {"check.annotation-repeated",
+        "this annotation may be written once in a file, and "
+        "already was"},
+    [LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE] = {"check.annotation-exclusive",
+        "this annotation and another written in this file are two "
+        "answers to one question: write whichever one applies, "
+        "not both"},
+    [LHAT_CHECK_ERR_ANNOTATION_REQUISITE] = {"check.annotation-requisite",
+        "this annotation means nothing on its own, and the one it "
+        "has to stand beside is missing"},
+    [LHAT_CHECK_ERR_ANNOTATION_ARGUMENTS] = {"check.annotation-arguments",
+        "these are not the arguments the annotation was "
+        "registered with"},
+    [LHAT_CHECK_ERR_BARE_TABLE_TYPE] = {"check.bare-table-type",
+        "a t^ is written with the members it asks for, and the top "
+        "of tables asks for none: write 't^{}'"},
+    [LHAT_CHECK_ERR_MISMATCH] =
+        {"check.mismatch", "this value does not fit where it is written"},
+    [LHAT_CHECK_ERR_NOT_NUMBER] =
+        {"check.not-number", "arithmetic needs number^"},
+    [LHAT_CHECK_ERR_NOT_BOOL] = {"check.not-bool", "this has to be bool^"},
+    [LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE] = {"check.match-not-exhaustive",
+        "a match written as an expression answers in every case, "
+        "and these arms do not cover every value the subject may "
+        "hold; write 'other^: ...' before the ';'"},
+    [LHAT_CHECK_ERR_NOT_CALLABLE] =
+        {"check.not-callable", "this is not a function or a procedure"},
+    [LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE] =
+        {"check.function-calls-procedure",
+         "f^ may call only f^, and this callee is a p^"},
+    [LHAT_CHECK_ERR_ARITY] = {"check.arity", "the wrong number of arguments"},
+    [LHAT_CHECK_ERR_NOT_VARIADIC] = {"check.not-variadic",
+        "'...' spreads into a variadic tail, and this callee "
+        "takes none"},
+    [LHAT_CHECK_ERR_NO_MEMBER] =
+        {"check.no-member", "this value has no such member"},
+    [LHAT_CHECK_ERR_NO_RESULT_TYPE] = {"check.no-result-type",
+        "this signature answers no value, so it has no ReturnType"},
+    [LHAT_CHECK_ERR_KIND_AS_VALUE] = {"check.kind-as-value",
+        "a kind is a type, not a value; error^Kind{ ... } is what "
+        "makes one"},
+    [LHAT_CHECK_ERR_CANNOT_FAIL] = {"check.cannot-fail",
+        "the left of catch^ or try^ cannot return an error"},
+    [LHAT_CHECK_ERR_CANNOT_BE_NIL] =
+        {"check.cannot-be-nil", "the left of ?? cannot be nil^"},
+    [LHAT_CHECK_ERR_TRY_OUTSIDE] = {"check.try-outside",
+        "try^ would return an error this subroutine cannot return"},
+    [LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES] = {"check.local-error-escapes",
+        "this error has to be resolved here: a localerror^ is not "
+        "one a subroutine may return. Write catch^, or wrap the "
+        "statements in try^{ } with an arm that takes it"},
+    [LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN] = {"check.local-error-written",
+        "a localerror^ cannot be written where a caller would "
+        "receive it -- not in a result, a yield, or a declared "
+        "field"},
+    [LHAT_CHECK_ERR_REQUIRE_FAILED] =
+        {"check.require-failed", "this unit could not be required"},
+    [LHAT_CHECK_ERR_NOT_COROUTINE] =
+        {"check.not-coroutine", "this has no coroutine to walk or delegate to"},
+    [LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE] = {"check.await-not-coroutine",
+        "await^ waits for something that finishes, and this is not "
+        "one -- what may be awaited is a coroutine (15.14)"},
+    [LHAT_CHECK_ERR_COROUTINE_MISMATCH] = {"check.coroutine-mismatch",
+        "the coroutine this body makes is not the one written "
+        "here; the yield^ sites and the c^{ … } have to agree"},
+    [LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION] = {"check.yield-needs-annotation",
+        "a yield^ that is bound needs a written type there"},
+    [LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH] = {"check.yield-type-mismatch",
+        "every yield^ in one body has to agree on what it sends "
+        "and what it answers"},
+    [LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS] = {"check.phantom-yield-binds",
+        "a _yield^ never runs, so nothing arrives here; bind _^ "
+        "-- the annotations are all this statement says"},
+    [LHAT_CHECK_ERR_NOT_INDEXABLE] = {"check.not-indexable",
+        "this is not a table, so a key reaches nothing; a "
+        "string^'s characters answer at(i)"},
+    [LHAT_CHECK_ERR_PATH_NOT_TABLE] = {"check.path-not-table",
+        "this holds the name written after it, so it has to be a "
+        "table"},
+    [LHAT_CHECK_ERR_PATH_IS_DEFINITION] = {"check.path-is-definition",
+        "a def^ says what its instances carry, so a member cannot "
+        "be added to one here"},
+    [LHAT_CHECK_ERR_MODULE_UNNAMED] = {"check.module-unnamed",
+        "this unit declares no module^, so there is no path to "
+        "bind it under; write 'let^ name = require^ ...' instead"},
+    [LHAT_CHECK_ERR_NOT_HOSTED] = {"check.not-hosted",
+        "import^ reaches what the host registered, and no module "
+        "of this name is there; a unit read from a file comes in "
+        "with require^ \"path\""},
+    [LHAT_CHECK_ERR_COROUTINE_DROPPED] = {"check.coroutine-dropped",
+        "this call makes a coroutine and runs none of the body; "
+        "write await^ to delegate, or let^ to keep it"},
+    [LHAT_CHECK_ERR_MISSING_FIELD] = {"check.missing-field",
+        "this field has no default, so it has to be written"},
+    [LHAT_CHECK_ERR_INCOMPARABLE] = {"check.incomparable",
+        "these can never be equal, so the comparison is fixed already"},
+    [LHAT_CHECK_ERR_AS_IMPOSSIBLE] = {"check.as-impossible",
+        "nothing is both of these, so this as^ could never succeed"},
+    [LHAT_CHECK_ERR_BAD_KEY] = {"check.bad-key",
+        "nil^ is how a table spells 'not there', so it cannot be a key"},
+    [LHAT_CHECK_ERR_NO_OPERATOR] = {"check.no-operator",
+        "an operator is answered by what stands to its left, or by "
+        "what stands to its right when that side writes the self^ "
+        "last; neither answers this one"},
+    [LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL] = {"check.operator-on-maybe-nil",
+        "this may be nil^, and nil^ answers no operator; '??' "
+        "gives it a value, or bind it to a name and narrow that -- "
+        "an index is not narrowed where it stands"},
+    [LHAT_CHECK_ERR_BAD_OPERATOR] = {"check.bad-operator",
+        "an op^ is an f^ taking self^ and one argument, and it may "
+        "not yield^; the self^ is whichever operand it is written "
+        "as -- first for the left one, last for the right. Only "
+        "op^- is also written with self^ alone, which is the unary "
+        "one"},
+    [LHAT_CHECK_ERR_COMPARE_NOT_NUMBER] = {"check.compare-not-number",
+        "op^<=> answers a number^: '<' and the rest read which "
+        "side of zero the answer falls on"},
+    [LHAT_CHECK_ERR_EQUAL_NOT_BOOL] = {"check.equal-not-bool",
+        "op^= answers a bool^: '=' takes it as it stands, and "
+        "'\xE2\x89\xA0' negates it"},
+    [LHAT_CHECK_ERR_NOT_ORDERED] = {"check.not-ordered",
+        "nothing here says how these compare: an ordering is read "
+        "off '<=>', and neither side carries one that takes the "
+        "other"},
+    [LHAT_CHECK_ERR_SELF_LAST_NOT_OPERATOR] = {"check.self-last-not-operator",
+        "only an op^ writes its self^ last, to say the right "
+        "operand is the receiver; everywhere else the receiver is "
+        "what stands before the dot"},
+    [LHAT_CHECK_ERR_ISA_ALWAYS_TRUE] = {"check.isa-always-true",
+        "any^ holds of every value, so this asks nothing"},
+    [LHAT_CHECK_ERR_MEMBER_EXISTS] = {"check.member-exists",
+        "this name is already a member; write override^ or overload^"},
+    [LHAT_CHECK_ERR_ALREADY_PROVIDED] = {"check.already-provided",
+        "something in the chain already provides this member, so "
+        "there is nothing for an abstract^ to ask for"},
+    [LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE] = {"check.abstract-provided-here",
+        "an abstract^ asks a composition for what this def^ does "
+        "not have, and this one is written here as well; the "
+        "members reach each other whatever the order, so drop the "
+        "declaration"},
+    [LHAT_CHECK_ERR_MUTABLE_DEFAULT] = {"check.mutable-default",
+        "a field's default lives on the prototype: an immutable "
+        "value, a table written out as a literal (each instance "
+        "is given its own copy), or a definition (shared by "
+        "design); what something else made -- a name, a call's "
+        "answer -- is given inside new"},
+    [LHAT_CHECK_ERR_NEW_RETURNS] = {"check.new-returns",
+        "construction answers the instance itself, so a new body "
+        "has no return^; what it writes through self^ is already "
+        "on what the caller gets"},
+    [LHAT_CHECK_ERR_SELF_TABLE_OUTSIDE_NEW] = {"check.self-table-outside-new",
+        "self^{ ... } is the construction notation, which only a "
+        "written new runs; a method writes its receiver one "
+        "field at a time, through self^.name"},
+    [LHAT_CHECK_ERR_PROTOTYPE_SEALED] = {"check.prototype-sealed",
+        "a definition's self^ is the prototype every instance "
+        "starts as; it is read here and written by no one -- a "
+        "default is settled where the field is written"},
+    [LHAT_CHECK_ERR_MUTABLE_KEY] = {"check.mutable-key",
+        "a key's hash is the box's bytes, and only a sealed box "
+        "keeps them still; write constbox^ to make one"},
+    [LHAT_CHECK_ERR_BOX_FIELD_WRITE] = {"check.box-field-write",
+        "a box's field is read straight off its bytes; writing "
+        "goes through set(...), which a ConstBox^ does not have"},
+    [LHAT_CHECK_ERR_NOT_BOXABLE] = {"check.not-boxable",
+        "box^ takes a host value; everything else already lives "
+        "on the heap and needs no box"},
+    [LHAT_CHECK_ERR_STILL_ABSTRACT] = {"check.still-abstract",
+        "this definition is still waiting on a composition -- a "
+        "member is declared with nothing providing it, or an "
+        "override^ has met nothing to replace"},
+    [LHAT_CHECK_ERR_FIELD_UNPROVIDED] = {"check.field-unprovided",
+        "this field is declared with no value, so an instance "
+        "would hold nothing under it; a composition has to give it "
+        "one, or an override^ new has to write it"},
+    [LHAT_CHECK_ERR_LENT_DOES_NOT_PROVIDE] = {"check.lent-does-not-provide",
+        "this member is declared with abstract^, and what a "
+        "delegate^ lends does not provide it -- to use the "
+        "delegate's, drop the abstract^; otherwise compose "
+        "something that provides it"},
+    [LHAT_CHECK_ERR_LENT_IS_NOT_REPLACED] = {"check.lent-is-not-replaced",
+        "this override^ has nothing to replace -- what a delegate^ "
+        "lends is not a member to replace, so super^ would reach "
+        "nothing; compose what it replaces, or drop the override^"},
+    [LHAT_CHECK_ERR_AMBIGUOUS_MEMBER] = {"check.ambiguous-member",
+        "both sides of the composition carry this name, so it "
+        "reaches no one answer; name the side you mean"},
+    [LHAT_CHECK_ERR_CONCAT_COLLIDES] = {"check.concat-collides",
+        "both tables carry this key, so the concatenation holds "
+        "no one value for it"},
+    [LHAT_CHECK_ERR_COMPOSE_COLLIDES] = {"check.compose-collides",
+        "both definitions carry a member of this name, and a "
+        "marker can only be written inside a def^"},
+    [LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE] = {"check.nothing-to-override",
+        "there is no member of this name to override^ or overload^"},
+    [LHAT_CHECK_ERR_NOT_SUBSTITUTABLE] = {"check.not-substitutable",
+        "override^ has to be usable where the original was"},
+    [LHAT_CHECK_ERR_OVERLOAD_OVERLAPS] =
+        {"check.overload-overlaps", "overload^ overlaps an existing signature"},
+    [LHAT_CHECK_ERR_ERROR_DROPPED] = {"check.error-dropped",
+        "this can fail, and dropping the answer drops the failure "
+        "with it; write try^ to hand it back, catch^ to answer "
+        "instead, or a name to bind it and narrow"},
+    [LHAT_CHECK_ERR_DISCARD_READ] = {"check.discard-read",
+        "'_^' throws the value away, so it is not a name and there "
+        "is nothing here to read; write a name where the value is "
+        "wanted"},
+    [LHAT_CHECK_ERR_NOT_DISPOSABLE] = {"check.not-disposable",
+        "with^ needs a value with a dispose() that returns nothing"},
+    [LHAT_CHECK_ERR_FUNCTION_FALLS_OUT] = {"check.function-falls-out",
+        "a function answers on every path; this one has a path "
+        "that leaves without a value"},
+    [LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT] = {"check.falls-out-of-result",
+        "this body has a path that leaves without a value, which "
+        "the result type it was given does not admit"},
+    [LHAT_CHECK_ERR_SUPER_OUTSIDE] = {"check.super-outside",
+        "super^ is the member an override^ replaces, so it is a "
+        "name only inside one"},
+    [LHAT_CHECK_ERR_THIS_OUTSIDE] = {"check.this-outside",
+        "this^ names the subroutine running, and none is here"},
+    [LHAT_CHECK_ERR_NEVER_RETURNS] = {"check.never-returns",
+        "every way out of this body calls it again, so it never "
+        "produces a value"},
+    [LHAT_CHECK_ERR_RESULT_UNDECIDED] = {"check.result-undecided",
+        "the result type did not come out of this body, so it has "
+        "to be written"},
+    [LHAT_CHECK_ERR_OPERATOR_UNSETTLED] = {"check.operator-unsettled",
+        "several types here carry this operator and nothing says "
+        "which is meant; write one of the types the signature "
+        "names, or narrow to it with fits^"},
+    [LHAT_CHECK_ERR_SHAPE_REFUSED] = {"check.shape-refused",
+        "this call hands over argument types the body cannot "
+        "take; writing the parameter types is what would surface "
+        "the body's own report"},
+    [LHAT_CHECK_ERR_PARAM_UNDECIDED] = {"check.param-undecided",
+        "nothing in this body says what this parameter is, so its "
+        "type has to be written; any^ is how to say it really does "
+        "take anything"},
+    [LHAT_CHECK_ERR_TYPE_UNDECIDED] = {"check.type-undecided",
+        "inference did not decide what this name holds, so its "
+        "type has to be written"},
+    [LHAT_CHECK_ERR_SCOPE_TOO_FAR] = {"check.scope-too-far",
+        "this reaches out past more scopes than are open here"},
+    [LHAT_CHECK_ERR_SCOPE_ON_DEFINE] = {"check.scope-on-define",
+        "let^ makes a name here, so it takes no scope specifier; "
+        "':=' is what writes one that is already there"},
+    [LHAT_CHECK_ERR_FUNCTION_WRITES_OUT] = {"check.function-writes-out",
+        "an f^ assigns to local variables only, and this name was "
+        "bound outside its body"},
+    [LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE] = {"check.function-changes-table",
+        "an f^ may change only a table its own body made; this one "
+        "came from somewhere else"},
+    [LHAT_CHECK_ERR_PATH_IS_OPAQUE] = {"check.path-is-opaque",
+        "this type carries what registered it, so what it holds "
+        "cannot be written over"},
+    [LHAT_CHECK_ERR_ADVANCES_OUTSIDE] = {"check.advances-outside",
+        "an f^ may advance only a coroutine its own body made; "
+        "this one came from somewhere else"},
+    [LHAT_CHECK_ERR_MUTATES_OUTSIDE] = {"check.mutates-outside",
+        "an f^ may write through mutable^self^ only into a table "
+        "its own body made; this one came from somewhere else"},
+    [LHAT_CHECK_ERR_ANSWER_NOT_FRESH] = {"check.answer-not-fresh",
+        "a fresh^ answer has to be made by this body -- a "
+        "literal, a new(), or another fresh^ call's answer"},
+    [LHAT_CHECK_ERR_COROUTINE_ESCAPES] = {"check.coroutine-escapes",
+        "an f^ coroutine may not leave the body that made it"},
+    [LHAT_CHECK_ERR_TABLE_IS_SEALED] = {"check.table-is-sealed",
+        "this table belongs to the machine; what it holds is "
+        "written by the host, not from here"},
+    [LHAT_CHECK_ERR_ASSIGN_TO_LET] = {"check.assign-to-let",
+        "this name was bound by a let^ and is not reassigned; "
+        "write var^ where the name has to change"},
+    [LHAT_CHECK_ERR_ASSIGN_TO_FORM] = {"check.assign-to-form",
+        "the construct that introduces this name is what gives it a "
+        "value -- a with^ holds it for the block, a for^ advances "
+        "or rebinds its focus -- so nothing else writes it"},
+    [LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE] = {"check.public-is-immutable",
+        "a public^ declaration binds with let^; another unit would "
+        "otherwise see a name change under it"},
+    [LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE] = {"check.self-type-outside",
+        "Self^ names the t^ or def^ written around it, and there is "
+        "no such literal here -- or a second hat counted past the "
+        "outermost one"},
+    [LHAT_CHECK_ERR_CATCHES_NOTHING] = {"check.catches-nothing",
+        "nothing in this try^{ } can fail: an error reaches the "
+        "arms by being written try^, and none is"},
+    [LHAT_CHECK_ERR_CLOSED_CAPTURES] = {"check.closed-captures",
+        "a closed^ body names nothing standing outside it: pass "
+        "this as an argument instead. An import^ed module, a name "
+        "the host bound, and L^ are reached without capturing and "
+        "may be written here"},
+    [LHAT_CHECK_ERR_HOSTVALUE_ESCAPES] = {"check.hostvalue-escapes",
+        "a host value lives on the stack and nowhere else; box it "
+        "into the container type its library provides to keep it"},
+    [LHAT_CHECK_ERR_TUPLE_MISPLACED] = {"check.tuple-misplaced",
+        "(A, B) is what a subroutine answers with, and it is "
+        "written nowhere else -- not as an argument, a name, a "
+        "table member, or a position of another tuple; pack^ makes "
+        "a t^{ A, B } of one"},
+    [LHAT_CHECK_ERR_HOSTVALUE_UNION] = {"check.hostvalue-union",
+        "a host value takes several slots, so what stands beside "
+        "it in a union has to be told apart by the first of them "
+        "-- nil^ or an error, the same as beside (A, B)"},
+    [LHAT_CHECK_ERR_TUPLE_UNION] = {"check.tuple-union",
+        "the only thing (A, B) may be written in a union with is "
+        "an error"},
+    [LHAT_CHECK_ERR_TUPLE_ARITY] = {"check.tuple-arity",
+        "this answers a different number of values than there are "
+        "names to take them"},
+    [LHAT_CHECK_ERR_TUPLE_ERROR_POSITION] = {"check.tuple-error-position",
+        "an error goes around the values, not among them; write "
+        "(A, B)|SomeError rather than (A, SomeError)"},
+};
+
 const char *lhat_check_error_message(LhatCheckErrorCode code)
 {
-    switch (code) {
-        case LHAT_CHECK_ERR_NONE:
-            return "no error";
-        case LHAT_CHECK_ERR_UNDEFINED:
-            return "no such name in scope";
-        case LHAT_CHECK_ERR_USED_BEFORE_DEFINED:
-            return "this name is read before its let^ has run";
-        case LHAT_CHECK_ERR_REDEFINED:
-            return "this name is already defined in this scope";
-        case LHAT_CHECK_ERR_UNKNOWN_TYPE:
-            return "no such type";
-        case LHAT_CHECK_ERR_NO_SUCH_ANNOTATION:
-            return "no host registered an annotation of this name";
-        case LHAT_CHECK_ERR_ANNOTATION_MISPLACED:
-            return "this annotation was not registered for what it is "
-                   "written above";
-        case LHAT_CHECK_ERR_ANNOTATION_REPEATED:
-            return "this annotation may be written once in a file, and "
-                   "already was";
-        case LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE:
-            return "this annotation and another written in this file are two "
-                   "answers to one question: write whichever one applies, "
-                   "not both";
-        case LHAT_CHECK_ERR_ANNOTATION_REQUISITE:
-            return "this annotation means nothing on its own, and the one it "
-                   "has to stand beside is missing";
-        case LHAT_CHECK_ERR_ANNOTATION_ARGUMENTS:
-            return "these are not the arguments the annotation was "
-                   "registered with";
-        case LHAT_CHECK_ERR_BARE_TABLE_TYPE:
-            return "a t^ is written with the members it asks for, and the top "
-                   "of tables asks for none: write 't^{}'";
-        case LHAT_CHECK_ERR_MISMATCH:
-            return "this value does not fit where it is written";
-        case LHAT_CHECK_ERR_NOT_NUMBER:
-            return "arithmetic needs number^";
-        case LHAT_CHECK_ERR_NOT_BOOL:
-            return "this has to be bool^";
-        case LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE:
-            return "a match written as an expression answers in every case, "
-                   "and these arms do not cover every value the subject may "
-                   "hold; write 'other^: ...' before the ';'";
-        case LHAT_CHECK_ERR_NOT_CALLABLE:
-            return "this is not a function or a procedure";
-        case LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE:
-            return "f^ may call only f^, and this callee is a p^";
-        case LHAT_CHECK_ERR_ARITY:
-            return "the wrong number of arguments";
-        case LHAT_CHECK_ERR_NOT_VARIADIC:
-            return "'...' spreads into a variadic tail, and this callee "
-                   "takes none";
-        case LHAT_CHECK_ERR_NO_MEMBER:
-            return "this value has no such member";
-        case LHAT_CHECK_ERR_NO_RESULT_TYPE:
-            return "this signature answers no value, so it has no ReturnType";
-        case LHAT_CHECK_ERR_KIND_AS_VALUE:
-            return "a kind is a type, not a value; error^Kind{ ... } is what "
-                   "makes one";
-        case LHAT_CHECK_ERR_CANNOT_FAIL:
-            return "the left of catch^ or try^ cannot return an error";
-        case LHAT_CHECK_ERR_CANNOT_BE_NIL:
-            return "the left of ?? cannot be nil^";
-        case LHAT_CHECK_ERR_TRY_OUTSIDE:
-            return "try^ would return an error this subroutine cannot return";
-        case LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES:
-            return "this error has to be resolved here: a localerror^ is not "
-                   "one a subroutine may return. Write catch^, or wrap the "
-                   "statements in try^{ } with an arm that takes it";
-        case LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN:
-            return "a localerror^ cannot be written where a caller would "
-                   "receive it -- not in a result, a yield, or a declared "
-                   "field";
-        case LHAT_CHECK_ERR_REQUIRE_FAILED:
-            return "this unit could not be required";
-        case LHAT_CHECK_ERR_NOT_COROUTINE:
-            return "this has no coroutine to walk or delegate to";
-        case LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE:
-            return "await^ waits for something that finishes, and this is not "
-                   "one -- what may be awaited is a coroutine (15.14)";
-        case LHAT_CHECK_ERR_COROUTINE_MISMATCH:
-            return "the coroutine this body makes is not the one written "
-                   "here; the yield^ sites and the c^{ … } have to agree";
-        case LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION:
-            return "a yield^ that is bound needs a written type there";
-        case LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH:
-            return "every yield^ in one body has to agree on what it sends "
-                   "and what it answers";
-        case LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS:
-            return "a _yield^ never runs, so nothing arrives here; bind _^ "
-                   "-- the annotations are all this statement says";
-        case LHAT_CHECK_ERR_NOT_INDEXABLE:
-            return "this is not a table, so a key reaches nothing; a "
-                   "string^'s characters answer at(i)";
-        case LHAT_CHECK_ERR_PATH_NOT_TABLE:
-            return "this holds the name written after it, so it has to be a "
-                   "table";
-        case LHAT_CHECK_ERR_PATH_IS_DEFINITION:
-            return "a def^ says what its instances carry, so a member cannot "
-                   "be added to one here";
-        case LHAT_CHECK_ERR_MODULE_UNNAMED:
-            return "this unit declares no module^, so there is no path to "
-                   "bind it under; write 'let^ name = require^ ...' instead";
-        case LHAT_CHECK_ERR_NOT_HOSTED:
-            return "import^ reaches what the host registered, and no module "
-                   "of this name is there; a unit read from a file comes in "
-                   "with require^ \"path\"";
-        case LHAT_CHECK_ERR_COROUTINE_DROPPED:
-            return "this call makes a coroutine and runs none of the body; "
-                   "write await^ to delegate, or let^ to keep it";
-        case LHAT_CHECK_ERR_MISSING_FIELD:
-            return "this field has no default, so it has to be written";
-        case LHAT_CHECK_ERR_INCOMPARABLE:
-            return "these can never be equal, so the comparison is fixed already";
-        case LHAT_CHECK_ERR_AS_IMPOSSIBLE:
-            return "nothing is both of these, so this as^ could never succeed";
-        case LHAT_CHECK_ERR_BAD_KEY:
-            return "nil^ is how a table spells 'not there', so it cannot be a key";
-        case LHAT_CHECK_ERR_NO_OPERATOR:
-            return "an operator is answered by what stands to its left, or by "
-                   "what stands to its right when that side writes the self^ "
-                   "last; neither answers this one";
-        case LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL:
-            return "this may be nil^, and nil^ answers no operator; '??' "
-                   "gives it a value, or bind it to a name and narrow that -- "
-                   "an index is not narrowed where it stands";
-        case LHAT_CHECK_ERR_BAD_OPERATOR:
-            return "an op^ is an f^ taking self^ and one argument, and it may "
-                   "not yield^; the self^ is whichever operand it is written "
-                   "as -- first for the left one, last for the right. Only "
-                   "op^- is also written with self^ alone, which is the unary "
-                   "one";
-        case LHAT_CHECK_ERR_COMPARE_NOT_NUMBER:
-            return "op^<=> answers a number^: '<' and the rest read which "
-                   "side of zero the answer falls on";
-        case LHAT_CHECK_ERR_EQUAL_NOT_BOOL:
-            return "op^= answers a bool^: '=' takes it as it stands, and "
-                   "'\xE2\x89\xA0' negates it";
-        case LHAT_CHECK_ERR_NOT_ORDERED:
-            return "nothing here says how these compare: an ordering is read "
-                   "off '<=>', and neither side carries one that takes the "
-                   "other";
-        case LHAT_CHECK_ERR_SELF_LAST_NOT_OPERATOR:
-            return "only an op^ writes its self^ last, to say the right "
-                   "operand is the receiver; everywhere else the receiver is "
-                   "what stands before the dot";
-        case LHAT_CHECK_ERR_ISA_ALWAYS_TRUE:
-            return "any^ holds of every value, so this asks nothing";
-        case LHAT_CHECK_ERR_MEMBER_EXISTS:
-            return "this name is already a member; write override^ or overload^";
-        case LHAT_CHECK_ERR_ALREADY_PROVIDED:
-            return "something in the chain already provides this member, so "
-                   "there is nothing for an abstract^ to ask for";
-        case LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE:
-            return "an abstract^ asks a composition for what this def^ does "
-                   "not have, and this one is written here as well; the "
-                   "members reach each other whatever the order, so drop the "
-                   "declaration";
-        case LHAT_CHECK_ERR_MUTABLE_DEFAULT:
-            return "a field's default lives on the prototype: an immutable "
-                   "value, a table written out as a literal (each instance "
-                   "is given its own copy), or a definition (shared by "
-                   "design); what something else made -- a name, a call's "
-                   "answer -- is given inside new";
-        case LHAT_CHECK_ERR_NEW_RETURNS:
-            return "construction answers the instance itself, so a new body "
-                   "has no return^; what it writes through self^ is already "
-                   "on what the caller gets";
-        case LHAT_CHECK_ERR_SELF_TABLE_OUTSIDE_NEW:
-            return "self^{ ... } is the construction notation, which only a "
-                   "written new runs; a method writes its receiver one "
-                   "field at a time, through self^.name";
-        case LHAT_CHECK_ERR_PROTOTYPE_SEALED:
-            return "a definition's self^ is the prototype every instance "
-                   "starts as; it is read here and written by no one -- a "
-                   "default is settled where the field is written";
-        case LHAT_CHECK_ERR_MUTABLE_KEY:
-            return "a key's hash is the box's bytes, and only a sealed box "
-                   "keeps them still; write constbox^ to make one";
-        case LHAT_CHECK_ERR_BOX_FIELD_WRITE:
-            return "a box's field is read straight off its bytes; writing "
-                   "goes through set(...), which a ConstBox^ does not have";
-        case LHAT_CHECK_ERR_NOT_BOXABLE:
-            return "box^ takes a host value; everything else already lives "
-                   "on the heap and needs no box";
-        case LHAT_CHECK_ERR_STILL_ABSTRACT:
-            return "this definition is still waiting on a composition -- a "
-                   "member is declared with nothing providing it, or an "
-                   "override^ has met nothing to replace";
-        case LHAT_CHECK_ERR_FIELD_UNPROVIDED:
-            return "this field is declared with no value, so an instance "
-                   "would hold nothing under it; a composition has to give it "
-                   "one, or an override^ new has to write it";
-        case LHAT_CHECK_ERR_LENT_DOES_NOT_PROVIDE:
-            return "this member is declared with abstract^, and what a "
-                   "delegate^ lends does not provide it -- to use the "
-                   "delegate's, drop the abstract^; otherwise compose "
-                   "something that provides it";
-        case LHAT_CHECK_ERR_LENT_IS_NOT_REPLACED:
-            return "this override^ has nothing to replace -- what a delegate^ "
-                   "lends is not a member to replace, so super^ would reach "
-                   "nothing; compose what it replaces, or drop the override^";
-        case LHAT_CHECK_ERR_AMBIGUOUS_MEMBER:
-            return "both sides of the composition carry this name, so it "
-                   "reaches no one answer; name the side you mean";
-        case LHAT_CHECK_ERR_CONCAT_COLLIDES:
-            return "both tables carry this key, so the concatenation holds "
-                   "no one value for it";
-        case LHAT_CHECK_ERR_COMPOSE_COLLIDES:
-            return "both definitions carry a member of this name, and a "
-                   "marker can only be written inside a def^";
-        case LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE:
-            return "there is no member of this name to override^ or overload^";
-        case LHAT_CHECK_ERR_NOT_SUBSTITUTABLE:
-            return "override^ has to be usable where the original was";
-        case LHAT_CHECK_ERR_OVERLOAD_OVERLAPS:
-            return "overload^ overlaps an existing signature";
-        case LHAT_CHECK_ERR_ERROR_DROPPED:
-            return "this can fail, and dropping the answer drops the failure "
-                   "with it; write try^ to hand it back, catch^ to answer "
-                   "instead, or a name to bind it and narrow";
-        case LHAT_CHECK_ERR_DISCARD_READ:
-            return "'_^' throws the value away, so it is not a name and there "
-                   "is nothing here to read; write a name where the value is "
-                   "wanted";
-        case LHAT_CHECK_ERR_NOT_DISPOSABLE:
-            return "with^ needs a value with a dispose() that returns nothing";
-        case LHAT_CHECK_ERR_FUNCTION_FALLS_OUT:
-            return "a function answers on every path; this one has a path "
-                   "that leaves without a value";
-        case LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT:
-            return "this body has a path that leaves without a value, which "
-                   "the result type it was given does not admit";
-        case LHAT_CHECK_ERR_SUPER_OUTSIDE:
-            return "super^ is the member an override^ replaces, so it is a "
-                   "name only inside one";
-        case LHAT_CHECK_ERR_THIS_OUTSIDE:
-            return "this^ names the subroutine running, and none is here";
-        case LHAT_CHECK_ERR_NEVER_RETURNS:
-            return "every way out of this body calls it again, so it never "
-                   "produces a value";
-        case LHAT_CHECK_ERR_RESULT_UNDECIDED:
-            return "the result type did not come out of this body, so it has "
-                   "to be written";
-        case LHAT_CHECK_ERR_OPERATOR_UNSETTLED:
-            return "several types here carry this operator and nothing says "
-                   "which is meant; write one of the types the signature "
-                   "names, or narrow to it with fits^";
-        case LHAT_CHECK_ERR_SHAPE_REFUSED:
-            return "this call hands over argument types the body cannot "
-                   "take; writing the parameter types is what would surface "
-                   "the body's own report";
-        case LHAT_CHECK_ERR_PARAM_UNDECIDED:
-            return "nothing in this body says what this parameter is, so its "
-                   "type has to be written; any^ is how to say it really does "
-                   "take anything";
-        case LHAT_CHECK_ERR_TYPE_UNDECIDED:
-            return "inference did not decide what this name holds, so its "
-                   "type has to be written";
-        case LHAT_CHECK_ERR_SCOPE_TOO_FAR:
-            return "this reaches out past more scopes than are open here";
-        case LHAT_CHECK_ERR_SCOPE_ON_DEFINE:
-            return "let^ makes a name here, so it takes no scope specifier; "
-                   "':=' is what writes one that is already there";
-        case LHAT_CHECK_ERR_FUNCTION_WRITES_OUT:
-            return "an f^ assigns to local variables only, and this name was "
-                   "bound outside its body";
-        case LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE:
-            return "an f^ may change only a table its own body made; this one "
-                   "came from somewhere else";
-        case LHAT_CHECK_ERR_PATH_IS_OPAQUE:
-            return "this type carries what registered it, so what it holds "
-                   "cannot be written over";
-        case LHAT_CHECK_ERR_ADVANCES_OUTSIDE:
-            return "an f^ may advance only a coroutine its own body made; "
-                   "this one came from somewhere else";
-        case LHAT_CHECK_ERR_MUTATES_OUTSIDE:
-            return "an f^ may write through mutable^self^ only into a table "
-                   "its own body made; this one came from somewhere else";
-        case LHAT_CHECK_ERR_ANSWER_NOT_FRESH:
-            return "a fresh^ answer has to be made by this body -- a "
-                   "literal, a new(), or another fresh^ call's answer";
-        case LHAT_CHECK_ERR_COROUTINE_ESCAPES:
-            return "an f^ coroutine may not leave the body that made it";
-        case LHAT_CHECK_ERR_TABLE_IS_SEALED:
-            return "this table belongs to the machine; what it holds is "
-                   "written by the host, not from here";
-        case LHAT_CHECK_ERR_ASSIGN_TO_LET:
-            return "this name was bound by a let^ and is not reassigned; "
-                   "write var^ where the name has to change";
-        case LHAT_CHECK_ERR_ASSIGN_TO_FORM:
-            return "the construct that introduces this name is what gives it a "
-                   "value -- a with^ holds it for the block, a for^ advances "
-                   "or rebinds its focus -- so nothing else writes it";
-        case LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE:
-            return "a public^ declaration binds with let^; another unit would "
-                   "otherwise see a name change under it";
-        case LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE:
-            return "Self^ names the t^ or def^ written around it, and there is "
-                   "no such literal here -- or a second hat counted past the "
-                   "outermost one";
-        case LHAT_CHECK_ERR_CATCHES_NOTHING:
-            return "nothing in this try^{ } can fail: an error reaches the "
-                   "arms by being written try^, and none is";
-        case LHAT_CHECK_ERR_CLOSED_CAPTURES:
-            return "a closed^ body names nothing standing outside it: pass "
-                   "this as an argument instead. An import^ed module, a name "
-                   "the host bound, and L^ are reached without capturing and "
-                   "may be written here";
-        case LHAT_CHECK_ERR_HOSTVALUE_ESCAPES:
-            return "a host value lives on the stack and nowhere else; box it "
-                   "into the container type its library provides to keep it";
-        case LHAT_CHECK_ERR_TUPLE_MISPLACED:
-            return "(A, B) is what a subroutine answers with, and it is "
-                   "written nowhere else -- not as an argument, a name, a "
-                   "table member, or a position of another tuple; pack^ makes "
-                   "a t^{ A, B } of one";
-        case LHAT_CHECK_ERR_HOSTVALUE_UNION:
-            return "a host value takes several slots, so what stands beside "
-                   "it in a union has to be told apart by the first of them "
-                   "-- nil^ or an error, the same as beside (A, B)";
-        case LHAT_CHECK_ERR_TUPLE_UNION:
-            return "the only thing (A, B) may be written in a union with is "
-                   "an error";
-        case LHAT_CHECK_ERR_TUPLE_ARITY:
-            return "this answers a different number of values than there are "
-                   "names to take them";
-        case LHAT_CHECK_ERR_TUPLE_ERROR_POSITION:
-            return "an error goes around the values, not among them; write "
-                   "(A, B)|SomeError rather than (A, SomeError)";
-    }
-    return "unknown error";
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(CHECK_MESSAGES, code);
+    return entry != NULL ? entry->text : "unknown error";
+}
+
+const char *lhat_check_error_id(LhatCheckErrorCode code)
+{
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(CHECK_MESSAGES, code);
+    return entry != NULL ? entry->id : NULL;
 }
 
 size_t lhat_check_message_write(const LhatCheckDiagnostic *diagnostic,

@@ -706,6 +706,9 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
 const LhatTypeMember *lhat_check_unimplemented_member(const LhatType *type);
 
 const char *lhat_check_error_message(LhatCheckErrorCode code);
+// 10 §4: the stable ID of the same message; NULL for a code the table
+// does not hold.
+const char *lhat_check_error_id(LhatCheckErrorCode code);
 
 // The message for one diagnostic, which for the codes that are about a name
 // says which -- "no such name in scope: nowhere". Everything a code knows on

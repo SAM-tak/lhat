@@ -1,5 +1,6 @@
 // L^ (lhat) -- a program: one unit and everything it requires.
 
+#include "message.h"
 #include "program_internal.h"
 #include "serialize.h"
 #include "registry.h"
@@ -4811,29 +4812,41 @@ bool lhat_program_has_errors(const LhatProgram *program)
     return false;
 }
 
+// 10 §4: the ID and the English text of every LhatProgramErrorCode, indexed by
+// the code. The ID is the one a translation is written against and never
+// changes meaning; the English is the reference every other language translates
+// (10 §2.2).
+static const LhatMessageEntry PROGRAM_MESSAGES[] = {
+    [LHAT_PROGRAM_ERR_CANNOT_READ] =
+        {"program.cannot-read", "this unit could not be read"},
+    [LHAT_PROGRAM_ERR_CYCLE] = {"program.cycle",
+        "the units require each other; move the common part out"},
+    [LHAT_PROGRAM_ERR_BAD_BINARY] = {"program.bad-binary",
+        "this binary unit was not written by this build of the "
+        "library, or has been damaged"},
+    [LHAT_PROGRAM_ERR_HOST_MISMATCH] = {"program.host-mismatch",
+        "this binary unit names a host type, kind or enum that "
+        "this program did not register the same way"},
+    [LHAT_PROGRAM_ERR_MIXED] = {"program.mixed",
+        "a program is text or binary throughout; this unit is "
+        "the other kind"},
+    [LHAT_PROGRAM_ERR_NO_SIGNATURE] = {"program.no-signature",
+        "this build has no front end to read a signature with, "
+        "and the signature table does not hold this one"},
+    [LHAT_PROGRAM_ERR_NO_FRONTEND] = {"program.no-frontend",
+        "this build has no front end; only a binary unit runs"},
+};
+
 const char *lhat_program_error_message(LhatProgramErrorCode code)
 {
-    switch (code) {
-        case LHAT_PROGRAM_ERR_CANNOT_READ:
-            return "this unit could not be read";
-        case LHAT_PROGRAM_ERR_CYCLE:
-            return "the units require each other; move the common part out";
-        case LHAT_PROGRAM_ERR_BAD_BINARY:
-            return "this binary unit was not written by this build of the "
-                   "library, or has been damaged";
-        case LHAT_PROGRAM_ERR_HOST_MISMATCH:
-            return "this binary unit names a host type, kind or enum that "
-                   "this program did not register the same way";
-        case LHAT_PROGRAM_ERR_MIXED:
-            return "a program is text or binary throughout; this unit is "
-                   "the other kind";
-        case LHAT_PROGRAM_ERR_NO_SIGNATURE:
-            return "this build has no front end to read a signature with, "
-                   "and the signature table does not hold this one";
-        case LHAT_PROGRAM_ERR_NO_FRONTEND:
-            return "this build has no front end; only a binary unit runs";
-    }
-    return "unknown error";
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(PROGRAM_MESSAGES, code);
+    return entry != NULL ? entry->text : "unknown error";
+}
+
+const char *lhat_program_error_id(LhatProgramErrorCode code)
+{
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(PROGRAM_MESSAGES, code);
+    return entry != NULL ? entry->id : NULL;
 }
 
 // ---------------------------------------------------------------------------

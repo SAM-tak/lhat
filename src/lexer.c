@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "message.h"
 #include "number.h"
 #include "grow.h"
 #include "lhat/port.h"
@@ -1155,45 +1156,55 @@ const char *lhat_lexer_string(const LhatLexer *lexer, const LhatToken *token,
     return lexer->strings + token->v.string.offset;
 }
 
+// 10 §4: the ID and the English text of every LhatErrorCode, indexed by the
+// code. The ID is the one a translation is written against and never changes
+// meaning; the English is the reference every other language translates (10
+// §2.2).
+static const LhatMessageEntry LEX_MESSAGES[] = {
+    [LHAT_ERR_NONE] = {"lex.none", "no error"},
+    [LHAT_ERR_UNEXPECTED_CHARACTER] =
+        {"lex.unexpected-character", "unexpected character"},
+    [LHAT_ERR_INVALID_UTF8] = {"lex.invalid-utf8", "invalid UTF-8 sequence"},
+    [LHAT_ERR_BARE_HAT] =
+        {"lex.bare-hat", "'^' must directly follow an identifier"},
+    [LHAT_ERR_BARE_AT] = {"lex.bare-at",
+        "'@' must be followed directly by the name of an annotation"},
+    [LHAT_ERR_IDENT_AFTER_NUMBER] = {"lex.ident-after-number",
+        "a number must be separated from an identifier by whitespace"},
+    [LHAT_ERR_MALFORMED_NUMBER] =
+        {"lex.malformed-number", "malformed number literal"},
+    [LHAT_ERR_MALFORMED_EXPONENT] =
+        {"lex.malformed-exponent", "exponent must be followed by digits"},
+    [LHAT_ERR_INTEGER_OVERFLOW] =
+        {"lex.integer-overflow", "integer literal is out of range"},
+    [LHAT_ERR_UNTERMINATED_STRING] =
+        {"lex.unterminated-string", "unterminated string literal"},
+    [LHAT_ERR_UNTERMINATED_NAME_LITERAL] = {"lex.unterminated-name-literal",
+        "name literal is not closed before the end of the line"},
+    [LHAT_ERR_EMPTY_NAME_LITERAL] =
+        {"lex.empty-name-literal", "name literal is empty"},
+    [LHAT_ERR_UNKNOWN_ESCAPE] =
+        {"lex.unknown-escape", "unknown escape sequence"},
+    [LHAT_ERR_MALFORMED_ESCAPE] =
+        {"lex.malformed-escape", "malformed escape sequence"},
+    [LHAT_ERR_UNTERMINATED_BLOCK_COMMENT] =
+        {"lex.unterminated-block-comment", "unterminated block comment"},
+    [LHAT_ERR_SCOPE_WITHOUT_NAME] = {"lex.scope-without-name",
+        "scope specifier must be followed directly by a name"},
+    [LHAT_ERR_INTERPOLATION_NEEDS_QUOTES] = {"lex.interpolation-needs-quotes",
+        "string interpolation requires double quotes: $\"...\""},
+    [LHAT_ERR_INTERPOLATION_TOO_DEEP] = {"lex.interpolation-too-deep",
+        "interpolated strings are nested too deeply"},
+};
+
 const char *lhat_lexer_error_message(LhatErrorCode code)
 {
-    switch (code) {
-        case LHAT_ERR_NONE:
-            return "no error";
-        case LHAT_ERR_UNEXPECTED_CHARACTER:
-            return "unexpected character";
-        case LHAT_ERR_INVALID_UTF8:
-            return "invalid UTF-8 sequence";
-        case LHAT_ERR_BARE_HAT:
-            return "'^' must directly follow an identifier";
-        case LHAT_ERR_BARE_AT:
-            return "'@' must be followed directly by the name of an annotation";
-        case LHAT_ERR_IDENT_AFTER_NUMBER:
-            return "a number must be separated from an identifier by whitespace";
-        case LHAT_ERR_MALFORMED_NUMBER:
-            return "malformed number literal";
-        case LHAT_ERR_MALFORMED_EXPONENT:
-            return "exponent must be followed by digits";
-        case LHAT_ERR_INTEGER_OVERFLOW:
-            return "integer literal is out of range";
-        case LHAT_ERR_UNTERMINATED_STRING:
-            return "unterminated string literal";
-        case LHAT_ERR_UNTERMINATED_NAME_LITERAL:
-            return "name literal is not closed before the end of the line";
-        case LHAT_ERR_EMPTY_NAME_LITERAL:
-            return "name literal is empty";
-        case LHAT_ERR_UNKNOWN_ESCAPE:
-            return "unknown escape sequence";
-        case LHAT_ERR_MALFORMED_ESCAPE:
-            return "malformed escape sequence";
-        case LHAT_ERR_UNTERMINATED_BLOCK_COMMENT:
-            return "unterminated block comment";
-        case LHAT_ERR_SCOPE_WITHOUT_NAME:
-            return "scope specifier must be followed directly by a name";
-        case LHAT_ERR_INTERPOLATION_NEEDS_QUOTES:
-            return "string interpolation requires double quotes: $\"...\"";
-        case LHAT_ERR_INTERPOLATION_TOO_DEEP:
-            return "interpolated strings are nested too deeply";
-    }
-    return "unknown error";
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(LEX_MESSAGES, code);
+    return entry != NULL ? entry->text : "unknown error";
+}
+
+const char *lhat_lexer_error_id(LhatErrorCode code)
+{
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(LEX_MESSAGES, code);
+    return entry != NULL ? entry->id : NULL;
 }
