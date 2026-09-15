@@ -5267,11 +5267,16 @@ void lhat_parse_result_dispose(LhatParseResult *result)
 // (10 §2.2).
 static const LhatMessageEntry PARSE_MESSAGES[] = {
     [LHAT_PARSE_ERR_NONE] = {"parse.none", "no error"},
-    [LHAT_PARSE_ERR_UNEXPECTED] = {"parse.unexpected", "unexpected token"},
-    [LHAT_PARSE_ERR_EXPECTED_EXPRESSION] =
-        {"parse.expected-expression", "expected an expression"},
-    [LHAT_PARSE_ERR_EXPECTED_TYPE] = {"parse.expected-type", "expected a type"},
-    [LHAT_PARSE_ERR_EXPECTED_NAME] = {"parse.expected-name", "expected a name"},
+    // The codes about the token they met, rather than about something larger
+    // the token happened to be inside, say what it was.
+    [LHAT_PARSE_ERR_UNEXPECTED] = {"parse.unexpected",
+        "unexpected token, and this is {found}"},
+    [LHAT_PARSE_ERR_EXPECTED_EXPRESSION] = {"parse.expected-expression",
+        "expected an expression, and this is {found}"},
+    [LHAT_PARSE_ERR_EXPECTED_TYPE] = {"parse.expected-type",
+        "expected a type, and this is {found}"},
+    [LHAT_PARSE_ERR_EXPECTED_NAME] = {"parse.expected-name",
+        "expected a name, and this is {found}"},
     [LHAT_PARSE_ERR_EXPECTED_TOKEN] =
         {"parse.expected-token", "expected a different token here"},
     // return^ is legal in every position this fires at (a unit's top
@@ -5443,64 +5448,83 @@ const char *lhat_parse_error_id(LhatParseErrorCode code)
     return entry != NULL ? entry->id : NULL;
 }
 
-// What the token that was there is called, for a message to name it by. An
-// operator is worth quoting; anything else is a kind, since its spelling is
-// already under the mark.
-static const char *found_spelling(const LhatParseDiagnostic *d)
+// 10 §5.2: the texts a parse message is drawn from besides its code's. The
+// first is what a diagnostic says when it knows the token that was wanted;
+// the rest are what the token that was there is called, the phrase {found}
+// takes. An operator is worth quoting, since it is short enough to read
+// inside a sentence; anything else is a kind, since its spelling is already
+// under the mark.
+enum {
+    PART_EXPECTED_FOUND,
+    PART_END,
+    PART_NAME,
+    PART_WORD,
+    PART_NUMBER,
+    PART_STRING,
+    PART_SCOPE,
+    PART_OPERATOR,
+    PART_OTHER,
+};
+
+static const LhatMessageEntry PARSE_PARTS[] = {
+    [PART_EXPECTED_FOUND] = {"parse.expected-found",
+        "a '{expected}' was expected here, and this is {found}"},
+    [PART_END] = {"parse.token.end-of-input", "the end of the input"},
+    [PART_NAME] = {"parse.token.name", "a name"},
+    [PART_WORD] = {"parse.token.word", "a word of the language"},
+    [PART_NUMBER] = {"parse.token.number", "a number"},
+    [PART_STRING] = {"parse.token.string", "a string"},
+    [PART_SCOPE] = {"parse.token.scope", "a scope specifier"},
+    [PART_OPERATOR] = {"parse.token.operator", "'{operator}'"},
+    [PART_OTHER] = {"parse.token.other", "something else"},
+};
+
+const char *lhat_parse_part_id(size_t index)
 {
-    switch (d->found) {
-        case LHAT_TOKEN_EOF:          return "the end of the input";
-        case LHAT_TOKEN_IDENT:        return "a name";
-        case LHAT_TOKEN_HAT_IDENT:    return "a word of the language";
-        case LHAT_TOKEN_INT:
-        case LHAT_TOKEN_FLOAT:        return "a number";
-        case LHAT_TOKEN_STRING:       return "a string";
-        case LHAT_TOKEN_SCOPE:        return "a scope specifier";
-        case LHAT_TOKEN_OP:           break;
-        default:                      return "something else";
-    }
-    // Quoted, since an operator is short enough to read inside a sentence.
-    static char quoted[16];
-    snprintf(quoted, sizeof quoted, "'%s'", lhat_op_name(d->found_op));
-    return quoted;
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(PARSE_PARTS, index);
+    return entry != NULL ? entry->id : NULL;
 }
 
-// The codes that are about the token they met, rather than about something
-// larger the token happened to be inside.
-static bool names_a_token(LhatParseErrorCode code)
+static size_t found_part(const LhatParseDiagnostic *d)
 {
-    return code == LHAT_PARSE_ERR_UNEXPECTED ||
-           code == LHAT_PARSE_ERR_EXPECTED_EXPRESSION ||
-           code == LHAT_PARSE_ERR_EXPECTED_TYPE ||
-           code == LHAT_PARSE_ERR_EXPECTED_NAME;
+    switch (d->found) {
+        case LHAT_TOKEN_EOF:          return PART_END;
+        case LHAT_TOKEN_IDENT:        return PART_NAME;
+        case LHAT_TOKEN_HAT_IDENT:    return PART_WORD;
+        case LHAT_TOKEN_INT:
+        case LHAT_TOKEN_FLOAT:        return PART_NUMBER;
+        case LHAT_TOKEN_STRING:       return PART_STRING;
+        case LHAT_TOKEN_SCOPE:        return PART_SCOPE;
+        case LHAT_TOKEN_OP:           return PART_OPERATOR;
+        default:                      return PART_OTHER;
+    }
 }
 
 size_t lhat_parse_message_write(const LhatParseDiagnostic *diagnostic,
                                 char *out, size_t capacity)
 {
-    const char *plain = diagnostic != NULL
-                            ? lhat_parse_error_message(diagnostic->code)
-                            : "unknown error";
+    if (diagnostic == NULL) {
+        return lhat_message_render("unknown error", NULL, 0, out, capacity);
+    }
+    const char *text = diagnostic->has_expected
+                           ? PARSE_PARTS[PART_EXPECTED_FOUND].text
+                           : lhat_parse_error_message(diagnostic->code);
 
-    // Only where the diagnostic knows something its code does not.
-    int written;
-    if (diagnostic != NULL && diagnostic->has_expected) {
-        written = snprintf(out, out != NULL ? capacity : 0,
-                           "a '%s' was expected here, and this is %s",
-                           lhat_op_name(diagnostic->expected),
-                           found_spelling(diagnostic));
-    } else if (diagnostic != NULL && names_a_token(diagnostic->code)) {
-        written = snprintf(out, out != NULL ? capacity : 0, "%s, and this is %s",
-                           plain, found_spelling(diagnostic));
-    } else {
-        written = snprintf(out, out != NULL ? capacity : 0, "%s", plain);
+    // The phrase is made first, since an operator's has a hole of its own.
+    const char *spelling = lhat_op_name(diagnostic->found_op);
+    const LhatMessageArg op = {"operator", spelling, strlen(spelling)};
+    char found[128];
+    size_t found_length =
+        lhat_message_render(PARSE_PARTS[found_part(diagnostic)].text, &op, 1,
+                            found, sizeof found);
+    if (found_length >= sizeof found) {
+        found_length = sizeof found - 1;
     }
 
-    if (written < 0) {
-        if (out != NULL && capacity > 0) {
-            out[0] = '\0';
-        }
-        return 0;
-    }
-    return (size_t)written;
+    const char *expected = lhat_op_name(diagnostic->expected);
+    const LhatMessageArg args[] = {
+        {"expected", expected, strlen(expected)},
+        {"found", found, found_length},
+    };
+    return lhat_message_render(text, args, 2, out, capacity);
 }

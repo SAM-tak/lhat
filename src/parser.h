@@ -194,6 +194,8 @@ void lhat_parse_type_only(LhatLexer *lexer, LhatParseResult *result);
 
 void lhat_parse_result_dispose(LhatParseResult *result);
 
+// The text of a code, holes unfilled: a code about the token it met holds
+// the hole that names it (10 §5.2).
 const char *lhat_parse_error_message(LhatParseErrorCode code);
 // 10 §4: the stable ID of the same message; NULL for a code the table
 // does not hold.
@@ -201,14 +203,16 @@ const char *lhat_parse_error_id(LhatParseErrorCode code);
 
 // The message for one diagnostic, which for some of them says more than the
 // code alone can -- "a ';' was expected here" rather than "expected a
-// different token here". Everything the code knows on its own is what
-// lhat_parse_error_message answers, so this only differs where the diagnostic
-// carries something besides its code.
+// different token here", and what the token met was. The token wanted and
+// the phrase naming the token met go into the text's holes.
 //
 // Follows lhat_report_write: answers how many bytes it wants, not counting
 // the terminating NUL, and fills up to `capacity` including it. So measuring
 // is a call with (NULL, 0).
 size_t lhat_parse_message_write(const LhatParseDiagnostic *diagnostic,
                                 char *out, size_t capacity);
+// 10 §4: the IDs of the texts a message is drawn from besides its code's, by
+// index from 0; NULL past the last. For the tests that hold every ID to §4.
+const char *lhat_parse_part_id(size_t index);
 
 #endif  // LHAT_PARSER_H

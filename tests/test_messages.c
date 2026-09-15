@@ -96,6 +96,18 @@ static const Table TABLES[] = {
      "unknown"},
 };
 
+// Every ID met, for the check that no two entries share one.
+static const char *all_ids[512];
+static size_t seen;
+
+static void remember(const char *id)
+{
+    LHAT_CHECK(seen < sizeof all_ids / sizeof all_ids[0], "room for '%s'", id);
+    if (seen < sizeof all_ids / sizeof all_ids[0]) {
+        all_ids[seen++] = id;
+    }
+}
+
 // 10 §4.2: `source.name`, lower-case ASCII letters and digits, words joined by
 // '-', and nothing doubled or left dangling at either end.
 static bool well_formed(const char *id, const char *source)
@@ -118,11 +130,38 @@ static bool well_formed(const char *id, const char *source)
     return last_alnum;
 }
 
+// How many holes `text` holds, and whether every one is among `allowed`.
+static size_t holes_in(const char *text, const char *const *allowed,
+                       size_t allowed_count, bool *all_allowed)
+{
+    size_t count = 0;
+    *all_allowed = true;
+    for (const char *p = strchr(text, '{'); p != NULL; p = strchr(p + 1, '{')) {
+        const char *end = p + 1;
+        if (*end < 'a' || *end > 'z') {
+            continue;
+        }
+        while ((*end >= 'a' && *end <= 'z') || (*end >= '0' && *end <= '9') ||
+               *end == '-') {
+            end++;
+        }
+        if (*end != '}') {
+            continue;
+        }
+        count++;
+        bool known = false;
+        for (size_t i = 0; i < allowed_count; i++) {
+            size_t n = strlen(allowed[i]);
+            known = known ||
+                    ((size_t)(end + 1 - p) == n && memcmp(p, allowed[i], n) == 0);
+        }
+        *all_allowed = *all_allowed && known;
+    }
+    return count;
+}
+
 static void test_ids(void)
 {
-    const char *all[512];
-    size_t seen = 0;
-
     for (size_t t = 0; t < sizeof TABLES / sizeof TABLES[0]; t++) {
         const Table *table = &TABLES[t];
         LHAT_TEST(table->source);
@@ -139,9 +178,7 @@ static void test_ids(void)
             LHAT_CHECK(message != NULL && message[0] != '\0' &&
                            strcmp(message, table->fallback) != 0,
                        "%s code %d has its own English", table->source, code);
-            if (seen < sizeof all / sizeof all[0]) {
-                all[seen++] = id;
-            }
+            remember(id);
         }
         // One past the last code there is no row: no ID, and the fallback.
         LHAT_CHECK(table->id(table->count) == NULL,
@@ -151,47 +188,26 @@ static void test_ids(void)
                    table->source);
     }
 
-    LHAT_TEST("every ID is unique across the tables");
-    for (size_t i = 0; i < seen; i++) {
-        for (size_t j = i + 1; j < seen; j++) {
-            LHAT_CHECK(strcmp(all[i], all[j]) != 0, "'%s' is used twice",
-                       all[i]);
-        }
+    LHAT_TEST("parse: the texts besides the codes'");
+    size_t parts = 0;
+    for (const char *id; (id = lhat_parse_part_id(parts)) != NULL; parts++) {
+        LHAT_CHECK(well_formed(id, "parse"), "'%s' is well formed", id);
+        remember(id);
+    }
+    LHAT_CHECK(parts > 0, "there are some");
+
+    LHAT_TEST("parse: a code's text holds no hole but {found}");
+    static const char *const FOUND_HOLE[] = {"{found}"};
+    for (int code = 0; code <= LHAT_PARSE_ERR_DUPLICATE_INDEXER; code++) {
+        bool all_found;
+        size_t n = holes_in(parse_message(code), FOUND_HOLE, 1, &all_found);
+        LHAT_CHECK(n <= 1 && all_found, "parse code %d", code);
     }
 }
 
 // The holes a checker diagnostic's name is offered under.
 static const char *const NAME_HOLES[] = {"{name}", "{member}", "{field}",
                                          "{annotation}", "{kind}"};
-
-// How many holes `text` holds, and whether every one is a NAME_HOLES.
-static size_t holes_in(const char *text, bool *all_named)
-{
-    size_t count = 0;
-    *all_named = true;
-    for (const char *p = strchr(text, '{'); p != NULL; p = strchr(p + 1, '{')) {
-        const char *end = p + 1;
-        if (*end < 'a' || *end > 'z') {
-            continue;
-        }
-        while ((*end >= 'a' && *end <= 'z') || (*end >= '0' && *end <= '9') ||
-               *end == '-') {
-            end++;
-        }
-        if (*end != '}') {
-            continue;
-        }
-        count++;
-        bool named = false;
-        for (size_t i = 0; i < sizeof NAME_HOLES / sizeof NAME_HOLES[0]; i++) {
-            size_t n = strlen(NAME_HOLES[i]);
-            named = named || ((size_t)(end + 1 - p) == n &&
-                              memcmp(p, NAME_HOLES[i], n) == 0);
-        }
-        *all_named = *all_named && named;
-    }
-    return count;
-}
 
 // 10 §5.1 over the checker: a diagnostic's name goes into its text's one
 // hole. A code with a second text for being reported with a name keeps its
@@ -221,7 +237,9 @@ static void test_named(void)
         }
 
         bool all_named;
-        size_t own = holes_in(check_message(code), &all_named);
+        size_t own = holes_in(check_message(code), NAME_HOLES,
+                              sizeof NAME_HOLES / sizeof NAME_HOLES[0],
+                              &all_named);
         LHAT_CHECK(own <= 1 && all_named,
                    "'%s' holds at most one hole, and one for a name", plain);
         char message[512];
@@ -239,6 +257,18 @@ static void test_named(void)
         LHAT_CHECK(own == 0, "'%s' has a second text, so no hole", plain);
         LHAT_CHECK(strstr(message, "Zq9") != NULL, "'%s' says the name",
                    named);
+        remember(named);
+    }
+}
+
+static void test_unique(void)
+{
+    LHAT_TEST("every ID is unique across the tables");
+    for (size_t i = 0; i < seen; i++) {
+        for (size_t j = i + 1; j < seen; j++) {
+            LHAT_CHECK(strcmp(all_ids[i], all_ids[j]) != 0,
+                       "'%s' is used twice", all_ids[i]);
+        }
     }
 }
 
@@ -313,6 +343,7 @@ int main(void)
 {
     test_ids();
     test_named();
+    test_unique();
     test_render();
     return lhat_test_report("test_messages");
 }
