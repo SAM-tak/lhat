@@ -22,6 +22,7 @@
 // which writes out the instructions a host is never shown.
 #include "code.h"
 #include "compile.h"
+#include "message.h"
 #include "program_internal.h"
 
 #ifdef LHAT_CLI_WITH_STDLIB
@@ -361,6 +362,146 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
 
 #endif  // LHAT_WITH_FRONTEND
 
+// 10 §4: the cli's own texts. Each is a line it prints -- or, for the usage
+// and the prompt's greeting, the lines it prints together -- with what goes
+// into it in holes (§5.1).
+enum {
+    CLI_OUT_OF_MEMORY,
+    CLI_CANNOT_READ,
+    CLI_CANNOT_READ_INPUT,
+    CLI_CANNOT_WRITE,
+    CLI_SAID,
+    CLI_ERROR,
+    CLI_PROMPT_ERROR,
+    CLI_AT_LINE,
+    CLI_WITH_OPERATOR,
+    CLI_INPUT_ENDED,
+    CLI_INPUT_DROPPED,
+    CLI_NO_TYPE_ERRORS,
+    CLI_DID_NOT_COMPILE,
+    CLI_WRITTEN_AS,
+    CLI_WRITTEN_UNDER,
+    CLI_NOT_WRITTEN,
+    CLI_OUTSIDE_ROOT,
+    CLI_NO_LTON,
+    CLI_NOT_A_SIGNATURE_TABLE,
+    CLI_SIGNATURES_NOT_WRITTEN,
+    CLI_COMPILE_NEEDS_OUT,
+    CLI_NO_FRONT_END,
+    CLI_VERSION,
+    CLI_GREETING,
+    CLI_USAGE,
+};
+
+static const LhatMessageEntry CLI_MESSAGES[] = {
+    [CLI_OUT_OF_MEMORY] = {"cli.out-of-memory", "lhat: out of memory"},
+    [CLI_CANNOT_READ] = {"cli.cannot-read", "lhat: cannot read {path}"},
+    [CLI_CANNOT_READ_INPUT] =
+        {"cli.cannot-read-input", "lhat: cannot read input"},
+    [CLI_CANNOT_WRITE] = {"cli.cannot-write", "lhat: cannot write {path}"},
+    [CLI_SAID] = {"cli.said", "lhat: {message}"},
+    [CLI_ERROR] = {"cli.error", "{path}: error: {message}"},
+    [CLI_PROMPT_ERROR] = {"cli.prompt-error", "error: {message}"},
+    [CLI_AT_LINE] = {"cli.at-line", "line {line}: {message}"},
+    [CLI_WITH_OPERATOR] = {"cli.with-operator", "{message} ({operator})"},
+    [CLI_INPUT_ENDED] = {"cli.input-ended",
+        "{path}: note: the input ended before the construct was complete"},
+    [CLI_INPUT_DROPPED] = {"cli.input-dropped",
+        "note: the unfinished input was dropped"},
+    [CLI_NO_TYPE_ERRORS] = {"cli.no-type-errors",
+        "{path}: no type errors (units checked: {count})"},
+    [CLI_DID_NOT_COMPILE] = {"cli.did-not-compile",
+        "{path}: error: the program did not compile"},
+    [CLI_WRITTEN_AS] = {"cli.written-as", "{path}: written as {file}"},
+    [CLI_WRITTEN_UNDER] = {"cli.written-under",
+        "{path}: written under {dir} (units: {count})"},
+    [CLI_NOT_WRITTEN] = {"cli.not-written",
+        "{path}: error: could not be written out"},
+    [CLI_OUTSIDE_ROOT] = {"cli.outside-root",
+        "{path}: error: outside the root's directory, so it has no place "
+        "under {dir}"},
+    [CLI_NO_LTON] = {"cli.no-lton",
+        "{path}: this driver has no std.lton to compile it with"},
+    [CLI_NOT_A_SIGNATURE_TABLE] = {"cli.not-a-signature-table",
+        "lhat: {path} is not a signature table this build reads"},
+    [CLI_SIGNATURES_NOT_WRITTEN] = {"cli.signatures-not-written",
+        "lhat: could not write the signature table"},
+    [CLI_COMPILE_NEEDS_OUT] =
+        {"cli.compile-needs-out", "lhat: --compile needs -o DIR"},
+    [CLI_NO_FRONT_END] = {"cli.no-front-end",
+        "lhat: this build has no front end; --run a binary unit"},
+    [CLI_VERSION] = {"cli.version", "L^ (lhat) {version}"},
+    [CLI_GREETING] = {"cli.greeting",
+        "an expression on its own is answered; an unfinished construct "
+        "reads on\n"
+        "ctrl-d or an empty line ends"},
+    [CLI_USAGE] = {"cli.usage",
+        "usage: lhat [option] <file> [argument...]\n"
+        "  no file        read from a prompt\n"
+        "  --run          check the whole program and run it; what follows "
+        "the file is its '...'\n"
+        "  --check        type check and report, without running\n"
+        "  default        print the syntax tree\n"
+        "  --tokens       print the token stream instead\n"
+        "  --dump-bytecode  print what the unit compiles to\n"
+        "  --command      read the input as the command form\n"
+        "  --strict       report a type error at compile time (default for "
+        "a file)\n"
+        "  --relaxed      leave an undecided type to a runtime check "
+        "(default for the prompt)\n"
+        "  --dump-host-api [file]  write what this driver registers as "
+        "JSON, for lhatls\n"
+        "  --compile -o DIR  check and compile the whole program and write "
+        "every unit to DIR as bytes; a .lton compiles on its own\n"
+        "  --dump-signatures FILE  write the signature table this driver's "
+        "registrations make\n"
+        "  --signatures FILE  read a signature table before registering "
+        "(what a build without the front end registers by)\n"
+        "  --strip-debug  leave the local and captured names out of what "
+        "--compile writes\n"
+        "  --dap=PORT     run under a debugger over DAP on that loopback "
+        "port (implies --run)\n"
+        "  -h, --help     show this and do nothing else\n"
+        "  -v, --version  show the version and do nothing else"},
+};
+
+#define CLI_ARG(name, text) {(name), (text), strlen(text)}
+
+// The text `id` makes with `args` in its holes, for the caller to free; NULL
+// when there was no room for it.
+static char *cli_text(size_t id, const LhatMessageArg *args, size_t count)
+{
+    const char *text = CLI_MESSAGES[id].text;
+    size_t needed = lhat_message_render(text, args, count, NULL, 0);
+    char *out = (char *)malloc(needed + 1);
+    if (out != NULL) {
+        lhat_message_render(text, args, count, out, needed + 1);
+    }
+    return out;
+}
+
+// The same, printed as a line of its own. With no room to fill it, the text
+// is printed as it stands rather than not at all.
+static void cli_say(FILE *stream, size_t id, const LhatMessageArg *args,
+                    size_t count)
+{
+    char *line = cli_text(id, args, count);
+    fprintf(stream, "%s\n", line != NULL ? line : CLI_MESSAGES[id].text);
+    free(line);
+}
+
+static void say_path(FILE *stream, size_t id, const char *path)
+{
+    const LhatMessageArg arg = CLI_ARG("path", path);
+    cli_say(stream, id, &arg, 1);
+}
+
+static void say_version(void)
+{
+    const LhatMessageArg arg = CLI_ARG("version", LHAT_VERSION);
+    cli_say(stdout, CLI_VERSION, &arg, 1);
+}
+
 // Whether a diagnostic is shown with the line it happened on. The rich form
 // wants the source, so it is off wherever this driver has none to hand.
 static bool rich_reports = true;
@@ -457,7 +598,10 @@ static void say_compile_error(const LhatSource *source, const char *name,
     lhat_compile_message_write(result, text, sizeof text);
 
     if (source == NULL || result->line == 0) {
-        fprintf(stderr, "%s: error: %s\n", name != NULL ? name : "lhat", text);
+        const LhatMessageArg args[] = {
+            CLI_ARG("path", name != NULL ? name : "lhat"),
+            CLI_ARG("message", text)};
+        cli_say(stderr, CLI_ERROR, args, 2);
         return;
     }
 
@@ -472,23 +616,39 @@ static void say_compile_error(const LhatSource *source, const char *name,
 }
 
 // 04 の 11.6改: what the program wrote in panic^ EXPR, as text -- a plain
-// string prints as its own text (a message reads oddly in quotes), anything
-// else falls back to lhat_value_write's general form.
-static void say_panic_value(LhatValue value)
+// string is its own text (a message reads oddly in quotes), anything else
+// lhat_value_write's general form, made into `kept` for the caller to free.
+static LhatMessageArg panic_value(LhatValue value, char **kept)
 {
+    LhatMessageArg said = {"message", "", 0};
     if (lhat_is_object_kind(value, LHAT_OBJECT_STRING)) {
         const LhatString *text = (const LhatString *)lhat_as_object(value);
-        fprintf(stderr, "%.*s", (int)text->length, text->text);
-        return;
+        said.value = text->text;
+        said.length = text->length;
+        return said;
     }
     size_t needed = lhat_value_write(value, NULL, 0);
-    char *room = (char *)malloc(needed + 1);
-    if (room == NULL) {
-        return;
+    *kept = (char *)malloc(needed + 1);
+    if (*kept != NULL) {
+        lhat_value_write(value, *kept, needed + 1);
+        said.value = *kept;
+        said.length = needed;
     }
-    lhat_value_write(value, room, needed + 1);
-    fprintf(stderr, "%s", room);
-    free(room);
+    return said;
+}
+
+// `message` inside the text `id` makes of it and one more argument, made
+// into `kept` for the caller to free -- or as it was, with no room for that.
+static LhatMessageArg wrapped(size_t id, LhatMessageArg message,
+                              LhatMessageArg other, char **kept)
+{
+    const LhatMessageArg args[] = {message, other};
+    *kept = cli_text(id, args, 2);
+    if (*kept != NULL) {
+        message.value = *kept;
+        message.length = strlen(*kept);
+    }
+    return message;
 }
 
 // 04 の 11 章: a runtime fault names the line it happened on and, when it was
@@ -515,23 +675,34 @@ static void say_traceback(LhatMachine *machine)
 
 static void say_run_error(const char *path, LhatRunResult ran)
 {
-    if (path != NULL) {
-        fprintf(stderr, "%s: ", path);
-    }
-    fprintf(stderr, "error: ");
-    if (ran.line > 0) {
-        fprintf(stderr, "line %u: ", ran.line);
-    }
+    char *kept[3] = {NULL, NULL, NULL};
+    LhatMessageArg message;
     if (ran.status == LHAT_RUN_PANIC) {
-        say_panic_value(ran.value);
-        fprintf(stderr, "\n");
-        return;
+        message = panic_value(ran.value, &kept[0]);
+    } else {
+        const char *status = lhat_run_status_message(ran.status);
+        message = (LhatMessageArg)CLI_ARG("message", status);
+        if (ran.op_name != NULL) {
+            const LhatMessageArg op = {"operator", ran.op_name,
+                                       ran.op_name_length};
+            message = wrapped(CLI_WITH_OPERATOR, message, op, &kept[1]);
+        }
     }
-    fprintf(stderr, "%s", lhat_run_status_message(ran.status));
-    if (ran.op_name != NULL) {
-        fprintf(stderr, " (%.*s)", (int)ran.op_name_length, ran.op_name);
+    if (ran.line > 0) {
+        char line[16];
+        snprintf(line, sizeof line, "%u", ran.line);
+        message = wrapped(CLI_AT_LINE, message,
+                          (LhatMessageArg)CLI_ARG("line", line), &kept[2]);
     }
-    fprintf(stderr, "\n");
+    if (path != NULL) {
+        const LhatMessageArg args[] = {CLI_ARG("path", path), message};
+        cli_say(stderr, CLI_ERROR, args, 2);
+    } else {
+        cli_say(stderr, CLI_PROMPT_ERROR, &message, 1);
+    }
+    for (size_t i = 0; i < 3; i++) {
+        free(kept[i]);
+    }
 }
 
 #if LHAT_WITH_FRONTEND
@@ -664,13 +835,15 @@ static bool bind_host_names(LhatProgram *program)
 static void say_registration_failure(const LhatProgram *program)
 {
     if (program->diagnostic_count == 0) {
-        fprintf(stderr, "lhat: out of memory\n");
+        cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
         return;
     }
     for (size_t i = 0; i < program->diagnostic_count; i++) {
         const LhatProgramDiagnostic *d = &program->diagnostics[i];
-        fprintf(stderr, "%s: error: %s\n", d->path,
-                lhat_program_error_message(d->code));
+        const LhatMessageArg args[] = {
+            CLI_ARG("path", d->path),
+            CLI_ARG("message", lhat_program_error_message(d->code))};
+        cli_say(stderr, CLI_ERROR, args, 2);
     }
 }
 
@@ -701,8 +874,10 @@ static size_t say_unit_diagnostics(const LhatProgram *program)
 {
     for (size_t i = 0; i < program->diagnostic_count; i++) {
         const LhatProgramDiagnostic *d = &program->diagnostics[i];
-        fprintf(stderr, "%s: error: %s\n", d->path,
-                lhat_program_error_message(d->code));
+        const LhatMessageArg args[] = {
+            CLI_ARG("path", d->path),
+            CLI_ARG("message", lhat_program_error_message(d->code))};
+        cli_say(stderr, CLI_ERROR, args, 2);
     }
 
     size_t units = 0;
@@ -748,7 +923,7 @@ static bool write_bytes(const char *out_path, const uint8_t *bytes,
 {
     FILE *file = make_directories(out_path) ? fopen(out_path, "wb") : NULL;
     if (file == NULL) {
-        fprintf(stderr, "lhat: cannot write %s\n", out_path);
+        say_path(stderr, CLI_CANNOT_WRITE, out_path);
         return false;
     }
     fwrite(bytes, 1, length, file);
@@ -771,7 +946,7 @@ static int compile_lton(const char *path, const char *out_dir, bool strict,
     size_t length = 0;
     char *text = lhat_load_file(NULL, path, &length);
     if (text == NULL) {
-        fprintf(stderr, "lhat: cannot read %s\n", path);
+        say_path(stderr, CLI_CANNOT_READ, path);
         return EXIT_FAILURE;
     }
     LhatProgram program;
@@ -796,7 +971,9 @@ static int compile_lton(const char *path, const char *out_dir, bool strict,
         if (out_path != NULL) {
             snprintf(out_path, out_length + 1, "%s/%s", out_dir, base);
             if (write_bytes(out_path, bytes, size)) {
-                printf("%s: written as %s\n", path, out_path);
+                const LhatMessageArg args[] = {CLI_ARG("path", path),
+                                               CLI_ARG("file", out_path)};
+                cli_say(stdout, CLI_WRITTEN_AS, args, 2);
                 code = EXIT_SUCCESS;
             }
         }
@@ -809,8 +986,7 @@ static int compile_lton(const char *path, const char *out_dir, bool strict,
     (void)out_dir;
     (void)strict;
     (void)with_debug;
-    fprintf(stderr, "%s: this driver has no std.lton to compile it with\n",
-            path);
+    say_path(stderr, CLI_NO_LTON, path);
     return EXIT_FAILURE;
 #endif
 }
@@ -861,16 +1037,16 @@ static int compile_program(const char *path, const char *out_dir,
             continue;
         }
         if (strncmp(unit_path, root_path, root_dir) != 0) {
-            fprintf(stderr, "%s: error: outside the root's directory, so it "
-                            "has no place under %s\n", unit_path, out_dir);
+            const LhatMessageArg args[] = {CLI_ARG("path", unit_path),
+                                           CLI_ARG("dir", out_dir)};
+            cli_say(stderr, CLI_OUTSIDE_ROOT, args, 2);
             failed = true;
             break;
         }
         uint8_t *bytes = NULL;
         size_t length = 0;
         if (!lhat_unit_write_binary(u, with_debug, &bytes, &length)) {
-            fprintf(stderr, "%s: error: could not be written out\n",
-                    unit_path);
+            say_path(stderr, CLI_NOT_WRITTEN, unit_path);
             failed = true;
             break;
         }
@@ -892,8 +1068,12 @@ static int compile_program(const char *path, const char *out_dir,
         lhat_free(bytes);
     }
     if (!failed) {
-        printf("%s: %zu unit%s written under %s\n", path, written,
-               written == 1 ? "" : "s", out_dir);
+        char count[24];
+        snprintf(count, sizeof count, "%zu", written);
+        const LhatMessageArg args[] = {CLI_ARG("path", path),
+                                       CLI_ARG("dir", out_dir),
+                                       CLI_ARG("count", count)};
+        cli_say(stdout, CLI_WRITTEN_UNDER, args, 3);
     }
     lhat_program_dispose(&program);
     return failed ? EXIT_FAILURE : EXIT_SUCCESS;
@@ -915,15 +1095,14 @@ static bool read_signatures(LhatProgram *program)
     size_t length = 0;
     char *bytes = lhat_load_file(NULL, signatures_file, &length);
     if (bytes == NULL) {
-        fprintf(stderr, "lhat: cannot read %s\n", signatures_file);
+        say_path(stderr, CLI_CANNOT_READ, signatures_file);
         return false;
     }
     bool ok = lhat_program_read_signatures(program, (const uint8_t *)bytes,
                                            length);
     lhat_free(bytes);
     if (!ok) {
-        fprintf(stderr, "lhat: %s is not a signature table this build "
-                        "reads\n", signatures_file);
+        say_path(stderr, CLI_NOT_A_SIGNATURE_TABLE, signatures_file);
     }
     return ok;
 }
@@ -947,8 +1126,11 @@ static int check_program(const char *path, bool run, bool strict,
 
     bool failed = root == NULL || lhat_program_has_errors(&program);
     if (!failed && !run) {
-        printf("%s: no type errors (%zu unit%s)\n", path, units,
-               units == 1 ? "" : "s");
+        char count[24];
+        snprintf(count, sizeof count, "%zu", units);
+        const LhatMessageArg args[] = {CLI_ARG("path", path),
+                                       CLI_ARG("count", count)};
+        cli_say(stdout, CLI_NO_TYPE_ERRORS, args, 2);
     }
 
     // 05 の 5.3: every unit compiles, each carrying the units its require^s
@@ -968,8 +1150,7 @@ static int check_program(const char *path, bool run, bool strict,
                                       : NULL,
                                   where != NULL ? where : path, &failure);
             } else {
-                fprintf(stderr, "%s: error: the program did not compile\n",
-                        path);
+                say_path(stderr, CLI_DID_NOT_COMPILE, path);
             }
             failed = true;
         } else {
@@ -1058,8 +1239,7 @@ static int dump_tree(const LhatSource *source, bool typed, bool command)
         status = EXIT_FAILURE;
     }
     if (result.incomplete) {
-        fprintf(stderr, "%s: note: the input ended before the construct was "
-                        "complete\n", source->name);
+        say_path(stderr, CLI_INPUT_ENDED, source->name);
     }
 
     lhat_parse_result_dispose(&result);
@@ -1151,7 +1331,7 @@ static int repl(bool strict)
     LhatCheckSession *checks = lhat_check_session_new();
     LhatCompileSession *compiles = lhat_compile_session_new();
     if (machine == NULL || checks == NULL || compiles == NULL) {
-        fprintf(stderr, "lhat: out of memory\n");
+        cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
         return EXIT_FAILURE;
     }
 
@@ -1163,22 +1343,20 @@ static int repl(bool strict)
     LhatProgram program;
     lhat_program_init(&program, strict, NULL, NULL);
     if (!bind_host_names(&program)) {  // 05 の 8.2 and 8.7
-        fprintf(stderr, "lhat: out of memory\n");
+        cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
         lhat_program_dispose(&program);
         return EXIT_FAILURE;
     }
     lhat_program_install_checks(&program, checks);
     lhat_program_install_compiles(&program, compiles);
     if (!lhat_program_install(&program, machine)) {
-        fprintf(stderr, "lhat: out of memory\n");
+        cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
         lhat_program_dispose(&program);
         return EXIT_FAILURE;
     }
 
-    printf("L^ (lhat) %s\n", LHAT_VERSION);
-    printf("an expression on its own is answered; an unfinished construct "
-           "reads on\n");
-    printf("ctrl-d or an empty line ends\n");
+    say_version();
+    cli_say(stdout, CLI_GREETING, NULL, 0);
 
     // Every input's pieces have to outlive the run -- a proto is what the
     // machine runs, and names point into the lexer's source. The session
@@ -1210,7 +1388,7 @@ static int repl(bool strict)
             }
             // A construct being carried has no end in sight, so this is the
             // way out of one the reader will never finish.
-            fprintf(stderr, "note: the unfinished input was dropped\n");
+            cli_say(stderr, CLI_INPUT_DROPPED, NULL, 0);
             free(input);
             input = NULL;
             input_length = 0;
@@ -1224,7 +1402,7 @@ static int repl(bool strict)
         size_t added = strlen(line);
         char *joined = (char *)realloc(input, input_length + added + 1);
         if (joined == NULL) {
-            fprintf(stderr, "lhat: out of memory\n");
+            cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
             break;
         }
         input = joined;
@@ -1235,7 +1413,7 @@ static int repl(bool strict)
             size_t grown = capacity ? capacity * 2 : 16;
             void *bigger = realloc(kept, grown * sizeof *kept);
             if (bigger == NULL) {
-                fprintf(stderr, "lhat: out of memory\n");
+                cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
                 break;
             }
             kept = bigger;
@@ -1344,36 +1522,8 @@ static int repl(bool strict)
 
 static void print_usage(void)
 {
-    printf("L^ (lhat) %s\n", LHAT_VERSION);
-    printf("usage: lhat [option] <file> [argument...]\n");
-    printf("  no file        read from a prompt\n");
-    printf("  --run          check the whole program and run it; "
-                            "what follows the file is its '...'\n");
-    printf("  --check        type check and report, without running\n");
-    printf("  default        print the syntax tree\n");
-    printf("  --tokens       print the token stream instead\n");
-    printf("  --dump-bytecode  print what the unit compiles to\n");
-    printf("  --command      read the input as the command form\n");
-    printf("  --strict       report a type error at compile time"
-                            " (default for a file)\n");
-    printf("  --relaxed      leave an undecided type to a runtime check"
-                            " (default for the prompt)\n");
-    printf("  --dump-host-api [file]  write what this driver registers"
-                            " as JSON, for lhatls\n");
-    printf("  --compile -o DIR  check and compile the whole program and"
-                            " write every unit to DIR as bytes; a .lton"
-                            " compiles on its own\n");
-    printf("  --dump-signatures FILE  write the signature table this"
-                            " driver's registrations make\n");
-    printf("  --signatures FILE  read a signature table before"
-                            " registering (what a build without the front"
-                            " end registers by)\n");
-    printf("  --strip-debug  leave the local and captured names out of"
-                            " what --compile writes\n");
-    printf("  --dap=PORT     run under a debugger over DAP on that"
-                            " loopback port (implies --run)\n");
-    printf("  -h, --help     show this and do nothing else\n");
-    printf("  -v, --version  show the version and do nothing else\n");
+    say_version();
+    cli_say(stdout, CLI_USAGE, NULL, 0);
 }
 
 int main(int argc, char **argv)
@@ -1451,7 +1601,7 @@ int main(int argc, char **argv)
     }
 
     if (show_version) {
-        printf("L^ (lhat) %s\n", LHAT_VERSION);
+        say_version();
         return EXIT_SUCCESS;
     }
     if (show_help) {
@@ -1471,14 +1621,14 @@ int main(int argc, char **argv)
         lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL,
                           NULL);
         if (!bind_host_names(&program)) {
-            fprintf(stderr, "lhat: out of memory\n");
+            cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
             lhat_program_dispose(&program);
             return EXIT_FAILURE;
         }
         size_t needed = lhat_program_dump_host_api(&program, NULL, 0);
         char *text = (char *)malloc(needed + 1);
         if (text == NULL) {
-            fprintf(stderr, "lhat: out of memory\n");
+            cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
             lhat_program_dispose(&program);
             return EXIT_FAILURE;
         }
@@ -1489,7 +1639,7 @@ int main(int argc, char **argv)
         if (path != NULL) {
             FILE *file = fopen(path, "wb");
             if (file == NULL) {
-                fprintf(stderr, "lhat: cannot write %s\n", path);
+                say_path(stderr, CLI_CANNOT_WRITE, path);
                 status = EXIT_FAILURE;
             } else {
                 fwrite(text, 1, needed, file);
@@ -1513,12 +1663,12 @@ int main(int argc, char **argv)
                   lhat_program_write_signatures(&program, &bytes, &length);
         lhat_program_dispose(&program);
         if (!ok) {
-            fprintf(stderr, "lhat: could not write the signature table\n");
+            cli_say(stderr, CLI_SIGNATURES_NOT_WRITTEN, NULL, 0);
             return EXIT_FAILURE;
         }
         FILE *file = fopen(dump_signatures_path, "wb");
         if (file == NULL) {
-            fprintf(stderr, "lhat: cannot write %s\n", dump_signatures_path);
+            say_path(stderr, CLI_CANNOT_WRITE, dump_signatures_path);
             lhat_free(bytes);
             return EXIT_FAILURE;
         }
@@ -1534,8 +1684,7 @@ int main(int argc, char **argv)
 #if LHAT_WITH_FRONTEND
         return repl(strictness == STRICTNESS_STRICT);
 #else
-        fprintf(stderr, "lhat: this build has no front end; --run a binary "
-                        "unit\n");
+        cli_say(stderr, CLI_NO_FRONT_END, NULL, 0);
         return EXIT_FAILURE;
 #endif
     }
@@ -1551,7 +1700,7 @@ int main(int argc, char **argv)
     signatures_file = signatures_path;
     if (compile_out) {
         if (out_dir == NULL) {
-            fprintf(stderr, "lhat: --compile needs -o DIR\n");
+            cli_say(stderr, CLI_COMPILE_NEEDS_OUT, NULL, 0);
             return EXIT_FAILURE;
         }
         return compile_program(path, out_dir,
@@ -1570,7 +1719,12 @@ int main(int argc, char **argv)
     LhatSource source;
     char *error = NULL;
     if (!lhat_source_init_from_file(&source, path, &error)) {
-        fprintf(stderr, "lhat: %s\n", error != NULL ? error : "cannot read input");
+        if (error != NULL) {
+            const LhatMessageArg said = CLI_ARG("message", error);
+            cli_say(stderr, CLI_SAID, &said, 1);
+        } else {
+            cli_say(stderr, CLI_CANNOT_READ_INPUT, NULL, 0);
+        }
         free(error);
         return EXIT_FAILURE;
     }
@@ -1582,8 +1736,7 @@ int main(int argc, char **argv)
 #else
     (void)tokens_only;
     (void)command_form;
-    fprintf(stderr, "lhat: this build has no front end; --run a binary "
-                    "unit\n");
+    cli_say(stderr, CLI_NO_FRONT_END, NULL, 0);
     return EXIT_FAILURE;
 #endif
 }
