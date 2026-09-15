@@ -453,13 +453,8 @@ static void say_check_error(const LhatSource *source, const char *name,
 static void say_compile_error(const LhatSource *source, const char *name,
                               const LhatCompileResult *result)
 {
-    char message[256];
-    const char *text = lhat_compile_status_message(result->status);
-    if (result->name != NULL) {
-        snprintf(message, sizeof message, "%s: %.*s", text,
-                 (int)result->name_length, result->name);
-        text = message;
-    }
+    char text[256];
+    lhat_compile_message_write(result, text, sizeof text);
 
     if (source == NULL || result->line == 0) {
         fprintf(stderr, "%s: error: %s\n", name != NULL ? name : "lhat", text);

@@ -259,6 +259,39 @@ static void test_named(void)
                    named);
         remember(named);
     }
+
+    // The compiler's name has no status that is only ever said with one, so
+    // every status about a name keeps a plain text and has a second.
+    LHAT_TEST("a compile result's name goes into a hole");
+    for (int status = 0; status <= LHAT_COMPILE_NOT_PUBLISHED; status++) {
+        LhatCompileResult r;
+        memset(&r, 0, sizeof r);
+        r.status = (LhatCompileStatus)status;
+        const char *plain = lhat_compile_message_id(&r);
+        r.name = "Zq9";
+        r.name_length = 3;
+        const char *named = lhat_compile_message_id(&r);
+        LHAT_CHECK(plain != NULL && named != NULL &&
+                       strcmp(plain, compile_id(status)) == 0,
+                   "compile status %d: both IDs, the plain one its own",
+                   status);
+        bool none;
+        LHAT_CHECK(holes_in(compile_message(status), NULL, 0, &none) == 0,
+                   "compile status %d: its own text holds no hole", status);
+        if (plain == NULL || named == NULL || strcmp(named, plain) == 0) {
+            continue;
+        }
+        size_t n = strlen(plain);
+        LHAT_CHECK(strncmp(named, plain, n) == 0 &&
+                       strcmp(named + n, ".named") == 0 &&
+                       well_formed(named, "compile"),
+                   "'%s' is the plain ID and .named", named);
+        char message[256];
+        lhat_compile_message_write(&r, message, sizeof message);
+        LHAT_CHECK(strstr(message, "Zq9") != NULL, "'%s' says the name",
+                   named);
+        remember(named);
+    }
 }
 
 static void test_unique(void)

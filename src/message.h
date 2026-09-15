@@ -54,6 +54,8 @@ size_t lhat_message_render(const char *text, const LhatMessageArg *args,
 // not hold.
 const char *lhat_lexer_error_id(LhatErrorCode code);
 const char *lhat_compile_status_id(LhatCompileStatus status);
+// The ID of the text lhat_compile_message_write draws from.
+const char *lhat_compile_message_id(const LhatCompileResult *result);
 const char *lhat_run_status_id(LhatRunStatus status);
 const char *lhat_program_error_id(LhatProgramErrorCode code);
 

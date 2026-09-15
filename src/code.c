@@ -50,6 +50,49 @@ const char *lhat_compile_status_id(LhatCompileStatus status)
     return entry != NULL ? entry->id : NULL;
 }
 
+// 10 §5.1: the statuses a compile reports about a name, which are said
+// without one too -- lhat_compile_status_message has only the status to go
+// on. With a name, the text is this table's: an ID of its own, the name in a
+// hole.
+static const LhatMessageEntry COMPILE_NAMED_MESSAGES[] = {
+    [LHAT_COMPILE_UNDEFINED] =
+        {"compile.undefined.named", "no such name: {name}"},
+    [LHAT_COMPILE_NOT_PUBLISHED] = {"compile.not-published.named",
+        "a definition composed from another unit may only use what "
+        "that unit published: {name}"},
+};
+
+static const LhatMessageEntry *compile_entry(const LhatCompileResult *result)
+{
+    const LhatMessageEntry *named =
+        result->name != NULL
+            ? LHAT_MESSAGE_AT(COMPILE_NAMED_MESSAGES, result->status)
+            : NULL;
+    return named != NULL ? named
+                         : LHAT_MESSAGE_AT(COMPILE_MESSAGES, result->status);
+}
+
+const char *lhat_compile_message_id(const LhatCompileResult *result)
+{
+    const LhatMessageEntry *entry =
+        result != NULL ? compile_entry(result) : NULL;
+    return entry != NULL ? entry->id : NULL;
+}
+
+size_t lhat_compile_message_write(const LhatCompileResult *result, char *out,
+                                  size_t capacity)
+{
+    const LhatMessageEntry *entry =
+        result != NULL ? compile_entry(result) : NULL;
+    LhatMessageArg name = {"name", NULL, 0};
+    if (entry != NULL) {
+        name.value = result->name;
+        name.length = result->name_length;
+    }
+    return lhat_message_render(entry != NULL ? entry->text : "unknown", &name,
+                               name.value != NULL ? 1 : 0, out, capacity);
+}
+
 LhatProto *lhat_proto_new(void)
 {
     LhatProto *proto = (LhatProto *)lhat_calloc(1, sizeof *proto);
