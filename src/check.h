@@ -705,19 +705,24 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
 // with), so it is asked here rather than read off the type a second time.
 const LhatTypeMember *lhat_check_unimplemented_member(const LhatType *type);
 
+// The text of a code, holes unfilled: a code only ever reported with a name
+// has the hole for it here (10 §5.1).
 const char *lhat_check_error_message(LhatCheckErrorCode code);
 // 10 §4: the stable ID of the same message; NULL for a code the table
 // does not hold.
 const char *lhat_check_error_id(LhatCheckErrorCode code);
 
 // The message for one diagnostic, which for the codes that are about a name
-// says which -- "no such name in scope: nowhere". Everything a code knows on
-// its own is what lhat_check_error_message answers, so this only differs
-// where the diagnostic carries something besides its code.
+// says which -- "no such name in scope: nowhere". The name goes into the
+// text's hole; a code reported both with a name and without one has a second
+// text for the first, under an ID of its own.
 //
 // Follows lhat_report_write: answers how many bytes it wants, not counting
 // the terminating NUL, and fills up to `capacity` including it.
 size_t lhat_check_message_write(const LhatCheckDiagnostic *diagnostic,
                                 char *out, size_t capacity);
+// 10 §4: the ID of the text that message is drawn from; NULL for a code no
+// table holds.
+const char *lhat_check_message_id(const LhatCheckDiagnostic *diagnostic);
 
 #endif  // LHAT_CHECK_H

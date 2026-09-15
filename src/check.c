@@ -3935,30 +3935,31 @@ const LhatTypeMember *lhat_check_unimplemented_member(const LhatType *type)
 // (10 §2.2).
 static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_NONE] = {"check.none", "no error"},
-    [LHAT_CHECK_ERR_UNDEFINED] = {"check.undefined", "no such name in scope"},
+    [LHAT_CHECK_ERR_UNDEFINED] =
+        {"check.undefined", "no such name in scope: {name}"},
     [LHAT_CHECK_ERR_USED_BEFORE_DEFINED] = {"check.used-before-defined",
         "this name is read before its let^ has run"},
-    [LHAT_CHECK_ERR_REDEFINED] =
-        {"check.redefined", "this name is already defined in this scope"},
+    [LHAT_CHECK_ERR_REDEFINED] = {"check.redefined",
+        "this name is already defined in this scope: {name}"},
     [LHAT_CHECK_ERR_UNKNOWN_TYPE] = {"check.unknown-type", "no such type"},
     [LHAT_CHECK_ERR_NO_SUCH_ANNOTATION] = {"check.no-such-annotation",
-        "no host registered an annotation of this name"},
+        "no host registered an annotation of this name: {annotation}"},
     [LHAT_CHECK_ERR_ANNOTATION_MISPLACED] = {"check.annotation-misplaced",
         "this annotation was not registered for what it is "
-        "written above"},
+        "written above: {annotation}"},
     [LHAT_CHECK_ERR_ANNOTATION_REPEATED] = {"check.annotation-repeated",
         "this annotation may be written once in a file, and "
-        "already was"},
+        "already was: {annotation}"},
     [LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE] = {"check.annotation-exclusive",
         "this annotation and another written in this file are two "
         "answers to one question: write whichever one applies, "
-        "not both"},
+        "not both: {annotation}"},
     [LHAT_CHECK_ERR_ANNOTATION_REQUISITE] = {"check.annotation-requisite",
         "this annotation means nothing on its own, and the one it "
-        "has to stand beside is missing"},
+        "has to stand beside is missing: {annotation}"},
     [LHAT_CHECK_ERR_ANNOTATION_ARGUMENTS] = {"check.annotation-arguments",
         "these are not the arguments the annotation was "
-        "registered with"},
+        "registered with: {annotation}"},
     [LHAT_CHECK_ERR_BARE_TABLE_TYPE] = {"check.bare-table-type",
         "a t^ is written with the members it asks for, and the top "
         "of tables asks for none: write 't^{}'"},
@@ -3986,7 +3987,7 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "this signature answers no value, so it has no ReturnType"},
     [LHAT_CHECK_ERR_KIND_AS_VALUE] = {"check.kind-as-value",
         "a kind is a type, not a value; error^Kind{ ... } is what "
-        "makes one"},
+        "makes one: {kind}"},
     [LHAT_CHECK_ERR_CANNOT_FAIL] = {"check.cannot-fail",
         "the left of catch^ or try^ cannot return an error"},
     [LHAT_CHECK_ERR_CANNOT_BE_NIL] =
@@ -4091,7 +4092,7 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "value, a table written out as a literal (each instance "
         "is given its own copy), or a definition (shared by "
         "design); what something else made -- a name, a call's "
-        "answer -- is given inside new"},
+        "answer -- is given inside new: {field}"},
     [LHAT_CHECK_ERR_NEW_RETURNS] = {"check.new-returns",
         "construction answers the instance itself, so a new body "
         "has no return^; what it writes through self^ is already "
@@ -4116,20 +4117,20 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_STILL_ABSTRACT] = {"check.still-abstract",
         "this definition is still waiting on a composition -- a "
         "member is declared with nothing providing it, or an "
-        "override^ has met nothing to replace"},
+        "override^ has met nothing to replace: {member}"},
     [LHAT_CHECK_ERR_FIELD_UNPROVIDED] = {"check.field-unprovided",
         "this field is declared with no value, so an instance "
         "would hold nothing under it; a composition has to give it "
-        "one, or an override^ new has to write it"},
+        "one, or an override^ new has to write it: {field}"},
     [LHAT_CHECK_ERR_LENT_DOES_NOT_PROVIDE] = {"check.lent-does-not-provide",
         "this member is declared with abstract^, and what a "
         "delegate^ lends does not provide it -- to use the "
         "delegate's, drop the abstract^; otherwise compose "
-        "something that provides it"},
+        "something that provides it: {member}"},
     [LHAT_CHECK_ERR_LENT_IS_NOT_REPLACED] = {"check.lent-is-not-replaced",
         "this override^ has nothing to replace -- what a delegate^ "
         "lends is not a member to replace, so super^ would reach "
-        "nothing; compose what it replaces, or drop the override^"},
+        "nothing; compose what it replaces, or drop the override^: {member}"},
     [LHAT_CHECK_ERR_AMBIGUOUS_MEMBER] = {"check.ambiguous-member",
         "both sides of the composition carry this name, so it "
         "reaches no one answer; name the side you mean"},
@@ -4138,7 +4139,7 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "no one value for it"},
     [LHAT_CHECK_ERR_COMPOSE_COLLIDES] = {"check.compose-collides",
         "both definitions carry a member of this name, and a "
-        "marker can only be written inside a def^"},
+        "marker can only be written inside a def^: {member}"},
     [LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE] = {"check.nothing-to-override",
         "there is no member of this name to override^ or overload^"},
     [LHAT_CHECK_ERR_NOT_SUBSTITUTABLE] = {"check.not-substitutable",
@@ -4217,11 +4218,11 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "written by the host, not from here"},
     [LHAT_CHECK_ERR_ASSIGN_TO_LET] = {"check.assign-to-let",
         "this name was bound by a let^ and is not reassigned; "
-        "write var^ where the name has to change"},
+        "write var^ where the name has to change: {name}"},
     [LHAT_CHECK_ERR_ASSIGN_TO_FORM] = {"check.assign-to-form",
         "the construct that introduces this name is what gives it a "
         "value -- a with^ holds it for the block, a for^ advances "
-        "or rebinds its focus -- so nothing else writes it"},
+        "or rebinds its focus -- so nothing else writes it: {name}"},
     [LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE] = {"check.public-is-immutable",
         "a public^ declaration binds with let^; another unit would "
         "otherwise see a name change under it"},
@@ -4236,7 +4237,7 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "a closed^ body names nothing standing outside it: pass "
         "this as an argument instead. An import^ed module, a name "
         "the host bound, and L^ are reached without capturing and "
-        "may be written here"},
+        "may be written here: {name}"},
     [LHAT_CHECK_ERR_HOSTVALUE_ESCAPES] = {"check.hostvalue-escapes",
         "a host value lives on the stack and nowhere else; box it "
         "into the container type its library provides to keep it"},
@@ -4260,6 +4261,22 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "(A, B)|SomeError rather than (A, SomeError)"},
 };
 
+// 10 §5.1: the codes reported both with a name and without one. Without, the
+// text is CHECK_MESSAGES'; with, it is this table's -- an ID of its own, the
+// name in a hole. A code only ever reported with a name holds the hole in its
+// one text instead, so it has no row here.
+static const LhatMessageEntry CHECK_NAMED_MESSAGES[] = {
+    [LHAT_CHECK_ERR_MISMATCH] = {"check.mismatch.named",
+        "this value does not fit where it is written: {member}"},
+    [LHAT_CHECK_ERR_NO_MEMBER] =
+        {"check.no-member.named", "this value has no such member: {member}"},
+    [LHAT_CHECK_ERR_AMBIGUOUS_MEMBER] = {"check.ambiguous-member.named",
+        "both sides of the composition carry this name, so it reaches no one "
+        "answer; name the side you mean: {member}"},
+    [LHAT_CHECK_ERR_NOT_SUBSTITUTABLE] = {"check.not-substitutable.named",
+        "override^ has to be usable where the original was: {member}"},
+};
+
 const char *lhat_check_error_message(LhatCheckErrorCode code)
 {
     const LhatMessageEntry *entry = LHAT_MESSAGE_AT(CHECK_MESSAGES, code);
@@ -4272,27 +4289,45 @@ const char *lhat_check_error_id(LhatCheckErrorCode code)
     return entry != NULL ? entry->id : NULL;
 }
 
+static const LhatMessageEntry *check_entry(
+    const LhatCheckDiagnostic *diagnostic)
+{
+    const LhatMessageEntry *named =
+        diagnostic->name != NULL
+            ? LHAT_MESSAGE_AT(CHECK_NAMED_MESSAGES, diagnostic->code)
+            : NULL;
+    return named != NULL ? named
+                         : LHAT_MESSAGE_AT(CHECK_MESSAGES, diagnostic->code);
+}
+
+const char *lhat_check_message_id(const LhatCheckDiagnostic *diagnostic)
+{
+    const LhatMessageEntry *entry =
+        diagnostic != NULL ? check_entry(diagnostic) : NULL;
+    return entry != NULL ? entry->id : NULL;
+}
+
+// What a diagnostic knows besides its code is one name, and the hole it goes
+// into is named for what the name is -- a member, a field. The text says
+// which, so the name is offered under each of them.
+static const char *const NAME_HOLES[] = {"name", "member", "field",
+                                         "annotation", "kind"};
+#define NAME_HOLE_COUNT (sizeof NAME_HOLES / sizeof NAME_HOLES[0])
+
 size_t lhat_check_message_write(const LhatCheckDiagnostic *diagnostic,
                                 char *out, size_t capacity)
 {
-    const char *plain = diagnostic != NULL
-                            ? lhat_check_error_message(diagnostic->code)
-                            : "unknown error";
-
-    // Only where the diagnostic knows something its code does not.
-    int written;
-    if (diagnostic != NULL && diagnostic->name != NULL) {
-        written = snprintf(out, out != NULL ? capacity : 0, "%s: %.*s", plain,
-                           (int)diagnostic->name_length, diagnostic->name);
-    } else {
-        written = snprintf(out, out != NULL ? capacity : 0, "%s", plain);
-    }
-
-    if (written < 0) {
-        if (out != NULL && capacity > 0) {
-            out[0] = '\0';
+    const LhatMessageEntry *entry =
+        diagnostic != NULL ? check_entry(diagnostic) : NULL;
+    LhatMessageArg args[NAME_HOLE_COUNT];
+    size_t count = 0;
+    if (entry != NULL && diagnostic->name != NULL) {
+        for (; count < NAME_HOLE_COUNT; count++) {
+            args[count].name = NAME_HOLES[count];
+            args[count].value = diagnostic->name;
+            args[count].length = diagnostic->name_length;
         }
-        return 0;
     }
-    return (size_t)written;
+    return lhat_message_render(entry != NULL ? entry->text : "unknown error",
+                               args, count, out, capacity);
 }

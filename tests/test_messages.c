@@ -160,6 +160,88 @@ static void test_ids(void)
     }
 }
 
+// The holes a checker diagnostic's name is offered under.
+static const char *const NAME_HOLES[] = {"{name}", "{member}", "{field}",
+                                         "{annotation}", "{kind}"};
+
+// How many holes `text` holds, and whether every one is a NAME_HOLES.
+static size_t holes_in(const char *text, bool *all_named)
+{
+    size_t count = 0;
+    *all_named = true;
+    for (const char *p = strchr(text, '{'); p != NULL; p = strchr(p + 1, '{')) {
+        const char *end = p + 1;
+        if (*end < 'a' || *end > 'z') {
+            continue;
+        }
+        while ((*end >= 'a' && *end <= 'z') || (*end >= '0' && *end <= '9') ||
+               *end == '-') {
+            end++;
+        }
+        if (*end != '}') {
+            continue;
+        }
+        count++;
+        bool named = false;
+        for (size_t i = 0; i < sizeof NAME_HOLES / sizeof NAME_HOLES[0]; i++) {
+            size_t n = strlen(NAME_HOLES[i]);
+            named = named || ((size_t)(end + 1 - p) == n &&
+                              memcmp(p, NAME_HOLES[i], n) == 0);
+        }
+        *all_named = *all_named && named;
+    }
+    return count;
+}
+
+// 10 §5.1 over the checker: a diagnostic's name goes into its text's one
+// hole. A code with a second text for being reported with a name keeps its
+// own free of a hole, and the second text's ID is its own and `.named`.
+static void test_named(void)
+{
+    LHAT_TEST("a checker diagnostic's name goes into one hole");
+    int count = LHAT_CHECK_ERR_BARE_TABLE_TYPE + 1;
+    for (int code = 0; code <= count; code++) {
+        LhatCheckDiagnostic d;
+        memset(&d, 0, sizeof d);
+        d.code = (LhatCheckErrorCode)code;
+        const char *plain = lhat_check_message_id(&d);
+        d.name = "Zq9";
+        d.name_length = 3;
+        const char *named = lhat_check_message_id(&d);
+        if (code == count) {
+            LHAT_CHECK(plain == NULL && named == NULL,
+                       "no ID past the last code");
+            continue;
+        }
+        LHAT_CHECK(plain != NULL && named != NULL &&
+                       strcmp(plain, check_id(code)) == 0,
+                   "check code %d: both IDs, the plain one its own", code);
+        if (plain == NULL || named == NULL) {
+            continue;
+        }
+
+        bool all_named;
+        size_t own = holes_in(check_message(code), &all_named);
+        LHAT_CHECK(own <= 1 && all_named,
+                   "'%s' holds at most one hole, and one for a name", plain);
+        char message[512];
+        lhat_check_message_write(&d, message, sizeof message);
+        if (strcmp(named, plain) == 0) {
+            LHAT_CHECK((own == 1) == (strstr(message, "Zq9") != NULL),
+                       "'%s' says the name exactly when it has a hole", plain);
+            continue;
+        }
+        size_t n = strlen(plain);
+        LHAT_CHECK(strncmp(named, plain, n) == 0 &&
+                       strcmp(named + n, ".named") == 0 &&
+                       well_formed(named, "check"),
+                   "'%s' is the plain ID and .named", named);
+        LHAT_CHECK(own == 0, "'%s' has a second text, so no hole", plain);
+        LHAT_CHECK(strstr(message, "Zq9") != NULL, "'%s' says the name",
+                   named);
+    }
+}
+
 // The sentence lhat_message_render makes, into a buffer wide enough for every
 // case here.
 static const char *rendered(const char *text, const LhatMessageArg *args,
@@ -230,6 +312,7 @@ static void test_render(void)
 int main(void)
 {
     test_ids();
+    test_named();
     test_render();
     return lhat_test_report("test_messages");
 }
