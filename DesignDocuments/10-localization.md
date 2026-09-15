@@ -71,19 +71,19 @@ L^ の処理系と道具が人に見せる文を、読み手の言語で出す�
 
 ### 3.1 処理系が人に見せる文
 
-現状はすべて英語の直書きである。
-
-| 出どころ | 件数 | 入口 |
-| --- | --- | --- |
-| 検査器 | 108 | `lhat_check_error_message` |
-| 構文解析 | 66 | `lhat_parse_error_message` |
-| 字句解析 | 18 | `lhat_lexer_error_message` |
-| 実行時の状態 | 20 | `lhat_run_status_message` |
-| program | 7 | `lhat_program_error_message` |
-| コンパイルの状態 | 7 | `lhat_compile_status_message` |
-| トレースバックの定型 | 4 | `lhat_machine_traceback`（`traceback:`・`in`・`at the top level`・`(coroutine)`。`in f^` と `(finally^)` の語は訳さない） |
-| CLI | 約 120 | `cli/main.c` |
-| デバッガ（DAP） | 約 70 | `dap/adapter.c` |
+| 対象 | 出どころ | 件数 | 入口 |
+| --- | --- | --- | --- |
+| 検査器 | `check` | 112（名前を伴う別の文 4 を含む） | `lhat_check_message_write` |
+| 構文解析 | `parse` | 67（トークンの種類の句 8 と、期待したトークンを言う文 1 を含む） | `lhat_parse_message_write` |
+| 字句解析 | `lex` | 18 | `lhat_lexer_error_message` |
+| コンパイルの状態 | `compile` | 9（名前を伴う別の文 2 を含む） | `lhat_compile_message_write` |
+| 実行時の状態 | `run` | 20 | `lhat_run_status_message` |
+| program | `program` | 8（読み込みの失敗を言う文 1 を含む） | `lhat_program_error_message`・`lhat_program_load_failure` |
+| ソースの読み込み | `source` | 3 | `lhat_source_init_from_file` |
+| 報告の見出し | `report` | 2 | `lhat_report_write`（`error:`・`note:`） |
+| トレースバックの定型 | `trace` | 4 | `lhat_machine_traceback`（`traceback:`・`in`・`at the top level`・`(coroutine)`。`f^` と `(finally^)` は訳さない） |
+| CLI | `cli` | 25 | `cli/main.c` |
+| デバッガ（DAP） | `dap` | 13 | `dap/adapter.c` |
 
 言語サーバが自分で書く文は診断の文面だけである。ホバーが出す定義の行は
 コードであり、説明文は作者が書いたものなので、どちらも訳の対象ではない（3.2）。
@@ -124,7 +124,11 @@ run.not-a-subroutine
 cli.no-type-errors
 ```
 
-出どころは `check` `parse` `lex` `run` `program` `trace` `cli` `dap`。
+出どころは 3.1 の表のとおり、`check` `parse` `lex` `compile` `run` `program` `source` `report` `trace` `cli` `dap` である。
+
+名前を伴っても伴わなくても報告されるコードは、名前を伴うときの文に別の ID を持つ。
+元の ID に `.named` を足す（`check.no-member.named`）。名前を伴ってしか報告されないコードは、
+その1つの文に穴を持ち、別の ID を持たない。
 
 一度出した ID の意味は変えない。使わなくなった ID は再利用しない。
 
@@ -143,20 +147,15 @@ cli.no-type-errors
 > **文は連結で作らない。引数は名前付きの穴に入れる。**
 
 ```text
-check.no-such-member = this value has no such member: {member}
+check.no-member.named = this value has no such member: {member}
 ```
 
 ```text
-check.no-such-member = この値にメンバ {member} は無い
+check.no-member.named = この値にメンバ {member} は無い
 ```
 
-現状には、英語の語順でしか成り立たない組み立てが3か所ある。
-
-- `lhat_check_message_write` は `"%s: %.*s"` で主題を **末尾に足す**。
-  日本語では主題が文の中ほどに来る
-- 構文解析は `"a '%s' was expected here, and this is %s"` に、
-  トークンの種類の句（`found_spelling` の `"a word of the language"` など）を差し込む
-- CLI は `"no type errors (%zu unit%s)"` で英語の複数形を作る。これは 5.3 のとおり文言を変える
+英語で主題を末尾に置く文も、主題を足して作らず、末尾に穴を置く。
+訳は穴を文の中ほどへ動かせる。
 
 ### 5.2 穴の種類
 
@@ -188,7 +187,8 @@ parse.token.word = 言語の語
 - **書けば食い違える。** 訳す人が種類を書き違えれば、句が引かれずに ID のまま出る
 - **検査が単純なまま保てる。** 読み込み時に比べるのは穴の名前の集合だけで済む（6.4）
 
-［補足］句の項目は引数を受け取らないので、それ自身は穴を持てない。
+［補足］句の項目も verbatim の穴を持てるが、phrase の穴は持たない。句の中に句は入れない。
+演算子の句 `parse.token.operator = '{operator}'` は、演算子を囲む引用符を訳に委ねるためにこの形をとる。
 
 **句はその言語で1つの形だけを持つ。** 格で語形が変わる言語では、同じ句が
 差し込む文によって別の形を要ることがある。これは 5.3 の複数形と同じ種類の問題なので、
@@ -225,7 +225,7 @@ cli.no-type-errors = {path}: 型の誤りなし（検査した単位: {count}）
 
 ```text
 # 検査器
-check.no-such-member = this value has no such member: {member}
+check.no-member.named = this value has no such member: {member}
 
 cli.usage = usage: lhat [option] <file> [argument...]
     --run     check the whole program and run it
@@ -261,7 +261,8 @@ cli.usage = usage: lhat [option] <file> [argument...]
 英語の原本を別ファイルに置いてビルド時に変換することはしない。
 焼き込むのは英語だけなので変換器が要らず、書き出し（6.3）が原本の役を果たす。
 
-［補足］前段を持たない実行時専用のビルド（05 §10.7）には、`run` と `trace` の英語だけが入る。
+［補足］前段を持たない実行時専用のビルド（05 §10.7）には、`compile` `run` `program` `source` `report` `trace` の英語が入り、
+`check` `parse` `lex` は入らない。
 カタログの読み手は前段に属さないので、そこでもほかの言語を読める。
 
 ### 6.3 英語を書き出す
@@ -275,7 +276,7 @@ cli.usage = usage: lhat [option] <file> [argument...]
 # To translate an entry, write it again below with the same ID and the new text.
 
 # check
-# check.no-such-member = this value has no such member: {member}
+# check.no-member.named = this value has no such member: {member}
 
 # cli
 # cli.usage = usage: lhat [option] <file> [argument...]
@@ -288,8 +289,8 @@ cli.usage = usage: lhat [option] <file> [argument...]
 訳す人は、訳した項目にだけ有効な項目を足す。英語の行は参考として注釈のまま残す。
 
 ```text
-# check.no-such-member = this value has no such member: {member}
-check.no-such-member = この値にメンバ {member} は無い
+# check.no-member.named = this value has no such member: {member}
+check.no-member.named = この値にメンバ {member} は無い
 
 # cli.usage = usage: lhat [option] <file> [argument...]
 #     --run     check the whole program and run it
@@ -312,7 +313,7 @@ cli.usage = 使い方: lhat [オプション] <ファイル> [引数...]
 - CLI — `lhat --dump-messages FILE`（`--dump-host-api` と同じ形）
 - C API — `size_t lhat_messages_write_english(char *out, size_t capacity);`。
   `lhat_report_write` の約束に従い、`(NULL, 0)` で必要な長さを答える
-- C API が書くのは処理系の本体が持つ項目（`check` `parse` `lex` `program` `run` `trace`）である。
+- C API が書くのは処理系の本体が持つ項目（`check` `parse` `lex` `compile` `run` `program` `source` `report` `trace`）である。
   CLI は自分の `cli` と `dap` を足して書く
 
 ### 6.4 読み込み時の扱い［提案］
@@ -428,7 +429,8 @@ LTON（08）のカタログを読む標準ライブラリにするか、Godot �
    英語の出力は今と一字一句同じにする。変更の前後で全文を書き出して突き合わせ、
    退行が無いことを確かめる
 2. **英語をテンプレートにする** — 引数を名前付きの穴にし（5.1、5.2）、穴の名前は文ごとに決める。
-   5.1 の3か所の組み立て、構文解析の句、トレースバックの行もここで穴を持つ文にして ID を付ける。
+   名前を末尾に足す組み立て、構文解析の句、トレースバックの行、報告の見出し、
+   読み込みの失敗を言う文もここで穴を持つ文にして ID を付ける。
    CLI とデバッガの人向けの文も洗い出し、同じくテンプレートにする。
    英語の文面が変わるのは、複数形を作っていた文を 5.3 のとおり直す所だけである
 3. **英語の書き出し**（6.3）
