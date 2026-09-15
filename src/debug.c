@@ -15,6 +15,7 @@
 #include "compile.h"
 #include "lhat/source.h"
 #include "machine.h"
+#include "message.h"
 #include "parser.h"
 
 // 04 の 11.6改: which span of frames the walkers read -- the recorded
@@ -113,6 +114,35 @@ static void trace_put(TraceText *w, const char *text)
     w->used += length;
 }
 
+// 10 §5.1: a traceback's fixed words. Where a frame stopped is written the
+// way a diagnostic's place is, and what it was in follows it. `f^` and
+// `finally^` are the language's own words and are not translated, so a
+// function with no name is `in {function}` like any other, and `(finally^)`
+// is not text at all.
+enum { TRACE_HEADER, TRACE_IN, TRACE_TOP_LEVEL, TRACE_COROUTINE };
+
+static const LhatMessageEntry TRACE_PARTS[] = {
+    [TRACE_HEADER] = {"trace.header", "traceback:"},
+    [TRACE_IN] = {"trace.in", "in {function}"},
+    [TRACE_TOP_LEVEL] = {"trace.top-level", "at the top level"},
+    [TRACE_COROUTINE] = {"trace.coroutine", "(coroutine)"},
+};
+
+const char *lhat_trace_part_id(size_t index)
+{
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(TRACE_PARTS, index);
+    return entry != NULL ? entry->id : NULL;
+}
+
+static void trace_say(TraceText *w, size_t part, const LhatMessageArg *args,
+                      size_t count)
+{
+    bool room = w->out != NULL && w->used < w->capacity;
+    w->used += lhat_message_render(TRACE_PARTS[part].text, args, count,
+                                   room ? w->out + w->used : NULL,
+                                   room ? w->capacity - w->used : 0);
+}
+
 size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
                               size_t capacity)
 {
@@ -122,7 +152,7 @@ size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
     w.used = 0;
     size_t count = lhat_machine_fault_depth(machine);
     if (count > 0) {
-        trace_put(&w, "traceback:");
+        trace_say(&w, TRACE_HEADER, NULL, 0);
         for (size_t level = 0; level < count; level++) {
             LhatFrameInfo info;
             if (!lhat_machine_fault_frame(machine, level, &info)) {
@@ -135,15 +165,18 @@ size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
                 snprintf(spelt, sizeof spelt, ":%u", info.line);
                 trace_put(&w, spelt);
             }
-            trace_put(&w, info.name != NULL
-                              ? ": in "
-                              : (info.top_level ? ": at the top level"
-                                                : ": in f^"));
-            if (info.name != NULL) {
-                trace_put(&w, info.name);
+            trace_put(&w, ": ");
+            if (info.name == NULL && info.top_level) {
+                trace_say(&w, TRACE_TOP_LEVEL, NULL, 0);
+            } else {
+                const char *function = info.name != NULL ? info.name : "f^";
+                const LhatMessageArg name = {"function", function,
+                                             strlen(function)};
+                trace_say(&w, TRACE_IN, &name, 1);
             }
             if (info.coroutine) {
-                trace_put(&w, " (coroutine)");
+                trace_put(&w, " ");
+                trace_say(&w, TRACE_COROUTINE, NULL, 0);
             }
             if (info.disposing) {
                 trace_put(&w, " (finally^)");

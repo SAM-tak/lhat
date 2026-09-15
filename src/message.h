@@ -56,6 +56,8 @@ const char *lhat_lexer_error_id(LhatErrorCode code);
 const char *lhat_compile_status_id(LhatCompileStatus status);
 // The ID of the text lhat_compile_message_write draws from.
 const char *lhat_compile_message_id(const LhatCompileResult *result);
+// The IDs of a traceback's fixed words, by index from 0; NULL past the last.
+const char *lhat_trace_part_id(size_t index);
 const char *lhat_run_status_id(LhatRunStatus status);
 const char *lhat_program_error_id(LhatProgramErrorCode code);
 

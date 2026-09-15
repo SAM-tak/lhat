@@ -196,6 +196,14 @@ static void test_ids(void)
     }
     LHAT_CHECK(parts > 0, "there are some");
 
+    LHAT_TEST("trace: a traceback's fixed words");
+    parts = 0;
+    for (const char *id; (id = lhat_trace_part_id(parts)) != NULL; parts++) {
+        LHAT_CHECK(well_formed(id, "trace"), "'%s' is well formed", id);
+        remember(id);
+    }
+    LHAT_CHECK(parts > 0, "there are some");
+
     LHAT_TEST("parse: a code's text holds no hole but {found}");
     static const char *const FOUND_HOLE[] = {"{found}"};
     for (int code = 0; code <= LHAT_PARSE_ERR_DUPLICATE_INDEXER; code++) {
