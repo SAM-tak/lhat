@@ -254,6 +254,12 @@ VSCode 上で動作する React Flow ベースのものを。
 | *.lho | コンパイル済みバイトコード | - |
 | *.lhl | ビジュアルエディタのレイアウト情報 | - |
 
+### 大人向けScratch
+
+[Scratch Has a Marketing Problem](https://medium.com/free-code-camp/scratch-has-a-marketing-problem-f84626bd18ef)
+
+↑ここで書かれていることが、まさしく L^ Visual Editor が目指していること。
+
 ### 文は縦に伸びる
 
 if文 や パターンマッチ文に よる分岐は、分割されて横に並ぶ。
