@@ -12,26 +12,42 @@
 #include "lhat/module.h"
 #include "grow.h"
 #include "lhat/port.h"
+#include "message.h"
 
 // The one thing of the compiler's a build without it still has to say
 // (05 の 10.8): what a status means, which program.c and the cli print.
+//
+// 10 §4: the ID and the English text of every LhatCompileStatus, indexed by
+// the code. The ID is the one a translation is written against and never
+// changes meaning; the English is the reference every other language
+// translates (10 §2.2).
+static const LhatMessageEntry COMPILE_MESSAGES[] = {
+    [LHAT_COMPILE_OK] = {"compile.ok", "compiled"},
+    [LHAT_COMPILE_UNSUPPORTED] = {"compile.unsupported",
+        "this form does not compile yet"},
+    [LHAT_COMPILE_TOO_COMPLEX] = {"compile.too-complex",
+        "too many registers or constants"},
+    [LHAT_COMPILE_UNDEFINED] = {"compile.undefined", "no such name"},
+    [LHAT_COMPILE_BREAK_TOO_FAR] = {"compile.break-too-far",
+        "this break^ or next^ names more loops than there are "
+        "around it"},
+    [LHAT_COMPILE_NOT_PUBLISHED] = {"compile.not-published",
+        "a definition composed from another unit may only use what "
+        "that unit published"},
+    [LHAT_COMPILE_SCOPE_TOO_FAR] = {"compile.scope-too-far",
+        "this reaches out past more scopes than are open here"},
+};
+
 const char *lhat_compile_status_message(LhatCompileStatus status)
 {
-    switch (status) {
-        case LHAT_COMPILE_OK:          return "compiled";
-        case LHAT_COMPILE_UNSUPPORTED: return "this form does not compile yet";
-        case LHAT_COMPILE_TOO_COMPLEX: return "too many registers or constants";
-        case LHAT_COMPILE_UNDEFINED:   return "no such name";
-        case LHAT_COMPILE_BREAK_TOO_FAR:
-            return "this break^ or next^ names more loops than there are "
-                   "around it";
-        case LHAT_COMPILE_NOT_PUBLISHED:
-            return "a definition composed from another unit may only use what "
-                   "that unit published";
-        case LHAT_COMPILE_SCOPE_TOO_FAR:
-            return "this reaches out past more scopes than are open here";
-    }
-    return "unknown";
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(COMPILE_MESSAGES, status);
+    return entry != NULL ? entry->text : "unknown";
+}
+
+const char *lhat_compile_status_id(LhatCompileStatus status)
+{
+    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(COMPILE_MESSAGES, status);
+    return entry != NULL ? entry->id : NULL;
 }
 
 LhatProto *lhat_proto_new(void)

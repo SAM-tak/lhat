@@ -61,6 +61,16 @@ static const char *program_message(int c)
     return lhat_program_error_message((LhatProgramErrorCode)c);
 }
 
+static const char *compile_id(int c)
+{
+    return lhat_compile_status_id((LhatCompileStatus)c);
+}
+
+static const char *compile_message(int c)
+{
+    return lhat_compile_status_message((LhatCompileStatus)c);
+}
+
 // Each table, counted by the last code its enum declares. A code appended to
 // an enum has to be counted here too -- the check one past the end is what
 // notices when it was given a row and this was not moved.
@@ -82,6 +92,8 @@ static const Table TABLES[] = {
     {"run", LHAT_RUN_SUSPENDED + 1, run_id, run_message, "unknown"},
     {"program", LHAT_PROGRAM_ERR_NO_FRONTEND + 1, program_id, program_message,
      "unknown error"},
+    {"compile", LHAT_COMPILE_NOT_PUBLISHED + 1, compile_id, compile_message,
+     "unknown"},
 };
 
 // 10 §4.2: `source.name`, lower-case ASCII letters and digits, words joined by

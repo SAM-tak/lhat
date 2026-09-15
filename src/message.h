@@ -14,6 +14,7 @@
 #include <stddef.h>
 
 #include "lhat/lexer.h"
+#include "lhat/module.h"
 #include "lhat/program.h"
 #include "lhat/vm.h"
 
@@ -31,10 +32,12 @@ typedef struct {
          ? &(table)[(size_t)(code)]                                           \
          : NULL)
 
-// The IDs for the three tables whose message functions are public (lexer.h,
-// vm.h, program.h) -- declared here rather than beside them, since what an ID
-// is to a host is still 10 §7.3's. NULL for a code the table does not hold.
+// The IDs for the four tables whose message functions are public (lexer.h,
+// module.h, vm.h, program.h) -- declared here rather than beside them, since
+// what an ID is to a host is still 10 §7.3's. NULL for a code the table does
+// not hold.
 const char *lhat_lexer_error_id(LhatErrorCode code);
+const char *lhat_compile_status_id(LhatCompileStatus status);
 const char *lhat_run_status_id(LhatRunStatus status);
 const char *lhat_program_error_id(LhatProgramErrorCode code);
 

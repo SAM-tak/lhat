@@ -73,6 +73,7 @@ L^ の処理系と道具が人に見せる文を、読み手の言語で出す�
 | 字句解析 | 18 | `lhat_lexer_error_message` |
 | 実行時の状態 | 20 | `lhat_run_status_message` |
 | program | 7 | `lhat_program_error_message` |
+| コンパイルの状態 | 7 | `lhat_compile_status_message` |
 | トレースバックの定型 | 4 | `lhat_machine_traceback`（`traceback:`・`in`・`at the top level`・`(coroutine)`。`in f^` と `(finally^)` の語は訳さない） |
 | CLI | 約 120 | `cli/main.c` |
 | デバッガ（DAP） | 約 70 | `dap/adapter.c` |
@@ -416,7 +417,7 @@ LTON（08）のカタログを読む標準ライブラリにするか、Godot �
 
 ## 9. 導入の段階
 
-1. **番号の付いた表に ID を付ける** — 検査器・構文解析・字句解析・実行時の状態・program の表。
+1. **番号の付いた表に ID を付ける** — 検査器・構文解析・字句解析・実行時の状態・program・コンパイルの状態の表。
    英語の出力は今と一字一句同じにする。変更の前後で全文を書き出して突き合わせ、
    退行が無いことを確かめる
 2. **英語をテンプレートにする** — 引数を名前付きの穴にし（5.1、5.2）、穴の名前は文ごとに決める。
