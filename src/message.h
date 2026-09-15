@@ -32,6 +32,22 @@ typedef struct {
          ? &(table)[(size_t)(code)]                                           \
          : NULL)
 
+// 10 §5.1: one argument of a message -- the hole it fills, by name, and the
+// text that fills it, exactly as it is to be written. A phrase (10 §5.2) has
+// already been looked up by whoever hands it over.
+typedef struct {
+    const char *name;
+    const char *value;
+    size_t length;
+} LhatMessageArg;
+
+// The sentence `text` makes with `args` in its holes (src/message.c says what
+// a hole is). lhat_report_write's convention: answers the bytes the whole
+// sentence needs, not counting the terminating NUL, and fills up to
+// `capacity` including it -- so (NULL, 0) measures.
+size_t lhat_message_render(const char *text, const LhatMessageArg *args,
+                           size_t count, char *out, size_t capacity);
+
 // The IDs for the four tables whose message functions are public (lexer.h,
 // module.h, vm.h, program.h) -- declared here rather than beside them, since
 // what an ID is to a host is still 10 §7.3's. NULL for a code the table does

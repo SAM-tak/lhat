@@ -160,8 +160,76 @@ static void test_ids(void)
     }
 }
 
+// The sentence lhat_message_render makes, into a buffer wide enough for every
+// case here.
+static const char *rendered(const char *text, const LhatMessageArg *args,
+                            size_t count)
+{
+    static char room[256];
+    lhat_message_render(text, args, count, room, sizeof room);
+    return room;
+}
+
+#define SAME(actual, expected)                                               \
+    LHAT_CHECK(strcmp((actual), (expected)) == 0, "got '%s', want '%s'",     \
+               (actual), (expected))
+
+// 10 §5.1 and §6.1: what a hole is, and what is not one.
+static void test_render(void)
+{
+    const LhatMessageArg member[] = {{"member", "ping", 4}};
+
+    LHAT_TEST("a text with no hole comes back as it is");
+    SAME(rendered("no such name in scope", NULL, 0), "no such name in scope");
+
+    LHAT_TEST("a hole takes its argument, wherever it stands");
+    SAME(rendered("this value has no such member: {member}", member, 1),
+         "this value has no such member: ping");
+    SAME(rendered("\xE3\x81\x93\xE3\x81\xAE\xE5\x80\xA4\xE3\x81\xAB {member} "
+                  "\xE3\x81\xAF\xE7\x84\xA1\xE3\x81\x84",
+                  member, 1),
+         "\xE3\x81\x93\xE3\x81\xAE\xE5\x80\xA4\xE3\x81\xAB ping "
+         "\xE3\x81\xAF\xE7\x84\xA1\xE3\x81\x84");
+
+    LHAT_TEST("the same hole twice takes the argument twice");
+    SAME(rendered("{member} and {member}", member, 1), "ping and ping");
+
+    // What the English already holds, which has to stand unchanged.
+    LHAT_TEST("braces that are not a hole are braces");
+    SAME(rendered("write 't^{}'", member, 1), "write 't^{}'");
+    SAME(rendered("self^{ ... } is the notation", member, 1),
+         "self^{ ... } is the notation");
+    SAME(rendered("a '{' opens it", member, 1), "a '{' opens it");
+    SAME(rendered("{Member} {1st} {member", member, 1),
+         "{Member} {1st} {member");
+
+    LHAT_TEST("a hole with no argument of its name is written as it stands");
+    SAME(rendered("has no {field}", member, 1), "has no {field}");
+
+    LHAT_TEST("escapes write a brace or a backslash");
+    SAME(rendered("\\{member\\}", member, 1), "{member}");
+    SAME(rendered("a \\\\ b", NULL, 0), "a \\ b");
+    SAME(rendered("C:\\path", NULL, 0), "C:\\path");
+
+    LHAT_TEST("what fills a hole is not read for holes again");
+    const LhatMessageArg nested[] = {{"a", "{b}", 3}, {"b", "no", 2}};
+    SAME(rendered("{a}", nested, 2), "{b}");
+
+    LHAT_TEST("measuring and cutting follow lhat_report_write");
+    LHAT_CHECK_EQ_INT(
+        lhat_message_render("no such member: {member}", member, 1, NULL, 0),
+        strlen("no such member: ping"));
+    char small[5];
+    size_t wanted =
+        lhat_message_render("no such member: {member}", member, 1, small,
+                            sizeof small);
+    LHAT_CHECK_EQ_INT(wanted, strlen("no such member: ping"));
+    SAME(small, "no s");
+}
+
 int main(void)
 {
     test_ids();
+    test_render();
     return lhat_test_report("test_messages");
 }

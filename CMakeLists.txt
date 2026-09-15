@@ -163,6 +163,7 @@ endif()
 set(LHAT_CORE_SOURCES
     src/source.c
     src/error.c
+    src/message.c
     src/number.c
     src/type.c
     src/program.c
