@@ -285,7 +285,7 @@ usage = 使い方: lhat [オプション] <ファイル> [引数...]
 - 処理系はファイルの場所を決めない。ホストがバイト列を渡す（7.1）。
   ファイルシステムの無いホストや、Godot の `res://`、lhatove の仮想ファイルシステムからでも同じに渡せる
 
-［提案］英語は C の表として持ち、ID の順に並べて二分探索で引く。
+英語は C の表として持ち、ID の順に並べて二分探索で引く。
 英語の原本を別ファイルに置いてビルド時に変換することはしない。
 焼き込むのは英語だけなので変換器が要らず、書き出し（6.3）が原本の役を果たす。
 
@@ -331,7 +331,7 @@ no-member.named = この値にメンバ {member} は無い
 渡すのは ID と英語の文の組（`LhatMessageEntry`）の並びである。関数が ID から出どころを外して
 書くので、ファイル名と中身の対応はそこで守られる。
 
-以下の入口は［提案］である。
+入口は次のとおり。
 
 ```c
 const char *lhat_messages_source(size_t index);
@@ -350,7 +350,7 @@ size_t lhat_messages_write_catalog(const char *source,
   CLI は `cli` を、デバッガは `dap` を、ホストは自分の分をこれで書く
 - どれも `lhat_report_write` の約束に従い、`(NULL, 0)` で必要な長さを答える
 
-### 6.4 読み込み時の扱い［提案］
+### 6.4 読み込み時の扱い
 
 読み込みは出どころ1つ分ずつである。どの出どころかは呼び手が言う（7.1）。
 ホストはファイル名から取ればよく、ファイルシステムを持たないホストでも渡せる。
@@ -365,7 +365,7 @@ size_t lhat_messages_write_catalog(const char *source,
 - `lhat --check-messages` は、`名前 = 文` の形をした続きの行も警告する。
   注釈を外すときに空白を残した疑いがあるためである
 
-### 6.5 ビルド時の検査［提案］
+### 6.5 ビルド時の検査
 
 次のいずれかでビルド（またはテスト）を失敗させる。
 
@@ -380,7 +380,7 @@ size_t lhat_messages_write_catalog(const char *source,
 
 ## 7. 言語の選択と受け渡し
 
-### 7.1 program ごとに持つ［提案］
+### 7.1 program ごとに持つ
 
 ```c
 size_t lhat_program_load_language(LhatProgram *program, const char *tag,
@@ -396,12 +396,12 @@ bool lhat_program_set_language(LhatProgram *program, const char *tag);
 - 言語タグは近いものへ寄せる。`ja-JP` のカタログが無ければ `ja`、それも無ければ英語
 - 読み込みは program への書き込みなので、05 §8.11 の鍵の中で行う
 
-### 7.2 機械［提案］
+### 7.2 機械
 
 実行時の状態とトレースバックは、機械を作った program の言語で出す。
 program を介さずに作った機械は英語で出す。
 
-### 7.3 構造での受け渡し［提案］
+### 7.3 構造での受け渡し
 
 文を描く前の形をホストへ渡す。ホストが自分で描いてもよい。
 
