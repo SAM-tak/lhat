@@ -71,4 +71,32 @@ const char *lhat_program_error_id(LhatProgramErrorCode code);
 // The ID of the text lhat_compile_message_write draws from.
 const char *lhat_compile_message_id(const LhatCompileResult *result);
 
+// 10 §6: what one language has for one source -- the entries read out of the
+// bytes a host handed over (10 §6.2). Owns its strings, and holds whole IDs,
+// since that is what a render site asks by. Zeroed is empty.
+typedef struct {
+    char *tag;
+    char *source;
+    LhatMessageEntry *entries;
+    size_t count;
+    size_t capacity;
+} LhatCatalog;
+
+// 10 §6.4: reads `text` into `catalog`, replacing whatever it held, and
+// answers how many entries it ends up holding -- a name written twice is one
+// entry, the later text. `english` is the table to check the names and the
+// holes against, or NULL to check against the source this build holds
+// itself.
+//
+// Never fails. A name the source does not hold, a text whose holes are not
+// the English's, an entry with no text, and a line that is none of these are
+// left out; what is left stands.
+size_t lhat_catalog_load(LhatCatalog *catalog, const char *tag,
+                         const char *source, const LhatMessageEntry *english,
+                         size_t english_count, const char *text,
+                         size_t length);
+void lhat_catalog_dispose(LhatCatalog *catalog);
+// The text this catalog has for `id`, or NULL when it has none.
+const char *lhat_catalog_text(const LhatCatalog *catalog, const char *id);
+
 #endif  // LHAT_MESSAGE_H

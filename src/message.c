@@ -19,8 +19,10 @@
 #include "message.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 
+#include "lhat/port.h"
 #include "lhat/version.h"
 
 typedef struct {
@@ -233,4 +235,343 @@ size_t lhat_messages_write_english(const char *source, char *out,
         break;
     }
     return sealed(&s);
+}
+
+// ---------------------------------------------------------------------------
+// 10 §6.4: reading a catalog -- bytes in 10 §6.1's format, for one language
+// and one source, into the entries this build knows the names and the holes
+// of. Nothing here fails: a line it cannot use is left out and the rest
+// stands, so a catalog written for another version still reads.
+
+// The hole after `p`, if there is one: `name` and `length` are its name, and
+// what comes back is where to look from next. The walk the renderer makes,
+// so an escaped brace is not a hole here either.
+static const char *hole_after(const char *p, const char **name, size_t *length)
+{
+    while (*p != '\0') {
+        if (p[0] == '\\' && (p[1] == '{' || p[1] == '}' || p[1] == '\\')) {
+            p += 2;
+            continue;
+        }
+        if (p[0] == '{' && name_start(p[1])) {
+            const char *end = p + 2;
+            while (name_byte(*end)) {
+                end++;
+            }
+            if (*end == '}') {
+                *name = p + 1;
+                *length = (size_t)(end - (p + 1));
+                return end + 1;
+            }
+        }
+        p++;
+    }
+    return NULL;
+}
+
+static bool holds_hole(const char *text, const char *name, size_t length)
+{
+    const char *at = text;
+    const char *found = NULL;
+    size_t found_length = 0;
+    while ((at = hole_after(at, &found, &found_length)) != NULL) {
+        if (found_length == length && memcmp(found, name, length) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A translation is taken only when its holes are the English's -- not more,
+// not fewer. Walked from both sides rather than gathered into a set, since a
+// text holds a handful of holes at most.
+static bool same_holes(const char *english, const char *said)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    for (const char *at = english;
+         (at = hole_after(at, &name, &length)) != NULL;) {
+        if (!holds_hole(said, name, length)) {
+            return false;
+        }
+    }
+    for (const char *at = said; (at = hole_after(at, &name, &length)) != NULL;) {
+        if (!holds_hole(english, name, length)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// 10 §4.2's spelling, over the name a line gives: lower-case letters and
+// digits, joined by '-' or '.', with neither doubled nor at either end.
+static bool well_spelled(const char *name, size_t length)
+{
+    bool last_alnum = false;
+    for (size_t i = 0; i < length; i++) {
+        char c = name[i];
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            last_alnum = true;
+        } else if ((c == '-' || c == '.') && last_alnum) {
+            last_alnum = false;
+        } else {
+            return false;
+        }
+    }
+    return last_alnum;
+}
+
+// The English of `source`'s `name`: from the table the caller gave, or from
+// what this build holds when it gave none.
+static const char *english_of(const char *source,
+                              const LhatMessageEntry *english, size_t count,
+                              const char *name, size_t length)
+{
+    const LhatMessageTable one = {english, count};
+    const LhatMessageTable *tables = english != NULL ? &one : NULL;
+    size_t table_count = english != NULL ? 1 : 0;
+    for (size_t i = 0; english == NULL && i < LHAT_MESSAGE_COUNT(SOURCES);
+         i++) {
+        if (strcmp(SOURCES[i].name, source) == 0) {
+            tables = SOURCES[i].tables(&table_count);
+            break;
+        }
+    }
+    size_t prefix = strlen(source);
+    for (size_t t = 0; tables != NULL && t < table_count; t++) {
+        for (size_t e = 0; e < tables[t].count; e++) {
+            const LhatMessageEntry *entry = &tables[t].entries[e];
+            if (entry->id != NULL && strncmp(entry->id, source, prefix) == 0 &&
+                entry->id[prefix] == '.' &&
+                strncmp(entry->id + prefix + 1, name, length) == 0 &&
+                entry->id[prefix + 1 + length] == '\0') {
+                return entry->text;
+            }
+        }
+    }
+    return NULL;
+}
+
+// The text of the entry being read, which its continuation lines grow. Out
+// of memory it stops growing and says so, and the entry is left out.
+typedef struct {
+    char *text;
+    size_t length;
+    size_t capacity;
+    bool short_of_room;
+} Held;
+
+static void held_add(Held *h, const char *text, size_t length)
+{
+    if (h->length + length + 1 > h->capacity) {
+        size_t wanted = (h->length + length + 1) * 2;
+        char *bigger = (char *)lhat_realloc(h->text, wanted);
+        if (bigger == NULL) {
+            h->short_of_room = true;
+            return;
+        }
+        h->text = bigger;
+        h->capacity = wanted;
+    }
+    memcpy(h->text + h->length, text, length);
+    h->length += length;
+    h->text[h->length] = '\0';
+}
+
+static void held_drop(Held *h)
+{
+    lhat_free(h->text);
+    h->text = NULL;
+    h->length = 0;
+    h->capacity = 0;
+    h->short_of_room = false;
+}
+
+// Keeps `text` under `source`.`name`, taking it over. An ID already held is
+// written again, since a catalog's later entry is the one that counts.
+static bool catalog_put(LhatCatalog *catalog, const char *name, size_t length,
+                        char *text)
+{
+    size_t room = strlen(catalog->source) + 1 + length + 1;
+    char *id = (char *)lhat_alloc(room);
+    if (id == NULL) {
+        return false;
+    }
+    snprintf(id, room, "%s.%.*s", catalog->source, (int)length, name);
+    for (size_t i = 0; i < catalog->count; i++) {
+        if (strcmp(catalog->entries[i].id, id) == 0) {
+            lhat_free((void *)catalog->entries[i].text);
+            catalog->entries[i].text = text;
+            lhat_free(id);
+            return true;
+        }
+    }
+    if (catalog->count == catalog->capacity) {
+        size_t grown = catalog->capacity != 0 ? catalog->capacity * 2 : 16;
+        LhatMessageEntry *bigger = (LhatMessageEntry *)lhat_realloc(
+            catalog->entries, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            lhat_free(id);
+            return false;
+        }
+        catalog->entries = bigger;
+        catalog->capacity = grown;
+    }
+    catalog->entries[catalog->count].id = id;
+    catalog->entries[catalog->count].text = text;
+    catalog->count++;
+    return true;
+}
+
+// The entry that was being read, taken into the catalog or left out.
+static void close_entry(LhatCatalog *catalog, const LhatMessageEntry *english,
+                        size_t english_count, const char *name, size_t length,
+                        Held *said)
+{
+    const char *reference =
+        name != NULL && !said->short_of_room
+            ? english_of(catalog->source, english, english_count, name, length)
+            : NULL;
+    if (reference != NULL && said->length > 0 &&
+        same_holes(reference, said->text) &&
+        catalog_put(catalog, name, length, said->text)) {
+        said->text = NULL;  // the catalog holds it now
+    }
+    held_drop(said);
+}
+
+static char *owned(const char *text)
+{
+    size_t room = strlen(text) + 1;
+    char *copy = (char *)lhat_alloc(room);
+    if (copy != NULL) {
+        memcpy(copy, text, room);
+    }
+    return copy;
+}
+
+void lhat_catalog_dispose(LhatCatalog *catalog)
+{
+    if (catalog == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < catalog->count; i++) {
+        lhat_free((void *)catalog->entries[i].id);
+        lhat_free((void *)catalog->entries[i].text);
+    }
+    lhat_free(catalog->entries);
+    lhat_free(catalog->tag);
+    lhat_free(catalog->source);
+    memset(catalog, 0, sizeof *catalog);
+}
+
+const char *lhat_catalog_text(const LhatCatalog *catalog, const char *id)
+{
+    for (size_t i = 0; catalog != NULL && id != NULL && i < catalog->count;
+         i++) {
+        if (strcmp(catalog->entries[i].id, id) == 0) {
+            return catalog->entries[i].text;
+        }
+    }
+    return NULL;
+}
+
+size_t lhat_catalog_load(LhatCatalog *catalog, const char *tag,
+                         const char *source, const LhatMessageEntry *english,
+                         size_t english_count, const char *text, size_t length)
+{
+    if (catalog == NULL || tag == NULL || source == NULL || text == NULL) {
+        return 0;
+    }
+    lhat_catalog_dispose(catalog);
+    catalog->tag = owned(tag);
+    catalog->source = owned(source);
+    if (catalog->tag == NULL || catalog->source == NULL) {
+        lhat_catalog_dispose(catalog);
+        return 0;
+    }
+
+    // The entry being read: the name its line gave, and the text its
+    // continuation lines are adding to. A blank line is the text's only when
+    // a continuation line follows it (10 §6.1).
+    const char *name = NULL;
+    size_t name_length = 0;
+    Held said = {NULL, 0, 0, false};
+    size_t blanks = 0;
+
+    size_t at = 0;
+    if (length >= 3 && (unsigned char)text[0] == 0xEF &&
+        (unsigned char)text[1] == 0xBB && (unsigned char)text[2] == 0xBF) {
+        at = 3;  // a BOM some editor wrote, as 01 §1 drops it from a source
+    }
+    while (at < length) {
+        size_t end = at;
+        while (end < length && text[end] != '\n' && text[end] != '\r') {
+            end++;
+        }
+        size_t next = end < length ? end + 1 : length;
+        if (end + 1 < length && text[end] == '\r' && text[end + 1] == '\n') {
+            next = end + 2;  // every line ending is one line ending
+        }
+        const char *line = text + at;
+        size_t line_length = end - at;
+        while (line_length > 0 && (line[line_length - 1] == ' ' ||
+                                   line[line_length - 1] == '\t')) {
+            line_length--;  // what is at the end of a line is not in the text
+        }
+        at = next;
+
+        if (line_length == 0) {
+            blanks++;
+            continue;
+        }
+        if (line[0] == '#') {
+            close_entry(catalog, english, english_count, name, name_length,
+                        &said);
+            name = NULL;
+            blanks = 0;
+            continue;
+        }
+        if (line[0] == ' ' || line[0] == '\t') {
+            if (name == NULL) {
+                blanks = 0;  // the continuation of nothing
+                continue;
+            }
+            for (size_t i = 0; i <= blanks; i++) {
+                held_add(&said, "\n", 1);
+            }
+            blanks = 0;
+            held_add(&said, line + 1, line_length - 1);
+            continue;
+        }
+
+        // A line of its own closes the entry before it, whatever it says.
+        close_entry(catalog, english, english_count, name, name_length,
+                    &said);
+        name = NULL;
+        blanks = 0;
+        const char *equals = (const char *)memchr(line, '=', line_length);
+        if (equals == NULL) {
+            continue;
+        }
+        size_t written = (size_t)(equals - line);
+        while (written > 0 &&
+               (line[written - 1] == ' ' || line[written - 1] == '\t')) {
+            written--;
+        }
+        if (!well_spelled(line, written)) {
+            continue;
+        }
+        name = line;
+        name_length = written;
+        const char *rest = equals + 1;
+        size_t rest_length = line_length - (size_t)(rest - line);
+        while (rest_length > 0 && (*rest == ' ' || *rest == '\t')) {
+            rest++;
+            rest_length--;
+        }
+        held_add(&said, rest, rest_length);
+    }
+    close_entry(catalog, english, english_count, name, name_length, &said);
+    return catalog->count;
 }
