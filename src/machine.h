@@ -151,6 +151,11 @@ typedef struct LhatWeakEntry {
 } LhatWeakEntry;
 
 struct LhatMachine {
+    // 10 §7.2: the program whose registrations were installed here, which is
+    // whose language this machine's messages come out in. NULL for a machine
+    // no program was installed on, which says its own in English.
+    const struct LhatProgram *program;
+
     // 2.2: the one shared stack, as two parallel runs -- payloads dense,
     // tags one byte each -- read and written through `slots`. 16 bytes a
     // slot becomes 9, and a frame's worth of tags sits in one or two cache

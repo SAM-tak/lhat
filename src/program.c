@@ -3716,6 +3716,8 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
     LhatProgram *writable = (LhatProgram *)program;
     lhat_program_hold(writable);
     bool ok = install_all(program, machine);
+    // 10 §7.2: and this is whose language the machine says things in.
+    lhat_machine_hold_program(machine, program);
     lhat_program_release(writable);
     return ok;
 }

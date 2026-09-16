@@ -666,7 +666,21 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
 // False for any value that is not a coroutine.
 bool lhat_machine_coroutine_done(LhatValue coroutine);
 
+// 10 §7.2: the program a machine says things in the language of.
+// lhat/program.h declares it; naming it here asks for nothing else.
+struct LhatProgram;
+
 const char *lhat_run_status_message(LhatRunStatus status);
+
+// 10 §7.2: the program whose registrations were installed on this machine,
+// which is whose language what it says comes out in (lhat_program_text).
+// NULL for a machine no program was installed on.
+const struct LhatProgram *lhat_machine_program(const LhatMachine *machine);
+// What lhat_program_install remembers on the machine it installs on. A host
+// that made a machine of its own may say the same thing; nothing else needs
+// to, since installing is what gives a machine a program at all.
+void lhat_machine_hold_program(LhatMachine *machine,
+                               const struct LhatProgram *program);
 
 // 04 の 11.6改: one frame of a traceback. `source` is the unit's path and
 // `name` the binding or member the body was written under -- both debug

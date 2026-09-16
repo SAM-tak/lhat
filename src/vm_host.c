@@ -1042,6 +1042,19 @@ const char *lhat_run_status_message(LhatRunStatus status)
 LHAT_MESSAGE_TABLES(lhat_run_message_tables,
     {RUN_MESSAGES, LHAT_MESSAGE_COUNT(RUN_MESSAGES)})
 
+void lhat_machine_hold_program(LhatMachine *machine,
+                               const struct LhatProgram *program)
+{
+    if (machine != NULL) {
+        machine->program = program;
+    }
+}
+
+const struct LhatProgram *lhat_machine_program(const LhatMachine *machine)
+{
+    return machine != NULL ? machine->program : NULL;
+}
+
 const char *lhat_run_status_id(LhatRunStatus status)
 {
     const LhatMessageEntry *entry = LHAT_MESSAGE_AT(RUN_MESSAGES, status);

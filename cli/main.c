@@ -681,14 +681,17 @@ static void say_traceback(LhatMachine *machine)
     free(text);
 }
 
-static void say_run_error(const char *path, LhatRunResult ran)
+static void say_run_error(const LhatProgram *program, const char *path,
+                          LhatRunResult ran)
 {
     char *kept[3] = {NULL, NULL, NULL};
     LhatMessageArg message;
     if (ran.status == LHAT_RUN_PANIC) {
         message = panic_value(ran.value, &kept[0]);
     } else {
-        const char *status = lhat_run_status_message(ran.status);
+        const char *status =
+            lhat_program_text(program, lhat_run_status_id(ran.status),
+                              lhat_run_status_message(ran.status));
         message = (LhatMessageArg)CLI_ARG("message", status);
         if (ran.op_name != NULL) {
             const LhatMessageArg op = {"operator", ran.op_name,
@@ -1240,7 +1243,7 @@ static int check_program(const char *path, bool run, bool strict,
             }
 #endif
             if (ran.status != LHAT_RUN_OK && !debugger_stopped) {
-                say_run_error(path, ran);
+                say_run_error(&program, path, ran);
                 say_traceback(machine);
                 failed = true;
             } else if (ran.status == LHAT_RUN_OK && !lhat_is_nil(ran.value)) {
@@ -1534,7 +1537,7 @@ static int repl(bool strict)
         LhatRunResult ran = lhat_run(machine, in->proto);
         held++;
         if (ran.status != LHAT_RUN_OK) {
-            say_run_error(NULL, ran);
+            say_run_error(&program, NULL, ran);
             say_traceback(machine);
             continue;
         }

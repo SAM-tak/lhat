@@ -131,11 +131,16 @@ static const LhatMessageEntry TRACE_PARTS[] = {
 LHAT_MESSAGE_TABLES(lhat_trace_message_tables,
     {TRACE_PARTS, LHAT_MESSAGE_COUNT(TRACE_PARTS)})
 
-static void trace_say(TraceText *w, size_t part, const LhatMessageArg *args,
-                      size_t count)
+// 10 §7.2: drawn in the language of the program that made the machine, the
+// English being what every build holds.
+static void trace_say(TraceText *w, const LhatMachine *machine, size_t part,
+                      const LhatMessageArg *args, size_t count)
 {
+    const char *text = lhat_program_text(lhat_machine_program(machine),
+                                         TRACE_PARTS[part].id,
+                                         TRACE_PARTS[part].text);
     bool room = w->out != NULL && w->used < w->capacity;
-    w->used += lhat_message_render(TRACE_PARTS[part].text, args, count,
+    w->used += lhat_message_render(text, args, count,
                                    room ? w->out + w->used : NULL,
                                    room ? w->capacity - w->used : 0);
 }
@@ -149,7 +154,7 @@ size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
     w.used = 0;
     size_t count = lhat_machine_fault_depth(machine);
     if (count > 0) {
-        trace_say(&w, TRACE_HEADER, NULL, 0);
+        trace_say(&w, machine, TRACE_HEADER, NULL, 0);
         for (size_t level = 0; level < count; level++) {
             LhatFrameInfo info;
             if (!lhat_machine_fault_frame(machine, level, &info)) {
@@ -164,16 +169,16 @@ size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
             }
             trace_put(&w, ": ");
             if (info.name == NULL && info.top_level) {
-                trace_say(&w, TRACE_TOP_LEVEL, NULL, 0);
+                trace_say(&w, machine, TRACE_TOP_LEVEL, NULL, 0);
             } else {
                 const char *function = info.name != NULL ? info.name : "f^";
                 const LhatMessageArg name = {"function", function,
                                              strlen(function)};
-                trace_say(&w, TRACE_IN, &name, 1);
+                trace_say(&w, machine, TRACE_IN, &name, 1);
             }
             if (info.coroutine) {
                 trace_put(&w, " ");
-                trace_say(&w, TRACE_COROUTINE, NULL, 0);
+                trace_say(&w, machine, TRACE_COROUTINE, NULL, 0);
             }
             if (info.disposing) {
                 trace_put(&w, " (finally^)");
