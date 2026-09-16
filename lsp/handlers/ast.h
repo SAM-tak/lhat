@@ -8,5 +8,6 @@
 typedef struct LspServer LspServer;
 
 cJSON *lsp_handle_ast(LspServer *server, const cJSON *params);
+cJSON *lsp_handle_type_options(LspServer *server, const cJSON *params);
 
 #endif  // LSP_HANDLERS_AST_H

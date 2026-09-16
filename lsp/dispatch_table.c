@@ -30,6 +30,7 @@ const LspRequestEntry LSP_REQUEST_TABLE[] = {
     {"textDocument/completion", lsp_handle_completion},
     // 07 の 7 章: an extension of our own, so it is named under "lhat/".
     {"lhat/ast", lsp_handle_ast},
+    {"lhat/typeOptions", lsp_handle_type_options},
     {"lhat/signature", lsp_handle_signature},
     {"lhat/toggleDisabledCode", lsp_handle_toggle_disabled_code},
     {NULL, NULL},

@@ -443,6 +443,9 @@ void chk_check_define(Checker *c, const LhatNode *node)
         const char *name = NULL;
         size_t length = 0;
         LhatType *held = annotated != NULL ? annotated : actual;
+#if LHAT_WITH_RESOLUTIONS
+        ((LhatNode *)target)->display_type = held;
+#endif
         // 04 の 8.3: '_^' throws a value away, and a failure is not one of
         // the things it may throw. 4.4 already said so -- "no spelling of
         // its own for dropping an error; catch^ is how it is written, and

@@ -3289,7 +3289,9 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
             !chk_node_name(c, entry->v.entry.key, &seeded, &seeded_length)) {
             continue;
         }
-        LhatType *seed = declared_signature(c, entry->v.entry.value);
+        LhatType *seed = entry->v.entry.type != NULL
+                             ? chk_resolve_type(c, entry->v.entry.type)
+                             : declared_signature(c, entry->v.entry.value);
         if (seed != NULL) {
             lhat_type_add_member(c->result->types, table, seeded,
                                  seeded_length, seed);
@@ -3317,8 +3319,20 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
             }
             c->scope = &receiver;
         }
+        LhatType *annotation = entry->v.entry.type != NULL
+                                   ? chk_resolve_type(c, entry->v.entry.type) : NULL;
+        LhatType *outer_expected = c->expected_func;
+        c->expected_func = annotation;
         LhatType *value = chk_require_value(c, entry->v.entry.value,
                                             chk_infer(c, entry->v.entry.value));
+        c->expected_func = outer_expected;
+        if (annotation != NULL) {
+            chk_expect(c, entry->v.entry.value, value, annotation, LHAT_CHECK_ERR_MISMATCH);
+            value = annotation;
+        }
+#if LHAT_WITH_RESOLUTIONS
+        ((LhatNode *)entry)->display_type = value;
+#endif
         if (method) {
             c->scope = outer;
             chk_scope_close(c, &receiver);
@@ -5166,6 +5180,8 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         // twice would report whatever is wrong with it twice.
         LhatType *seed = entry->v.entry.declared
                              ? chk_resolve_type(c, entry->v.entry.value)
+                             : entry->v.entry.type != NULL
+                                   ? chk_resolve_type(c, entry->v.entry.type)
                              : declared_signature(c, entry->v.entry.value);
         if (seed == NULL) {
             continue;
@@ -5411,7 +5427,16 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             if (constructor_entry) {
                 c->new_func = entry->v.entry.value;
             }
+            LhatType *annotation = entry->v.entry.type != NULL
+                                       ? chk_resolve_type(c, entry->v.entry.type) : NULL;
+            LhatType *outer_expected = c->expected_func;
+            c->expected_func = annotation;
             LhatType *type = chk_infer(c, entry->v.entry.value);
+            c->expected_func = outer_expected;
+            if (annotation != NULL) {
+                chk_expect(c, entry->v.entry.value, type, annotation, LHAT_CHECK_ERR_MISMATCH);
+                type = annotation;
+            }
             c->new_func = outer_new;
             if (method) {
                 c->scope = &members;
@@ -5598,6 +5623,9 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
         }
     }
     LhatType *type = infer_node(c, node, named_type);
+#if LHAT_WITH_RESOLUTIONS
+    if (node != NULL) ((LhatNode *)node)->display_type = type;
+#endif
     // 8.6.4: the place a '?op=' reads answers what is there. 04 の 11.3 puts
     // a nil^ arm on everything a key reaches, and the '?' spelling is how a
     // writer says the write is skipped rather than that the arm is gone --

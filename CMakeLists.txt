@@ -487,6 +487,7 @@ if(LHAT_BUILD_LSP)
         lsp/position.c
         lsp/semantic_tokens.c
         lsp/ast_json.c
+        lsp/graph_types.c
         lsp/disabled_code.c
         lsp/handlers/disabled_code.c
         lsp/hover.c

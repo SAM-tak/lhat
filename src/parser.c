@@ -1097,11 +1097,9 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
                       is_op(&p->ahead, LHAT_OP_EQ));
 
         // 14.6: a field may say what it holds as well as what it starts as,
-        // the way a let^ target does -- 'hp : number^ = 50'. Only a template
-        // reads it this way: a ':' inside a table literal is not this, and
-        // 14.14改 leaves that spelling to mean what it already means there.
-        bool typed = require_key &&
-                     (p->current.kind == LHAT_TOKEN_IDENT ||
+        // the way a let^ target does -- 'hp : number^ = 50'. A table literal
+        // uses the same annotation; computed keys put it after the ']'.
+        bool typed = (p->current.kind == LHAT_TOKEN_IDENT ||
                       p->current.kind == LHAT_TOKEN_HAT_IDENT) &&
                      is_op(&p->ahead, LHAT_OP_COLON);
 
@@ -1115,6 +1113,9 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
             entry->v.entry.key = parse_expression(p);
             entry->v.entry.computed = true;
             expect_op(p, LHAT_OP_RBRACKET);
+            if (match_op(p, LHAT_OP_COLON)) {
+                entry->v.entry.type = parse_type(p);
+            }
             expect_introduces(p);
             // 14.6: a field template names every field, so a computed key is
             // not one of them.
@@ -1438,6 +1439,9 @@ static LhatNode *parse_def(Parser *p)
             }
             entry->v.entry.key = name;
             advance(p);
+            if (match_op(p, LHAT_OP_COLON)) {
+                entry->v.entry.type = parse_type(p);
+            }
             if (expect_introduces(p)) {
                 entry->v.entry.value = parse_expression(p);
             }
@@ -1452,8 +1456,13 @@ static LhatNode *parse_def(Parser *p)
                 if (expect_op(p, LHAT_OP_COLON)) {
                     entry->v.entry.value = parse_type(p);
                 }
-            } else if (expect_introduces(p)) {
-                entry->v.entry.value = parse_expression(p);
+            } else {
+                if (match_op(p, LHAT_OP_COLON)) {
+                    entry->v.entry.type = parse_type(p);
+                }
+                if (expect_introduces(p)) {
+                    entry->v.entry.value = parse_expression(p);
+                }
             }
         } else {
             report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_MEMBER);

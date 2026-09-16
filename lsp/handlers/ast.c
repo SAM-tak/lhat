@@ -11,6 +11,8 @@
 // basename -- a bare "ast_json.h" would resolve to lsp/handlers/ first if one
 // ever appeared there, the way semantic_tokens.c already has to say.
 #include "../ast_json.h"
+#include "../graph_types.h"
+#include "position.h"
 
 #include "server.h"
 #include "uri.h"
@@ -52,4 +54,27 @@ cJSON *lsp_handle_ast(LspServer *server, const cJSON *params)
     // Not part of any checked root yet -- a JSON null result, which the editor
     // reads as "ask again once diagnostics have arrived".
     return tree;
+}
+
+typedef struct { int line; int character; cJSON *reply; } TypeRequest;
+static void collect_types(void *context, const LhatUnit *unit)
+{
+    TypeRequest *request = context;
+    request->reply = lsp_graph_type_options(unit, lsp_unit_offset_at(unit, request->line, request->character));
+}
+
+cJSON *lsp_handle_type_options(LspServer *server, const cJSON *params)
+{
+    const cJSON *document = cJSON_GetObjectItemCaseSensitive(params, "textDocument");
+    const cJSON *uri = cJSON_GetObjectItemCaseSensitive(document, "uri");
+    const cJSON *position = cJSON_GetObjectItemCaseSensitive(params, "position");
+    const cJSON *line = cJSON_GetObjectItemCaseSensitive(position, "line");
+    const cJSON *character = cJSON_GetObjectItemCaseSensitive(position, "character");
+    if (!cJSON_IsString(uri) || !cJSON_IsNumber(line) || !cJSON_IsNumber(character) || line->valueint < 0 || character->valueint < 0) return NULL;
+    char *path = lsp_uri_to_absolute_path(uri->valuestring);
+    if (!path) return NULL;
+    TypeRequest request = {line->valueint, character->valueint, NULL};
+    lsp_workspace_with_unit(&server->workspace, path, collect_types, &request);
+    free(path);
+    return request.reply;
 }

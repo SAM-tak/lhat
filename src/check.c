@@ -512,6 +512,7 @@ static void record_bindings(Checker *c, const Scope *scope)
         site->is_parameter = b->is_parameter;
         site->immutable = b->immutable;
         site->names_type = b->names_type;
+        site->named_type = b->named_type;
     }
 }
 #endif
@@ -3700,6 +3701,8 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
                                            m->type, 0);
                 if (b != NULL) {
                     b->reached = true;
+                    b->names_type = m->names_type;
+                    b->named_type = m->named_type;
                 }
             }
         }

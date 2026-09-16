@@ -224,6 +224,11 @@ struct LhatNode {
     // NULL until checking runs, and unset entirely when it never does.
     void *checked_type;
 
+#if LHAT_WITH_RESOLUTIONS
+    // Tooling's value type, independent of the compiler's selective stamps.
+    void *display_type;
+#endif
+
     // 03 の 5.11c: which arm of an overloaded member (02 の 14.12) the checker
     // settled on, as the index into that member's arms plus one -- zero means
     // it settled nothing, which is what an unchecked compile always sees.
@@ -364,10 +369,10 @@ struct LhatNode {
             // composed onto it has to. Set on a template field too, where
             // 14.12's modifier has no place.
             bool declared;
-            // 14.6 with 8.6: a template field written 'name : type = value'.
+            // 14.6 / 14.14 with 8.6: a keyed entry written 'name : type = value'.
             // The type is what the field holds; the value is what 14.11
             // bakes onto the prototype. NULL when only a value was written,
-            // which is every other entry.
+            // and for positional entries.
             LhatNode *type;
             // 14.10改2: MEMBER_DECL only. Written 'type[]' in a t^{ ... }
             // -- the unbounded run past the fixed positions. `value` is the

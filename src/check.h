@@ -458,6 +458,7 @@ typedef struct {
     bool is_parameter;  // 13.1: declared by a signature rather than bound
     bool immutable;     // 8.9: a let^ rather than a var^
     bool names_type;    // 13.14: the name stands for a type in annotations
+    LhatType *named_type; // Meaning in type position (aliases differ from values).
 } LhatBindingSite;
 #endif  // LHAT_WITH_RESOLUTIONS
 

@@ -89,6 +89,7 @@ typedef struct {
     const char *text;
     size_t length;
     const Utf16Map *map;
+    const LhatType *owner;
 #if LHAT_WITH_COMMENTS
     const LhatComment *comments;
     size_t comment_count;
@@ -105,6 +106,7 @@ static bool layer_init(Layer *layer, const LhatSource *source,
     layer->text = source->text;
     layer->length = source->length;
     layer->map = map;
+    layer->owner = NULL;
 #if LHAT_WITH_COMMENTS
     layer->comments = lexer->comments;
     layer->comment_count = lexer->comment_count;
@@ -403,7 +405,33 @@ static cJSON *node_to_json(const LhatNode *node, const Layer *layer)
     cJSON *out = open_node(lhat_node_kind_name(node->kind),
                            lhat_node_span_start(node), node->end, node->line,
                            node->column, layer->map);
-    if (out != NULL && !fill_node(out, node, layer)) {
+    Layer inner = *layer;
+    if (out != NULL && (node->kind == LHAT_NODE_TABLE_ENTRY || node->kind == LHAT_NODE_MEMBER_DECL)) {
+        cJSON_AddBoolToObject(out, "declared", node->v.entry.declared || node->kind == LHAT_NODE_MEMBER_DECL);
+        cJSON_AddBoolToObject(out, "computed", node->v.entry.computed);
+    }
+#if LHAT_WITH_RESOLUTIONS
+    const LhatType *type = node->display_type;
+    if (node->kind == LHAT_NODE_SELF_TABLE && layer->owner != NULL &&
+        layer->owner->kind == LHAT_TYPE_TABLE && layer->owner->v.table.is_definition) {
+        type = layer->owner->v.table.instance;
+    }
+    if (node->kind == LHAT_NODE_TABLE_ENTRY && layer->owner != NULL &&
+        node->v.entry.key != NULL && !node->v.entry.computed) {
+        const LhatNode *key = node->v.entry.key;
+        const LhatTypeMember *member = lhat_type_find_member(layer->owner,
+            layer->text + key->v.name.offset, key->v.name.length);
+        if (member != NULL) type = member->type;
+    }
+    if (out != NULL && type != NULL) {
+        char written[512];
+        lhat_type_write(type, written, sizeof written);
+        cJSON_AddStringToObject(out, "inferredType", written);
+    }
+    if (node->kind == LHAT_NODE_TABLE || node->kind == LHAT_NODE_DEF ||
+        node->kind == LHAT_NODE_SELF_TABLE) inner.owner = type;
+#endif
+    if (out != NULL && !fill_node(out, node, &inner)) {
         cJSON_Delete(out);
         return NULL;
     }
