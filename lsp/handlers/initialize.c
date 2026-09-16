@@ -89,6 +89,23 @@ static WorkspacePaths read_workspace_paths(const cJSON *params)
     return paths;
 }
 
+// 10 §7.4: the editor says which language it shows (LSP's `locale`) and,
+// through its own options, where the catalogs it ships are. Neither is this
+// process's business to guess: one server answers whichever editor started
+// it.
+static void read_language(LspServer *server, const cJSON *params)
+{
+    const cJSON *locale = cJSON_GetObjectItemCaseSensitive(params, "locale");
+    const cJSON *options =
+        cJSON_GetObjectItemCaseSensitive(params, "initializationOptions");
+    const cJSON *messages =
+        cJSON_GetObjectItemCaseSensitive(options, "messages");
+    lsp_workspace_speak(&server->workspace,
+                        cJSON_IsString(locale) ? locale->valuestring : NULL,
+                        cJSON_IsString(messages) ? messages->valuestring
+                                                 : NULL);
+}
+
 cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
 {
     WorkspacePaths paths = read_workspace_paths(params);
@@ -99,6 +116,7 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     lsp_workspace_init(&server->workspace, (const char *const *)paths.paths,
                        paths.count);
     workspace_paths_dispose(&paths);
+    read_language(server, params);
 
     cJSON *result = cJSON_CreateObject();
     cJSON *capabilities = cJSON_CreateObject();

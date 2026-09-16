@@ -415,6 +415,12 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
 // -- and with `rich`, the line it happened on and a caret beneath. The same
 // convention, and what a host wants unless it is placing the position
 // itself, as a language server does.
+// 10 §7.3: the ID of the text this diagnostic's message was drawn from --
+// what a tool puts in the `code` an editor shows, and what a host looks up
+// to draw the message itself. NULL for a unit that reports nothing of its
+// own (a binary one) or an index past the last.
+const char *lhat_unit_diagnostic_id(const LhatUnit *unit, size_t index);
+
 size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
                                   bool rich, char *out, size_t capacity);
 

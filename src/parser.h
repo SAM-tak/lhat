@@ -217,6 +217,9 @@ struct LhatProgram;
 size_t lhat_parse_message_write(const struct LhatProgram *program,
                                 const LhatParseDiagnostic *diagnostic,
                                 char *out, size_t capacity);
+// 10 §4: the ID of the text that message is drawn from; NULL for a code no
+// table holds.
+const char *lhat_parse_message_id(const LhatParseDiagnostic *diagnostic);
 // 10 §4: the IDs of the texts a message is drawn from besides its code's, by
 // index from 0; NULL past the last. For the tests that hold every ID to §4.
 const char *lhat_parse_part_id(size_t index);

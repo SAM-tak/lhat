@@ -4909,6 +4909,29 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
 #endif
 }
 
+const char *lhat_unit_diagnostic_id(const LhatUnit *unit, size_t index)
+{
+    LhatStage stage = LHAT_STAGE_LEXER;
+    size_t within = 0;
+    if (!stage_of(unit, index, &stage, &within)) {
+        return NULL;
+    }
+#if !LHAT_WITH_FRONTEND
+    (void)within;
+    return NULL;  // 10.8: a binary unit reports nothing of its own
+#else
+    switch (stage) {
+        case LHAT_STAGE_LEXER:
+            return lhat_lexer_error_id(unit->lexer.diagnostics[within].code);
+        case LHAT_STAGE_PARSER:
+            return lhat_parse_message_id(&unit->parsed.diagnostics[within]);
+        case LHAT_STAGE_CHECKER:
+            return lhat_check_message_id(&unit->checked.diagnostics[within]);
+    }
+    return NULL;
+#endif
+}
+
 size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
                                   bool rich, char *out, size_t capacity)
 {

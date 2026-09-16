@@ -5498,6 +5498,18 @@ static size_t found_part(const LhatParseDiagnostic *d)
     }
 }
 
+const char *lhat_parse_message_id(const LhatParseDiagnostic *diagnostic)
+{
+    if (diagnostic == NULL) {
+        return NULL;
+    }
+    const LhatMessageEntry *entry =
+        diagnostic->has_expected ? &PARSE_PARTS[PART_EXPECTED_FOUND]
+                                 : LHAT_MESSAGE_AT(PARSE_MESSAGES,
+                                                   diagnostic->code);
+    return entry != NULL ? entry->id : NULL;
+}
+
 size_t lhat_parse_message_write(const struct LhatProgram *program,
                                 const LhatParseDiagnostic *diagnostic,
                                 char *out, size_t capacity)

@@ -369,6 +369,8 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
 // directory is --messages or `messages/<tag>` beside the executable.
 static const char *said_language;
 static char said_directory[512];
+static char executable_dir[512];  // with its separator, or empty
+static bool messages_named;       // --messages said where outright
 
 // The driver's own texts are about no program, so they are drawn through one
 // it holds for itself. NULL until a language is chosen -- the English needs
@@ -582,45 +584,75 @@ static const char *os_language(void)
 #endif
 }
 
-// 10 §7.1: one source's catalog for the chosen language, read out of the
-// file the directory holds. A source with no file stays in English.
-static void read_catalog(LhatProgram *program, const char *source,
+// 10 §7.1: one source's catalog for a language, read out of the file the
+// directory holds. A source with no file there stays in English.
+static void read_catalog(LhatProgram *program, const char *tag,
+                         const char *directory, const char *source,
                          const LhatMessageEntry *english, size_t count)
 {
     char path[640];
-    snprintf(path, sizeof path, "%s/%s.txt", said_directory, source);
+    snprintf(path, sizeof path, "%s/%s.txt", directory, source);
     size_t length = 0;
     char *text = lhat_load_file(NULL, path, &length);
     if (text == NULL) {
         return;
     }
-    lhat_program_load_catalog(program, said_language, source, english, count,
-                              text, length);
+    lhat_program_load_catalog(program, tag, source, english, count, text,
+                              length);
     lhat_free(text);
 }
 
 // Every source this build holds, and the two this driver holds itself, in
-// the language chosen. A program with no catalogs says the English.
-static void speak(LhatProgram *program)
+// the language named. A program with no catalogs says the English.
+static void speak_in(LhatProgram *program, const char *tag,
+                     const char *directory)
 {
-    if (said_language == NULL || said_directory[0] == '\0') {
+    if (tag == NULL || directory == NULL || directory[0] == '\0') {
         return;
     }
-    lhat_program_set_language(program, said_language);
+    lhat_program_set_language(program, tag);
     for (size_t i = 0;; i++) {
         const char *source = lhat_messages_source(i);
         if (source == NULL) {
             break;
         }
-        read_catalog(program, source, NULL, 0);
+        read_catalog(program, tag, directory, source, NULL, 0);
     }
-    read_catalog(program, "cli", CLI_MESSAGES, LHAT_MESSAGE_COUNT(CLI_MESSAGES));
+    read_catalog(program, tag, directory, "cli", CLI_MESSAGES,
+                 LHAT_MESSAGE_COUNT(CLI_MESSAGES));
 #ifdef LHAT_CLI_WITH_DAP
     size_t count = 0;
     const LhatMessageEntry *entries = dap_messages(&count);
-    read_catalog(program, "dap", entries, count);
+    read_catalog(program, tag, directory, "dap", entries, count);
 #endif
 }
+
+static void speak(LhatProgram *program)
+{
+    speak_in(program, said_language, said_directory);
+}
+
+#ifdef LHAT_CLI_WITH_DAP
+// 10 §7.4: the debugger said which language it reads, which is not this
+// driver's to argue with. Its catalogs are where this driver's are, under
+// that tag -- unless --messages named a directory outright, which is an
+// answer for whatever language is asked for.
+static void dap_speak(void *context, const char *tag)
+{
+    LhatProgram *program = (LhatProgram *)context;
+    if (program == NULL || tag == NULL) {
+        return;
+    }
+    char directory[512];
+    if (messages_named) {
+        snprintf(directory, sizeof directory, "%s", said_directory);
+    } else {
+        snprintf(directory, sizeof directory, "%smessages/%s", executable_dir,
+                 tag);
+    }
+    speak_in(program, tag, directory);
+}
+#endif
 
 static void dispose_driver(void)
 {
@@ -631,7 +663,8 @@ static void dispose_driver(void)
 }
 
 // Where the catalogs are, when --messages did not say: `messages/<tag>` in
-// the directory the executable stands in.
+// the directory the executable stands in, which is kept for a language asked
+// for later (the debugger's).
 static void find_catalogs(const char *argv0)
 {
     size_t cut = 0;
@@ -640,8 +673,10 @@ static void find_catalogs(const char *argv0)
             cut = i + 1;
         }
     }
-    snprintf(said_directory, sizeof said_directory, "%.*smessages/%s",
-             (int)cut, argv0 != NULL ? argv0 : "", said_language);
+    snprintf(executable_dir, sizeof executable_dir, "%.*s", (int)cut,
+             argv0 != NULL ? argv0 : "");
+    snprintf(said_directory, sizeof said_directory, "%smessages/%s",
+             executable_dir, said_language);
 }
 
 // Whether a diagnostic is shown with the line it happened on. The rich form
@@ -1360,9 +1395,12 @@ static int check_program(const char *path, bool run, bool strict,
             DapSession *dap = NULL;
             if (dap_port != 0) {
                 // NULL: the cli's units are files, so the debugger's paths
-                // and the program's are the same thing (09 の 5.2).
+                // and the program's are the same thing (09 の 5.2). The
+                // language is not the same thing: what the editor shows is
+                // its own, so it says so and this loads the catalogs.
+                const DapLanguage language = {dap_speak, &program};
                 dap_session_begin(&dap, machine, &program, (uint16_t)dap_port,
-                                  NULL);
+                                  NULL, &language);
             }
 #endif
             LhatValue *handed = argument_count > 0
@@ -1813,10 +1851,10 @@ int main(int argc, char **argv)
     // executable unless --messages pointed elsewhere.
     said_language = language != NULL ? language : os_language();
     if (said_language != NULL && strcmp(said_language, "en") != 0) {
+        find_catalogs(argv[0]);
         if (messages_dir != NULL) {
             snprintf(said_directory, sizeof said_directory, "%s", messages_dir);
-        } else {
-            find_catalogs(argv[0]);
+            messages_named = true;
         }
         lhat_program_init(&driver, true, NULL, NULL);
         driver_ready = true;

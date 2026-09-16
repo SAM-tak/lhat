@@ -60,9 +60,20 @@ typedef struct {
 // spellings to the program's unit spellings; NULL takes both as filesystem
 // paths. false (and `*out` NULL) when no debugger could be reached, which
 // the caller treats as "run without one".
+// 10 §7.4: what the debugger says it reads (DAP's `locale`), handed to
+// whoever started this process. The adapter has no files of its own and no
+// business guessing where a catalog lives, so it says the tag and the host
+// loads the catalogs into the program it gave (lhat_program_load_language).
+//
+// Called on the reader thread while the session is held; quick, please.
+typedef struct {
+    void (*to_language)(void *context, const char *tag);
+    void *context;
+} DapLanguage;
+
 bool dap_session_begin(DapSession **out, LhatMachine *machine,
                        const LhatProgram *program, uint16_t port,
-                       const DapPathMap *paths);
+                       const DapPathMap *paths, const DapLanguage *language);
 
 // After the run: tells the debugger the program is over (with `exit_code`),
 // takes the hook off, and closes. Frees the session.

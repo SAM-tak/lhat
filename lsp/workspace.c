@@ -210,6 +210,45 @@ static void lsp_stub_host_fn(LhatMachine *machine, void *context,
     (void)answer_count;
 }
 
+// 10 §7.4: the language the editor reads, into a program about to check for
+// it. The catalogs are files under the directory the editor named, one per
+// source (10 §6.1); a source with no file there stays in English.
+static void speak(const LspWorkspace *ws, LhatProgram *program)
+{
+    if (ws->language == NULL || ws->messages_path == NULL) {
+        return;
+    }
+    lhat_program_set_language(program, ws->language);
+    for (size_t i = 0;; i++) {
+        const char *source = lhat_messages_source(i);
+        if (source == NULL) {
+            break;
+        }
+        char path[640];
+        snprintf(path, sizeof path, "%s/%s/%s.txt", ws->messages_path,
+                 ws->language, source);
+        size_t length = 0;
+        char *text = lhat_load_file(NULL, path, &length);
+        if (text == NULL) {
+            continue;
+        }
+        lhat_program_load_language(program, ws->language, source, text, length);
+        lhat_free(text);
+    }
+}
+
+void lsp_workspace_speak(LspWorkspace *ws, const char *language,
+                         const char *messages_path)
+{
+    lhat_mutex_lock(&ws->lock);
+    free(ws->language);
+    free(ws->messages_path);
+    ws->language = language != NULL ? lsp_strdup(language) : NULL;
+    ws->messages_path =
+        messages_path != NULL ? lsp_strdup(messages_path) : NULL;
+    lhat_mutex_unlock(&ws->lock);
+}
+
 static void bind_host_names(const LspProject *project, LhatProgram *program)
 {
     if (project != NULL && project->host_config != NULL) {
@@ -364,6 +403,7 @@ static void recheck_one_root(LspWorkspace *ws, LspProject *project,
         lhat_program_dispose(&root->program);
     }
     lhat_program_init(&root->program, true, lsp_program_load, ws);
+    speak(ws, &root->program);
     bind_host_names(project, &root->program);
     lhat_program_check(&root->program, root->path);
 
@@ -766,6 +806,10 @@ void lsp_workspace_dispose(LspWorkspace *ws)
     }
     free(ws->workspace_paths);
     lsp_document_store_dispose(&ws->documents);
+    free(ws->language);
+    free(ws->messages_path);
+    ws->language = NULL;
+    ws->messages_path = NULL;
     lhat_mutex_destroy(&ws->lock);
 }
 
@@ -996,6 +1040,7 @@ void lsp_workspace_with_fresh_unit(LspWorkspace *ws, const char *path,
     LspProject *project = ensure_project_for_path(ws, path);
     LhatProgram program;
     lhat_program_init(&program, true, lsp_program_load, ws);
+    speak(ws, &program);
     bind_host_names(project, &program);
     const LhatUnit *unit = lhat_program_check(&program, path);
     if (unit != NULL && unit->loaded) {

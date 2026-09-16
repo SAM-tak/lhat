@@ -15,7 +15,7 @@
 // `span` is in bytes, and zero marks one character rather than a span --
 // the same convention error.h's LhatReport uses.
 static cJSON *make_diagnostic(const LhatUnit *unit, uint32_t offset,
-                              uint32_t span, int severity,
+                              uint32_t span, int severity, const char *id,
                               const char *message)
 {
     uint32_t marked = span > 0 ? span : 1;
@@ -28,6 +28,11 @@ static cJSON *make_diagnostic(const LhatUnit *unit, uint32_t offset,
     cJSON_AddItemToObject(diag, "range", range);
     cJSON_AddNumberToObject(diag, "severity", severity);
     cJSON_AddStringToObject(diag, "source", "lhat");
+    // 10 §4.1: the ID is what a reader searches by and what a translation is
+    // written against, so it is what `code` says.
+    if (id != NULL) {
+        cJSON_AddStringToObject(diag, "code", id);
+    }
     cJSON_AddStringToObject(diag, "message", message);
     return diag;
 }
@@ -67,7 +72,9 @@ cJSON *lsp_diagnostics_for_unit(const LhatUnit *unit, bool project_relaxed)
                            : LSP_SEVERITY_ERROR;
         cJSON_AddItemToArray(array,
                              make_diagnostic(unit, d.offset, d.length,
-                                             severity, message));
+                                             severity,
+                                             lhat_unit_diagnostic_id(unit, i),
+                                             message));
         free(bigger);
     }
 
@@ -91,5 +98,7 @@ void lsp_diagnostics_add_compile_failure(cJSON *array, const LhatUnit *unit,
     cJSON_AddItemToArray(array,
                          make_diagnostic(unit, failure.offset,
                                          failure.name_length,
-                                         LSP_SEVERITY_ERROR, message));
+                                         LSP_SEVERITY_ERROR,
+                                         lhat_compile_message_id(&failure),
+                                         message));
 }

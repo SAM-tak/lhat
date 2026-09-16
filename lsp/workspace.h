@@ -70,6 +70,11 @@ typedef struct {
     // a document never obtains a config from above its longest matching one.
     char **workspace_paths;
     size_t workspace_count;
+    // 10 §7.4: what the editor reads, and where the catalogs for it are --
+    // the editor says both at initialize, since the language it shows is
+    // its own and not this process's. NULL for the English.
+    char *language;
+    char *messages_path;
     LspDocumentStore documents;
     LspProject *projects;
     // One lock covers the collection and every project's checking state.
@@ -84,6 +89,13 @@ void lsp_workspace_init(LspWorkspace *ws,
                         const char *const *workspace_paths,
                         size_t workspace_count);
 void lsp_workspace_dispose(LspWorkspace *ws);
+
+// 10 §7.4: what language to draw diagnostics in, and the directory holding
+// `<language tag>/<source>.txt`. Both from the editor at initialize -- the
+// language it shows is its own, not this process's. NULL for either leaves
+// the English, which every build holds.
+void lsp_workspace_speak(LspWorkspace *ws, const char *language,
+                         const char *messages_path);
 
 // Finds every configuration directory below each workspace folder, then
 // makes an isolated project for it (plus a fallback project at the folder

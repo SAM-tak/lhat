@@ -97,6 +97,10 @@ struct DapSession {
     LhatMutex write_lock;
     LhatSocket listener;
     LhatSocket socket;
+    // 10 §7.4: what to do when the debugger says which language it reads.
+    // Zeroed when nobody offered, and then the English stands.
+    DapLanguage language;
+
     // 09 の 5.2: the host's spelling map, zeroed when none was given --
     // both sides are filesystem paths then, and are normalized to compare.
     DapPathMap paths;
@@ -1084,6 +1088,11 @@ static void dispatch(DapSession *s, const cJSON *request)
     const cJSON *arguments = dap_arguments(request);
 
     if (strcmp(command, "initialize") == 0) {
+        // 10 §7.4: the editor's language, before anything is answered in it.
+        const cJSON *locale = cJSON_GetObjectItem(arguments, "locale");
+        if (cJSON_IsString(locale) && s->language.to_language != NULL) {
+            s->language.to_language(s->language.context, locale->valuestring);
+        }
         cJSON *body = cJSON_CreateObject();
         cJSON_AddBoolToObject(body, "supportsConfigurationDoneRequest", true);
         cJSON_AddBoolToObject(body, "supportsSetVariable", true);
@@ -1442,7 +1451,7 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
 
 bool dap_session_begin(DapSession **out, LhatMachine *machine,
                        const LhatProgram *program, uint16_t port,
-                       const DapPathMap *paths)
+                       const DapPathMap *paths, const DapLanguage *language)
 {
     *out = NULL;
     if (!lhat_socket_startup()) {
@@ -1455,6 +1464,9 @@ bool dap_session_begin(DapSession **out, LhatMachine *machine,
     }
     if (paths != NULL) {
         s->paths = *paths;
+    }
+    if (language != NULL) {
+        s->language = *language;
     }
     s->program = program;
     s->peer.seq = 1;

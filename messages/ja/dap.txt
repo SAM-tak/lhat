@@ -1,0 +1,25 @@
+# dap -- L^ 0.3.3 の英語から訳した。
+# panic = panic^ {value}
+panic = panic^ {value}
+# thread-main = main
+thread-main = 主
+# thread-machine = machine {id}
+thread-machine = 機械 {id}
+# breakpoint-line = a breakpoint line must be a positive whole number
+breakpoint-line = ブレークポイントの行は正の整数である
+# breakpoint-source = the source is not part of this program
+breakpoint-source = そのソースはこのプログラムの一部ではない
+# breakpoint-condition = a breakpoint condition must be an expression
+breakpoint-condition = ブレークポイントの条件は式である
+# breakpoint-no-line = there is no executable line at or after this line
+breakpoint-no-line = この行から後に、実行される行が無い
+# breakpoint-out-of-memory = out of memory while setting the breakpoint
+breakpoint-out-of-memory = ブレークポイントを置く途中でメモリが足りなくなった
+# not-faulted = that machine did not stop on a runtime fault
+not-faulted = その機械は実行時の故障で止まったのではない
+# no-expression = no expression
+no-expression = 式が無い
+# not-stopped = that machine is not stopped
+not-stopped = その機械は止まっていない
+# stopped-by-debugger = stopped by the debugger
+stopped-by-debugger = デバッガが止めた
