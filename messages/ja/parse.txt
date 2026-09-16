@@ -1,0 +1,135 @@
+# parse -- L^ 0.3.3 の英語から訳した。
+# none = no error
+none = 誤りなし
+# unexpected = unexpected token, and this is {found}
+unexpected = 予期しないトークン。あるのは{found}
+# expected-expression = expected an expression, and this is {found}
+expected-expression = ここには式が要るが、あるのは{found}
+# expected-type = expected a type, and this is {found}
+expected-type = ここには型が要るが、あるのは{found}
+# expected-name = expected a name, and this is {found}
+expected-name = ここには名前が要るが、あるのは{found}
+# expected-token = expected a different token here
+expected-token = ここには別のトークンが要る
+# bare-expression = an expression on its own is not a statement; did you mean return^?
+bare-expression = 式だけでは文にならない。return^ のつもりか
+# juxtaposition = arguments without parentheses are only accepted in command mode; did you mean foo(1, 2, 3)?
+juxtaposition = 括弧の無い引数はコマンドモードでだけ受け付ける。foo(1, 2, 3) のつもりか
+# reserved-shift = '<<' and '>>' are reserved and not part of the language; a bit operation is a function
+reserved-shift = '<<' と '>>' は予約されていて、言語の一部ではない。ビット演算は関数である
+# id-needs-name = id^ answers the spelling of a name; write the name after it
+id-needs-name = id^ は名前の綴りを答える。後に名前を書く
+# binding-arity = the number of targets and values does not match
+binding-arity = 束縛先と値の数が合わない
+# clause-order = loop clauses run prolog^, pre^, first^, main^, last^, epilog^, finally^ and must be written in that order
+clause-order = ループの節は prolog^, pre^, first^, main^, last^, epilog^, finally^ の順に走り、その順に書く
+# main-required = statements before prolog^, pre^ or first^ need 'main^:' to say they are the body
+main-required = prolog^・pre^・first^ より前の文には、それが本体だと言う 'main^:' が要る
+# no-body-clause = a loop needs a body: one of first^, pre^, main^ or last^, or statements with no clause heading at all
+no-body-clause = ループには本体が要る。first^・pre^・main^・last^ のどれか、または節の見出しの無い文を書く
+# pre-in-walk = pre^ runs before the walk answers, so there is nothing bound for it to read; use main^
+pre-in-walk = pre^ は走査が答えるより前に走るので、読める束縛が無い。main^ を使う
+# clause-not-in-loop = only finally^ may appear outside a loop
+clause-not-in-loop = ループの外に書けるのは finally^ だけである
+# for-needs-clause = for^ needs one of to^, downto^, in^, while^, until^ or if^
+for-needs-clause = for^ には to^・downto^・in^・while^・until^・if^ のどれかが要る
+# repeat-takes-no-next = next^ belongs to for^; repeat^ declares no focus to advance
+repeat-takes-no-next = next^ は for^ のものである。repeat^ は進める焦点を宣言しない
+# next-not-here = next^ updates the focus of a while^ or until^ loop; this form advances its own
+next-not-here = next^ は while^ か until^ のループの焦点を更新する。この形は自分で焦点を進める
+# from-not-here = from^ opens the counted range of a to^ or downto^ loop; this form takes 'var^ i = 1' or 'let^ i = 1'
+from-not-here = from^ は to^ か downto^ のループの数え上げの範囲を開く。この形は 'var^ i = 1' か 'let^ i = 1' を取る
+# focus-needs-from = a to^ or downto^ loop advances a focus of its own; write 'for^ i from^ 1 to^ 10', or a while^ loop to count with a name that is already there
+focus-needs-from = to^ や downto^ のループは自分の焦点を進める。'for^ i from^ 1 to^ 10' と書くか、既にある名前で数えるなら while^ のループにする
+# expected-member = a def^ holds 'name := value' members and one self^{ ... }
+expected-member = def^ が持つのは 'name := value' のメンバと、ひとつの self^{ ... } である
+# signature-named = a written signature carries no parameter names (13.3); the names belong to a literal, whose body a '{' opens
+signature-named = 書かれた署名は仮引数の名前を持たない（13.3）。名前はリテラルのもので、その本体は '{' が開く
+# param-needs-name = a type stands where a parameter name is wanted; bare types belong to a written signature, which a ';' closes
+param-needs-name = 仮引数の名前が要る所に型がある。名前の無い型は書かれた署名のもので、署名は ';' が閉じる
+# fresh-tuple = fresh^ promises one new answer; a tuple result cannot carry it
+fresh-tuple = fresh^ はひとつの新しい答えを約束する。タプルの結果には付けられない
+# operator-not-definable = op^ defines '..' and the arithmetic operators; and^, or^, '!' and the comparisons are the language's own
+operator-not-definable = op^ が定義するのは '..' と算術の演算子である。and^・or^・'!' と比較は言語のものである
+# compound-not-definable = a compound assignment has no definition of its own: 'a += b' is 'a := a + b', so it is op^+ that decides what it does
+compound-not-definable = 複合代入は自分の定義を持たない。'a += b' は 'a := a + b' なので、何をするかを決めるのは op^+ である
+# comparison-not-definable = the orderings are not written one by one: op^<=> answers with a number^, and '<', '>', '≦' and '≧' are all read off it. A type that knows what equals what but puts its values in no order writes op^= instead, which answers a bool^; '≠' is read off whichever of the two it has
+comparison-not-definable = 順序はひとつずつ書かない。op^<=> が number^ で答え、'<'・'>'・'≦'・'≧' はすべてそこから読む。何と何が等しいかは分かるが値に順序を付けない型は、代わりに bool^ で答える op^= を書く。'≠' は二つのうち持っている方から読む
+# field-needs-name = every field of self^{ ... } needs a name and a value
+field-needs-name = self^{ ... } のフィールドには、どれも名前と値が要る
+# duplicate-template = a def^ declares its fields once; write one self^{ ... }
+duplicate-template = def^ はフィールドを一度だけ宣言する。self^{ ... } はひとつだけ書く
+# modifier-on-template = override^ and overload^ mark a member, not the fields
+modifier-on-template = override^ と overload^ はメンバに付ける印で、フィールドには付けない
+# duplicate-delegate = a def^ delegates to one thing; write one delegate^
+duplicate-delegate = def^ が委譲する先はひとつである。delegate^ はひとつだけ書く
+# delegate-target = delegate^ names what this def^ declares: self^.field for one of the template's, or a bare name for one of its own
+delegate-target = delegate^ はこの def^ が宣言した物を名指す。雛形のフィールドなら self^.field、自分の物なら名前をそのまま書く
+# closed-needs-body = closed^ marks a body: write closed^f^ ... or closed^p^ ...
+closed-needs-body = closed^ は本体に付ける印である。closed^f^ ... か closed^p^ ... と書く
+# catch-after-bare = a bare catch^: takes whatever is left, so nothing follows it -- write the narrower arms first
+catch-after-bare = 見出しの無い catch^: は残りすべてを受けるので、後には何も続かない。狭い選択肢を先に書く
+# catch-arm-needs-type = an arm of a try^{ } is written 'catch^ Kind:' or bare as 'catch^:'. A fallback value is the other reading of the word and is written with parentheses here: 'let^ n = (f() catch^ 0)'
+catch-arm-needs-type = try^{ } の選択肢は 'catch^ Kind:' か、見出し無しの 'catch^:' と書く。代わりの値はこの語のもうひとつの読み方で、ここでは括弧を付けて書く: 'let^ n = (f() catch^ 0)'
+# field-needs-type = a field needs a type, a default, or both
+field-needs-type = フィールドには型か既定値、またはその両方が要る
+# errordef-needs-name = errordef^ needs a name; an error kind has no anonymous form
+errordef-needs-name = errordef^ には名前が要る。誤りの種別に名前の無い形は無い
+# enumdef-needs-name = enum^ needs a name; an enum has no anonymous form
+enumdef-needs-name = enum^ には名前が要る。列挙に名前の無い形は無い
+# error-needs-kind = write the kind, as in error^IOError.NotFound{ ... }
+error-needs-kind = error^IOError.NotFound{ ... } のように種別を書く
+# let-needs-value = a definition needs a value; write 'var^ x = 0'
+let-needs-value = 定義には値が要る。'var^ x = 0' と書く
+# focus-takes-one = a for^ introduces one binding; write another for^ for the next one
+focus-takes-one = for^ が導く束縛はひとつである。次の束縛には別の for^ を書く
+# let-needs-equals = let^ defines and never reassigns; write 'let^ x = 0', or 'var^ x = 0' for a name that may be reassigned
+let-needs-equals = let^ は定義するだけで、代入し直さない。'let^ x = 0' と書くか、代入し直す名前なら 'var^ x = 0' と書く
+# let-needs-name = let^ binds a name; write 'var^ t.a = 1' for a member of a table
+let-needs-name = let^ は名前を束縛する。テーブルのメンバなら 'var^ t.a = 1' と書く
+# equals-is-comparison = '=' compares; write 'x := 1' to reassign or 'var^ x = 1' to make a new name
+equals-is-comparison = '=' は比べる。代入し直すなら 'x := 1'、新しい名前を作るなら 'var^ x = 1' と書く
+# module-misplaced = module^ goes first, and only once in a file
+module-misplaced = module^ はファイルの最初に、一度だけ書く
+# public-needs-declaration = public^ marks a let^ or an errordef^
+public-needs-declaration = public^ は let^ か errordef^ に付ける印である
+# require-needs-literal = require^ takes a written path, since the checker follows it
+require-needs-literal = require^ は書かれたパスを取る。検査器がそれを辿るためである
+# else-needs-colon = this needs a ':' after it; what follows was read as the condition of a further test, and no ':' came
+else-needs-colon = この後に ':' が要る。続く部分がさらなる判定の条件として読まれ、':' が来なかった
+# if-expr-needs-else = an if^ written as an expression answers in every case; write 'el^: ...' before the ';', or the statement form with braces
+if-expr-needs-else = 式として書いた if^ はどの場合にも答える。';' の前に 'el^: ...' を書くか、波括弧を使う文の形にする
+# match-opens-after-subject = a match is opened by the ':' after its subject; write 'for^ e: when^ ...;' -- a do^: answers with the expression that follows it
+match-opens-after-subject = パターンマッチは対象の後の ':' が開く。'for^ e: when^ ...;' と書く。do^: はその後に続く式で答える
+# spread-not-last = '...' forwards the whole collected tail, so nothing can follow it here
+spread-not-last = '...' は集めた末尾全体を渡すので、ここでは後に何も続けられない
+# hats-dont-stack = a second hat counts levels, which this word does not take here
+hats-dont-stack = 2つ目のハットは段数を数えるが、この語はここでは段数を取らない
+# bad-position-count = '[ ... ]' after a type says how many positions it takes, which is a positive integer written out
+bad-position-count = 型の後の '[ ... ]' はその型が取る位置の数を言い、それは書き下した正の整数である
+# annotation-needs-declaration = an annotation is written above a declaration -- a let^, a var^, a field, a member, or the unit itself
+annotation-needs-declaration = 注釈は宣言の上に書く。let^・var^・フィールド・メンバ、または単位そのもの
+# annotation-arg-not-literal = an annotation never runs, so an argument of one is a number, a string, a name or a boolean written out
+annotation-arg-not-literal = 注釈は走らないので、その引数は書き下した数・文字列・名前・真偽値である
+# named-takes-no-count = a name holds one value; '[ ... ]' says how many positions a type takes, so it goes on one written without a name
+named-takes-no-count = 名前はひとつの値を持つ。'[ ... ]' は型が取る位置の数を言うので、名前の無い型に付ける
+# duplicate-indexer = a table type takes one [key type]:value type constraint
+duplicate-indexer = テーブル型が取る [鍵の型]:値の型 の制約はひとつである
+# expected-found = a '{expected}' was expected here, and this is {found}
+expected-found = ここには「{expected}」が要るが、あるのは{found}
+# token.end-of-input = the end of the input
+token.end-of-input = 入力の終わり
+# token.name = a name
+token.name = 名前
+# token.word = a word of the language
+token.word = 言語の語
+# token.number = a number
+token.number = 数
+# token.string = a string
+token.string = 文字列
+# token.scope = a scope specifier
+token.scope = スコープ指定子
+# token.operator = '{operator}'
+token.operator = 「{operator}」
+# token.other = something else
+token.other = ほかの何か
