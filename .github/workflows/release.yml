@@ -83,6 +83,9 @@ jobs:
       - name: Test
         run: ctest --preset release
 
+      # 10 §7.4: the catalogs go beside each executable. The cli reads
+      # `messages/<tag>/` next to itself, and the VSCode extension, which
+      # unpacks lhatls into its bin/, hands that same directory to the server.
       - name: Collect
         shell: bash
         run: |
@@ -94,9 +97,10 @@ jobs:
               cp "build/release/$name" "dist/$name/"
             fi
             cp LICENSE "dist/$name/"
+            cp -R messages "dist/$name/"
           done
           ls -l dist
-          ls -l dist/lhat dist/lhatls
+          ls -lR dist/lhat dist/lhatls
 
       - name: Pack
         shell: bash
