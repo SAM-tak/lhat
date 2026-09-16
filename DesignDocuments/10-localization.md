@@ -407,13 +407,29 @@ program を介さずに作った機械は英語で出す。
 
 文を描く前の形をホストへ渡す。ホストが自分で描いてもよい。
 
+**ID** は渡す。言語サーバはこれを診断の `code` に入れる。
+
 ```c
 const char *lhat_unit_diagnostic_id(const LhatUnit *unit, size_t index);
+```
+
+**引数** は、使う側が現れてから作る。
+
+```c
 size_t lhat_unit_diagnostic_argument_count(const LhatUnit *unit, size_t index);
 bool lhat_unit_diagnostic_argument(const LhatUnit *unit, size_t index,
                                    size_t which, const char **name,
                                    const char **value);
 ```
+
+訳すだけなら引数は要らない。ホストの訳は `lhat_program_load_catalog` で program に渡せ、
+文は program の言語で描かれる。引数が要るのは、それを装飾するとき（名前をコード書体や
+定義へのリンクにする）と、データとして使うとき（quick fix で名前を宣言する）である。
+診断の範囲は名前そのものを指すので、名前だけならソースから読める。
+
+［補足］TypeScript で書かれた道具（VS Code 拡張、ビジュアルエディタ）は C の API を直接呼べない。
+それらが引数を要るときは、言語サーバが LSP の `Diagnostic.data` に ID と引数を載せて渡し、
+この API を使うのは言語サーバになる。
 
 既存の `lhat_unit_diagnostic_message` は、program の言語で描いた文を答える。
 言語が英語のとき、答える文は今と同じである。
