@@ -28,11 +28,8 @@ static const LhatMessageEntry SOURCE_PARTS[] = {
     [SOURCE_OUT_OF_MEMORY] = {"source.out-of-memory", "out of memory"},
 };
 
-const char *lhat_source_part_id(size_t index)
-{
-    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(SOURCE_PARTS, index);
-    return entry != NULL ? entry->id : NULL;
-}
+LHAT_MESSAGE_TABLES(lhat_source_message_tables,
+    {SOURCE_PARTS, LHAT_MESSAGE_COUNT(SOURCE_PARTS)})
 
 // The error lhat_source_init_from_file hands its caller to free.
 static char *error_text(size_t part, const char *path)

@@ -1039,6 +1039,9 @@ const char *lhat_run_status_message(LhatRunStatus status)
     return entry != NULL ? entry->text : "unknown";
 }
 
+LHAT_MESSAGE_TABLES(lhat_run_message_tables,
+    {RUN_MESSAGES, LHAT_MESSAGE_COUNT(RUN_MESSAGES)})
+
 const char *lhat_run_status_id(LhatRunStatus status)
 {
     const LhatMessageEntry *entry = LHAT_MESSAGE_AT(RUN_MESSAGES, status);

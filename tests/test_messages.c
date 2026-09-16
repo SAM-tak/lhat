@@ -4,6 +4,8 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "check.h"
@@ -96,17 +98,24 @@ static const Table TABLES[] = {
      "unknown"},
 };
 
-// The texts a source has besides the ones its codes index: phrases, fixed
-// words, and the sentences that wrap another.
-typedef struct {
-    const char *source;
-    const char *(*id)(size_t index);
-} Parts;
+// Every source the library holds and the tables it hands over -- the codes'
+// texts, and the phrases, fixed words and wrapping sentences beside them.
+// The tests build with the front end, so all nine are here (10 §6.2).
+typedef const LhatMessageTable *(*Tables)(size_t *count);
 
-static const Parts PARTS[] = {
-    {"parse", lhat_parse_part_id},   {"trace", lhat_trace_part_id},
-    {"report", lhat_report_part_id}, {"program", lhat_program_part_id},
-    {"source", lhat_source_part_id},
+static const struct {
+    const char *source;
+    Tables tables;
+} SOURCES[] = {
+    {"check", lhat_check_message_tables},
+    {"parse", lhat_parse_message_tables},
+    {"lex", lhat_lexer_message_tables},
+    {"compile", lhat_compile_message_tables},
+    {"run", lhat_run_message_tables},
+    {"program", lhat_program_message_tables},
+    {"source", lhat_source_message_tables},
+    {"report", lhat_report_message_tables},
+    {"trace", lhat_trace_message_tables},
 };
 
 // Every ID met, for the check that no two entries share one.
@@ -191,7 +200,6 @@ static void test_ids(void)
             LHAT_CHECK(message != NULL && message[0] != '\0' &&
                            strcmp(message, table->fallback) != 0,
                        "%s code %d has its own English", table->source, code);
-            remember(id);
         }
         // One past the last code there is no row: no ID, and the fallback.
         LHAT_CHECK(table->id(table->count) == NULL,
@@ -201,17 +209,28 @@ static void test_ids(void)
                    table->source);
     }
 
-    for (size_t t = 0; t < sizeof PARTS / sizeof PARTS[0]; t++) {
-        const Parts *parts = &PARTS[t];
-        LHAT_TEST(parts->source);
-        size_t index = 0;
-        for (const char *id; (id = parts->id(index)) != NULL; index++) {
-            LHAT_CHECK(well_formed(id, parts->source), "'%s' is well formed",
-                       id);
-            remember(id);
+    // Every entry of every table, which is what a catalog is written from.
+    for (size_t s = 0; s < LHAT_MESSAGE_COUNT(SOURCES); s++) {
+        LHAT_TEST(SOURCES[s].source);
+        size_t count = 0;
+        const LhatMessageTable *tables = SOURCES[s].tables(&count);
+        LHAT_CHECK(count > 0, "%s hands over its tables", SOURCES[s].source);
+        size_t held = 0;
+        for (size_t t = 0; t < count; t++) {
+            for (size_t e = 0; e < tables[t].count; e++) {
+                const LhatMessageEntry *entry = &tables[t].entries[e];
+                if (entry->id == NULL) {
+                    continue;  // a code the table does not hold
+                }
+                LHAT_CHECK(well_formed(entry->id, SOURCES[s].source),
+                           "'%s' is well formed", entry->id);
+                LHAT_CHECK(entry->text != NULL && entry->text[0] != '\0',
+                           "'%s' has its English", entry->id);
+                remember(entry->id);
+                held++;
+            }
         }
-        LHAT_CHECK(index > 0, "%s has texts besides its codes'",
-                   parts->source);
+        LHAT_CHECK(held > 0, "%s holds entries", SOURCES[s].source);
     }
 
     LHAT_TEST("parse: a code's text holds no hole but {found}");
@@ -275,7 +294,6 @@ static void test_named(void)
         LHAT_CHECK(own == 0, "'%s' has a second text, so no hole", plain);
         LHAT_CHECK(strstr(message, "Zq9") != NULL, "'%s' says the name",
                    named);
-        remember(named);
     }
 
     // The compiler's name has no status that is only ever said with one, so
@@ -308,8 +326,92 @@ static void test_named(void)
         lhat_compile_message_write(&r, message, sizeof message);
         LHAT_CHECK(strstr(message, "Zq9") != NULL, "'%s' says the name",
                    named);
-        remember(named);
     }
+}
+
+// 10 §6.3: the English of one source, written out for a translation to be
+// made from -- every entry commented out, under a heading that names the
+// source and the version.
+static void test_dump(void)
+{
+    LHAT_TEST("every source this build holds writes its catalog");
+    size_t sources = 0;
+    for (const char *source; (source = lhat_messages_source(sources)) != NULL;
+         sources++) {
+        size_t needed = lhat_messages_write_english(source, NULL, 0);
+        char *written = (char *)malloc(needed + 1);
+        LHAT_CHECK(written != NULL && needed > 0, "'%s' writes something",
+                   source);
+        if (written == NULL) {
+            continue;
+        }
+        LHAT_CHECK_EQ_INT(lhat_messages_write_english(source, written,
+                                                      needed + 1),
+                          needed);
+        LHAT_CHECK(strlen(written) == needed, "'%s' fills what it measured",
+                   source);
+
+        char heading[64];
+        snprintf(heading, sizeof heading, "# %s -- L^ ", source);
+        LHAT_CHECK(strncmp(written, heading, strlen(heading)) == 0,
+                   "'%s' names itself and the version first", source);
+
+        // Every entry is in it, commented out and under its bare name.
+        size_t count = 0;
+        const LhatMessageTable *tables = NULL;
+        for (size_t s = 0; s < LHAT_MESSAGE_COUNT(SOURCES); s++) {
+            if (strcmp(SOURCES[s].source, source) == 0) {
+                tables = SOURCES[s].tables(&count);
+            }
+        }
+        LHAT_CHECK(tables != NULL, "'%s' is one of the sources", source);
+        for (size_t t = 0; tables != NULL && t < count; t++) {
+            for (size_t e = 0; e < tables[t].count; e++) {
+                const LhatMessageEntry *entry = &tables[t].entries[e];
+                if (entry->id == NULL) {
+                    continue;
+                }
+                char wanted[128];
+                snprintf(wanted, sizeof wanted, "# %s = ",
+                         entry->id + strlen(source) + 1);
+                LHAT_CHECK(strstr(written, wanted) != NULL, "'%s' is in it",
+                           entry->id);
+            }
+        }
+        free(written);
+    }
+    LHAT_CHECK_EQ_INT(sources, LHAT_MESSAGE_COUNT(SOURCES));
+
+    LHAT_TEST("a source this build does not hold writes nothing");
+    LHAT_CHECK_EQ_INT(lhat_messages_write_english("nowhere", NULL, 0), 0);
+
+    LHAT_TEST("a tool's own table is written the same way");
+    const LhatMessageEntry own[] = {
+        {"tool.one", "first"},
+        {"tool.two", "a line\nand another"},
+        {"other.three", "not this file's"},
+    };
+    size_t needed = lhat_messages_write_catalog("tool", own, 3, NULL, 0);
+    char *written = (char *)malloc(needed + 1);
+    LHAT_CHECK(written != NULL, "room for it");
+    if (written != NULL) {
+        lhat_messages_write_catalog("tool", own, 3, written, needed + 1);
+        LHAT_CHECK(strstr(written, "# tool -- L^ ") == written,
+                   "the heading names the source");
+        LHAT_CHECK(strstr(written, "# one = first\n") != NULL, "one entry");
+        LHAT_CHECK(strstr(written, "# two = a line\n#  and another\n") != NULL,
+                   "a newline becomes a continuation line");
+        LHAT_CHECK(strstr(written, "three") == NULL,
+                   "another source's entry is not this file's");
+        free(written);
+    }
+
+    LHAT_TEST("measuring and cutting follow lhat_report_write");
+    char small[8];
+    size_t wanted = lhat_messages_write_catalog("tool", own, 1, small,
+                                                sizeof small);
+    LHAT_CHECK(wanted > sizeof small, "it wanted more than it was given");
+    LHAT_CHECK(strlen(small) == sizeof small - 1, "and closed what it filled");
 }
 
 static void test_unique(void)
@@ -394,6 +496,7 @@ int main(void)
 {
     test_ids();
     test_named();
+    test_dump();
     test_unique();
     test_render();
     return lhat_test_report("test_messages");

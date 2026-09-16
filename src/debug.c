@@ -128,11 +128,8 @@ static const LhatMessageEntry TRACE_PARTS[] = {
     [TRACE_COROUTINE] = {"trace.coroutine", "(coroutine)"},
 };
 
-const char *lhat_trace_part_id(size_t index)
-{
-    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(TRACE_PARTS, index);
-    return entry != NULL ? entry->id : NULL;
-}
+LHAT_MESSAGE_TABLES(lhat_trace_message_tables,
+    {TRACE_PARTS, LHAT_MESSAGE_COUNT(TRACE_PARTS)})
 
 static void trace_say(TraceText *w, size_t part, const LhatMessageArg *args,
                       size_t count)

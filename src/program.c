@@ -3733,12 +3733,6 @@ static const LhatMessageEntry PROGRAM_PARTS[] = {
     {"program.failed", "{path}: error: {message}"},
 };
 
-const char *lhat_program_part_id(size_t index)
-{
-    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(PROGRAM_PARTS, index);
-    return entry != NULL ? entry->id : NULL;
-}
-
 static void say_failed(Said *s, const char *path, const char *message)
 {
     const LhatMessageArg args[] = {
@@ -4864,6 +4858,10 @@ const char *lhat_program_error_message(LhatProgramErrorCode code)
     const LhatMessageEntry *entry = LHAT_MESSAGE_AT(PROGRAM_MESSAGES, code);
     return entry != NULL ? entry->text : "unknown error";
 }
+
+LHAT_MESSAGE_TABLES(lhat_program_message_tables,
+    {PROGRAM_MESSAGES, LHAT_MESSAGE_COUNT(PROGRAM_MESSAGES)},
+    {PROGRAM_PARTS, LHAT_MESSAGE_COUNT(PROGRAM_PARTS)})
 
 const char *lhat_program_error_id(LhatProgramErrorCode code)
 {

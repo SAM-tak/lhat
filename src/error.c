@@ -212,11 +212,8 @@ static const LhatMessageEntry REPORT_PARTS[] = {
     [REPORT_NOTE] = {"report.note", "note: {message}"},
 };
 
-const char *lhat_report_part_id(size_t index)
-{
-    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(REPORT_PARTS, index);
-    return entry != NULL ? entry->id : NULL;
-}
+LHAT_MESSAGE_TABLES(lhat_report_message_tables,
+    {REPORT_PARTS, LHAT_MESSAGE_COUNT(REPORT_PARTS)})
 
 size_t lhat_report_write(const LhatReport *report, const LhatSource *source,
                          const char *name, bool rich, char *out,

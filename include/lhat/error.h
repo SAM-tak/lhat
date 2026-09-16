@@ -80,6 +80,14 @@ size_t lhat_report_write(const LhatReport *report, const LhatSource *source,
                          const char *name, bool rich, char *out,
                          size_t capacity);
 
+// 10 §4: a message's stable ID and its English text. The ID is what a
+// translation is written against and never changes meaning; the English is
+// the reference every other language translates (10 §2.2).
+typedef struct {
+    const char *id;
+    const char *text;
+} LhatMessageEntry;
+
 // 10 §5.1: one argument of a message -- the hole it fills, by name, and the
 // text that fills it, exactly as it is to be written.
 typedef struct {
@@ -100,6 +108,28 @@ typedef struct {
 // including it. So measuring is a call with (NULL, 0).
 size_t lhat_message_render(const char *text, const LhatMessageArg *args,
                            size_t count, char *out, size_t capacity);
+
+// 10 §4.2: the sources this build holds messages for, in the order 10 §3.1
+// lists them; NULL one past the last. A build without the front end holds no
+// `check`, `parse` or `lex` (10 §6.2).
+const char *lhat_messages_source(size_t index);
+
+// 10 §6.3: the English of one source, written as a catalog with every entry
+// commented out -- what a translation is made from. A source this build does
+// not hold writes nothing and answers 0.
+//
+// Follows lhat_report_write: answers how many bytes the whole catalog wants,
+// not counting the terminating NUL, and fills up to `capacity` including it.
+size_t lhat_messages_write_english(const char *source, char *out,
+                                   size_t capacity);
+
+// The same for a table a tool holds itself -- the cli's `cli`, the debug
+// adapter's `dap`, a host's own. The format lives here and nowhere else, so
+// every catalog is written the one way. An entry whose ID does not start with
+// `source` and a '.' is left out.
+size_t lhat_messages_write_catalog(const char *source,
+                                   const LhatMessageEntry *entries,
+                                   size_t count, char *out, size_t capacity);
 
 #ifdef __cplusplus
 }

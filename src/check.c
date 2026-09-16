@@ -4300,6 +4300,10 @@ static const LhatMessageEntry *check_entry(
                          : LHAT_MESSAGE_AT(CHECK_MESSAGES, diagnostic->code);
 }
 
+LHAT_MESSAGE_TABLES(lhat_check_message_tables,
+    {CHECK_MESSAGES, LHAT_MESSAGE_COUNT(CHECK_MESSAGES)},
+    {CHECK_NAMED_MESSAGES, LHAT_MESSAGE_COUNT(CHECK_NAMED_MESSAGES)})
+
 const char *lhat_check_message_id(const LhatCheckDiagnostic *diagnostic)
 {
     const LhatMessageEntry *entry =

@@ -19,10 +19,36 @@
 #include "lhat/program.h"
 #include "lhat/vm.h"
 
+// How many rows a table of entries holds.
+#define LHAT_MESSAGE_COUNT(table) (sizeof(table) / sizeof((table)[0]))
+
+// One of a source's tables (10 §6.3): a source hands over every table it
+// holds, and the catalog is written out of them in order. A row of NULLs is
+// a code the table does not hold and is left out.
 typedef struct {
-    const char *id;
-    const char *text;
-} LhatMessageEntry;
+    const LhatMessageEntry *entries;
+    size_t count;
+} LhatMessageTable;
+
+// The function each source answers its tables with. `count` is how many
+// tables; the tables themselves outlive every caller.
+#define LHAT_MESSAGE_TABLES(function, ...)                                    \
+    const LhatMessageTable *function(size_t *count)                           \
+    {                                                                         \
+        static const LhatMessageTable tables[] = {__VA_ARGS__};               \
+        *count = LHAT_MESSAGE_COUNT(tables);                                  \
+        return tables;                                                        \
+    }
+
+const LhatMessageTable *lhat_check_message_tables(size_t *count);
+const LhatMessageTable *lhat_parse_message_tables(size_t *count);
+const LhatMessageTable *lhat_lexer_message_tables(size_t *count);
+const LhatMessageTable *lhat_compile_message_tables(size_t *count);
+const LhatMessageTable *lhat_run_message_tables(size_t *count);
+const LhatMessageTable *lhat_program_message_tables(size_t *count);
+const LhatMessageTable *lhat_source_message_tables(size_t *count);
+const LhatMessageTable *lhat_report_message_tables(size_t *count);
+const LhatMessageTable *lhat_trace_message_tables(size_t *count);
 
 // The entry for `code`, or NULL when the table holds none. `table` has to be
 // the array itself rather than a pointer to it, since the length is read off
@@ -44,13 +70,5 @@ const char *lhat_program_error_id(LhatProgramErrorCode code);
 
 // The ID of the text lhat_compile_message_write draws from.
 const char *lhat_compile_message_id(const LhatCompileResult *result);
-
-// The IDs of the texts a source has besides the ones its codes index, by
-// index from 0; NULL past the last: a traceback's fixed words, a report's
-// label, a load's failure, and why a file did not become a source.
-const char *lhat_trace_part_id(size_t index);
-const char *lhat_report_part_id(size_t index);
-const char *lhat_program_part_id(size_t index);
-const char *lhat_source_part_id(size_t index);
 
 #endif  // LHAT_MESSAGE_H

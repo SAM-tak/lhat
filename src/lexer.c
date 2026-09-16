@@ -1203,6 +1203,9 @@ const char *lhat_lexer_error_message(LhatErrorCode code)
     return entry != NULL ? entry->text : "unknown error";
 }
 
+LHAT_MESSAGE_TABLES(lhat_lexer_message_tables,
+    {LEX_MESSAGES, LHAT_MESSAGE_COUNT(LEX_MESSAGES)})
+
 const char *lhat_lexer_error_id(LhatErrorCode code)
 {
     const LhatMessageEntry *entry = LHAT_MESSAGE_AT(LEX_MESSAGES, code);

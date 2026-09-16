@@ -5479,11 +5479,9 @@ static const LhatMessageEntry PARSE_PARTS[] = {
     [PART_OTHER] = {"parse.token.other", "something else"},
 };
 
-const char *lhat_parse_part_id(size_t index)
-{
-    const LhatMessageEntry *entry = LHAT_MESSAGE_AT(PARSE_PARTS, index);
-    return entry != NULL ? entry->id : NULL;
-}
+LHAT_MESSAGE_TABLES(lhat_parse_message_tables,
+    {PARSE_MESSAGES, LHAT_MESSAGE_COUNT(PARSE_MESSAGES)},
+    {PARSE_PARTS, LHAT_MESSAGE_COUNT(PARSE_PARTS)})
 
 static size_t found_part(const LhatParseDiagnostic *d)
 {

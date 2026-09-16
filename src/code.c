@@ -72,6 +72,10 @@ static const LhatMessageEntry *compile_entry(const LhatCompileResult *result)
                          : LHAT_MESSAGE_AT(COMPILE_MESSAGES, result->status);
 }
 
+LHAT_MESSAGE_TABLES(lhat_compile_message_tables,
+    {COMPILE_MESSAGES, LHAT_MESSAGE_COUNT(COMPILE_MESSAGES)},
+    {COMPILE_NAMED_MESSAGES, LHAT_MESSAGE_COUNT(COMPILE_NAMED_MESSAGES)})
+
 const char *lhat_compile_message_id(const LhatCompileResult *result)
 {
     const LhatMessageEntry *entry =
