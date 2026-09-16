@@ -3069,6 +3069,141 @@ void lhat_program_release(LhatProgram *program)
     }
 }
 
+// ---------------------------------------------------------------------------
+// 10 §7.1: the language a program draws its messages in, and the catalogs it
+// was handed.
+
+// How close `tag` is to the language `wanted`: 2 for the same tag, 1 for the
+// language alone (a `ja` catalog answers a `ja-JP` program), 0 for neither.
+// Tags are matched without case, as 10 §6.1 says.
+static int tag_rank(const char *tag, const char *wanted)
+{
+    size_t i = 0;
+    for (; tag[i] != '\0' && wanted[i] != '\0'; i++) {
+        char a = tag[i] >= 'A' && tag[i] <= 'Z' ? (char)(tag[i] + 32) : tag[i];
+        char b = wanted[i] >= 'A' && wanted[i] <= 'Z' ? (char)(wanted[i] + 32)
+                                                      : wanted[i];
+        if (a != b) {
+            return 0;
+        }
+    }
+    if (tag[i] == '\0' && wanted[i] == '\0') {
+        return 2;
+    }
+    // `ja` answers `ja-JP`; `ja-JP` does not answer `ja`, and `jam` neither.
+    return tag[i] == '\0' && wanted[i] == '-' ? 1 : 0;
+}
+
+// Where this language's catalog of this source goes: the one already held,
+// or a new one at the end. NULL when there was no room for another.
+static LhatCatalog *catalog_for(LhatProgram *program, const char *tag,
+                                const char *source)
+{
+    for (size_t i = 0; i < program->catalog_count; i++) {
+        LhatCatalog *at = &program->catalogs[i];
+        if (tag_rank(at->tag, tag) == 2 && strcmp(at->source, source) == 0) {
+            return at;
+        }
+    }
+    if (program->catalog_count == program->catalog_capacity) {
+        size_t grown =
+            program->catalog_capacity != 0 ? program->catalog_capacity * 2 : 4;
+        LhatCatalog *bigger = (LhatCatalog *)lhat_realloc(
+            program->catalogs, grown * sizeof *bigger);
+        if (bigger == NULL) {
+            return NULL;
+        }
+        program->catalogs = bigger;
+        program->catalog_capacity = grown;
+    }
+    LhatCatalog *fresh = &program->catalogs[program->catalog_count++];
+    memset(fresh, 0, sizeof *fresh);
+    return fresh;
+}
+
+size_t lhat_program_load_catalog(LhatProgram *program, const char *tag,
+                                 const char *source,
+                                 const LhatMessageEntry *english,
+                                 size_t english_count, const char *text,
+                                 size_t length)
+{
+    if (program == NULL || tag == NULL || source == NULL || text == NULL) {
+        return 0;
+    }
+    lhat_program_hold(program);
+    LhatCatalog *at = catalog_for(program, tag, source);
+    size_t held = at != NULL ? lhat_catalog_load(at, tag, source, english,
+                                                 english_count, text, length)
+                             : 0;
+    lhat_program_release(program);
+    return held;
+}
+
+size_t lhat_program_load_language(LhatProgram *program, const char *tag,
+                                  const char *source, const char *text,
+                                  size_t length)
+{
+    return lhat_program_load_catalog(program, tag, source, NULL, 0, text,
+                                     length);
+}
+
+bool lhat_program_set_language(LhatProgram *program, const char *tag)
+{
+    if (program == NULL) {
+        return false;
+    }
+    lhat_program_hold(program);
+    char *copy = NULL;
+    bool ok = true;
+    if (tag != NULL) {
+        size_t room = strlen(tag) + 1;
+        copy = (char *)lhat_alloc(room);
+        ok = copy != NULL;
+        if (ok) {
+            memcpy(copy, tag, room);
+        }
+    }
+    if (ok) {
+        lhat_free(program->language);
+        program->language = copy;
+    }
+    lhat_program_release(program);
+    return ok;
+}
+
+const char *lhat_program_language(const LhatProgram *program)
+{
+    return program != NULL && program->language != NULL ? program->language
+                                                        : "en";
+}
+
+// 10 §2.2: the text to draw `id` from -- this program's language, or the
+// English the build holds when that language has nothing for it. Read while
+// a message is being written, which the lock is already around, so it takes
+// none of its own.
+const char *lhat_program_text(const LhatProgram *program, const char *id,
+                              const char *english)
+{
+    if (program == NULL || program->language == NULL || id == NULL) {
+        return english;
+    }
+    const char *found = NULL;
+    int best = 0;
+    for (size_t i = 0; i < program->catalog_count; i++) {
+        const LhatCatalog *at = &program->catalogs[i];
+        int rank = tag_rank(at->tag, program->language);
+        if (rank <= best) {
+            continue;  // a closer catalog already answered
+        }
+        const char *text = lhat_catalog_text(at, id);
+        if (text != NULL) {
+            found = text;
+            best = rank;
+        }
+    }
+    return found != NULL ? found : english;
+}
+
 // 07 の 4 章. Freed here rather than where they are made, since the program
 // is what outlives them. The three counts are left alone: what they say is
 // which registrations the cache was emptied against, and an empty cache
@@ -4059,6 +4194,17 @@ void lhat_program_dispose(LhatProgram *program)
 
     lhat_free(program->load_failure);
     program->load_failure = NULL;
+    // 10 §7.1: the catalogs this program was handed, and the language it drew
+    // its messages in.
+    for (size_t i = 0; i < program->catalog_count; i++) {
+        lhat_catalog_dispose(&program->catalogs[i]);
+    }
+    lhat_free(program->catalogs);
+    program->catalogs = NULL;
+    program->catalog_count = 0;
+    program->catalog_capacity = 0;
+    lhat_free(program->language);
+    program->language = NULL;
     for (size_t i = 0; i < program->host_entry_count; i++) {
         lhat_free(program->host_entries[i].module);
         lhat_free(program->host_entries[i].type);

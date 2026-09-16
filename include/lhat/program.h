@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "lhat/error.h"   // 10 §6.3: the entries a catalog is checked against
 #include "lhat/module.h"  // what a compile answers with, and why one stopped
 #include "lhat/object.h"  // 05 の 8.7: LhatHostFn
 #include "lhat/source.h"  // what a diagnostic's position indexes
@@ -262,6 +263,33 @@ LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,
 LhatLoadStatus lhat_program_load_file(LhatProgram *program, const char *path,
                                       LhatProto **out);
 const char *lhat_program_load_failure(const LhatProgram *program);
+
+// 10 §7.1: the language this program's messages come out in, and the
+// catalogs they are drawn from -- one per source, per language tag. Held per
+// program rather than anywhere global, since two programs in one process may
+// be read by people in different languages (10 §2.3).
+//
+// `lhat_program_load_language` takes the bytes of one catalog and answers how
+// many entries it holds. Which source they are for is the caller's to say:
+// the file name is the host's to read (10 §6.1), and a host with no files
+// still has bytes. Reading the same language and source again replaces what
+// was held.
+size_t lhat_program_load_language(LhatProgram *program, const char *tag,
+                                  const char *source, const char *text,
+                                  size_t length);
+// The same for a source whose English the caller holds itself -- a tool's or
+// a host's own texts, which is what the names and the holes in the catalog
+// are checked against (10 §6.3).
+size_t lhat_program_load_catalog(LhatProgram *program, const char *tag,
+                                 const char *source,
+                                 const LhatMessageEntry *english,
+                                 size_t english_count, const char *text,
+                                 size_t length);
+// The language to draw in. `en` is the default and needs no catalog; a tag
+// with no catalog of its own falls back to the language alone (`ja-JP` to
+// `ja`), and then to the English the build holds (10 §2.2).
+bool lhat_program_set_language(LhatProgram *program, const char *tag);
+const char *lhat_program_language(const LhatProgram *program);
 
 // 05 の 10 章 with 08 の 7改: whether `bytes` begin the way a compiled unit
 // does -- the one reading that tells the two apart, since the extension

@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "message.h"
+#include "program_internal.h"
 #include "testutil.h"
 
 // The catalog `text` makes for `source`, against the English this build
@@ -190,11 +191,74 @@ static void test_own_table(void)
     lhat_catalog_dispose(&catalog);
 }
 
+// 10 §7.1: a program holds the catalogs it was handed and the language its
+// messages come out in -- one program's language is not another's.
+static void test_program(void)
+{
+    LhatProgram program;
+    lhat_program_init(&program, true, NULL, NULL);
+    const char *said = "top-level = the top, in xx\n";
+
+    LHAT_TEST("a catalog is held, and the English stands until xx is chosen");
+    LHAT_CHECK_EQ_INT(
+        lhat_program_load_language(&program, "xx", "trace", said,
+                                   strlen(said)),
+        1);
+    SAME(lhat_program_language(&program), "en");
+    SAME(lhat_program_text(&program, "trace.top-level", "at the top level"),
+         "at the top level");
+
+    LHAT_TEST("the language chosen is what a message is drawn in");
+    LHAT_CHECK(lhat_program_set_language(&program, "xx"), "xx is chosen");
+    SAME(lhat_program_text(&program, "trace.top-level", "at the top level"),
+         "the top, in xx");
+    SAME(lhat_program_text(&program, "trace.header", "traceback:"),
+         "traceback:");
+
+    LHAT_TEST("a tag falls back to its language, and case is not read");
+    LHAT_CHECK(lhat_program_set_language(&program, "XX-YY"), "XX-YY is chosen");
+    SAME(lhat_program_text(&program, "trace.top-level", "at the top level"),
+         "the top, in xx");
+    LHAT_CHECK(lhat_program_set_language(&program, "zz"), "zz is chosen");
+    SAME(lhat_program_text(&program, "trace.top-level", "at the top level"),
+         "at the top level");
+
+    LHAT_TEST("the closest catalog answers, and the language's own fills in");
+    const char *closer = "top-level = the top, in xx-yy\n";
+    LHAT_CHECK_EQ_INT(
+        lhat_program_load_language(&program, "xx-YY", "trace", closer,
+                                   strlen(closer)),
+        1);
+    LHAT_CHECK(lhat_program_set_language(&program, "xx-yy"), "xx-yy is chosen");
+    SAME(lhat_program_text(&program, "trace.top-level", "at the top level"),
+         "the top, in xx-yy");
+    const char *again = "header = a traceback, in xx-yy\n";
+    LHAT_CHECK_EQ_INT(
+        lhat_program_load_language(&program, "xx-YY", "trace", again,
+                                   strlen(again)),
+        1);
+    SAME(lhat_program_text(&program, "trace.header", "traceback:"),
+         "a traceback, in xx-yy");
+    SAME(lhat_program_text(&program, "trace.top-level", "at the top level"),
+         "the top, in xx");
+
+    LHAT_TEST("a source the caller holds the English of is held beside them");
+    static const LhatMessageEntry OWN[] = {{"tool.one", "first"}};
+    const char *tool = "one = the first, in xx\n";
+    LHAT_CHECK_EQ_INT(lhat_program_load_catalog(&program, "xx", "tool", OWN, 1,
+                                                tool, strlen(tool)),
+                      1);
+    SAME(lhat_program_text(&program, "tool.one", "first"), "the first, in xx");
+
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     test_entries();
     test_left_out();
     test_lines();
     test_own_table();
+    test_program();
     return lhat_test_report("test_catalog");
 }
