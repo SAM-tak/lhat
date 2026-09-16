@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "lhat/error.h"
 #include "lhat/program.h"
 #include "lhat/vm.h"
 
@@ -23,6 +24,10 @@ extern "C" {
 #endif
 
 typedef struct DapSession DapSession;
+
+// 10 §6.3: the adapter's own texts, for whoever writes the catalogs out --
+// the cli does, since the adapter is linked into it.
+const LhatMessageEntry *dap_messages(size_t *count);
 
 // 09 の 5.2: how the debugger's spelling of a file and the program's
 // spelling of a unit meet, when they are not the same thing -- a host

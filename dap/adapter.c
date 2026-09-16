@@ -863,10 +863,7 @@ enum {
     DAP_STOPPED_BY_DEBUGGER,
 };
 
-static const struct {
-    const char *id;
-    const char *text;
-} DAP_MESSAGES[] = {
+static const LhatMessageEntry DAP_MESSAGES[] = {
     [DAP_PANIC] = {"dap.panic", "panic^ {value}"},
     [DAP_THREAD_MAIN] = {"dap.thread-main", "main"},
     [DAP_THREAD_MACHINE] = {"dap.thread-machine", "machine {id}"},
@@ -887,6 +884,12 @@ static const struct {
     [DAP_STOPPED_BY_DEBUGGER] =
         {"dap.stopped-by-debugger", "stopped by the debugger"},
 };
+
+const LhatMessageEntry *dap_messages(size_t *count)
+{
+    *count = sizeof DAP_MESSAGES / sizeof DAP_MESSAGES[0];
+    return DAP_MESSAGES;
+}
 
 // The text `id` makes with one argument in its hole, into `out`.
 static void dap_say(size_t id, const char *name, const char *value,

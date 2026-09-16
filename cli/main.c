@@ -451,6 +451,8 @@ static const LhatMessageEntry CLI_MESSAGES[] = {
         "(default for the prompt)\n"
         "  --dump-host-api [file]  write what this driver registers as "
         "JSON, for lhatls\n"
+        "  --dump-messages DIR  write the English messages under DIR, one "
+        "file per source, as the catalogs a translation is made from\n"
         "  --compile -o DIR  check and compile the whole program and write "
         "every unit to DIR as bytes; a .lton compiles on its own\n"
         "  --dump-signatures FILE  write the signature table this driver's "
@@ -929,6 +931,41 @@ static bool write_bytes(const char *out_path, const uint8_t *bytes,
     fwrite(bytes, 1, length, file);
     fclose(file);
     return true;
+}
+
+// 10 §6.3: one source's catalog, written under the directory --dump-messages
+// was pointed at. `entries` is a table this driver holds itself; NULL asks
+// the library for the source it holds.
+static bool write_catalog(const char *dir, const char *source,
+                          const LhatMessageEntry *entries, size_t count)
+{
+    size_t needed =
+        entries != NULL
+            ? lhat_messages_write_catalog(source, entries, count, NULL, 0)
+            : lhat_messages_write_english(source, NULL, 0);
+    char *text = (char *)malloc(needed + 1);
+    if (text == NULL) {
+        cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
+        return false;
+    }
+    if (entries != NULL) {
+        lhat_messages_write_catalog(source, entries, count, text, needed + 1);
+    } else {
+        lhat_messages_write_english(source, text, needed + 1);
+    }
+
+    size_t room = strlen(dir) + strlen(source) + sizeof "/.txt";
+    char *path = (char *)malloc(room);
+    bool ok = false;
+    if (path == NULL) {
+        cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
+    } else {
+        snprintf(path, room, "%s/%s.txt", dir, source);
+        ok = write_bytes(path, (const uint8_t *)text, needed);
+    }
+    free(path);
+    free(text);
+    return ok;
 }
 
 static bool is_lton_path(const char *path)
@@ -1541,6 +1578,7 @@ int main(int argc, char **argv)
     const char *out_dir = NULL;
     bool strip_debug = false;
     const char *dump_signatures_path = NULL;  // 10.7
+    const char *dump_messages_dir = NULL;     // 10 §6.3
     const char *signatures_path = NULL;
     bool show_help = false;
     bool show_version = false;
@@ -1575,6 +1613,8 @@ int main(int argc, char **argv)
             out_dir = argv[++i];
         } else if (strcmp(argv[i], "--dump-signatures") == 0 && i + 1 < argc) {
             dump_signatures_path = argv[++i];
+        } else if (strcmp(argv[i], "--dump-messages") == 0 && i + 1 < argc) {
+            dump_messages_dir = argv[++i];
         } else if (strcmp(argv[i], "--signatures") == 0 && i + 1 < argc) {
             signatures_path = argv[++i];
         } else if (strcmp(argv[i], "-h") == 0 ||
@@ -1676,6 +1716,28 @@ int main(int argc, char **argv)
         fclose(file);
         lhat_free(bytes);
         return EXIT_SUCCESS;
+    }
+
+    // 10 §6.3: the English this build holds, as the catalogs a translation
+    // is made from -- the library's sources, and the texts this driver and
+    // the debug adapter hold themselves.
+    if (dump_messages_dir != NULL) {
+        bool ok = true;
+        for (size_t i = 0; ok; i++) {
+            const char *source = lhat_messages_source(i);
+            if (source == NULL) {
+                break;
+            }
+            ok = write_catalog(dump_messages_dir, source, NULL, 0);
+        }
+        ok = ok && write_catalog(dump_messages_dir, "cli", CLI_MESSAGES,
+                                 LHAT_MESSAGE_COUNT(CLI_MESSAGES));
+#ifdef LHAT_CLI_WITH_DAP
+        size_t said = 0;
+        const LhatMessageEntry *entries = dap_messages(&said);
+        ok = ok && write_catalog(dump_messages_dir, "dap", entries, said);
+#endif
+        return ok ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     // 03 の 4 章: with nothing to read, read from the prompt.
