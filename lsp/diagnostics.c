@@ -85,7 +85,8 @@ void lsp_diagnostics_add_compile_failure(cJSON *array, const LhatUnit *unit,
         return;
     }
     char message[256];
-    lhat_compile_message_write(&failure, message, sizeof message);
+    lhat_compile_message_write(unit->program, &failure, message,
+                               sizeof message);
     // A compile refusal stops every host, strict or relaxed -- always Error.
     cJSON_AddItemToArray(array,
                          make_diagnostic(unit, failure.offset,

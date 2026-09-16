@@ -747,7 +747,7 @@ static void test_immutable_bindings(void)
     check_text(&u, "for^ i from^ 1 to^ 10 { i := 0 }\n");
     if (u.checked.diagnostic_count > 0) {
         char message[256];
-        lhat_check_message_write(&u.checked.diagnostics[0], message,
+        lhat_check_message_write(NULL, &u.checked.diagnostics[0], message,
                                  sizeof message);
         LHAT_CHECK(strstr(message, "var^") == NULL,
                    "a from^ focus has no var^ spelling to suggest");

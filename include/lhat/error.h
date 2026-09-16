@@ -25,6 +25,11 @@
 extern "C" {
 #endif
 
+// 10 §7.1: a message is written in the language of the program it is about.
+// lhat/program.h is where that is declared; naming it here asks for nothing
+// else.
+struct LhatProgram;
+
 typedef enum {
     LHAT_REPORT_ERROR,
     LHAT_REPORT_NOTE
@@ -76,7 +81,11 @@ typedef struct {
 // Follows lhat_value_write: answers how many bytes the whole thing wants,
 // not counting the terminating NUL, and fills up to `capacity` including it.
 // So measuring is a call with (NULL, 0).
-size_t lhat_report_write(const LhatReport *report, const LhatSource *source,
+// `program` is the one the report is about, whose language it is written in
+// (10 §7.1); NULL writes the English. Its declaration is lhat/program.h's,
+// which this header does not otherwise need.
+size_t lhat_report_write(const struct LhatProgram *program,
+                         const LhatReport *report, const LhatSource *source,
                          const char *name, bool rich, char *out,
                          size_t capacity);
 

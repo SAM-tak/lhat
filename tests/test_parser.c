@@ -985,7 +985,7 @@ static void test_statements(void)
 
             char message[128];
             size_t needed =
-                lhat_parse_message_write(d, message, sizeof message);
+                lhat_parse_message_write(NULL, d, message, sizeof message);
             LHAT_CHECK(needed < sizeof message, "it fits");
             LHAT_CHECK(strcmp(message,
                               "a ';' was expected here, and this is '}'") == 0,
@@ -1004,7 +1004,7 @@ static void test_statements(void)
             const LhatParseDiagnostic *d = &p.result.diagnostics[0];
             LHAT_CHECK_EQ_INT(d->code, LHAT_PARSE_ERR_EXPECTED_NAME);
             char message[128];
-            lhat_parse_message_write(d, message, sizeof message);
+            lhat_parse_message_write(NULL, d, message, sizeof message);
             LHAT_CHECK(strcmp(message, "expected a name, and this is a number")
                            == 0,
                        "it says what was there");
@@ -1022,7 +1022,7 @@ static void test_statements(void)
             LHAT_CHECK(!d->has_expected, "nothing to name");
 
             char message[128];
-            lhat_parse_message_write(d, message, sizeof message);
+            lhat_parse_message_write(NULL, d, message, sizeof message);
             LHAT_CHECK(strcmp(message, lhat_parse_error_message(d->code)) == 0,
                        "the code's own message");
         }
@@ -1035,10 +1035,10 @@ static void test_statements(void)
     parse_text(&p, "g := f^ { if^ 1: 2 el^: 3 }");
     if (p.result.diagnostic_count > 0) {
         const LhatParseDiagnostic *d = &p.result.diagnostics[0];
-        size_t needed = lhat_parse_message_write(d, NULL, 0);
+        size_t needed = lhat_parse_message_write(NULL, d, NULL, 0);
         char *room = (char *)malloc(needed + 1);
         if (room != NULL) {
-            LHAT_CHECK_EQ_INT(lhat_parse_message_write(d, room, needed + 1),
+            LHAT_CHECK_EQ_INT(lhat_parse_message_write(NULL, d, room, needed + 1),
                               needed);
             LHAT_CHECK_EQ_INT(strlen(room), needed);
             free(room);

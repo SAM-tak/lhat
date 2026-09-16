@@ -215,7 +215,8 @@ static const LhatMessageEntry REPORT_PARTS[] = {
 LHAT_MESSAGE_TABLES(lhat_report_message_tables,
     {REPORT_PARTS, LHAT_MESSAGE_COUNT(REPORT_PARTS)})
 
-size_t lhat_report_write(const LhatReport *report, const LhatSource *source,
+size_t lhat_report_write(const struct LhatProgram *program,
+                         const LhatReport *report, const LhatSource *source,
                          const char *name, bool rich, char *out,
                          size_t capacity)
 {
@@ -323,7 +324,8 @@ size_t lhat_report_write(const LhatReport *report, const LhatSource *source,
     const char *message = report->message != NULL ? report->message : "";
     const LhatMessageArg said = {"message", message, strlen(message)};
     bool room = w.out != NULL && w.used < w.capacity;
-    w.used += lhat_message_render(label->text, &said, 1,
+    w.used += lhat_message_render(
+        lhat_program_text(program, label->id, label->text), &said, 1,
                                   room ? w.out + w.used : NULL,
                                   room ? w.capacity - w.used : 0);
 

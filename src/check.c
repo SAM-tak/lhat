@@ -4318,7 +4318,8 @@ static const char *const NAME_HOLES[] = {"name", "member", "field",
                                          "annotation", "kind"};
 #define NAME_HOLE_COUNT (sizeof NAME_HOLES / sizeof NAME_HOLES[0])
 
-size_t lhat_check_message_write(const LhatCheckDiagnostic *diagnostic,
+size_t lhat_check_message_write(const struct LhatProgram *program,
+                                const LhatCheckDiagnostic *diagnostic,
                                 char *out, size_t capacity)
 {
     const LhatMessageEntry *entry =
@@ -4332,6 +4333,8 @@ size_t lhat_check_message_write(const LhatCheckDiagnostic *diagnostic,
             args[count].length = diagnostic->name_length;
         }
     }
-    return lhat_message_render(entry != NULL ? entry->text : "unknown error",
-                               args, count, out, capacity);
+    const char *text =
+        entry != NULL ? lhat_program_text(program, entry->id, entry->text)
+                      : "unknown error";
+    return lhat_message_render(text, args, count, out, capacity);
 }

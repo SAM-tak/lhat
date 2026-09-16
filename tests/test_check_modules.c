@@ -503,7 +503,7 @@ static void test_named_diagnostics(void)
             LHAT_CHECK_EQ_INT(d->name_length, 7);
 
             char message[128];
-            size_t needed = lhat_check_message_write(d, message, sizeof message);
+            size_t needed = lhat_check_message_write(NULL, d, message, sizeof message);
             LHAT_CHECK(needed < sizeof message, "it fits");
             LHAT_CHECK(strcmp(message, "no such name in scope: nowhere") == 0,
                        "the message names it");
@@ -517,7 +517,7 @@ static void test_named_diagnostics(void)
         const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
         LHAT_CHECK_EQ_INT(d->code, LHAT_CHECK_ERR_NO_MEMBER);
         char message[128];
-        lhat_check_message_write(d, message, sizeof message);
+        lhat_check_message_write(NULL, d, message, sizeof message);
         LHAT_CHECK(strcmp(message,
                           "this value has no such member: missing") == 0,
                    "the member is named");
@@ -554,7 +554,7 @@ static void test_named_diagnostics(void)
         const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
         LHAT_CHECK(d->name == NULL, "nothing to name");
         char message[128];
-        lhat_check_message_write(d, message, sizeof message);
+        lhat_check_message_write(NULL, d, message, sizeof message);
         LHAT_CHECK(strcmp(message, lhat_check_error_message(d->code)) == 0,
                    "the code's own message");
     }

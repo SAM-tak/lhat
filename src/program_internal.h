@@ -252,12 +252,6 @@ typedef struct LhatGlobalEntry {
 // completions are read and written from src/completion.c, which is not the
 // file that defines them.
 void lhat_program_hold(LhatProgram *program);
-
-// 10 §2.2: the text `id` is drawn from in this program's language, or
-// `english` where that language holds nothing for it. Read while a message
-// is being written, so it takes no lock of its own.
-const char *lhat_program_text(const LhatProgram *program, const char *id,
-                              const char *english);
 void lhat_program_release(LhatProgram *program);
 
 // 07 の 4 章: what a member completion answered for one receiver.

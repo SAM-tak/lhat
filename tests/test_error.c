@@ -15,12 +15,12 @@
 static char *rendered(const LhatReport *report, const LhatSource *source,
                       const char *name, bool rich)
 {
-    size_t needed = lhat_report_write(report, source, name, rich, NULL, 0);
+    size_t needed = lhat_report_write(NULL, report, source, name, rich, NULL, 0);
     char *out = (char *)malloc(needed + 1);
     if (out == NULL) {
         return NULL;
     }
-    size_t again = lhat_report_write(report, source, name, rich, out,
+    size_t again = lhat_report_write(NULL, report, source, name, rich, out,
                                      needed + 1);
     // Measuring and filling have to agree, or a caller sizing a buffer from
     // the first call gets a truncated second one.
@@ -279,7 +279,7 @@ static void test_edges(void)
     {
         char room[8];
         room[0] = 'x';
-        LHAT_CHECK_EQ_INT(lhat_report_write(NULL, NULL, NULL, true, room,
+        LHAT_CHECK_EQ_INT(lhat_report_write(NULL, NULL, NULL, NULL, true, room,
                                             sizeof room),
                           0);
         LHAT_CHECK_EQ_INT(room[0], '\0');
@@ -292,7 +292,7 @@ static void test_edges(void)
         LhatReport report = at("message", 0, 1, 1, 0);
         char room[6];
         size_t needed =
-            lhat_report_write(&report, &source, NULL, false, room, sizeof room);
+            lhat_report_write(NULL, &report, &source, NULL, false, room, sizeof room);
         LHAT_CHECK(needed >= sizeof room, "it wanted more");
         LHAT_CHECK_EQ_INT(room[sizeof room - 1], '\0');
         LHAT_CHECK(strlen(room) < sizeof room, "terminated within it");

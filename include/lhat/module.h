@@ -96,12 +96,8 @@ typedef struct {
     uint32_t name_length;
 } LhatCompileResult;
 
-// The message for one compile result, which for a status about a name says
-// which -- "no such name: nowhere". Follows lhat_report_write: answers how
-// many bytes it wants, not counting the terminating NUL, and fills up to
-// `capacity` including it.
-size_t lhat_compile_message_write(const LhatCompileResult *result, char *out,
-                                  size_t capacity);
+// lhat/program.h writes the message one of these makes: a compile result is
+// read in the language of the program the compile was for (10 §7.1).
 
 #ifdef __cplusplus
 }

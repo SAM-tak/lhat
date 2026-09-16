@@ -4882,8 +4882,10 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
     switch (stage) {
         case LHAT_STAGE_LEXER: {
             // A literal, so it is copied rather than written.
+            LhatErrorCode code = unit->lexer.diagnostics[within].code;
             const char *text =
-                lhat_lexer_error_message(unit->lexer.diagnostics[within].code);
+                lhat_program_text(unit->program, lhat_lexer_error_id(code),
+                                  lhat_lexer_error_message(code));
             size_t length = strlen(text);
             if (out != NULL && capacity > 0) {
                 size_t fits = length < capacity - 1 ? length : capacity - 1;
@@ -4893,11 +4895,13 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
             return length;
         }
         case LHAT_STAGE_PARSER:
-            return lhat_parse_message_write(&unit->parsed.diagnostics[within],
-                                            out, capacity);
+            return lhat_parse_message_write(
+                unit->program, &unit->parsed.diagnostics[within], out,
+                capacity);
         case LHAT_STAGE_CHECKER:
-            return lhat_check_message_write(&unit->checked.diagnostics[within],
-                                            out, capacity);
+            return lhat_check_message_write(
+                unit->program, &unit->checked.diagnostics[within], out,
+                capacity);
     }
     return 0;
 #endif
@@ -4928,7 +4932,8 @@ size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
     report.column = d.column;
     report.length = d.length;
 
-    size_t written = lhat_report_write(&report, lhat_unit_source(unit),
+    size_t written = lhat_report_write(unit->program, &report,
+                                       lhat_unit_source(unit),
                                        lhat_unit_path(unit), rich, out,
                                        capacity);
     if (message != room) {

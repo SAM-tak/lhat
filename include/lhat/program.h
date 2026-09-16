@@ -290,6 +290,20 @@ size_t lhat_program_load_catalog(LhatProgram *program, const char *tag,
 // `ja`), and then to the English the build holds (10 §2.2).
 bool lhat_program_set_language(LhatProgram *program, const char *tag);
 const char *lhat_program_language(const LhatProgram *program);
+// 10 §2.2: the text `id` is drawn from in this program's language, or
+// `english` where that language holds nothing for it. Every message written
+// about this program goes through it, and a host drawing its own texts in
+// the same language asks it too. A NULL program answers the English.
+const char *lhat_program_text(const LhatProgram *program, const char *id,
+                              const char *english);
+
+// The message for one compile result, which for a status about a name says
+// which -- "no such name: nowhere" -- in `program`'s language. Follows
+// lhat_report_write: answers how many bytes it wants, not counting the
+// terminating NUL, and fills up to `capacity` including it.
+size_t lhat_compile_message_write(const LhatProgram *program,
+                                  const LhatCompileResult *result, char *out,
+                                  size_t capacity);
 
 // 05 の 10 章 with 08 の 7改: whether `bytes` begin the way a compiled unit
 // does -- the one reading that tells the two apart, since the extension

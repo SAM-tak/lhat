@@ -712,6 +712,11 @@ const char *lhat_check_error_message(LhatCheckErrorCode code);
 // does not hold.
 const char *lhat_check_error_id(LhatCheckErrorCode code);
 
+// 10 §7.1: a message is written in the language of the program it is about.
+// lhat/program.h is where that is declared; naming it here asks for nothing
+// else.
+struct LhatProgram;
+
 // The message for one diagnostic, which for the codes that are about a name
 // says which -- "no such name in scope: nowhere". The name goes into the
 // text's hole; a code reported both with a name and without one has a second
@@ -719,7 +724,8 @@ const char *lhat_check_error_id(LhatCheckErrorCode code);
 //
 // Follows lhat_report_write: answers how many bytes it wants, not counting
 // the terminating NUL, and fills up to `capacity` including it.
-size_t lhat_check_message_write(const LhatCheckDiagnostic *diagnostic,
+size_t lhat_check_message_write(const struct LhatProgram *program,
+                                const LhatCheckDiagnostic *diagnostic,
                                 char *out, size_t capacity);
 // 10 §4: the ID of the text that message is drawn from; NULL for a code no
 // table holds.

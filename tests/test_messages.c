@@ -280,7 +280,7 @@ static void test_named(void)
         LHAT_CHECK(own <= 1 && all_named,
                    "'%s' holds at most one hole, and one for a name", plain);
         char message[512];
-        lhat_check_message_write(&d, message, sizeof message);
+        lhat_check_message_write(NULL, &d, message, sizeof message);
         if (strcmp(named, plain) == 0) {
             LHAT_CHECK((own == 1) == (strstr(message, "Zq9") != NULL),
                        "'%s' says the name exactly when it has a hole", plain);
@@ -323,7 +323,7 @@ static void test_named(void)
                        well_formed(named, "compile"),
                    "'%s' is the plain ID and .named", named);
         char message[256];
-        lhat_compile_message_write(&r, message, sizeof message);
+        lhat_compile_message_write(NULL, &r, message, sizeof message);
         LHAT_CHECK(strstr(message, "Zq9") != NULL, "'%s' says the name",
                    named);
     }

@@ -201,6 +201,11 @@ const char *lhat_parse_error_message(LhatParseErrorCode code);
 // does not hold.
 const char *lhat_parse_error_id(LhatParseErrorCode code);
 
+// 10 §7.1: a message is written in the language of the program it is about.
+// lhat/program.h is where that is declared; naming it here asks for nothing
+// else.
+struct LhatProgram;
+
 // The message for one diagnostic, which for some of them says more than the
 // code alone can -- "a ';' was expected here" rather than "expected a
 // different token here", and what the token met was. The token wanted and
@@ -209,7 +214,8 @@ const char *lhat_parse_error_id(LhatParseErrorCode code);
 // Follows lhat_report_write: answers how many bytes it wants, not counting
 // the terminating NUL, and fills up to `capacity` including it. So measuring
 // is a call with (NULL, 0).
-size_t lhat_parse_message_write(const LhatParseDiagnostic *diagnostic,
+size_t lhat_parse_message_write(const struct LhatProgram *program,
+                                const LhatParseDiagnostic *diagnostic,
                                 char *out, size_t capacity);
 // 10 §4: the IDs of the texts a message is drawn from besides its code's, by
 // index from 0; NULL past the last. For the tests that hold every ID to §4.

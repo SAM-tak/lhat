@@ -83,7 +83,8 @@ const char *lhat_compile_message_id(const LhatCompileResult *result)
     return entry != NULL ? entry->id : NULL;
 }
 
-size_t lhat_compile_message_write(const LhatCompileResult *result, char *out,
+size_t lhat_compile_message_write(const LhatProgram *program,
+                                  const LhatCompileResult *result, char *out,
                                   size_t capacity)
 {
     const LhatMessageEntry *entry =
@@ -93,8 +94,11 @@ size_t lhat_compile_message_write(const LhatCompileResult *result, char *out,
         name.value = result->name;
         name.length = result->name_length;
     }
-    return lhat_message_render(entry != NULL ? entry->text : "unknown", &name,
-                               name.value != NULL ? 1 : 0, out, capacity);
+    const char *text =
+        entry != NULL ? lhat_program_text(program, entry->id, entry->text)
+                      : "unknown";
+    return lhat_message_render(text, &name, name.value != NULL ? 1 : 0, out,
+                               capacity);
 }
 
 LhatProto *lhat_proto_new(void)

@@ -510,12 +510,12 @@ static bool rich_reports = true;
 
 // error.h fills a buffer rather than a stream, so the driver decides where it
 // goes -- 05 の 8.9 keeps the language away from stdio.
-static void say(const LhatReport *report, const LhatSource *source,
-                const char *name)
+static void say(const LhatProgram *program, const LhatReport *report,
+                const LhatSource *source, const char *name)
 {
     char room[1024];
-    size_t needed = lhat_report_write(report, source, name, rich_reports, room,
-                                      sizeof room);
+    size_t needed = lhat_report_write(program, report, source, name,
+                                      rich_reports, room, sizeof room);
     if (needed < sizeof room) {
         fprintf(stderr, "%s\n", room);
         return;
@@ -525,7 +525,8 @@ static void say(const LhatReport *report, const LhatSource *source,
         fprintf(stderr, "%s\n", room);  // truncated, but better than silence
         return;
     }
-    lhat_report_write(report, source, name, rich_reports, bigger, needed + 1);
+    lhat_report_write(program, report, source, name, rich_reports, bigger,
+                      needed + 1);
     fprintf(stderr, "%s\n", bigger);
     free(bigger);
 }
@@ -533,17 +534,19 @@ static void say(const LhatReport *report, const LhatSource *source,
 #if LHAT_WITH_FRONTEND
 // The parser's message can name the token it wanted, which no literal can
 // carry, so it is written into a buffer first and the report borrows that.
-static void say_parse_error(const LhatSource *source, const char *name,
+static void say_parse_error(const LhatProgram *program,
+                            const LhatSource *source, const char *name,
                             const LhatParseDiagnostic *d)
 {
     char message[256];
-    size_t needed = lhat_parse_message_write(d, message, sizeof message);
+    size_t needed =
+        lhat_parse_message_write(program, d, message, sizeof message);
     char *text = message;
     char *bigger = NULL;
     if (needed >= sizeof message) {
         bigger = (char *)malloc(needed + 1);
         if (bigger != NULL) {
-            lhat_parse_message_write(d, bigger, needed + 1);
+            lhat_parse_message_write(program, d, bigger, needed + 1);
             text = bigger;
         }
     }
@@ -555,22 +558,24 @@ static void say_parse_error(const LhatSource *source, const char *name,
     report.line = d->line;
     report.column = d->column;
     report.length = d->length;
-    say(&report, source, name);
+    say(program, &report, source, name);
     free(bigger);
 }
 
 // The same for the checker, whose codes about a name can say which.
-static void say_check_error(const LhatSource *source, const char *name,
+static void say_check_error(const LhatProgram *program,
+                            const LhatSource *source, const char *name,
                             const LhatCheckDiagnostic *d)
 {
     char message[256];
-    size_t needed = lhat_check_message_write(d, message, sizeof message);
+    size_t needed =
+        lhat_check_message_write(program, d, message, sizeof message);
     char *text = message;
     char *bigger = NULL;
     if (needed >= sizeof message) {
         bigger = (char *)malloc(needed + 1);
         if (bigger != NULL) {
-            lhat_check_message_write(d, bigger, needed + 1);
+            lhat_check_message_write(program, d, bigger, needed + 1);
             text = bigger;
         }
     }
@@ -582,7 +587,7 @@ static void say_check_error(const LhatSource *source, const char *name,
     report.line = d->line;
     report.column = d->column;
     report.length = d->name_length;
-    say(&report, source, name);
+    say(program, &report, source, name);
     free(bigger);
 }
 
@@ -593,11 +598,12 @@ static void say_check_error(const LhatSource *source, const char *name,
 // way the checker's own diagnostics tell them. Falls back to the one-line
 // form where there is no source to point into: a failure before any unit was
 // read has a status and nothing else.
-static void say_compile_error(const LhatSource *source, const char *name,
+static void say_compile_error(const LhatProgram *program,
+                              const LhatSource *source, const char *name,
                               const LhatCompileResult *result)
 {
     char text[256];
-    lhat_compile_message_write(result, text, sizeof text);
+    lhat_compile_message_write(program, result, text, sizeof text);
 
     if (source == NULL || result->line == 0) {
         const LhatMessageArg args[] = {
@@ -614,7 +620,7 @@ static void say_compile_error(const LhatSource *source, const char *name,
     report.line = result->line;
     report.column = result->column;
     report.length = result->name_length;
-    say(&report, source, name);
+    say(program, &report, source, name);
 }
 
 // 04 の 11.6改: what the program wrote in panic^ EXPR, as text -- a plain
@@ -708,9 +714,9 @@ static void say_run_error(const char *path, LhatRunResult ran)
 }
 
 #if LHAT_WITH_FRONTEND
-static void say_error(const LhatSource *source, const char *name,
-                      uint32_t offset, uint32_t line, uint32_t column,
-                      const char *message)
+static void say_error(const LhatProgram *program, const LhatSource *source,
+                      const char *name, uint32_t offset, uint32_t line,
+                      uint32_t column, const char *message)
 {
     LhatReport report;
     report.kind = LHAT_REPORT_ERROR;
@@ -719,7 +725,7 @@ static void say_error(const LhatSource *source, const char *name,
     report.line = line;
     report.column = column;
     report.length = 0;
-    say(&report, source, name);
+    say(program, &report, source, name);
 }
 
 static int report_lexical(const LhatLexer *lexer, const LhatSource *source)
@@ -727,7 +733,7 @@ static int report_lexical(const LhatLexer *lexer, const LhatSource *source)
     int status = EXIT_SUCCESS;
     for (size_t i = 0; i < lexer->diagnostic_count; i++) {
         const LhatDiagnostic *d = &lexer->diagnostics[i];
-        say_error(source, NULL, d->offset, d->line, d->column,
+        say_error(NULL, source, NULL, d->offset, d->line, d->column,
                   lhat_lexer_error_message(d->code));
         status = EXIT_FAILURE;
     }
@@ -1051,7 +1057,8 @@ static int compile_program(const char *path, const char *out_dir,
         const char *where = NULL;
         LhatCompileResult failure =
             lhat_program_compile_failure(&program, &where);
-        say_compile_error(program.compile_unit != NULL
+        say_compile_error(&program,
+                          program.compile_unit != NULL
                               ? &program.compile_unit->source
                               : NULL,
                           where != NULL ? where : path, &failure);
@@ -1182,7 +1189,8 @@ static int check_program(const char *path, bool run, bool strict,
                 const char *where = NULL;
                 LhatCompileResult failure =
                     lhat_program_compile_failure(&program, &where);
-                say_compile_error(program.compile_unit != NULL
+                say_compile_error(&program,
+                                  program.compile_unit != NULL
                                       ? &program.compile_unit->source
                                       : NULL,
                                   where != NULL ? where : path, &failure);
@@ -1272,7 +1280,7 @@ static int dump_tree(const LhatSource *source, bool typed, bool command)
     int status = report_lexical(&lexer, source);
     for (size_t i = 0; i < result.diagnostic_count; i++) {
         const LhatParseDiagnostic *d = &result.diagnostics[i];
-        say_parse_error(source, NULL, d);
+        say_parse_error(NULL, source, NULL, d);
         status = EXIT_FAILURE;
     }
     if (result.incomplete) {
@@ -1338,7 +1346,8 @@ static int dump_bytecode(const char *path)
                 const char *where = NULL;
                 LhatCompileResult failure =
                     lhat_program_compile_failure(&program, &where);
-                say_compile_error(program.compile_unit != NULL
+                say_compile_error(&program,
+                                  program.compile_unit != NULL
                                       ? &program.compile_unit->source
                                       : NULL,
                                   where != NULL ? where : path, &failure);
@@ -1481,12 +1490,13 @@ static int repl(bool strict)
         bool refused = in->lexer.diagnostic_count > 0;
         for (size_t i = 0; i < in->lexer.diagnostic_count; i++) {
             const LhatDiagnostic *d = &in->lexer.diagnostics[i];
-            say_error(&in->source, "stdin", d->offset, d->line, d->column,
+            say_error(&program, &in->source, "stdin", d->offset, d->line,
+                      d->column,
                       lhat_lexer_error_message(d->code));
         }
         for (size_t i = 0; i < in->parsed.diagnostic_count; i++) {
             const LhatParseDiagnostic *d = &in->parsed.diagnostics[i];
-            say_parse_error(&in->source, "stdin", d);
+            say_parse_error(&program, &in->source, "stdin", d);
             refused = true;
         }
 
@@ -1496,7 +1506,7 @@ static int repl(bool strict)
                             &checked);
             for (size_t i = 0; i < checked.diagnostic_count; i++) {
                 const LhatCheckDiagnostic *d = &checked.diagnostics[i];
-                say_check_error(&in->source, "stdin", d);
+                say_check_error(&program, &in->source, "stdin", d);
                 refused = true;
             }
             lhat_check_result_dispose(&checked);
@@ -1506,7 +1516,7 @@ static int repl(bool strict)
             LhatCompileResult compiled = lhat_compile_next(
                 compiles, in->parsed.root, &in->lexer, &in->proto);
             if (compiled.status != LHAT_COMPILE_OK) {
-                say_compile_error(&in->source, "stdin", &compiled);
+                say_compile_error(&program, &in->source, "stdin", &compiled);
                 refused = true;
             }
         }

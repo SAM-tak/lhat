@@ -5498,23 +5498,30 @@ static size_t found_part(const LhatParseDiagnostic *d)
     }
 }
 
-size_t lhat_parse_message_write(const LhatParseDiagnostic *diagnostic,
+size_t lhat_parse_message_write(const struct LhatProgram *program,
+                                const LhatParseDiagnostic *diagnostic,
                                 char *out, size_t capacity)
 {
     if (diagnostic == NULL) {
         return lhat_message_render("unknown error", NULL, 0, out, capacity);
     }
-    const char *text = diagnostic->has_expected
-                           ? PARSE_PARTS[PART_EXPECTED_FOUND].text
-                           : lhat_parse_error_message(diagnostic->code);
+    const LhatMessageEntry *sentence =
+        diagnostic->has_expected
+            ? &PARSE_PARTS[PART_EXPECTED_FOUND]
+            : LHAT_MESSAGE_AT(PARSE_MESSAGES, diagnostic->code);
+    const char *text =
+        sentence != NULL
+            ? lhat_program_text(program, sentence->id, sentence->text)
+            : "unknown error";
 
     // The phrase is made first, since an operator's has a hole of its own.
     const char *spelling = lhat_op_name(diagnostic->found_op);
     const LhatMessageArg op = {"operator", spelling, strlen(spelling)};
+    const LhatMessageEntry *phrase = &PARSE_PARTS[found_part(diagnostic)];
     char found[128];
-    size_t found_length =
-        lhat_message_render(PARSE_PARTS[found_part(diagnostic)].text, &op, 1,
-                            found, sizeof found);
+    size_t found_length = lhat_message_render(
+        lhat_program_text(program, phrase->id, phrase->text), &op, 1, found,
+        sizeof found);
     if (found_length >= sizeof found) {
         found_length = sizeof found - 1;
     }
