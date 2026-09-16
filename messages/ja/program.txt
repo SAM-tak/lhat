@@ -1,0 +1,17 @@
+# program -- L^ 0.3.3 の英語から訳した。
+# cannot-read = this unit could not be read
+cannot-read = この単位を読めなかった
+# cycle = the units require each other; move the common part out
+cycle = 単位どうしが互いを require^ している。共通の部分を外に出す
+# bad-binary = this binary unit was not written by this build of the library, or has been damaged
+bad-binary = このバイナリ単位は、このビルドのライブラリが書いた物ではないか、壊れている
+# host-mismatch = this binary unit names a host type, kind or enum that this program did not register the same way
+host-mismatch = このバイナリ単位が名指すホストの型・種別・列挙を、このプログラムは同じようには登録していない
+# mixed = a program is text or binary throughout; this unit is the other kind
+mixed = プログラムは全体がテキストかバイナリのどちらかである。この単位はもう一方である
+# no-signature = this build has no front end to read a signature with, and the signature table does not hold this one
+no-signature = このビルドには署名を読む前段が無く、署名表にもこの署名は無い
+# no-frontend = this build has no front end; only a binary unit runs
+no-frontend = このビルドには前段が無い。走るのはバイナリ単位だけである
+# failed = {path}: error: {message}
+failed = {path}: エラー: {message}

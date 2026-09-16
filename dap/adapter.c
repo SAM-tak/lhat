@@ -891,12 +891,20 @@ const LhatMessageEntry *dap_messages(size_t *count)
     return DAP_MESSAGES;
 }
 
+// 10 §7.2: the text of `id` in the language of the program the session was
+// given, which is what its messages come out in.
+static const char *dap_text(const LhatProgram *program, size_t id)
+{
+    return lhat_program_text(program, DAP_MESSAGES[id].id,
+                             DAP_MESSAGES[id].text);
+}
+
 // The text `id` makes with one argument in its hole, into `out`.
-static void dap_say(size_t id, const char *name, const char *value,
-                    char *out, size_t capacity)
+static void dap_say(const LhatProgram *program, size_t id, const char *name,
+                    const char *value, char *out, size_t capacity)
 {
     const LhatMessageArg arg = {name, value, strlen(value)};
-    lhat_message_render(DAP_MESSAGES[id].text, &arg, 1, out, capacity);
+    lhat_message_render(dap_text(program, id), &arg, 1, out, capacity);
 }
 
 static void fault_text(LhatMachine *machine, char *out, size_t capacity)
@@ -906,9 +914,13 @@ static void fault_text(LhatMachine *machine, char *out, size_t capacity)
         char value[192];
         lhat_value_text(lhat_machine_fault_value(machine), value,
                         sizeof value);
-        dap_say(DAP_PANIC, "value", value, out, capacity);
+        dap_say(lhat_machine_program(machine), DAP_PANIC, "value", value, out,
+                capacity);
     } else {
-        snprintf(out, capacity, "%s", lhat_run_status_message(status));
+        snprintf(out, capacity, "%s",
+                 lhat_program_text(lhat_machine_program(machine),
+                                   lhat_run_status_id(status),
+                                   lhat_run_status_message(status)));
     }
 }
 
@@ -1035,20 +1047,20 @@ static void set_breakpoints(DapSession *s, const cJSON *arguments, cJSON *body)
         if (!cJSON_IsNumber(line) || line->valuedouble < 1 ||
             line->valuedouble > UINT32_MAX ||
             (uint32_t)line->valuedouble != line->valuedouble) {
-            why = DAP_MESSAGES[DAP_BREAKPOINT_LINE].text;
+            why = dap_text(s->program, DAP_BREAKPOINT_LINE);
         } else if (key == NULL) {
-            why = DAP_MESSAGES[DAP_BREAKPOINT_SOURCE].text;
+            why = dap_text(s->program, DAP_BREAKPOINT_SOURCE);
         } else if (condition != NULL && !cJSON_IsString(condition)) {
-            why = DAP_MESSAGES[DAP_BREAKPOINT_CONDITION].text;
+            why = dap_text(s->program, DAP_BREAKPOINT_CONDITION);
         } else {
             requested = (uint32_t)line->valuedouble;
             actual = next_executable_line(s, key, requested);
             condition_text = cJSON_IsString(condition) ? condition->valuestring
                                                         : NULL;
             if (actual == 0) {
-                why = DAP_MESSAGES[DAP_BREAKPOINT_NO_LINE].text;
+                why = dap_text(s->program, DAP_BREAKPOINT_NO_LINE);
             } else if (!add_breakpoint(s, key, actual, condition_text)) {
-                why = DAP_MESSAGES[DAP_BREAKPOINT_OUT_OF_MEMORY].text;
+                why = dap_text(s->program, DAP_BREAKPOINT_OUT_OF_MEMORY);
             }
         }
         add_breakpoint_response(verified, why == NULL, actual, why);
@@ -1120,7 +1132,8 @@ static void dispatch(DapSession *s, const cJSON *request)
             char id[16];
             char name[64];
             snprintf(id, sizeof id, "%d", s->threads[i]->id);
-            dap_say(s->threads[i]->id == 1 ? DAP_THREAD_MAIN
+            dap_say(s->program,
+                    s->threads[i]->id == 1 ? DAP_THREAD_MAIN
                                            : DAP_THREAD_MACHINE,
                     "id", id, name, sizeof name);
             cJSON_AddStringToObject(one, "name", name);
@@ -1144,7 +1157,7 @@ static void dispatch(DapSession *s, const cJSON *request)
         DapThread *t = thread_by_id(
             s, cJSON_IsNumber(thread_id) ? (int)thread_id->valuedouble : 1);
         if (t == NULL || !t->parked || !t->faulted) {
-            refuse(s, request, DAP_MESSAGES[DAP_NOT_FAULTED].text);
+            refuse(s, request, dap_text(s->program, DAP_NOT_FAULTED));
             return;
         }
         cJSON *body = cJSON_CreateObject();
@@ -1228,11 +1241,11 @@ static void dispatch(DapSession *s, const cJSON *request)
                                              : 1000;  // main, level 0
         DapThread *t = thread_by_id(s, frame / 1000);
         if (!cJSON_IsString(expression)) {
-            refuse(s, request, DAP_MESSAGES[DAP_NO_EXPRESSION].text);
+            refuse(s, request, dap_text(s->program, DAP_NO_EXPRESSION));
             return;
         }
         if (t == NULL || !t->parked) {
-            refuse(s, request, DAP_MESSAGES[DAP_NOT_STOPPED].text);
+            refuse(s, request, dap_text(s->program, DAP_NOT_STOPPED));
             return;
         }
         char why[256];
@@ -1369,7 +1382,7 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
     if (s->ended) {
         lhat_mutex_unlock(&s->lock);
         if (!lhat_machine_panic_text(
-                machine, DAP_MESSAGES[DAP_STOPPED_BY_DEBUGGER].text)) {
+                machine, dap_text(s->program, DAP_STOPPED_BY_DEBUGGER))) {
             lhat_machine_panic(machine, lhat_nil());
         }
         return;
@@ -1418,7 +1431,7 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
     lhat_mutex_unlock(&s->lock);
     if (over) {
         if (!lhat_machine_panic_text(
-                machine, DAP_MESSAGES[DAP_STOPPED_BY_DEBUGGER].text)) {
+                machine, dap_text(s->program, DAP_STOPPED_BY_DEBUGGER))) {
             lhat_machine_panic(machine, lhat_nil());
         }
     }

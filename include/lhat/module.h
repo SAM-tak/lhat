@@ -73,6 +73,9 @@ typedef enum {
 } LhatCompileStatus;
 
 const char *lhat_compile_status_message(LhatCompileStatus status);
+// 10 §4: the stable ID of that message, which a host draws its own language's
+// text from (lhat_program_text). NULL for a status the table does not hold.
+const char *lhat_compile_status_id(LhatCompileStatus status);
 
 // What a compile answers: the status above and where it stopped.
 //

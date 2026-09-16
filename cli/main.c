@@ -9,6 +9,8 @@
 #include <string.h>
 #ifdef _WIN32
 #include <direct.h>
+// 10 §7.4: GetUserPreferredUILanguages, for the language the user reads.
+#include <windows.h>
 #else
 #include <sys/stat.h>
 #endif
@@ -362,6 +364,19 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
 
 #endif  // LHAT_WITH_FRONTEND
 
+// 10 §7.4: the language this driver says things in, and where the catalogs
+// for it are. The tag is the OS's unless --language said otherwise, and the
+// directory is --messages or `messages/<tag>` beside the executable.
+static const char *said_language;
+static char said_directory[512];
+
+// The driver's own texts are about no program, so they are drawn through one
+// it holds for itself. NULL until a language is chosen -- the English needs
+// none.
+static LhatProgram driver;
+static bool driver_ready;
+static const LhatProgram *said_in;
+
 // 10 §4: the cli's own texts. Each is a line it prints -- or, for the usage
 // and the prompt's greeting, the lines it prints together -- with what goes
 // into it in holes (§5.1).
@@ -453,6 +468,10 @@ static const LhatMessageEntry CLI_MESSAGES[] = {
         "JSON, for lhatls\n"
         "  --dump-messages DIR  write the English messages under DIR, one "
         "file per source, as the catalogs a translation is made from\n"
+        "  --language TAG  say things in that language rather than the one "
+        "the system reads\n"
+        "  --messages DIR  read the catalogs from DIR rather than from "
+        "beside the executable\n"
         "  --compile -o DIR  check and compile the whole program and write "
         "every unit to DIR as bytes; a .lton compiles on its own\n"
         "  --dump-signatures FILE  write the signature table this driver's "
@@ -473,7 +492,8 @@ static const LhatMessageEntry CLI_MESSAGES[] = {
 // when there was no room for it.
 static char *cli_text(size_t id, const LhatMessageArg *args, size_t count)
 {
-    const char *text = CLI_MESSAGES[id].text;
+    const char *text = lhat_program_text(said_in, CLI_MESSAGES[id].id,
+                                         CLI_MESSAGES[id].text);
     size_t needed = lhat_message_render(text, args, count, NULL, 0);
     char *out = (char *)malloc(needed + 1);
     if (out != NULL) {
@@ -488,7 +508,10 @@ static void cli_say(FILE *stream, size_t id, const LhatMessageArg *args,
                     size_t count)
 {
     char *line = cli_text(id, args, count);
-    fprintf(stream, "%s\n", line != NULL ? line : CLI_MESSAGES[id].text);
+    fprintf(stream, "%s\n",
+            line != NULL ? line
+                         : lhat_program_text(said_in, CLI_MESSAGES[id].id,
+                                             CLI_MESSAGES[id].text));
     free(line);
 }
 
@@ -502,6 +525,123 @@ static void say_version(void)
 {
     const LhatMessageArg arg = CLI_ARG("version", LHAT_VERSION);
     cli_say(stdout, CLI_VERSION, &arg, 1);
+}
+
+// 10 §7.4: `ja_JP.UTF-8` is the language `ja-JP`; `C` and `POSIX` are the
+// English. Written into `out`, or NULL when there is nothing to make of it.
+static const char *language_of(const char *value, char *out, size_t capacity)
+{
+    if (value == NULL || value[0] == '\0' || strcmp(value, "C") == 0 ||
+        strcmp(value, "POSIX") == 0) {
+        return NULL;
+    }
+    size_t at = 0;
+    for (; value[at] != '\0' && value[at] != '.' && value[at] != '@' &&
+           at + 1 < capacity;
+         at++) {
+        out[at] = value[at] == '_' ? '-' : value[at];
+    }
+    out[at] = '\0';
+    return at > 0 ? out : NULL;
+}
+
+// The language the OS says this user reads. POSIX asks the environment;
+// Windows asks for the display languages and takes the first.
+static const char *os_language(void)
+{
+    static char tag[64];
+#ifdef _WIN32
+    ULONG languages = 0;
+    ULONG characters = 0;
+    if (GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &languages, NULL,
+                                    &characters) &&
+        characters > 0) {
+        WCHAR *wide = (WCHAR *)malloc(characters * sizeof *wide);
+        if (wide != NULL &&
+            GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &languages, wide,
+                                        &characters) &&
+            languages > 0) {
+            char narrow[64];
+            int written = WideCharToMultiByte(CP_UTF8, 0, wide, -1, narrow,
+                                              (int)sizeof narrow, NULL, NULL);
+            free(wide);
+            return written > 0 ? language_of(narrow, tag, sizeof tag) : NULL;
+        }
+        free(wide);
+    }
+    return NULL;
+#else
+    static const char *const NAMES[] = {"LC_ALL", "LC_MESSAGES", "LANG"};
+    for (size_t i = 0; i < sizeof NAMES / sizeof NAMES[0]; i++) {
+        const char *found = language_of(getenv(NAMES[i]), tag, sizeof tag);
+        if (found != NULL) {
+            return found;
+        }
+    }
+    return NULL;
+#endif
+}
+
+// 10 §7.1: one source's catalog for the chosen language, read out of the
+// file the directory holds. A source with no file stays in English.
+static void read_catalog(LhatProgram *program, const char *source,
+                         const LhatMessageEntry *english, size_t count)
+{
+    char path[640];
+    snprintf(path, sizeof path, "%s/%s.txt", said_directory, source);
+    size_t length = 0;
+    char *text = lhat_load_file(NULL, path, &length);
+    if (text == NULL) {
+        return;
+    }
+    lhat_program_load_catalog(program, said_language, source, english, count,
+                              text, length);
+    lhat_free(text);
+}
+
+// Every source this build holds, and the two this driver holds itself, in
+// the language chosen. A program with no catalogs says the English.
+static void speak(LhatProgram *program)
+{
+    if (said_language == NULL || said_directory[0] == '\0') {
+        return;
+    }
+    lhat_program_set_language(program, said_language);
+    for (size_t i = 0;; i++) {
+        const char *source = lhat_messages_source(i);
+        if (source == NULL) {
+            break;
+        }
+        read_catalog(program, source, NULL, 0);
+    }
+    read_catalog(program, "cli", CLI_MESSAGES, LHAT_MESSAGE_COUNT(CLI_MESSAGES));
+#ifdef LHAT_CLI_WITH_DAP
+    size_t count = 0;
+    const LhatMessageEntry *entries = dap_messages(&count);
+    read_catalog(program, "dap", entries, count);
+#endif
+}
+
+static void dispose_driver(void)
+{
+    if (driver_ready) {
+        lhat_program_dispose(&driver);
+        driver_ready = false;
+    }
+}
+
+// Where the catalogs are, when --messages did not say: `messages/<tag>` in
+// the directory the executable stands in.
+static void find_catalogs(const char *argv0)
+{
+    size_t cut = 0;
+    for (size_t i = 0; argv0 != NULL && argv0[i] != '\0'; i++) {
+        if (argv0[i] == '/' || argv0[i] == '\\') {
+            cut = i + 1;
+        }
+    }
+    snprintf(said_directory, sizeof said_directory, "%.*smessages/%s",
+             (int)cut, argv0 != NULL ? argv0 : "", said_language);
 }
 
 // Whether a diagnostic is shown with the line it happened on. The rich form
@@ -851,9 +991,11 @@ static void say_registration_failure(const LhatProgram *program)
     }
     for (size_t i = 0; i < program->diagnostic_count; i++) {
         const LhatProgramDiagnostic *d = &program->diagnostics[i];
-        const LhatMessageArg args[] = {
-            CLI_ARG("path", d->path),
-            CLI_ARG("message", lhat_program_error_message(d->code))};
+        const char *said =
+            lhat_program_text(program, lhat_program_error_id(d->code),
+                              lhat_program_error_message(d->code));
+        const LhatMessageArg args[] = {CLI_ARG("path", d->path),
+                                       CLI_ARG("message", said)};
         cli_say(stderr, CLI_ERROR, args, 2);
     }
 }
@@ -885,9 +1027,11 @@ static size_t say_unit_diagnostics(const LhatProgram *program)
 {
     for (size_t i = 0; i < program->diagnostic_count; i++) {
         const LhatProgramDiagnostic *d = &program->diagnostics[i];
-        const LhatMessageArg args[] = {
-            CLI_ARG("path", d->path),
-            CLI_ARG("message", lhat_program_error_message(d->code))};
+        const char *said =
+            lhat_program_text(program, lhat_program_error_id(d->code),
+                              lhat_program_error_message(d->code));
+        const LhatMessageArg args[] = {CLI_ARG("path", d->path),
+                                       CLI_ARG("message", said)};
         cli_say(stderr, CLI_ERROR, args, 2);
     }
 
@@ -997,6 +1141,7 @@ static int compile_lton(const char *path, const char *out_dir, bool strict,
     }
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
+    speak(&program);
     uint8_t *bytes = NULL;
     size_t size = 0;
     LhatLtonStatus status = lhatstdlib_lton_write(&program, path, text, length,
@@ -1048,6 +1193,7 @@ static int compile_program(const char *path, const char *out_dir,
     }
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
+    speak(&program);
     if (!bind_host_names(&program)) {
         say_registration_failure(&program);
         lhat_program_dispose(&program);
@@ -1161,6 +1307,7 @@ static int check_program(const char *path, bool run, bool strict,
     (void)dap_port;  // unused without LHAT_CLI_WITH_DAP
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
+    speak(&program);
     if (!read_signatures(&program) || !bind_host_names(&program)) {
         // 05 の 8.2, before checking (8.3)
         say_registration_failure(&program);
@@ -1333,6 +1480,7 @@ static int dump_bytecode(const char *path)
 {
     LhatProgram program;
     lhat_program_init(&program, false, lhat_load_file, NULL);
+    speak(&program);
     if (!bind_host_names(&program)) {  // 05 の 8.2, before checking (8.3)
         say_registration_failure(&program);
         lhat_program_dispose(&program);
@@ -1391,6 +1539,7 @@ static int repl(bool strict)
     // stdlib. It outlives both sessions, which borrow its types.
     LhatProgram program;
     lhat_program_init(&program, strict, NULL, NULL);
+    speak(&program);
     if (!bind_host_names(&program)) {  // 05 の 8.2 and 8.7
         cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
         lhat_program_dispose(&program);
@@ -1592,6 +1741,8 @@ int main(int argc, char **argv)
     bool strip_debug = false;
     const char *dump_signatures_path = NULL;  // 10.7
     const char *dump_messages_dir = NULL;     // 10 §6.3
+    const char *language = NULL;              // --language, 10 §7.4
+    const char *messages_dir = NULL;          // --messages DIR
     const char *signatures_path = NULL;
     bool show_help = false;
     bool show_version = false;
@@ -1628,6 +1779,10 @@ int main(int argc, char **argv)
             dump_signatures_path = argv[++i];
         } else if (strcmp(argv[i], "--dump-messages") == 0 && i + 1 < argc) {
             dump_messages_dir = argv[++i];
+        } else if (strcmp(argv[i], "--language") == 0 && i + 1 < argc) {
+            language = argv[++i];
+        } else if (strcmp(argv[i], "--messages") == 0 && i + 1 < argc) {
+            messages_dir = argv[++i];
         } else if (strcmp(argv[i], "--signatures") == 0 && i + 1 < argc) {
             signatures_path = argv[++i];
         } else if (strcmp(argv[i], "-h") == 0 ||
@@ -1653,6 +1808,25 @@ int main(int argc, char **argv)
         }
     }
 
+    // 10 §7.4: what to say things in, before anything is said. The OS's
+    // language unless --language named one; the catalogs beside the
+    // executable unless --messages pointed elsewhere.
+    said_language = language != NULL ? language : os_language();
+    if (said_language != NULL && strcmp(said_language, "en") != 0) {
+        if (messages_dir != NULL) {
+            snprintf(said_directory, sizeof said_directory, "%s", messages_dir);
+        } else {
+            find_catalogs(argv[0]);
+        }
+        lhat_program_init(&driver, true, NULL, NULL);
+        driver_ready = true;
+        atexit(dispose_driver);  // main leaves by many ways; this is all of them
+        speak(&driver);
+        said_in = &driver;
+    } else {
+        said_language = NULL;
+    }
+
     if (show_version) {
         say_version();
         return EXIT_SUCCESS;
@@ -1673,6 +1847,7 @@ int main(int argc, char **argv)
         // "strict": false rather than always claiming strict.
         lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL,
                           NULL);
+        speak(&program);
         if (!bind_host_names(&program)) {
             cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
             lhat_program_dispose(&program);
@@ -1710,6 +1885,7 @@ int main(int argc, char **argv)
         LhatProgram program;
         lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL,
                           NULL);
+        speak(&program);
         uint8_t *bytes = NULL;
         size_t length = 0;
         bool ok = bind_host_names(&program) &&

@@ -1,0 +1,5 @@
+# report -- L^ 0.3.3 の英語から訳した。
+# error = error: {message}
+error = エラー: {message}
+# note = note: {message}
+note = 注記: {message}

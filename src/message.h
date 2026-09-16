@@ -59,15 +59,6 @@ const LhatMessageTable *lhat_trace_message_tables(size_t *count);
          ? &(table)[(size_t)(code)]                                           \
          : NULL)
 
-// The IDs for the four tables whose message functions are public (lexer.h,
-// module.h, vm.h, program.h) -- declared here rather than beside them, since
-// what an ID is to a host is still 10 §7.3's. NULL for a code the table does
-// not hold.
-const char *lhat_lexer_error_id(LhatErrorCode code);
-const char *lhat_compile_status_id(LhatCompileStatus status);
-const char *lhat_run_status_id(LhatRunStatus status);
-const char *lhat_program_error_id(LhatProgramErrorCode code);
-
 // The ID of the text lhat_compile_message_write draws from.
 const char *lhat_compile_message_id(const LhatCompileResult *result);
 

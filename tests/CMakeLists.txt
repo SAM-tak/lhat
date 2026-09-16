@@ -39,6 +39,10 @@ lhat_add_test(test_source core)
 lhat_add_test(test_error core)
 lhat_add_test(test_messages core)
 lhat_add_test(test_catalog core)
+# 10 §6.5: it reads the catalogs this repository ships and holds them to the
+# English, so a translation that names something no source holds fails here.
+target_compile_definitions(test_catalog
+    PRIVATE LHAT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 lhat_add_test(test_number core)
 lhat_add_test(test_lexer core)
 lhat_add_test(test_parser core)

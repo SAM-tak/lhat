@@ -112,6 +112,9 @@ const char *lhat_lexer_string(const LhatLexer *lexer, const LhatToken *token,
                               size_t *length);
 
 const char *lhat_lexer_error_message(LhatErrorCode code);
+// 10 §4: the stable ID of that message, which a host draws its own language's
+// text from (lhat_program_text). NULL for a code the table does not hold.
+const char *lhat_lexer_error_id(LhatErrorCode code);
 
 #ifdef __cplusplus
 }

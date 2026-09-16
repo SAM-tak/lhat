@@ -671,6 +671,9 @@ bool lhat_machine_coroutine_done(LhatValue coroutine);
 struct LhatProgram;
 
 const char *lhat_run_status_message(LhatRunStatus status);
+// 10 §4: the stable ID of that message, which a host draws its own language's
+// text from (lhat_program_text). NULL for a status the table does not hold.
+const char *lhat_run_status_id(LhatRunStatus status);
 
 // 10 §7.2: the program whose registrations were installed on this machine,
 // which is whose language what it says comes out in (lhat_program_text).

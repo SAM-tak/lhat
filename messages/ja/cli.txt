@@ -1,0 +1,73 @@
+# cli -- L^ 0.3.3 の英語から訳した。
+# out-of-memory = lhat: out of memory
+out-of-memory = lhat: メモリが足りない
+# cannot-read = lhat: cannot read {path}
+cannot-read = lhat: {path} を読めない
+# cannot-read-input = lhat: cannot read input
+cannot-read-input = lhat: 入力を読めない
+# cannot-write = lhat: cannot write {path}
+cannot-write = lhat: {path} に書けない
+# said = lhat: {message}
+said = lhat: {message}
+# error = {path}: error: {message}
+error = {path}: エラー: {message}
+# prompt-error = error: {message}
+prompt-error = エラー: {message}
+# at-line = line {line}: {message}
+at-line = {line} 行目: {message}
+# with-operator = {message} ({operator})
+with-operator = {message} ({operator})
+# input-ended = {path}: note: the input ended before the construct was complete
+input-ended = {path}: 注記: 構文が終わらないうちに入力が尽きた
+# input-dropped = note: the unfinished input was dropped
+input-dropped = 注記: 書きかけの入力を捨てた
+# no-type-errors = {path}: no type errors (units checked: {count})
+no-type-errors = {path}: 型の誤りなし（検査した単位: {count}）
+# did-not-compile = {path}: error: the program did not compile
+did-not-compile = {path}: エラー: プログラムをコンパイルできなかった
+# written-as = {path}: written as {file}
+written-as = {path}: {file} として書き出した
+# written-under = {path}: written under {dir} (units: {count})
+written-under = {path}: {dir} の下に書き出した（単位: {count}）
+# not-written = {path}: error: could not be written out
+not-written = {path}: エラー: 書き出せなかった
+# outside-root = {path}: error: outside the root's directory, so it has no place under {dir}
+outside-root = {path}: エラー: 根のディレクトリの外にあるので、{dir} の下に置き場所がない
+# no-lton = {path}: this driver has no std.lton to compile it with
+no-lton = {path}: この駆動系には、これをコンパイルする std.lton が無い
+# not-a-signature-table = lhat: {path} is not a signature table this build reads
+not-a-signature-table = lhat: {path} は、このビルドが読む署名表ではない
+# signatures-not-written = lhat: could not write the signature table
+signatures-not-written = lhat: 署名表を書き出せなかった
+# compile-needs-out = lhat: --compile needs -o DIR
+compile-needs-out = lhat: --compile には -o DIR が要る
+# no-front-end = lhat: this build has no front end; --run a binary unit
+no-front-end = lhat: このビルドには前段が無い。バイナリ単位を --run すること
+# version = L^ (lhat) {version}
+version = L^ (lhat) {version}
+# greeting = an expression on its own is answered; an unfinished construct reads on
+#  ctrl-d or an empty line ends
+greeting = 式だけを書けば答えが返る。構文が続いていれば読み続ける
+ ctrl-d か空行で終わる
+# usage = usage: lhat [option] <file> [argument...]
+usage = 使い方: lhat [オプション] <ファイル> [引数...]
+   ファイル無し    プロンプトから読む
+   --run          プログラム全体を検査して走らせる。ファイルの後に続く語がその '...' になる
+   --check        型を検査して報告する。走らせない
+   既定           構文木を出す
+   --tokens       代わりにトークン列を出す
+   --dump-bytecode  その単位が何にコンパイルされるかを出す
+   --command      入力をコマンド形式として読む
+   --strict       型の誤りをコンパイル時に報告する（ファイルの既定）
+   --relaxed      決まらない型は実行時の検査に委ねる（プロンプトの既定）
+   --dump-host-api [file]  この駆動系が登録する物を JSON で書き出す。lhatls 用
+   --dump-messages DIR  英語のメッセージを DIR の下に、出どころごとに1ファイルで書き出す。訳の元になる
+   --language TAG  システムの言語ではなく、その言語で出す
+   --messages DIR  実行ファイルの隣ではなく、DIR からカタログを読む
+   --compile -o DIR  プログラム全体を検査してコンパイルし、すべての単位をバイト列として DIR に書く。.lton は単独でコンパイルされる
+   --dump-signatures FILE  この駆動系の登録が作る署名表を書き出す
+   --signatures FILE  登録の前に署名表を読む（前段の無いビルドが登録に使う物）
+   --strip-debug  --compile が書く物から、局所名と捕捉名を落とす
+   --dap=PORT     そのループバックポートで DAP を話すデバッガの下で走らせる（--run を含む）
+   -h, --help     これを出して何もしない
+   -v, --version  版を出して何もしない

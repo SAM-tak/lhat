@@ -1,0 +1,7 @@
+# source -- L^ 0.3.3 の英語から訳した。
+# cannot-open = cannot open: {path}
+cannot-open = 開けない: {path}
+# cannot-read = cannot read: {path}
+cannot-read = 読み取れない: {path}
+# out-of-memory = out of memory
+out-of-memory = メモリが足りない

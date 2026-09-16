@@ -10,6 +10,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "message.h"
@@ -253,6 +254,56 @@ static void test_program(void)
     lhat_program_dispose(&program);
 }
 
+// 10 §6.5: the catalogs this repository ships are held to the English -- a
+// name no source holds, or a text whose holes are not the English's, is left
+// out by the reader, and that is what this would catch.
+static void test_shipped(void)
+{
+#ifdef LHAT_SOURCE_DIR
+    for (size_t i = 0;; i++) {
+        const char *source = lhat_messages_source(i);
+        if (source == NULL) {
+            break;
+        }
+        char path[512];
+        snprintf(path, sizeof path, "%s/messages/ja/%s.txt", LHAT_SOURCE_DIR,
+                 source);
+        FILE *file = fopen(path, "rb");
+        if (file == NULL) {
+            continue;  // a source with no translation yet is no failure
+        }
+        LHAT_TEST(path);
+        static char text[65536];
+        size_t length = fread(text, 1, sizeof text - 1, file);
+        fclose(file);
+        text[length] = '\0';
+
+        // What the file writes as an entry: a line of its own holding an '='.
+        size_t written = 0;
+        for (size_t at = 0; at < length; at++) {
+            bool first = at == 0 || text[at - 1] == '\n';
+            char c = text[at];
+            if (!first || c == '#' || c == '\n' || c == '\r' || c == ' ' ||
+                c == '\t') {
+                continue;
+            }
+            const char *line = text + at;
+            const char *end = strchr(line, '\n');
+            const char *equals = strchr(line, '=');
+            written += equals != NULL && (end == NULL || equals < end) ? 1 : 0;
+        }
+
+        LhatCatalog catalog;
+        memset(&catalog, 0, sizeof catalog);
+        size_t taken = lhat_catalog_load(&catalog, "ja", source, NULL, 0, text,
+                                         length);
+        LHAT_CHECK(taken == written, "%zu of the %zu entries written were taken",
+                   taken, written);
+        lhat_catalog_dispose(&catalog);
+    }
+#endif
+}
+
 int main(void)
 {
     test_entries();
@@ -260,5 +311,6 @@ int main(void)
     test_lines();
     test_own_table();
     test_program();
+    test_shipped();
     return lhat_test_report("test_catalog");
 }

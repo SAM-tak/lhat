@@ -1041,6 +1041,9 @@ void lhat_program_install_compiles(const LhatProgram *program,
 bool lhat_program_has_errors(const LhatProgram *program);
 
 const char *lhat_program_error_message(LhatProgramErrorCode code);
+// 10 §4: the stable ID of that message, which a host draws its own language's
+// text from (lhat_program_text). NULL for a code the table does not hold.
+const char *lhat_program_error_id(LhatProgramErrorCode code);
 
 // Writes everything the host registered -- the types, the signatures, the
 // initial bindings -- as JSON, so a tool that cannot run the host's C can

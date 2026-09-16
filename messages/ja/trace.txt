@@ -1,0 +1,9 @@
+# trace -- L^ 0.3.3 の英語から訳した。
+# header = traceback:
+header = トレースバック:
+# in = in {function}
+in = {function} の中
+# top-level = at the top level
+top-level = 最上位
+# coroutine = (coroutine)
+coroutine = (コルーチン)
