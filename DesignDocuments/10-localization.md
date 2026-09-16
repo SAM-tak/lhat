@@ -131,6 +131,7 @@ cli.no-type-errors
 ```
 
 出どころは 3.1 の表のとおり、`check` `parse` `lex` `compile` `run` `program` `source` `report` `trace` `cli` `dap` である。
+カタログの中ではこの出どころを書かない。ファイル名が与える（6.1）。
 
 名前を伴っても伴わなくても報告されるコードは、名前を伴うときの文に別の ID を持つ。
 元の ID に `.named` を足す（`check.no-member.named`）。名前を伴ってしか報告されないコードは、
@@ -223,25 +224,34 @@ cli.no-type-errors = {path}: 型の誤りなし（検査した単位: {count}）
 
 ### 6.1 書式は単純形式である
 
-カタログは `ID = 文` を並べる単純な形式とし、**注釈の行を持つ**。
-注釈は、訳していない英語の項目を参考として残すために使う（6.3）。
+カタログは **出どころごとに1つのファイル** であり、`名前 = 文` を並べる単純な形式とし、
+**注釈の行を持つ**。注釈は、訳していない英語の項目を参考として残すために使う（6.3）。
+
+> **ファイル名が出どころを与える。ファイルの中では出どころを書かない。**
+
+`ja/lex.msg` には `lex` の項目しか入らない。ID が `lex.string-unterminated` なら、
+ファイルには `string-unterminated = …` と書く。ファイル名と中身が食い違いようがなく、
+同じ出どころの訳は、どのビルドから書き出しても1つのファイルに集まる。
 
 行の種類は、その行の1文字目で決まる。
 
 - **`#`** — 注釈。読み飛ばす
 - **空白** — 直前の項目の続き。間の改行は文に残る
-- **それ以外** — 新しい項目。`ID = 文` と書く
+- **それ以外** — 新しい項目。`名前 = 文` と書く。名前は ID から出どころと `.` を除いたものである（4.2）
 
 ```text
-# 検査器
-check.no-member.named = this value has no such member: {member}
-
-cli.usage = usage: lhat [option] <file> [argument...]
-    --run     check the whole program and run it
-    --check   type check and report, without running
+# ja/check.msg
+no-member.named = この値にメンバ {member} は無い
 ```
 
-`cli.usage` の文は3行になる。続きの行に共通する字下げは取り除く。
+```text
+# ja/cli.msg
+usage = 使い方: lhat [オプション] <ファイル> [引数...]
+    --run     プログラム全体を検査して走らせる
+    --check   型を検査して報告する。走らせない
+```
+
+`usage` の文は3行になる。続きの行に共通する字下げは取り除く。
 
 - 改行はこの形でだけ書く。エスケープで書く改行は持たない
 - 注釈は1文字目が `#` の行だけである。字下げした行の `#` は文の一部になる
@@ -255,7 +265,7 @@ cli.usage = usage: lhat [option] <file> [argument...]
 - 文字符号化は UTF-8
 - `=` の前後の空白は除く
 - 空行は読み飛ばす。ただし後に同じ項目の続きの行があるなら、その空行は文の中の空行として残る
-- 言語は BCP 47 の言語タグで表し、ファイル名にする（`ja.msg`）
+- 言語は BCP 47 の言語タグで表し、ディレクトリ名にする（`ja/lex.msg`）
 
 ### 6.2 英語は処理系に焼き込み、ほかの言語は実行時に読む
 
@@ -278,19 +288,14 @@ cli.usage = usage: lhat [option] <file> [argument...]
 
 > **処理系に入っている英語は、カタログの書式で書き出せる。**
 
-訳はこれをもとに作る。書き出すカタログは **すべての項目を注釈にした形** とする。
+訳はこれをもとに作る。書き出しは出どころごとに1つのファイルで、
+**すべての項目を注釈にした形** とする。
 
 ```text
-# L^ 0.3.3 -- English messages, every entry commented out.
-# To translate an entry, write it again below with the same ID and the new text.
+# check -- L^ 0.3.3, every entry commented out.
+# To translate an entry, write it again below with the same name and the new text.
 
-# check
-# check.no-member.named = this value has no such member: {member}
-
-# cli
-# cli.usage = usage: lhat [option] <file> [argument...]
-#     --run     check the whole program and run it
-#     --check   type check and report, without running
+# no-member.named = this value has no such member: {member}
 ```
 
 複数行の項目は、各行の頭に `# ` が付く。
@@ -298,42 +303,57 @@ cli.usage = usage: lhat [option] <file> [argument...]
 訳す人は、訳した項目にだけ有効な項目を足す。英語の行は参考として注釈のまま残す。
 
 ```text
-# check.no-member.named = this value has no such member: {member}
-check.no-member.named = この値にメンバ {member} は無い
-
-# cli.usage = usage: lhat [option] <file> [argument...]
-#     --run     check the whole program and run it
-#     --check   type check and report, without running
-cli.usage = 使い方: lhat [オプション] <ファイル> [引数...]
-    --run     プログラム全体を検査して走らせる
-    --check   型を検査して報告する。走らせない
+# no-member.named = this value has no such member: {member}
+no-member.named = この値にメンバ {member} は無い
 ```
 
 注釈のまま残った項目は、読み込むと英語で出る。訳の途中のカタログをそのまま使える。
 
-注釈を外すときに `#` だけを消して空白を残すと、ID の行が字下げされた続きの行として読まれ、
+注釈を外すときに `#` だけを消して空白を残すと、名前の行が字下げされた続きの行として読まれ、
 前の項目の文に繋がってしまう。6.4 の検査がこれを報告する。
 
-先頭の注釈には処理系の版を入れる。どの版の英語から訳したかが残り、
+先頭の注釈には出どころと処理系の版を入れる。どの版の英語から訳したかが残り、
 新しい版の書き出しと見比べれば、足された項目と変わった項目が分かる。
+
+> **書き出すのは、その表を持っている側である。** ライブラリは自分の出どころを書き、
+> 道具は自分の分を足す。リンクされている物だけが出るので、書き出したカタログが嘘をつかない。
+
+書式は1か所にしか持たない。ライブラリが書式化の関数を公開し、道具は自分の表を渡す。
+渡すのは ID と英語の文の組（`LhatMessageEntry`）の並びである。関数が ID から出どころを外して
+書くので、ファイル名と中身の対応はそこで守られる。
 
 以下の入口は［提案］である。
 
-- CLI — `lhat --dump-messages FILE`（`--dump-host-api` と同じ形）
-- C API — `size_t lhat_messages_write_english(char *out, size_t capacity);`。
-  `lhat_report_write` の約束に従い、`(NULL, 0)` で必要な長さを答える
-- C API が書くのは処理系の本体が持つ項目（`check` `parse` `lex` `compile` `run` `program` `source` `report` `trace`）である。
-  CLI は自分の `cli` と `dap` を足して書く
+```c
+const char *lhat_messages_source(size_t index);
+size_t lhat_messages_write_english(const char *source, char *out,
+                                   size_t capacity);
+size_t lhat_messages_write_catalog(const char *source,
+                                   const LhatMessageEntry *entries,
+                                   size_t count, char *out, size_t capacity);
+```
+
+- CLI — `lhat --dump-messages DIR`。`DIR/<出どころ>.msg` を出どころの数だけ書く
+- `lhat_messages_source` は、このビルドが持つ出どころを順に答える。
+  前段を持たないビルドでは `check` `parse` `lex` が並ばない（6.2）
+- `lhat_messages_write_english` は、ライブラリが持つ出どころ1つ分を書く
+- `lhat_messages_write_catalog` は、道具が自分の表を同じ書式で書くためのものである。
+  CLI は `cli` を、デバッガは `dap` を、ホストは自分の分をこれで書く
+- どれも `lhat_report_write` の約束に従い、`(NULL, 0)` で必要な長さを答える
 
 ### 6.4 読み込み時の扱い［提案］
 
-- 知らない ID は無視する。別の版の処理系に向けたカタログでも読める
+読み込みは出どころ1つ分ずつである。どの出どころかは呼び手が言う（7.1）。
+ホストはファイル名から取ればよく、ファイルシステムを持たないホストでも渡せる。
+
+- 知らない名前は無視する。別の版の処理系に向けたカタログでも読める
 - 穴の名前の集合が英語と一致しない項目は無視する。その項目は英語で出る
-- 同じ ID の項目が2つあれば、後の項目を採る
+- 同じ名前の項目が2つあれば、後の項目を採る
 - 注釈の後に来た続きの行は、どの項目の続きでもない。無視する
-- 読み込みは失敗しない。採った項目の数を答える
+- 読み込みは失敗しない。採った項目の数を答える。
+  出どころを取り違えて渡せば、ひとつも採れずに 0 が返る
 - 採らなかった項目とその理由は、`lhat --check-messages FILE` が報告する。訳す人のための入口である
-- `lhat --check-messages` は、`ID = 文` の形をした続きの行も警告する。
+- `lhat --check-messages` は、`名前 = 文` の形をした続きの行も警告する。
   注釈を外すときに空白を残した疑いがあるためである
 
 ### 6.5 ビルド時の検査［提案］
@@ -341,7 +361,7 @@ cli.usage = 使い方: lhat [オプション] <ファイル> [引数...]
 次のいずれかでビルド（またはテスト）を失敗させる。
 
 - 内部の列挙に、ID と英語の文を持たないものがある
-- リポジトリに置く訳のカタログ（`messages/ja.msg` など）に、英語に無い ID がある
+- リポジトリに置く訳のカタログ（`messages/ja/check.msg` など）に、英語に無い名前がある
 - そのカタログの項目の穴の名前の集合が、英語と一致しない
 
 後の2つは、英語の書き出しと突き合わせるテストで確かめる。
@@ -355,12 +375,14 @@ cli.usage = 使い方: lhat [オプション] <ファイル> [引数...]
 
 ```c
 size_t lhat_program_load_language(LhatProgram *program, const char *tag,
-                                  const char *text, size_t length);
+                                  const char *source, const char *text,
+                                  size_t length);
 bool lhat_program_set_language(LhatProgram *program, const char *tag);
 ```
 
-- `lhat_program_load_language` は、言語タグ `tag` のカタログを program に持たせ、
-  採った項目の数を答える。同じタグをもう一度読めば置き換える
+- `lhat_program_load_language` は、言語タグ `tag` の、出どころ `source` のカタログを
+  program に持たせ、採った項目の数を答える。同じ組をもう一度読めば置き換える。
+  ほかの出どころには触らない
 - `lhat_program_set_language` の既定は `en`
 - 言語タグは近いものへ寄せる。`ja-JP` のカタログが無ければ `ja`、それも無ければ英語
 - 読み込みは program への書き込みなので、05 §8.11 の鍵の中で行う
@@ -395,7 +417,8 @@ bool lhat_unit_diagnostic_argument(const LhatUnit *unit, size_t index,
 処理系は大域の設定を持たないので、2.3 に反しない。
 
 - **CLI の明示** — `--language` で言語を明示すれば、OS のロケールより優先する。
-  カタログは `--messages FILE` か、実行ファイルの隣の `messages/<言語タグ>.msg` から読む
+  カタログは `--messages DIR` か、実行ファイルの隣の `messages/<言語タグ>/` から読む。
+  そのディレクトリの `<出どころ>.msg` を順に読む
 - **CLI が読む OS のロケール** — POSIX では `LC_ALL`、`LC_MESSAGES`、`LANG` の順に、
   最初に値のあるものを採る。`ja_JP.UTF-8` のような値は `ja-JP` に直す
   （`_` を `-` にし、`.` 以降と `@` 以降を除く）。`C` と `POSIX` は英語とする。
