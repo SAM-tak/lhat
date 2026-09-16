@@ -434,9 +434,10 @@ bool lhat_unit_diagnostic_argument(const LhatUnit *unit, size_t index,
   最初に値のあるものを採る。`ja_JP.UTF-8` のような値は `ja-JP` に直す
   （`_` を `-` にし、`.` 以降と `@` 以降を除く）。`C` と `POSIX` は英語とする。
   Windows ではユーザーの表示言語（`GetUserPreferredUILanguages` の先頭）を採る
-- **言語サーバ** — `initialize` の `locale` を program の言語にする（現状は読んでいない）。
-  カタログの場所は言語サーバの設定で与える。診断の `code` に ID を入れる（現状は空）
-- **デバッガ** — DAP の `initialize` の `locale` を使う
+- **言語サーバ** — `initialize` の `locale` を program の言語にする。
+  カタログの場所はエディタが `initializationOptions` で与える。診断の `code` には ID を入れる
+- **デバッガ** — DAP の `initialize` の `locale` を使う。
+  アダプタはファイルを持たないので、言語タグを起動した側へ渡し、カタログの読み込みはそちらが行う
 - **Godot バインディング** — エディタの言語と、バインディングが持つカタログを、
   ホストが `lhat_program_load_language` と `lhat_program_set_language` へ渡す
 
