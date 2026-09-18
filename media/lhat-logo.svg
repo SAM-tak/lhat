@@ -9,8 +9,12 @@
    id="svg1"
    inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
    sodipodi:docname="lhat-logo.svg"
+   inkscape:export-filename="lhat-logo.png"
+   inkscape:export-xdpi="100"
+   inkscape:export-ydpi="100"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg">
   <sodipodi:namedview
@@ -24,7 +28,7 @@
      inkscape:deskcolor="#505050"
      inkscape:document-units="mm"
      inkscape:zoom="3.0467172"
-     inkscape:cx="125.05263"
+     inkscape:cx="125.21674"
      inkscape:cy="129.48363"
      inkscape:window-width="1920"
      inkscape:window-height="1057"
@@ -34,6 +38,30 @@
      inkscape:current-layer="layer1" />
   <defs
      id="defs1">
+    <linearGradient
+       id="linearGradient18"
+       inkscape:collect="always">
+      <stop
+         style="stop-color:#00beff;stop-opacity:1;"
+         offset="0"
+         id="stop19" />
+      <stop
+         style="stop-color:#00beff;stop-opacity:0.17185186;"
+         offset="1"
+         id="stop20" />
+    </linearGradient>
+    <linearGradient
+       id="linearGradient12"
+       inkscape:collect="always">
+      <stop
+         style="stop-color:#00beff;stop-opacity:1;"
+         offset="0"
+         id="stop13" />
+      <stop
+         style="stop-color:#0c4a8d;stop-opacity:1;"
+         offset="1"
+         id="stop14" />
+    </linearGradient>
     <rect
        x="246.82304"
        y="921.64777"
@@ -87,6 +115,26 @@
        width="653.81848"
        height="630.18646"
        id="rect7" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient12"
+       id="linearGradient14"
+       x1="140.90176"
+       y1="55.355156"
+       x2="77.607681"
+       y2="250.1543"
+       gradientUnits="userSpaceOnUse" />
+    <radialGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient18"
+       id="radialGradient20"
+       cx="109.25471"
+       cy="152.75472"
+       fx="109.25471"
+       fy="152.75472"
+       r="102.41195"
+       gradientTransform="translate(0,1.1379785e-5)"
+       gradientUnits="userSpaceOnUse" />
   </defs>
   <g
      inkscape:label="Layer 1"
@@ -94,8 +142,16 @@
      id="layer1"
      transform="translate(-2.588046,-46.088054)">
     <rect
-       style="opacity:1;fill:#00beff;fill-opacity:1;stroke:#68641f;stroke-width:0.641413;stroke-linecap:round;stroke-linejoin:round"
+       style="display:inline;opacity:1;fill:url(#linearGradient14);stroke:#4e4b18;stroke-width:0.641413;stroke-linecap:round;stroke-linejoin:round;stroke-opacity:1"
        id="rect9"
+       width="204.1825"
+       height="204.18248"
+       x="7.163465"
+       y="50.663479"
+       ry="13.547368" />
+    <rect
+       style="display:inline;opacity:1;fill:url(#radialGradient20);stroke:none;stroke-width:0.641413;stroke-linecap:round;stroke-linejoin:round;fill-rule:nonzero"
+       id="rect10"
        width="204.1825"
        height="204.18248"
        x="7.163465"
@@ -123,6 +179,6 @@
        y="0"><tspan
          x="352.86426"
          y="965.44029"
-         id="tspan2">[ɛlhæt]</tspan></text>
+         id="tspan1">[ɛlhæt]</tspan></text>
   </g>
 </svg>
