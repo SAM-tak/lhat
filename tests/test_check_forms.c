@@ -544,7 +544,7 @@ static void test_tonumber(void)
 
     // 11.7's '??' is one of the two ways of dealing with it; 04 の 11.4's
     // narrowing is the other.
-    LHAT_TEST("'??' is one way of dealing with it");
+    LHAT_TEST("'?\?' is one way of dealing with it");
     check_text(&u, "var^ a : number^ = \"1\".tonumber() ?? 0\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);

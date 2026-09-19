@@ -467,6 +467,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_CONCAT:      return "concat";
         case LHAT_BC_NEG:         return "neg";
         case LHAT_BC_NOT:         return "not";
+        case LHAT_BC_TYPEOF:      return "typeof";
         case LHAT_BC_EQ:          return "eq";
         case LHAT_BC_SAME:        return "same";
         case LHAT_BC_NE:          return "ne";
@@ -474,6 +475,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_LE:          return "le";
         case LHAT_BC_GT:          return "gt";
         case LHAT_BC_GE:          return "ge";
+        case LHAT_BC_SPACESHIP:   return "spaceship";
         case LHAT_BC_CLOSURE:     return "closure";
         case LHAT_BC_CALL:        return "call";
         case LHAT_BC_PICKARM:     return "pickarm";
@@ -501,6 +503,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_ISERROR:     return "iserror";
         case LHAT_BC_FITS:         return "fits";
         case LHAT_BC_ISNIL:       return "isnil";
+        case LHAT_BC_ASCAST:      return "ascast";
         case LHAT_BC_NEWINSTANCE: return "newinstance";
         case LHAT_BC_SETPROTO:    return "setproto";
         case LHAT_BC_SETDELEGATE: return "setdelegate";
@@ -522,6 +525,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_YIELD:       return "yield";
         case LHAT_BC_RESUME:      return "resume";
         case LHAT_BC_ISDONE:      return "isdone";
+        case LHAT_BC_PANIC:       return "panic";
         case LHAT_BC_RETURN:      return "return";
         case LHAT_BC_RETURN_NIL:  return "returnnil";
         case LHAT_BC_COUNT:       break;

@@ -697,12 +697,6 @@ LhatType *lhat_type_call_answer(const LhatType *type)
 // Conformance (13.11)
 // ---------------------------------------------------------------------------
 
-static bool member_names_equal(const LhatTypeMember *a, const LhatTypeMember *b)
-{
-    return a->name_length == b->name_length &&
-           memcmp(a->name, b->name, a->name_length) == 0;
-}
-
 // 02 の 14.7改2: whether a member is one an instance may reach. 14.7 is the
 // whole rule -- a static member of the delegate stays the delegate's, the
 // way a static member of a definition stays the definition's.

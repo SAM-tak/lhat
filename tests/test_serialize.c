@@ -602,7 +602,7 @@ static void register_signatures(LhatProgram *program)
 static void check_signature(LhatProgram *program, const char *text)
 {
     const LhatRuntimeType *held = lhat_program_signature_type(program, text);
-    LHAT_CHECK(held != NULL, text);
+    LHAT_CHECK(held != NULL, "%s", text);
     const LhatType *written = lhat_type_of_text(text, strlen(text),
                                                 &program->types,
                                                 program->hosted, NULL);

@@ -852,6 +852,23 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 type_put_text(w, ".Box^");
             }
             return;
+        // 02 の 19 章: spelt the way the checker spells them (type.c) -- the
+        // enum's name, and a member through the enum that declared it.
+        case LHAT_TYPE_RT_ENUM_MEMBER:
+            if (type->enum_owner_name != NULL) {
+                type_put(w, type->enum_owner_name->text,
+                         type->enum_owner_name->length);
+                type_put_text(w, ".");
+            }
+            if (type->enum_name != NULL) {
+                type_put(w, type->enum_name->text, type->enum_name->length);
+            }
+            return;
+        case LHAT_TYPE_RT_ENUM:
+            if (type->enum_name != NULL) {
+                type_put(w, type->enum_name->text, type->enum_name->length);
+            }
+            return;
         // 13.9's three slots. NULL still prints any^ -- not a guess, the same
         // "nothing written asks for the top type" convention as everywhere
         // else in this function.

@@ -47,6 +47,19 @@ static void test_enums(void)
     CHECK_INTEGER(&r, 111111);
     run_dispose(&r);
 
+    // 14.16: the run spells an enum and a member as the checker does. A
+    // member read in a value position is the wide type; the narrow one is
+    // what a written annotation asks for.
+    LHAT_TEST("typeof^ writes an enum and a member by name");
+    run_checked_text(&r,
+             "enum^ E { AAA, BBB }\n"
+             "let^ x = E.BBB\n"
+             "let^ y : E.AAA = E.AAA\n"
+             "return^ typeof^(x).signature .. \" \" .. "
+             "typeof^(y).signature\n");
+    CHECK_STRING(&r, "E E.AAA");
+    run_dispose(&r);
+
     LHAT_TEST("a value may be a table, evaluated where the declaration ran");
     run_text(&r,
              "enum^ E { AAA = { 7, 8 } }\n"

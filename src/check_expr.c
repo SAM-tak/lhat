@@ -4845,6 +4845,12 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
             return lhat_type_intersect(c->result->types, inherited->type,
                                        replacement);
         }
+
+        // 14.15's declaration and 14.7改2's delegate^ define no member, so
+        // 14.12 has nothing to ask of either.
+        case LHAT_DEF_ABSTRACT:
+        case LHAT_DEF_DELEGATE:
+            break;
     }
     return replacement;
 }

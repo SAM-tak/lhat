@@ -178,6 +178,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_ERROR_KIND:
         case LHAT_NODE_ENUMDEF:
         case LHAT_NODE_ENUM_MEMBER:
+        case LHAT_NODE_ANNOTATION:  // 02 の 18: the name and its arguments
             visit_one("name", node->v.named.name, visit, context);
             visit_list("members", node->v.named.members, visit, context);
             break;

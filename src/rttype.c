@@ -330,6 +330,9 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             }
             return rt;
         }
+
+        case LHAT_TYPE_KIND_COUNT:
+            break;
     }
     return NULL;
 }

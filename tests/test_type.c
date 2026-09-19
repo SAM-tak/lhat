@@ -821,7 +821,8 @@ static void test_writing_whole(void)
     // so does the machine's own writer (object.c); this is the third.
     LHAT_TEST("05 の 8.8: a host type is written as the name it registered");
     {
-        static const LhatHostDataTag tag = {"std.random", "Random", NULL, NULL};
+        static const LhatHostDataTag tag = {.module = "std.random",
+                                            .name = "Random"};
         LhatType *held = lhat_type_table(&t.arena);
         lhat_type_add_member(&t.arena, held, "next", 4,
                              simple(&t, LHAT_TYPE_NUMBER));

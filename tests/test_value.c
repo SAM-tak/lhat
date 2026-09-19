@@ -226,12 +226,12 @@ static void wrote(LhatValue value, const char *expected)
     char buffer[256];
     size_t needed = lhat_value_write(value, buffer, sizeof buffer);
     LHAT_CHECK_EQ_INT(needed, strlen(expected));
-    LHAT_CHECK(strcmp(buffer, expected) == 0, expected);
+    LHAT_CHECK(strcmp(buffer, expected) == 0, "%s", expected);
 }
 
 static void test_writing(void)
 {
-    LhatHeap heap = { NULL, 0 };
+    LhatHeap heap = {0};
 
     LHAT_TEST("the values that are not objects");
     wrote(lhat_nil(), "nil^");

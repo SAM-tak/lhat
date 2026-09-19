@@ -567,7 +567,7 @@ static void test_narrowing(void)
     // 04 の 11.3 makes absence no failure, so panicking on one asserts
     // something else in kind. '??' takes an expression and panic^ is not
     // one, which is where that lands.
-    LHAT_TEST("'??' does not take a panic^ arm");
+    LHAT_TEST("'?\?' does not take a panic^ arm");
     check_text(&u,
                "var^ t = { a = 1 }\n"
                "var^ v = t[\"b\"] ?? panic^ \"missing\"\n");
@@ -636,7 +636,7 @@ static void test_nil_propagation(void)
     unit_dispose(&u);
 
     // 11.7: which is what '??' is for -- the pair is the whole idiom.
-    LHAT_TEST("'??' takes the nil^ back off again");
+    LHAT_TEST("'?\?' takes the nil^ back off again");
     check_text(&u,
                "var^ f = f^ -> t^{ a : number^ }|nil^ { return^ nil^ }\n"
                "var^ t = f()\n"
@@ -771,7 +771,7 @@ static void test_operator_on_maybe_nil(void)
     unit_dispose(&u);
 
     // The two ways out the message names.
-    LHAT_TEST("'??' is one of them");
+    LHAT_TEST("'?\?' is one of them");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
                    "var^ n : number^ = (t[1] ?? 0) + 1\n");

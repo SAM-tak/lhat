@@ -285,16 +285,6 @@ static Task *queue_pop(TaskModule *module)
     return task;
 }
 
-// Whether the pool is still taking work. Read between slices, which is how
-// a job that never yields still lets a stop through.
-static bool pool_running(TaskModule *module)
-{
-    lhat_mutex_lock(&module->lock);
-    bool running = module->running;
-    lhat_mutex_unlock(&module->lock);
-    return running;
-}
-
 // 04 の 11.6改: what a run failed with, kept while the machine that ran it
 // is still standing -- the value is one of its objects and the frames are
 // still up. Every way out of run_job that carries a fault comes through

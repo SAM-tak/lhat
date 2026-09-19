@@ -376,7 +376,7 @@ static void test_dynamic_key(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    LHAT_TEST("and '??' is what 11.3 offers for it");
+    LHAT_TEST("and '?\?' is what 11.3 offers for it");
     check_text(&u,
                "var^ t = { 10, 20, 30 }\n"
                "var^ i = 2\n"

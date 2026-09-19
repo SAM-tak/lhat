@@ -371,7 +371,7 @@ static bool fill_node(cJSON *out, const LhatNode *node, const Layer *layer)
     if (fields == NULL) {
         return false;
     }
-    FieldSink sink = {fields, layer, false};
+    FieldSink sink = {.fields = fields, .layer = layer};
 #if LHAT_WITH_COMMENTS
     sink.statements = statements;
     sink.next = statements != NULL

@@ -18,7 +18,7 @@ static LhatValue string_value(LhatHeap *owner, const char *text)
 
 static void test_strings(void)
 {
-    LhatHeap owner = { NULL, 0 };
+    LhatHeap owner = {0};
 
     LHAT_TEST("a string keeps its bytes and a terminator");
     {
@@ -71,7 +71,7 @@ static void test_strings(void)
 // and a key that is not there answers nil^.
 static void test_table_basics(void)
 {
-    LhatHeap owner = { NULL, 0 };
+    LhatHeap owner = {0};
     LhatTable *t = lhat_table_new(&owner);
     bool refused = false;
 
@@ -176,7 +176,7 @@ static void test_table_basics(void)
 
 static void test_table_growth(void)
 {
-    LhatHeap owner = { NULL, 0 };
+    LhatHeap owner = {0};
     bool refused = false;
 
     // Enough to force the hash part to grow several times.

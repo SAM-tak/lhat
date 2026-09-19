@@ -4073,7 +4073,7 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "what stands to its right when that side writes the self^ "
         "last; neither answers this one"},
     [LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL] = {"check.operator-on-maybe-nil",
-        "this may be nil^, and nil^ answers no operator; '??' "
+        "this may be nil^, and nil^ answers no operator; '?\?' "
         "gives it a value, or bind it to a name and narrow that -- "
         "an index is not narrowed where it stands"},
     [LHAT_CHECK_ERR_BAD_OPERATOR] = {"check.bad-operator",
