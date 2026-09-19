@@ -2134,6 +2134,105 @@ static void check_clause(Checker *c, const LhatNode *node, LhatClauseKind kind,
     c->scope = held;
 }
 
+// 04 の 4.5: the arms of `owner`, given what the try^ written before them
+// found. Each takes what it is written for, with it^ narrowed to that (4.2),
+// and what no arm took goes on out exactly as a bare try^ would have sent it.
+static void check_arms(Checker *c, const LhatNode *owner, LhatType *caught,
+                       const LhatNode *arms)
+{
+    // 4.1's line, one construct over: catching what cannot fail says nothing.
+    if (caught == NULL) {
+        chk_report(c, owner, LHAT_CHECK_ERR_CATCHES_NOTHING);
+    }
+
+    LhatType *left = caught;
+    for (const LhatNode *arm = arms; arm != NULL; arm = arm->next) {
+        LhatType *want = arm->v.clause.condition != NULL
+                             ? chk_resolve_type(c, arm->v.clause.condition)
+                             : NULL;
+        // The bare arm takes everything still standing; a written one takes
+        // the arms of that which fit it, the same reading 13.11's fits^ makes.
+        LhatType *here = want != NULL ? chk_only(c, left, want) : left;
+
+        Scope scope;
+        chk_scope_open(&scope, c->scope, arm, false);
+        Scope *outer = c->scope;
+        c->scope = &scope;
+        Binding *bound =
+            chk_scope_add(&scope, "it^", 3,
+                          here != NULL ? here : chk_any_error(c), arm->offset);
+        if (bound != NULL) {
+            bound->reached = true;
+        }
+        // An arm is one path among several, so a let^ written in it is as
+        // uncertain as one inside an if^ clause.
+        c->conditional++;
+        chk_check_statement(c, arm->v.clause.body);
+        c->conditional--;
+        c->scope = outer;
+        chk_scope_close(c, &scope);
+
+        if (want != NULL) {
+            left = chk_without(c, left, want);
+        } else {
+            left = NULL;
+        }
+    }
+
+    chk_error_leaves(c, owner, left);
+}
+
+// 04 の 4.5: a block's statements with its arms after them. The statements
+// are checked with a frame open, so every try^ written in them hands its
+// errors to the arms instead of to the subroutine's result.
+//
+// What the statements bound is kept out of the arms' reach -- an arm may be
+// entered before any of it was -- by cutting it off the scope while they are
+// read. It stays in the scope for what follows the arms: 02 の 10.1's
+// finally^ still reads it. `plain` is what may be assumed in an arm, which
+// is whatever held before the statements ran.
+static void check_caught(Checker *c, const LhatNode *owner,
+                         const LhatNode *statements, const LhatNode *arms,
+                         Narrowing *plain)
+{
+    if (arms == NULL) {
+        chk_check_statements(c, statements);
+        return;
+    }
+
+    struct CatchFrame frame = { NULL, c->catch_frame };
+    c->catch_frame = &frame;
+    Scope *scope = c->scope;
+    Binding *mark = scope->tail;
+    chk_check_statements(c, statements);
+    c->catch_frame = frame.outer;
+
+    Binding *bound = mark != NULL ? mark->next : scope->bindings;
+    Binding *last = scope->tail;
+    if (bound != NULL) {
+        if (mark != NULL) {
+            mark->next = NULL;
+        } else {
+            scope->bindings = NULL;
+        }
+        scope->tail = mark;
+    }
+
+    Narrowing *narrowed = c->narrowings;
+    c->narrowings = plain;
+    check_arms(c, owner, frame.caught, arms);
+    c->narrowings = narrowed;
+
+    if (bound != NULL) {
+        if (mark != NULL) {
+            mark->next = bound;
+        } else {
+            scope->bindings = bound;
+        }
+        scope->tail = last;
+    }
+}
+
 void chk_check_block_in_scope(Checker *c, const LhatNode *node)
 {
     // 13.11: the enclosing loop's condition, if this block is its body. Taken
@@ -2144,8 +2243,13 @@ void chk_check_block_in_scope(Checker *c, const LhatNode *node)
     // 9.3: the block's own statements are main^, written or implied. With no
     // clauses beside them there is one layer and one order, which is every
     // block that is not a loop body -- a subroutine's among them.
+    //
+    // 04 の 4.5: the arms close main^. In a loop body that makes them one
+    // turn's, and the condition that let the turn in may no longer hold by
+    // the time one runs -- main^ can change what it tested.
     if (node->v.list.extra == NULL) {
-        chk_check_statements(c, node->v.list.items);
+        check_caught(c, node, node->v.list.items, node->v.list.arms,
+                     test != NULL ? test->before : c->narrowings);
         return;
     }
 
@@ -2165,7 +2269,7 @@ void chk_check_block_in_scope(Checker *c, const LhatNode *node)
     check_clause(c, node, LHAT_CLAUSE_PRE, NULL, plain);
     check_clause(c, node, LHAT_CLAUSE_FIRST, carried, narrowed);
 
-    chk_check_statements(c, node->v.list.items);  // main^
+    check_caught(c, node, node->v.list.items, node->v.list.arms, plain);
 
     check_clause(c, node, LHAT_CLAUSE_LAST, carried, plain);
     check_clause(c, node, LHAT_CLAUSE_EPILOG, carried, plain);
@@ -2233,64 +2337,6 @@ static void check_loop_body(Checker *c, const LhatNode *body,
 
     c->loop_test = outer;
     chk_pop_narrowings(c, before);
-}
-
-// 04 の 4.5: the body is checked with a frame open, so every try^ written in
-// it hands its errors here instead of to the subroutine's result. Each arm
-// then takes what it is written for, with it^ narrowed to that (4.2), and
-// what no arm took goes on out exactly as a bare try^ would have sent it.
-static void check_try_block(Checker *c, const LhatNode *node)
-{
-    const LhatNode *body = node->v.list.items;
-    if (body == NULL) {
-        return;
-    }
-
-    struct CatchFrame frame = { NULL, c->catch_frame };
-    c->catch_frame = &frame;
-    chk_check_statement(c, body->v.clause.body);
-    c->catch_frame = frame.outer;
-
-    // 4.1's line, one construct over: catching what cannot fail says nothing.
-    if (frame.caught == NULL) {
-        chk_report(c, node, LHAT_CHECK_ERR_CATCHES_NOTHING);
-    }
-
-    LhatType *left = frame.caught;
-    for (const LhatNode *arm = body->next; arm != NULL; arm = arm->next) {
-        LhatType *want = arm->v.clause.condition != NULL
-                             ? chk_resolve_type(c, arm->v.clause.condition)
-                             : NULL;
-        // The bare arm takes everything still standing; a written one takes
-        // the arms of that which fit it, the same reading 13.11's fits^ makes.
-        LhatType *here = want != NULL ? chk_only(c, left, want) : left;
-
-        Scope scope;
-        chk_scope_open(&scope, c->scope, arm, false);
-        Scope *outer = c->scope;
-        c->scope = &scope;
-        Binding *caught =
-            chk_scope_add(&scope, "it^", 3,
-                          here != NULL ? here : chk_any_error(c), arm->offset);
-        if (caught != NULL) {
-            caught->reached = true;
-        }
-        // An arm is one path among several, so a let^ written in it is as
-        // uncertain as one inside an if^ clause.
-        c->conditional++;
-        chk_check_statement(c, arm->v.clause.body);
-        c->conditional--;
-        c->scope = outer;
-        chk_scope_close(c, &scope);
-
-        if (want != NULL) {
-            left = chk_without(c, left, want);
-        } else {
-            left = NULL;
-        }
-    }
-
-    chk_error_leaves(c, node, left);
 }
 
 void chk_check_statement(Checker *c, const LhatNode *node)
@@ -2368,6 +2414,12 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             bool has_else = false;
             bool every_branch_exits = true;
 
+            // 04 の 4.5: with arms, what a try^ in a body finds goes to them
+            // -- the conditions stand outside the braces, so theirs do not.
+            struct CatchFrame frame = { NULL, c->catch_frame };
+            struct CatchFrame *bodies =
+                node->v.list.arms != NULL ? &frame : c->catch_frame;
+
             for (const LhatNode *clause = node->v.list.items; clause != NULL;
                  clause = clause->next) {
                 const LhatNode *condition = clause->v.clause.condition;
@@ -2377,7 +2429,9 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                     // failed, so a let^ path written here is exactly as
                     // uncertain as one inside an ordinary clause.
                     c->conditional++;
+                    c->catch_frame = bodies;
                     chk_check_statement(c, clause->v.clause.body);
+                    c->catch_frame = frame.outer;
                     c->conditional--;
                     continue;
                 }
@@ -2387,7 +2441,9 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 Narrowing *before = c->narrowings;
                 chk_narrow_from(c, condition, true);
                 c->conditional++;
+                c->catch_frame = bodies;
                 chk_check_statement(c, clause->v.clause.body);
+                c->catch_frame = frame.outer;
                 c->conditional--;
                 chk_pop_narrowings(c, before);
 
@@ -2400,16 +2456,29 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             // Reaching the statement after this one means no branch was taken
             // -- but only when every branch that was taken left, and there was
             // no else to fall out of. Otherwise what holds below is a join of
-            // several paths, which is not attempted here.
-            if (has_else || !every_branch_exits) {
+            // several paths, which is not attempted here. An arm is one more
+            // way to reach it.
+            if (has_else || !every_branch_exits || node->v.list.arms != NULL) {
                 chk_pop_narrowings(c, outer);
+            }
+
+            if (node->v.list.arms != NULL) {
+                check_arms(c, node, frame.caught, node->v.list.arms);
+            }
+
+            // 02 の 10.1: the if^'s own finally^, in a scope of its own the
+            // way a block's is.
+            if (node->v.list.extra != NULL) {
+                Scope scope;
+                chk_scope_open(&scope, c->scope, node->v.list.extra, false);
+                Scope *held = c->scope;
+                c->scope = &scope;
+                check_clause(c, node, LHAT_CLAUSE_FINALLY, NULL, c->narrowings);
+                c->scope = held;
+                chk_scope_close(c, &scope);
             }
             break;
         }
-
-        case LHAT_NODE_TRY_BLOCK:
-            check_try_block(c, node);
-            break;
 
         case LHAT_NODE_RETURN: {
             // 02 の 14.11: construction answers the instance itself, so a

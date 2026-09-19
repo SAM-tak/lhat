@@ -284,8 +284,8 @@ typedef enum {
                                         // second value back, so the rule has
                                         // to be said out loud instead. Write
                                         // '(A, B)|IOError'
-    LHAT_CHECK_ERR_CATCHES_NOTHING,     // 04 の 4.5: a try^{ } whose body
-                                        // writes no try^ has nothing to
+    LHAT_CHECK_ERR_CATCHES_NOTHING,     // 04 の 4.5: arms after statements
+                                        // that write no try^ have nothing to
                                         // catch, the same as 4.1's catch^ on
                                         // an expression that cannot fail
     LHAT_CHECK_ERR_CLOSED_CAPTURES,     // 15.13: a closed^ body named

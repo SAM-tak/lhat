@@ -317,7 +317,9 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             print_node(lexer, node->v.coroutine.result, depth + 1);
             break;
         case LHAT_NODE_BLOCK:
+        case LHAT_NODE_IF_STMT:
             print_list(lexer, "items", node->v.list.items, depth + 1);
+            print_list(lexer, "arms", node->v.list.arms, depth + 1);  // 04 の 4.5
             print_list(lexer, "clauses", node->v.list.extra, depth + 1);
             break;
         case LHAT_NODE_ANNOTATION:
@@ -330,9 +332,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
         case LHAT_NODE_TABLE:
         case LHAT_NODE_DEF:
         case LHAT_NODE_SELF_TABLE:
-        case LHAT_NODE_IF_STMT:
         case LHAT_NODE_IF_EXPR:
-        case LHAT_NODE_TRY_BLOCK:  // 04 の 4.5: the body and its arms
         case LHAT_NODE_INTERP:
         case LHAT_NODE_TYPE_TABLE:
         case LHAT_NODE_TYPE_TUPLE:  // 13.8改: the positions, in order

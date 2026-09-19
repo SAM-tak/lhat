@@ -2369,6 +2369,20 @@ void chk_drop_narrowings_for(Checker *c, const LhatNode *target)
 // one being asked about, so a break^ leaves it when its level reaches past
 // them. Whether it is that loop's normal end or one it is only passed
 // through does not matter here: either way control leaves.
+static bool breaks_out_from(const LhatNode *node, uint32_t depth);
+
+// 04 の 4.5: an arm stands where the block's statements do, so a break^ in
+// one counts the same loops theirs would.
+static bool arms_break_out(const LhatNode *arms, uint32_t depth)
+{
+    for (const LhatNode *arm = arms; arm != NULL; arm = arm->next) {
+        if (breaks_out_from(arm->v.clause.body, depth)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool breaks_out_from(const LhatNode *node, uint32_t depth)
 {
     for (; node != NULL; node = node->next) {
@@ -2390,6 +2404,9 @@ static bool breaks_out_from(const LhatNode *node, uint32_t depth)
                         return true;
                     }
                 }
+                if (arms_break_out(node->v.list.arms, depth)) {
+                    return true;
+                }
                 break;
 
             case LHAT_NODE_IF_STMT:
@@ -2398,6 +2415,9 @@ static bool breaks_out_from(const LhatNode *node, uint32_t depth)
                     if (breaks_out_from(clause->v.clause.body, depth)) {
                         return true;
                     }
+                }
+                if (arms_break_out(node->v.list.arms, depth)) {
+                    return true;
                 }
                 break;
 
@@ -2443,6 +2463,16 @@ static bool breaks_out(const LhatNode *node)
     return breaks_out_from(node, 0);
 }
 
+static bool arms_always_exit(const LhatNode *arms)
+{
+    for (const LhatNode *arm = arms; arm != NULL; arm = arm->next) {
+        if (!chk_always_exits(arm->v.clause.body)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // Whether control cannot reach the end of this statement. 04 の 6.1 is
 // written in the early-return style -- handle the error, leave, and carry on
 // below knowing it did not happen -- so the narrowing a branch established
@@ -2462,11 +2492,14 @@ bool chk_always_exits(const LhatNode *node)
         case LHAT_NODE_PANIC:
             return true;
 
+        // 04 の 4.5: the statements finishing with nothing raised is one way
+        // past a block, and each arm is another -- what no arm took leaves
+        // the frame -- so every arm has to leave as well.
         case LHAT_NODE_BLOCK:
             for (const LhatNode *s = node->v.list.items; s != NULL;
                  s = s->next) {
                 if (chk_always_exits(s)) {
-                    return true;
+                    return arms_always_exit(node->v.list.arms);
                 }
             }
             return false;
@@ -2482,22 +2515,7 @@ bool chk_always_exits(const LhatNode *node)
                     has_else = true;
                 }
             }
-            return has_else;
-        }
-
-        // 04 の 4.5: the way past a try^{ } is the body finishing with
-        // nothing raised, so a body that always leaves closes that way out.
-        // The arms are the other ways in, and what no arm took leaves the
-        // frame -- so when every arm leaves as well, nothing reaches the
-        // statement below.
-        case LHAT_NODE_TRY_BLOCK: {
-            for (const LhatNode *clause = node->v.list.items; clause != NULL;
-                 clause = clause->next) {
-                if (!chk_always_exits(clause->v.clause.body)) {
-                    return false;
-                }
-            }
-            return node->v.list.items != NULL;
+            return has_else && arms_always_exit(node->v.list.arms);
         }
 
         // 16.5: a repeat^ with no bound runs until something leaves it. With
@@ -3999,8 +4017,8 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "try^ would return an error this subroutine cannot return"},
     [LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES] = {"check.local-error-escapes",
         "this error has to be resolved here: a localerror^ is not "
-        "one a subroutine may return. Write catch^, or wrap the "
-        "statements in try^{ } with an arm that takes it"},
+        "one a subroutine may return. Write catch^, or a catch^ arm "
+        "after the statements that takes it"},
     [LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN] = {"check.local-error-written",
         "a localerror^ cannot be written where a caller would "
         "receive it -- not in a result, a yield, or a declared "
@@ -4234,8 +4252,8 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "no such literal here -- or a second hat counted past the "
         "outermost one"},
     [LHAT_CHECK_ERR_CATCHES_NOTHING] = {"check.catches-nothing",
-        "nothing in this try^{ } can fail: an error reaches the "
-        "arms by being written try^, and none is"},
+        "nothing before these catch^ arms can fail: an error reaches "
+        "them by being written try^, and none is"},
     [LHAT_CHECK_ERR_CLOSED_CAPTURES] = {"check.closed-captures",
         "a closed^ body names nothing standing outside it: pass "
         "this as an argument instead. An import^ed module, a name "

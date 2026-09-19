@@ -460,15 +460,16 @@ static void test_comments(void)
                   "define");
     expect_holder("@sample(1)  # note\nlet^ y = 1\n", "# note", "define");
 
-    // An if^ clause's body, a try^{ } arm's, and 9 章's clauses are closed by
+    // An if^ clause's body, a catch^ arm's, and 9 章's clauses are closed by
     // what follows them rather than by a brace of their own. They end where
     // what is written in them does, so a comment under the last statement is
     // theirs -- not the next clause's.
     LHAT_TEST("a comment under a clause body's last statement stays in it");
     expect_holder("if^ true^ {\n    f()\n    # tail\nel^:\n    g()\n}\n",
                   "# tail", "block");
-    expect_holder("try^{\n    f()\n    # tail\ncatch^:\n    g()\n}\n", "# tail",
-                  "block");
+    expect_holder("do^{\n    f()\ncatch^ E:\n    g()\n    # tail\ncatch^:\n"
+                  "    h()\n}\n",
+                  "# tail", "block");
     check_attached_once(
         "for^ i from^ 1 to^ 3 {\n    f()\nlast^:\n    g()\n    # tail\n}\n");
 }
@@ -3334,16 +3335,16 @@ static void test_definitions(void)
 }
 
 // 04-errors.md.
-static void test_try_block(void)
+static void test_catch_arms(void)
 {
     Parse p;
 
-    // 04 の 4.5: the body and the arms live inside the one pair of braces,
-    // the way 5.2 puts an if^'s clauses there. The first clause is the body
-    // and carries no type; the bare arm carries none either and is last.
-    LHAT_TEST("try^{ } holds a body and its arms");
+    // 04 の 4.5: the arms close the block's statements, inside the one pair
+    // of braces the way 5.2 puts an if^'s clauses there. Each names a kind,
+    // bar the bare one, which is last.
+    LHAT_TEST("a block carries its catch^ arms after its statements");
     parse_text(&p,
-               "try^{\n"
+               "do^{\n"
                "    var^ v = try^ f()\n"
                "catch^ E.A:\n"
                "    var^ x = 1\n"
@@ -3353,20 +3354,19 @@ static void test_try_block(void)
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     {
         const LhatNode *block = first_statement(&p);
-        LHAT_CHECK_EQ_INT(block->kind, LHAT_NODE_TRY_BLOCK);
-        LHAT_CHECK_EQ_INT(lhat_node_list_length(block->v.list.items), 3);
-
-        const LhatNode *body = block->v.list.items;
-        LHAT_CHECK(body->v.clause.condition == NULL, "the body names no kind");
-        LHAT_CHECK(body->next->v.clause.condition != NULL, "the arm names one");
-        LHAT_CHECK(body->next->next->v.clause.condition == NULL,
+        LHAT_CHECK_EQ_INT(block->kind, LHAT_NODE_BLOCK);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(block->v.list.items), 1);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(block->v.list.arms), 2);
+        const LhatNode *arm = block->v.list.arms;
+        LHAT_CHECK(arm->v.clause.condition != NULL, "the arm names a kind");
+        LHAT_CHECK(arm->next->v.clause.condition == NULL,
                    "and the bare arm does not");
     }
     parse_dispose(&p);
 
     LHAT_TEST("and nothing follows the bare arm");
     parse_text(&p,
-               "try^{\n"
+               "do^{\n"
                "    var^ v = try^ f()\n"
                "catch^:\n"
                "    var^ x = 1\n"
@@ -3380,54 +3380,159 @@ static void test_try_block(void)
     }
     parse_dispose(&p);
 
-    // 4.5: the two readings of the word cannot be told apart by looking
-    // ahead, so the block takes its own -- and says so where a fallback was
-    // written instead, since the fix is a pair of parentheses.
-    LHAT_TEST("and a fallback written in the block's list says which to write");
+    // What an arm is shaped like -- a ':' after the word, or a kind and then
+    // one -- is never what 4.1's operator is followed by where a statement
+    // ends, so a fallback needs nothing around it.
+    LHAT_TEST("a fallback in a block with arms is still the operator");
     parse_text(&p,
-               "try^{\n"
+               "do^{\n"
                "    var^ n = g() catch^ 0\n"
+               "    var^ m = g() catch^ fallback\n"
                "    var^ v = try^ f()\n"
+               "catch^:\n"
+               "    var^ x = 1\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *block = first_statement(&p);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(block->v.list.items), 3);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(block->v.list.arms), 1);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("and so is one whose value is a match with ':' inside it");
+    parse_text(&p,
+               "do^{\n"
+               "    var^ n = g() catch^ for^ it^: when^ fits^ E.A: 1 "
+               "other^: 2 ;\n"
+               "    var^ v = try^ f()\n"
+               "catch^:\n"
+               "    var^ x = 1\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // A header is followed by a ':' or a '{' of its own, so the catch^ in
+    // one is the operator even where it reads 'catch^ Kind:'.
+    LHAT_TEST("a catch^ in a header is the operator");
+    parse_text(&p,
+               "do^{\n"
+               "    var^ v = try^ f()\n"
+               "    if^ g() catch^ false { var^ w = 1 }\n"
+               "catch^:\n"
+               "    var^ x = 1\n"
+               "}\n"
+               "var^ k = f^ { if^ g() catch^ d: 1 el^: 2 ; }\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // 4.5: the arms are a clause of the block, so they stand where main^
+    // ends -- after it and before last^, with finally^ after them.
+    LHAT_TEST("arms close main^ and come before last^ and finally^");
+    parse_text(&p,
+               "for^ i from^ 1 to^ 3 {\n"
+               "    var^ v = try^ f()\n"
+               "catch^:\n"
+               "    var^ x = 1\n"
+               "last^:\n"
+               "    var^ y = 2\n"
+               "finally^:\n"
+               "    var^ z = 3\n"
+               "}");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    parse_text(&p,
+               "do^{\n"
+               "    var^ v = try^ f()\n"
+               "finally^:\n"
+               "    var^ z = 3\n"
                "catch^:\n"
                "    var^ x = 1\n"
                "}");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     if (p.result.diagnostic_count > 0) {
         LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                          LHAT_PARSE_ERR_CATCH_ARM_NEEDS_TYPE);
-        // And only the one: the arms after it are read as arms.
-        LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 1);
+                          LHAT_PARSE_ERR_CLAUSE_ORDER);
     }
     parse_dispose(&p);
 
-    LHAT_TEST("and parentheses are what make it the fallback");
+    // Every body that takes a finally^ takes arms, and a function's too.
+    LHAT_TEST("an if^, a with^, a loop and a subroutine body carry arms");
     parse_text(&p,
-               "try^{\n"
-               "    var^ n = (g() catch^ 0)\n"
+               "if^ c {\n"
+               "    var^ v = try^ f()\n"
+               "el^:\n"
+               "    var^ w = try^ f()\n"
+               "catch^:\n"
+               "    var^ x = 1\n"
+               "}\n"
+               "with^ h = g() {\n"
                "    var^ v = try^ f()\n"
                "catch^:\n"
                "    var^ x = 1\n"
-               "}");
+               "}\n"
+               "repeat^ 3 {\n"
+               "    var^ v = try^ f()\n"
+               "catch^:\n"
+               "    next^\n"
+               "}\n"
+               "var^ k = f^ { try^ f() catch^: 0 }\n");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_IF_STMT);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.list.items), 2);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(s->v.list.arms), 1);
+
+        s = s->next;
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_WITH);
+        LHAT_CHECK(s->v.list.extra->v.list.arms != NULL,
+                   "the with^ body holds the arm");
+
+        s = s->next;
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_REPEAT);
+        LHAT_CHECK(s->v.repeat.body->v.list.arms != NULL,
+                   "the loop body holds the arm");
+
+        // 15.12: an arm that is one expression is what it answers with.
+        s = s->next;
+        const LhatNode *body = s->v.binding.values->v.func.body;
+        LHAT_CHECK_EQ_INT(body->v.list.items->kind, LHAT_NODE_RETURN);
+        const LhatNode *arm_body = body->v.list.arms->v.clause.body;
+        LHAT_CHECK_EQ_INT(arm_body->v.list.items->kind, LHAT_NODE_RETURN);
+    }
     parse_dispose(&p);
 
-    // The block's own list is where catch^ is spoken for; anywhere else it is
-    // still 4.1's operator, including inside a body written in the block.
-    LHAT_TEST("a catch^ nested deeper is still the operator");
+    // 02 の 10.1 has had one all along.
+    LHAT_TEST("an if^ carries a finally^");
+    parse_text(&p, "if^ c {\n    f()\nfinally^:\n    g()\n}\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *s = first_statement(&p);
+        LHAT_CHECK_EQ_INT(s->kind, LHAT_NODE_IF_STMT);
+        LHAT_CHECK(s->v.list.extra != NULL, "the finally^ is kept");
+    }
+    parse_dispose(&p);
+
+    // An error kind is a name (2.2), so an arm naming anything else is
+    // refused where the kind should be.
+    LHAT_TEST("an arm names a kind");
     parse_text(&p,
-               "try^{\n"
-               "    var^ v = try^ f()\n"
-               "    if^ v > 0 {\n"
-               "        var^ n = g() catch^ 0\n"
-               "    }\n"
-               "catch^:\n"
+               "do^{\n"
+               "    if^ c { var^ v = try^ f() }\n"
+               "catch^ 0:\n"
                "    var^ x = 1\n"
                "}");
-    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+    if (p.result.diagnostic_count > 0) {
+        LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                          LHAT_PARSE_ERR_CATCH_ARM_NEEDS_TYPE);
+    }
     parse_dispose(&p);
 
-    // And a try^ with no brace after it is the unary operator of 5 章.
-    LHAT_TEST("try^ without a brace is the operator it always was");
+    // And a try^ is the unary operator of 5 章 wherever it stands.
+    LHAT_TEST("try^ is the operator it always was");
     parse_text(&p, "var^ v = try^ f()\nvar^ n = g() catch^ 0\n");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
@@ -4240,11 +4345,11 @@ static void test_stacked_hats(void)
 }
 
 // 01 の 2.1 with 04 の 4.5: a call standing alone as a statement must not
-// swallow the word that opens the next one. The five asked about here each
-// begin a statement of their own but are not jump keywords -- a jump takes
-// them as its value (`return^ try^ f()`), which is why they are a question
-// of their own. A Love2D binding met this as `print(x)` followed by
-// `try^ { }` complaining about command mode.
+// swallow the word that opens the next one. The ones asked about here each
+// begin a statement of their own, or an arm, but are not jump keywords -- a
+// jump takes some of them as its value (`return^ try^ f()`), which is why
+// they are a question of their own. A Love2D binding met this as a call
+// followed by a block of arms complaining about command mode.
 static void check_parses(const char *text)
 {
     Parse p;
@@ -4256,14 +4361,15 @@ static void check_parses(const char *text)
 
 static void test_statement_after_a_call(void)
 {
-    LHAT_TEST("a try^ block after a call statement is its own statement");
+    LHAT_TEST("a catch^ arm after a call statement opens the arm");
     check_parses("let^ f = p^ {\n"
                  "    print(\"before\")\n"
-                 "    try^ {\n"
+                 "    do^{\n"
                  "        print(\"inside\")\n"
                  "    catch^:\n"
                  "        print(\"caught\")\n"
                  "    }\n"
+                 "    try^ save()\n"
                  "}\n");
 
     LHAT_TEST("and so are import^, public^ and require^");
@@ -4307,7 +4413,7 @@ int main(void)
     test_loop_clauses();
     test_definitions();
     test_errors();
-    test_try_block();
+    test_catch_arms();
     test_incomplete();
     test_recovery();
     test_a_dot_with_nothing_after_it();

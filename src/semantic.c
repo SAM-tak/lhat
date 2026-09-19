@@ -278,22 +278,17 @@ static void walk_list(SemCollector *out, const LhatNode *list)
     }
 }
 
-// 04 の 4.5: try^{ ... catch^T: ... catch^: ... }. The items are IF_CLAUSE
-// nodes -- the first is the body and carries no condition, and each arm
-// after it holds **a written type** where an if^'s clause would hold a
-// condition (parse_try_block, parser.c). That is why these cannot go
-// through walk_value's IF_CLAUSE case, which reads the condition as a
-// value: it would walk a type as an expression and name nothing.
-static void walk_try_clauses(SemCollector *out, const LhatNode *clauses)
+// 04 の 4.5: a block's or an if^'s catch^ arms. Each is an IF_CLAUSE that
+// holds **a written type** where an if^'s clause would hold a condition
+// (parse_catch_arms, parser.c). That is why these cannot go through
+// walk_value's IF_CLAUSE case, which reads the condition as a value: it
+// would walk a type as an expression and name nothing.
+static void walk_arms(SemCollector *out, const LhatNode *arms)
 {
-    for (const LhatNode *c = clauses; c != NULL; c = c->next) {
-        if (c->kind != LHAT_NODE_IF_CLAUSE) {
-            continue;
-        }
-        walk_type(out, c->v.clause.condition);  // NULL on the body and the
-                                                // bare arm, which take what
-                                                // is left
-        walk_value(out, c->v.clause.body);
+    for (const LhatNode *arm = arms; arm != NULL; arm = arm->next) {
+        walk_type(out, arm->v.clause.condition);  // NULL on the bare arm,
+                                                  // which takes what is left
+        walk_value(out, arm->v.clause.body);
     }
 }
 
@@ -703,11 +698,12 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             walk_value(out, node->v.func.body);
             break;
         case LHAT_NODE_IF_EXPR:
-        case LHAT_NODE_IF_STMT:
             walk_list(out, node->v.list.items);
             break;
-        case LHAT_NODE_TRY_BLOCK:
-            walk_try_clauses(out, node->v.list.items);
+        case LHAT_NODE_IF_STMT:
+            walk_list(out, node->v.list.items);
+            walk_arms(out, node->v.list.arms);
+            walk_list(out, node->v.list.extra);  // 02 の 10.1's finally^
             break;
         case LHAT_NODE_IF_CLAUSE:
             walk_value(out, node->v.clause.condition);
@@ -729,6 +725,7 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             break;
         case LHAT_NODE_BLOCK:
             walk_list(out, node->v.list.items);
+            walk_arms(out, node->v.list.arms);
             walk_list(out, node->v.list.extra);  // 9 章's clauses
             break;
         case LHAT_NODE_LOOP_CLAUSE:

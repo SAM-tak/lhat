@@ -447,13 +447,17 @@ static void walk_statement(Outline *o, const LhatNode *node, cJSON *into,
         }
         // The forms that hold statements without naming anything themselves
         // are looked through, so a let^ inside an if^ is still listed.
+        // 04 の 4.5: a catch^ arm is a clause like an if^'s, and 02 の
+        // 10.1's finally^ on an if^ one like a block's.
         case LHAT_NODE_BLOCK:
-            walk_statements(o, node->v.list.items, into, false);
-            walk_clauses(o, node->v.list.extra, into);
-            break;
         case LHAT_NODE_IF_STMT:
-        case LHAT_NODE_TRY_BLOCK:
-            walk_clauses(o, node->v.list.items, into);
+            if (node->kind == LHAT_NODE_BLOCK) {
+                walk_statements(o, node->v.list.items, into, false);
+            } else {
+                walk_clauses(o, node->v.list.items, into);
+            }
+            walk_clauses(o, node->v.list.arms, into);
+            walk_clauses(o, node->v.list.extra, into);
             break;
         case LHAT_NODE_WITH:
             walk_statements(o, node->v.list.items, into, false);

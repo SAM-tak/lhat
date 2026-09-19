@@ -146,15 +146,21 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_DEF:
         case LHAT_NODE_SELF_TABLE:
         case LHAT_NODE_IF_EXPR:
-        case LHAT_NODE_IF_STMT:
-        case LHAT_NODE_TRY_BLOCK:  // 04 の 4.5: the body and its arms
         case LHAT_NODE_TYPE_TABLE:
         case LHAT_NODE_TYPE_TUPLE:
         case LHAT_NODE_TUPLE:  // 13.8改: the positions, in order
             visit_list("items", node->v.list.items, visit, context);
             break;
 
+        // 04 の 4.5: an if^ statement's arms follow its clauses, and 02 の
+        // 10.1's finally^ follows those.
+        case LHAT_NODE_IF_STMT:
         case LHAT_NODE_BLOCK:
+            visit_list("items", node->v.list.items, visit, context);
+            visit_list("arms", node->v.list.arms, visit, context);
+            visit_list("extra", node->v.list.extra, visit, context);
+            break;
+
         case LHAT_NODE_WITH:
             visit_list("items", node->v.list.items, visit, context);
             visit_list("extra", node->v.list.extra, visit, context);
@@ -549,7 +555,6 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_CALL_STMT:      return "call-stmt";
         case LHAT_NODE_BLOCK:          return "block";
         case LHAT_NODE_IF_STMT:        return "if-stmt";
-        case LHAT_NODE_TRY_BLOCK:      return "try-block";
         case LHAT_NODE_RETURN:         return "return";
         case LHAT_NODE_BREAK:          return "break";
         case LHAT_NODE_NEXT:           return "next";

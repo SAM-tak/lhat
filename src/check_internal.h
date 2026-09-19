@@ -426,10 +426,11 @@ typedef struct {
     // reaches through.
     Scope *closed_scope;
 
-    // 04 の 4.5: the try^{ } being checked, if any. A try^ written inside one
-    // hands its errors here rather than to the subroutine's result -- what
-    // no arm takes is what goes on out (check_try_block). A subroutine body
-    // written inside the block clears it: a try^ there belongs to that body.
+    // 04 の 4.5: the statements with catch^ arms being checked, if any. A
+    // try^ written in them hands its errors here rather than to the
+    // subroutine's result -- what no arm takes is what goes on out
+    // (check_arms). A subroutine body written inside them clears it: a try^
+    // there belongs to that body.
     struct CatchFrame {
         LhatType *caught;
         struct CatchFrame *outer;
@@ -637,7 +638,7 @@ LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node);
 bool chk_takes_receiver(const LhatType *type);
 
 // 04 の 5.3 with 3.4: an error leaving the body being checked, through a try^
-// or through the arms of a try^{ } that did not take it.
+// or through catch^ arms that did not take it.
 void chk_error_leaves(Checker *c, const LhatNode *at, LhatType *escaping);
 
 bool chk_may_stand_beside_tuple(const LhatType *type);

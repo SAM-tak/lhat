@@ -1833,7 +1833,7 @@ static void test_errors(void)
 
     // 04 の 4.1 with 5.3: the shape a writer reaches for when the failing
     // work is a block rather than a call -- wrap it, call it where it stands,
-    // and catch^ what comes out. 4.5 is what replaces it.
+    // and catch^ what comes out. 4.5's arms are what replace it.
     LHAT_TEST("a body written and called where it stands can be caught");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
@@ -1845,20 +1845,36 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04 の 4.5: inside a try^{ }, a try^ hands its errors to the arms rather
-    // than to the result -- so a body answering number^ alone is honest here
-    // even though what it calls may fail.
-    LHAT_TEST("a try^{ } takes the errors off the result");
+    // 04 の 4.5: in a block with catch^ arms, a try^ hands its errors to the
+    // arms rather than to the result -- so a body answering number^ alone is
+    // honest here even though what it calls may fail.
+    LHAT_TEST("catch^ arms take the errors off the result");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
                "var^ open = f^ -> number^|IOError { return^ 0 }\n"
                "var^ read = f^ -> number^ {\n"
-               "    try^{\n"
+               "    do^{\n"
                "        return^ try^ open()\n"
                "    catch^:\n"
                "        return^ 0\n"
                "    }\n"
                "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // The arms are the block's own clause, so a subroutine body carries them
+    // as directly as a do^ does -- and an arm that is one expression answers
+    // with it, the way 15.12's body does.
+    LHAT_TEST("and a function body carries them itself");
+    check_text(&u,
+               "errordef^ IOError { NotFound, Denied }\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ read = f^ -> number^ {\n"
+               "    return^ try^ open()\n"
+               "catch^:\n"
+               "    return^ 0\n"
+               "}\n"
+               "var^ quick = f^ -> number^ { try^ open() catch^: 0 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1869,7 +1885,7 @@ static void test_errors(void)
                "errordef^ IOError { NotFound { path : string^ }, Denied }\n"
                "var^ open = f^ -> number^|IOError { return^ 0 }\n"
                "var^ read = f^ -> string^ {\n"
-               "    try^{\n"
+               "    do^{\n"
                "        var^ n = try^ open()\n"
                "        return^ \"\"\n"
                "    catch^ IOError.NotFound:\n"
@@ -1888,7 +1904,7 @@ static void test_errors(void)
                "errordef^ IOError { NotFound, Denied }\n"
                "var^ open = f^ -> number^|IOError { return^ 0 }\n"
                "var^ read = f^ -> number^|IOError.NotFound {\n"
-               "    try^{\n"
+               "    do^{\n"
                "        return^ try^ open()\n"
                "    catch^ IOError.NotFound:\n"
                "        return^ 0\n"
@@ -1897,11 +1913,90 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TRY_OUTSIDE);
     unit_dispose(&u);
 
+    // 4.5: an arm may be entered before anything the statements bind was
+    // bound, so none of it is in reach there -- while the finally^ after the
+    // arms still reads it, as 02 の 10.1 writes it.
+    LHAT_TEST("an arm does not see what the statements bound");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ go = p^ {\n"
+               "    do^{\n"
+               "        var^ opened = try^ open()\n"
+               "    catch^:\n"
+               "        var^ m = opened\n"
+               "    }\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+
+    LHAT_TEST("but a finally^ after them does");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ go = p^ {\n"
+               "    do^{\n"
+               "        var^ opened = 1\n"
+               "        var^ n = try^ open()\n"
+               "    catch^:\n"
+               "        var^ m = 2\n"
+               "    finally^:\n"
+               "        var^ k = opened\n"
+               "    }\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // An if^'s arms take what its bodies found; a loop's, what one turn's
+    // main^ found.
+    LHAT_TEST("an if^ and a loop carry arms too");
+    check_text(&u,
+               "errordef^ IOError { NotFound }\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ pick = f^ c:bool^ -> number^ {\n"
+               "    if^ c {\n"
+               "        return^ try^ open()\n"
+               "    el^:\n"
+               "        return^ 1\n"
+               "    catch^:\n"
+               "        return^ 2\n"
+               "    }\n"
+               "}\n"
+               "var^ count = p^ -> number^ {\n"
+               "    var^ total = 0\n"
+               "    repeat^ 3 {\n"
+               "        total += try^ open()\n"
+               "    catch^:\n"
+               "        next^\n"
+               "    }\n"
+               "    return^ total\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    // 4.2: the kinds with a value to stand in take one, and the rest go on
+    // out through a try^ written in the arm that is left -- it^ narrowed to
+    // what the arms before it did not take.
+    LHAT_TEST("a fallback can pass the kinds it has no value for");
+    check_text(&u,
+               "errordef^ IOError { NotFound, Denied, Busy }\n"
+               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ a = f^ -> number^|IOError.Denied|IOError.Busy {\n"
+               "    return^ open() catch^ for^ it^: when^ fits^ "
+               "IOError.NotFound: 0 other^: try^ it^ ;\n"
+               "}\n"
+               "var^ b = f^ -> number^|IOError.Denied|IOError.Busy {\n"
+               "    return^ try^ (open() catch^ for^ it^: when^ fits^ "
+               "IOError.NotFound: 0 other^: it^ ;)\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // And nothing to catch is 4.1's line, one construct over.
-    LHAT_TEST("a try^{ } with no try^ inside it catches nothing");
+    LHAT_TEST("arms with no try^ before them catch nothing");
     check_text(&u,
                "var^ go = p^ {\n"
-               "    try^{\n"
+               "    do^{\n"
                "        var^ n = 1\n"
                "    catch^:\n"
                "        var^ m = 2\n"
@@ -1917,7 +2012,7 @@ static void test_errors(void)
                "errordef^ IOError { NotFound }\n"
                "var^ open = f^ -> number^|IOError { return^ 0 }\n"
                "var^ go = p^ {\n"
-               "    try^{\n"
+               "    do^{\n"
                "        var^ inner = f^ { return^ try^ open() }\n"
                "    catch^:\n"
                "        var^ m = 2\n"

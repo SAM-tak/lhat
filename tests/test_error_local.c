@@ -11,7 +11,7 @@
 // The rule the family exists for is that what a caller receives may not
 // touch localerror^: not a written result, not an inferred one, not one
 // nested inside a table. What is left is resolving it where it was raised --
-// catch^, or a try^{ } arm -- and one way for the thing that failed to
+// catch^, or a catch^ arm -- and one way for the thing that failed to
 // survive: 10 章's chain, which 2.3 widened `cause` for.
 
 #include <stdio.h>
@@ -148,10 +148,10 @@ static void test_resolving_it_here(void)
     unit_dispose(&u);
 
     // 4.5: the arm is what keeps it from reaching 5.3 at all.
-    LHAT_TEST("a try^{ } arm that names the kind takes it");
+    LHAT_TEST("a catch^ arm that names the kind takes it");
     check_text(&u, DECLS
                "let^ g = p^ -> number^ {\n"
-               "    try^{\n"
+               "    do^{\n"
                "        return^ try^ " RAISED "\n"
                "    catch^ IOFatal:\n"
                "        return^ 0\n"
@@ -164,7 +164,7 @@ static void test_resolving_it_here(void)
     LHAT_TEST("and so does the bare arm");
     check_text(&u, DECLS
                "let^ g = p^ -> number^ {\n"
-               "    try^{\n"
+               "    do^{\n"
                "        return^ try^ " RAISED "\n"
                "    catch^:\n"
                "        return^ 0\n"
@@ -178,7 +178,7 @@ static void test_resolving_it_here(void)
     LHAT_TEST("an arm for another family does not take it");
     check_text(&u, DECLS
                "let^ g = p^ -> number^ {\n"
-               "    try^{\n"
+               "    do^{\n"
                "        return^ try^ " RAISED "\n"
                "    catch^ IOError:\n"
                "        return^ 0\n"

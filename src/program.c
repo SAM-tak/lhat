@@ -990,7 +990,8 @@ static LhatUnitMember tree_member(const LhatUnit *unit, const char *definition,
     // so both halves of the list have to be empty for this to be true.
     const LhatNode *body = member_body(entry);
     out.empty_body = body != NULL && body->kind == LHAT_NODE_BLOCK &&
-                     body->v.list.items == NULL && body->v.list.extra == NULL;
+                     body->v.list.items == NULL && body->v.list.extra == NULL &&
+                     body->v.list.arms == NULL;
     // The written type first: 14.6's 'name : type = value' says it outright.
     // Where only a value was written, the way it was spelt is what is left.
     out.type = written_type_kind(unit, entry->v.entry.type);

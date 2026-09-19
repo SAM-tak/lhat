@@ -73,11 +73,6 @@ typedef enum {
     LHAT_NODE_CALL_STMT,
     LHAT_NODE_BLOCK,         // do^{ ... } and any braced body
     LHAT_NODE_IF_STMT,
-    LHAT_NODE_TRY_BLOCK,     // try^{ ... catch^T: ... catch^: ... }
-                             // (04 の 4.5). The items are IF_CLAUSE nodes:
-                             // the first is the body, the rest are arms
-                             // whose `condition` is the written type -- NULL
-                             // on the bare one, which takes what is left
     LHAT_NODE_RETURN,
     LHAT_NODE_BREAK,
     LHAT_NODE_NEXT,          // next^ / skip^ / continue^          (9.11)
@@ -441,7 +436,15 @@ struct LhatNode {
         // `extra` empty, so the common case is unchanged.
         struct {
             LhatNode *items;
-            LhatNode *extra;  // WITH: body. BLOCK: clause list.
+            // WITH: body. BLOCK: clause list. IF_STMT: its finally^ (02 の
+            // 10.1), the one clause it may carry.
+            LhatNode *extra;
+            // 04 の 4.5: BLOCK and IF_STMT -- the catch^ arms written at the
+            // end of the braces, as IF_CLAUSE nodes whose `condition` is the
+            // written type (NULL on the bare one, which takes what is left).
+            // A try^ in the block's main^, or in any of the if^'s bodies,
+            // leaves for them. NULL when none was written.
+            LhatNode *arms;
             // 02 の 18.4: the unit's own, written at its head. Only the root
             // block of a unit ever carries these.
             LhatNode *annotations;

@@ -6,10 +6,9 @@
 // name means is exactly what its place in the parent says, and the visitor
 // hands over every child alike -- so it keeps a switch of its own, and a
 // node kind added to ast.h falls into its `default` until someone names it
-// there. Everything under such a node then goes uncoloured, quietly:
-// try^{ } (04 の 4.5) did precisely that. So this walks the tree through
-// the visitor, which needs no teaching, and asks that every name it finds
-// came back with a token.
+// there. Everything under such a node then goes uncoloured, quietly. So
+// this walks the tree through the visitor, which needs no teaching, and asks
+// that every name it finds came back with a token.
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -273,9 +272,9 @@ static void test_every_name_is_reached(void)
 
     // Written to put a name inside each construct that holds one, so that a
     // kind left out of semantic_tokens.c's switch shows up here as a name
-    // with nothing on it. 04 の 4.5's try^{ }, 9.11's next^, 16.3's typed
-    // focus and 04 の 14.4's qualified type name are the four this test was
-    // written for; the rest is here so the check keeps its reach.
+    // with nothing on it. 04 の 4.5's catch^ arms, 9.11's next^, 16.3's
+    // typed focus and 04 の 14.4's qualified type name are the four this test
+    // was written for; the rest is here so the check keeps its reach.
     static const char *source =
         "module^ demo.unit\n"
         "errordef^ E { Bad { why : string^ } }\n"
@@ -287,9 +286,9 @@ static void test_every_name_is_reached(void)
         "    shout(\"x\")\n"
         "}\n"
         "for^ key, value in^ table { shout(key) }\n"
-        // 04 の 4.5: the arms live inside the try^'s own braces, and a ':'
+        // 04 の 4.5: the arms live inside the block's own braces, and a ':'
         // opens each body -- the shape 5.2 gives if^, not a braced block.
-        "try^{\n"
+        "do^{\n"
         "    shout(\"y\")\n"
         "catch^ E.Bad:\n"
         "    shout(\"z\")\n"
@@ -382,14 +381,14 @@ static void test_a_type_written_as_a_value(void)
     check_dispose(&c);
 }
 
-static void test_try_block(void)
+static void test_catch_arms(void)
 {
-    LHAT_TEST("04 の 4.5: a try^{ } body and its arms");
+    LHAT_TEST("04 の 4.5: a block's statements and its arms");
 
     static const char *source =
         "errordef^ E { Bad }\n"
         "let^ shout = f^ m:string^ -> string^ { return^ m }\n"
-        "try^{\n"
+        "do^{\n"
         "    shout(\"body\")\n"
         "catch^ E.Bad:\n"
         "    shout(\"arm\")\n"
@@ -400,8 +399,8 @@ static void test_try_block(void)
     cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
     Tokens tokens = decode(data);
 
-    // The body and the arm both hold ordinary statements -- what stood
-    // uncoloured before try^{ } was a kind of its own.
+    // The block and the arm both hold ordinary statements, and the arm is a
+    // field of the block the switch has to walk.
     expect_token(&tokens, source, "shout(\"body\")", "function", false);
     expect_token(&tokens, source, "shout(\"arm\")", "function", false);
     // 04 の 14.4: the arm's written type is a qualified name, and both
@@ -1056,7 +1055,7 @@ int main(void)
     test_a_type_written_as_a_value();
     test_module_path_reads_the_same_everywhere();
     test_compound_assignment_is_one_token();
-    test_try_block();
+    test_catch_arms();
     test_for_focus();
     test_qualified_type_name();
     test_a_type_name_is_coloured_only_where_it_names_a_type();

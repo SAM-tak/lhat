@@ -40,22 +40,20 @@ typedef struct {
     // the body included.
     size_t bare_depth;
 
-    // 04 の 4.5: the depth of the statement list a try^{ } owns, where a
-    // catch^ opens an arm rather than standing between two expressions. The
-    // two readings are both legal L^ otherwise -- 'f() catch^ 0' is a value
-    // and 'f()' followed by 'catch^ E:' is a statement and an arm -- and no
-    // amount of lookahead separates them, so the block's own list is where
-    // the word is spoken for. Parenthesise a fallback written there.
-    // Zero outside any try^{ }.
-    size_t catch_depth;
-
     // How many expressions are open (parse_expression). A bracket, a call's
     // arguments, a table or a hole opens one, and so does a body written
-    // inside an expression -- so the level a statement of the try^{ }'s own
-    // list runs at is recorded rather than assumed, and 4.5's word belongs
-    // to the block only at or above it.
+    // inside an expression.
     size_t expr_depth;
-    size_t catch_expr_depth;
+
+    // 04 の 4.5: the level of the expression that ends the statement being
+    // read -- a let^'s value, a call standing alone, what a return^ answers
+    // -- and zero while none is. A catch^ met at that level and shaped like
+    // an arm ('catch^:', 'catch^ Kind:') opens the arm rather than joining
+    // the expression: nothing in the statement follows its last expression
+    // with a ':', so 4.1's operator is not a reading there. A header -- an
+    // if^'s condition, a for^'s bound -- is followed by one, and never sets
+    // this.
+    size_t tail_expr_depth;
 } Parser;
 
 // Levels of 11.6, weakest first. A larger value binds tighter.
@@ -75,8 +73,9 @@ enum {
 
 static LhatNode *parse_expression(Parser *p);
 static LhatNode *parse_type(Parser *p);
-// 04 の 4.1改: the one statement catch^ takes on its right side.
-static LhatNode *parse_panic(Parser *p);
+// 04 の 4.1改: the one statement catch^ takes on its right side. `tail` when
+// it ends a statement, where an arm may follow it (tail_expr_depth).
+static LhatNode *parse_panic(Parser *p, bool tail);
 static LhatNode *parse_statement(Parser *p);
 static LhatNode *parse_statement_after_annotations(Parser *p);
 static LhatNode *parse_annotations(Parser *p);
@@ -85,6 +84,7 @@ static LhatNode *parse_annotations(Parser *p);
 // answer_with_body, which is what lets 'f^ { (0, 1) }' work.
 static void fold_tuple_answer(LhatNode *jump);
 static LhatNode *parse_block_body(Parser *p, const LhatToken *at);
+static LhatNode *parse_catch_arms(Parser *p);  // 04 の 4.5
 static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
                                    bool walks);
 static LhatNode *access_node(Parser *p, LhatNodeKind kind, const LhatToken *at,
@@ -95,7 +95,6 @@ static LhatNode *parse_error_fields(Parser *p);
 static LhatNode *parse_module(Parser *p);
 static LhatNode *parse_public(Parser *p);
 static LhatNode *parse_for(Parser *p);
-static LhatNode *parse_try_block(Parser *p);
 static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
                                const LhatToken *at, LhatNode *targets);
 static bool is_binary_op(const LhatNode *node, LhatOpKind op);
@@ -118,6 +117,33 @@ static void advance(Parser *p)
 static bool at_eof(const Parser *p)
 {
     return p->current.kind == LHAT_TOKEN_EOF;
+}
+
+// A copy of the lexer to read ahead with and throw away. The copy is
+// shallow, so the buffers a lexer grows as it reads would be the original's:
+// a string literal read here would realloc its `strings` out from under it --
+// leaving a pointer that goes on being used -- and leave what it grew behind
+// besides. The probe gets its own of each instead, and gives them back in
+// probe_end.
+static void probe_begin(LhatLexer *probe, const LhatLexer *lexer)
+{
+    *probe = *lexer;
+    probe->strings = NULL;
+    probe->strings_length = 0;
+    probe->strings_capacity = 0;
+    probe->diagnostics = NULL;
+    probe->diagnostic_count = 0;
+    probe->diagnostic_capacity = 0;
+#if LHAT_WITH_COMMENTS
+    probe->comments = NULL;
+    probe->comment_count = 0;
+    probe->comment_capacity = 0;
+#endif
+}
+
+static void probe_end(LhatLexer *probe)
+{
+    lhat_lexer_dispose(probe);
 }
 
 static bool is_op(const LhatToken *token, LhatOpKind op)
@@ -285,7 +311,7 @@ static LhatNode *finish_at(LhatNode *node, const LhatNode *last)
 }
 
 // `finish`, for a body closed by whatever follows it rather than by a brace
-// of its own -- an if^ clause's, a try^{ } arm's, one of 9 章's clauses. Its
+// of its own -- an if^ clause's, a catch^ arm's, one of 9 章's clauses. Its
 // last token is its last statement's, so a comment written under that
 // statement would fall outside it and 01 の 6.4 would give the comment to the
 // next clause. It ends where what is written in it does, comments included.
@@ -1736,6 +1762,14 @@ static LhatNode *parse_subroutine_or_type(Parser *p, bool is_function)
         p->bare_depth = enclosing_bare;
         if (is_function) {
             answer_with_body(p, node->v.func.body);
+            // 04 の 4.5: an arm is the other way the body ends, so one that
+            // is one expression answers with it the same way.
+            for (LhatNode *arm = node->v.func.body != NULL
+                                     ? node->v.func.body->v.list.arms
+                                     : NULL;
+                 arm != NULL; arm = arm->next) {
+                answer_with_body(p, arm->v.clause.body);
+            }
         }
         expect_op(p, LHAT_OP_RBRACE);
         // As in parse_braced_block: the brace closes the body, not the
@@ -1757,23 +1791,60 @@ static bool is_else_marker(const Parser *p)
            check_hat(p, "elseif") || check_hat(p, "elsif") || check_hat(p, "elif");
 }
 
-// Whether a type could begin here. 13 章's forms all start with a name, a
-// hat identifier (t^, f^, Self^, …) or the '(' of a tuple -- so a literal or
-// a brace standing where an arm's kind belongs is 04 の 4.5's other reading
-// rather than a type that failed to parse.
-static bool starts_type(const Parser *p)
+// 04 の 4.5: a word an arm's kind may start with. An error kind has a name
+// (2.2), and the two tops (2.7) are the hat identifiers among them.
+static bool names_error_kind(const Parser *p, const LhatToken *token)
 {
-    return p->current.kind == LHAT_TOKEN_IDENT ||
-           p->current.kind == LHAT_TOKEN_HAT_IDENT ||
-           is_op(&p->current, LHAT_OP_LPAREN);
+    return token->kind == LHAT_TOKEN_IDENT || token_is_hat(p, token, "error") ||
+           token_is_hat(p, token, "localerror");
 }
 
-// 04 の 4.5: a catch^ standing in the statement list a try^{ } owns, which is
-// where the word opens an arm. Anywhere else it is 4.1's binary operator.
+// 04 の 4.5: whether the catch^ here is written as an arm -- 'catch^:', or
+// 'catch^' and a kind (dotted, alternatives joined by '|') and then ':'.
+// The kind may run past the one token of lookahead the parser keeps, so the
+// rest is read off a copy of the lexer.
+static bool catch_arm_shaped(const Parser *p)
+{
+    if (is_op(&p->ahead, LHAT_OP_COLON)) {
+        return true;
+    }
+    if (!names_error_kind(p, &p->ahead)) {
+        return false;
+    }
+    LhatLexer probe;
+    probe_begin(&probe, p->lexer);
+    bool shaped = false;
+    for (;;) {
+        LhatToken t = lhat_lexer_next(&probe);
+        while (is_op(&t, LHAT_OP_DOT)) {
+            t = lhat_lexer_next(&probe);
+            if (t.kind != LHAT_TOKEN_IDENT) {
+                break;
+            }
+            t = lhat_lexer_next(&probe);
+        }
+        if (is_op(&t, LHAT_OP_COLON)) {
+            shaped = true;
+            break;
+        }
+        if (!is_op(&t, LHAT_OP_UNION)) {
+            break;
+        }
+        t = lhat_lexer_next(&probe);
+        if (!names_error_kind(p, &t)) {
+            break;
+        }
+    }
+    probe_end(&probe);
+    return shaped;
+}
+
+// 04 の 4.5: a catch^ that ends the statement being read and opens an arm.
+// Anywhere else it is 4.1's binary operator.
 static bool at_catch_arm(const Parser *p)
 {
-    return p->catch_depth != 0 && p->depth == p->catch_depth &&
-           p->expr_depth <= p->catch_expr_depth && check_hat(p, "catch");
+    return check_hat(p, "catch") && p->tail_expr_depth != 0 &&
+           p->expr_depth == p->tail_expr_depth && catch_arm_shaped(p);
 }
 
 // Words that begin a statement. The lexer keeps no keyword table (01 の 2.1),
@@ -2550,8 +2621,8 @@ static LhatNode *parse_fallback(Parser *p)
     LhatNode *left = parse_ascription(p);
 
     for (;;) {
-        // 04 の 4.5: not the one that opens an arm -- there the word belongs
-        // to the block, and an expression written just before it has ended.
+        // 04 の 4.5: not the one that opens an arm -- there the statement
+        // has ended, and the word belongs to the block.
         bool catching = check_hat(p, "catch") && !at_catch_arm(p);
         if (!catching && !check_op(p, LHAT_OP_NIL_ELSE)) {
             break;
@@ -2575,11 +2646,15 @@ static LhatNode *parse_fallback(Parser *p)
         //
         // Not on '??': 04 の 11.3 makes absence no failure, so panicking on
         // one asserts something else. And not return^, however writable it
-        // looks -- 4.5's try^{ } is there for exactly that, and admitting it
-        // here would hollow that out.
-        node->v.binary.right = catching && check_hat(p, "panic")
-                                   ? parse_panic(p)
-                                   : parse_ascription(p);
+        // looks -- 4.5's catch^ arms are there for exactly that, and
+        // admitting it here would hollow them out.
+        //
+        // Where this catch^ ends a statement, so does the panic^, and an arm
+        // may follow what it says.
+        node->v.binary.right =
+            catching && check_hat(p, "panic")
+                ? parse_panic(p, p->expr_depth == p->tail_expr_depth)
+                : parse_ascription(p);
         left = finish(p, node);
     }
     return left;
@@ -2796,14 +2871,23 @@ static LhatNode *parse_logical(Parser *p, int min_precedence)
 
 static LhatNode *parse_expression(Parser *p)
 {
-    // 04 の 4.5: how deep in expressions this stands. One is the statement's
-    // own -- where a catch^ is the word the block spoke for -- and anything
-    // more is inside a bracket, a call's arguments, a table or a hole, where
-    // it is 4.1's operator again. That is what makes '(f() catch^ 0)' the
-    // way to write the fallback there.
+    // How deep in expressions this stands -- which is how 04 の 4.5 tells
+    // the expression ending a statement (tail_expr_depth) from one inside a
+    // bracket, a call's arguments, a table or a hole.
     p->expr_depth++;
     LhatNode *node = parse_logical(p, PREC_OR);
     p->expr_depth--;
+    return node;
+}
+
+// 04 の 4.5: an expression that ends its statement, so that a catch^ arm
+// written after it is read as one (tail_expr_depth).
+static LhatNode *parse_tail_expression(Parser *p)
+{
+    size_t outer = p->tail_expr_depth;
+    p->tail_expr_depth = p->expr_depth + 1;
+    LhatNode *node = parse_expression(p);
+    p->tail_expr_depth = outer;
     return node;
 }
 
@@ -2873,7 +2957,7 @@ static bool can_begin_statement(const Parser *p)
             // (8.3), so 2.1 must not read them as a further argument to the
             // call on the line above.
             // 04 の 4.5's catch^ ends the statement above it as surely as a
-            // '}' would: in the list a try^{ } owns, the word opens an arm.
+            // '}' would: where a statement may begin, the word opens an arm.
             //
             // The five below open a statement of their own
             // (parse_statement_after_annotations dispatches on each), and
@@ -2883,11 +2967,11 @@ static bool can_begin_statement(const Parser *p)
             // is right, and a jump must go on doing that. What is asked
             // HERE is a different question -- may a statement start here --
             // and the answer for all five is yes. Left out, the call on the
-            // line above swallowed them: 'print(x)' followed by 'try^ { }'
-            // read the try^ as an argument of the print, and what the
-            // reader saw was a complaint about command mode (a Love2D
-            // binding met exactly that).
-            return is_statement_keyword(p) || at_catch_arm(p) ||
+            // line above swallowed them: 'print(x)' followed by
+            // 'try^ save(y)' read the try^ as an argument of the print, and
+            // what the reader saw was a complaint about command mode (a
+            // Love2D binding met exactly that).
+            return is_statement_keyword(p) || check_hat(p, "catch") ||
                    check_hat(p, "try") || check_hat(p, "import") ||
                    check_hat(p, "require") || check_hat(p, "module") ||
                    check_hat(p, "public") ||
@@ -3027,12 +3111,17 @@ static LhatNode *parse_statement_list(Parser *p)
     LhatNode *tail = NULL;
     p->depth++;
 
+    // No expression ends a statement here yet (tail_expr_depth), whatever
+    // the list is written inside.
+    size_t outer_tail = p->tail_expr_depth;
+    p->tail_expr_depth = 0;
+
     // Stops at an else marker and at a clause marker as well as at '}',
     // because 5.2 and 9.2 both put those inside the braces. 04 の 4.5's
-    // catch^ arms sit inside them the same way, in the one list that owns
-    // them.
+    // catch^ arms sit inside them the same way: no statement begins with the
+    // word, so met here it opens one.
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE) && !is_else_marker(p) &&
-           !at_catch_arm(p) && clause_index(p) < 0) {
+           !check_hat(p, "catch") && clause_index(p) < 0) {
         uint32_t before = p->current.offset;
 
         LhatNode *statement = parse_statement(p);
@@ -3052,6 +3141,7 @@ static LhatNode *parse_statement_list(Parser *p)
         }
     }
     p->depth--;
+    p->tail_expr_depth = outer_tail;
     return head;
 }
 
@@ -3066,7 +3156,8 @@ static LhatNode *parse_block_body(Parser *p, const LhatToken *at)
 }
 
 // A body that may carry the clauses of 9 章. Outside a loop only finally^ is
-// allowed (10.1), since the others describe how an iteration proceeds.
+// allowed (10.1), since the others describe how an iteration proceeds --
+// finally^ and 04 の 4.5's catch^ arms, which are the block's own.
 // `walks` marks a for^ ... in^, which 9.10 keeps pre^ out of.
 static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
                                    bool walks)
@@ -3086,7 +3177,28 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
     bool has_body = unlabelled;
     bool saw_clause = false;
 
-    for (int index; (index = clause_index(p)) >= 0;) {
+    for (;;) {
+        // 04 の 4.5: the arms close main^ -- in a loop they take what a try^
+        // in it found, one turn at a time -- so they stand where main^ ends:
+        // after it and before last^. Outside a loop that leaves finally^.
+        if (check_hat(p, "catch")) {
+            if (block->v.list.arms != NULL || previous > LHAT_CLAUSE_MAIN) {
+                report(p, &p->current, LHAT_PARSE_ERR_CLAUSE_ORDER);
+            }
+            LhatNode *arms = parse_catch_arms(p);
+            if (block->v.list.arms == NULL) {
+                block->v.list.arms = arms;
+            }
+            if (previous < LHAT_CLAUSE_MAIN) {
+                previous = LHAT_CLAUSE_MAIN;
+            }
+            continue;
+        }
+
+        int index = clause_index(p);
+        if (index < 0) {
+            break;
+        }
         LhatToken at_clause = p->current;
 
         if (!in_loop && index != LHAT_CLAUSE_FINALLY) {
@@ -3164,7 +3276,8 @@ static LhatNode *parse_braced_block(Parser *p, bool in_loop, bool walks)
 static LhatNode *parse_target(Parser *p)
 {
     LhatToken start = p->current;
-    LhatNode *value = parse_expression(p);
+    // A call standing alone ends its statement, and so may a target.
+    LhatNode *value = parse_tail_expression(p);
 
     if (!check_op(p, LHAT_OP_COLON)) {
         return value;
@@ -3225,9 +3338,9 @@ static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
 {
     LhatNode *values = NULL;
     LhatNode *values_tail = NULL;
-    lhat_node_append(&values, &values_tail, parse_expression(p));
+    lhat_node_append(&values, &values_tail, parse_tail_expression(p));
     while (match_op(p, LHAT_OP_COMMA)) {
-        lhat_node_append(&values, &values_tail, parse_expression(p));
+        lhat_node_append(&values, &values_tail, parse_tail_expression(p));
     }
 
     LhatNode *node = make(p, kind, at);
@@ -3475,61 +3588,35 @@ static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
                          finish_at(finish(p, clause), clause->v.clause.body));
     }
 
+    // 04 の 4.5: the arms follow the last clause and take what a try^ in any
+    // of the bodies found -- the condition is not theirs, being outside the
+    // braces. 02 の 10.1: a finally^ is the if^'s as a whole in the same way.
+    node->v.list.arms = parse_catch_arms(p);
+    if (clause_index(p) == LHAT_CLAUSE_FINALLY) {
+        LhatToken at = p->current;
+        advance(p);
+        expect_op(p, LHAT_OP_COLON);
+        LhatNode *clause = make(p, LHAT_NODE_LOOP_CLAUSE, &at);
+        if (clause != NULL) {
+            clause->v.loop_clause.kind = LHAT_CLAUSE_FINALLY;
+            clause->v.loop_clause.body = parse_statement_list(p);
+            node->v.list.extra = finish_body(p, clause);
+        }
+    }
+
     expect_op(p, LHAT_OP_RBRACE);
     node->v.list.items = head;
     return finish(p, node);
 }
 
-// 04 の 4.5: try^{ … } and the catch^ arms inside its braces. The shape is
-// 5.2's -- the clauses live inside, and a ':' opens the next one -- so this
-// reads the way parse_if_body does, with a written type where a condition
-// would stand. The first clause is the body and carries none.
-static LhatNode *parse_try_block(Parser *p)
+// 04 の 4.5: the catch^ arms at the end of a block, read once its statements
+// have stopped at the first of them. An arm has 5.2's shape -- a ':' opens
+// it, and the next one or the end of the braces closes it -- with a written
+// kind where an if^'s condition would stand, and the bare one last.
+static LhatNode *parse_catch_arms(Parser *p)
 {
-    LhatToken start = p->current;
-    advance(p);  // try^
-
-    LhatNode *node = make(p, LHAT_NODE_TRY_BLOCK, &start);
-    if (node == NULL) {
-        return NULL;
-    }
-
-    LhatToken brace = p->current;
-    if (!expect_op(p, LHAT_OP_LBRACE)) {
-        return finish(p, node);
-    }
-
-    // The list the braces open is the one this block's arms are spoken for
-    // in. A try^{ } written inside another owns its own, and the outer one
-    // is put back below.
-    size_t enclosing_catch = p->catch_depth;
-    size_t enclosing_catch_expr = p->catch_expr_depth;
-    p->catch_depth = p->depth + 1;
-    // A statement of that list opens one expression of its own; anything
-    // deeper is a bracket or a body, where the word is the operator again.
-    p->catch_expr_depth = p->expr_depth + 1;
-
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
-
-    LhatNode *body = make(p, LHAT_NODE_IF_CLAUSE, &brace);
-    if (body == NULL) {
-        p->catch_depth = enclosing_catch;
-        p->catch_expr_depth = enclosing_catch_expr;
-        return finish(p, node);
-    }
-    body->v.clause.condition = NULL;
-    // From after the '{', not from the brace itself. Starting both the clause
-    // and its body there would make the two spans identical, and a tool
-    // showing the clause could not tell what it is from what it does -- the
-    // same reason an el^ clause's body starts after its ':' (parse_if_body).
-    body->v.clause.body = parse_block_body(p, &p->current);
-    lhat_node_append(&head, &tail,
-                     finish_at(finish(p, body), body->v.clause.body));
-
-    // Inside these braces every catch^ is an arm, so the word alone is the
-    // test here -- at_catch_arm asks a question about the list's own depth,
-    // and the list has closed by the time each arm is read.
     bool bare = false;
     while (check_hat(p, "catch")) {
         LhatToken at = p->current;
@@ -3543,25 +3630,23 @@ static LhatNode *parse_try_block(Parser *p)
         if (bare) {
             report(p, &at, LHAT_PARSE_ERR_CATCH_AFTER_BARE);
         }
-        // What stands here is a kind and a ':', and what a writer may have
-        // meant instead is 4.1's fallback -- which is why the two are told
-        // apart before the type is read, rather than by letting the type
-        // fail. The message names the parentheses that separate them.
+        // An error kind is named (2.2), so a word that could not start one
+        // is refused here rather than by letting a type fail to parse.
         bool shaped = true;
         if (check_op(p, LHAT_OP_COLON)) {
             bare = true;
-        } else if (starts_type(p)) {
+        } else if (names_error_kind(p, &p->current)) {
             arm->v.clause.condition = parse_type(p);
         } else {
             shaped = false;
         }
         if (!shaped || !check_op(p, LHAT_OP_COLON)) {
             report(p, &p->current, LHAT_PARSE_ERR_CATCH_ARM_NEEDS_TYPE);
-            // On to the next arm or the end of the block: what follows was
-            // written as arms, and reading it as loose statements would
-            // report a second time about the same mistake.
+            // On to the next arm, a clause or the end of the block: what
+            // follows was written as an arm, and reading it as loose
+            // statements would report a second time about the same mistake.
             while (!at_eof(p) && !check_hat(p, "catch") &&
-                   !check_op(p, LHAT_OP_RBRACE)) {
+                   !check_op(p, LHAT_OP_RBRACE) && clause_index(p) < 0) {
                 advance(p);
             }
             continue;
@@ -3572,12 +3657,7 @@ static LhatNode *parse_try_block(Parser *p)
         lhat_node_append(&head, &tail,
                          finish_at(finish(p, arm), arm->v.clause.body));
     }
-
-    p->catch_depth = enclosing_catch;
-    p->catch_expr_depth = enclosing_catch_expr;
-    expect_op(p, LHAT_OP_RBRACE);
-    node->v.list.items = head;
-    return finish(p, node);
+    return head;
 }
 
 // Where a bare expression is read at all: the top of interactive input (8.2,
@@ -4547,7 +4627,7 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
          check_op(p, LHAT_OP_NOT) || check_op(p, LHAT_OP_LBRACE));
 
     if (operand_follows) {
-        node->v.jump.value = parse_expression(p);
+        node->v.jump.value = parse_tail_expression(p);
 
         // 02 の 13.8改: 'return^ a, b' answers a tuple. The values are a list
         // hanging off `value`, and `level` says how many -- 0 and 1 both mean
@@ -4567,7 +4647,7 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
             LhatNode *head = node->v.jump.value;
             LhatNode *tail = head;
             while (match_op(p, LHAT_OP_COMMA)) {
-                lhat_node_append(&head, &tail, parse_expression(p));
+                lhat_node_append(&head, &tail, parse_tail_expression(p));
             }
             node->v.jump.value = head;
             node->v.jump.level = (uint32_t)lhat_node_list_length(head);
@@ -4579,7 +4659,7 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
 
 // 04 の 11.6: unlike return^/break^/yield^, the value is not optional --
 // panic^ answers no value of its own, so a bare panic^ would say nothing.
-static LhatNode *parse_panic(Parser *p)
+static LhatNode *parse_panic(Parser *p, bool tail)
 {
     LhatToken start = p->current;
     advance(p);
@@ -4587,7 +4667,7 @@ static LhatNode *parse_panic(Parser *p)
     if (node == NULL) {
         return NULL;
     }
-    node->v.jump.value = parse_expression(p);
+    node->v.jump.value = tail ? parse_tail_expression(p) : parse_expression(p);
     return finish(p, node);
 }
 
@@ -4662,13 +4742,6 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
             advance(p);
             return start_at(parse_braced_block(p, false, false), &start);
         }
-        // 04 の 4.5: a brace after try^ opens the block form, which is a
-        // statement. Everywhere else try^ is the unary operator of 5 章, and
-        // what follows it is an expression -- a table literal there would be
-        // asking a table for an error it cannot hold, so the two do not meet.
-        if (check_hat(p, "try") && is_op(&p->ahead, LHAT_OP_LBRACE)) {
-            return parse_try_block(p);
-        }
         if (check_hat(p, "with")) {
             return parse_with(p);
         }
@@ -4702,7 +4775,7 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
             return parse_jump(p, LHAT_NODE_NEXT);
         }
         if (check_hat(p, "panic")) {
-            return parse_panic(p);
+            return parse_panic(p, true);
         }
         // 05 の 5.5: a require^ standing alone binds the unit under the
         // path it declared, rather than under a name the reader picks. It is
@@ -4813,9 +4886,9 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
 
         LhatNode *rhs_head = NULL;
         LhatNode *rhs_tail = NULL;
-        lhat_node_append(&rhs_head, &rhs_tail, parse_expression(p));
+        lhat_node_append(&rhs_head, &rhs_tail, parse_tail_expression(p));
         while (match_op(p, LHAT_OP_COMMA)) {
-            lhat_node_append(&rhs_head, &rhs_tail, parse_expression(p));
+            lhat_node_append(&rhs_head, &rhs_tail, parse_tail_expression(p));
         }
 
         LhatNode *node = make(p, LHAT_NODE_REASSIGN, &at);
@@ -4934,9 +5007,8 @@ static void parser_begin(Parser *p, LhatLexer *lexer, LhatParseResult *result)
     // held, and a value that happened to equal `depth` let 8.2's bare
     // expression through at the top level of a unit.
     p->bare_depth = 0;
-    p->catch_depth = 0;  // 04 の 4.5, and left unset for the same reason
     p->expr_depth = 0;
-    p->catch_expr_depth = 0;
+    p->tail_expr_depth = 0;  // 04 の 4.5, and left unset for the same reason
     // Nothing has been consumed yet, so `finish` before the first advance
     // must not widen anything.
     memset(&p->previous, 0, sizeof p->previous);
@@ -5188,24 +5260,9 @@ void lhat_parse_type_only(LhatLexer *lexer, LhatParseResult *result)
 // call of x.
 bool lhat_parse_is_command(const LhatLexer *lexer)
 {
-    // Two tokens are read and the reading is thrown away. The copy is
-    // shallow, so the buffers a lexer grows as it reads would be the
-    // caller's: a string literal in what this reads would realloc the
-    // caller's `strings` out from under it -- leaving a pointer that goes on
-    // being used -- and leave what it grew behind besides. The probe gets
-    // its own of each instead, and gives them back on the way out.
-    LhatLexer probe = *lexer;
-    probe.strings = NULL;
-    probe.strings_length = 0;
-    probe.strings_capacity = 0;
-    probe.diagnostics = NULL;
-    probe.diagnostic_count = 0;
-    probe.diagnostic_capacity = 0;
-#if LHAT_WITH_COMMENTS
-    probe.comments = NULL;
-    probe.comment_count = 0;
-    probe.comment_capacity = 0;
-#endif
+    // Two tokens are read and the reading is thrown away.
+    LhatLexer probe;
+    probe_begin(&probe, lexer);
 
     bool answer = false;
     LhatToken first = lhat_lexer_next(&probe);
@@ -5215,7 +5272,7 @@ bool lhat_parse_is_command(const LhatLexer *lexer)
         LhatToken second = lhat_lexer_next(&probe);
         answer = !continues_expression(&p, &second);
     }
-    lhat_lexer_dispose(&probe);
+    probe_end(&probe);
     return answer;
 }
 
@@ -5306,8 +5363,8 @@ static const LhatMessageEntry PARSE_MESSAGES[] = {
     [LHAT_PARSE_ERR_BINDING_ARITY] = {"parse.binding-arity",
         "the number of targets and values does not match"},
     [LHAT_PARSE_ERR_CLAUSE_ORDER] = {"parse.clause-order",
-        "loop clauses run prolog^, pre^, first^, main^, last^, "
-        "epilog^, finally^ and must be written in that order"},
+        "a block's clauses run prolog^, pre^, first^, main^, catch^, "
+        "last^, epilog^, finally^ and must be written in that order"},
     [LHAT_PARSE_ERR_MAIN_REQUIRED] = {"parse.main-required",
         "statements before prolog^, pre^ or first^ need 'main^:' "
         "to say they are the body"},
@@ -5376,10 +5433,8 @@ static const LhatMessageEntry PARSE_MESSAGES[] = {
         "a bare catch^: takes whatever is left, so nothing follows "
         "it -- write the narrower arms first"},
     [LHAT_PARSE_ERR_CATCH_ARM_NEEDS_TYPE] = {"parse.catch-arm-needs-type",
-        "an arm of a try^{ } is written 'catch^ Kind:' or bare as "
-        "'catch^:'. A fallback value is the other reading of the "
-        "word and is written with parentheses here: "
-        "'let^ n = (f() catch^ 0)'"},
+        "a catch^ arm is written 'catch^ Kind:', or bare as "
+        "'catch^:' -- and a kind is a name"},
     [LHAT_PARSE_ERR_MODULE_MISPLACED] = {"parse.module-misplaced",
         "module^ goes first, and only once in a file"},
     [LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION] =

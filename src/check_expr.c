@@ -687,7 +687,7 @@ static LhatType *initial_binding_type(Checker *c, const char *name,
 }
 
 // 04 の 5.3 with 3.4: an error on its way out of the body being checked --
-// through a try^, or through a try^{ } whose arms did not take it. Where the
+// through a try^, or through catch^ arms that did not take it. Where the
 // result was written, this is where it is asked whether that admits it; where
 // none was, this is one of the exits the result is the union of.
 void chk_error_leaves(Checker *c, const LhatNode *at, LhatType *escaping)
@@ -6063,9 +6063,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             if (!chk_can_be(value, error)) {
                 chk_report(c, node, LHAT_CHECK_ERR_CANNOT_FAIL);
             } else if (c->catch_frame != NULL) {
-                // 04 の 4.5: a try^{ } stands between this and the caller.
-                // What leaves here reaches its arms, and 5.3 is asked of
-                // whatever they do not take, where the block closes.
+                // 04 の 4.5: catch^ arms stand between this and the
+                // caller. What leaves here reaches them, and 5.3 is asked of
+                // whatever they do not take, where they are.
                 LhatType *escaping = chk_only(c, value, error);
                 if (escaping != NULL) {
                     c->catch_frame->caught =

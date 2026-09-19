@@ -30,11 +30,11 @@ typedef struct LoopContext {
     size_t cleanup_depth;  // what a break^ has to drain back down to
 } LoopContext;
 
-// 04 の 4.5: the try^{ } being compiled. A try^ inside its body leaves for
-// the arms rather than for the caller, which is the same shape as break^
-// above -- a jump to be patched, and the cleanups opened since to drain on
-// the way. `caught` is where the error waits while the arms are chosen; it^
-// names that register inside each of them.
+// 04 の 4.5: the statements whose catch^ arms are being compiled. A try^ in
+// them leaves for the arms rather than for the caller, which is the same
+// shape as break^ above -- a jump to be patched, and the cleanups opened
+// since to drain on the way. `caught` is where the error waits while the
+// arms are chosen; it^ names that register inside each of them.
 typedef struct TryContext {
     struct TryContext *enclosing;
     size_t jumps[LHAT_MAX_BREAKS];
@@ -138,7 +138,7 @@ typedef struct Compiler {
     size_t pending_name_length;
 
     LoopContext *loop;  // the innermost loop being compiled, NULL outside one
-    TryContext *trying;  // 04 の 4.5: and the innermost try^{ }
+    TryContext *trying;  // 04 の 4.5: and the innermost statements with arms
 
     // 01 の 8 章: how many scopes are open here, counting this subroutine's
     // body as 0. A scope is what a '{' opens when names become visible in
@@ -1571,9 +1571,9 @@ static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
 // reads exactly what it always read, and the error arm still travels as one
 // value: the RETURN carrying it out is narrow (B stays 0).
 // 04 の 5.1 with 4.5: where an error found by a try^ goes. Out of the frame
-// when nothing stands between here and the caller, and to the arms of the
-// try^{ } that does otherwise -- draining what it opened on the way, the
-// same as break^ leaving the loops it passes through.
+// when nothing stands between here and the caller, and to the nearest catch^
+// arms otherwise -- draining what was opened on the way, the same as break^
+// leaving the loops it passes through.
 static void emit_error_escape(Compiler *c, uint8_t from)
 {
     TryContext *target = c->trying;
@@ -5839,19 +5839,23 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
     }
 }
 
-static void compile_statements(Compiler *c, const LhatNode *statements)
+// A list's statements with their names left declared, for what still reads
+// them afterwards -- 02 の 10.1's finally^. end_statements ends them.
+static void open_statements(Compiler *c, const LhatNode *statements)
 {
-    // A block's names end with it, and so do their slots.
-    size_t local_mark = c->local_count;
-    uint8_t register_mark = c->next_register;
-
     declare_errors(c, statements);
     declare_names(c, statements);
     declare_defs(c, statements);
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
         compile_statement(c, s);
     }
+}
 
+// A block's names end with it, and so do their slots -- everything declared
+// since the marks were taken.
+static void end_statements(Compiler *c, size_t local_mark,
+                           uint8_t register_mark)
+{
     // The slots go back to the pool, so anything sharing one has to stop
     // sharing it first -- otherwise a closure made inside the block would read
     // whatever the next block puts there.
@@ -5861,6 +5865,14 @@ static void compile_statements(Compiler *c, const LhatNode *statements)
 
     release_locals(c, local_mark);
     c->next_register = register_mark;
+}
+
+static void compile_statements(Compiler *c, const LhatNode *statements)
+{
+    size_t local_mark = c->local_count;
+    uint8_t register_mark = c->next_register;
+    open_statements(c, statements);
+    end_statements(c, local_mark, register_mark);
 }
 
 // 03 の 4.3: the top level of a session is not a block that ends. Its names
@@ -6009,30 +6021,114 @@ static void compile_numeric_advance(Compiler *c, const LhatNode *node,
                             focus->reg, focus->reg, step));
 }
 
-// 02 の 10.1: finally^ belongs to blocks in general, not to loops. A block
-// that has one remembers it on the way in and runs it on every way out --
-// which 10.2 wants and 5.5 says is the frame's job rather than the compiler's.
-// The block's statements in the scope that is already open. 01 の 8 章: a
-// subroutine's body is written with a '{', but the scope it opens is the one
-// its parameters are already in -- the checker puts both in the one Scope
-// infer_func pushes, so counting it again here would put '$^' one step
-// behind on this side.
-static void compile_block_in_scope(Compiler *c, const LhatNode *block)
+// 04 の 4.5: opens the place a try^ leaves for. `caught` is reserved here,
+// before anything the guarded statements declare.
+static void catch_begin(Compiler *c, TryContext *context)
 {
-    if (block == NULL) {
+    context->enclosing = c->trying;
+    context->count = 0;
+    context->cleanup_depth = c->cleanup_depth;
+    context->caught = reserve(c);
+}
+
+// 04 の 4.5: the arms, entered only through the jumps the try^ in what they
+// guard wrote, with the error already in `caught`. Reaching the end of what
+// they guard with nothing raised jumps past them.
+//
+// What the guarded statements declared from `hidden` on stays declared --
+// a finally^ after the arms reads it -- but no arm reads it: an arm may be
+// entered before any of it was bound, which is how 8.7改's being_defined
+// already reads a name, so the mark is borrowed for the arms' stretch.
+static void compile_arms(Compiler *c, TryContext *context,
+                         const LhatNode *arms, size_t hidden)
+{
+    c->trying = context->enclosing;
+    uint8_t caught = context->caught;
+
+    size_t no_error = emit_jump(c, LHAT_BC_JUMP, 0);
+    for (size_t i = 0; i < context->count; i++) {
+        lhat_chunk_patch_here(&c->proto->chunk, context->jumps[i]);
+    }
+
+    size_t declared = c->local_count;
+    for (size_t i = hidden; i < declared; i++) {
+        c->locals[i].being_defined = true;
+    }
+
+    // 13.11's judgement, arm by arm. The bare one asks nothing, and 4.5 puts
+    // it last, so what follows it is only the end.
+    size_t leaving[LHAT_MAX_BREAKS];
+    size_t leaving_count = 0;
+    bool bare = false;
+    for (const LhatNode *arm = arms; arm != NULL; arm = arm->next) {
+        size_t next = SIZE_MAX;
+        if (arm->v.clause.condition != NULL) {
+            uint8_t inner = c->next_register;
+            uint8_t test = reserve(c);
+            compile_fits_test(c, arm->v.clause.condition, caught, test);
+            next = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+            c->next_register = inner;
+        }
+
+        // 4.2: it^ is the error, and the register it is already in.
+        size_t local_mark = c->local_count;
+        declare_local(c, "it^", 3, caught, 1);
+        compile_statement(c, arm->v.clause.body);
+        release_locals(c, local_mark);
+
+        if (next == SIZE_MAX) {
+            bare = true;  // it takes everything left; the end is next
+            break;
+        }
+        if (leaving_count < LHAT_MAX_BREAKS) {
+            leaving[leaving_count++] = emit_jump(c, LHAT_BC_JUMP, 0);
+        }
+        lhat_chunk_patch_here(&c->proto->chunk, next);
+    }
+
+    // 4.5: what no arm took leaves the way it would have without the arms
+    // -- to outer ones, or out of the frame.
+    if (!bare) {
+        emit_error_escape(c, caught);
+    }
+
+    for (size_t i = hidden; i < declared; i++) {
+        c->locals[i].being_defined = false;
+    }
+    for (size_t i = 0; i < leaving_count; i++) {
+        lhat_chunk_patch_here(&c->proto->chunk, leaving[i]);
+    }
+    lhat_chunk_patch_here(&c->proto->chunk, no_error);
+}
+
+// 04 の 4.5: statements with the arms written after them, their names left
+// declared (open_statements).
+static void compile_caught(Compiler *c, const LhatNode *statements,
+                           const LhatNode *arms)
+{
+    if (arms == NULL) {
+        open_statements(c, statements);
         return;
     }
-    const LhatNode *cleanup = clause_of(block, LHAT_CLAUSE_FINALLY);
+    TryContext context;
+    catch_begin(c, &context);
+    size_t hidden = c->local_count;
+    c->trying = &context;
+    open_statements(c, statements);
+    compile_arms(c, &context, arms, hidden);
+}
+
+// 02 の 10.1: finally^ belongs to blocks in general, not to loops. A block
+// that has one remembers it on the way in (`push`, taken at cleanup depth
+// `entry`) and runs it on every way out -- which 10.2 wants and 5.5 says is
+// the frame's job rather than the compiler's. This is the normal way out,
+// and the body the others reach.
+static void compile_cleanup(Compiler *c, const LhatNode *cleanup, size_t entry,
+                            size_t push)
+{
     if (cleanup == NULL) {
-        compile_statements(c, block->v.list.items);
         return;
     }
-
-    size_t entry = c->cleanup_depth;
-    size_t push = emit_cleanup_push(c);
-
-    compile_statements(c, block->v.list.items);
-
     emit_cleanup_drain(c, entry);
     c->cleanup_depth = entry;
     size_t over = emit_jump(c, LHAT_BC_JUMP, 0);
@@ -6045,6 +6141,30 @@ static void compile_block_in_scope(Compiler *c, const LhatNode *block)
     emit(c, lhat_encode_abc(LHAT_BC_ENDCLEANUP, 0, 0, 0));
 
     lhat_chunk_patch_here(&c->proto->chunk, over);
+}
+
+// The block's statements in the scope that is already open. 01 の 8 章: a
+// subroutine's body is written with a '{', but the scope it opens is the one
+// its parameters are already in -- the checker puts both in the one Scope
+// infer_func pushes, so counting it again here would put '$^' one step
+// behind on this side.
+//
+// The finally^ comes after the arms and reads what the statements bound, so
+// their names end only after it (10.1).
+static void compile_block_in_scope(Compiler *c, const LhatNode *block)
+{
+    if (block == NULL) {
+        return;
+    }
+    const LhatNode *cleanup = clause_of(block, LHAT_CLAUSE_FINALLY);
+    size_t entry = c->cleanup_depth;
+    size_t push = cleanup != NULL ? emit_cleanup_push(c) : SIZE_MAX;
+
+    size_t local_mark = c->local_count;
+    uint8_t register_mark = c->next_register;
+    compile_caught(c, block->v.list.items, block->v.list.arms);
+    compile_cleanup(c, cleanup, entry, push);
+    end_statements(c, local_mark, register_mark);
 }
 
 // The same, opening the scope the block's '{' stands for. 01 の 8 章 counts
@@ -6497,8 +6617,14 @@ static void compile_loop(Compiler *c, const LhatNode *node)
 
     // 9.4: what main^ declares lives one iteration, so it gets its own scope.
     // 01 の 8 章 counts that scope: the body's '{' is one for '$^' to walk.
+    // 04 の 4.5: the arms close main^, so they are one turn's too, and a
+    // turn an arm took goes on to the next like any other.
     c->scope_depth++;
-    compile_statements(c, body != NULL ? body->v.list.items : NULL);
+    size_t main_locals = c->local_count;
+    uint8_t main_registers = c->next_register;
+    compile_caught(c, body != NULL ? body->v.list.items : NULL,
+                   body != NULL ? body->v.list.arms : NULL);
+    end_statements(c, main_locals, main_registers);
     c->scope_depth--;
 
     // 9.11: where a next^ lands. The rest of the body is what it skipped;
@@ -6569,20 +6695,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
 
     // 9.2 and 10.9: epilog^ is the last of the loop's own clauses, and
     // finally^ comes after it whichever way the loop ended.
-    if (cleanup != NULL) {
-        emit_cleanup_drain(c, cleanup_entry);
-        c->cleanup_depth = cleanup_entry;
-        size_t over = emit_jump(c, LHAT_BC_JUMP, 0);
-
-        patch_cleanup_here(c, cleanup_push);
-        bool enclosing = c->in_cleanup;
-        c->in_cleanup = true;
-        compile_statements(c, cleanup);
-        c->in_cleanup = enclosing;
-        emit(c, lhat_encode_abc(LHAT_BC_ENDCLEANUP, 0, 0, 0));
-
-        lhat_chunk_patch_here(&c->proto->chunk, over);
-    }
+    compile_cleanup(c, cleanup, cleanup_entry, cleanup_push);
 
     if (c->local_count > local_mark) {
         emit(c, lhat_encode_abc(LHAT_BC_CLOSE, register_mark, 0, 0));
@@ -6700,7 +6813,24 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             return;
         }
 
+        // 04 の 4.5: with arms, the bodies are what they guard -- the
+        // conditions stand outside the braces, and a try^ in one goes on out.
+        // 02 の 10.1: a finally^ is the if^'s as a whole, in a scope of its
+        // own as the checker keeps it.
         case LHAT_NODE_IF_STMT: {
+            const LhatNode *cleanup = clause_of(node, LHAT_CLAUSE_FINALLY);
+            size_t entry = c->cleanup_depth;
+            size_t push = cleanup != NULL ? emit_cleanup_push(c) : SIZE_MAX;
+            uint8_t register_mark = c->next_register;
+
+            const LhatNode *arms = node->v.list.arms;
+            TryContext context;
+            if (arms != NULL) {
+                catch_begin(c, &context);
+            }
+            TryContext *outer = c->trying;
+            TryContext *bodies = arms != NULL ? &context : outer;
+
             size_t leaving[LHAT_MAX_LOCALS];
             size_t leaving_count = 0;
 
@@ -6708,7 +6838,9 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                  clause = clause->next) {
                 const LhatNode *condition = clause->v.clause.condition;
                 if (condition == NULL) {
+                    c->trying = bodies;
                     compile_statement(c, clause->v.clause.body);
+                    c->trying = outer;
                     break;
                 }
 
@@ -6718,7 +6850,9 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 size_t next = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
                 c->next_register = mark;
 
+                c->trying = bodies;
                 compile_statement(c, clause->v.clause.body);
+                c->trying = outer;
                 if (clause->next != NULL && leaving_count < LHAT_MAX_LOCALS) {
                     leaving[leaving_count++] = emit_jump(c, LHAT_BC_JUMP, 0);
                 }
@@ -6728,78 +6862,13 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             for (size_t i = 0; i < leaving_count; i++) {
                 lhat_chunk_patch_here(&c->proto->chunk, leaving[i]);
             }
-            return;
-        }
-
-        // 04 の 4.5: the body runs with the arms as the place a try^ leaves
-        // for. Reaching the end of it with nothing raised jumps past them --
-        // the arms are only ever entered through one of those jumps, with the
-        // error already in `caught`.
-        case LHAT_NODE_TRY_BLOCK: {
-            const LhatNode *body = node->v.list.items;
-            if (body == NULL) {
-                return;
+            if (arms != NULL) {
+                compile_arms(c, &context, arms, c->local_count);
             }
-            uint8_t mark = c->next_register;
-            uint8_t caught = reserve(c);
-
-            TryContext context;
-            context.enclosing = c->trying;
-            context.count = 0;
-            context.cleanup_depth = c->cleanup_depth;
-            context.caught = caught;
-            c->trying = &context;
-            compile_statement(c, body->v.clause.body);
-            c->trying = context.enclosing;
-
-            size_t no_error = emit_jump(c, LHAT_BC_JUMP, 0);
-            for (size_t i = 0; i < context.count; i++) {
-                lhat_chunk_patch_here(&c->proto->chunk, context.jumps[i]);
-            }
-
-            // 13.11's judgement, arm by arm. The bare one asks nothing, and
-            // 4.5 puts it last, so what follows it is only the end.
-            size_t leaving[LHAT_MAX_BREAKS];
-            size_t leaving_count = 0;
-            bool bare = false;
-            for (const LhatNode *arm = body->next; arm != NULL;
-                 arm = arm->next) {
-                size_t next = SIZE_MAX;
-                if (arm->v.clause.condition != NULL) {
-                    uint8_t inner = c->next_register;
-                    uint8_t test = reserve(c);
-                    compile_fits_test(c, arm->v.clause.condition, caught, test);
-                    next = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
-                    c->next_register = inner;
-                }
-
-                // 4.2: it^ is the error, and the register it is already in.
-                size_t local_mark = c->local_count;
-                declare_local(c, "it^", 3, caught, 1);
-                compile_statement(c, arm->v.clause.body);
-                release_locals(c, local_mark);
-
-                if (next == SIZE_MAX) {
-                    bare = true;  // it takes everything left; the end is next
-                    break;
-                }
-                if (leaving_count < LHAT_MAX_BREAKS) {
-                    leaving[leaving_count++] = emit_jump(c, LHAT_BC_JUMP, 0);
-                }
-                lhat_chunk_patch_here(&c->proto->chunk, next);
-            }
-
-            // 4.5: what no arm took leaves the way it would have without the
-            // block around it -- to an outer one, or out of the frame.
-            if (!bare) {
-                emit_error_escape(c, caught);
-            }
-
-            for (size_t i = 0; i < leaving_count; i++) {
-                lhat_chunk_patch_here(&c->proto->chunk, leaving[i]);
-            }
-            lhat_chunk_patch_here(&c->proto->chunk, no_error);
-            c->next_register = mark;
+            c->scope_depth++;
+            compile_cleanup(c, cleanup, entry, push);
+            c->scope_depth--;
+            c->next_register = register_mark;
             return;
         }
 

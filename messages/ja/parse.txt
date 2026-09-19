@@ -21,8 +21,8 @@ reserved-shift = '<<' と '>>' は予約されていて、言語の一部では�
 id-needs-name = id^ は名前の綴りを答える。後に名前を書く
 # binding-arity = the number of targets and values does not match
 binding-arity = 束縛先と値の数が合わない
-# clause-order = loop clauses run prolog^, pre^, first^, main^, last^, epilog^, finally^ and must be written in that order
-clause-order = ループの節は prolog^, pre^, first^, main^, last^, epilog^, finally^ の順に走り、その順に書く
+# clause-order = a block's clauses run prolog^, pre^, first^, main^, catch^, last^, epilog^, finally^ and must be written in that order
+clause-order = ブロックの節は prolog^, pre^, first^, main^, catch^, last^, epilog^, finally^ の順に走り、その順に書く
 # main-required = statements before prolog^, pre^ or first^ need 'main^:' to say they are the body
 main-required = prolog^・pre^・first^ より前の文には、それが本体だと言う 'main^:' が要る
 # no-body-clause = a loop needs a body: one of first^, pre^, main^ or last^, or statements with no clause heading at all
@@ -69,8 +69,8 @@ delegate-target = delegate^ はこの def^ が宣言した物を名指す。雛�
 closed-needs-body = closed^ は本体に付ける印である。closed^f^ ... か closed^p^ ... と書く
 # catch-after-bare = a bare catch^: takes whatever is left, so nothing follows it -- write the narrower arms first
 catch-after-bare = 見出しの無い catch^: は残りすべてを受けるので、後には何も続かない。狭い選択肢を先に書く
-# catch-arm-needs-type = an arm of a try^{ } is written 'catch^ Kind:' or bare as 'catch^:'. A fallback value is the other reading of the word and is written with parentheses here: 'let^ n = (f() catch^ 0)'
-catch-arm-needs-type = try^{ } の選択肢は 'catch^ Kind:' か、見出し無しの 'catch^:' と書く。代わりの値はこの語のもうひとつの読み方で、ここでは括弧を付けて書く: 'let^ n = (f() catch^ 0)'
+# catch-arm-needs-type = a catch^ arm is written 'catch^ Kind:', or bare as 'catch^:' -- and a kind is a name
+catch-arm-needs-type = catch^ の選択肢は 'catch^ Kind:' か、見出し無しの 'catch^:' と書く。種別は名前で書く
 # field-needs-type = a field needs a type, a default, or both
 field-needs-type = フィールドには型か既定値、またはその両方が要る
 # errordef-needs-name = errordef^ needs a name; an error kind has no anonymous form

@@ -143,7 +143,7 @@ let^same = f^want, used {
     return^true^
 }
 
-try^{
+do^{
     with^rng = try^std.random.new(0) {
         let^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
         var^shown = ""
