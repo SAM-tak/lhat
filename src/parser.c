@@ -1465,34 +1465,31 @@ static LhatNode *parse_def(Parser *p)
             }
             entry->v.entry.key = name;
             advance(p);
+        } else if (p->current.kind == LHAT_TOKEN_IDENT ||
+                   p->current.kind == LHAT_TOKEN_HAT_IDENT) {
+            entry->v.entry.key = simple_node(p);
+        } else {
+            report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_MEMBER);
+            break;
+        }
+
+        // A member, named by a word or by an operator (11.1 makes the two
+        // one thing) -- the template and delegate^ above carry no key.
+        // 14.15: an abstract^ member is written with its type, since there
+        // is no value to read it from. 14.10 spells a member's type the same
+        // way, so the two agree.
+        if (entry->v.entry.key != NULL && modifier == LHAT_DEF_ABSTRACT) {
+            entry->v.entry.declared = true;
+            if (expect_op(p, LHAT_OP_COLON)) {
+                entry->v.entry.value = parse_type(p);
+            }
+        } else if (entry->v.entry.key != NULL) {
             if (match_op(p, LHAT_OP_COLON)) {
                 entry->v.entry.type = parse_type(p);
             }
             if (expect_introduces(p)) {
                 entry->v.entry.value = parse_expression(p);
             }
-        } else if (p->current.kind == LHAT_TOKEN_IDENT ||
-                   p->current.kind == LHAT_TOKEN_HAT_IDENT) {
-            entry->v.entry.key = simple_node(p);
-            // 14.15: an abstract^ member is written with its type, since
-            // there is no value to read it from. 14.10 spells a member's
-            // type the same way, so the two agree.
-            if (modifier == LHAT_DEF_ABSTRACT) {
-                entry->v.entry.declared = true;
-                if (expect_op(p, LHAT_OP_COLON)) {
-                    entry->v.entry.value = parse_type(p);
-                }
-            } else {
-                if (match_op(p, LHAT_OP_COLON)) {
-                    entry->v.entry.type = parse_type(p);
-                }
-                if (expect_introduces(p)) {
-                    entry->v.entry.value = parse_expression(p);
-                }
-            }
-        } else {
-            report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_MEMBER);
-            break;
         }
 
         lhat_node_append(&head, &tail, finish(p, entry));

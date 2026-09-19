@@ -549,6 +549,20 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);
 
+    // 11.8: and an operator, which is a member named by the operator.
+    LHAT_TEST("what fills a declared operator is what the mixin's '+' runs");
+    run_checked_text(&r,
+             "var^ Twice = def^{ self^{},\n"
+             "  abstract^ op^+ : f^self^, number^ -> number^;,\n"
+             "  twice := f^self^, o:number^ -> number^ {\n"
+             "    return^ (self^ + o) + o },\n"
+             "}\n"
+             "var^ N = Twice .. def^{ self^{ n := 1 },\n"
+             "  op^+ := f^self^, o:number^ -> number^ { return^ self^.n + o } }\n"
+             "return^ N.new().twice(20)\n");
+    CHECK_INTEGER(&r, 41);
+    run_dispose(&r);
+
     // 14.6: a declared field has no initialiser to run, so the one that fills
     // it is the only one the construction sees.
     LHAT_TEST("an abstract^ field is initialised by what fills it");

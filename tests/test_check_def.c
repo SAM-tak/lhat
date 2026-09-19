@@ -1200,6 +1200,53 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ALREADY_PROVIDED);
     unit_dispose(&u);
 
+    // 11.8: an operator is a member named by the operator, so it is declared
+    // the way any member is -- and a mixin may use one it does not provide.
+    LHAT_TEST("an operator is declared the same way");
+    check_text(&u,
+               "var^ Twice = def^{ self^{},\n"
+               "  abstract^ op^+ : f^self^, number^ -> number^;,\n"
+               "  twice := f^self^, o:number^ -> number^ {\n"
+               "    return^ (self^ + o) + o },\n"
+               "}\n"
+               "var^ N = Twice .. def^{ self^{ n := 1 },\n"
+               "  op^+ := f^self^, o:number^ -> number^ { return^ self^.n + o } }\n"
+               "var^ r : number^ = N.new().twice(20)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and one left unfilled stops the construction");
+    check_text(&u,
+               "var^ Twice = def^{ self^{},\n"
+               "  abstract^ op^+ : f^self^, number^ -> number^;, }\n"
+               "var^ o = Twice.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
+    unit_dispose(&u);
+
+    LHAT_TEST("what fills a declared operator has to fit it");
+    check_text(&u,
+               "var^ A = def^{ self^{},\n"
+               "  abstract^ op^+ : f^self^, number^ -> number^;, }\n"
+               "var^ B = A .. def^{ self^{},\n"
+               "  op^+ := f^self^, o:number^ -> string^ { return^ \"x\" } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // Declaring asks the same shape of it that giving one does.
+    LHAT_TEST("a declared operator takes an operator's shape");
+    check_text(&u,
+               "var^ A = def^{ self^{}, abstract^ op^+ : f^ -> number^;, }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
+    unit_dispose(&u);
+
+    // 14.15: the form has no value, for an operator as for a name.
+    LHAT_TEST("and an abstract^ operator with a value is not the form");
+    check_text(&u,
+               "var^ A = def^{ self^{},\n"
+               "  abstract^ op^+ := f^self^, o:number^ -> number^ { return^ o } }\n");
+    LHAT_CHECK(syntax_errors(&u) > 0, "refused as it is written");
+    unit_dispose(&u);
+
     // 14.6: the template takes one too, which is what lets a mixin reach a
     // field through self^ without owning it.
     LHAT_TEST("a template field may be abstract^ as well");

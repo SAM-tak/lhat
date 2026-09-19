@@ -5349,7 +5349,11 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                     seeded != NULL && seeded->provisional
                         ? seeded->type
                         : chk_resolve_type(c, entry->v.entry.value);
-                if (!chk_is_operator_name(name, length)) {
+                // 11.1: an op^ is a member with an operator for a name, and
+                // declaring one asks the same shape of it that giving one does.
+                if (chk_is_operator_name(name, length)) {
+                    chk_check_operator_shape(c, entry, declared, name, length);
+                } else {
                     chk_refuse_self_last(c, entry, declared);
                 }
                 if (hidden != NULL && !hidden->abstract) {
