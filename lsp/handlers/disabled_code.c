@@ -79,7 +79,8 @@ cJSON *lsp_handle_toggle_disabled_code(LspServer *server, const cJSON *params)
     if (lhat_source_init_from_string(&unit.source, path, text, length)) {
         lhat_lexer_init(&unit.lexer, &unit.source);
         lhat_parse(&unit.lexer, &unit.parsed);
-        answer = lsp_disabled_code_toggle(
+        answer = (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(params, "exact"))
+                      ? lsp_disabled_code_toggle_exact : lsp_disabled_code_toggle)(
             &unit, lsp_unit_offset_at(&unit, from_line, from_character),
             lsp_unit_offset_at(&unit, to_line, to_character));
         lhat_parse_result_dispose(&unit.parsed);

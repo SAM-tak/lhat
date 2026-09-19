@@ -56,11 +56,11 @@ cJSON *lsp_handle_ast(LspServer *server, const cJSON *params)
     return tree;
 }
 
-typedef struct { int line; int character; cJSON *reply; } TypeRequest;
+typedef struct { int line; int character; int result_index; cJSON *reply; } TypeRequest;
 static void collect_types(void *context, const LhatUnit *unit)
 {
     TypeRequest *request = context;
-    request->reply = lsp_graph_type_options(unit, lsp_unit_offset_at(unit, request->line, request->character));
+    request->reply = lsp_graph_type_options_result(unit, lsp_unit_offset_at(unit, request->line, request->character), request->result_index);
 }
 
 cJSON *lsp_handle_type_options(LspServer *server, const cJSON *params)
@@ -73,7 +73,9 @@ cJSON *lsp_handle_type_options(LspServer *server, const cJSON *params)
     if (!cJSON_IsString(uri) || !cJSON_IsNumber(line) || !cJSON_IsNumber(character) || line->valueint < 0 || character->valueint < 0) return NULL;
     char *path = lsp_uri_to_absolute_path(uri->valuestring);
     if (!path) return NULL;
-    TypeRequest request = {line->valueint, character->valueint, NULL};
+    const cJSON *result_index = cJSON_GetObjectItemCaseSensitive(params, "resultIndex");
+    if (result_index && (!cJSON_IsNumber(result_index) || result_index->valueint < 0 || result_index->valuedouble != result_index->valueint)) { free(path); return NULL; }
+    TypeRequest request = {line->valueint, character->valueint, result_index ? result_index->valueint : -1, NULL};
     lsp_workspace_with_unit(&server->workspace, path, collect_types, &request);
     free(path);
     return request.reply;

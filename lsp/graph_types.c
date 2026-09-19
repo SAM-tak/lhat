@@ -10,9 +10,11 @@
 typedef struct {
     const LhatUnit *unit;
     uint32_t offset;
+    int result_index;
     const LhatType *owner;
     const LhatType *actual;
     const LhatNode *annotation;
+    const LhatNode *binding;
     bool found;
     bool member;
 } Site;
@@ -35,17 +37,55 @@ static void find_site(Site *site, const LhatNode *node)
                 if (!target->next && target == node->v.binding.targets && node->v.binding.values)
                     site->actual = node->v.binding.values->display_type;
                 site->annotation = target->kind == LHAT_NODE_PARAM ? target->v.param.type : NULL;
+                site->binding = name;
                 site->found = true;
                 return;
             }
         }
     }
-    if (node->kind == LHAT_NODE_TABLE_ENTRY && node->v.entry.key &&
+    if (node->kind == LHAT_NODE_PARAM && node->v.param.name &&
+        site->offset == lhat_node_span_start(node->v.param.name)) {
+        site->actual = node->display_type;
+        site->annotation = node->v.param.type;
+        site->binding = node->v.param.name;
+        site->found = true;
+        return;
+    }
+    if (node->kind == LHAT_NODE_PARAM && !node->v.param.name && node->v.param.type &&
+        site->offset == lhat_node_span_start(node->v.param.type)) {
+        site->annotation = node->v.param.type;
+        site->found = true;
+        return;
+    }
+    if ((node->kind == LHAT_NODE_FUNC || node->kind == LHAT_NODE_TYPE_FUNC) &&
+        (site->offset == lhat_node_span_start(node) ||
+         (node->v.func.return_type &&
+          site->offset == lhat_node_span_start(node->v.func.return_type)))) {
+        const LhatType *func = node->display_type;
+        site->actual = func != NULL && func->kind == LHAT_TYPE_FUNC
+                           ? lhat_type_call_answer(func) : NULL;
+        site->annotation = node->v.func.return_type;
+        if (site->result_index >= 0) {
+            if (site->actual && lhat_type_tuple_width(site->actual)) {
+                if ((size_t)site->result_index >= lhat_type_tuple_width(site->actual)) return;
+                site->actual = lhat_type_tuple_at(site->actual, (size_t)site->result_index);
+            } else if (site->result_index > 0 && (!site->annotation || site->annotation->kind != LHAT_NODE_TYPE_TUPLE)) return;
+            if (site->annotation && site->annotation->kind == LHAT_NODE_TYPE_TUPLE) {
+                site->annotation = site->annotation->v.list.items;
+                for (int i = 0; i < site->result_index && site->annotation; i++) site->annotation = site->annotation->next;
+                if (!site->annotation) return;
+            }
+        }
+        site->found = true;
+        return;
+    }
+    if ((node->kind == LHAT_NODE_TABLE_ENTRY || node->kind == LHAT_NODE_MEMBER_DECL) && node->v.entry.key &&
         site->offset == lhat_node_span_start(node->v.entry.key)) {
         site->found = true;
         site->member = true;
-        site->annotation = node->v.entry.declared ? node->v.entry.value : node->v.entry.type;
-        site->actual = node->v.entry.declared || !node->v.entry.value
+        bool declared = node->v.entry.declared || node->kind == LHAT_NODE_MEMBER_DECL;
+        site->annotation = declared ? node->v.entry.value : node->v.entry.type;
+        site->actual = declared || !node->v.entry.value
                            ? NULL : node->v.entry.value->display_type;
         return;
     }
@@ -69,8 +109,16 @@ static void bind_name(void *context, const LhatBindingSite *site)
 {
     Options *out = context;
     if (!site->name_length || lhat_type_own_member(out->names, site->name, site->name_length)) return;
-    LhatTypeMember *member = lhat_type_add_member(&out->arena, out->names, site->name, site->name_length, site->type);
-    if (member) {
+    const char *name = NULL;
+    size_t length = 0;
+    bool own = out->site->binding && lhat_node_name(out->site->binding, out->site->unit->source.text,
+        out->site->unit->lexer.strings, &name, &length) &&
+        length == site->name_length && memcmp(name, site->name, length) == 0;
+    // Keep a shadowing entry, but no type meaning: neither this binding nor
+    // a hidden outer namesake may resolve inside its own annotation. Parsing
+    // candidates through this scope also rejects nested|nil^ and nested.Box^.
+    LhatTypeMember *member = lhat_type_add_member(&out->arena, out->names, site->name, site->name_length, own ? NULL : site->type);
+    if (member && !own) {
         member->names_type = site->names_type;
         member->named_type = site->named_type;
     }
@@ -84,7 +132,9 @@ static void offer(Options *out, const char *text)
     if (!type || type->kind == LHAT_TYPE_PENDING || type->kind == LHAT_TYPE_NONE ||
         lhat_type_tuple_width(type) || (out->site->member && lhat_type_hostvalue_arm(type))) return;
     if (out->site->actual && lhat_type_hostvalue_arm(out->site->actual) && !lhat_type_hostvalue_arm(type)) return;
-    if (out->site->actual && !lhat_type_conforms_strict(out->site->actual, type)) return;
+    if (out->site->actual && out->site->actual->kind != LHAT_TYPE_PENDING &&
+        out->site->actual->kind != LHAT_TYPE_UNKNOWN &&
+        !lhat_type_conforms_strict(out->site->actual, type)) return;
     cJSON_AddItemToArray(out->choices, cJSON_CreateString(text));
 }
 
@@ -96,7 +146,8 @@ static void offer_names(Options *out, const LhatType *names, const char *prefix,
         char text[1024];
         int length = snprintf(text, sizeof text, "%s%.*s", prefix, (int)m->name_length, m->name);
         if (length < 0 || (size_t)length >= sizeof text - 8) continue;
-        if (m->names_type || (m->type && m->type->kind == LHAT_TYPE_TABLE && m->type->v.table.is_definition) ||
+        if (m->names_type || (m->type && m->type->kind == LHAT_TYPE_TABLE &&
+            (m->type->v.table.is_definition || (prefix[0] && m->type->v.table.hostdata_tag))) ||
             (m->type && ((prefix[0] && m->type->kind == LHAT_TYPE_HOSTVALUE) || m->type->kind == LHAT_TYPE_ENUM ||
                          m->type->kind == LHAT_TYPE_ERROR_SET || m->type->kind == LHAT_TYPE_ERROR_KIND))) {
             offer(out, text);
@@ -113,9 +164,14 @@ static void offer_names(Options *out, const LhatType *names, const char *prefix,
 
 cJSON *lsp_graph_type_options(const LhatUnit *unit, uint32_t offset)
 {
+    return lsp_graph_type_options_result(unit, offset, -1);
+}
+
+cJSON *lsp_graph_type_options_result(const LhatUnit *unit, uint32_t offset, int result_index)
+{
 #if LHAT_WITH_RESOLUTIONS
     if (!unit || !unit->parsed.root) return NULL;
-    Site site = {0}; site.unit = unit; site.offset = offset;
+    Site site = {0}; site.unit = unit; site.offset = offset; site.result_index = result_index;
     find_site(&site, unit->parsed.root);
     if (!site.found) return NULL;
     Options out = {0}; out.site = &site;
@@ -145,6 +201,6 @@ cJSON *lsp_graph_type_options(const LhatUnit *unit, uint32_t offset)
     lhat_type_arena_dispose(&out.arena);
     return reply;
 #else
-    (void)unit; (void)offset; return NULL;
+    (void)unit; (void)offset; (void)result_index; return NULL;
 #endif
 }

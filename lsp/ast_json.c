@@ -18,6 +18,7 @@
 
 #include "ast.h"
 #include "disabled_code.h"
+#include "type.h"
 
 // lhat records positions as byte offsets into the source. The editor holds
 // that source as a JavaScript string, which is indexed in UTF-16 code units,
@@ -427,6 +428,15 @@ static cJSON *node_to_json(const LhatNode *node, const Layer *layer)
         char written[512];
         lhat_type_write(type, written, sizeof written);
         cJSON_AddStringToObject(out, "inferredType", written);
+    }
+    if (out != NULL && node->kind == LHAT_NODE_FUNC && type != NULL &&
+        type->kind == LHAT_TYPE_FUNC) {
+        const LhatType *answer = lhat_type_call_answer(type);
+        if (answer != NULL && answer->kind != LHAT_TYPE_NONE) {
+            char written[512];
+            lhat_type_write(answer, written, sizeof written);
+            cJSON_AddStringToObject(out, "inferredReturnType", written);
+        }
     }
     if (node->kind == LHAT_NODE_TABLE || node->kind == LHAT_NODE_DEF ||
         node->kind == LHAT_NODE_SELF_TABLE) inner.owner = type;

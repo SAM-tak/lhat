@@ -3682,6 +3682,9 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
                          : expected != NULL
                              ? expected
                              : chk_simple(c, LHAT_TYPE_PENDING);
+#if LHAT_WITH_RESOLUTIONS
+        ((LhatNode *)param)->display_type = type;
+#endif
         // 13.4: a default is what completion and the visual editor write into
         // a call site, so it has to fit the position it will be written into.
         // Read out here, before c->scope becomes the body below -- the

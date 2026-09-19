@@ -1182,12 +1182,15 @@ static void test_statements(void)
 
     // 8.7: mutual recursion is handled by scope-wide visibility, so a
     // declaration without a value has no job to do.
-    LHAT_TEST("var^ needs a value");
-    parse_text(&p, "var^ x : number^");
-    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
-    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_LET_NEEDS_VALUE);
-    parse_dispose(&p);
+    LHAT_TEST("let^ and var^ need values even when typed");
+    const char *missing_values[] = {"let^ x : number^", "var^ x : number^"};
+    for (size_t i = 0; i < sizeof missing_values / sizeof *missing_values; i++) {
+        parse_text(&p, missing_values[i]);
+        LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+        LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                          LHAT_PARSE_ERR_LET_NEEDS_VALUE);
+        parse_dispose(&p);
+    }
 
     // 14.14改2: every brace introduces, so all five read '=' as well as ':='
     // and the two mean the same thing. Before this they disagreed three ways.

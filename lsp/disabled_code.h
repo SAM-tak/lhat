@@ -46,4 +46,8 @@ const char *lsp_disabled_code_statements_field(const LhatNode *node);
 cJSON *lsp_disabled_code_toggle(const LhatUnit *unit, uint32_t from,
                                 uint32_t to);
 
+// Graph commands already identify one whole statement. Do not widen to its
+// line, which can also contain sibling statements or an enclosing definition.
+cJSON *lsp_disabled_code_toggle_exact(const LhatUnit *unit, uint32_t from, uint32_t to);
+
 #endif  // LSP_DISABLED_CODE_H

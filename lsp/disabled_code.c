@@ -400,6 +400,54 @@ cJSON *lsp_disabled_code_toggle(const LhatUnit *unit, uint32_t from,
     return out;
 }
 
+typedef struct { Span span; bool found; } ExactStatement;
+static void find_exact_statement(const LhatNode *node, ExactStatement *search);
+static void find_exact_child(void *context, const char *field, bool list, const LhatNode *node)
+{
+    (void)field; (void)list;
+    find_exact_statement(node, context);
+}
+static void find_exact_statement(const LhatNode *node, ExactStatement *search)
+{
+    if (search->found || lhat_node_span_start(node) > search->span.from || node->end < search->span.to) return;
+    const LhatNode *item = node->kind == LHAT_NODE_BLOCK ? node->v.list.items
+        : node->kind == LHAT_NODE_LOOP_CLAUSE ? node->v.loop_clause.body : NULL;
+    for (; item; item = item->next) {
+        if (statement_start(item) == search->span.from && item->end == search->span.to) {
+            search->found = true;
+            return;
+        }
+    }
+    lhat_node_visit_children(node, find_exact_child, search);
+}
+
+cJSON *lsp_disabled_code_toggle_exact(const LhatUnit *unit, uint32_t from, uint32_t to)
+{
+    if (!unit || !unit->parsed.root || from >= to || to > unit->source.length) return NULL;
+    const char *text = unit->source.text;
+    Span selected = {from, to}, code;
+    if (enclosing_code(text, unit->source.length, unit->lexer.comments,
+                       unit->lexer.comment_count, selected, &code)) {
+        if (code.from != from || code.to != to) return refusal("Select the whole disabled statement group.");
+        cJSON *out = lsp_disabled_code_toggle(unit, from, to);
+        if (out) cJSON_AddBoolToObject(out, "exact", true);
+        return out;
+    }
+    ExactStatement search = {selected, false};
+    find_exact_statement(unit->parsed.root, &search);
+    if (!search.found) return refusal("There is no whole statement at this range.");
+    if (!pairs_up(text, from, to)) return refusal("Unpaired '#[' or ']#' prevents disabling this statement.");
+    cJSON *edits = cJSON_CreateArray();
+    // No added whitespace: removing these markers restores even an inline
+    // statement byte-for-byte, and no sibling is swallowed by the comment.
+    bool added = edits && add_edit(edits, unit, from, from, "#[~") && add_edit(edits, unit, to, to, "]#");
+    cJSON *out = added ? cJSON_CreateObject() : NULL;
+    if (!out) { cJSON_Delete(edits); return NULL; }
+    cJSON_AddItemToObject(out, "edits", edits);
+    cJSON_AddBoolToObject(out, "exact", true);
+    return out;
+}
+
 #else  // LHAT_WITH_COMMENTS
 
 // Without comments kept there is no '#[~' to find: the lexer keeps no table.
@@ -410,6 +458,11 @@ cJSON *lsp_disabled_code_toggle(const LhatUnit *unit, uint32_t from,
     (void)from;
     (void)to;
     return NULL;
+}
+
+cJSON *lsp_disabled_code_toggle_exact(const LhatUnit *unit, uint32_t from, uint32_t to)
+{
+    return lsp_disabled_code_toggle(unit, from, to);
 }
 
 #endif  // LHAT_WITH_COMMENTS

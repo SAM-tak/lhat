@@ -69,7 +69,7 @@ static char *apply(const char *text, cJSON *edits)
 
 // `marked` is the text with '$' at the selection: once for a cursor, twice
 // around a selection. A NULL `want` means the command refuses.
-static void expect_toggle(const char *marked, const char *want)
+static void expect_toggle_mode(const char *marked, const char *want, bool exact)
 {
     char text[256];
     uint32_t marks[2] = {0, 0};
@@ -92,7 +92,7 @@ static void expect_toggle(const char *marked, const char *want)
     lhat_lexer_init(&unit.lexer, &unit.source);
     lhat_parse(&unit.lexer, &unit.parsed);
 
-    cJSON *answer = lsp_disabled_code_toggle(
+    cJSON *answer = (exact ? lsp_disabled_code_toggle_exact : lsp_disabled_code_toggle)(
         &unit, marks[0], count == 2 ? marks[1] : marks[0]);
     cJSON *edits = cJSON_GetObjectItemCaseSensitive(answer, "edits");
     if (want == NULL) {
@@ -102,6 +102,7 @@ static void expect_toggle(const char *marked, const char *want)
     } else if (!cJSON_IsArray(edits)) {
         LHAT_CHECK(false, "no edits for \"%s\"", marked);
     } else {
+        if (exact) LHAT_CHECK(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(answer, "exact")), "missing exact-mode acknowledgement");
         char *after = apply(text, edits);
         LHAT_CHECK(after != NULL && strcmp(after, want) == 0,
                    "for \"%s\"\n got \"%s\"\nwant \"%s\"", marked,
@@ -113,6 +114,23 @@ static void expect_toggle(const char *marked, const char *want)
     lhat_parse_result_dispose(&unit.parsed);
     lhat_lexer_dispose(&unit.lexer);
     lhat_source_dispose(&unit.source);
+}
+
+static void expect_toggle(const char *marked, const char *want)
+{
+    expect_toggle_mode(marked, want, false);
+}
+
+static void test_exact(void)
+{
+    LHAT_TEST("graph toggles only the exact statement, even in a shared line");
+    expect_toggle_mode("f(); $g()$; h()", "f(); #[~g()]#; h()", true);
+    expect_toggle_mode("let^ p = p^{ $f()$; g() }", "let^ p = p^{ #[~f()]#; g() }", true);
+    expect_toggle_mode("let^ p = p^{ $#[~f()]#$; g() }", "let^ p = p^{ f(); g() }", true);
+    expect_toggle_mode("$#[~let^ x = 1]#$\n", "let^ x = 1\n", true);
+    expect_toggle_mode("f($1$)", NULL, true);
+    expect_toggle_mode("$let^ s = \"]#\"$", NULL, true);
+    expect_toggle_mode("$if^ true^ {\n    f()\n}$\ng()", "#[~if^ true^ {\n    f()\n}]#\ng()", true);
 }
 
 static void test_wrap(void)
@@ -185,6 +203,7 @@ int main(void)
     test_wrap();
     test_unwrap();
     test_refusals();
+    test_exact();
 #endif
     return lhat_test_report("test_disabled_code");
 }

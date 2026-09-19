@@ -424,9 +424,12 @@ let^ other = require^ "lib/util.lh"
 直列化の側にノード種ごとの場合分けは、どの並びが文を持つか（06 の 4.1）の1つしかない
 （`lhat_node_visit_children` が子とその名前を渡す）。
 
-`lhat/toggleDisabledCode` は `{ textDocument, range }` を受け、`{ edits: TextEdit[] }` か、
+`lhat/toggleDisabledCode` は `{ textDocument, range, exact?: boolean }` を受け、`{ edits: TextEdit[] }` か、
 囲めない理由の `{ refusal: string }` を答える。文書シンボルと同じく検査を待たず、
 文書ストアのテキストをその場で構文解析する——押されるのは編集の直後である。
+グラフは `exact: true` を付け、構文木の文の範囲または無効コード全体の範囲を指定する。
+このモードでは行単位に広げず、同じ行の兄弟文や外側の定義を巻き込まない。
+成功応答には `exact: true` も含め、古いサーバーがオプションを無視した応答と区別する。
 
 ## 8. VSCode 拡張
 
