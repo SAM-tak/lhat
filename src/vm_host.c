@@ -716,46 +716,6 @@ bool lhat_machine_attach_module(LhatMachine *machine, const char *path,
            !refused;
 }
 
-// 05 の 8.8改: puts a registered type's members table under its base's, so
-// that a member the base declared is found by WALKING rather than by having
-// been copied down when the program was installed. Copying meant a pass over
-// every registration for every type and every one of its ancestors -- a
-// binding with a class per engine class waited seconds for it -- and it was
-// a second copy of what the checker had already stopped making (the base
-// link on the type, type.h).
-//
-// `definition` is the link table_get_in already climbs, and `is_definition`
-// is what tells it this climb is 14.5's walk up to a base and passes
-// everything, rather than 14.7's walk from an instance which lets only what
-// takes a receiver through. Nearest wins by the order of the walk, which is
-// what the copy had to work out by hand.
-bool lhat_machine_link_hostdata_base(LhatMachine *machine,
-                                     const char *module, const char *name,
-                                     const char *base_module,
-                                     const char *base_name)
-{
-    Machine *m = (Machine *)machine;
-    if (m == NULL || m->environment == NULL) {
-        return false;
-    }
-    LhatTable *root = m->modules;
-    if (root == NULL) {
-        return false;
-    }
-    LhatTable *owner = reach_table(m, root, module);
-    LhatTable *derived = owner != NULL ? reach_table(m, owner, name) : NULL;
-    LhatTable *base_owner = reach_table(m, root, base_module);
-    LhatTable *base =
-        base_owner != NULL ? reach_table(m, base_owner, base_name) : NULL;
-    if (derived == NULL || base == NULL || derived == base) {
-        return false;
-    }
-    derived->definition = base;
-    derived->is_definition = true;
-    base->is_definition = true;
-    return true;
-}
-
 bool lhat_machine_set_global(LhatMachine *machine, const char *name,
                              LhatValue value)
 {

@@ -249,6 +249,11 @@ bool lhat_machine_make_table(LhatMachine *machine, LhatValue *out);
 //
 // A table the host has just made and not handed over yet is the one case
 // that does not need this, and using it there costs nothing either.
+//
+// `refused` says the table would not take the write: a nil^ or NaN key, or
+// a table the program shares among its machines (05 の 8.7改5 -- a
+// registered module's, read through lhat_machine_registered), which nobody
+// writes. False is reserved for failing: no table, or no memory.
 bool lhat_machine_table_set(LhatMachine *machine, LhatTable *table,
                             LhatValue key, LhatValue value, bool *refused);
 
@@ -273,6 +278,11 @@ bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
 // Puts `value` at L^.modules.<module>[.<type>].<name>, making the tables on
 // the way the way 02 の 8.8 does. `type` is NULL for a member of the module
 // itself.
+//
+// False where the path runs into a module registered through the program
+// (lhat_register_*): 05 の 8.7改5 builds those once and shares them among
+// every machine, so nothing is written inside one, at any depth. What a host
+// wants kept alive belongs in lhat_machine_host_root instead.
 bool lhat_machine_register(LhatMachine *machine, const char *module,
                            const char *type, const char *name,
                            LhatValue value);
@@ -450,7 +460,18 @@ bool lhat_machine_attach_module(LhatMachine *machine, const char *path,
 
 // 05 の 8.12: what a host remembers about its own objects
 // ---------------------------------------------------------------------------
+
+// What a host keeps alive: a table the machine roots and L^ has no name for
+// -- what Lua calls its registry. An LhatValue a C object holds is no root
+// (the collector knows only the machine's own), so a binding that needs a
+// value across calls -- a script's instances, a callback it will call later
+// -- puts it here with lhat_machine_table_set, under keys of its own making.
+// Not under L^.modules: a program reaches that, and a registered module in
+// it is the program's and takes no writes (lhat_machine_register).
 //
+// The table is the machine's and lives as long as the machine does.
+LhatTable *lhat_machine_host_root(LhatMachine *machine);
+
 // A binding hands the same C object to L^ over and over -- a node every
 // frame, a body every step -- and wants the same L^ value back each time,
 // rather than a fresh wrapper per handover. The obvious way is a map of its

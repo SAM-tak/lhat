@@ -1326,6 +1326,60 @@ static void test_registrations_are_shared(void)
         lhat_program_dispose(&program);
     }
 
+    // The same promise from the host's side. A table of this machine's hung
+    // inside the shared one would be reached by no collector -- the shared
+    // table is black and never looked into -- so it is refused, at any depth,
+    // rather than freed while still named.
+    LHAT_TEST("nor may the host write inside one");
+    {
+        static const File files[] = {
+            {"main.lh", "return^ 1\n"},
+        };
+        static const char *const modes[] = {"Idle", "Busy"};
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        LHAT_CHECK(lhat_register_enum(&program, "scene", NULL, "Mode", modes, 2),
+                   "an enum beside the types");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_compile(&program), "built");
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_CHECK(lhat_program_install(&program, machine), "installed");
+
+        LhatValue kept = lhat_nil();
+        LHAT_CHECK(lhat_machine_make_table(machine, &kept), "the machine's own");
+        LHAT_CHECK(!lhat_machine_register(machine, "scene", NULL, "kept", kept),
+                   "not beside the registrations");
+        LHAT_CHECK(!lhat_machine_register(machine, "scene", "Node", "kept", kept),
+                   "nor among a type's members");
+        LHAT_CHECK(!lhat_machine_register(machine, "scene", "Mode", "kept", kept),
+                   "nor among an enum's");
+        LHAT_CHECK(!lhat_machine_register(machine, "scene.deeper", NULL, "kept",
+                                          kept),
+                   "nor in a table made under them");
+
+        LhatValue node = lhat_nil();
+        LHAT_CHECK(lhat_machine_registered(machine, "scene", NULL, "Node", &node) &&
+                       lhat_is_object_kind(node, LHAT_OBJECT_TABLE),
+                   "the type's table reads back");
+        bool refused = false;
+        LHAT_CHECK(lhat_machine_table_set(machine,
+                                          (LhatTable *)lhat_as_object(node),
+                                          lhat_integer(1), kept, &refused),
+                   "a write into it is not a failure");
+        LHAT_CHECK(refused, "but it is refused");
+
+        LhatMachine *other = lhat_machine_new();
+        LHAT_CHECK(lhat_program_install(&program, other), "a second machine");
+        LhatValue seen = lhat_nil();
+        LHAT_CHECK(!lhat_machine_registered(other, "scene", NULL, "kept", &seen),
+                   "which sees none of it");
+        LHAT_CHECK(!lhat_machine_registered(other, "scene", "Node", "kept", &seen),
+                   "anywhere");
+        lhat_machine_dispose(other);
+        lhat_machine_dispose(machine);
+        lhat_program_dispose(&program);
+    }
+
     LHAT_TEST("a unit under its own name publishes as it always did");
     {
         static const File files[] = {

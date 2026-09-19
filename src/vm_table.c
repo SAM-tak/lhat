@@ -16,6 +16,13 @@
 bool vm_set_key(Machine *m, LhatTable *table, LhatValue key,
                     LhatValue value, bool *refused)
 {
+    // 05 の 8.7改5: the program's table, written by nobody. Refused here, next
+    // to the barrier it would otherwise trip, so that no host entry point has
+    // to remember to ask -- and before the seat below, which writes too.
+    if (table->shared) {
+        *refused = true;
+        return true;
+    }
     // 02 の 14.15: writing nil^ over a field its definition declared puts
     // the seat back rather than taking the key. The prototype keeps its own
     // seat for ever (sealed, never filled), which is what says the name was

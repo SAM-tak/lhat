@@ -253,6 +253,11 @@ struct LhatMachine {
     // same table rather than a second one.
     LhatTable *modules;
 
+    // 05 の 8.12: what the host keeps alive, and nothing L^ can name -- the
+    // strong twin of the weak cache. Made with the machine and rooted by it
+    // (gc.c's mark_roots); lhat_machine_host_root hands it out.
+    LhatTable *host_root;
+
     // 05 の 8.9: one members table per registered host value type, indexed
     // by tag->index -- what a member call on a host value answers through,
     // since the value itself has no heap half to carry one. The tables live

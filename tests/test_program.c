@@ -1404,44 +1404,43 @@ static void test_hosting(void)
     // 05 の 8.7: a namespace and something under it are one registry, so
     // importing both into one scope is importing one tree twice -- the
     // parent's own table holds the child. Either order (a LOVE2D binding's
-    // love.getVersion beside love.graphics).
+    // love.getVersion beside love.graphics). And they run: the parent's table
+    // is the program's (8.7改5), so an import of the child after it has
+    // nothing to write there.
     LHAT_TEST("a module and one under it are imported into one scope");
     {
-        static const File parent_first[] = {
-            {"main.lh",
-             "import^ lib\n"
-             "import^ lib.draw\n"
-             "var^ a : number^ = lib.version()\n"
-             "var^ b : number^ = lib.draw.line()\n"},
+        static const File orders[][1] = {
+            {{"main.lh",
+              "import^ lib\n"
+              "import^ lib.draw\n"
+              "return^ lib.version() + lib.draw.line() * 10\n"}},
+            {{"main.lh",
+              "import^ lib.draw\n"
+              "import^ lib\n"
+              "return^ lib.version() + lib.draw.line() * 10\n"}},
         };
-        program_with(&program, &disk, parent_first, 1);
-        lhat_register_func(&program, "lib", "version", "f^ -> number^;",
-                           host_one, NULL);
-        lhat_register_func(&program, "lib.draw", "line", "f^ -> number^;",
-                           host_one, NULL);
-        const LhatUnit *root = lhat_program_check(&program, "main.lh");
-        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
-                   "the parent first");
+        for (size_t i = 0; i < 2; i++) {
+            program_with(&program, &disk, orders[i], 1);
+            lhat_register_func(&program, "lib", "version", "f^ -> number^;",
+                               host_one, NULL);
+            lhat_register_func(&program, "lib.draw", "line", "f^ -> number^;",
+                               host_two, NULL);
+            const LhatUnit *root = lhat_program_check(&program, "main.lh");
+            bool built = root != NULL && !lhat_program_has_errors(&program) &&
+                         lhat_program_compile(&program);
+            LHAT_CHECK(built, "order %d builds", (int)i);
+            if (built) {
+                LhatMachine *machine = lhat_machine_new();
+                LHAT_CHECK(lhat_program_install(&program, machine),
+                           "installed");
+                LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+                LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+                LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 21);
+                lhat_machine_dispose(machine);
+            }
+            lhat_program_dispose(&program);
+        }
     }
-    lhat_program_dispose(&program);
-    {
-        static const File child_first[] = {
-            {"main.lh",
-             "import^ lib.draw\n"
-             "import^ lib\n"
-             "var^ a : number^ = lib.version()\n"
-             "var^ b : number^ = lib.draw.line()\n"},
-        };
-        program_with(&program, &disk, child_first, 1);
-        lhat_register_func(&program, "lib", "version", "f^ -> number^;",
-                           host_one, NULL);
-        lhat_register_func(&program, "lib.draw", "line", "f^ -> number^;",
-                           host_one, NULL);
-        const LhatUnit *root = lhat_program_check(&program, "main.lh");
-        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
-                   "and the child first");
-    }
-    lhat_program_dispose(&program);
 
     // What was not imported is still out of reach: importing the child
     // leaves a stand-in holding that child and nothing else.

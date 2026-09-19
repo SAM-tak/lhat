@@ -226,6 +226,8 @@ static void mark_roots(Machine *m)
     // forget_unit over a type's path would otherwise leave a pointer the
     // sweep has freed.
     lhat_gc_reach(&m->gray, lhat_object((LhatObject *)m->modules));
+    // 05 の 8.12: the host's own, held by nothing else.
+    lhat_gc_reach(&m->gray, lhat_object((LhatObject *)m->host_root));
     for (size_t i = 0; i < m->hostvalue_member_count; i++) {
         lhat_gc_reach(&m->gray,
                       lhat_object((LhatObject *)m->hostvalue_members[i]));

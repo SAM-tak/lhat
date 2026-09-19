@@ -143,8 +143,16 @@ typedef struct LhatTable {
     // typed t^{ … }, which carries no such mark (the writer has no spelling
     // for it). So the machine asks as well: an instruction written in L^ may
     // not change one. The host is unaffected -- it reaches a table through
-    // this file's own API rather than through an instruction.
+    // this file's own API rather than through an instruction -- except where
+    // `shared` below is set too.
     bool sealed;
+
+    // 05 の 8.7改5: built once on the program's heap and hung on every
+    // machine it is installed on. Born black, so it is written by nobody --
+    // not by an instruction and not by the host either: a write would thread
+    // it onto one machine's gray list and leave it pointing at that machine's
+    // objects, which no other collector sees. vm_set_key refuses it.
+    bool shared;
 } LhatTable;
 
 // 04 の 2.4: what a kind is, is where it was declared. Two errordef^ bodies

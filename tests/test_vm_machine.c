@@ -987,6 +987,48 @@ static void test_host_table_write(void)
                    "and no table at all is a failure");
     }
     run_dispose(&r);
+
+    // 05 の 8.12: what only the host names, held by the machine's root for
+    // the host rather than by anything L^ can reach -- and let go by
+    // writing nil^ over it.
+    LHAT_TEST("the host's root keeps what it holds");
+    run_text(&r, "return^ 1\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    {
+        LhatTable *root = lhat_machine_host_root(r.machine);
+        LHAT_CHECK(root != NULL, "every machine has one");
+        LhatValue key = lhat_nil();
+        LhatValue mark = lhat_nil();
+        LHAT_CHECK(lhat_machine_make_string(r.machine, "kept", 4, &key) &&
+                       lhat_machine_make_string(r.machine,
+                                                "the host keeps this", 19,
+                                                &mark),
+                   "made outside any instruction");
+        bool refused = false;
+        LHAT_CHECK(lhat_machine_table_set(r.machine, root, key, mark,
+                                          &refused) &&
+                       !refused,
+                   "written");
+
+        size_t holding = lhat_machine_collectgarbage(r.machine);
+        lhat_machine_collectgarbage(r.machine);
+        LhatValue held = lhat_table_get(root, key);
+        LHAT_CHECK(lhat_is_object_kind(held, LHAT_OBJECT_STRING),
+                   "still there after two cycles");
+        if (lhat_is_object_kind(held, LHAT_OBJECT_STRING)) {
+            const LhatString *text = (const LhatString *)lhat_as_object(held);
+            LHAT_CHECK_EQ_STR(text->text, text->length, "the host keeps this");
+        }
+
+        LHAT_CHECK(lhat_machine_table_set(r.machine, root, key, lhat_nil(),
+                                          &refused) &&
+                       !refused,
+                   "let go");
+        size_t after = lhat_machine_collectgarbage(r.machine);
+        LHAT_CHECK(after < holding, "and it goes: %zu against %zu", after,
+                   holding);
+    }
+    run_dispose(&r);
 }
 // A host that calls the closure it was handed and comes back -- the shape of
 // every callback a host makes -- and one that answers how deep the machine

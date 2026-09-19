@@ -6882,9 +6882,19 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             if (path != NULL && path->kind == LHAT_NODE_MEMBER) {
                 uint8_t owner = reserve(c);
                 uint8_t key = reserve(c);
+                uint8_t held = reserve(c);
                 compile_path_prefix(c, path->v.access.target, owner);
                 compile_key(c, path, key);
+                // Where the parent was imported, its own table already holds
+                // what this brought in -- and that table is the program's
+                // (8.7改5), which nothing writes. So only a stand-in, or
+                // nothing, is written over, as ensure_table_at does.
+                emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, held, owner, key));
+                emit(c, lhat_encode_abc(LHAT_BC_SAME, held, held, slot));
+                emit(c, lhat_encode_abc(LHAT_BC_NOT, held, held, 0));
+                size_t there = emit_jump(c, LHAT_BC_JUMP_FALSE, held);
                 emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, slot));
+                lhat_chunk_patch_here(&c->proto->chunk, there);
             } else {
                 const char *name = NULL;
                 size_t length = 0;

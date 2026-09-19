@@ -52,7 +52,8 @@ static bool build_environment(Machine *m)
     // be told apart by looking at the source.
     m->environment->sealed = true;
     m->modules = modules_value;
-    return true;
+    m->host_root = lhat_table_new(&m->objects);
+    return m->host_root != NULL;
 }
 
 // 03 の 4.3改: the three runs sit after the struct in one block, so their
@@ -199,8 +200,13 @@ bool lhat_machine_holds_body(const LhatMachine *machine,
     return false;
 }
 // ---------------------------------------------------------------------------
-// 05 の 8.12: the weak cache
+// 05 の 8.12: the host's root, and the weak cache
 // ---------------------------------------------------------------------------
+
+LhatTable *lhat_machine_host_root(LhatMachine *machine)
+{
+    return machine != NULL ? machine->host_root : NULL;
+}
 
 // An address, spread over the word. The low bits of a malloc'd pointer are
 // zero (alignment), so they are the last thing an index should be taken

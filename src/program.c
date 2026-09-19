@@ -3274,44 +3274,6 @@ bool lhat_program_on_dispose(LhatProgram *program, LhatProgramDisposeFn call,
     return true;
 }
 
-// One registration made into a value on `machine` and put where it belongs.
-// The place is passed separately from the entry so that an inherited member
-// can be installed under the type that inherited it -- which may sit in
-// another module than the one that declared it.
-static bool install_entry(LhatMachine *machine, const LhatHostEntry *e,
-                          const char *module, const char *type,
-                          const char *name)
-{
-    // A type registers as an empty table under its module; its members
-    // are entries of their own and land in it as they come.
-    LhatValue value = lhat_nil();
-    if (e->const_kind == LHAT_HOST_CONST_INTEGER) {
-        value = lhat_integer(e->const_integer);
-    } else if (e->const_kind == LHAT_HOST_CONST_REAL) {
-        value = lhat_real(e->const_real);
-    } else if (e->const_kind == LHAT_HOST_CONST_BOOL) {
-        value = lhat_bool(e->const_bool);
-    } else if (e->const_kind == LHAT_HOST_CONST_STRING) {
-        if (!lhat_machine_make_string(machine, e->const_text,
-                                      strlen(e->const_text), &value)) {
-            return false;
-        }
-    } else if (e->call == NULL) {
-        if (!lhat_machine_make_table(machine, &value)) {
-            return false;
-        }
-    } else if (!lhat_machine_make_host(
-                   machine, e->call, e->context, e->parameters,
-                   e->has_variadic, e->takes_self, e->self_last,
-                   borrowed_params((const LhatRuntimeType *const *)
-                                       e->parameter_types,
-                                   e->parameters),
-                   &value)) {
-        return false;
-    }
-    return lhat_machine_register(machine, module, type, name, value);
-}
-
 // ---------------------------------------------------------------------------
 // 05 の 8.7改5: the registrations, built once on the program's own heap
 // ---------------------------------------------------------------------------
@@ -3329,9 +3291,10 @@ static bool install_entry(LhatMachine *machine, const LhatHostEntry *e,
 // The condition that comes with it is IMMUTABILITY, not blackness (gc.h).
 // A write into a black table would trip lhat_gc_barrier_back -- whose guard
 // is "is the parent black", which these meet for ever -- and thread the
-// table onto one machine's gray list. So everything built here is sealed,
-// and what a machine still writes into (a unit's own module^, a late
-// registration) lands on the machine's side of the join.
+// table onto one machine's gray list. So everything built here is sealed and
+// shared (share_tree), which refuses the host's writes as well as a
+// program's, and what a machine still writes into (a unit's own module^, a
+// late registration) lands on the machine's side of the join.
 
 // The heap-only twin of vm.c's reach_table. No machine, so no barrier and
 // no reserved-seat dance: nothing here is written twice.
@@ -3412,7 +3375,8 @@ static bool shared_register(LhatHeap *heap, LhatTable *root,
            !refused;
 }
 
-// install_entry's five cases, on the program's heap.
+// One registration made into a value on the program's heap and put where it
+// belongs: a constant, a string, a type's (empty) members table, or a host.
 static bool shared_entry(LhatProgram *program, LhatTable *root,
                          const LhatHostEntry *e)
 {
@@ -3498,9 +3462,10 @@ static bool shared_enum(LhatProgram *program, LhatTable *root,
 }
 
 // 05 の 8.8改, done once: a derived type's members table stands on its
-// base's, so a member the base declares is found by walking. The machine
-// used to do this per install (lhat_machine_link_hostdata_base); it is a
-// fact about the declarations, so it belongs to the build.
+// base's, so a member the base declares is found by walking. `definition` is
+// the link table_get_in already climbs, and `is_definition` makes the climb
+// 14.5's walk up to a base, which passes everything. It is a fact about the
+// declarations, so it belongs to the build.
 static bool shared_link_bases(LhatProgram *program, LhatTable *root)
 {
     LhatHeap *heap = &program->host_heap;
@@ -3527,19 +3492,23 @@ static bool shared_link_bases(LhatProgram *program, LhatTable *root)
     return true;
 }
 
-// Every table under `table`, sealed. What a program writes at L^.modules is
-// refused by SETINDEX from here on, which is what keeps the promise the
-// black birth is made under.
-static void seal_tree(LhatTable *table)
+// Every table under `table`, sealed and marked shared. What a program writes
+// at L^.modules is refused by SETINDEX from here on, and what a host writes by
+// vm_set_key, which is what keeps the promise the black birth is made under.
+// An enum's members are a table too, and reach_table walks into them.
+static void share_tree(LhatTable *table)
 {
-    if (table == NULL || table->sealed) {
-        return;  // sealed already: either done, or an enum's members
+    if (table == NULL || table->shared) {
+        return;
     }
     table->sealed = true;
+    table->shared = true;
     for (size_t i = 0; i < table->entry_capacity; i++) {
         LhatValue held = table->entries[i].value;
         if (lhat_is_object_kind(held, LHAT_OBJECT_TABLE)) {
-            seal_tree((LhatTable *)lhat_as_object(held));
+            share_tree((LhatTable *)lhat_as_object(held));
+        } else if (lhat_is_object_kind(held, LHAT_OBJECT_ENUM)) {
+            share_tree(((LhatEnum *)lhat_as_object(held))->members);
         }
     }
 }
@@ -3594,8 +3563,8 @@ static bool remember_shared(LhatProgram *program, const char *path,
     return true;
 }
 
-// The whole of it. Answers false only when memory ran out; the caller then
-// installs the old way, which is still correct.
+// The whole of it. Answers false only when memory ran out, and install with
+// it.
 static bool build_shared_modules(LhatProgram *program)
 {
     if (program->shared_ready &&
@@ -3644,7 +3613,7 @@ static bool build_shared_modules(LhatProgram *program)
         }
     }
     for (size_t i = 0; i < program->shared_count; i++) {
-        seal_tree(program->shared[i].table);
+        share_tree(program->shared[i].table);
     }
     program->shared_ready = true;
     program->shared_from_entries = program->host_entry_count;
