@@ -36,6 +36,7 @@ lhat_lsp_add_test(test_diagnostics
 # disabled_code.c reads what a '#[~ ... ]#' holds, which the tree lists.
 lhat_lsp_add_test(test_ast_json
     ${CMAKE_SOURCE_DIR}/lsp/ast_json.c
+    ${CMAKE_SOURCE_DIR}/lsp/call_info.c
     ${CMAKE_SOURCE_DIR}/lsp/disabled_code.c
     ${CMAKE_SOURCE_DIR}/lsp/position.c
     ${CMAKE_SOURCE_DIR}/lsp/lton.c
@@ -43,6 +44,7 @@ lhat_lsp_add_test(test_ast_json
 lhat_lsp_add_test(test_graph_types
     ${CMAKE_SOURCE_DIR}/lsp/graph_types.c
     ${CMAKE_SOURCE_DIR}/lsp/ast_json.c
+    ${CMAKE_SOURCE_DIR}/lsp/call_info.c
     ${CMAKE_SOURCE_DIR}/lsp/disabled_code.c
     ${CMAKE_SOURCE_DIR}/lsp/position.c
     ${CMAKE_SOURCE_DIR}/lsp/lton.c

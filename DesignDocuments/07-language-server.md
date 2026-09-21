@@ -421,8 +421,14 @@ let^ other = require^ "lib/util.lh"
 独自拡張は `lhat/` を接頭辞とする。
 
 直列化と受け口を分けるのは `semantic_tokens` と同じ形。
-直列化の側にノード種ごとの場合分けは、どの並びが文を持つか（06 の 4.1）の1つしかない
-（`lhat_node_visit_children` が子とその名前を渡す）。
+子の直列化は `lhat_node_visit_children` が渡す名前とリスト情報に従う。
+呼び出しには `lsp/call_info.c` が `callable` を補う。固定入力 `inputs`、可変長入力 `variadic?` は
+`{ type, name?, default? }`、出力 `outputs` は型文字列の配列、`signature` は解決した完全な関数型とする。
+オーバーロードは検査器が選んだ腕を使い、暗黙の receiver は固定入力に重ねて載せない。
+名前と既定値は解決した宣言から取得できる場合だけ載せる。既定値は括弧を保ったソースであり、
+実行時に引数を省略できるという意味ではない（02 の 13.4）。可変の関数束縛や関数型しか分からない引数では名前を推測しない。
+出力は呼び出しの実際の結果から得る。タプルを各位置に分け、無値は空配列、コルーチンは1出力とする。
+位置・方向・グループ表示はクライアントの責務である。
 
 `lhat/toggleDisabledCode` は `{ textDocument, range, exact?: boolean }` を受け、`{ edits: TextEdit[] }` か、
 囲めない理由の `{ refusal: string }` を答える。文書シンボルと同じく検査を待たず、

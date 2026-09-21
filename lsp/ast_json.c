@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "ast.h"
+#include "call_info.h"
 #include "disabled_code.h"
 #include "type.h"
 
@@ -91,6 +92,7 @@ typedef struct {
     size_t length;
     const Utf16Map *map;
     const LhatType *owner;
+    const LhatUnit *unit;
 #if LHAT_WITH_COMMENTS
     const LhatComment *comments;
     size_t comment_count;
@@ -108,6 +110,7 @@ static bool layer_init(Layer *layer, const LhatSource *source,
     layer->length = source->length;
     layer->map = map;
     layer->owner = NULL;
+    layer->unit = NULL;
 #if LHAT_WITH_COMMENTS
     layer->comments = lexer->comments;
     layer->comment_count = lexer->comment_count;
@@ -412,6 +415,8 @@ static cJSON *node_to_json(const LhatNode *node, const Layer *layer)
         cJSON_AddBoolToObject(out, "computed", node->v.entry.computed);
     }
 #if LHAT_WITH_RESOLUTIONS
+    cJSON *callable = lsp_call_info(layer->unit, node);
+    if (callable != NULL) cJSON_AddItemToObject(out, "callable", callable);
     const LhatType *type = node->display_type;
     if (node->kind == LHAT_NODE_SELF_TABLE && layer->owner != NULL &&
         layer->owner->kind == LHAT_TYPE_TABLE && layer->owner->v.table.is_definition) {
@@ -496,6 +501,7 @@ cJSON *lsp_ast_json_for_unit(const LhatUnit *unit)
         return NULL;
     }
 
+    layer.unit = unit;
     cJSON *out = cJSON_CreateObject();
     // The source once, rather than a slice of it on every node. Every span in
     // the reply indexes into this, so the editor cuts its own labels out and

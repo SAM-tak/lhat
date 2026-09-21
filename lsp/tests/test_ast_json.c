@@ -9,6 +9,7 @@
 #include "lhat/source.h"
 
 #include "ast_json.h"
+#include "check.h"
 #include "testutil.h"
 
 typedef struct {
@@ -332,6 +333,90 @@ static void test_disabled_code(void)
 }
 #endif
 
+static void test_callable_info(void)
+{
+    LHAT_TEST("call slots retain resolved names, defaults, types and multi-value output");
+    Tree t;
+    tree_of(&t, "let^ f = f^x:number^ = (2 + 3) * 4, y:string^ = \"hi\" -> number^, string^ { return^ x, y }\n"
+                "let^ a, b = f(1, \"s\")\n");
+    LhatCheckResult checked;
+    lhat_check(t.parsed.root, &t.lexer, true, &checked);
+    t.unit.checked = checked;
+    cJSON_Delete(t.json);
+    t.json = lsp_ast_json_for_unit(&t.unit);
+    cJSON *binding = cJSON_GetArrayItem(field(root_of(&t), "items"), 1);
+    cJSON *call = cJSON_GetArrayItem(field(binding, "values"), 0);
+    cJSON *info = cJSON_GetObjectItemCaseSensitive(call, "callable");
+    LHAT_CHECK(info != NULL, "no callable metadata");
+    cJSON *inputs = cJSON_GetObjectItemCaseSensitive(info, "inputs");
+    cJSON *outputs = cJSON_GetObjectItemCaseSensitive(info, "outputs");
+    LHAT_CHECK_EQ_INT(cJSON_GetArraySize(inputs), 2);
+    LHAT_CHECK_EQ_INT(cJSON_GetArraySize(outputs), 2);
+    cJSON *first = cJSON_GetArrayItem(inputs, 0);
+    const char *name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(first, "name"));
+    const char *fallback = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(first, "default"));
+    LHAT_CHECK(name != NULL && strcmp(name, "x") == 0, "parameter name was lost");
+    LHAT_CHECK(fallback != NULL && strcmp(fallback, "(2 + 3) * 4") == 0, "default grouping was lost");
+    const char *output = cJSON_GetStringValue(cJSON_GetArrayItem(outputs, 1));
+    LHAT_CHECK(output != NULL && strcmp(output, "string^") == 0, "second output has the wrong type");
+    lhat_check_result_dispose(&checked);
+    tree_dispose(&t);
+
+    LHAT_TEST("variadic calls and callable parameters do not invent argument names");
+    tree_of(&t, "let^ apply = f^fn:f^number^ -> number^; { fn(1) }\n"
+                "let^ v = f^...:number^ { return^ 1 }\nlet^ answer = v(1, 2)\n");
+    lhat_check(t.parsed.root, &t.lexer, true, &checked);
+    t.unit.checked = checked;
+    cJSON_Delete(t.json);
+    t.json = lsp_ast_json_for_unit(&t.unit);
+    cJSON *fn = cJSON_GetArrayItem(field(first_statement(&t), "values"), 0);
+    cJSON *ret = cJSON_GetArrayItem(field(field(fn, "body"), "items"), 0);
+    call = cJSON_GetArrayItem(field(ret, "value"), 0);
+    info = cJSON_GetObjectItemCaseSensitive(call, "callable");
+    LHAT_CHECK(info != NULL, "callable parameter signature is missing");
+    first = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(info, "inputs"), 0);
+    LHAT_CHECK(cJSON_GetObjectItemCaseSensitive(first, "name") == NULL, "invented a parameter name");
+    binding = cJSON_GetArrayItem(field(root_of(&t), "items"), 2);
+    call = cJSON_GetArrayItem(field(binding, "values"), 0);
+    info = cJSON_GetObjectItemCaseSensitive(call, "callable");
+    LHAT_CHECK(cJSON_GetObjectItemCaseSensitive(info, "variadic") != NULL, "variadic tail is missing");
+    lhat_check_result_dispose(&checked);
+    tree_dispose(&t);
+}
+
+static void test_callable_origins(void)
+{
+    const char *sources[] = {
+        "let^ original = f^named:number^ = (2 + 3) { named }\nlet^ alias = original\nlet^ out = alias(1)\n",
+        "var^ original = f^named:number^ { named }\nlet^ alias = original\nlet^ out = alias(1)\n",
+        "let^ Table = def^{ method = f^self^, named:number^ { named } }\nlet^ alias = Table.new()\nlet^ out = alias.method(1)\n",
+        "let^ Table = def^{ method = f^named:number^ { named }, overload^method := f^text:string^ { text } }\nlet^ alias = Table\nlet^ out = alias.method(\"a\")\n",
+    };
+    for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
+        LHAT_TEST("callable origins follow immutable aliases and bound receivers");
+        Tree t; tree_of(&t, sources[i]);
+        LhatCheckResult checked;
+        lhat_check(t.parsed.root, &t.lexer, true, &checked);
+        LHAT_CHECK_EQ_INT(t.parsed.diagnostic_count, 0);
+        LHAT_CHECK_EQ_INT(checked.diagnostic_count, 0);
+        t.unit.checked = checked;
+        cJSON_Delete(t.json); t.json = lsp_ast_json_for_unit(&t.unit);
+        cJSON *binding = item(field(root_of(&t), "items"), 2);
+        cJSON *call = item(field(binding, "values"), 0);
+        cJSON *info = cJSON_GetObjectItemCaseSensitive(call, "callable");
+        cJSON *inputs = cJSON_GetObjectItemCaseSensitive(info, "inputs");
+        LHAT_CHECK_EQ_INT(cJSON_GetArraySize(inputs), 1);
+        const char *name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(item(inputs, 0), "name"));
+        if (i == 1) LHAT_CHECK(name == NULL, "mutable alias incorrectly promises the initializer's parameter name");
+        else LHAT_CHECK(name != NULL && strcmp(name, i == 3 ? "text" : "named") == 0, "resolved parameter name is missing");
+        if (i == 0) {
+            const char *fallback = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(item(inputs, 0), "default"));
+            LHAT_CHECK(fallback != NULL && strcmp(fallback, "(2 + 3)") == 0, "outer parentheses were lost");
+        }
+        lhat_check_result_dispose(&checked); tree_dispose(&t);
+    }
+}
+
 int main(void)
 {
     test_shape();
@@ -342,5 +427,7 @@ int main(void)
     test_disabled_code();
 #endif
     test_absent();
+    test_callable_info();
+    test_callable_origins();
     return lhat_test_report("test_ast_json");
 }
