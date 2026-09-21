@@ -83,8 +83,8 @@ static void test_match(void)
             "    let^ caps = r.captures(\"12-34\")\n"
             "    r.dispose()\n"
             "    if^ caps? {\n"
-            "        return^ (caps[1] ?? \"\") .. \"/\" .. (caps[2] ?? \"\")"
-            " .. \"/\" .. (caps[3] ?? \"\")\n"
+            "        return^ (caps[0] ?? \"\") .. \"/\" .. (caps[1] ?? \"\")"
+            " .. \"/\" .. (caps[2] ?? \"\")\n"
             "    }\n"
             "    return^ \"none\"\n"));
         LHAT_CHECK_RAN_TEXT(ran, "12-34/12/34");
@@ -117,7 +117,7 @@ static void test_gmatch(void)
             "    }\n"
             "    r.dispose()\n"
             "    return^ log.join^(\",\")\n"));
-        LHAT_CHECK_RAN_TEXT(ran, "one@1,two@5,three@9");
+        LHAT_CHECK_RAN_TEXT(ran, "one@0,two@4,three@8");
         lhat_test_ran_dispose(&ran);
     }
 
@@ -160,7 +160,7 @@ static void test_gsub(void)
             "    })\n"
             "    r.dispose()\n"
             "    return^ if^ swapped fits^ string^: swapped el^: \"?\" ;\n"));
-        LHAT_CHECK_RAN_TEXT(ran, "a<1@2>b<22@4>");
+        LHAT_CHECK_RAN_TEXT(ran, "a<1@1>b<22@3>");
         lhat_test_ran_dispose(&ran);
     }
 

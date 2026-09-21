@@ -56,14 +56,15 @@ bool vm_ordinal_of(LhatValue value, int64_t *out)
     return true;
 }
 
-// 14.19: a written ordinal as a position counting from 1. A negative one
-// counts from the end, so -1 is the last character.
+// 14.19: a written ordinal as a position counting from 0. A negative one
+// counts from the end, so -1 is the last character. What still falls
+// outside 0..count-1 is the caller's to refuse.
 int64_t vm_resolve_ordinal(int64_t written, size_t count)
 {
     if (written < 0) {
-        return (int64_t)count + 1 + written;
+        return (int64_t)count + written;
     }
-    return written;  // 0 stays 0, which no position is, and the caller refuses
+    return written;
 }
 // ---------------------------------------------------------------------------
 // 02 の 14.19改3: the plain string searches
@@ -103,7 +104,7 @@ static size_t characters_before(const char *text, size_t until)
 }
 
 // The walk findall answers: every non-overlapping stand of the needle, as
-// 1-based character ordinals. The haystack rides the coroutine's `held`;
+// character ordinals. The haystack rides the coroutine's `held`;
 // this state owns its copy of the needle.
 typedef struct {
     const LhatString *subject;  // kept alive by `held`
@@ -132,13 +133,12 @@ static bool findall_step(struct LhatMachine *machine, void *context,
     }
     size_t ordinal = walk->chars_before +
                      characters_before(walk->subject->text + walk->next_byte,
-                                       at - walk->next_byte) +
-                     1;
+                                       at - walk->next_byte);
     // The next search starts past this stand, and the ordinal count moves
     // with it -- counted over the span walked, never from the top again.
     size_t past = at + walk->needle_length;
     walk->chars_before =
-        ordinal - 1 + characters_before(walk->subject->text + at, past - at);
+        ordinal + characters_before(walk->subject->text + at, past - at);
     walk->next_byte = past;
     answers[0] = lhat_integer((int64_t)ordinal);
     *answer_count = 1;
@@ -453,7 +453,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
     }
 
     // 02 の 14.19: a run of the subject's characters, named
-    // by ordinals that start at 1 and count from the end
+    // by ordinals that start at 0 and count from the end
     // when negative. A range that does not stand answers the
     // empty string -- what is not there is not an error, the
     // way 04 の 11.3 has a missing key answer nil^.
@@ -480,13 +480,13 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         }
         size_t count = subject->characters;
         // The one ordinal ends where it starts for at, and at
-        // the end of the string for substring.
+        // the last character (-1) for substring.
         int64_t last = single  ? from
                        : b == 2 ? to
-                                : (int64_t)count;
+                                : -1;
         int64_t start = vm_resolve_ordinal(from, count);
         int64_t end = vm_resolve_ordinal(last, count);
-        if (start < 1 || end < start || end > (int64_t)count) {
+        if (start < 0 || end < start || end >= (int64_t)count) {
             LhatString *empty =
                 lhat_string_new(&m->objects, "", 0);
             if (empty == NULL) {
@@ -498,14 +498,14 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         // The whole of it is the string itself: nothing about
         // a string changes, so a copy would be a second name
         // for the same bytes and nothing more.
-        if (start == 1 && end == (int64_t)count) {
+        if (start == 0 && end == (int64_t)count - 1) {
             lhat_slots_set(m->slots, into, native->bound);
             return LHAT_RUN_OK;
         }
         size_t at_byte =
-            lhat_string_byte_at(subject, (size_t)start - 1);
+            lhat_string_byte_at(subject, (size_t)start);
         size_t end_byte =
-            lhat_string_byte_at(subject, (size_t)end);
+            lhat_string_byte_at(subject, (size_t)end + 1);
         LhatString *cut = lhat_string_new(
             &m->objects, subject->text + at_byte,
             end_byte - at_byte);
@@ -613,7 +613,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
                     i - begin);
                 ok = piece != NULL &&
                      vm_set_key(m, pieces,
-                             lhat_integer(++position),
+                             lhat_integer(position++),
                              lhat_object((LhatObject *)piece),
                              &refused);
             }
@@ -650,7 +650,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
                     end - from);
                 ok = piece != NULL &&
                      vm_set_key(m, pieces,
-                             lhat_integer(++position),
+                             lhat_integer(position++),
                              lhat_object((LhatObject *)piece),
                              &refused);
                 if (!ok) {
@@ -695,20 +695,19 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
                 return LHAT_RUN_ARITY;
             }
             // The optional second ordinal reads as
-            // substring's does -- 1-based, negative from
+            // substring's does -- from 0, negative from
             // the end.
-            int64_t from = 1;
+            int64_t from = 0;
             if (b == 2 && !vm_ordinal_of(lhat_slots_get(m->slots, first + 1), &from)) {
                 return LHAT_RUN_TYPE_ERROR;
             }
             from = vm_resolve_ordinal(from, subject->characters);
-            if (from < 1) {
-                from = 1;
+            if (from < 0) {
+                from = 0;
             }
             size_t start_byte =
-                (size_t)from - 1 <= subject->characters
-                    ? lhat_string_byte_at(subject,
-                                          (size_t)from - 1)
+                (size_t)from <= subject->characters
+                    ? lhat_string_byte_at(subject, (size_t)from)
                     : subject->length;
             size_t found = 0;
             if (!find_bytes(subject->text, subject->length,
@@ -719,8 +718,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
             }
             lhat_slots_set(m->slots, into, lhat_integer(
                           (int64_t)characters_before(
-                              subject->text, found) +
-                          1));
+                              subject->text, found)));
             return LHAT_RUN_OK;
         }
 

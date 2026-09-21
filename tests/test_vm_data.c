@@ -506,7 +506,7 @@ static void test_strings(void)
              "var^ t = { a := 1, 10 }\n"
              "var^ u = { b := 2, 20 }\n"
              "var^ j = t .. u\n"
-             "return^ j[1] * 1000 + j[2] * 10 + j.a + j.b\n");
+             "return^ j[0] * 1000 + j[1] * 10 + j.a + j.b\n");
     CHECK_INTEGER(&r, 10203);
     run_dispose(&r);
 
@@ -523,8 +523,8 @@ static void test_strings(void)
                      "var^ t = {3, 1, 2}\n"
                      "t.push^(9)\n"
                      "var^ popped = t.pop^() ?? 0\n"
-                     "t.insert^(1, 7)\n"
-                     "var^ removed = t.remove^(1) ?? 0\n"
+                     "t.insert^(0, 7)\n"
+                     "var^ removed = t.remove^(0) ?? 0\n"
                      "return^ popped * 100 + removed * 10 + t.count^\n");
     CHECK_INTEGER(&r, 900 + 70 + 3);
     run_dispose(&r);
@@ -543,16 +543,16 @@ static void test_strings(void)
                      "var^ absent = t.indexof^(\"z\") ?? -1\n"
                      "return^ where * 10 + (if^ t.contains^(\"c\"): 1 "
                      "el^: 0 ;) + absent\n");
-    CHECK_INTEGER(&r, 20 + 1 - 1);
+    CHECK_INTEGER(&r, 10 + 1 - 1);
     run_dispose(&r);
 
     LHAT_TEST("slice^ answers a fresh table sharing the elements");
     run_checked_text(&r,
                      "var^ inner = { v = 5 }\n"
                      "var^ t = {inner, inner}\n"
-                     "var^ cut = t.slice^(2)\n"
+                     "var^ cut = t.slice^(1)\n"
                      "inner.v := 6\n"
-                     "return^ cut.count^ * 10 + (cut[1].v ?? 0)\n");
+                     "return^ cut.count^ * 10 + (cut[0].v ?? 0)\n");
     CHECK_INTEGER(&r, 16);
     run_dispose(&r);
 
@@ -610,10 +610,10 @@ static void test_strings(void)
     LHAT_TEST("move^ relocates one, copies a block, reads another table");
     run_checked_text(&r,
                      "var^ t = {1, 2, 3, 4}\n"
-                     "t.move^(1, 3)\n"
+                     "t.move^(0, 2)\n"
                      "var^ turned = t.join^(\"\")\n"
                      "var^ u = {9, 8}\n"
-                     "t.move^(u, 1, 2, 1)\n"
+                     "t.move^(u, 0, 1, 0)\n"
                      "return^ turned .. \"/\" .. t.join^(\"\")\n");
     CHECK_STRING(&r, "2314/9814");
     run_dispose(&r);
@@ -621,7 +621,7 @@ static void test_strings(void)
     LHAT_TEST("an overlapping block move copies, not smears");
     run_checked_text(&r,
                      "var^ t = {1, 2, 3, 4, 5}\n"
-                     "t.move^(1, 3, 2)\n"
+                     "t.move^(0, 2, 1)\n"
                      "return^ t.join^(\"\")\n");
     CHECK_STRING(&r, "11235");
     run_dispose(&r);
@@ -636,7 +636,7 @@ static void test_strings(void)
                      "var^ sh = t.clone^()\n"
                      "inner.w := 8\n"
                      "sh.push^(99)\n"
-                     "return^ (sh[2].w ?? 0) * 100 + sh.count^ * 10 + "
+                     "return^ (sh[1].w ?? 0) * 100 + sh.count^ * 10 + "
                      "t.count^\n");
     CHECK_INTEGER(&r, 800 + 40 + 3);
     run_dispose(&r);
@@ -650,7 +650,7 @@ static void test_strings(void)
                      "    other^: x\n"
                      "    ;\n"
                      "})\n"
-                     "return^ (dbl[1] ?? 0) + (dbl[2] ?? 0) + "
+                     "return^ (dbl[0] ?? 0) + (dbl[1] ?? 0) + "
                      "(dbl.bonus ?? 0)\n");
     CHECK_INTEGER(&r, 2 + 4 + 20);
     run_dispose(&r);
@@ -666,7 +666,7 @@ static void test_strings(void)
                      "    ;\n"
                      "})\n"
                      "inner.w := 100\n"
-                     "return^ dp[1].w ?? 0\n");
+                     "return^ dp[0].w ?? 0\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
@@ -767,13 +767,13 @@ static void test_tables(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    LHAT_TEST("a positional entry counts from one");
-    run_text(&r, "var^ t = { 10, 20, 30 }\nreturn^ t.1 + t.3\n");
+    LHAT_TEST("a positional entry counts from zero");
+    run_text(&r, "var^ t = { 10, 20, 30 }\nreturn^ t.0 + t.2\n");
     CHECK_INTEGER(&r, 40);
     run_dispose(&r);
 
     LHAT_TEST("keyed and positional entries mix");
-    run_text(&r, "var^ t = { 10, a := 1, 20 }\nreturn^ t.2 + t.a\n");
+    run_text(&r, "var^ t = { 10, a := 1, 20 }\nreturn^ t.1 + t.a\n");
     CHECK_INTEGER(&r, 21);
     run_dispose(&r);
 
@@ -801,8 +801,8 @@ static void test_tables(void)
     run_text(&r,
              "var^ a = 1\n"
              "var^ t = { (a = 1), (a = 2) }\n"
-             "if^ t[1] {\n"
-             "  if^ t[2] { return^ 0 }\n"
+             "if^ t[0] {\n"
+             "  if^ t[1] { return^ 0 }\n"
              "  return^ 1\n"
              "}\n"
              "return^ 2\n");
@@ -905,7 +905,7 @@ static void test_nil_safe_compound(void)
     Run r;
 
     LHAT_TEST("a place that is there is added to");
-    run_text(&r, "var^ t = { 10, 20 }\nt[1] ?+= 5\nreturn^ t.1\n");
+    run_text(&r, "var^ t = { 10, 20 }\nt[0] ?+= 5\nreturn^ t.0\n");
     CHECK_INTEGER(&r, 15);
     run_dispose(&r);
 
@@ -931,7 +931,7 @@ static void test_nil_safe_compound(void)
              "var^ side = p^ -> number^ { runs += 1  return^ 1 }\n"
              "var^ t = { 10 }\n"
              "t[9] ?+= side()\n"
-             "t[1] ?+= side()\n"
+             "t[0] ?+= side()\n"
              "return^ runs\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
@@ -943,7 +943,7 @@ static void test_nil_safe_compound(void)
              "var^ keys = 0\n"
              "var^ at = p^ n:number^ -> number^ { keys += 1  return^ n }\n"
              "var^ t = { 10 }\n"
-             "t[at(1)] ?+= 1\n"
+             "t[at(0)] ?+= 1\n"
              "t[at(9)] ?+= 1\n"
              "return^ keys\n");
     CHECK_INTEGER(&r, 2);
@@ -968,8 +968,8 @@ static void test_nil_safe_compound(void)
     run_text(&r,
              "var^ p = { 1 }\n"
              "var^ q = { 2 }\n"
-             "p[1], q[9] ?+= 10, 10\n"
-             "return^ p.1 * 100 + (q[9] ?? 0)\n");
+             "p[0], q[9] ?+= 10, 10\n"
+             "return^ p.0 * 100 + (q[9] ?? 0)\n");
     CHECK_INTEGER(&r, 1100);
     run_dispose(&r);
 
@@ -977,17 +977,17 @@ static void test_nil_safe_compound(void)
     run_text(&r,
              "var^ p = { 1 }\n"
              "var^ q = { 2 }\n"
-             "q[9], p[1] ?+= 10, 10\n"
-             "return^ p.1 * 100 + (q[9] ?? 0)\n");
+             "q[9], p[0] ?+= 10, 10\n"
+             "return^ p.0 * 100 + (q[9] ?? 0)\n");
     CHECK_INTEGER(&r, 1100);
     run_dispose(&r);
 
     LHAT_TEST("the concatenating one reaches a string");
     run_text(&r,
              "var^ t = { \"a\" }\n"
-             "t[1] ?..= \"b\"\n"
+             "t[0] ?..= \"b\"\n"
              "t[9] ?..= \"c\"\n"
-             "return^ t.1\n");
+             "return^ t.0\n");
     CHECK_STRING(&r, "ab");
     run_dispose(&r);
 }
@@ -1001,7 +1001,7 @@ static void test_nil_safe_assign(void)
     Run r;
 
     LHAT_TEST("a place that is there is written");
-    run_text(&r, "var^ t = { 10, 20 }\nt[1] ?:= 5\nreturn^ t.1\n");
+    run_text(&r, "var^ t = { 10, 20 }\nt[0] ?:= 5\nreturn^ t.0\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
@@ -1029,7 +1029,7 @@ static void test_nil_safe_assign(void)
              "var^ side = p^ -> number^ { log.n := log.n + 1  return^ 99 }\n"
              "var^ t = { 10 }\n"
              "t[9] ?:= side()\n"
-             "t[1] ?:= side()\n"
+             "t[0] ?:= side()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
@@ -1041,7 +1041,7 @@ static void test_nil_safe_assign(void)
              "var^ log = { n = 0 }\n"
              "var^ at = p^ i:number^ -> number^ { log.n := log.n + 1  return^ i }\n"
              "var^ t = { 10 }\n"
-             "t[at(1)] ?:= 5\n"
+             "t[at(0)] ?:= 5\n"
              "t[at(9)] ?:= 5\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 2);
@@ -1051,8 +1051,8 @@ static void test_nil_safe_assign(void)
     run_text(&r,
              "var^ p = { 1 }\n"
              "var^ q = { }\n"
-             "p[1], q[9] ?:= 5, 5\n"
-             "return^ p[1] + q.length^\n");
+             "p[0], q[9] ?:= 5, 5\n"
+             "return^ p[0] + q.length^\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
@@ -1065,8 +1065,8 @@ static void test_nil_safe_assign(void)
                      "var^ pair = p^ -> (number^, number^) { return^ 7, 8 }\n"
                      "var^ a = { 1 }\n"
                      "var^ b = { }\n"
-                     "a[1], b[9] ?:= pair()\n"
-                     "return^ a[1] + b.length^\n");
+                     "a[0], b[9] ?:= pair()\n"
+                     "return^ a[0] + b.length^\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
@@ -1485,7 +1485,7 @@ static void test_counting(void)
     run_dispose(&r);
 }
 
-// 02 の 14.19: a run of a string^'s characters. Ordinals start at 1 and count
+// 02 の 14.19: a run of a string^'s characters. Ordinals start at 0 and count
 // from the end when negative, both ends are included, and a range that does
 // not stand answers the empty string rather than an error.
 static void test_substring(void)
@@ -1498,7 +1498,7 @@ static void test_substring(void)
 
     LHAT_TEST("one ordinal takes the rest of the string");
     snprintf(text, sizeof text, "%s%s", five,
-             "return^ s.substr(1) .. \"|\" .. s.substr(3) .. \"|\" ..\n"
+             "return^ s.substr(0) .. \"|\" .. s.substr(2) .. \"|\" ..\n"
              "        s.substr(-2)\n");
     run_text(&r, text);
     CHECK_STRING(&r, "あいうえお|うえお|えお");
@@ -1506,8 +1506,8 @@ static void test_substring(void)
 
     LHAT_TEST("two ordinals take a run, both ends included");
     snprintf(text, sizeof text, "%s%s", five,
-             "return^ s.substr(2, 3) .. \"|\" .. s.substr(-4, 3) .. \"|\" ..\n"
-             "        s.substr(1, -1) .. \"|\" .. s.substr(2, -2)\n");
+             "return^ s.substr(1, 2) .. \"|\" .. s.substr(-4, 2) .. \"|\" ..\n"
+             "        s.substr(0, -1) .. \"|\" .. s.substr(1, -2)\n");
     run_text(&r, text);
     CHECK_STRING(&r, "いう|いう|あいうえお|いうえ");
     run_dispose(&r);
@@ -1515,14 +1515,14 @@ static void test_substring(void)
     // 14.19: one member under three names.
     LHAT_TEST("the three names are one member");
     snprintf(text, sizeof text, "%s%s", five,
-             "return^ s.substring(2, 3) .. s.substr(2, 3) .. s.sub(2, 3)\n");
+             "return^ s.substring(1, 2) .. s.substr(1, 2) .. s.sub(1, 2)\n");
     run_text(&r, text);
     CHECK_STRING(&r, "いういういう");
     run_dispose(&r);
 
     // 14.18改: three names, and no hat spelling of any of them.
     LHAT_TEST("and the hat spelling is not a fourth");
-    snprintf(text, sizeof text, "%s%s", five, "return^ s.sub^(2, 3)\n");
+    snprintf(text, sizeof text, "%s%s", five, "return^ s.sub^(1, 2)\n");
     run_text(&r, text);
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
@@ -1531,8 +1531,8 @@ static void test_substring(void)
     // does not stand is empty, not an error and not nil^.
     LHAT_TEST("a range that does not stand is the empty string");
     snprintf(text, sizeof text, "%s%s", five,
-             "return^ \"[\" .. s.substr(0) .. s.substr(9) .. s.substr(3, 2) ..\n"
-             "        s.substr(1, 0) .. \"\".substr(1) .. \"]\"\n");
+             "return^ \"[\" .. s.substr(-9) .. s.substr(9) .. s.substr(3, 2) ..\n"
+             "        s.substr(1, 0) .. \"\".substr(0) .. \"]\"\n");
     run_text(&r, text);
     CHECK_STRING(&r, "[]");
     run_dispose(&r);
@@ -1542,7 +1542,7 @@ static void test_substring(void)
     // far end -- the one rounding that commutes with resolving a negative.
     LHAT_TEST("a fractional ordinal is rounded, halves to the far end");
     snprintf(text, sizeof text, "%s%s", five,
-             "return^ s.substr(2.5) .. \"|\" .. s.substr(2.4) .. \"|\" ..\n"
+             "return^ s.substr(1.5) .. \"|\" .. s.substr(1.4) .. \"|\" ..\n"
              "        s.substr(-2.5)\n");
     run_text(&r, text);
     CHECK_STRING(&r, "うえお|いうえお|えお");
@@ -1552,8 +1552,8 @@ static void test_substring(void)
     // would be a second name for the same bytes.
     LHAT_TEST("the whole of a string is the string itself");
     snprintf(text, sizeof text, "%s%s", five,
-             "if^ s.substr(1) is^ s and^ s.substr(1, -1) is^ s and^\n"
-             "   !(s.substr(2) is^ s) { return^ 1 }\n"
+             "if^ s.substr(0) is^ s and^ s.substr(0, -1) is^ s and^\n"
+             "   !(s.substr(1) is^ s) { return^ 1 }\n"
              "return^ 0\n");
     run_text(&r, text);
     CHECK_INTEGER(&r, 1);
@@ -1563,7 +1563,7 @@ static void test_substring(void)
     // character and three bytes.
     LHAT_TEST("the run is measured in characters, not bytes");
     snprintf(text, sizeof text, "%s%s", five,
-             "return^ s.substr(2, 2).size * 10 + s.substr(2, 2).length\n");
+             "return^ s.substr(1, 1).size * 10 + s.substr(1, 1).length\n");
     run_text(&r, text);
     CHECK_INTEGER(&r, 31);
     run_dispose(&r);
@@ -1571,24 +1571,46 @@ static void test_substring(void)
     // 14.19改: at(i) is substr(i, i), so every rule above is its rule too.
     LHAT_TEST("at takes the one character the ordinal names");
     snprintf(text, sizeof text, "%s%s", five,
-             "return^ s.at(2) .. \"|\" .. s.at(-1) .. \"|\" .. s.at(2.5) ..\n"
-             "        \"|\" .. s.at(1)\n");
+             "return^ s.at(1) .. \"|\" .. s.at(-1) .. \"|\" .. s.at(1.5) ..\n"
+             "        \"|\" .. s.at(0)\n");
     run_text(&r, text);
     CHECK_STRING(&r, "い|お|う|あ");
     run_dispose(&r);
 
     LHAT_TEST("and answers the empty string where there is no character");
     snprintf(text, sizeof text, "%s%s", five,
-             "return^ \"[\" .. s.at(0) .. s.at(6) .. s.at(-9) ..\n"
-             "        \"\".at(1) .. \"]\"\n");
+             "return^ \"[\" .. s.at(-6) .. s.at(5) .. s.at(-9) ..\n"
+             "        \"\".at(0) .. \"]\"\n");
     run_text(&r, text);
     CHECK_STRING(&r, "[]");
     run_dispose(&r);
 
     LHAT_TEST("one ordinal is the whole of its shape");
-    snprintf(text, sizeof text, "%s%s", five, "return^ s.at(1, 2)\n");
+    snprintf(text, sizeof text, "%s%s", five, "return^ s.at(0, 1)\n");
     run_text(&r, text);
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+
+    // 14.19改3: the searches answer in the same ordinals, and read their own
+    // starting one the way substring reads its first.
+    LHAT_TEST("find answers the ordinal the needle stands at");
+    run_text(&r,
+             "let^ s = \"\\u{3042}\\u{3044}\\u{3046}\\u{3042}\\u{3044}\"\n"
+             "return^ (s.find(\"\\u{3044}\") ?? 9) * 100 +\n"
+             "        (s.find(\"\\u{3044}\", 2) ?? 9) * 10 +\n"
+             "        (s.find(\"\\u{3044}\", -1) ?? 9)\n");
+    CHECK_INTEGER(&r, 144);
+    run_dispose(&r);
+
+    LHAT_TEST("findall walks every stand from the first");
+    run_text(&r,
+             "let^ s = \"\\u{3042}\\u{3044}\\u{3046}\\u{3042}\\u{3044}\"\n"
+             "var^ out = 0\n"
+             "for^ i in^ s.findall(\"\\u{3042}\\u{3044}\") {\n"
+             "    out := out * 10 + i + 1\n"
+             "}\n"
+             "return^ out\n");
+    CHECK_INTEGER(&r, 14);
     run_dispose(&r);
 
     // 14.19改 takes the name only where 14.19's member is, so a table keeps
@@ -1937,7 +1959,7 @@ static void test_member_cache(void)
                      "var^ i = 0\n"
                      "repeat^while^ i < 9 {\n"
                      "    sum := sum + t.a\n"
-                     "    t[names[i + 1]] := i\n"
+                     "    t[names[i]] := i\n"
                      "    i := i + 1\n"
                      "}\n"
                      "return^ sum\n");

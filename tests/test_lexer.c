@@ -274,14 +274,14 @@ static void test_lexical_hazards(void)
 {
     Scan s;
 
-    // Section 10.1. A naive scanner reads ".1.1" as the float 1.1.
-    LHAT_TEST("10.1 a.1.1 is a chain of integer keys");
-    scan_text(&s, "a.1.1");
+    // Section 10.1. A naive scanner reads ".0.0" as the float 0.0.
+    LHAT_TEST("10.1 a.0.0 is a chain of integer keys");
+    scan_text(&s, "a.0.0");
     LHAT_CHECK_EQ_INT(token_count(&s), 5);
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_DOT), "expected .");
     LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_INT);
-    LHAT_CHECK_EQ_INT(s.tokens[2].v.integer.value, 1);
+    LHAT_CHECK_EQ_INT(s.tokens[2].v.integer.value, 0);
     LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_DOT), "expected .");
     LHAT_CHECK_EQ_INT(s.tokens[4].kind, LHAT_TOKEN_INT);
     scan_dispose(&s);

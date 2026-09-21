@@ -3447,7 +3447,7 @@ static bool shared_enum(LhatProgram *program, LhatTable *root,
         }
         LhatEnumerator *made_one = lhat_enumerator_new(
             heap, made, member,
-            lhat_integer(e->values != NULL ? e->values[i] : (int64_t)i + 1),
+            lhat_integer(e->values != NULL ? e->values[i] : (int64_t)i),
             i + 1);
         bool refused = false;
         if (made_one == NULL ||

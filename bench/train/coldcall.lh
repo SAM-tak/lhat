@@ -130,6 +130,7 @@ let^ t = {
 }
 var^ s = 0
 repeat^ 46875 {
+    s := s + t[0].m()
     s := s + t[1].m()
     s := s + t[2].m()
     s := s + t[3].m()
@@ -193,6 +194,5 @@ repeat^ 46875 {
     s := s + t[61].m()
     s := s + t[62].m()
     s := s + t[63].m()
-    s := s + t[64].m()
 }
 return^ s

@@ -349,7 +349,7 @@ static bool write_table(Writer *w, const JsonModule *m, const LhatTable *table,
     }
     size_t filled = 0;
     for (size_t i = 0; i < table->array_count; i++) {
-        name_key(&members[filled], lhat_integer((int64_t)i + 1),
+        name_key(&members[filled], lhat_integer((int64_t)i),
                  lhat_slots_get(table->array, i));
         filled++;
     }
@@ -732,8 +732,7 @@ static bool read_array(Reader *r, LhatValue *out, size_t depth)
         if (!read_value(r, &held, depth + 1)) {
             return false;
         }
-        at++;
-        if (!keep(r, table, lhat_integer(at), held)) {
+        if (!keep(r, table, lhat_integer(at++), held)) {
             return false;
         }
         skip_space(r);

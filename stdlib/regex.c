@@ -34,7 +34,7 @@ static LhatValue fail_with(LhatMachine *machine, const LhatErrorKind *kind,
                : lhat_nil();
 }
 
-// 1-based character ordinal of a byte offset -- continuation bytes carry no
+// The character ordinal of a byte offset -- continuation bytes carry no
 // ordinal of their own (02 の 14.19's counting).
 static size_t ordinal_at(const char *text, size_t byte_at)
 {
@@ -44,7 +44,7 @@ static size_t ordinal_at(const char *text, size_t byte_at)
             count++;
         }
     }
-    return count + 1;
+    return count;
 }
 
 // One code point's width at `at`, for stepping past an empty match.
@@ -155,7 +155,7 @@ static LhatValue do_captures(LhatMachine *machine, const RegexModule *module,
         }
         LhatValue piece = span_string(machine, text->text, spans[i]);
         if (!lhat_machine_table_set(machine, holder,
-                                    lhat_integer((int64_t)i + 1), piece, NULL)) {
+                                    lhat_integer((int64_t)i), piece, NULL)) {
             return lhat_nil();
         }
     }
@@ -210,7 +210,7 @@ static bool call_replacement(LhatMachine *machine, LhatValue fn,
         return false;
     }
     LhatTable *holder = (LhatTable *)lhat_as_object(table);
-    for (size_t i = 1; i <= groups; i++) {
+    for (size_t i = 0; i <= groups; i++) {
         if (spans[i].begin == (size_t)-1) {
             continue;
         }
@@ -341,7 +341,7 @@ static LhatValue do_split(LhatMachine *machine, const RegexModule *module,
         if (!lhat_machine_make_string(machine, text->text + from,
                                       spans[0].begin - from, &piece) ||
             !lhat_machine_table_set(machine, pieces,
-                                    lhat_integer(++position), piece, NULL)) {
+                                    lhat_integer(position++), piece, NULL)) {
             return lhat_nil();
         }
         from = spans[0].end;
@@ -349,7 +349,7 @@ static LhatValue do_split(LhatMachine *machine, const RegexModule *module,
     LhatValue tail = lhat_nil();
     if (!lhat_machine_make_string(machine, text->text + from,
                                   text->length - from, &tail) ||
-        !lhat_machine_table_set(machine, pieces, lhat_integer(++position),
+        !lhat_machine_table_set(machine, pieces, lhat_integer(position++),
                                 tail, NULL)) {
         return lhat_nil();
     }

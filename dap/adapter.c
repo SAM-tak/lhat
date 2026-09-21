@@ -615,7 +615,7 @@ static cJSON *expand_table(DapSession *s, LhatMachine *machine,
     const LhatTable *table = (const LhatTable *)lhat_as_object(value);
     for (size_t i = 0; i < table->array_count; i++) {
         char name[32];
-        snprintf(name, sizeof name, "%zu", i + 1);
+        snprintf(name, sizeof name, "%zu", i);
         cJSON_AddItemToArray(
             out,
             variable_json(s, machine, name, lhat_slots_get(table->array, i)));

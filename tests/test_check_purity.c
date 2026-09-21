@@ -442,7 +442,7 @@ static void test_purity(void)
     LHAT_TEST("an indexed write is the same change");
     check_text(&u,
                "var^ f = f^ t:t^{ number^[] } -> number^ {\n"
-               "    t[1] := 5\n"
+               "    t[0] := 5\n"
                "    return^ 0\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);

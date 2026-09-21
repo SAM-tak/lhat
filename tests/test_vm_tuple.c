@@ -83,7 +83,7 @@ static void test_multi_value_return(void)
                      "var^ total = 0\n"
                      "repeat^ 2000 {\n"
                      "  var^ t = divmod(7, 2)\n"
-                     "  total := total + t[1] + t[2] }\n"
+                     "  total := total + t[0] + t[1] }\n"
                      "return^ total\n");
     CHECK_INTEGER(&r, 8000);
     LHAT_CHECK(r.ran.collected > 1000, "the table path still makes tables");
@@ -96,7 +96,7 @@ static void test_multi_value_return(void)
                      "var^ pair = f^ -> t^{ number^, number^ } {\n"
                      "  return^ { 3, 4 } }\n"
                      "var^ t = pair()\n"
-                     "return^ t[1] * 10 + t[2]\n");
+                     "return^ t[0] * 10 + t[1]\n");
     CHECK_INTEGER(&r, 34);
     run_dispose(&r);
 
@@ -114,13 +114,13 @@ static void test_multi_value_return(void)
     run_dispose(&r);
 
     // 13.8改: the one bridge. A tuple is not a value a name can hold; this
-    // makes one that is, with 14.10's positions numbered from 1.
+    // makes one that is, with 14.10's positions numbered from 0.
     LHAT_TEST("pack^ makes a table of them");
     run_checked_text(&r,
                      "var^ both = f^ -> (number^, string^) {\n"
                      "  return^ 5, \"b\" }\n"
                      "var^ t = pack^ both()\n"
-                     "return^ t[1].tostring^() .. t[2]\n");
+                     "return^ t[0].tostring^() .. t[1]\n");
     CHECK_STRING(&r, "5b");
     run_dispose(&r);
 
@@ -189,7 +189,7 @@ static void test_multi_value_return(void)
                      "var^ w = t.iterate^()\n"
                      "var^ k, v = w.start() ?? (0, 0)\n"
                      "return^ k * 100 + v\n");
-    CHECK_INTEGER(&r, 110);
+    CHECK_INTEGER(&r, 10);
     run_dispose(&r);
 
     LHAT_TEST("and answers the replacement once it runs out");
@@ -395,7 +395,7 @@ static void test_walk_shapes(void)
     LHAT_TEST("two names walk a table without allocating per step");
     run_checked_text(&r,
                      "var^ t = { }\n"
-                     "for^ i from^ 1 to^ 2000 { t[i] := i }\n"
+                     "for^ i from^ 0 to^ 1999 { t[i] := i + 1 }\n"
                      "var^ total = 0\n"
                      "for^ k, v in^ t { total := total + v }\n"
                      "return^ total\n");
@@ -408,7 +408,7 @@ static void test_walk_shapes(void)
     LHAT_TEST("and so does one name");
     run_checked_text(&r,
                      "var^ t = { }\n"
-                     "for^ i from^ 1 to^ 2000 { t[i] := i }\n"
+                     "for^ i from^ 0 to^ 1999 { t[i] := i + 1 }\n"
                      "var^ total = 0\n"
                      "for^ v in^ t { total := total + v }\n"
                      "return^ total\n");
@@ -423,7 +423,7 @@ static void test_walk_shapes(void)
     LHAT_TEST("a hand-driven walk allocates nothing per step");
     run_checked_text(&r,
                      "var^ t = { }\n"
-                     "for^ i from^ 1 to^ 700 { t[i] := i }\n"
+                     "for^ i from^ 0 to^ 699 { t[i] := i }\n"
                      "var^ w = t.iterate^()\n"
                      "var^ n = 0\n"
                      "w.start()\n"
@@ -472,7 +472,7 @@ static void test_walk_shapes(void)
     run_text(&r,
              "var^ total = 0\n"
              "for^ k, v in^ { 10, 20, 30 } {\n"
-             "  if^ k = 3 { break^ }\n"
+             "  if^ k = 2 { break^ }\n"
              "  total := total + v }\n"
              "return^ total\n");
     CHECK_INTEGER(&r, 30);
@@ -565,7 +565,7 @@ static void test_tuple_spread(void)
                      "var^ f = f^ -> (number^, number^) { return^ 10, 20 }\n"
                      "var^ sum = f^ ...:t^{ number^, number^ } -> number^ {\n"
                      "  var^ total = 0\n"
-                     "  for^ t in^ ... { total := total + t[1] + t[2] }\n"
+                     "  for^ t in^ ... { total := total + t[0] + t[1] }\n"
                      "  return^ total }\n"
                      "var^ total = 0\n"
                      "repeat^ 2000 { total := total + sum(pack^ f()) }\n"

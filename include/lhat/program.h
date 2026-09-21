@@ -873,7 +873,7 @@ bool lhat_register_const_string(LhatProgram *program, const char *module,
 // read as 02 の 19 章's enum^: the members are singleton values under
 // module.Name, a when^ naming them all proves exhaustive, and fits^
 // compares the declaration. `values` gives each member its integer;
-// without it (lhat_register_enum) they count from 1. A name already
+// without it (lhat_register_enum) they count from 0. A name already
 // registered there is refused; strings are copied. Before
 // lhat_program_check, as every registration is. The identity is the
 // program's: enum values do not cross programs.

@@ -514,7 +514,7 @@ LhatTypeKind lhat_type_member_key_kind(const LhatTypeMember *member)
     return LHAT_TYPE_NUMBER;
 }
 
-// The digits of a one-based index, stored like an ordinary member name.
+// The digits of a position, stored like an ordinary member name.
 static size_t index_digits(size_t index, char *out, size_t capacity)
 {
     size_t length = 0;
@@ -1279,7 +1279,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             }
             // 13.7, 14.10: an unbounded tail, checked by walking the
             // positions after the named ones the way 14.10 counts them --
-            // from 1, since a variadic type here is not written mixed with
+            // from 0, since a variadic type here is not written mixed with
             // fixed positions in practice. Stops at the first position
             // value does not have; 13.7 asks for zero or more, not a count.
             if (target->v.table.variadic != NULL) {
@@ -1296,7 +1296,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                                      target->v.table.variadic, seen)) {
                     return false;
                 }
-                for (size_t i = 1;; i++) {
+                for (size_t i = 0;; i++) {
                     char digits[24];
                     size_t length = index_digits(i, digits, sizeof digits);
                     LhatTypeMember probe;
@@ -1934,17 +1934,17 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth);
 static void write_result(TypeSink *sink, const LhatType *type, int depth);
 
 // 14.10: an entry with no name is the type of the next position, counted from
-// one in written order with the named ones taking no place in the sequence.
+// zero in written order with the named ones taking no place in the sequence.
 // lhat_type_add_index_member holds a position as a member whose name is its
 // digits, so this is that rule read backwards: a member standing where the
 // count says its own name is one of these, and the way to write it is with no
-// name at all. 't^{ 1 : number^ }' is not a type -- the grammar takes a name
+// name at all. 't^{ 0 : number^ }' is not a type -- the grammar takes a name
 // there, and a number is not one -- so writing the name would put down
 // something nothing can read.
 //
 // Counting rather than testing each name for digits is what keeps the two
-// rules the same one: a member named "3" standing anywhere but third is not
-// what a bare type in third place would mean, so it keeps its name.
+// rules the same one: a member named "3" standing anywhere but fourth is not
+// what a bare type in fourth place would mean, so it keeps its name.
 static bool is_next_position(const LhatTypeMember *m, size_t position)
 {
     char digits[24];
@@ -1974,7 +1974,7 @@ static size_t run_of_positions(const LhatTypeMember *m, size_t position)
 {
     size_t run = 0;
     for (const LhatTypeMember *at = m; at != NULL; at = at->next) {
-        if (!is_next_position(at, position + run + 1) ||
+        if (!is_next_position(at, position + run) ||
             !lhat_type_equal(at->type, m->type)) {
             break;
         }
@@ -2003,7 +2003,7 @@ static void write_members(TypeSink *sink, const LhatTypeMember *members,
         if (count > 0) {
             put_text(sink, ", ");
         }
-        if (is_next_position(m, position + 1)) {
+        if (is_next_position(m, position)) {
             size_t run = run_of_positions(m, position);
             write_type(sink, m->type, depth + 1);
             if (run >= WRITE_RUN_MINIMUM) {

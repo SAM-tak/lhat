@@ -442,7 +442,7 @@ bool lhat_machine_make_enum(LhatMachine *machine, const char *name,
         }
         LhatEnumerator *e = lhat_enumerator_new(
             &m->objects, made, member,
-            lhat_integer(values != NULL ? values[i] : (int64_t)i + 1),
+            lhat_integer(values != NULL ? values[i] : (int64_t)i),
             i + 1);
         if (e == NULL) {
             return false;

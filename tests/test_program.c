@@ -3356,7 +3356,7 @@ static void test_host_tuple(void)
             {"main.lh",
              "import^ system.num\n"
              "var^ t = pack^ system.num.divmod(7, 2)\n"
-             "return^ t[1]\n"},
+             "return^ t[0]\n"},
         };
         program_with(&program, &disk, files, 1);
         lhat_register_func(&program, "system.num", "divmod",

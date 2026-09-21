@@ -359,9 +359,9 @@ static void test_names(void)
     run_text(&r,
              "var^ t = { 100, 200 }\n"
              "var^ calls = 0\n"
-             "var^ idx = p^ { calls := calls + 1\nreturn^ 1 }\n"
+             "var^ idx = p^ { calls := calls + 1\nreturn^ 0 }\n"
              "t[idx()] += 5\n"
-             "return^ t.1 = 105 and^ calls = 1\n");
+             "return^ t.0 = 105 and^ calls = 1\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
@@ -825,7 +825,7 @@ static void test_calls(void)
     run_text(&r,
              "var^ sum = f^ ...:t^{ number^, number^ } -> number^ {\n"
              "  var^ total = 0\n"
-             "  for^ t in^ ... { total := total + t[1] + t[2] }\n"
+             "  for^ t in^ ... { total := total + t[0] + t[1] }\n"
              "  return^ total }\n"
              "var^ total = 0\n"
              "repeat^ 2000 { total := total + sum({ 10, 20 }) }\n"
@@ -1669,7 +1669,7 @@ static void test_budget(void)
                      "    for^ k from^ 1 to^ 20 { spin := spin + 1 }\n"
                      "    return^ a <=> b\n"
                      "})\n"
-                     "return^ t[1]\n");
+                     "return^ t[0]\n");
         LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
         r.machine = lhat_machine_new();
         lhat_machine_set_budget(r.machine, 50);

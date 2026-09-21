@@ -659,7 +659,7 @@ static void test_coroutines(void)
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
-             "    log[1] := 5\n"
+             "    log[0] := 5\n"
              "  }\n"
              "}\n"
              "var^ outer = p^ {\n"
@@ -674,7 +674,7 @@ static void test_coroutines(void)
     LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_TABLE), "a table");
     LHAT_CHECK_EQ_INT(
         lhat_as_integer(lhat_table_get(
-            (const LhatTable *)lhat_as_object(r.ran.value), lhat_integer(1))),
+            (const LhatTable *)lhat_as_object(r.ran.value), lhat_integer(0))),
         5);
     run_dispose(&r);
 
@@ -688,7 +688,7 @@ static void test_coroutines(void)
              "  do^{\n"
              "    yield^ 1\n"
              "  finally^:\n"
-             "    log[1] := 5\n"
+             "    log[0] := 5\n"
              "  }\n"
              "}\n"
              "var^ c = gen()\n"
@@ -697,7 +697,7 @@ static void test_coroutines(void)
     LHAT_CHECK(lhat_is_object_kind(r.ran.value, LHAT_OBJECT_TABLE), "a table");
     LHAT_CHECK_EQ_INT(
         lhat_as_integer(lhat_table_get(
-            (const LhatTable *)lhat_as_object(r.ran.value), lhat_integer(1))),
+            (const LhatTable *)lhat_as_object(r.ran.value), lhat_integer(0))),
         0);
     run_dispose(&r);
 

@@ -75,10 +75,11 @@ public^let^Scheduler: t^{
 
     # 走らせる。start はまだしない——run() が最初の一歩を進める
     add = p^self^, task:c^{p^-> number^}{
+        let^slot = self^.live
+        self^.tasks[slot] := task
+        self^.waits[slot] := 0
         self^.live += 1
-        self^.tasks[self^.live] := task
-        self^.waits[self^.live] := 0
-        return^self^.live
+        return^slot
     },
 
     # 1つ進める。答えは「まだ生きているか」
@@ -99,7 +100,7 @@ public^let^Scheduler: t^{
 
     # 済んだ id を持つタスクを起こす
     wake = p^self^, done:number^{
-        for^i from^1 to^self^.live {
+        for^i from^0 to^self^.live - 1 {
             if^self^.waits[i] = done { self^.waits[i] := 0 }
         }
     },
@@ -113,7 +114,7 @@ public^let^Scheduler: t^{
     poll = p^self^-> bool^{
         var^awake = 0
         var^waiting = 0
-        for^i from^1 to^self^.live {
+        for^i from^0 to^self^.live - 1 {
             if^self^.tasks[i] is^nil^{ next^}
             if^self^.waits[i] = 0 {
                 awake += 1
@@ -139,7 +140,7 @@ public^let^Scheduler: t^{
             if^!self^.poll() { break^}
             var^awake = 0
             var^waiting = 0
-            for^i from^1 to^self^.live {
+            for^i from^0 to^self^.live - 1 {
                 if^self^.tasks[i] is^nil^{ next^}
                 if^self^.waits[i] = 0 {
                     awake += 1

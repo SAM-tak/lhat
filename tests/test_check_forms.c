@@ -374,10 +374,10 @@ static void test_substring(void)
 
     LHAT_TEST("either form answers a string^, under any of the three names");
     check_text(&u,
-               "var^ a : string^ = \"xyz\".substring(2)\n"
-               "var^ b : string^ = \"xyz\".substr(2, 3)\n"
+               "var^ a : string^ = \"xyz\".substring(1)\n"
+               "var^ b : string^ = \"xyz\".substr(1, 2)\n"
                "var^ c : string^ = \"xyz\".sub(-1)\n"
-               "var^ d : string^ = \"xyz\".sub(1, -1)\n");
+               "var^ d : string^ = \"xyz\".sub(0, -1)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -409,7 +409,7 @@ static void test_substring(void)
     // 14.19 answers a string^ and nothing else -- there is no nil^ arm, so
     // what comes back is usable without narrowing.
     LHAT_TEST("the answer needs no narrowing");
-    check_text(&u, "var^ n : number^ = \"xyz\".substr(2).length\n");
+    check_text(&u, "var^ n : number^ = \"xyz\".substr(1).length\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -422,7 +422,7 @@ static void test_substring(void)
     // ordinal -- so it answers a string^ too, there being no character type
     // for it to answer instead.
     LHAT_TEST("at takes one ordinal and answers a string^");
-    check_text(&u, "var^ a : string^ = \"xyz\".at(2)\n");
+    check_text(&u, "var^ a : string^ = \"xyz\".at(1)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 

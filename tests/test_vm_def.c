@@ -46,8 +46,8 @@ static void test_definitions(void)
              "var^ Foo = def^{ self^{ items := { } } }\n"
              "var^ a = Foo.new()\n"
              "var^ b = Foo.new()\n"
-             "a.items[1] := 9\n"
-             "return^ b.items[1] ?? 0\n");
+             "a.items[0] := 9\n"
+             "return^ b.items[0] ?? 0\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
@@ -56,8 +56,8 @@ static void test_definitions(void)
              "var^ Foo = def^{ self^{ grid := { { 0 }, { 0 } } } }\n"
              "var^ a = Foo.new()\n"
              "var^ b = Foo.new()\n"
-             "a.grid[1][1] := 9\n"
-             "return^ b.grid[1][1] ?? 0\n");
+             "a.grid[0][0] := 9\n"
+             "return^ b.grid[0][0] ?? 0\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
@@ -87,7 +87,7 @@ static void test_definitions(void)
     LHAT_TEST("the prototype's inner tables take no writes either");
     run_text(&r,
              "var^ Foo = def^{ self^{ used := { 0, 0 } } }\n"
-             "Foo.self^.used[1] := 9\n"
+             "Foo.self^.used[0] := 9\n"
              "return^ 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SEALED);
     run_dispose(&r);
@@ -98,8 +98,8 @@ static void test_definitions(void)
     run_text(&r,
              "var^ shared = { 5 }\n"
              "var^ Foo = def^{ self^{ items := shared } }\n"
-             "shared[1] := 7\n"
-             "return^ Foo.new().items[1] * 10 + shared[1]\n");
+             "shared[0] := 7\n"
+             "return^ Foo.new().items[0] * 10 + shared[0]\n");
     CHECK_INTEGER(&r, 57);
     run_dispose(&r);
 
@@ -113,8 +113,8 @@ static void test_definitions(void)
              "}\n"
              "var^ a = Foo.new()\n"
              "var^ b = Foo.new()\n"
-             "a.items[1] := 9\n"
-             "return^ b.items[1] ?? 0\n");
+             "a.items[0] := 9\n"
+             "return^ b.items[0] ?? 0\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 

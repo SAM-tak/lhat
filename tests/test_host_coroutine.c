@@ -633,10 +633,10 @@ static void test_driven_from_c(void)
         LhatValue co = r.ran.value;
         LhatRunResult one = lhat_machine_resume(r.machine, co, NULL, 0);
         LHAT_CHECK_EQ_INT(one.status, LHAT_RUN_OK);
-        // The pair crosses as positions: (1, 5).
+        // The pair crosses as positions: (0, 5).
         LHAT_CHECK_EQ_INT(one.position_count, 2);
         if (one.position_count == 2) {
-            LHAT_CHECK_EQ_INT(lhat_as_integer(one.positions[0]), 1);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(one.positions[0]), 0);
             LHAT_CHECK_EQ_INT(lhat_as_integer(one.positions[1]), 5);
         }
         lhat_machine_resume(r.machine, co, NULL, 0);

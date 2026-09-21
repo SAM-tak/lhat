@@ -151,7 +151,7 @@ static void test_alias_rebinding(void)
         "let^T = string^|nil^\nlet^id = f^x { return^ x }\nlet^U = id(T)\n",
         "let^make = f^ { string^|nil^ }\nlet^U = make()\n",
         "let^T = string^|nil^\nlet^U = if^ true^: T el^: T;\n",
-        "let^T = string^|nil^\nlet^box = {T}\nlet^U = box[1]\n",
+        "let^T = string^|nil^\nlet^box = {T}\nlet^U = box[0]\n",
     };
     for (size_t i = 0; i < sizeof ordinary / sizeof *ordinary; i++) {
         LHAT_TEST("ordinary descriptor values do not acquire an alias target");

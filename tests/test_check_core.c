@@ -87,7 +87,7 @@ static void test_names(void)
     check_text(&u,
                "var^ f = f^ t:t^{ number^[] } -> number^ {\n"
                "  var^ total = 0\n"
-               "  for^ i from^1 to^2 {\n"
+               "  for^ i from^0 to^1 {\n"
                "    var^ t = t[i] ?? 0\n"
                "    total := total + t\n"
                "  }\n"

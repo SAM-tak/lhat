@@ -13,7 +13,7 @@
 //   anything else, empty included       ->  an object
 //
 // So `{1, 2, 3}` writes as `[1,2,3]`, `{a := 1}` as `{"a":1}`, and one
-// holding both writes as an object whose dense half took the keys "1"…"n".
+// holding both writes as an object whose dense half took the keys "0"…"n-1".
 // The empty table has no half to read, and is written `{}`: an empty table
 // is more often a record about to be filled than a list about to be.
 //
@@ -44,7 +44,7 @@
 // 04 の 11.3 spells "not there" nil^, and that has two sides here.
 //
 // Reading: JSON's null puts no key. So `[1, null, 3]` answers a table with
-// nothing at 2 -- and encoding that back answers an object, since the table
+// nothing at 1 -- and encoding that back answers an object, since the table
 // is no longer only a dense part. This is the one place the round trip does
 // not close, and it closes as far as 11.3 lets it.
 //

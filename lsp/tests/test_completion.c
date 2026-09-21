@@ -238,9 +238,9 @@ static void test_a_receiver_that_is_not_a_name(void)
     LHAT_TEST("and so is what an index answers");
     check_text(&c,
                "let^ rows = { { x = 1 } }\n"
-               "let^ n = rows[1].\n");
+               "let^ n = rows[0].\n");
     {
-        cJSON *items = offered_after(&c, "rows[1].");
+        cJSON *items = offered_after(&c, "rows[0].");
         expect_offers(items, "x", true);
         cJSON_Delete(items);
     }

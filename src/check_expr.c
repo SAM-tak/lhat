@@ -193,7 +193,7 @@ static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
     // type that writes one.
     if (!related && op != LHAT_OP_EQ && op != LHAT_OP_NE && op != LHAT_OP_IS) {
         // Either side may be the one carrying the nil^, so both are asked --
-        // 't[1] < 3' and '3 < t[1]' are the same mistake read from the two
+        // 't[0] < 3' and '3 < t[0]' are the same mistake read from the two
         // ends. Whichever it is, what is missing is the narrowing.
         LhatType *bare = NULL;
         bool by_nil =
@@ -975,7 +975,7 @@ static LhatType *concat_table_types(Checker *c, const LhatNode *node,
         size_t own = 0;
         for (const LhatTypeMember *m = sides[s]->v.table.members; m != NULL;
              m = m->next) {
-            if (lhat_type_member_position(m, own + 1)) {
+            if (lhat_type_member_position(m, own)) {
                 own++;
                 if (fold) {
                     element = element == NULL
@@ -984,7 +984,7 @@ static LhatType *concat_table_types(Checker *c, const LhatNode *node,
                                                     m->type);
                 } else {
                     lhat_type_add_index_member(c->result->types, joined,
-                                               ++position, m->type);
+                                               position++, m->type);
                 }
                 continue;
             }
@@ -1887,7 +1887,7 @@ LhatType *chk_call_answer(Checker *c, const LhatType *callee)
 }
 
 // 02 § 16.3 with 13.8改: what the built-in walk of a table yields -- the
-// tuple (K, V), position 1 the key, position 2 the value. A tuple rather
+// tuple (K, V), the key first and the value second. A tuple rather
 // than a table: a table would cost an allocation every step. Both halves come
 // from what the table holds: 14 章 makes it a sequence and a mapping at
 // once, so a walk of one that is both hands over keys of either kind.
@@ -1930,7 +1930,7 @@ LhatType *chk_table_walk_tuple(Checker *c, const LhatType *over)
 
 // 02 § 16.3 with 13.8改: what a single name walking a table receives -- the
 // values of the sequence half, in order, the keyed half not visited. The
-// same loop as 'for^ i from^ 1 to^ the length { t[i] }', so the type is the
+// same loop as 'for^ i from^ 0 to^ the length - 1 { t[i] }', so the type is the
 // union of the positional members and the unbounded tail; named members are
 // not part of it.
 LhatType *chk_table_element_type(Checker *c, const LhatType *over)
@@ -3094,7 +3094,7 @@ static LhatType *reachable_by_key(Checker *c, const LhatType *over,
 
 // 13.11改 with 14.10: what the type answers for every position a bounded key
 // could name, or NULL where the key is not bounded or could leave them. The
-// positions have to run from one without a gap -- a value fitting the type
+// positions have to run from zero without a gap -- a value fitting the type
 // has each one it declares, and nothing is promised past the first it does
 // not.
 static LhatType *within_declared_positions(Checker *c, const LhatType *over,
@@ -3103,7 +3103,7 @@ static LhatType *within_declared_positions(Checker *c, const LhatType *over,
     int64_t lo = 0;
     int64_t hi = 0;
     if (key == NULL || key->next != NULL ||
-        !chk_narrowed_bounds(c, key, &lo, &hi) || lo < 1) {
+        !chk_narrowed_bounds(c, key, &lo, &hi) || lo < 0) {
         return NULL;
     }
     LhatType *reached = NULL;
@@ -3300,7 +3300,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
 
     // 02 §14 makes a table a sequence as well as a mapping. The keyed
     // half is described by name; the sequence half by position, counted the
-    // way the machine lays it out -- one-based, in the order written.
+    // way the machine lays it out -- from zero, in the order written.
     size_t position = 0;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
@@ -3413,7 +3413,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
             continue;
         }
         if (entry->v.entry.key == NULL) {
-            lhat_type_add_index_member(c->result->types, table, ++position,
+            lhat_type_add_index_member(c->result->types, table, position++,
                                        value);
         }
     }
@@ -4222,7 +4222,7 @@ static bool immutable_default_value(Checker *c, const LhatNode *node,
                     member = chk_find_member(type, name, length);
                 }
             } else {
-                member = lhat_type_member_at(type, ++position);
+                member = lhat_type_member_at(type, position++);
             }
             if (!immutable_default_value(c, entry->v.entry.value,
                                          member != NULL ? member->type
@@ -6410,7 +6410,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
 
         // 13.8改: pack^ turns the several values a call answered with into a
         // table a name can hold -- 14.10's positional members, numbered from
-        // 1, which is what 't[1]' and a destructuring both read.
+        // 0, which is what 't[0]' and a destructuring both read.
         case LHAT_NODE_PACK: {
             LhatType *source = chk_infer(c, node->v.jump.value);
             size_t width = lhat_type_tuple_width(source);
@@ -6422,7 +6422,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             }
             LhatType *packed = lhat_type_table(c->result->types);
             for (size_t i = 0; i < width; i++) {
-                lhat_type_add_index_member(c->result->types, packed, i + 1,
+                lhat_type_add_index_member(c->result->types, packed, i,
                                            lhat_type_tuple_at(source, i));
             }
             return packed;

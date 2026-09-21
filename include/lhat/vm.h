@@ -85,7 +85,7 @@ typedef struct {
     LhatValue value;   // what the unit returned, or nil^
 
     // 02 の 13.8改: the several values, when the answer was a tuple. `value`
-    // is position 1 then, so a host that reads only it still reads a value
+    // is positions[0] then, so a host that reads only it still reads a value
     // it can use -- which is why nothing written before tuples has to change.
     // `positions` aims into the machine's own room and is good until the
     // next run or call on that machine; copy what has to outlive it.

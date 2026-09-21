@@ -34,7 +34,7 @@ typedef enum {
 // (03 の 4.2). No mode allocates.
 typedef enum {
     // 'for^ v in^ t': the values of the sequence half, in order, the keyed
-    // half not visited -- 'for^ i from^ 1 to^ the length { t[i] }' written
+    // half not visited -- 'for^ i from^ 0 to^ the length - 1 { t[i] }' written
     // as a walk.
     WALK_AS_VALUE,
     // 'for^ k, v in^ t', and a hand-driven call that reserved the width:

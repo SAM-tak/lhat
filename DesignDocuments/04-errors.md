@@ -1179,7 +1179,7 @@ u[s]              # string^|nil^      s は文字列
 
 ```lhat
 let^ f = f^ t:t^{ number^[9] } {
-    for^ i from^1 to^9 { print(t[i] + 1) }      # number^
+    for^ i from^0 to^8 { print(t[i] + 1) }      # number^
 }
 ```
 

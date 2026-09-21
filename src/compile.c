@@ -1734,7 +1734,7 @@ static void compile_nil_else(Compiler *c, const LhatNode *node, uint8_t into)
 // declaration stands. The identity rides an RT_ENUM descriptor made here
 // and loaded as a constant -- the same object a fits^ against E compares
 // (rt_from_checked stamps the same checker declaration). A member with no
-// written value takes the running number: 1 to start, an integer literal
+// written value takes the running number: 0 to start, an integer literal
 // resets the run to itself plus one, any other written value leaves the
 // count where it was.
 static void compile_enumdef(Compiler *c, const LhatNode *node)
@@ -1767,7 +1767,7 @@ static void compile_enumdef(Compiler *c, const LhatNode *node)
     }
     emit(c, lhat_encode_abx(LHAT_BC_NEWENUM, reg, (uint16_t)k));
 
-    int64_t running = 1;
+    int64_t running = 0;
     uint8_t mark = c->next_register;
     uint8_t member_name = reserve(c);
     uint8_t member_value = reserve(c);
@@ -3330,8 +3330,7 @@ static void compile_interp(Compiler *c, const LhatNode *node, uint8_t into)
 }
 
 // 02 の 14 章: a table literal makes a table and fills it in. A keyed entry
-// names its key; a positional one takes the next integer, counting from 1 as
-// 16.4 の 'for^ i := 1 to^ n' does.
+// names its key; a positional one takes the next integer, counting from 0.
 static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
 {
     emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, into, 0, 0));
@@ -3363,7 +3362,7 @@ static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
                 return;
             }
         } else {
-            load_constant(c, key, lhat_integer(++position));
+            load_constant(c, key, lhat_integer(position++));
         }
 
         compile_expression(c, entry->v.entry.value, value);

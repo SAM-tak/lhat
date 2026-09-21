@@ -549,7 +549,7 @@ LhatTypeMember *lhat_type_add_index_member(LhatTypeArena *arena,
                                            LhatType *owner, size_t index,
                                            LhatType *type);
 
-// The member standing for a one-based position, or NULL when the table says
+// The member standing for a position, or NULL when the table says
 // nothing about it.
 const LhatTypeMember *lhat_type_member_at(const LhatType *table, size_t index);
 

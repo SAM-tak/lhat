@@ -496,7 +496,7 @@ static void test_between_machines(void)
             "let^ c = std.channel.new()\n"
             "if^ c fits^ std.channel.Channel {\n"
             "    let^ h = std.thread.spawn(p^ ... {\n"
-            "        let^ mine = ...[1]\n"
+            "        let^ mine = ...[0]\n"
             "        if^ mine fits^ std.channel.Channel { mine.push(11) catch^ nil^ }\n"
             "    }, c)\n"
             "    if^ h fits^ std.thread.ThreadHandle {\n"

@@ -218,7 +218,7 @@ static void test_modules(void)
     check_against(&u, &lib, "public^ let^ thing = 1\n",
                   "let^ args = ...\n"
                   "var^ n : number^ = args.count^\n"
-                  "var^ first : any^ = args[1]\n");
+                  "var^ first : any^ = args[0]\n");
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
     memset(&lib, 0, sizeof lib);

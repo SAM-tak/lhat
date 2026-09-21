@@ -21,8 +21,8 @@ static void test_enums(void)
              "    EEE,\n"
              "}\n"
              "var^ n = 0\n"
-             "if^ E.AAA.value = 1 { n := n + 1 }\n"
-             "if^ E.BBB.value = 2 { n := n + 10 }\n"
+             "if^ E.AAA.value = 0 { n := n + 1 }\n"
+             "if^ E.BBB.value = 1 { n := n + 10 }\n"
              "if^ E.CCC.value = \"aaa\" { n := n + 100 }\n"
              "if^ E.DDD.value = 10 { n := n + 1000 }\n"
              "if^ E.EEE.value = 11 { n := n + 10000 }\n"
@@ -63,7 +63,7 @@ static void test_enums(void)
     LHAT_TEST("a value may be a table, evaluated where the declaration ran");
     run_text(&r,
              "enum^ E { AAA = { 7, 8 } }\n"
-             "return^ E.AAA.value[2]\n");
+             "return^ E.AAA.value[1]\n");
     CHECK_INTEGER(&r, 8);
     run_dispose(&r);
 

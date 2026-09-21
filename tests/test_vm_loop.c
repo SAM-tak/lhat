@@ -92,7 +92,7 @@ static void test_repeat(void)
     LHAT_TEST("a keyed entry takes no position from the sequence");
     run_text(&r,
              "var^ t = { 10, [\"k\"] := 20, 30 }\n"
-             "return^ t[2]\n");
+             "return^ t[1]\n");
     CHECK_INTEGER(&r, 30);
     run_dispose(&r);
 
@@ -506,7 +506,7 @@ static void test_for(void)
              "var^ seen = 0\n"
              "for^ k, v in^ t { seen := seen * 100 + k * 10 + v // 10 }\n"
              "return^ seen\n");
-    CHECK_INTEGER(&r, 112233);
+    CHECK_INTEGER(&r, 11223);
     run_dispose(&r);
 
     LHAT_TEST("and reaches the keyed part too");
@@ -685,7 +685,7 @@ static void test_for(void)
                      "var^ vs = \"\"\n"
                      "for^ v in^ t.values^() { vs := vs .. v.tostring^() }\n"
                      "return^ ks .. \"|\" .. vs\n");
-    CHECK_STRING(&r, "12a|10209");
+    CHECK_STRING(&r, "01a|10209");
     run_dispose(&r);
 
     // The two projections step together: reading them side by side gives the
@@ -702,7 +702,7 @@ static void test_for(void)
                      "  v := vs.resume()\n"
                      "}\n"
                      "return^ out\n");
-    CHECK_STRING(&r, "1=10 2=20 a=9 ");
+    CHECK_STRING(&r, "0=10 1=20 a=9 ");
     run_dispose(&r);
 
     // 16.3: the single-name loop is the sequence reading and stays what it
@@ -874,7 +874,7 @@ static void test_for(void)
     LHAT_TEST("a loop fills a table");
     run_text(&r,
              "var^ t = { }\n"
-             "for^ i from^ 1 to^ 4 { t[i] := i * i }\n"
+             "for^ i from^ 0 to^ 3 { t[i] := i * i }\n"
              "return^ t.3\n");
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);

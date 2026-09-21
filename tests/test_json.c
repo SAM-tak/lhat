@@ -57,9 +57,9 @@ static void test_writing(void)
         LHAT_CHECK_RAN_TEXT(ran, "{}");
         lhat_test_ran_dispose(&ran);
 
-        // Both halves: an object, and the dense half took the keys "1"…"n".
+        // Both halves: an object, and the dense half took the keys "0"…"n-1".
         ran = run_source(ENCODING("{1, 2, a := 3}"));
-        LHAT_CHECK_RAN_TEXT(ran, "{\"1\":1,\"2\":2,\"a\":3}");
+        LHAT_CHECK_RAN_TEXT(ran, "{\"0\":1,\"1\":2,\"a\":3}");
         lhat_test_ran_dispose(&ran);
     }
 
@@ -74,7 +74,7 @@ static void test_writing(void)
         // a null but nothing at all, which breaks the dense half and makes
         // the whole an object.
         ran = run_source(ENCODING("{true^, false^, nil^, 7}"));
-        LHAT_CHECK_RAN_TEXT(ran, "{\"1\":true,\"2\":false,\"4\":7}");
+        LHAT_CHECK_RAN_TEXT(ran, "{\"0\":true,\"1\":false,\"3\":7}");
         lhat_test_ran_dispose(&ran);
 
         // 14.8's two representations: an integer keeps its shape, and a real
@@ -148,7 +148,7 @@ static void test_reading(void)
             "import^ std.json\n"
             "let^ t = try^ std.json.decode("
             "\"{\\\"a\\\": 1, \\\"b\\\": [10, 20]}\")\n"
-            "return^ t[\"a\"] + t[\"b\"][2]\n");
+            "return^ t[\"a\"] + t[\"b\"][1]\n");
         LHAT_CHECK_RAN_INTEGER(ran, 21);
         lhat_test_ran_dispose(&ran);
     }
@@ -159,8 +159,8 @@ static void test_reading(void)
         LhatTestRan ran = run_source(
             "import^ std.json\n"
             "let^ t = try^ std.json.decode(\"[3, 3.5, 3e2, -4]\")\n"
-            "if^ (t[1] = 3) and^ (t[2] = 3.5) and^ (t[3] = 300.0)\n"
-            "   and^ (t[4] = -4) { return^ 1 }\n"
+            "if^ (t[0] = 3) and^ (t[1] = 3.5) and^ (t[2] = 300.0)\n"
+            "   and^ (t[3] = -4) { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
@@ -171,7 +171,7 @@ static void test_reading(void)
         LhatTestRan ran = run_source(
             "import^ std.json\n"
             "let^ t = try^ std.json.decode(\"[\\\"a\\\\tb\\\"]\")\n"
-            "return^ t[1]\n");
+            "return^ t[0]\n");
         LHAT_CHECK_RAN_TEXT(ran, "a\tb");
         lhat_test_ran_dispose(&ran);
 
@@ -180,7 +180,7 @@ static void test_reading(void)
             "import^ std.json\n"
             "let^ t = try^ std.json.decode("
             "\"[\\\"\\\\u65e5\\\\ud83d\\\\ude00\\\"]\")\n"
-            "return^ t[1]\n");
+            "return^ t[0]\n");
         LHAT_CHECK_RAN_TEXT(ran, "日\xF0\x9F\x98\x80");
         lhat_test_ran_dispose(&ran);
     }
@@ -203,7 +203,7 @@ static void test_reading(void)
             "import^ std.json\n"
             "return^ try^ std.json.encode("
             "try^ std.json.decode(\"[1,null,3]\"))\n");
-        LHAT_CHECK_RAN_TEXT(ran, "{\"1\":1,\"3\":3}");
+        LHAT_CHECK_RAN_TEXT(ran, "{\"0\":1,\"2\":3}");
         lhat_test_ran_dispose(&ran);
     }
 
@@ -256,7 +256,7 @@ static void test_round_trip(void)
             "if^ (back[\"name\"] = was.name) and^ (back[\"n\"] = -42)\n"
             "   and^ (back[\"r\"] = 0.1) and^ (back[\"yes\"] = true^)\n"
             "   and^ (back[\"no\"] = false^)\n"
-            "   and^ (back[\"list\"][3][2] = 4)\n"
+            "   and^ (back[\"list\"][2][1] = 4)\n"
             "   and^ (back[\"nested\"][\"deep\"][\"deeper\"] = \"end\")\n"
             "   { return^ 1 }\n"
             "return^ 0\n");

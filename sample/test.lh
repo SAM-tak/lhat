@@ -144,7 +144,7 @@ print(t.bbb)
 print(t["bbb"])
 print(t.あああ)
 print(t["あああ"])
-print(t[1])
+print(t[0])
 
 let^C = p^{ yield^}
 
@@ -221,7 +221,7 @@ print(yy(2))
 
 let^s = "あいうえお"
 # print(s[2])
-print(s.at(2))
+print(s.at(1))
 
 let^p = p^{}
 p()

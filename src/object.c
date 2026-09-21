@@ -246,7 +246,7 @@ bool lhat_table_walk(LhatCoroutine *walk, LhatValue *key, LhatValue *value)
     // sequence and a mapping, and the sequence half has an order worth
     // keeping. What order the rest comes in is not promised.
     if (walk->at_array < table->array_count) {
-        *key = lhat_integer((int64_t)walk->at_array + 1);
+        *key = lhat_integer((int64_t)walk->at_array);
         *value = lhat_slots_get(table->array, walk->at_array++);
         return true;
     }
@@ -445,13 +445,13 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                 return false;
             }
             for (size_t i = 0; i < type->part_count; i++) {
-                LhatValue held = lhat_table_get(table, lhat_integer((int64_t)i + 1));
+                LhatValue held = lhat_table_get(table, lhat_integer((int64_t)i));
                 if (lhat_is_nil(held) || !lhat_value_satisfies(held, type->parts[i])) {
                     return false;
                 }
             }
             if (type->variadic != NULL) {
-                for (size_t i = type->part_count + 1;; i++) {
+                for (size_t i = type->part_count;; i++) {
                     LhatValue held = lhat_table_get(table, lhat_integer((int64_t)i));
                     if (lhat_is_nil(held)) {
                         break;
@@ -481,7 +481,7 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                 for (size_t i = 0; i < table->array_count; i++) {
                     LhatValue held = lhat_slots_get(table->array, i);
                     if (!lhat_is_nil(held) &&
-                        (!lhat_value_satisfies(lhat_integer((int64_t)i + 1),
+                        (!lhat_value_satisfies(lhat_integer((int64_t)i),
                                                type->index_key) ||
                          !lhat_value_satisfies(held, type->index_value))) {
                         return false;
@@ -1634,10 +1634,10 @@ static bool array_index(const LhatTable *table, LhatValue key, size_t *index)
     } else {
         return false;
     }
-    if (i < 1 || (uint64_t)i > table->array_count) {
+    if (i < 0 || (uint64_t)i >= table->array_count) {
         return false;
     }
-    *index = (size_t)i - 1;
+    *index = (size_t)i;
     return true;
 }
 
@@ -1668,7 +1668,7 @@ static bool grow_array(LhatTable *table)
 static void drain_into_array(LhatTable *table)
 {
     while (table->entry_capacity > 0) {
-        LhatValue key = lhat_integer((int64_t)table->array_count + 1);
+        LhatValue key = lhat_integer((int64_t)table->array_count);
         LhatTableEntry *entry =
             probe(table->entries, table->entry_capacity, key, hash_key(key));
         if (lhat_is_nil(entry->key)) {
@@ -1990,7 +1990,7 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
     // The next key along extends the dense part rather than starting a hash
     // entry, which is what makes a table built up in order stay an array.
     if (lhat_is_integer(key) && !lhat_is_nil(value) &&
-        (uint64_t)lhat_as_integer(key) == (uint64_t)table->array_count + 1) {
+        (uint64_t)lhat_as_integer(key) == (uint64_t)table->array_count) {
         if (table->array_count == table->array_capacity && !grow_array(table)) {
             return false;
         }

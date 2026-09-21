@@ -440,7 +440,7 @@ static void test_collection(void)
     LHAT_TEST("what the program holds is kept");
     run_text(&r,
              "var^ kept = { }\n"
-             "for^ i from^ 1 to^ 2000 { kept[i] := { a := i } }\n"
+             "for^ i from^ 0 to^ 1999 { kept[i] := { a := i } }\n"
              "return^ kept[1500].a\n");
     CHECK_INTEGER(&r, 1500);
     LHAT_CHECK(r.ran.live > 2000, "every table held is still there");
@@ -496,7 +496,7 @@ static void test_collection(void)
              "var^ c = gen()\n"
              "c.start()\n"
              "var^ next = 30\n"
-             "for^ i from^ 1 to^ 2000 {\n"
+             "for^ i from^ 0 to^ 1999 {\n"
              "  kept[i] := { a := i }\n"
              "  if^ i = next { c.resume()  next := next + 30 }\n"
              "}\n"
@@ -520,12 +520,12 @@ static void test_collection(void)
              "  put := p^ v { box := v }\n"
              "  read := f^ { return^ box.n }\n"
              "}\n"
-             "for^ i from^ 1 to^ 2000 {\n"
+             "for^ i from^ 0 to^ 1999 {\n"
              "  kept[i] := { a := i }\n"
              "  put({ n := i })\n"
              "}\n"
              "return^ read()\n");
-    CHECK_INTEGER(&r, 2000);
+    CHECK_INTEGER(&r, 1999);
     run_dispose(&r);
 
     // 14.12: an overload^ adds an arm to the group already in the definition
@@ -543,7 +543,7 @@ static void test_collection(void)
              "  overload^\n"
              "  m := f^self^, x:number^ { return^ x },\n"
              "}\n"
-             "for^ i from^ 1 to^ 500 { kept[i] := { a := i } }\n"
+             "for^ i from^ 0 to^ 499 { kept[i] := { a := i } }\n"
              "var^ Sub = Mid .. def^{\n"
              "  self^{ },\n"
              "  overload^\n"
@@ -636,7 +636,7 @@ static void test_collection(void)
     LHAT_TEST("a host may ask for the cycle itself");
     run_text(&r,
              "var^ kept = { }\n"
-             "for^ i from^ 1 to^ 2000 { kept[i] := { a := i } }\n"
+             "for^ i from^ 0 to^ 1999 { kept[i] := { a := i } }\n"
              "return^ 1\n");
     CHECK_INTEGER(&r, 1);
     LHAT_CHECK(r.ran.live > 2000, "the run ended holding every table");
@@ -928,7 +928,7 @@ static void test_host_table_write(void)
     // gone missing.
     run_text(&r,
              "var^ kept = { }\n"
-             "for^ i from^ 1 to^ 2000 { kept[i] := { a := i } }\n"
+             "for^ i from^ 0 to^ 1999 { kept[i] := { a := i } }\n"
              "return^ { held := kept, check := f^ {\n"
              "  L^.collectgarbage()\n"
              "  return^ kept[5000]\n"

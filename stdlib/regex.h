@@ -14,6 +14,10 @@
 //   std.regex.match/gmatch/gsub(p, s, …)   -- the convenience forms; they
 //       compile every call, so a hot path holds a new() of its own
 //
+// A group is keyed by its number everywhere it is handed over: in captures'
+// table, in the function's caps and in "$n" alike, 0 is the whole match and
+// n the nth group. One that took no part in the match is absent.
+//
 // Error.Exhausted is the backtracking budget giving out -- a pathological
 // pattern ((a+)+b against a long text), reported rather than felt. A gmatch
 // walk cannot answer an error mid-walk, so there the budget simply ends it.

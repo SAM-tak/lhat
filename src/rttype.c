@@ -166,7 +166,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             size_t sequence = 0;
             for (;;) {
                 const LhatTypeMember *m =
-                    lhat_type_member_at(type, sequence + 1);
+                    lhat_type_member_at(type, sequence);
                 if (m == NULL) {
                     break;
                 }
@@ -203,7 +203,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
                     }
                     bool positional = false;
                     for (size_t i = 0; i < sequence; i++) {
-                        if (lhat_type_member_at(type, i + 1) == m) {
+                        if (lhat_type_member_at(type, i) == m) {
                             positional = true;
                             break;
                         }

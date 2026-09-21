@@ -301,7 +301,7 @@ WalkStep vm_step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
         // Only the dense half, by index -- lhat_table_walk would go on into
         // the keyed half, which this form does not visit.
         LhatValue value = lhat_table_get(
-            co->walking, lhat_integer((int64_t)co->at_array + 1));
+            co->walking, lhat_integer((int64_t)co->at_array));
         if (lhat_is_nil(value)) {
             co->state = LHAT_COROUTINE_DONE;
             lhat_slots_set(m->slots, at, lhat_nil());
@@ -628,7 +628,7 @@ LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
         for (size_t i = 0; i < count; i++) {
             bool refused = false;
             if (lhat_is_hostvalue(arguments[i]) ||
-                !vm_set_key(m, collected, lhat_integer((int64_t)i + 1),
+                !vm_set_key(m, collected, lhat_integer((int64_t)i),
                          arguments[i], &refused)) {
                 return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), 0);
             }
@@ -856,7 +856,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
             if (lhat_is_hostvalue(arguments[i])) {
                 return call_fault(m, LHAT_RUN_TYPE_ERROR);
             }
-            if (!vm_set_key(m, collected, lhat_integer((int64_t)(i - taken + 1)),
+            if (!vm_set_key(m, collected, lhat_integer((int64_t)(i - taken)),
                             arguments[i], &refused)) {
                 return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
             }

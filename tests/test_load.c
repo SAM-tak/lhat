@@ -34,7 +34,7 @@ static void test_text(void)
     LHAT_TEST("loaded text runs as a script, its '...' the call's arguments");
     {
         LhatTestRan ran = run_source(LOADED(
-            "\"let^ a = ...\\nreturn^ a[1] * 2\"", "\"gen\"",
+            "\"let^ a = ...\\nreturn^ a[0] * 2\"", "\"gen\"",
             "let^ r = f(21)\n"
             "if^ r fits^ number^ { return^ r }\n"
             "return^ -1\n"));

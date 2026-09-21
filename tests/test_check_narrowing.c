@@ -648,7 +648,7 @@ static void test_nil_propagation(void)
     check_text(&u,
                "var^ f = f^ -> t^{ string^[] }|nil^ { return^ nil^ }\n"
                "var^ t = f()\n"
-               "var^ s : string^ = t?[1] ?? \"\"\n");
+               "var^ s : string^ = t?[0] ?? \"\"\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -734,7 +734,7 @@ static void test_operator_on_maybe_nil(void)
     LHAT_TEST("the receiver may be nil^");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "var^ n : number^ = t[1] + 1\n");
+                   "var^ n : number^ = t[0] + 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
@@ -743,21 +743,21 @@ static void test_operator_on_maybe_nil(void)
     LHAT_TEST("the argument may be nil^");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "var^ n : number^ = 1 + t[1]\n");
+                   "var^ n : number^ = 1 + t[0]\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
     LHAT_TEST("an ordering says it too, rather than 'nothing orders these'");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "var^ b : bool^ = t[1] < 3\n");
+                   "var^ b : bool^ = t[0] < 3\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
     LHAT_TEST("and the unary '-', rather than 'arithmetic needs number^'");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "var^ n : number^ = -t[1]\n");
+                   "var^ n : number^ = -t[0]\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
@@ -766,7 +766,7 @@ static void test_operator_on_maybe_nil(void)
     LHAT_TEST("'..' is the same mistake");
     check_text(&u, "var^ f = f^ -> t^{ string^[] } { return^ { \"a\" } }\n"
                    "var^ t = f()\n"
-                   "var^ s : string^ = t[1] .. \"a\"\n");
+                   "var^ s : string^ = t[0] .. \"a\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
@@ -774,14 +774,14 @@ static void test_operator_on_maybe_nil(void)
     LHAT_TEST("'?\?' is one of them");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "var^ n : number^ = (t[1] ?? 0) + 1\n");
+                   "var^ n : number^ = (t[0] ?? 0) + 1\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("binding it to a name and narrowing that is the other");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "var^ v = t[1]\n"
+                   "var^ v = t[0]\n"
                    "if^ v fits^ number^ { var^ n : number^ = v + 1 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -792,7 +792,7 @@ static void test_operator_on_maybe_nil(void)
     LHAT_TEST("narrowing the index where it stands does not do it");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "if^ t[1] fits^ number^ { var^ n : number^ = t[1] + 1 }\n");
+                   "if^ t[0] fits^ number^ { var^ n : number^ = t[0] + 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
@@ -1120,7 +1120,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("a driven loop bounds its focus");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] } {\n"
-               "    for^ i from^1 to^9 { var^ n : number^ = t[i] }\n"
+               "    for^ i from^0 to^8 { var^ n : number^ = t[i] }\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1128,7 +1128,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("and a loop reaching past them does not");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[3] } {\n"
-               "    for^ i from^1 to^9 { var^ n : number^ = t[i] }\n"
+               "    for^ i from^0 to^8 { var^ n : number^ = t[i] }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -1136,7 +1136,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("nor one starting before the first position");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] } {\n"
-               "    for^ i from^0 to^9 { var^ n : number^ = t[i] }\n"
+               "    for^ i from^ -1 to^8 { var^ n : number^ = t[i] }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -1144,7 +1144,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("downto^ counts the same two ends");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] } {\n"
-               "    for^ i from^9 downto^1 { var^ n : number^ = t[i] }\n"
+               "    for^ i from^8 downto^0 { var^ n : number^ = t[i] }\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1154,7 +1154,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("a chain bounds the name between its ends");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
-               "    if^ 1 <= d <= 9 { var^ n : number^ = t[d] }\n"
+               "    if^ 0 <= d <= 8 { var^ n : number^ = t[d] }\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1163,7 +1163,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("and two orderings joined by and^ meet in the middle");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
-               "    if^ d >= 1 and^ d <= 9 { var^ n : number^ = t[d] }\n"
+               "    if^ d >= 0 and^ d <= 8 { var^ n : number^ = t[d] }\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1171,7 +1171,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("one end alone leaves the other open");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
-               "    if^ 1 <= d { var^ n : number^ = t[d] }\n"
+               "    if^ 0 <= d { var^ n : number^ = t[d] }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -1182,7 +1182,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("a guard that exits bounds what it let through");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
-               "    if^ d < 1 or^ d > 9 { return^ }\n"
+               "    if^ d < 0 or^ d > 8 { return^ }\n"
                "    var^ n : number^ = t[d]\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -1191,7 +1191,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("and the else of one knows the same");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
-               "    if^ d < 1 or^ d > 9 { else^: var^ n : number^ = t[d] }\n"
+               "    if^ d < 0 or^ d > 8 { else^: var^ n : number^ = t[d] }\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1199,7 +1199,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("a guard denying one end alone is not enough");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
-               "    if^ d < 1 { return^ }\n"
+               "    if^ d < 0 { return^ }\n"
                "    var^ n : number^ = t[d]\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
@@ -1208,7 +1208,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("what a branch knew is not known after it");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
-               "    if^ 1 <= d <= 9 { }\n"
+               "    if^ 0 <= d <= 8 { }\n"
                "    var^ n : number^ = t[d]\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
@@ -1219,8 +1219,8 @@ static void test_bounded_keys(void)
     LHAT_TEST("nor after the name is written to");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] } {\n"
-               "    var^ d = 1\n"
-               "    if^ 1 <= d <= 9 { d := 40  var^ n : number^ = t[d] }\n"
+               "    var^ d = 0\n"
+               "    if^ 0 <= d <= 8 { d := 40  var^ n : number^ = t[d] }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -1228,7 +1228,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("a bound does not survive arithmetic");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] } {\n"
-               "    for^ i from^1 to^8 { var^ n : number^ = t[i + 1] }\n"
+               "    for^ i from^0 to^7 { var^ n : number^ = t[i + 1] }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -1238,7 +1238,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("and an end that is not written out is no end");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] }, n:number^ {\n"
-               "    for^ i from^1 to^ n { var^ x : number^ = t[i] }\n"
+               "    for^ i from^0 to^ n { var^ x : number^ = t[i] }\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -1248,7 +1248,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("a bound over positions of two types answers both");
     check_text(&u,
                "var^ f = p^ t:t^{ number^, string^ }, d:number^ {\n"
-               "    if^ 1 <= d <= 2 { var^ n : number^|string^ = t[d] }\n"
+               "    if^ 0 <= d <= 1 { var^ n : number^|string^ = t[d] }\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1258,7 +1258,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("a bounded place takes a plain compound assignment");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n"
-               "    if^ 1 <= d <= 9 { t[d] += 1 }\n"
+               "    if^ 0 <= d <= 8 { t[d] += 1 }\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1267,7 +1267,7 @@ static void test_bounded_keys(void)
     LHAT_TEST("a type narrowing and a bound stand together");
     check_text(&u,
                "var^ f = p^ t:t^{ number^[9] }, d:number^|string^ {\n"
-               "    if^ d fits^ number^ and^ 1 <= d <= 9 {\n"
+               "    if^ d fits^ number^ and^ 0 <= d <= 8 {\n"
                "        var^ n : number^ = t[d]\n"
                "    }\n"
                "}\n");

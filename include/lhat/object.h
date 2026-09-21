@@ -69,15 +69,15 @@ typedef struct {
 } LhatTableEntry;
 
 // 02 の 14 章: one data structure, so it has to serve as both a sequence and
-// a mapping. The dense part holds the keys 1..array_count and the rest go in
-// an open-addressed hash part, which is the split 03 の 1.2 kept from Lua.
+// a mapping. The dense part holds the keys 0..array_count-1 and the rest go
+// in an open-addressed hash part, which is the split 03 の 1.2 kept from Lua.
 typedef struct LhatTable {
     LhatObject header;
 
     // 2.2: the dense half as two parallel runs (payloads + one-byte tags)
     // rather than an LhatValue array -- half the memory, and the tag run is
     // what a scan (the collector's, a walk's) touches first. Slot i is the
-    // value at key i+1; read and written only through lhat_slots_get/set.
+    // value at key i; read and written only through lhat_slots_get/set.
     LhatSlots array;
     size_t array_count;
     size_t array_capacity;
@@ -1054,7 +1054,7 @@ void lhat_table_vacate(LhatTable *table, LhatValue key);
 bool lhat_table_reserved(const LhatTable *table, LhatValue key);
 void lhat_table_prune_seats(LhatTable *proto, const LhatTable *definition);
 
-// How many keys 1, 2, 3 ... the table holds without a gap.
+// How many keys 0, 1, 2 ... the table holds without a gap.
 size_t lhat_table_length(const LhatTable *table);
 
 // 02 の 14.18: everything the table itself holds -- the run above and the

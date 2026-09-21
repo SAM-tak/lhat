@@ -3839,7 +3839,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
                 target = finish(p, binding);
             }
         } else if (check_hat(p, "from")) {
-            // 16.3改2: 'i from^ 1 to^ 10'. from^ is the introducer of the
+            // 16.3改2: 'i from^ 0 to^ 9'. from^ is the introducer of the
             // counted form, and the only one it takes. A keyword cannot be
             // read as a comparison, so this brings back what 16.3改 had to
             // take away when the spelling was '=' -- for^ introducing its own
@@ -5382,10 +5382,10 @@ static const LhatMessageEntry PARSE_MESSAGES[] = {
         "form advances its own"},
     [LHAT_PARSE_ERR_FROM_NOT_HERE] = {"parse.from-not-here",
         "from^ opens the counted range of a to^ or downto^ loop; "
-        "this form takes 'var^ i = 1' or 'let^ i = 1'"},
+        "this form takes 'var^ i = 0' or 'let^ i = 0'"},
     [LHAT_PARSE_ERR_FOCUS_NEEDS_FROM] = {"parse.focus-needs-from",
         "a to^ or downto^ loop advances a focus of its own; write "
-        "'for^ i from^ 1 to^ 10', or a while^ loop to count with a "
+        "'for^ i from^ 0 to^ 9', or a while^ loop to count with a "
         "name that is already there"},
     [LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE] = {"parse.operator-not-definable",
         "op^ defines '..' and the arithmetic operators; and^, or^, "

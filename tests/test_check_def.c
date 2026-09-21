@@ -1687,7 +1687,7 @@ static void test_prototype(void)
     LHAT_TEST("nothing inside it is written through it either");
     check_text(&u,
                "let^ D = def^{ self^{ used = { 0, 0 } } }\n"
-               "D.self^.used[1] := 9\n");
+               "D.self^.used[0] := 9\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PROTOTYPE_SEALED);
     unit_dispose(&u);
 

@@ -118,7 +118,7 @@ bool vm_bake_default(Machine *m, LhatValue held, LhatValue *out,
             LhatValue baked = lhat_nil();
             if (!vm_bake_default(m, lhat_slots_get(table->array, i), &baked,
                               depth + 1, refused_value) ||
-                !vm_set_key(m, copy, lhat_integer((int64_t)i + 1), baked,
+                !vm_set_key(m, copy, lhat_integer((int64_t)i), baked,
                          &key_refused)) {
                 return false;
             }
@@ -208,7 +208,7 @@ LhatTable *vm_clone_table(Machine *m, const LhatTable *source,
         LhatValue held = lhat_nil();
         if (!clone_default(m, lhat_slots_get(source->array, i), &held, depth,
                            too_deep) ||
-            !vm_set_key(m, clone, lhat_integer((int64_t)i + 1), held, &refused)) {
+            !vm_set_key(m, clone, lhat_integer((int64_t)i), held, &refused)) {
             return NULL;
         }
     }
@@ -263,7 +263,7 @@ LhatTable *vm_concat_tables(Machine *m, const LhatTable *left,
     const LhatTable *sides[2] = { left, right };
     for (size_t s = 0; s < 2; s++) {
         for (size_t i = 0; i < sides[s]->array_count; i++) {
-            if (!vm_set_key(m, joined, lhat_integer((int64_t)++position),
+            if (!vm_set_key(m, joined, lhat_integer((int64_t)position++),
                          lhat_slots_get(sides[s]->array, i), &refused)) {
                 return NULL;
             }
@@ -340,7 +340,7 @@ static LhatRunStatus table_sort(Machine *m, LhatTable *t, LhatValue cmp)
     }
     bool refused = false;
     for (size_t i = 0; i < count; i++) {
-        if (!vm_set_key(m, aux, lhat_integer((int64_t)i + 1),
+        if (!vm_set_key(m, aux, lhat_integer((int64_t)i),
                      lhat_slots_get(t->array, i), &refused)) {
             return LHAT_RUN_OUT_OF_MEMORY;
         }
@@ -516,7 +516,7 @@ static LhatRunStatus table_clone(Machine *m, const LhatTable *t,
             status = clone_policy(m, policy, held, &held);
         }
         if (status == LHAT_RUN_OK &&
-            !vm_set_key(m, copy, lhat_integer((int64_t)i + 1), held, &refused)) {
+            !vm_set_key(m, copy, lhat_integer((int64_t)i), held, &refused)) {
             status = LHAT_RUN_OUT_OF_MEMORY;
         }
     }
@@ -599,7 +599,7 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
             for (size_t i = 0; i < n; i++) {
                 if (lhat_value_equal(args[0], lhat_slots_get(t->array, i))) {
                     *answer = asking ? lhat_bool(true)
-                                     : lhat_integer((int64_t)i + 1);
+                                     : lhat_integer((int64_t)i);
                     break;
                 }
             }
@@ -619,15 +619,15 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
             // 14.19's reading: one ordinal runs to the end, a negative one
             // counts from it, and a range that does not stand answers empty.
             int64_t start = vm_resolve_ordinal(from, n);
-            int64_t end = vm_resolve_ordinal(count == 2 ? to : (int64_t)n, n);
+            int64_t end = vm_resolve_ordinal(count == 2 ? to : -1, n);
             LhatTable *cut = lhat_table_new(&m->objects);
             if (cut == NULL) {
                 return LHAT_RUN_OUT_OF_MEMORY;
             }
-            if (start >= 1 && start <= end && end <= (int64_t)n) {
+            if (start >= 0 && start <= end && end < (int64_t)n) {
                 for (int64_t k = start; k <= end; k++) {
-                    if (!vm_set_key(m, cut, lhat_integer(k - start + 1),
-                                 lhat_slots_get(t->array, (size_t)k - 1),
+                    if (!vm_set_key(m, cut, lhat_integer(k - start),
+                                 lhat_slots_get(t->array, (size_t)k),
                                  &refused)) {
                         return LHAT_RUN_OUT_OF_MEMORY;
                     }
@@ -645,12 +645,12 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
             if (!vm_ordinal_of(args[0], &at_pos)) {
                 return LHAT_RUN_TYPE_ERROR;
             }
-            if (at_pos < 1 || at_pos > (int64_t)n + 1) {
+            if (at_pos < 0 || at_pos > (int64_t)n) {
                 return LHAT_RUN_BAD_KEY;
             }
-            for (int64_t k = (int64_t)n; k >= at_pos; k--) {
+            for (int64_t k = (int64_t)n - 1; k >= at_pos; k--) {
                 if (!vm_set_key(m, t, lhat_integer(k + 1),
-                             lhat_slots_get(t->array, (size_t)k - 1),
+                             lhat_slots_get(t->array, (size_t)k),
                              &refused)) {
                     return LHAT_RUN_OUT_OF_MEMORY;
                 }
@@ -665,7 +665,7 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
             if (count != 1) {
                 return LHAT_RUN_ARITY;
             }
-            if (!vm_set_key(m, t, lhat_integer((int64_t)n + 1), args[0],
+            if (!vm_set_key(m, t, lhat_integer((int64_t)n), args[0],
                          &refused)) {
                 return LHAT_RUN_OUT_OF_MEMORY;
             }
@@ -685,7 +685,7 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
             // appends what it held when the call was made.
             size_t held = more->array_count;
             for (size_t i = 0; i < held; i++) {
-                if (!vm_set_key(m, t, lhat_integer((int64_t)(n + i) + 1),
+                if (!vm_set_key(m, t, lhat_integer((int64_t)(n + i)),
                              lhat_slots_get(more->array, i), &refused)) {
                     return LHAT_RUN_OUT_OF_MEMORY;
                 }
@@ -695,7 +695,7 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
 
         case LHAT_NATIVE_REMOVE:
         case LHAT_NATIVE_POP: {
-            int64_t at_pos = (int64_t)n;
+            int64_t at_pos = (int64_t)n - 1;
             if (native->kind == LHAT_NATIVE_REMOVE) {
                 if (count != 1) {
                     return LHAT_RUN_ARITY;
@@ -709,16 +709,16 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
             }
             // 04 の 11.3's line: what is not there is not an error. An empty
             // table's pop and an out-of-range remove both answer nil^.
-            if (at_pos < 1 || at_pos > (int64_t)n) {
+            if (at_pos < 0 || at_pos >= (int64_t)n) {
                 *answer = lhat_nil();
                 return LHAT_RUN_OK;
             }
-            *answer = lhat_slots_get(t->array, (size_t)at_pos - 1);
-            for (int64_t k = at_pos; k < (int64_t)n; k++) {
-                lhat_slots_set(t->array, (size_t)k - 1,
-                               lhat_slots_get(t->array, (size_t)k));
+            *answer = lhat_slots_get(t->array, (size_t)at_pos);
+            for (int64_t k = at_pos; k + 1 < (int64_t)n; k++) {
+                lhat_slots_set(t->array, (size_t)k,
+                               lhat_slots_get(t->array, (size_t)k + 1));
             }
-            if (!vm_set_key(m, t, lhat_integer((int64_t)n), lhat_nil(),
+            if (!vm_set_key(m, t, lhat_integer((int64_t)n - 1), lhat_nil(),
                          &refused)) {
                 return LHAT_RUN_OUT_OF_MEMORY;
             }
@@ -765,29 +765,27 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
             if (!cross && !block) {
                 // 14.22: the two-ordinal form of self relocates one element,
                 // the others shifting to close and open the gap.
-                if (from < 1 || from > (int64_t)n || to < 1 ||
-                    to > (int64_t)n) {
+                if (from < 0 || from >= (int64_t)n || to < 0 ||
+                    to >= (int64_t)n) {
                     return LHAT_RUN_BAD_KEY;
                 }
-                LhatValue moved =
-                    lhat_slots_get(t->array, (size_t)from - 1);
+                LhatValue moved = lhat_slots_get(t->array, (size_t)from);
                 if (from < to) {
                     for (int64_t k = from; k < to; k++) {
-                        lhat_slots_set(t->array, (size_t)k - 1,
-                                       lhat_slots_get(t->array, (size_t)k));
+                        lhat_slots_set(t->array, (size_t)k,
+                                       lhat_slots_get(t->array, (size_t)k + 1));
                     }
                 } else {
                     for (int64_t k = from; k > to; k--) {
-                        lhat_slots_set(
-                            t->array, (size_t)k - 1,
-                            lhat_slots_get(t->array, (size_t)k - 2));
+                        lhat_slots_set(t->array, (size_t)k,
+                                       lhat_slots_get(t->array, (size_t)k - 1));
                     }
                 }
-                lhat_slots_set(t->array, (size_t)to - 1, moved);
+                lhat_slots_set(t->array, (size_t)to, moved);
                 return LHAT_RUN_OK;
             }
             if (last >= from &&
-                (from < 1 || last > (int64_t)source->array_count || to < 1)) {
+                (from < 0 || last >= (int64_t)source->array_count || to < 0)) {
                 return LHAT_RUN_BAD_KEY;
             }
             return table_blockmove(m, t, source, from, last, to);

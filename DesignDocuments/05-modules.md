@@ -2557,13 +2557,13 @@ tag)` がタグ照合の上でバイト列を返す（`lhat_hostdata_pointer` �
 `LhatRunResult` は位置を持つ。
 
 ```c
-LhatValue value;              // 今までどおり。タプルなら位置1
+LhatValue value;              // 今までどおり。タプルなら positions[0]
 const LhatValue *positions;   // 機械の部屋を指す
 size_t position_count;        // 単値の答えなら 0
 ```
 
 `value` の意味を変えていないので、**タプル以前に書かれたホストは
-読み替えを要さない**——位置1を読むことになり、それは使える値である。
+読み替えを要さない**——先頭の位置を読むことになり、それは使える値である。
 `positions` は次の実行までの寿命であり、跨がせるならホストが写す。
 
 #### コルーチンとホスト値（8.9改）

@@ -37,10 +37,10 @@ for-needs-clause = for^ には to^・downto^・in^・while^・until^・if^ の�
 repeat-takes-no-next = next^ は for^ のものである。repeat^ は進める焦点を宣言しない
 # next-not-here = next^ updates the focus of a while^ or until^ loop; this form advances its own
 next-not-here = next^ は while^ か until^ のループの焦点を更新する。この形は自分で焦点を進める
-# from-not-here = from^ opens the counted range of a to^ or downto^ loop; this form takes 'var^ i = 1' or 'let^ i = 1'
-from-not-here = from^ は to^ か downto^ のループの数え上げの範囲を開く。この形は 'var^ i = 1' か 'let^ i = 1' を取る
-# focus-needs-from = a to^ or downto^ loop advances a focus of its own; write 'for^ i from^ 1 to^ 10', or a while^ loop to count with a name that is already there
-focus-needs-from = to^ や downto^ のループは自分の焦点を進める。'for^ i from^ 1 to^ 10' と書くか、既にある名前で数えるなら while^ のループにする
+# from-not-here = from^ opens the counted range of a to^ or downto^ loop; this form takes 'var^ i = 0' or 'let^ i = 0'
+from-not-here = from^ は to^ か downto^ のループの数え上げの範囲を開く。この形は 'var^ i = 0' か 'let^ i = 0' を取る
+# focus-needs-from = a to^ or downto^ loop advances a focus of its own; write 'for^ i from^ 0 to^ 9', or a while^ loop to count with a name that is already there
+focus-needs-from = to^ や downto^ のループは自分の焦点を進める。'for^ i from^ 0 to^ 9' と書くか、既にある名前で数えるなら while^ のループにする
 # expected-member = a def^ holds 'name := value' members and one self^{ ... }
 expected-member = def^ が持つのは 'name := value' のメンバと、ひとつの self^{ ... } である
 # signature-named = a written signature carries no parameter names (13.3); the names belong to a literal, whose body a '{' opens

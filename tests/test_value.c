@@ -280,8 +280,8 @@ static void test_writing(void)
     {
         LhatTable *t = lhat_table_new(&heap);
         bool refused = false;
-        lhat_table_set(t, lhat_integer(1), lhat_integer(10), &refused);
-        lhat_table_set(t, lhat_integer(2), lhat_integer(20), &refused);
+        lhat_table_set(t, lhat_integer(0), lhat_integer(10), &refused);
+        lhat_table_set(t, lhat_integer(1), lhat_integer(20), &refused);
         wrote(lhat_object((LhatObject *)t), "{ 10, 20 }");
     }
 
@@ -320,7 +320,7 @@ static void test_writing(void)
     {
         LhatTable *t = lhat_table_new(&heap);
         bool refused = false;
-        lhat_table_set(t, lhat_integer(1),
+        lhat_table_set(t, lhat_integer(0),
                        lhat_object((LhatObject *)t), &refused);
         char buffer[256];
         size_t needed = lhat_value_write(lhat_object((LhatObject *)t), buffer,

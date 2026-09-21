@@ -75,7 +75,7 @@ static void test_walking(void)
     unit_dispose(&u);
 
     // 16.3 with 13.8改: one name over a table takes the sequence half's
-    // values in order -- 'for^ i from^ 1 to^ the length { t[i] }' written as
+    // values in order -- 'for^ i from^ 0 to^ the length - 1 { t[i] }' written as
     // a walk. The keyed half is not visited, and no pair exists to receive.
     LHAT_TEST("one name over a table takes the values");
     check_text(&u,
@@ -182,7 +182,7 @@ static void test_walking(void)
 
 // 02 の 14 章 makes a table a sequence as well as a mapping. The keyed half
 // was described by name from the start; the sequence half was dropped on the
-// floor, so nothing downstream of it -- t[1], a walk's pair -- had
+// floor, so nothing downstream of it -- t[0], a walk's pair -- had
 // anything to read.
 static void test_positions(void)
 {
@@ -191,21 +191,21 @@ static void test_positions(void)
     LHAT_TEST("a positional entry carries its type");
     check_text(&u,
                "var^ t = { 10, 20 }\n"
-               "var^ n : number^ = t[1]\n");
+               "var^ n : number^ = t[0]\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("so the wrong type at a position is caught");
     check_text(&u,
                "var^ t = { 10, 20 }\n"
-               "var^ s : string^ = t[1]\n");
+               "var^ s : string^ = t[0]\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
     LHAT_TEST("and each position keeps its own");
     check_text(&u,
                "var^ t = { 10, \"a\" }\n"
-               "var^ s : string^ = t[2]\n");
+               "var^ s : string^ = t[1]\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -214,7 +214,7 @@ static void test_positions(void)
     LHAT_TEST("a keyed entry takes no position from the ones after it");
     check_text(&u,
                "var^ t = { 10, a := \"x\", 20 }\n"
-               "var^ n : number^ = t[2]\n");
+               "var^ n : number^ = t[1]\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -296,7 +296,7 @@ static void test_positions(void)
     LHAT_TEST("a computed key takes no position");
     check_text(&u,
                "var^ t = { 10, [\"k\"] := 20, 30 }\n"
-               "var^ s : string^ = t[2]\n");
+               "var^ s : string^ = t[1]\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -469,14 +469,14 @@ static void test_nil_safe_compound(void)
     LHAT_TEST("a plain compound has nothing to add to an absent place");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "t[1] += 1\n");
+                   "t[0] += 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
     LHAT_TEST("and the '?' spelling is what answers that");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "t[1] ?+= 1\n");
+                   "t[0] ?+= 1\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -485,7 +485,7 @@ static void test_nil_safe_compound(void)
     LHAT_TEST("the right-hand side keeps its own nil^");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "t[1] ?+= t[2] + 1\n");
+                   "t[0] ?+= t[1] + 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
@@ -502,14 +502,14 @@ static void test_nil_safe_compound(void)
     LHAT_TEST("what is left still has to answer the operator");
     check_text(&u, "var^ f = f^ -> t^{ string^[] } { return^ { \"a\" } }\n"
                    "var^ t = f()\n"
-                   "t[1] ?+= 1\n");
+                   "t[0] ?+= 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("the concatenating one reaches a string the same way");
     check_text(&u, "var^ f = f^ -> t^{ string^[] } { return^ { \"a\" } }\n"
                    "var^ t = f()\n"
-                   "t[1] ?..= \"b\"\n");
+                   "t[0] ?..= \"b\"\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -532,7 +532,7 @@ static void test_nil_safe_compound(void)
     LHAT_TEST("the plain nil-safe assignment checks like ':='");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "t[1] ?:= 2\n");
+                   "t[0] ?:= 2\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -547,7 +547,7 @@ static void test_nil_safe_compound(void)
     LHAT_TEST("and the value still has to fit the place");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
                    "var^ t = f()\n"
-                   "t[1] ?:= \"text\"\n");
+                   "t[0] ?:= \"text\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -588,8 +588,8 @@ static void test_not_indexable(void)
     LHAT_TEST("a table still does, and an undecided target stays quiet");
     check_text(&u,
                "let^ t = { 10, 20 }\n"
-               "var^ x = t[1]\n"
-               "let^ g = f^ v { return^ v[1] }\n");
+               "var^ x = t[0]\n"
+               "let^ g = f^ v { return^ v[0] }\n");
     CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_NOT_INDEXABLE);
     unit_dispose(&u);
 }
@@ -748,7 +748,7 @@ static void test_builtin_operations(void)
                "let^ f = f^ -> number^ {\n"
                "    var^ t = {2, 1}\n"
                "    t.sort^()\n"
-               "    return^ t[1]\n"
+               "    return^ t[0]\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -757,7 +757,7 @@ static void test_builtin_operations(void)
     check_text(&u,
                "let^ f = f^ t:t^{ number^[] } -> number^ {\n"
                "    t.sort^()\n"
-               "    return^ t[1] ?? 0\n"
+               "    return^ t[0] ?? 0\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MUTATES_OUTSIDE);
     unit_dispose(&u);
@@ -766,7 +766,7 @@ static void test_builtin_operations(void)
     LHAT_TEST("the reading half are functions");
     check_text(&u,
                "let^ f = f^ t:t^{ number^[] } -> string^ {\n"
-               "    return^ t.slice^(1, 2).join^(\",\")\n"
+               "    return^ t.slice^(0, 1).join^(\",\")\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -804,7 +804,7 @@ static void test_builtin_operations(void)
     LHAT_TEST("a slice is the body's own the same way");
     check_text(&u,
                "let^ g = f^ src:t^{ number^[] } -> number^ {\n"
-               "    var^ cut = src.slice^(1, 2)\n"
+               "    var^ cut = src.slice^(0, 1)\n"
                "    cut.push^(9)\n"
                "    return^ cut.count^\n"
                "}\n");

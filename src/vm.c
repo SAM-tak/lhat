@@ -1305,8 +1305,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
 
             // 02 の 13.8改: pack^ -- the one bridge from a tuple to a table.
-            // 14.10 numbers positions from 1, which is what a destructuring
-            // and 't[1]' both read.
+            // 14.10 numbers positions from 0, which is what a destructuring
+            // and 't[0]' both read.
             VM_CASE(LHAT_BC_PACK) {
                 LHAT_GC_POLL();  // this case allocates
                 if (!lhat_is_run(R(a)) || lhat_run_width(R(a)) != (size_t)b) {
@@ -1319,10 +1319,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                   at);
                 }
                 for (size_t i = 0; i < (size_t)b; i++) {
-                    // The key is a positive integer every time, so `refused`
-                    // (04 の 11.3's nil^, a NaN) cannot come back set.
+                    // The key is a non-negative integer every time, so
+                    // `refused` (04 の 11.3's nil^, a NaN) cannot come back set.
                     bool refused = false;
-                    if (!vm_set_key(m, packed, lhat_integer((int64_t)i + 1),
+                    if (!vm_set_key(m, packed, lhat_integer((int64_t)i),
                                  R(a + 1 + i), &refused)) {
                         return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
                                       lhat_nil(), at);
@@ -2332,7 +2332,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                           lhat_nil(), at);
                         }
                         if (!vm_set_key(m, collected,
-                                     lhat_integer((int64_t)(i - required + 1)),
+                                     lhat_integer((int64_t)(i - required)),
                                      value, &refused)) {
                             return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
                                           lhat_nil(), at);
@@ -2816,7 +2816,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                     for (size_t i = 0; i < positions; i++) {
                         LhatValue held = lhat_table_get(
-                            yielded, lhat_integer((int64_t)i + 1));
+                            yielded, lhat_integer((int64_t)i));
                         if (lhat_is_nil(held)) {
                             return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                           lhat_nil(), at);
@@ -3427,7 +3427,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // 02 の 13.8改: several values do cross. The positions rode
                 // the frame's own room through the drain; they are copied
                 // into the machine's here so the result may point at them
-                // once the frame is gone. `value` becomes position 1, which
+                // once the frame is gone. `value` becomes positions[0], which
                 // is what lets a host written before tuples read the answer
                 // and get something it can use.
                 if (lhat_is_run(value)) {

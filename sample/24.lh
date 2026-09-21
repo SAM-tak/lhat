@@ -44,24 +44,24 @@ for.
 let^Reader = def^{
     self^{
         text = "",
-        at = 1,
+        at = 0,
         ok = true^,
-        # The multiset of digits used. 1..9 index it directly
-        used = { 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+        # The multiset of digits used. 1..9 index it directly, 0 goes unused
+        used = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
     },
 
     override^new = f^line { self^{ text = line } },
 
     # The character here, spaces skipped. "" once the text is spent
     peek = p^self^{
-        repeat^while^self^.at ≦ self^.text.length {
+        repeat^while^self^.at < self^.text.length {
             if^self^.text.at(self^.at) = " " {
                 self^.at += 1
             else^:
                 break^
             }
         }
-        return^if^self^.at > self^.text.length: ""
+        return^if^self^.at ≧ self^.text.length: ""
                el^: self^.text.at(self^.at);
     },
 
@@ -135,7 +135,7 @@ let^Reader = def^{
 }
 
 # Whether the four dealt and the four used are the same multiset. Each takes a
-# table of counts, one per digit of 1..9
+# table of counts, indexed by the digit itself
 let^same = f^want, used {
     for^i from^1 to^9 {
         if^want[i] != used[i] { return^false^}
@@ -145,7 +145,7 @@ let^same = f^want, used {
 
 do^{
     with^rng = try^std.random.new(0) {
-        let^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+        let^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
         var^shown = ""
         for^i from^1 to^4 {
             let^d = rng.range(1, 9)

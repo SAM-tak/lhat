@@ -708,7 +708,7 @@ static void test_writing_whole(void)
     LHAT_TEST("14.10: a position is written as a type and no name");
     {
         LhatType *row = lhat_type_table(&t.arena);
-        for (size_t i = 1; i <= 2; i++) {
+        for (size_t i = 0; i < 2; i++) {
             lhat_type_add_index_member(&t.arena, row, i,
                                        simple(&t, LHAT_TYPE_NUMBER));
         }
@@ -723,7 +723,7 @@ static void test_writing_whole(void)
     LHAT_TEST("14.10改: three of a type are written with the count");
     {
         LhatType *row = lhat_type_table(&t.arena);
-        for (size_t i = 1; i <= 3; i++) {
+        for (size_t i = 0; i < 3; i++) {
             lhat_type_add_index_member(&t.arena, row, i,
                                        simple(&t, LHAT_TYPE_NUMBER));
         }
@@ -735,11 +735,11 @@ static void test_writing_whole(void)
     LHAT_TEST("14.10改: a run ends where the type changes");
     {
         LhatType *row = lhat_type_table(&t.arena);
-        for (size_t i = 1; i <= 3; i++) {
+        for (size_t i = 0; i < 3; i++) {
             lhat_type_add_index_member(&t.arena, row, i,
                                        simple(&t, LHAT_TYPE_NUMBER));
         }
-        lhat_type_add_index_member(&t.arena, row, 4,
+        lhat_type_add_index_member(&t.arena, row, 3,
                                    simple(&t, LHAT_TYPE_STRING));
         char buffer[128];
         size_t written = lhat_type_write_full(row, buffer, sizeof buffer);
@@ -749,11 +749,11 @@ static void test_writing_whole(void)
     LHAT_TEST("14.10改: and a run of two is written out");
     {
         LhatType *row = lhat_type_table(&t.arena);
-        for (size_t i = 1; i <= 2; i++) {
+        for (size_t i = 0; i < 2; i++) {
             lhat_type_add_index_member(&t.arena, row, i,
                                        simple(&t, LHAT_TYPE_NUMBER));
         }
-        lhat_type_add_index_member(&t.arena, row, 3,
+        lhat_type_add_index_member(&t.arena, row, 2,
                                    simple(&t, LHAT_TYPE_STRING));
         char buffer[128];
         size_t written = lhat_type_write_full(row, buffer, sizeof buffer);
@@ -766,13 +766,13 @@ static void test_writing_whole(void)
     LHAT_TEST("14.10改: a name between them parts the runs");
     {
         LhatType *row = lhat_type_table(&t.arena);
-        for (size_t i = 1; i <= 3; i++) {
+        for (size_t i = 0; i < 3; i++) {
             lhat_type_add_index_member(&t.arena, row, i,
                                        simple(&t, LHAT_TYPE_NUMBER));
         }
         lhat_type_add_member(&t.arena, row, "seen", 4,
                              simple(&t, LHAT_TYPE_BOOL));
-        for (size_t i = 4; i <= 6; i++) {
+        for (size_t i = 3; i < 6; i++) {
             lhat_type_add_index_member(&t.arena, row, i,
                                        simple(&t, LHAT_TYPE_NUMBER));
         }
@@ -787,7 +787,7 @@ static void test_writing_whole(void)
     LHAT_TEST("14.10改: a run spends one item of a cut answer");
     {
         LhatType *row = lhat_type_table(&t.arena);
-        for (size_t i = 1; i <= 8; i++) {
+        for (size_t i = 0; i < 8; i++) {
             lhat_type_add_index_member(&t.arena, row, i,
                                        simple(&t, LHAT_TYPE_NUMBER));
         }
@@ -802,11 +802,11 @@ static void test_writing_whole(void)
     LHAT_TEST("14.10: a name beside the positions keeps its name");
     {
         LhatType *mixed = lhat_type_table(&t.arena);
-        lhat_type_add_index_member(&t.arena, mixed, 1,
+        lhat_type_add_index_member(&t.arena, mixed, 0,
                                    simple(&t, LHAT_TYPE_NUMBER));
         lhat_type_add_member(&t.arena, mixed, "seen", 4,
                              simple(&t, LHAT_TYPE_BOOL));
-        lhat_type_add_index_member(&t.arena, mixed, 2,
+        lhat_type_add_index_member(&t.arena, mixed, 1,
                                    simple(&t, LHAT_TYPE_STRING));
         char buffer[128];
         size_t written = lhat_type_write_full(mixed, buffer, sizeof buffer);

@@ -1611,9 +1611,9 @@ static void test_postfix(void)
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
-    // 01 の 10.1: 'a.1.1' is a chain of integer keys.
-    LHAT_TEST("a.1.1 is two integer keys");
-    parse_text(&p, "x := a.1.1");
+    // 01 の 10.1: 'a.0.0' is a chain of integer keys.
+    LHAT_TEST("a.0.0 is two integer keys");
+    parse_text(&p, "x := a.0.0");
     {
         const LhatNode *e = first_value(&p);
         LHAT_CHECK_EQ_INT(e->kind, LHAT_NODE_MEMBER);

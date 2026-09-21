@@ -52,8 +52,8 @@ static void test_what_may_be_written(void)
         LHAT_CHECK_RAN_INTEGER(ran, 7);
         lhat_test_ran_dispose(&ran);
 
-        // Positional, counted from 1, and keys that no name could spell.
-        ran = run_source(PARSING("10, 20, 30", "t[1] + t[3]"));
+        // Positional, counted from 0, and keys that no name could spell.
+        ran = run_source(PARSING("10, 20, 30", "t[0] + t[2]"));
         LHAT_CHECK_RAN_INTEGER(ran, 40);
         lhat_test_ran_dispose(&ran);
 

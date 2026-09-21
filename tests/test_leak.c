@@ -110,7 +110,7 @@ static File files[] = {
      "require^ \"lib.lh\"\n"
      "errordef^ Trouble { Late, Lost }\n"
      "var^ kept = { }\n"
-     "for^ i from^ 1 to^ 20 { kept[i] := { n := i } }\n"
+     "for^ i from^ 0 to^ 19 { kept[i] := { n := i } }\n"
      "var^ gen = p^ {\n"
      "  do^{\n"
      "    yield^ 1\n"

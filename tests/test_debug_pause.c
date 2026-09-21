@@ -118,7 +118,7 @@ static void test_waits_pause(void)
                     "if^ c fits^ std.channel.Channel {\n"
                     "    let^ empty = c.demand(0.03)\n"
                     "    let^ h = std.thread.spawn(p^ ... {\n"
-                    "        let^ mine = ...[1]\n"
+                    "        let^ mine = ...[0]\n"
                     "        std.thread.sleep(0.04)\n"
                     "        if^ mine fits^ std.channel.Channel { mine.pop() }\n"
                     "    }, c)\n"

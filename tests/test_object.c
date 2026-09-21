@@ -115,26 +115,27 @@ static void test_table_basics(void)
     LHAT_TEST("a real reaches the run it lands in");
     {
         LhatTable *run = lhat_table_new(&owner);
-        for (int64_t i = 1; i <= 3; i++) {
-            lhat_table_set(run, lhat_integer(i), lhat_integer(i * 10), &refused);
+        for (int64_t i = 0; i < 3; i++) {
+            lhat_table_set(run, lhat_integer(i), lhat_integer((i + 1) * 10),
+                           &refused);
         }
-        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(2.3))), 20);
-        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(2.7))), 30);
-        // at's rounding: a half goes up, so 2.5 is the third slot.
-        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(2.5))), 30);
-        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(0.6))), 10);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(1.3))), 20);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(1.7))), 30);
+        // at's rounding: a half goes up, so 1.5 is the third slot.
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(1.5))), 30);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(-0.4))), 10);
 
         // Writing lands in the same slot, so the two halves cannot disagree.
-        lhat_table_set(run, lhat_real(2.3), lhat_integer(77), &refused);
-        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_integer(2))), 77);
+        lhat_table_set(run, lhat_real(1.3), lhat_integer(77), &refused);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_integer(1))), 77);
 
         // Past the run a real is an ordinary key, and does not extend it --
         // a table read by real keys is one whose keys were never a run.
-        LHAT_CHECK(lhat_is_nil(lhat_table_get(run, lhat_real(4.4))), "4.4 is nowhere yet");
-        lhat_table_set(run, lhat_real(4.4), lhat_integer(99), &refused);
-        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(4.4))), 99);
-        LHAT_CHECK(lhat_is_nil(lhat_table_get(run, lhat_integer(4))),
-                   "and 4 is still nowhere");
+        LHAT_CHECK(lhat_is_nil(lhat_table_get(run, lhat_real(3.4))), "3.4 is nowhere yet");
+        lhat_table_set(run, lhat_real(3.4), lhat_integer(99), &refused);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(run, lhat_real(3.4))), 99);
+        LHAT_CHECK(lhat_is_nil(lhat_table_get(run, lhat_integer(3))),
+                   "and 3 is still nowhere");
     }
 
     LHAT_TEST("with no run at all, a real is only ever a key");
@@ -223,24 +224,24 @@ static void test_table_growth(void)
         LHAT_CHECK(none, "the even ones went");
     }
 
-    // The keys 1, 2, 3 ... are what a sequence is made of, and they are worth
+    // The keys 0, 1, 2 ... are what a sequence is made of, and they are worth
     // holding densely however they arrive.
     LHAT_TEST("a run of keys is counted whichever order it arrives in");
     {
         LhatTable *forwards = lhat_table_new(&owner);
-        for (int64_t i = 1; i <= 20; i++) {
+        for (int64_t i = 0; i < 20; i++) {
             lhat_table_set(forwards, lhat_integer(i), lhat_integer(i), &refused);
         }
         LHAT_CHECK_EQ_INT(lhat_table_length(forwards), 20);
 
         LhatTable *backwards = lhat_table_new(&owner);
-        for (int64_t i = 20; i >= 1; i--) {
+        for (int64_t i = 19; i >= 0; i--) {
             lhat_table_set(backwards, lhat_integer(i), lhat_integer(i), &refused);
         }
         LHAT_CHECK_EQ_INT(lhat_table_length(backwards), 20);
 
         bool all = true;
-        for (int64_t i = 1; i <= 20; i++) {
+        for (int64_t i = 0; i < 20; i++) {
             LhatValue v = lhat_table_get(backwards, lhat_integer(i));
             if (!lhat_is_integer(v) || lhat_as_integer(v) != i) {
                 all = false;
@@ -252,11 +253,11 @@ static void test_table_growth(void)
     LHAT_TEST("a gap stops the run");
     {
         LhatTable *t = lhat_table_new(&owner);
+        lhat_table_set(t, lhat_integer(0), lhat_integer(0), &refused);
         lhat_table_set(t, lhat_integer(1), lhat_integer(1), &refused);
-        lhat_table_set(t, lhat_integer(2), lhat_integer(2), &refused);
-        lhat_table_set(t, lhat_integer(4), lhat_integer(4), &refused);
+        lhat_table_set(t, lhat_integer(3), lhat_integer(3), &refused);
         LHAT_CHECK_EQ_INT(lhat_table_length(t), 2);
-        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(t, lhat_integer(4))), 4);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(t, lhat_integer(3))), 3);
     }
 
     lhat_object_free_all(&owner);

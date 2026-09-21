@@ -22,7 +22,7 @@ static void test_shapes_decide(void)
     LHAT_TEST("one call shape checks the body and strict passes unannotated");
     check_text(&u,
                "let^ same = f^ want, used {\n"
-               "    for^ i from^ 1 to^ 3 {\n"
+               "    for^ i from^ 0 to^ 2 {\n"
                "        if^ want[i] != used[i] { return^ false^ }\n"
                "    }\n"
                "    return^ true^\n"

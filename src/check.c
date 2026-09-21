@@ -716,7 +716,7 @@ static void resolve_members_into(Checker *c, LhatType *table,
                                  const LhatNode *items, const LhatNode *node)
 {
     // 14.10: an entry with no name is the type of the next position. They
-    // are counted the way a literal counts its own -- from one, in written
+    // are counted the way a literal counts its own -- from zero, in written
     // order, with the named ones taking no place in the sequence.
     size_t position = 0;
     for (const LhatNode *m = items; m != NULL; m = m->next) {
@@ -760,7 +760,7 @@ static void resolve_members_into(Checker *c, LhatType *table,
             // downstream can tell the two spellings apart.
             uint32_t repeat = m->v.entry.repeat > 0 ? m->v.entry.repeat : 1;
             for (uint32_t i = 0; i < repeat; i++) {
-                lhat_type_add_index_member(c->result->types, table, ++position,
+                lhat_type_add_index_member(c->result->types, table, position++,
                                            member);
             }
             continue;
@@ -2135,13 +2135,20 @@ static bool is_nil_literal(const Checker *c, const LhatNode *node)
 // 13.11改: a whole number written down, which is what makes a comparison
 // against it a bound. The literal only, for the reason the nil^ one above is
 // the literal only -- and a whole one, since a position is counted in whole
-// numbers and 14.8's one type admits reals as readily.
+// numbers and 14.8's one type admits reals as readily. '-1' is the unary it
+// is written as and still a number written down -- positions count from 0,
+// so the end just before the first is spelt with it.
 bool chk_whole_literal(const LhatNode *node, int64_t *value)
 {
+    bool negated = node != NULL && node->kind == LHAT_NODE_UNARY &&
+                   node->v.unary.op == LHAT_OP_SUB;
+    if (negated) {
+        node = node->v.unary.operand;
+    }
     if (node == NULL || node->kind != LHAT_NODE_INT) {
         return false;
     }
-    *value = node->v.integer.value;
+    *value = negated ? -node->v.integer.value : node->v.integer.value;
     return true;
 }
 
@@ -2556,8 +2563,8 @@ void chk_narrow_from(Checker *c, const LhatNode *condition, bool truth)
     // type; '=' / '!=' / 'is^' against the nil^ literal asks about absence,
     // which 11.3 spells with nil^ and is the first thing anyone writes; and
     // 11.7改2's 'x?' is the second of those written short. Without the nil^
-    // ones, 'if^ t != nil^ { t[1] }' passed the condition and then reported
-    // against t[1] -- a diagnostic nowhere near its cause.
+    // ones, 'if^ t != nil^ { t[0] }' passed the condition and then reported
+    // against t[0] -- a diagnostic nowhere near its cause.
     const LhatNode *path = NULL;
     LhatType *tested = NULL;
     // Whether the branch has the path *being* what was tested for. '!=' and

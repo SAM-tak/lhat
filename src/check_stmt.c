@@ -1520,7 +1520,7 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
 
     // The built-in walk of a table. 13.8改: several names take the (K, V)
     // pairs; one name takes the sequence half's values, and never visits the
-    // keyed half at all -- 'for^ i from^ 1 to^ the length { t[i] }' written
+    // keyed half at all -- 'for^ i from^ 0 to^ the length - 1 { t[i] }' written
     // as a walk.
     if (over->kind == LHAT_TYPE_TABLE || over->kind == LHAT_TYPE_ERROR_KIND) {
         return count > 1 ? chk_table_walk_tuple(c, over)
@@ -1618,7 +1618,7 @@ static void check_focus(Checker *c, const LhatNode *node)
 
     size_t position = 0;
     for (const LhatNode *e = node->v.loop.focus; e != NULL; e = e->next) {
-        position++;
+        size_t here = position++;
         const LhatNode *element = focus_element(e);
         if (element == NULL) {
             continue;
@@ -1632,12 +1632,12 @@ static void check_focus(Checker *c, const LhatNode *node)
         // a table's (a user iterator yielding one) off its indexed members.
         LhatType *taken = produced;
         if (count > 1 && width > 0) {
-            taken = lhat_type_tuple_at(produced, position - 1);
+            taken = lhat_type_tuple_at(produced, here);
             if (taken == NULL) {
                 taken = chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
         } else if (count > 1) {
-            const LhatTypeMember *at = lhat_type_member_at(produced, position);
+            const LhatTypeMember *at = lhat_type_member_at(produced, here);
             taken = at != NULL ? at->type : chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
 
