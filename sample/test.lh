@@ -223,5 +223,7 @@ let^s = "あいうえお"
 # print(s[2])
 print(s.at(1))
 
-let^p = p^{}
-p()
+let^foo = f^x:number^ {print(x)}
+let^bar = f^{print("bar!") return^4 }
+let^blah = foo bar()
+print(foo, bar, blah)
