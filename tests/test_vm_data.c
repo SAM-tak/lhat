@@ -529,6 +529,29 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 900 + 70 + 3);
     run_dispose(&r);
 
+    // A negative ordinal names the element remove^ would, and the value lands
+    // after it rather than before -- so -1 appends and remove^ with the same
+    // ordinal takes it back out.
+    LHAT_TEST("insert^ reads a negative ordinal from the end, and remove^ undoes it");
+    run_checked_text(&r,
+                     "var^ t = {1, 2, 3}\n"
+                     "t.insert^(-1, 9)\n"
+                     "t.insert^(-2, 8)\n"
+                     "var^ laid = t.join^(\"\")\n"
+                     "var^ back = t.remove^(-2) ?? 0\n"
+                     "return^ laid .. \"/\" .. back.tostring^() .. \"/\" .. "
+                     "t.join^(\"\")\n");
+    CHECK_STRING(&r, "12389/8/1239");
+    run_dispose(&r);
+
+    LHAT_TEST("and one past the places is refused");
+    run_text(&r,
+             "var^ t = {1, 2, 3}\n"
+             "t.insert^(-5, 9)\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_KEY);
+    run_dispose(&r);
+
     LHAT_TEST("pop of an empty table answers nil^, not a fault");
     run_checked_text(&r,
                      "var^ t:t^{number^[]} = {}\n"

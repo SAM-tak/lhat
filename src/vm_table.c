@@ -645,6 +645,12 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
             if (!vm_ordinal_of(args[0], &at_pos)) {
                 return LHAT_RUN_TYPE_ERROR;
             }
+            // The ordinal names an element as remove^'s does; a positive one
+            // lands the value before it, a negative one after it, so -1
+            // appends and the ordinal names the value afterwards either way --
+            // which is what lets remove^ with the same ordinal undo it.
+            // Resolving against n + 1 is element n + i and one past it.
+            at_pos = vm_resolve_ordinal(at_pos, n + 1);
             if (at_pos < 0 || at_pos > (int64_t)n) {
                 return LHAT_RUN_BAD_KEY;
             }
