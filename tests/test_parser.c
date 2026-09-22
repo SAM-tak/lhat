@@ -1719,6 +1719,18 @@ static void test_postfix(void)
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_SPREAD_NOT_LAST);
     parse_dispose(&p);
+
+    // 13.8改: 'expr...' may be a tuple, whose width lets it stand anywhere --
+    // so whether something follows is the checker's to decide, not this.
+    LHAT_TEST("'expr...' may be followed");
+    parse_text(&p, "x := sum(f()..., 1)");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *first = first_value(&p)->v.access.argument;
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(first), 2);
+        LHAT_CHECK_EQ_INT(first->kind, LHAT_NODE_SPREAD);
+    }
+    parse_dispose(&p);
 }
 
 static void test_literals(void)

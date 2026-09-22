@@ -4007,9 +4007,19 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         {"check.function-calls-procedure",
          "f^ may call only f^, and this callee is a p^"},
     [LHAT_CHECK_ERR_ARITY] = {"check.arity", "the wrong number of arguments"},
+    [LHAT_CHECK_ERR_ARITY_SPREAD] = {"check.arity-spread",
+        "the wrong number of arguments -- each position of a spread "
+        "tuple is one of them"},
     [LHAT_CHECK_ERR_NOT_VARIADIC] = {"check.not-variadic",
-        "'...' spreads into a variadic tail, and this callee "
-        "takes none"},
+        "only a tuple spreads into the parameters; anything else '...' "
+        "spreads continues a variadic tail, and this callee takes none"},
+    [LHAT_CHECK_ERR_SPREAD_NOT_LAST] = {"check.spread-not-last",
+        "only a tuple's width is known before it runs, so anything else "
+        "'...' spreads -- a table, or a value whose type is not settled "
+        "-- comes last"},
+    [LHAT_CHECK_ERR_SPREAD_NOT_SEQUENCE] = {"check.spread-not-sequence",
+        "'...' spreads a tuple, or a table whose type says what its "
+        "sequence holds (t^{ T[] }); this is neither"},
     [LHAT_CHECK_ERR_NO_MEMBER] =
         {"check.no-member", "this value has no such member"},
     [LHAT_CHECK_ERR_NO_RESULT_TYPE] = {"check.no-result-type",

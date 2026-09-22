@@ -527,6 +527,41 @@ static void test_tuple_spread(void)
     CHECK_INTEGER(&r, 31);
     run_dispose(&r);
 
+    // A tuple's width is the checker's, so its positions are ordinary
+    // arguments: they fill fixed parameters, stand before other arguments,
+    // and more than one tuple may spread into the one call.
+    LHAT_TEST("a tuple fills fixed parameters");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^) { return^ 1, 2 }\n"
+                     "var^ g = f^ a:number^, b:number^, c:number^ -> number^ {\n"
+                     "  return^ a * 100 + b * 10 + c }\n"
+                     "return^ g(9, f()...) * 1000 + g(f()..., 9)\n");
+    CHECK_INTEGER(&r, 912129);
+    run_dispose(&r);
+
+    LHAT_TEST("and several spread around what is written between them");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^) { return^ 1, 2 }\n"
+                     "var^ h = f^ a:number^, ...:number^ -> number^ {\n"
+                     "  var^ t = a\n"
+                     "  for^ x in^ ... { t := t * 10 + x }\n"
+                     "  return^ t }\n"
+                     "return^ h(f()..., 7, f()...)\n");
+    CHECK_INTEGER(&r, 12712);
+    run_dispose(&r);
+
+    LHAT_TEST("a method takes a spread after its receiver");
+    run_checked_text(&r,
+                     "var^ f = f^ -> (number^, number^) { return^ 1, 2 }\n"
+                     "var^ P = def^{\n"
+                     "  self^{ k := 5 },\n"
+                     "  m := f^self^, a:number^, b:number^ -> number^ {\n"
+                     "    return^ self^.k * 100 + a * 10 + b },\n"
+                     "}\n"
+                     "return^ P.new().m(f()...)\n");
+    CHECK_INTEGER(&r, 512);
+    run_dispose(&r);
+
     // Each position keeps its own type through the spread, so a tail of
     // string^ takes the string position of a mixed tuple.
     LHAT_TEST("the positions keep their types across the spread");

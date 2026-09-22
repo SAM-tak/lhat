@@ -250,23 +250,14 @@ static bool ordering(LhatOpcode op, LhatValue left, LhatValue right,
 // 13.7: the i-th effective argument of a call, whether it sits in an
 // ordinary register or comes from what a spread ('expr...') unpacked -- the
 // two are not contiguous in memory, so nothing beyond this reads registers
-// directly once a spread is in play.
-//
-// 13.8改: the spread is either a table's positions or a tuple's. A tuple's
-// are contiguous with the registers -- they are the run's own slots, one
-// past the head -- so `run_at` is where that head sits and the positions
-// follow it. Only one of the two is ever set.
+// directly once a spread is in play. Only a table spreads here: a tuple's
+// positions were laid as ordinary arguments by the compiler (13.8改).
 static LhatValue call_arg(LhatSlots regs, size_t rbase, uint8_t a, size_t skip,
-                          const LhatTable *spread, size_t run_at,
-                          size_t before_spread, size_t i)
+                          const LhatTable *spread, size_t before_spread,
+                          size_t i)
 {
-    if (i >= before_spread) {
-        if (spread != NULL) {
-            return lhat_slots_get(spread->array, i - before_spread);
-        }
-        if (run_at != SIZE_MAX) {
-            return lhat_slots_get(regs, run_at + 1 + (i - before_spread));
-        }
+    if (spread != NULL && i >= before_spread) {
+        return lhat_slots_get(spread->array, i - before_spread);
     }
     return lhat_slots_get(regs, rbase + a + skip + i);
 }
@@ -1767,7 +1758,6 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // frame to push here, so it is unpacked into an array of
                     // its own further down.
                     const LhatTable *spread_table = NULL;
-                    size_t spread_run = SIZE_MAX;
                     size_t written = b;
                     // 13.8改: C carries the reserved-slot count too, so the
                     // spread is the low bit rather than the whole byte.
@@ -1776,23 +1766,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR,
                                           lhat_nil(), at);
                         }
-                        LhatValue spread_from = R(a + skip + b - 1);
-                        // 13.8改: a tuple spreads as the run it already is.
-                        // Its positions are the slots after the head, so
-                        // nothing is unpacked -- only counted.
-                        if (lhat_is_run(spread_from)) {
-                            spread_run = rbase + a + skip + (size_t)b - 1;
-                            written =
-                                (size_t)b - 1 + lhat_run_width(spread_from);
-                        } else {
-                            spread_table = vm_table_of(spread_from);
-                            if (spread_table == NULL) {
-                                return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR,
-                                              lhat_nil(), at);
-                            }
-                            written =
-                                (size_t)b - 1 + spread_table->array_count;
+                        spread_table = vm_table_of(R(a + skip + b - 1));
+                        if (spread_table == NULL) {
+                            return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                          lhat_nil(), at);
                         }
+                        written = (size_t)b - 1 + spread_table->array_count;
                     }
 
                     // 13.4 keeps self^ out of the parameter list, so what the
@@ -1850,8 +1829,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // frame, and both stay reachable for as long as the call
                     // does.
                     LhatValue *packed = NULL;
-                    if ((spread_table != NULL || spread_run != SIZE_MAX) &&
-                        given > 0) {
+                    if (spread_table != NULL && given > 0) {
                         packed = (LhatValue *)lhat_alloc(given * sizeof *packed);
                         if (packed == NULL) {
                             return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
@@ -1863,7 +1841,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         }
                         for (size_t i = 0; i < written; i++) {
                             packed[into++] = call_arg(m->slots, rbase, a, skip,
-                                                      spread_table, spread_run,
+                                                      spread_table,
                                                       (size_t)b - 1, i);
                         }
                         arguments = packed;
@@ -2271,28 +2249,18 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // it, which is why what a call owes is read through
                 // call_arg() from here on rather than off registers directly.
                 const LhatTable *spread_table = NULL;
-                size_t spread_run = SIZE_MAX;
                 size_t before_spread = given;
                 if ((cc & LHAT_CALL_SPREAD) != 0) {  // 13.8改, as above
                     if (given == 0) {
                         return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                     }
-                    LhatValue spread_from = R(a + skip + given - 1);
                     before_spread = given - 1;
-                    // 13.8改: a tuple spreads as the run it already is -- the
-                    // positions are the slots past the head, so there is
-                    // nothing to unpack and nothing to allocate.
-                    if (lhat_is_run(spread_from)) {
-                        spread_run = rbase + a + skip + given - 1;
-                        given = before_spread + lhat_run_width(spread_from);
-                    } else {
-                        spread_table = vm_table_of(spread_from);
-                        if (spread_table == NULL) {
-                            return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR,
-                                          lhat_nil(), at);
-                        }
-                        given = before_spread + spread_table->array_count;
+                    spread_table = vm_table_of(R(a + skip + given - 1));
+                    if (spread_table == NULL) {
+                        return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                      lhat_nil(), at);
                     }
+                    given = before_spread + spread_table->array_count;
                 }
                 // 13.7: the last slot of a variadic callee collects the rest
                 // into a table rather than taking one argument for itself, so
@@ -2321,9 +2289,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     for (size_t i = required; i < given; i++) {
                         bool refused = false;
                         LhatValue value = call_arg(m->slots, rbase, a, skip,
-                                                   spread_table, spread_run,
-                                                   before_spread,
-                                                   i);
+                                                   spread_table, before_spread, i);
                         // 05 の 8.9: the collection is a table, and a table
                         // member is never a host value -- the checker said
                         // so at the call; this is the unchecked backstop.
@@ -2358,7 +2324,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // spread re-indexes by value, and never mixes with a
                     // wide argument (the compiler refused that pair, and
                     // wide with variadic likewise).
-                    if (spread_table == NULL && spread_run == SIZE_MAX &&
+                    if (spread_table == NULL &&
                         !callee->proto->has_variadic) {
                         for (size_t i = 0; i < callee->proto->parameter_slots;
                              i++) {
@@ -2373,8 +2339,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         for (size_t i = 0; i < fixed; i++) {
                             lhat_slots_set(co->registers, i,
                                            call_arg(m->slots, rbase, a, skip,
-                                                    spread_table, spread_run,
-                                                    before_spread, i));
+                                                    spread_table, before_spread, i));
                         }
                     }
                     if (callee->proto->has_variadic) {
@@ -2421,8 +2386,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     for (size_t i = 0; i < fixed; i++) {
                         lhat_slots_set(m->slots, next_base + i,
                                        call_arg(m->slots, rbase, a, skip,
-                                                spread_table, spread_run,
-                                                before_spread, i));
+                                                spread_table, before_spread, i));
                     }
                 }
                 if (callee->proto->has_variadic) {

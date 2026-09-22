@@ -49,9 +49,19 @@ typedef enum {
                                               // this callee is a p^
     LHAT_CHECK_ERR_ARITY,               // too few or too many arguments
                                         // a call, and the two read differently
-    LHAT_CHECK_ERR_NOT_VARIADIC,        // 13.7: 'expr...' spreads into a
-                                        // variadic tail, and this callee has
-                                        // none
+    LHAT_CHECK_ERR_ARITY_SPREAD,        // the same, with a spread tuple among
+                                        // the arguments -- each of its
+                                        // positions counts as one
+    LHAT_CHECK_ERR_NOT_VARIADIC,        // 13.7: an 'expr...' that is not a
+                                        // tuple continues a variadic tail,
+                                        // and this callee has none
+    LHAT_CHECK_ERR_SPREAD_NOT_LAST,     // 13.7: an 'expr...' that is not a
+                                        // tuple with arguments after it --
+                                        // its length is not known until it
+                                        // runs
+    LHAT_CHECK_ERR_SPREAD_NOT_SEQUENCE, // 13.7: '...' of something that is
+                                        // neither a tuple nor a table whose
+                                        // type says what its sequence holds
     LHAT_CHECK_ERR_NO_MEMBER,           // 14.10: the structure lacks it
     LHAT_CHECK_ERR_NO_RESULT_TYPE,      // 13.14改: X.ReturnType of a
                                         // signature answering no value (13.2)

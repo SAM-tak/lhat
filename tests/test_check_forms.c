@@ -744,6 +744,60 @@ static void test_variadic(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 13.8改: a tuple's width is its type's, so it is as many arguments as
+    // it has positions wherever it is written -- fixed parameters included,
+    // and with more arguments after it.
+    LHAT_TEST("a tuple spreads into fixed parameters");
+    check_text(&u,
+               "var^ g = f^ a:number^, b:number^, c:number^ -> number^ { a }\n"
+               "var^ pair = f^ -> (number^, number^) { return^ 1, 2 }\n"
+               "var^ x = g(9, pair()...)\n"
+               "var^ y = g(pair()..., 9)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("each position is matched against the parameter it fills");
+    check_text(&u,
+               "var^ g = f^ a:number^, b:number^ -> number^ { a }\n"
+               "var^ pair = f^ -> (number^, string^) { return^ 1, \"a\" }\n"
+               "var^ x = g(pair()...)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and a count that does not fit says the positions count");
+    check_text(&u,
+               "var^ g = f^ a:number^, b:number^, c:number^ -> number^ { a }\n"
+               "var^ pair = f^ -> (number^, number^) { return^ 1, 2 }\n"
+               "var^ x = g(pair()...)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY_SPREAD);
+    unit_dispose(&u);
+
+    // A table's length is known only when it runs, so it still continues
+    // the variadic tail alone and nothing follows it.
+    LHAT_TEST("a table spread still comes last");
+    check_text(&u,
+               "var^ h = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "var^ t : t^{ number^[] } = { 1, 2 }\n"
+               "var^ x = h(t..., 3)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SPREAD_NOT_LAST);
+    unit_dispose(&u);
+
+    LHAT_TEST("and into a callee with no tail it is said once");
+    check_text(&u,
+               "var^ g = f^ a:number^ -> number^ { return^ a }\n"
+               "var^ t : t^{ number^[] } = { 1, 2 }\n"
+               "var^ x = g(t...)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_VARIADIC);
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    LHAT_TEST("a value that is neither a tuple nor a sequence is refused");
+    check_text(&u,
+               "var^ h = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "var^ x = h(5...)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SPREAD_NOT_SEQUENCE);
+    unit_dispose(&u);
+
     // 13.8改 keeps the two readings apart: a tuple reaches a variadic tail
     // only where '...' is written, never because the callee happens to take
     // one. Without the spelling it is a value in an argument position, which

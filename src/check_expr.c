@@ -1435,6 +1435,32 @@ static bool lent_by_delegate(const LhatType *definition, const char *name,
            lhat_type_takes_receiver(m->type);
 }
 
+// One parameter position of a call, filled by `actual` -- a written argument
+// or one position of a spread tuple, which are the same thing here. The
+// receiver's goes unasked (14.4: its type is the call site's own); the rest
+// are matched against what they fill. Answers the parameter after it.
+static const LhatTypeList *fill_position(Checker *c, const LhatNode *at,
+                                         const LhatType *callee,
+                                         const LhatTypeList *param,
+                                         size_t *skip, LhatType *actual)
+{
+    if (*skip > 0) {
+        (*skip)--;
+        return param;
+    }
+    // 05 の 8.9: the variadic tail collects into a table for an L^ body
+    // and erases the width for a host's -- either way the seat cannot
+    // say a host value's type, so one is boxed to ride it.
+    if (param == NULL && chk_is_hostvalue(actual)) {
+        chk_report(c, at, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
+    }
+    LhatType *wanted = param != NULL ? param->type : callee->v.func.variadic;
+    if (wanted != NULL) {
+        chk_expect(c, at, actual, wanted, LHAT_CHECK_ERR_MISMATCH);
+    }
+    return param != NULL ? param->next : NULL;
+}
+
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
     // 3.4改: the arguments first where the callee is a literal, so what they
@@ -1618,9 +1644,16 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         // an unoverloaded signature. The full answer is still searched for
         // below; this only decides what a literal with nothing written may
         // read.
+        // 13.8改: a spread tuple counts as its positions, which are not known
+        // until it is read -- so a call with one leaves this guess unmade.
+        bool spreads = false;
+        for (const LhatNode *arg = node->v.access.argument; arg != NULL;
+             arg = arg->next) {
+            spreads = spreads || arg->kind == LHAT_NODE_SPREAD;
+        }
         const LhatType *by_arity = NULL;
-        for (const LhatTypeList *arm = callee->v.composite.arms; arm != NULL;
-             arm = arm->next) {
+        for (const LhatTypeList *arm = callee->v.composite.arms;
+             arm != NULL && !spreads; arm = arm->next) {
             if (arm->type == NULL || arm->type->kind != LHAT_TYPE_FUNC) {
                 continue;
             }
@@ -1650,8 +1683,26 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 
         LhatType *args[LHAT_CHECK_MAX_TRACKED_ARGS];
         size_t tracked = 0;
+        bool overflow = false;
         for (const LhatNode *arg = node->v.access.argument; arg != NULL;
              arg = arg->next) {
+            // 13.8改: a spread tuple is its positions, each an argument the
+            // arm is asked about. A table spread stays the one unknown it
+            // always was here.
+            if (arg->kind == LHAT_NODE_SPREAD) {
+                LhatType *spread = chk_infer(c, arg->v.jump.value);
+                size_t positions = lhat_type_tuple_width(spread);
+                for (size_t i = 0; i < (positions > 0 ? positions : 1); i++) {
+                    if (tracked == LHAT_CHECK_MAX_TRACKED_ARGS) {
+                        overflow = true;
+                        break;
+                    }
+                    args[tracked++] = positions > 0
+                                          ? lhat_type_tuple_at(spread, i)
+                                          : chk_simple(c, LHAT_TYPE_UNKNOWN);
+                }
+                continue;
+            }
             LhatType *outer_expected = c->expected_func;
             if (expect_skip > 0) {
                 expect_skip--;
@@ -1667,9 +1718,11 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             c->expected_func = outer_expected;
             if (tracked < LHAT_CHECK_MAX_TRACKED_ARGS) {
                 args[tracked++] = type;
+            } else {
+                overflow = true;
             }
         }
-        if (tracked < given) {
+        if (overflow) {
             return chk_simple(c, LHAT_TYPE_UNKNOWN);  // more than worth tracking
         }
         size_t position = 0;
@@ -1752,65 +1805,46 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         skip = 1;
     }
 
-    // 13.7: 'expr...' as the last argument spreads a collected table -- or a
-    // tuple -- back into the variadic tail. It stands for zero or more of the
-    // callee's own, so what comes before it owes the fixed arguments and may
-    // then write as many of the variadic ones as it likes: `print("a", ...)`
-    // reads as the tail beginning with "a". 'declared' does not count the
-    // variadic one (v.func.variadic is kept apart from `params`, the same way
-    // self^ is).
-    const LhatNode *last_arg = node->v.access.argument;
-    while (last_arg != NULL && last_arg->next != NULL) {
-        last_arg = last_arg->next;
-    }
-    bool has_spread = last_arg != NULL && last_arg->kind == LHAT_NODE_SPREAD;
-    if (has_spread) {
-        given--;  // the spread node itself is not one fixed argument
-    }
-
-    // 13.7: a trailing '...' takes any number beyond the declared ones.
-    if (has_spread) {
-        if (callee->v.func.variadic == NULL) {
-            chk_report(c, last_arg, LHAT_CHECK_ERR_NOT_VARIADIC);
-        }
-        if (given < declared) {
-            chk_report(c, node, LHAT_CHECK_ERR_ARITY);
-        }
-    } else if (given < declared ||
-              (given > declared && callee->v.func.variadic == NULL)) {
-        // 13.4: a written default does not make a parameter optional. What it
-        // fills in is a call site being written by an editor, so a call that
-        // reaches here still owes every declared argument.
-        chk_report(c, node, LHAT_CHECK_ERR_ARITY);
-    }
-
-    size_t taken = 0;
+    // 13.7 with 13.8改: 'expr...' spreads. A tuple's width is its type's, so
+    // it stands for that many arguments wherever it is written -- the fixed
+    // parameters and the variadic tail alike, as if each position had been
+    // written out. Anything else -- a table, or a value whose type is not
+    // settled -- is as long as it turns out to be when it runs, so it can
+    // only continue the variadic tail, and nothing may follow it. 'declared'
+    // does not count the variadic one (v.func.variadic is kept apart from
+    // `params`, the same way self^ is).
+    size_t filled = 0;  // positions given, the receiver's included
+    bool other_spread = false;
+    bool tuple_spread = false;
+    size_t taken = 0;   // arguments read, which given_types is indexed by
     for (const LhatNode *arg = node->v.access.argument; arg != NULL;
          arg = arg->next) {
-        // 13.7: checked against the element type directly, rather than
-        // through the ordinary per-argument loop below -- there is no
-        // parameter position for it to line up with.
         if (arg->kind == LHAT_NODE_SPREAD) {
             LhatType *spread = chk_infer(c, arg->v.jump.value);
             size_t positions = lhat_type_tuple_width(spread);
-            if (callee->v.func.variadic != NULL && positions > 0) {
-                // 13.8改: a tuple spreads too. Unlike a table, whose tail is
-                // one element type, each position carries its own -- so each
-                // is asked separately whether it fits the variadic's.
-                for (size_t i = 0; i < positions; i++) {
-                    chk_expect(c, arg, lhat_type_tuple_at(spread, i),
-                               callee->v.func.variadic,
-                               LHAT_CHECK_ERR_MISMATCH);
-                }
-            } else if (callee->v.func.variadic != NULL && spread != NULL &&
-                       spread->kind == LHAT_TYPE_TABLE &&
+            for (size_t i = 0; i < positions; i++) {
+                param = fill_position(c, arg, callee, param, &skip,
+                                      lhat_type_tuple_at(spread, i));
+                filled++;
+            }
+            if (positions > 0) {
+                tuple_spread = true;
+                continue;
+            }
+            other_spread = true;
+            if (arg->next != NULL) {
+                chk_report(c, arg, LHAT_CHECK_ERR_SPREAD_NOT_LAST);
+            }
+            if (callee->v.func.variadic == NULL) {
+                chk_report(c, arg, LHAT_CHECK_ERR_NOT_VARIADIC);
+            } else if (spread != NULL && spread->kind == LHAT_TYPE_TABLE &&
                        spread->v.table.variadic != NULL) {
                 chk_expect(c, arg, spread->v.table.variadic,
                            callee->v.func.variadic, LHAT_CHECK_ERR_MISMATCH);
-            } else if (callee->v.func.variadic != NULL) {
-                chk_report(c, arg, LHAT_CHECK_ERR_NOT_VARIADIC);
+            } else if (spread == NULL || !lhat_type_has_gap(spread)) {
+                chk_report(c, arg, LHAT_CHECK_ERR_SPREAD_NOT_SEQUENCE);
             }
-            break;
+            continue;
         }
         // 3.4改: what this position takes, read before the argument rather
         // than after -- a subroutine literal written here has the callee's
@@ -1831,30 +1865,35 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             c->expected_func = outer_expected;
         }
         taken++;
-        if (skip > 0) {
-            skip--;  // the receiver, whose type the call site already knows
-            continue;
-        }
+        filled++;
         // 13.8改: an argument is one value. A tuple in one is what would
         // bring back 13.7's expansion rule (Lua's truncate-except-in-tail-
         // position), and refusing it here is what keeps that rule from
         // arising. Said by name rather than left to the mismatch below,
         // which would report the position's type against the parameter's.
-        if (lhat_type_tuple_width(actual) > 0) {
+        if (skip == 0 && lhat_type_tuple_width(actual) > 0) {
             chk_report(c, arg, LHAT_CHECK_ERR_TUPLE_MISPLACED);
         }
-        // 05 の 8.9: the variadic tail collects into a table for an L^ body
-        // and erases the width for a host's -- either way the seat cannot
-        // say a host value's type, so one is boxed to ride it.
-        if (param == NULL && chk_is_hostvalue(actual)) {
-            chk_report(c, arg, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
-        }
-        if (wanted != NULL) {
-            chk_expect(c, arg, actual, wanted, LHAT_CHECK_ERR_MISMATCH);
-        }
-        if (param != NULL) {
-            param = param->next;
-        }
+        param = fill_position(c, arg, callee, param, &skip, actual);
+    }
+
+    // 13.4: a written default does not make a parameter optional. What it
+    // fills in is a call site being written by an editor, so a call that
+    // reaches here still owes every declared argument. 13.7: a spread that
+    // is not a tuple takes any number beyond them, so only falling short is
+    // wrong there -- and into a callee with no tail to continue it was
+    // reported above, the count following from that. A spread tuple is said
+    // by name, since its positions are what the count is short or over by
+    // and nothing written shows them.
+    bool miscounted = filled < declared ||
+                      (filled > declared && callee->v.func.variadic == NULL);
+    if (other_spread) {
+        miscounted = callee->v.func.variadic != NULL && filled < declared;
+    }
+    if (miscounted) {
+        chk_report(c, node,
+                   tuple_spread ? LHAT_CHECK_ERR_ARITY_SPREAD
+                                : LHAT_CHECK_ERR_ARITY);
     }
 
     // 15.10: when the body being checked is calling itself, its result is

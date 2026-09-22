@@ -3491,20 +3491,31 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     bool wide_args = false;
     for (const LhatNode *arg = node->v.access.argument; arg != NULL;
          arg = arg->next) {
-        // 13.7: the value to unpack goes in the slot; C tells the machine the
-        // last argument is not an ordinary one but something to spread.
         if (arg->kind == LHAT_NODE_SPREAD) {
-            // 13.8改: a tuple spreads as the run it already is -- head slot
-            // and positions -- so nothing is built to hand over. A table
-            // spreads as the one value it is, the way it always did.
+            // 13.8改: a tuple's width is the checker's, so its positions are
+            // ordinary arguments -- the run lands head first and the
+            // positions move down over the head, into the slots written
+            // arguments would have taken. Nothing is built to hand over, and
+            // the machine sees a call like any other.
             size_t positions = tuple_width_of(arg->v.jump.value);
             if (positions > 1) {
                 uint8_t head = reserve_wide(c, positions + 1);
                 compile_run_source(c, arg->v.jump.value, head, positions + 1);
-            } else {
-                uint8_t slot = reserve(c);
-                compile_expression(c, arg->v.jump.value, slot);
+                emit_move_wide(c, head, (uint8_t)(head + 1), positions);
+                c->next_register = (uint8_t)(head + positions);
+                count += positions;
+                continue;
             }
+            // 13.7: a table spreads as the one value it is. C tells the
+            // machine the last argument is something to unpack, so only the
+            // last may be one -- the checker says so, and an unchecked
+            // compile that could not tell a tuple from a table stops here.
+            if (arg->next != NULL) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                return;
+            }
+            uint8_t slot = reserve(c);
+            compile_expression(c, arg->v.jump.value, slot);
             spread = true;
             count++;
             continue;

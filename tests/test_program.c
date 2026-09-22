@@ -3427,16 +3427,18 @@ static void test_host_tuple(void)
     }
     lhat_program_dispose(&program);
 
-    // 13.7: 'expr...' forwards a tuple the same way it forwards a collected
-    // tail. The host arm builds its argument array itself, so it expands the
-    // run on a path of its own -- the closure arm passing is no evidence.
-    LHAT_TEST("a tuple spreads into a host's variadic tail");
+    // 13.8改: a tuple's positions are ordinary arguments, so a host takes
+    // them as it takes written ones -- the first filling its fixed
+    // parameter, the other joining the tail with what follows. The host arm
+    // builds its argument array itself, so the closure arm passing is no
+    // evidence.
+    LHAT_TEST("a tuple spreads into a host's parameters");
     {
         static const File files[] = {
             {"main.lh",
              "import^ system.num\n"
              "var^ f = f^ -> (number^, number^) { return^ 10, 20 }\n"
-             "return^ system.num.sum(1, f()...)\n"},
+             "return^ system.num.sum(f()..., 1)\n"},
         };
         program_with(&program, &disk, files, 1);
         LHAT_CHECK(lhat_register_func(&program, "system.num", "sum",
