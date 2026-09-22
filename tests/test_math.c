@@ -3,8 +3,7 @@
 // taking any exponent).
 //
 // Every case asks its question from inside L^. Reals are compared with
-// '=' where 14.8's tolerance is wanted and with '.eq(x, 0)' where an exact
-// answer is the point -- the quarter turns, which std.math promises exactly.
+// '=', which reads them with 14.8's tolerance.
 
 #include "stdlibutil.h"
 #include "testutil.h"
@@ -23,40 +22,31 @@ static bool checks(const char *text)
     return lhat_test_check_text(regs, 1, text);
 }
 
-// Runs `expr` and answers 1 when it is exactly `exact`.
-#define EXACTLY(expr, exact)                                     \
-    "import^ std.math\n"                                         \
-    "if^ (" expr ").eq(" exact ", 0) { return^ 1 }\n"            \
-    "return^ 0\n"
-
-static void test_degrees(void)
+static void test_angles(void)
 {
-    LHAT_TEST("the quarter turns are exact");
-    {
-        static const char *const cases[] = {
-            EXACTLY("std.math.sin(90)", "1"),
-            EXACTLY("std.math.cos(90)", "0"),
-            EXACTLY("std.math.sin(180)", "0"),
-            EXACTLY("std.math.cos(180)", "-1"),
-            EXACTLY("std.math.sin(-90)", "-1"),
-            EXACTLY("std.math.cos(720)", "1"),
-            EXACTLY("std.math.tan(180)", "0"),
-        };
-        for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
-            LhatTestRan ran = run_source(cases[i]);
-            LHAT_CHECK_RAN_INTEGER(ran, 1);
-            lhat_test_ran_dispose(&ran);
-        }
-    }
-
-    LHAT_TEST("and the rest are degrees in, degrees out");
+    LHAT_TEST("angles are radians in, radians out");
     {
         LhatTestRan ran = run_source(
             "import^ std.math\n"
-            "let^ ok = std.math.sin(30) = 0.5 and^ std.math.cos(60) = 0.5\n"
-            "    and^ std.math.asin(1) = 90 and^ std.math.acos(0.5) = 60\n"
-            "    and^ std.math.atan(1) = 45 and^ std.math.atan2(1, -1) = 135\n"
-            "    and^ std.math.rad(180) = number^.pi and^ std.math.deg(number^.pi) = 180\n"
+            "let^ pi = number^.pi\n"
+            "let^ ok = std.math.sin(pi / 2) = 1 and^ std.math.cos(pi) = -1\n"
+            "    and^ std.math.sin(pi / 6) = 0.5 and^ std.math.cos(pi / 3) = 0.5\n"
+            "    and^ std.math.tan(pi / 4) = 1\n"
+            "    and^ std.math.asin(1) = pi / 2 and^ std.math.acos(0.5) = pi / 3\n"
+            "    and^ std.math.atan(1) = pi / 4 and^ std.math.atan2(1, -1) = 3 * pi / 4\n"
+            "if^ ok { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("rad and deg convert a written angle");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ ok = std.math.rad(180) = number^.pi and^ std.math.deg(number^.pi) = 180\n"
+            "    and^ std.math.sin(std.math.rad(30)) = 0.5\n"
+            "    and^ std.math.deg(std.math.atan2(1, -1)) = 135\n"
             "if^ ok { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
@@ -171,7 +161,7 @@ static void test_number_members(void)
 
 int main(void)
 {
-    test_degrees();
+    test_angles();
     test_functions();
     test_number_members();
     return lhat_test_report("test_math");

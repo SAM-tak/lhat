@@ -59,61 +59,19 @@ static void binary(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-// ---- Degrees --------------------------------------------------------------
-
-static double to_radians(double degrees) { return degrees / degrees_per_radian; }
-static double to_degrees(double radians) { return radians * degrees_per_radian; }
-
-// The angle reduced to [0, 360), and whether it sits on a quarter turn --
-// where the answers are exact and the libm ones are not (cos(pi/2) is
-// 6e-17). An integer multiple of 90 reduces exactly in double.
-static bool quarter_turn(double degrees, int *which)
-{
-    double r = fmod(degrees, 360.0);
-    if (r < 0) {
-        r += 360.0;
-    }
-    if (r == 0.0 || r == 90.0 || r == 180.0 || r == 270.0) {
-        *which = (int)(r / 90.0);
-        return true;
-    }
-    return false;
-}
-
-static double sin_degrees(double degrees)
-{
-    static const double exact[4] = {0.0, 1.0, 0.0, -1.0};
-    int q = 0;
-    return quarter_turn(degrees, &q) ? exact[q] : sin(to_radians(degrees));
-}
-
-static double cos_degrees(double degrees)
-{
-    static const double exact[4] = {1.0, 0.0, -1.0, 0.0};
-    int q = 0;
-    return quarter_turn(degrees, &q) ? exact[q] : cos(to_radians(degrees));
-}
-
-static double tan_degrees(double degrees)
-{
-    int q = 0;
-    if (quarter_turn(degrees, &q)) {
-        // 0 and 180 are flat; 90 and 270 have no tangent.
-        return (q % 2 == 0) ? 0.0 : (q == 1 ? HUGE_VAL : -HUGE_VAL);
-    }
-    return tan(to_radians(degrees));
-}
-
-static double asin_degrees(double x) { return to_degrees(asin(x)); }
-static double acos_degrees(double x) { return to_degrees(acos(x)); }
-static double atan_degrees(double x) { return to_degrees(atan(x)); }
-static double atan2_degrees(double y, double x) { return to_degrees(atan2(y, x)); }
-
-// ---- The rest -------------------------------------------------------------
-
 // Through wrappers rather than by address: a C library function may be an
 // import whose address is not a constant (MSVC), and a static table wants
-// one.
+// one. Angles are radians, as <math.h> and Lua take them, so the trigonometry
+// is libm's as it stands.
+static double sin_of(double x) { return sin(x); }
+static double cos_of(double x) { return cos(x); }
+static double tan_of(double x) { return tan(x); }
+static double asin_of(double x) { return asin(x); }
+static double acos_of(double x) { return acos(x); }
+static double atan_of(double x) { return atan(x); }
+static double atan2_of(double y, double x) { return atan2(y, x); }
+static double to_radians(double degrees) { return degrees / degrees_per_radian; }
+static double to_degrees(double radians) { return radians * degrees_per_radian; }
 static double sqrt_of(double x) { return sqrt(x); }
 static double cbrt_of(double x) { return cbrt(x); }
 static double exp_of(double x) { return exp(x); }
@@ -195,13 +153,13 @@ bool lhatstdlib_math_register(LhatProgram *program)
 #define ONE "f^number^ -> number^;"
 #define TWO "f^number^, number^ -> number^;"
     static const Entry entries[] = {
-        {"sin", ONE, sin_degrees, NULL},
-        {"cos", ONE, cos_degrees, NULL},
-        {"tan", ONE, tan_degrees, NULL},
-        {"asin", ONE, asin_degrees, NULL},
-        {"acos", ONE, acos_degrees, NULL},
-        {"atan", ONE, atan_degrees, NULL},
-        {"atan2", TWO, NULL, atan2_degrees},
+        {"sin", ONE, sin_of, NULL},
+        {"cos", ONE, cos_of, NULL},
+        {"tan", ONE, tan_of, NULL},
+        {"asin", ONE, asin_of, NULL},
+        {"acos", ONE, acos_of, NULL},
+        {"atan", ONE, atan_of, NULL},
+        {"atan2", TWO, NULL, atan2_of},
         {"deg", ONE, to_degrees, NULL},
         {"rad", ONE, to_radians, NULL},
         {"sqrt", ONE, sqrt_of, NULL},

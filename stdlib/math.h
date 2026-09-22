@@ -7,15 +7,16 @@
 // math table copied over: what std.random owns is not here, and what
 // number^ carries is not here either.
 //
-// Angles are degrees throughout, as Unity's Mathf -- sin(90) is 1, and
-// asin(1) is 90. The multiples of 90 are answered exactly (cos(90) is 0,
-// not 6e-17). A host whose own API takes radians (LÖVE, Box2D) converts at
-// its boundary with rad and deg.
+// Angles are radians throughout, as Lua's math and C's <math.h> -- sin of
+// number^.pi / 2 is 1, and asin(1) is number^.pi / 2. The answers are libm's
+// as they stand, so cos(number^.pi / 2) is 6e-17 rather than 0; '=' reads a
+// real with 14.8's tolerance, which is the comparison that wants. A written
+// angle in degrees converts with rad, and deg turns an answer back.
 //
-//   sin cos tan          f^number^ -> number^;     degrees in
-//   asin acos atan       f^number^ -> number^;     degrees out
-//   atan2                f^number^, number^ -> number^;   (y, x), degrees out
-//   deg rad              f^number^ -> number^;     radians <-> degrees
+//   sin cos tan          f^number^ -> number^;     radians in
+//   asin acos atan       f^number^ -> number^;     radians out
+//   atan2                f^number^, number^ -> number^;   (y, x), radians out
+//   deg rad              f^number^ -> number^;     radians -> degrees, and back
 //   sqrt cbrt exp        f^number^ -> number^;
 //   log                  f^number^ -> number^;  and  f^number^, number^ -> number^;
 //                        (natural, and to a written base -- one name, two arms)

@@ -8651,8 +8651,11 @@ clamp : f^self^, number^, number^ -> number^;   # 下限・上限に収めた自
 
 `std.math` の側（`sin cos tan asin acos atan atan2 deg rad sqrt cbrt exp
 log log2 log10 hypot fmod min max lerp`）は stdlib/math.h が一覧で、
-**角度は度**である（Unity の Mathf と同じ。`sin(90)` は `1`、90 の倍数は
-厳密値）。`pow` は無い——`**` が任意の指数を取る（14.8改2）。
+**角度は弧度**である（Lua の math・C の `<math.h>` と同じ。
+`sin(number^.pi / 2)` は `1`）。答えは libm のままで、`cos(number^.pi / 2)` は
+0 ではなく 6e-17 になる——比べるなら 14.8 の許容差を持つ `=` で書く。
+度で書いた角は `rad` で弧度に、答えは `deg` で度に直す。
+`pow` は無い——`**` が任意の指数を取る（14.8改2）。
 
 ### 14.22 テーブルの操作 — 組込みメンバ一式
 
@@ -11525,6 +11528,11 @@ enum^ Mode {
 
 ## 改定履歴（要約）
 
+- **14.21改（2026-09-22）: `std.math` の角度は弧度。** 度（Unity の Mathf と同じ）を
+  採っていたが、Lua の math と同じ弧度に改めた。C の libm も、角度を受ける
+  ホストの API（LÖVE・Godot）も弧度で、度のままでは境界ごとに `rad` を挟む
+  ことになっていた。90 の倍数を厳密に答える扱いは度でしか意味を持たないので
+  除き、答えは libm のままとした。`deg`・`rad` は変換として残す
 - **14.22（2026-09-22）: `insert^` も負の序数を受ける。** `remove^` だけが 14.19 の
   読みに乗り、`insert^` は負を範囲外としていた。序数が指す要素は `remove^` と
   同じにし、負のときはその要素の後ろに差し込む——`insert^(-1, x)` は末尾に付き、
