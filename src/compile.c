@@ -4556,7 +4556,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     into);
                 return;
             }
-            // 02 の 14.8改2: number^.pi and the rest are constants, loaded
+            // 02 の 14.8改2: number^.inf and number^.nan are constants, loaded
             // as such -- the checker already refused any other name there.
             const LhatNode *on = node->v.access.target;
             const char *on_name = NULL;

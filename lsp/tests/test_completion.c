@@ -364,15 +364,13 @@ static void test_the_built_ins(void)
     check_text(&c, "let^ n = number^.\n");
     {
         cJSON *items = offered_after(&c, "number^.");
-        expect_offers(items, "pi", true);
-        expect_offers(items, "tau", true);
-        expect_offers(items, "e", true);
+        expect_offers(items, "pi", false);
         expect_offers(items, "inf", true);
         expect_offers(items, "nan", true);
         // Not the members of a number: that is a different receiver.
         expect_offers(items, "floor", false);
         expect_offers(items, "tostring", false);
-        LHAT_CHECK_EQ_INT(cJSON_GetArraySize(items), 5);
+        LHAT_CHECK_EQ_INT(cJSON_GetArraySize(items), 2);
         cJSON_Delete(items);
     }
     check_dispose(&c);

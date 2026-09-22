@@ -649,7 +649,7 @@ bool lhat_node_name(const LhatNode *node, const char *source_text,
 bool lhat_name_is(const char *text, size_t length, const char *literal);
 
 // 02 の 14.8改2: the constant number^ carries under `name` as a static
-// member (pi, tau, e, inf, nan), or NULL. The checker asks whether there is
+// member (inf, nan), or NULL. The checker asks whether there is
 // one and the compiler what it is, off this one table.
 const double *lhat_number_constant(const char *name, size_t length);
 

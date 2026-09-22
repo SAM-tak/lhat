@@ -28,7 +28,7 @@ static void test_angles(void)
     {
         LhatTestRan ran = run_source(
             "import^ std.math\n"
-            "let^ pi = number^.pi\n"
+            "let^ pi = std.math.pi\n"
             "let^ ok = std.math.sin(pi / 2) = 1 and^ std.math.cos(pi) = -1\n"
             "    and^ std.math.sin(pi / 6) = 0.5 and^ std.math.cos(pi / 3) = 0.5\n"
             "    and^ std.math.tan(pi / 4) = 1\n"
@@ -44,7 +44,7 @@ static void test_angles(void)
     {
         LhatTestRan ran = run_source(
             "import^ std.math\n"
-            "let^ ok = std.math.rad(180) = number^.pi and^ std.math.deg(number^.pi) = 180\n"
+            "let^ ok = std.math.rad(180) = std.math.pi and^ std.math.deg(std.math.pi) = 180\n"
             "    and^ std.math.sin(std.math.rad(30)) = 0.5\n"
             "    and^ std.math.deg(std.math.atan2(1, -1)) = 135\n"
             "if^ ok { return^ 1 }\n"
@@ -61,7 +61,7 @@ static void test_functions(void)
         LhatTestRan ran = run_source(
             "import^ std.math\n"
             "let^ ok = std.math.sqrt(16) = 4 and^ std.math.cbrt(27) = 3\n"
-            "    and^ std.math.exp(0) = 1 and^ std.math.log(number^.e) = 1\n"
+            "    and^ std.math.exp(0) = 1 and^ std.math.log(std.math.e) = 1\n"
             "    and^ std.math.log2(8) = 3 and^ std.math.log10(1000) = 3\n"
             "if^ ok { return^ 1 }\n"
             "return^ 0\n");
@@ -131,13 +131,12 @@ static void test_number_members(void)
     LHAT_TEST("clamp asks for its two bounds");
     LHAT_CHECK(!checks("return^ (5).clamp(1)\n"), "one bound is not enough");
 
-    // 02 の 14.8改2: the constants are static members of the type's own
-    // word; nothing else is.
+    // 02 の 14.8改2: the representation's constants are static members of
+    // the type's own word; nothing else is.
     LHAT_TEST("number^ carries its constants");
     {
         LhatTestRan ran = run_source(
-            "let^ ok = number^.tau = 2 * number^.pi and^ number^.e > 2.718\n"
-            "    and^ number^.inf > 1e308 and^ -number^.inf < -1e308\n"
+            "let^ ok = number^.inf > 1e308 and^ -number^.inf < -1e308\n"
             "    and^ !(number^.nan = number^.nan)\n"
             "if^ ok { return^ 1 }\n"
             "return^ 0\n");
@@ -145,6 +144,20 @@ static void test_number_members(void)
         lhat_test_ran_dispose(&ran);
     }
     LHAT_CHECK(!checks("return^ number^.phi\n"), "no such constant");
+    LHAT_CHECK(!checks("return^ number^.pi\n"), "pi is std.math's");
+
+    // 02 の 14.21改: the mathematical constants are std.math's.
+    LHAT_TEST("std.math carries pi, tau and e");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math\n"
+            "let^ ok = std.math.tau = 2 * std.math.pi and^ std.math.e > 2.718\n"
+            "    and^ std.math.pi > 3.14159 and^ std.math.pi < 3.1416\n"
+            "if^ ok { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
     LHAT_CHECK(!checks("return^ number^\n"), "the bare word is still no value");
 
     // 14.8改: '**' takes any exponent now, and always answers a real.

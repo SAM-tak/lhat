@@ -184,7 +184,15 @@ bool lhatstdlib_math_register(LhatProgram *program)
             return false;
         }
     }
-    return lhat_register_func(program, "std.math", "min",
+    // The mathematical constants live beside the functions they serve.
+    // number^ keeps inf and nan, which are about the representation.
+    return lhat_register_const_real(program, "std.math", NULL, "pi",
+                                    3.14159265358979323846) &&
+           lhat_register_const_real(program, "std.math", NULL, "tau",
+                                    6.28318530717958647692) &&
+           lhat_register_const_real(program, "std.math", NULL, "e",
+                                    2.71828182845904523536) &&
+           lhat_register_func(program, "std.math", "min",
                               "f^number^, ...:number^ -> number^;", math_min,
                               NULL) &&
            lhat_register_func(program, "std.math", "max",

@@ -6111,17 +6111,21 @@ if^ value < 24: 24 - value < 0.000001 el^: value - 24 < 0.000001;
 
 #### 14.8改2 `number^` の定数——型の語が持つ静的メンバ
 
-> **`number^.pi` `number^.tau` `number^.e` `number^.inf` `number^.nan`。
+> **`number^.inf` `number^.nan`。
 > 型の語そのものは値ではなく、`.` で定数を引くときだけ書ける。**
 
 ```lhat
-let^ turn = number^.tau
 if^ x = number^.inf { … }
 !(number^.nan = number^.nan)     # 真。NaN は自身とも等しくない
 ```
 
 14.16 が予告していた「組み込み型をクラスとして読む」の最初の一歩である。
-静的メンバを持つのは今のところ `number^` だけで、持つのはこの5つだけ。
+静的メンバを持つのは今のところ `number^` だけで、持つのはこの2つだけ。
+
+置くのは **表現についての事実** だけである。無限大と NaN は数の表し方が
+持つ値であり、型の持ち物になる。円周率やネイピア数は表現と関わりのない
+数学上の定数なので、それを使う関数と並べて `std.math`（14.21改）に置く——
+Ruby・Java・JavaScript・Kotlin・Rust が同じ線で分けている。
 裸の `number^` は今までどおり名前として未定義であり、知らない名前は
 「no such member」になる。コンパイル時に実数定数へ落ちるので、走行時に
 表を引くことはない。
@@ -8652,8 +8656,9 @@ clamp : f^self^, number^, number^ -> number^;   # 下限・上限に収めた自
 `std.math` の側（`sin cos tan asin acos atan atan2 deg rad sqrt cbrt exp
 log log2 log10 hypot fmod min max lerp`）は stdlib/math.h が一覧で、
 **角度は弧度**である（Lua の math・C の `<math.h>` と同じ。
-`sin(number^.pi / 2)` は `1`）。答えは libm のままで、`cos(number^.pi / 2)` は
+`sin(std.math.pi / 2)` は `1`）。答えは libm のままで、`cos(std.math.pi / 2)` は
 0 ではなく 6e-17 になる——比べるなら 14.8 の許容差を持つ `=` で書く。
+数学上の定数 `pi` `tau` `e` もここにある（14.8改2）。
 度で書いた角は `rad` で弧度に、答えは `deg` で度に直す。
 `pow` は無い——`**` が任意の指数を取る（14.8改2）。
 
@@ -11528,6 +11533,11 @@ enum^ Mode {
 
 ## 改定履歴（要約）
 
+- **14.8改2・14.21改（2026-09-22）: `pi`・`tau`・`e` は `std.math` のもの。**
+  `number^` の静的メンバから外し、`std.math.pi` などとした。`number^` に残るのは
+  表現の事実である `inf`・`nan` だけ。登録した定数は今のところ実行時のメンバ
+  読みになり、`number^.pi` にあったコンパイル時の畳み込みを失うが、これは
+  登録定数の側を畳み込みの対象にして取り戻す（05 の M9）
 - **14.21改（2026-09-22）: `std.math` の角度は弧度。** 度（Unity の Mathf と同じ）を
   採っていたが、Lua の math と同じ弧度に改めた。C の libm も、角度を受ける
   ホストの API（LÖVE・Godot）も弧度で、度のままでは境界ごとに `rad` を挟む

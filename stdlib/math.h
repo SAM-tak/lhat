@@ -2,17 +2,18 @@
 //
 // The scalar functions -- what a number^ cannot answer about itself alone
 // (02 の 14.21改 gives it abs, sign and clamp beside the three roundings,
-// and 14.8改2 the constants number^.pi / tau / e / inf / nan). This is the
-// rest: two numbers or more, and the transcendental functions. Not Lua's
-// math table copied over: what std.random owns is not here, and what
-// number^ carries is not here either.
+// and 14.8改2 the constants number^.inf / nan). This is the rest: two
+// numbers or more, the transcendental functions, and the mathematical
+// constants they are written with. Not Lua's math table copied over: what
+// std.random owns is not here, and what number^ carries is not here either.
 //
 // Angles are radians throughout, as Lua's math and C's <math.h> -- sin of
-// number^.pi / 2 is 1, and asin(1) is number^.pi / 2. The answers are libm's
-// as they stand, so cos(number^.pi / 2) is 6e-17 rather than 0; '=' reads a
-// real with 14.8's tolerance, which is the comparison that wants. A written
-// angle in degrees converts with rad, and deg turns an answer back.
+// pi / 2 is 1, and asin(1) is pi / 2. The answers are libm's as they stand,
+// so cos(pi / 2) is 6e-17 rather than 0; '=' reads a real with 14.8's
+// tolerance, which is the comparison that wants. A written angle in degrees
+// converts with rad, and deg turns an answer back.
 //
+//   pi tau e             number^                   constants (tau = 2 * pi)
 //   sin cos tan          f^number^ -> number^;     radians in
 //   asin acos atan       f^number^ -> number^;     radians out
 //   atan2                f^number^, number^ -> number^;   (y, x), radians out

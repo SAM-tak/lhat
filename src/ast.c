@@ -653,9 +653,6 @@ static const struct {
     size_t length;
     double value;
 } NUMBER_CONSTANTS[] = {
-    { "pi", 2, 3.14159265358979323846 },
-    { "tau", 3, 6.28318530717958647692 },
-    { "e", 1, 2.71828182845904523536 },
     { "inf", 3, HUGE_VAL },
     { "nan", 3, NAN },
 };
