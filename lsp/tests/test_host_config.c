@@ -5,6 +5,7 @@
 // host_config.c, has to make a program that checks a unit using those
 // registrations clean -- that is the whole point of the file.
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -388,9 +389,61 @@ static void test_counts(void)
     LHAT_CHECK_EQ_INT(types, 0);
 }
 
+static char *dumped(LhatProgram *program)
+{
+    size_t length = lhat_program_dump_host_api(program, NULL, 0);
+    char *text = (char *)malloc(length + 1);
+    if (text != NULL) {
+        lhat_program_dump_host_api(program, text, length + 1);
+    }
+    return text;
+}
+
+// 05 の 8.7改: a constant goes out through the dump and back through the
+// config unchanged -- the values JSON has no number for as well, which once
+// made the whole file unreadable (inf, nan) or came back rounded (an integer
+// past 2^53).
+static void test_constants(void)
+{
+    LHAT_TEST("constants come back as the dump wrote them");
+    Disk disk = {NULL, 0};
+    LhatProgram from;
+    lhat_program_init(&from, true, disk_load, &disk);
+    LHAT_CHECK(lhat_register_const_real(&from, "c", NULL, "HALF", 0.5) &&
+                   lhat_register_const_real(&from, "c", NULL, "INF",
+                                            HUGE_VAL) &&
+                   lhat_register_const_real(&from, "c", NULL, "NEG",
+                                            -HUGE_VAL) &&
+                   lhat_register_const_real(&from, "c", NULL, "NOT", NAN) &&
+                   lhat_register_const_integer(&from, "c", NULL, "BIG",
+                                               INT64_MAX) &&
+                   lhat_register_const_integer(&from, "c", NULL, "LOW",
+                                               INT64_MIN + 1),
+               "the constants registered");
+    char *first = dumped(&from);
+    LspHostConfig *config =
+        first != NULL ? lsp_host_config_parse(first, strlen(first)) : NULL;
+    LHAT_CHECK(config != NULL, "the dump parsed");
+    if (config != NULL) {
+        LhatProgram to;
+        lhat_program_init(&to, true, disk_load, &disk);
+        lsp_host_config_apply(config, &to);
+        char *second = dumped(&to);
+        LHAT_CHECK(second != NULL && strcmp(first, second) == 0,
+                   "the second dump is the first:\n%s\n---\n%s", first,
+                   second != NULL ? second : "(none)");
+        free(second);
+        lhat_program_dispose(&to);
+        lsp_host_config_free(config);
+    }
+    free(first);
+    lhat_program_dispose(&from);
+}
+
 int main(void)
 {
     test_round_trip();
+    test_constants();
     test_without_config();
     test_malformed();
     test_strict_field();

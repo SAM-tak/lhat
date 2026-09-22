@@ -5,6 +5,7 @@
 #include "serialize.h"
 #include "registry.h"
 
+#include <math.h>   // isnan, isinf: lhat_program_dump_host_api's reals
 #include <stdio.h>  // snprintf: lhat_program_dump_host_api's numbers
 #include <stdlib.h>
 #include <string.h>
@@ -5445,16 +5446,39 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
             char number[64];
             switch (entry->const_kind) {
                 case LHAT_HOST_CONST_INTEGER:
-                    snprintf(number, sizeof number,
-                             ", \"value_kind\": \"integer\", \"value\": %lld",
-                             (long long)entry->const_integer);
+                    // JSON has one kind of number, and a reader holding it as
+                    // a double (lsp/host_config.c's cJSON) keeps an integer
+                    // exactly only within 2^53 -- past that the digits go out
+                    // as a string, which the reader takes back as they are.
+                    if (entry->const_integer >= -(INT64_C(1) << 53) &&
+                        entry->const_integer <= (INT64_C(1) << 53)) {
+                        snprintf(number, sizeof number,
+                                 ", \"value_kind\": \"integer\", \"value\": %lld",
+                                 (long long)entry->const_integer);
+                    } else {
+                        snprintf(number, sizeof number,
+                                 ", \"value_kind\": \"integer\", \"value\": \"%lld\"",
+                                 (long long)entry->const_integer);
+                    }
                     dump_text(&w, number);
                     break;
                 case LHAT_HOST_CONST_REAL:
-                    snprintf(number, sizeof number,
-                             ", \"value_kind\": \"real\", \"value\": %.17g",
-                             entry->const_real);
-                    dump_text(&w, number);
+                    // JSON has no spelling for the infinities or NaN, so
+                    // those go out as strings. Asked rather than left to
+                    // printf, which spells a NaN differently per C library
+                    // ("-nan(ind)" on MSVC); a NaN's sign is not kept.
+                    if (isnan(entry->const_real)) {
+                        dump_text(&w, ", \"value_kind\": \"real\", \"value\": \"nan\"");
+                    } else if (isinf(entry->const_real)) {
+                        dump_text(&w, entry->const_real > 0
+                                          ? ", \"value_kind\": \"real\", \"value\": \"inf\""
+                                          : ", \"value_kind\": \"real\", \"value\": \"-inf\"");
+                    } else {
+                        snprintf(number, sizeof number,
+                                 ", \"value_kind\": \"real\", \"value\": %.17g",
+                                 entry->const_real);
+                        dump_text(&w, number);
+                    }
                     break;
                 case LHAT_HOST_CONST_BOOL:
                     dump_text(&w, entry->const_bool

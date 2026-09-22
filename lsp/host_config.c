@@ -2,6 +2,8 @@
 
 #include "host_config.h"
 
+#include <errno.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -58,6 +60,55 @@ static const char *string_of(const cJSON *object, const char *key)
 {
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(object, key);
     return cJSON_IsString(item) ? item->valuestring : NULL;
+}
+
+// A constant's integer. cJSON holds a number as a double, exact only within
+// 2^53, so the dump writes one past that as its digits in a string -- and
+// both are read here.
+static bool integer_of(const cJSON *value, int64_t *out)
+{
+    if (cJSON_IsNumber(value)) {
+        double d = value->valuedouble;
+        if (!(d >= -9223372036854775808.0 && d < 9223372036854775808.0)) {
+            return false;
+        }
+        *out = (int64_t)d;
+        return true;
+    }
+    if (!cJSON_IsString(value)) {
+        return false;
+    }
+    char *end = NULL;
+    errno = 0;
+    long long parsed = strtoll(value->valuestring, &end, 10);
+    if (errno != 0 || end == value->valuestring || *end != '\0') {
+        return false;
+    }
+    *out = (int64_t)parsed;
+    return true;
+}
+
+// A constant's real. JSON has no spelling for the infinities or NaN, so the
+// dump writes those as the strings "inf", "-inf" and "nan".
+static bool real_of(const cJSON *value, double *out)
+{
+    if (cJSON_IsNumber(value)) {
+        *out = value->valuedouble;
+        return true;
+    }
+    if (!cJSON_IsString(value)) {
+        return false;
+    }
+    if (strcmp(value->valuestring, "inf") == 0) {
+        *out = HUGE_VAL;
+    } else if (strcmp(value->valuestring, "-inf") == 0) {
+        *out = -HUGE_VAL;
+    } else if (strcmp(value->valuestring, "nan") == 0) {
+        *out = NAN;
+    } else {
+        return false;
+    }
+    return true;
 }
 
 bool lsp_host_config_strict(const LspHostConfig *config, bool fallback)
@@ -346,13 +397,13 @@ static void apply_function(const cJSON *entry, LhatProgram *program)
         if (cmodule == NULL || value_kind == NULL) {
             return;
         }
-        if (strcmp(value_kind, "integer") == 0 && cJSON_IsNumber(value)) {
+        int64_t integer = 0;
+        double real = 0.0;
+        if (strcmp(value_kind, "integer") == 0 && integer_of(value, &integer)) {
             lhat_register_const_integer(program, cmodule, ctype, name,
-                                        (int64_t)value->valuedouble);
-        } else if (strcmp(value_kind, "real") == 0 &&
-                   cJSON_IsNumber(value)) {
-            lhat_register_const_real(program, cmodule, ctype, name,
-                                     value->valuedouble);
+                                        integer);
+        } else if (strcmp(value_kind, "real") == 0 && real_of(value, &real)) {
+            lhat_register_const_real(program, cmodule, ctype, name, real);
         } else if (strcmp(value_kind, "bool") == 0 && cJSON_IsBool(value)) {
             lhat_register_const_bool(program, cmodule, ctype, name,
                                      cJSON_IsTrue(value));

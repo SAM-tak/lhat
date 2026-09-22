@@ -5,6 +5,7 @@
 // dependency order of 6.2, the single load of 5.3 and the refusal of 6.3 —
 // rather than anything about a file system.
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -3557,6 +3558,19 @@ static void test_dump_host_api(void)
     LHAT_CHECK(lhat_register_annotation(&program, "h", "atop",
                                         LHAT_ANNOTATION_UNIT),
                "the unit annotation registered");
+    // 05 の 8.7改: constants, including the values JSON has no number for --
+    // the infinities, NaN, and an integer a double cannot hold exactly.
+    LHAT_CHECK(lhat_register_const_real(&program, "c", NULL, "HALF", 0.5) &&
+                   lhat_register_const_real(&program, "c", NULL, "INF",
+                                            HUGE_VAL) &&
+                   lhat_register_const_real(&program, "c", NULL, "NEG",
+                                            -HUGE_VAL) &&
+                   lhat_register_const_real(&program, "c", NULL, "NOT", NAN) &&
+                   lhat_register_const_integer(&program, "c", NULL, "SMALL",
+                                               42) &&
+                   lhat_register_const_integer(&program, "c", NULL, "BIG",
+                                               INT64_MAX),
+               "the constants registered");
 
     size_t needed = lhat_program_dump_host_api(&program, NULL, 0);
     LHAT_CHECK(needed > 0, "measuring answered a size");
@@ -3594,6 +3608,13 @@ static void test_dump_host_api(void)
             "{\"module\": \"h\", \"name\": \"atop\", \"targets\": "
             "{\"unit\": true}}",
             "{\"name\": \"twice\", \"member\": \"L^.twice\"}",
+            "\"name\": \"HALF\", \"value_kind\": \"real\", \"value\": 0.5}",
+            "\"name\": \"INF\", \"value_kind\": \"real\", \"value\": \"inf\"}",
+            "\"name\": \"NEG\", \"value_kind\": \"real\", \"value\": \"-inf\"}",
+            "\"name\": \"NOT\", \"value_kind\": \"real\", \"value\": \"nan\"}",
+            "\"name\": \"SMALL\", \"value_kind\": \"integer\", \"value\": 42}",
+            "\"name\": \"BIG\", \"value_kind\": \"integer\", "
+            "\"value\": \"9223372036854775807\"}",
         };
         for (size_t i = 0; i < sizeof expected / sizeof expected[0]; i++) {
             LHAT_CHECK(strstr(text, expected[i]) != NULL,
