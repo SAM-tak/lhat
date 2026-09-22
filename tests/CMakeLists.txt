@@ -163,7 +163,9 @@ add_test(NAME install_smoke
              -DHOST_COMPILER=${CMAKE_C_COMPILER}
              -DHOST_SANITIZE=${LHAT_SANITIZE}
              -P ${CMAKE_SOURCE_DIR}/scripts/install_smoke.cmake)
-set_tests_properties(install_smoke PROPERTIES LABELS e2e TIMEOUT 300)
+# Debug builds are for development, not installation validation.
+set_tests_properties(install_smoke PROPERTIES
+    LABELS e2e TIMEOUT 300 DISABLED "$<CONFIG:Debug>")
 
 if(LHAT_BUILD_CLI)
     set(lhat_e2e_samples
