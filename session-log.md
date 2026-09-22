@@ -2,6 +2,56 @@
 
 保存しておきたいセッションログをここに書きつける。
 
+## 数学定数のこと
+
+ところで、今気になったのだが、pi が number^.pi として定義されていることが気になった。
+number^.nan number^.inf は妥当だと思うが、pi e などは std.math の方にあるべきかな…と思ったが、他言語ではどうだろう？
+
+---
+
+他言語は、あなたの感覚（nan・inf は型に、pi・e は数学モジュールに）で分けているものが多い。
+
+### 型と数学モジュールに分けている言語
+
+- **Ruby**: `Float::NAN`・`Float::INFINITY` と `Math::PI`・`Math::E`
+- **Java**: `Double.NaN`・`Double.POSITIVE_INFINITY` と `Math.PI`・`Math.E`
+- **JavaScript**: `Number.NaN`・`Number.POSITIVE_INFINITY` と `Math.PI`・`Math.E`
+- **Kotlin**: `Double.NaN` と `kotlin.math.PI`
+- **Rust**: `f64::NAN`・`f64::INFINITY` は型の定数、`std::f64::consts::PI` は定数用の別モジュール
+- **C#**: 長く `double.NaN` と `Math.PI` に分けてきた。.NET 7 で `double.Pi` も加わった
+
+### 全部を数学モジュールに置く言語
+
+- **Lua / Luau**: `math.pi`・`math.huge`（NaN の定数は無い）
+- **Python**: `math.pi`・`math.e`・`math.tau`・`math.inf`・`math.nan`
+- **Go**: `math.Pi`・`math.E`、`math.Inf(1)`・`math.NaN()` は関数
+
+### pi を型に置く言語
+
+- **Swift**: `Double.pi`・`Double.infinity`・`Double.nan`（e は無い）
+- **C#（.NET 7 以降）**: `double.Pi`
+
+分ける言語の筋はこうなる。
+
+- nan・inf（や epsilon・max）は浮動小数の表現についての事実なので、型の持ち物。
+- pi・e は表現と関係のない数学上の定数なので、数学関数と一緒に置く。
+
+Swift や .NET 7 が pi を型に置くのは、**Float と Double で pi の精度が違い、型に対して汎用に書いたコードが `T.pi` と引きたいから**。L^ は数値型が `number^` の1つだけ（14.8）なので、この理由は当てはまらない。
+
+以上から、分けるのが筋だと思う。`number^` に残すのは `inf`・`nan`、`std.math` に移すのは `pi`・`tau`・`e`。
+
+移すときの代償は2つ。
+
+- **コンパイル時の畳み込みが無くなる**: `number^.pi` は今コンパイル時に実数定数へ置き換わるが、`lhat_register_const_real` で登録した値は実行時のメンバ読みになる。熱いループでは `let^ pi = std.math.pi` と一度束縛すれば済む。
+- **std.math が登録されていない環境では pi が無くなる**: std.math は任意の標準ライブラリ（sample standard library）なので、ホストが登録しなければ `pi` を引けない。ただ、pi を使う場面はほぼ三角関数と一緒で、どのみち `import^ std.math` を書く。
+
+進めるなら次をやる。
+
+- 3つの定数を std.math に登録する。
+- `number^` の静的メンバから外す。
+- 02 §14.8改2 と §14.21改、テストを直す。
+- 使っている箇所を移す（`number^.pi` をテストや兄弟リポジトリの lhatove で使っている）。
+
 ## isa^ のこと (現在は fits^)
 
 えーと、L^ の isa^ は実際に実行時の命令を生成し、実行時型情報との突き合わせを行う、で間違いない？
