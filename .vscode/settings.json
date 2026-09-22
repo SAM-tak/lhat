@@ -9,6 +9,7 @@
     // one only for Makefile and Ninja), so this points at a Ninja preset's.
     // Any of debug / release / asan will do; they describe the same sources.
     "C_Cpp.default.compileCommands": "${workspaceFolder}/build/debug/compile_commands.json",
+    "C_Cpp.errorSquiggles": "disabled",
 
     // Ninja + MSVC needs INCLUDE / LIB / PATH from vcvars64.bat, which the
     // extension does not have unless a kit was picked or VS Code was started
@@ -26,5 +27,4 @@
 
     "lhat.serverAutoRestart": false,
     "lhat.serverPath": "C:\\Users\\Owner\\source\\repos\\lhat\\build\\release\\lhatls.exe",
-    "C_Cpp.errorSquiggles": "disabled"
 }
