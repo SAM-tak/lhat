@@ -2148,7 +2148,8 @@ bool chk_whole_literal(const LhatNode *node, int64_t *value)
     if (node == NULL || node->kind != LHAT_NODE_INT) {
         return false;
     }
-    *value = negated ? -node->v.integer.value : node->v.integer.value;
+    int64_t written = (int64_t)node->v.integer.value;
+    *value = negated ? -written : written;
     return true;
 }
 
