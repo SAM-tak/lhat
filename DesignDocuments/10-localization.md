@@ -87,6 +87,7 @@ L^ の処理系と道具が人に見せる文を、読み手の言語で出す�
 | 報告の見出し | `report` | 2 | `lhat_report_write`（`error:`・`note:`） |
 | トレースバックの定型 | `trace` | 4 | `lhat_machine_traceback`（`traceback:`・`in`・`at the top level`・`(coroutine)`。`f^` と `(finally^)` は訳さない） |
 | CLI | `cli` | 25 | `cli/main.c` |
+| 修正案の題名 | `fix` | 1 | `lhat_unit_diagnostic_fix_title`（07 §6.1） |
 | デバッガ（DAP） | `dap` | 12 | `dap/adapter.c` |
 
 言語サーバが自分で書く文は診断の文面だけである。ホバーが出す定義の行は
@@ -130,7 +131,7 @@ run.not-a-subroutine
 cli.no-type-errors
 ```
 
-出どころは 3.1 の表のとおり、`check` `parse` `lex` `compile` `run` `program` `source` `report` `trace` `cli` `dap` である。
+出どころは 3.1 の表のとおり、`check` `parse` `lex` `compile` `run` `program` `source` `report` `trace` `fix` `cli` `dap` である。
 カタログの中ではこの出どころを書かない。ファイル名が与える（6.1）。
 
 名前を伴っても伴わなくても報告されるコードは、名前を伴うときの文に別の ID を持つ。
