@@ -1,8 +1,8 @@
 # check -- L^ 0.3.3 の英語から訳した。
 # none = no error
-none = 誤りなし
+none = エラーなし
 # undefined = no such name in scope: {name}
-undefined = スコープにこの名前は無い: {name}
+undefined = 現在のスコープにこの名前は無い: {name}
 # used-before-defined = this name is read before its let^ has run
 used-before-defined = この名前は、その let^ が走る前に読まれている
 # redefined = this name is already defined in this scope: {name}
