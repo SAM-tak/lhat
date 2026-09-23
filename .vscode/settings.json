@@ -27,4 +27,5 @@
 
     "lhat.serverAutoRestart": false,
     "lhat.serverPath": "C:\\Users\\Owner\\source\\repos\\lhat\\build\\release\\lhatls.exe",
+    "lhat.messagesPath": "C:\\Users\\Owner\\source\\repos\\lhat\\messages",
 }
