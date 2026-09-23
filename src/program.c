@@ -4881,18 +4881,25 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
 }
 
 #if LHAT_WITH_FRONTEND
-// 07 §6: the stage's own diagnostic, for the fixes it carries. Only the
-// parser works any out so far, so every other stage answers none.
-static const LhatParseDiagnostic *parse_diagnostic_at(const LhatUnit *unit,
-                                                      size_t index)
+// 07 §6: the fixes the diagnostic at `index` carries, whichever stage made
+// it. The lexer works none out -- a byte it cannot read says nothing about
+// what belonged there -- so its diagnostics answer none.
+static const LhatFixSlot *fix_slots_at(const LhatUnit *unit, size_t index)
 {
     LhatStage stage = LHAT_STAGE_LEXER;
     size_t within = 0;
-    if (!stage_of(unit, index, &stage, &within) ||
-        stage != LHAT_STAGE_PARSER) {
+    if (!stage_of(unit, index, &stage, &within)) {
         return NULL;
     }
-    return &unit->parsed.diagnostics[within];
+    switch (stage) {
+        case LHAT_STAGE_PARSER:
+            return unit->parsed.diagnostics[within].fixes;
+        case LHAT_STAGE_CHECKER:
+            return unit->checked.diagnostics[within].fixes;
+        case LHAT_STAGE_LEXER:
+        default:
+            return NULL;
+    }
 }
 #endif
 
@@ -4903,7 +4910,7 @@ size_t lhat_unit_diagnostic_fix_count(const LhatUnit *unit, size_t index)
     (void)index;
     return 0;
 #else
-    return lhat_parse_fix_count(parse_diagnostic_at(unit, index));
+    return lhat_fix_slot_count(fix_slots_at(unit, index));
 #endif
 }
 
@@ -4917,7 +4924,7 @@ bool lhat_unit_diagnostic_fix(const LhatUnit *unit, size_t index, size_t which,
     (void)out;
     return false;
 #else
-    return lhat_parse_fix(parse_diagnostic_at(unit, index), which, out);
+    return lhat_fix_slot_read(fix_slots_at(unit, index), which, out);
 #endif
 }
 
@@ -4930,13 +4937,14 @@ size_t lhat_unit_diagnostic_fix_title(const LhatUnit *unit, size_t index,
     (void)which;
     return lhat_message_render("", NULL, 0, out, capacity);
 #else
-    const LhatParseDiagnostic *d = parse_diagnostic_at(unit, index);
+    const LhatFixSlot *slots = fix_slots_at(unit, index);
     LhatFix fix;
-    if (!lhat_parse_fix(d, which, &fix)) {
+    if (!lhat_fix_slot_read(slots, which, &fix)) {
         return lhat_message_render("", NULL, 0, out, capacity);
     }
+    const LhatMessageEntry *title = slots[which].title;
     const char *text =
-        lhat_program_text(unit->program, d->fix_title->id, d->fix_title->text);
+        lhat_program_text(unit->program, title->id, title->text);
     const char *wrote = fix.edits[0].text != NULL ? fix.edits[0].text : "";
     const LhatMessageArg arg = {"text", wrote, strlen(wrote)};
     return lhat_message_render(text, &arg, 1, out, capacity);

@@ -4666,6 +4666,47 @@ static void collect_written_fields(WrittenFields *w, const LhatNode *node)
     lhat_node_visit_children(node, written_fields_child, w);
 }
 
+// 07 §6: 14.12's marker leads the member it applies to, and the parser starts
+// the entry at it -- so the marker is the stretch between the entry's start
+// and its key, the space after the word included. Empty length when no marker
+// was written, which is how a fix knows there is nothing to take off.
+static size_t marker_removal(const LhatNode *entry, LhatFixSlot *out)
+{
+    const LhatNode *key = entry->v.entry.key;
+    if (key == NULL || key->offset <= entry->offset) {
+        return 0;
+    }
+    out->title = lhat_fix_message(LHAT_FIX_REMOVE_MARKER);
+    out->confidence = LHAT_FIX_SUGGESTED;
+    out->edit.offset = entry->offset;
+    out->edit.length = key->offset - entry->offset;
+    out->edit.text = "";
+    return 1;
+}
+
+// And the other way: a name that is already a member takes one of the two
+// markers, written in front of it. Which of them is the writer's to say --
+// one replaces what is there, the other adds a way of calling it -- so both
+// are offered and neither is machine-appliable. Fills LHAT_FIX_SLOTS slots.
+static size_t marker_choices(const LhatNode *entry, LhatFixSlot *out)
+{
+    static const struct {
+        LhatFixTitle title;
+        const char *text;
+    } WORDS[] = {
+        {LHAT_FIX_WRITE_OVERRIDE, "override^ "},
+        {LHAT_FIX_WRITE_OVERLOAD, "overload^ "},
+    };
+    for (size_t i = 0; i < sizeof WORDS / sizeof WORDS[0]; i++) {
+        out[i].title = lhat_fix_message(WORDS[i].title);
+        out[i].confidence = LHAT_FIX_SUGGESTED;
+        out[i].edit.offset = entry->offset;
+        out[i].edit.length = 0;
+        out[i].edit.text = WORDS[i].text;
+    }
+    return sizeof WORDS / sizeof WORDS[0];
+}
+
 // 14.12's overlap test, applied to two signatures: is there an argument count
 // admissible by both at which no position is separate? A separate position is
 // enough to keep them apart, since a call has to satisfy every one.
@@ -4760,7 +4801,9 @@ static LhatType *override_one(Checker *c, const LhatNode *entry,
     }
 
     if (overlaps == 0) {
-        chk_report(c, entry, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
+        LhatFixSlot away;
+        chk_report_fix(c, entry, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE, NULL, 0,
+                       &away, marker_removal(entry, &away));
         return replacement;
     }
     if (overlaps > 1) {
@@ -4818,7 +4861,9 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
         // the way of; overload^ has no such reading, since adding a way to
         // call something that is not there says nothing.
         if (modifier == LHAT_DEF_OVERLOAD) {
-            chk_report(c, entry, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
+            LhatFixSlot away;
+            chk_report_fix(c, entry, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE, NULL,
+                           0, &away, marker_removal(entry, &away));
         }
         return replacement;
     }
@@ -4833,7 +4878,9 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
     // declaration does ask is that the value fit the type it wrote.
     if (inherited->abstract) {
         if (modifier != LHAT_DEF_PLAIN) {
-            chk_report(c, entry, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
+            LhatFixSlot away;
+            chk_report_fix(c, entry, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE, NULL,
+                           0, &away, marker_removal(entry, &away));
         } else if (!lhat_type_conforms(replacement, inherited->type)) {
             chk_report(c, entry, LHAT_CHECK_ERR_MISMATCH);
         }
@@ -4841,9 +4888,12 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
     }
 
     switch (modifier) {
-        case LHAT_DEF_PLAIN:
-            chk_report(c, entry, LHAT_CHECK_ERR_MEMBER_EXISTS);
+        case LHAT_DEF_PLAIN: {
+            LhatFixSlot markers[LHAT_FIX_SLOTS];
+            chk_report_fix(c, entry, LHAT_CHECK_ERR_MEMBER_EXISTS, NULL, 0,
+                           markers, marker_choices(entry, markers));
             return replacement;
+        }
 
         case LHAT_DEF_OVERRIDE:
             // 14.12改2: the exemption above. The whole member goes, so there
@@ -5539,7 +5589,11 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 if (hidden == NULL && held != NULL && !held->provisional &&
                     !chk_takes_receiver(held->type)) {
                     if (!held->abstract) {
-                        chk_report(c, entry, LHAT_CHECK_ERR_MEMBER_EXISTS);
+                        LhatFixSlot markers[LHAT_FIX_SLOTS];
+                        chk_report_fix(c, entry,
+                                       LHAT_CHECK_ERR_MEMBER_EXISTS, NULL, 0,
+                                       markers,
+                                       marker_choices(entry, markers));
                         refused = true;
                     } else if (!lhat_type_conforms(type, held->type)) {
                         chk_report(c, entry, LHAT_CHECK_ERR_MISMATCH);

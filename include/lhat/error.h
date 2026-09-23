@@ -129,6 +129,24 @@ typedef struct {
     const char *text;
 } LhatMessageEntry;
 
+// 07 §6: a fix as a stage stores it, before anyone asks for one. A `title`
+// of NULL is a slot holding no fix, and the filled slots come first. Two is
+// what the codes with two ways out want -- write override^ or overload^ --
+// and every other code fills one.
+#define LHAT_FIX_SLOTS 2
+
+typedef struct {
+    const LhatMessageEntry *title;
+    LhatFixConfidence confidence;
+    LhatFixEdit edit;
+} LhatFixSlot;
+
+// How many fixes `slots` holds, and the `which`th of them as a reader sees
+// it. One storage for every stage: what a diagnostic knows how to do about
+// itself is the same thing wherever it was refused.
+size_t lhat_fix_slot_count(const LhatFixSlot *slots);
+bool lhat_fix_slot_read(const LhatFixSlot *slots, size_t which, LhatFix *out);
+
 // 10 §5.1: one argument of a message -- the hole it fills, by name, and the
 // text that fills it, exactly as it is to be written.
 typedef struct {

@@ -15,6 +15,7 @@
 #include "environment.h"
 #include "lhat/config.h"
 #include "grow.h"
+#include "message.h"  // 07 §6: the titles the fixes are offered under
 #include "operators.h"
 #include "lhat/port.h"
 
@@ -60,6 +61,11 @@ typedef struct Binding {
     // chose -- a with^, or the focus of a counted or walking for^. Writing
     // var^ instead is not open to them, so the diagnostic must not offer it.
     bool bound_by_form;
+    // 07 §6: where the let^ or var^ that introduced it stands, so a
+    // diagnostic about a write to this name can offer the other word. Empty
+    // for every binding no word of the source made -- a parameter, an
+    // import^ root, a construct's own focus (8.9 with 12.1 and 16.3改2).
+    LhatSpan keyword;
     // 05 の 8.7: the root an import^ bound. A name under it is read off
     // L^.modules wherever it is written, so naming one captures nothing --
     // which is what 15.13 has to know to let a closed^ body write it. A
@@ -540,6 +546,14 @@ typedef struct {
 
 
 void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code);
+
+// 07 §6 with the above: the whole of a report -- the name the diagnostic is
+// about (NULL for the codes that name none) and the fixes it knows how to
+// make (NULL for none, at most LHAT_FIX_SLOTS of them). chk_report and
+// chk_report_named are this with one or both left out.
+void chk_report_fix(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
+                    const char *name, size_t name_length,
+                    const LhatFixSlot *fixes, size_t count);
 #if LHAT_WITH_RESOLUTIONS
 // 07 の 4 章: for the language server, not for the language -- see check.h's
 // LhatResolution. Every call site carries this same guard.

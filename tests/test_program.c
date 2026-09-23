@@ -4563,6 +4563,24 @@ static void test_annotation_exclusion(void)
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 1 &&
                        root->checked.diagnostics[0].line == 4,
                    "at the second of the two");
+        // 07 §6: and something to do about it. The whole line goes -- an
+        // annotation stands on one of its own (02 の 18.4), so leaving it
+        // blank would be a second thing to tidy.
+        const char *text = apart[0].text;
+        const char *marked = strstr(text, "@tool");
+        LhatFix fix;
+        LHAT_CHECK_EQ_INT(lhat_unit_diagnostic_fix_count(root, 0), 1);
+        if (lhat_unit_diagnostic_fix(root, 0, 0, &fix)) {
+            LHAT_CHECK_EQ_INT(fix.edit_count, 1);
+            LHAT_CHECK_EQ_INT(fix.edits[0].offset, (size_t)(marked - text));
+            LHAT_CHECK_EQ_INT(fix.edits[0].length, strlen("@tool\n"));
+            LHAT_CHECK_EQ_STR(fix.edits[0].text, strlen(fix.edits[0].text), "");
+            LHAT_CHECK(fix.confidence == LHAT_FIX_SUGGESTED,
+                       "which of the two to keep is the writer's to say");
+            char title[64];
+            lhat_unit_diagnostic_fix_title(root, 0, 0, title, sizeof title);
+            LHAT_CHECK_EQ_STR(title, strlen(title), "remove this annotation");
+        }
     }
     lhat_program_dispose(&program);
 

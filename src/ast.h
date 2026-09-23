@@ -177,6 +177,14 @@ typedef enum {
     ((k) == LHAT_CLAUSE_PRE || (k) == LHAT_CLAUSE_FIRST ||                    \
      (k) == LHAT_CLAUSE_MAIN || (k) == LHAT_CLAUSE_LAST)
 
+// 06 の 4.2: a stretch of the source text, for a tool that shows or rewrites
+// it. A `length` of 0 means nothing was written there -- the construct bound
+// the name itself, and there is no word to rewrite.
+typedef struct {
+    uint32_t offset;
+    uint32_t length;
+} LhatSpan;
+
 typedef struct LhatNode LhatNode;
 
 struct LhatNode {
@@ -425,6 +433,12 @@ struct LhatNode {
             // 02 の 18.4: what was written above this declaration. NULL when
             // nothing was. A list of LHAT_NODE_ANNOTATION.
             LhatNode *annotations;
+            // 8.9: where the let^ or var^ itself stands. The node begins at
+            // the word only when nothing was written before it -- a public^
+            // takes the start over (05 の 4 章) -- and 12.1's with^ and
+            // 16.3改2's focus are bound by their construct, with no word to
+            // point at. Empty in both of those, so 07 §6's fixes can tell.
+            LhatSpan keyword;
         } binding;
 
         // Statement or expression lists: BLOCK, TABLE, IF_STMT, IF_EXPR,

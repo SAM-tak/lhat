@@ -54,7 +54,17 @@ const LhatMessageTable *lhat_fix_message_tables(size_t *count);
 // 07 §6: which title a fix is offered under. The kinds are the library's own,
 // since a fix is worked out where a stage refused.
 typedef enum {
-    LHAT_FIX_WRITE_TOKEN
+    LHAT_FIX_WRITE_TOKEN,
+    LHAT_FIX_LET_TO_VAR,
+    LHAT_FIX_VAR_TO_LET,
+    LHAT_FIX_WRITE_OVERRIDE,
+    LHAT_FIX_WRITE_OVERLOAD,
+    LHAT_FIX_REMOVE_MARKER,
+    LHAT_FIX_TABLE_MEMBERS,
+    LHAT_FIX_REMOVE_SCOPE,
+    LHAT_FIX_REMOVE_ANNOTATION,
+    LHAT_FIX_HAND_BACK,
+    LHAT_FIX_DELEGATE
 } LhatFixTitle;
 
 const LhatMessageEntry *lhat_fix_message(size_t which);

@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "ast.h"
+#include "lhat/error.h"  // 07 §6: the fixes a diagnostic carries
 #include "lhat/lexer.h"
 #include "hosted.h"
 #include "type.h"
@@ -362,6 +363,11 @@ typedef struct {
     // for the codes that name nothing.
     const char *name;
     uint32_t name_length;
+
+    // 07 §6: the fixes this diagnostic knows how to make, read through
+    // lhat_fix_slot_read. The stage that refused is the one that knows what
+    // would have been right, so they are worked out here and not in a tool.
+    LhatFixSlot fixes[LHAT_FIX_SLOTS];
 } LhatCheckDiagnostic;
 
 #if LHAT_WITH_RESOLUTIONS

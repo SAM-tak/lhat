@@ -281,7 +281,15 @@ void chk_check_define(Checker *c, const LhatNode *node)
     // change without being able to see what changed it. A p^ that publishes
     // an accessor is how a unit lets its state move.
     if (node->v.binding.exported && !node->v.binding.immutable) {
-        chk_report(c, node, LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE);
+        // 07 §6: the var^ becomes a let^ where it stands. Suggested, since
+        // the other way out is the accessor this paragraph describes, which
+        // no one edit writes.
+        const LhatSpan word = node->v.binding.keyword;
+        const LhatFixSlot bind = {lhat_fix_message(LHAT_FIX_VAR_TO_LET),
+                                  LHAT_FIX_SUGGESTED,
+                                  {word.offset, word.length, "let^"}};
+        chk_report_fix(c, node, LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE, NULL, 0,
+                       &bind, word.length > 0 ? 1 : 0);
     }
 
     // 15.11: a _yield^ answers nothing at run time -- the whole statement
@@ -324,8 +332,21 @@ void chk_check_define(Checker *c, const LhatNode *node)
         // 8.7 with 01 の 8 章: a let^ makes a name in the scope it is
         // written in, so there is no other scope for a specifier to name.
         // ':=' is what reaches an existing binding, here as anywhere.
-        if (target_name_node(target)->kind == LHAT_NODE_SCOPE) {
-            chk_report(c, target, LHAT_CHECK_ERR_SCOPE_ON_DEFINE);
+        const LhatNode *spelt = target_name_node(target);
+        if (spelt->kind == LHAT_NODE_SCOPE) {
+            // 07 §6: the specifier comes off and the name stays. The sigil is
+            // glued to the name (01 の 8 章), so what goes is the stretch in
+            // front of the name itself.
+            const LhatNode *bare = spelt->v.scope.name;
+            const uint32_t sigil =
+                bare != NULL && bare->offset > spelt->offset
+                    ? bare->offset - spelt->offset
+                    : 0;
+            const LhatFixSlot drop = {lhat_fix_message(LHAT_FIX_REMOVE_SCOPE),
+                                      LHAT_FIX_SUGGESTED,
+                                      {spelt->offset, sigil, ""}};
+            chk_report_fix(c, target, LHAT_CHECK_ERR_SCOPE_ON_DEFINE, NULL, 0,
+                           &drop, sigil > 0 ? 1 : 0);
         }
         LhatType *annotated = target->kind == LHAT_NODE_PARAM
                                   ? chk_resolve_type(c, target->v.param.type)
@@ -1164,10 +1185,18 @@ static void check_immutable_write(Checker *c, const LhatNode *target)
         // 12.1 and 16.3改2 bind without the writer choosing a word, so there
         // is no var^ for them to write instead. Saying otherwise would send a
         // reader to a spelling that is itself refused.
-        chk_report_named(c, name_node,
-                         b->bound_by_form ? LHAT_CHECK_ERR_ASSIGN_TO_FORM
-                                          : LHAT_CHECK_ERR_ASSIGN_TO_LET,
-                         name, length);
+        // 07 §6: and where there is one, the fix is that word becoming
+        // var^. Suggested: not writing to the name is the other way out, and
+        // an edit cannot say that.
+        const LhatFixSlot change = {lhat_fix_message(LHAT_FIX_LET_TO_VAR),
+                                    LHAT_FIX_SUGGESTED,
+                                    {b->keyword.offset, b->keyword.length,
+                                     "var^"}};
+        chk_report_fix(c, name_node,
+                       b->bound_by_form ? LHAT_CHECK_ERR_ASSIGN_TO_FORM
+                                        : LHAT_CHECK_ERR_ASSIGN_TO_LET,
+                       name, length, &change,
+                       !b->bound_by_form && b->keyword.length > 0 ? 1 : 0);
     }
 }
 
@@ -1894,6 +1923,7 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
                 // holds -- a let^ over an earlier var^ makes it a let^ from
                 // here on, and the other way round.
                 already->immutable = s->v.binding.immutable;
+                already->keyword = s->v.binding.keyword;
                 continue;
             }
             Binding *b =
@@ -1906,6 +1936,8 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
             if (b != NULL) {
                 b->immutable = s->v.binding.immutable;
                 b->bound_by_form = s->v.binding.bound_by_form;
+                // 07 §6: which word, for a fix that offers the other one.
+                b->keyword = s->v.binding.keyword;
             }
         }
     }
@@ -2386,7 +2418,14 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             // above is what stops applying, not the rule.
             if (value != NULL && value->kind == LHAT_TYPE_CORO &&
                 node != c->answering) {
-                chk_report(c, node, LHAT_CHECK_ERR_COROUTINE_DROPPED);
+                // 07 §6: await^ in front of it runs the body here, which is
+                // the reading that keeps the statement. Keeping the coroutine
+                // wants a name, and naming it is the writer's to do.
+                const LhatFixSlot run = {lhat_fix_message(LHAT_FIX_DELEGATE),
+                                         LHAT_FIX_SUGGESTED,
+                                         {node->offset, 0, "await^ "}};
+                chk_report_fix(c, node, LHAT_CHECK_ERR_COROUTINE_DROPPED, NULL,
+                               0, &run, 1);
             }
             // 04 の 8.3: and the answer's failure goes with the answer. 8.1
             // reads the type as the detection -- "handle the error or you
@@ -2396,7 +2435,14 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             // door: not a second value beside the first, but the first one
             // thrown away. The same door Zig shuts.
             if (lhat_type_carries_error(value) && node != c->answering) {
-                chk_report(c, node, LHAT_CHECK_ERR_ERROR_DROPPED);
+                // 07 §6: try^ in front of it hands the failure to the caller.
+                // Suggested twice over -- the body has to declare the arm
+                // (04 の 5.3), and catching it here may be what was meant.
+                const LhatFixSlot hand = {lhat_fix_message(LHAT_FIX_HAND_BACK),
+                                          LHAT_FIX_SUGGESTED,
+                                          {node->offset, 0, "try^ "}};
+                chk_report_fix(c, node, LHAT_CHECK_ERR_ERROR_DROPPED, NULL, 0,
+                               &hand, 1);
             }
             break;
         }

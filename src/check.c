@@ -8,7 +8,9 @@
 // Diagnostics
 // ---------------------------------------------------------------------------
 
-void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code)
+void chk_report_fix(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
+                    const char *name, size_t name_length,
+                    const LhatFixSlot *fixes, size_t count)
 {
     // 13.11's narrowing reads a path the caller has already inferred, so
     // whatever is wrong with it has been said once. One mistake is one
@@ -26,8 +28,19 @@ void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code)
     d->offset = at->offset;
     d->line = at->line;
     d->column = at->column;
-    d->name = NULL;
-    d->name_length = 0;
+    d->name = name;
+    d->name_length = name != NULL ? (uint32_t)name_length : 0;
+    for (size_t i = 0; i < LHAT_FIX_SLOTS; i++) {
+        d->fixes[i].title = NULL;
+    }
+    for (size_t i = 0; i < count && i < LHAT_FIX_SLOTS; i++) {
+        d->fixes[i] = fixes[i];
+    }
+}
+
+void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code)
+{
+    chk_report_fix(c, at, code, NULL, 0, NULL, 0);
 }
 
 void chk_member_declared_at(Checker *c, LhatTypeMember *member,
@@ -290,18 +303,46 @@ void chk_settle_member_sites(LhatCheckResult *result)
 // The same, about a name. The text is borrowed from the source, which 6 章
 // keeps alive as long as the result -- a copy per diagnostic would be paid
 // for by every program, and almost none of them read one.
+// 07 §6: an annotation that was already written, or that another answers, is
+// one to take off. The whole of it goes, and the line's end with it -- 02 の
+// 18.4 puts one on its own line, so leaving the line blank would be a second
+// thing for the writer to tidy. Answers how many fixes were worked out, which
+// is none for an annotation the source does not account for.
+static size_t annotation_removal(const Checker *c, const LhatNode *at,
+                                 LhatFixSlot *out)
+{
+    const LhatSource *source = c->lexer != NULL ? c->lexer->source : NULL;
+    if (source == NULL || at->end <= at->offset) {
+        return 0;
+    }
+    size_t through = at->end;
+    while (through < source->length &&
+           (source->text[through] == ' ' || source->text[through] == '\t')) {
+        through++;
+    }
+    if (through < source->length && source->text[through] == '\n') {
+        through++;
+    }
+    // 18.2 makes the '@' a mark on the name rather than a character of it, so
+    // the name's own span begins one byte in. What takes the annotation off
+    // takes its mark with it.
+    uint32_t from = at->offset;
+    if (from > 0 && source->text[from - 1] == '@') {
+        from--;
+    }
+    out->title = lhat_fix_message(LHAT_FIX_REMOVE_ANNOTATION);
+    out->confidence = LHAT_FIX_SUGGESTED;
+    out->edit.offset = from;
+    out->edit.length = (uint32_t)(through - from);
+    out->edit.text = "";
+    return 1;
+}
+
 void chk_report_named(Checker *c, const LhatNode *at,
                       LhatCheckErrorCode code, const char *name,
                       size_t length)
 {
-    size_t before = c->result->diagnostic_count;
-    chk_report(c, at, code);
-    if (c->result->diagnostic_count == before || name == NULL) {
-        return;  // report kept quiet, so there is nothing to say it on
-    }
-    LhatCheckDiagnostic *d = &c->result->diagnostics[before];
-    d->name = name;
-    d->name_length = (uint32_t)length;
+    chk_report_fix(c, at, code, name, length, NULL, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -1402,7 +1443,14 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
             // 't^{}' -- said here rather than left to "no such type", since
             // the word is right and only the braces are missing.
             if (chk_name_is(name, length, "t^")) {
-                chk_report(c, node, LHAT_CHECK_ERR_BARE_TABLE_TYPE);
+                // 07 §6: and so the fix is the braces, written where the
+                // word ends. Machine-appliable: the sentence above says
+                // there is one thing this could have been.
+                const LhatFixSlot braces = {
+                    lhat_fix_message(LHAT_FIX_TABLE_MEMBERS), LHAT_FIX_MACHINE,
+                    {node->end, 0, "{}"}};
+                chk_report_fix(c, node, LHAT_CHECK_ERR_BARE_TABLE_TYPE, NULL,
+                               0, &braces, 1);
                 return lhat_type_table(c->result->types);
             }
 
@@ -3290,9 +3338,10 @@ void chk_check_annotations(Checker *c, const LhatNode *list, uint32_t target)
             if ((found->targets & LHAT_ANNOTATION_FILEUNIQUE) != 0 &&
                 c->annotation_seen[which] != NULL &&
                 c->annotation_seen[which] != at) {
-                chk_report_named(c, at->v.named.name,
-                                 LHAT_CHECK_ERR_ANNOTATION_REPEATED, name,
-                                 length);
+                LhatFixSlot away;
+                chk_report_fix(c, at->v.named.name,
+                               LHAT_CHECK_ERR_ANNOTATION_REPEATED, name,
+                               length, &away, annotation_removal(c, at, &away));
                 continue;
             }
             c->annotation_seen[which] = at;
@@ -3304,9 +3353,10 @@ void chk_check_annotations(Checker *c, const LhatNode *list, uint32_t target)
         // and a host saying it from one side is enough.
         if (c->annotation_seen != NULL &&
             chk_annotation_excluded(c, found, which)) {
-            chk_report_named(c, at->v.named.name,
-                             LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE, name,
-                             length);
+            LhatFixSlot away;
+            chk_report_fix(c, at->v.named.name,
+                           LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE, name, length,
+                           &away, annotation_removal(c, at, &away));
             continue;
         }
 
