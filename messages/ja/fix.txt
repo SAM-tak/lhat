@@ -1,3 +1,23 @@
 # fix -- L^ の英語から訳した。
 # write-token = write '{text}'
 write-token = 「{text}」を書く
+# let-to-var = write var^ where the name is bound
+let-to-var = 束縛しているところに var^ と書く
+# var-to-let = bind with let^
+var-to-let = let^ で束縛する
+# write-override = write override^
+write-override = override^ と書く
+# write-overload = write overload^
+write-overload = overload^ と書く
+# remove-marker = remove the marker
+remove-marker = 印を外す
+# table-members = write 't^{}'
+table-members = 't^{}' と書く
+# remove-scope = remove the scope specifier
+remove-scope = スコープ指定子を外す
+# remove-annotation = remove this annotation
+remove-annotation = この注釈を外す
+# hand-back = write try^ to hand the failure back
+hand-back = try^ と書いて失敗を呼び出し元へ返す
+# delegate = write await^ to delegate
+delegate = await^ と書いて委譲する

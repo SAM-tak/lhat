@@ -421,13 +421,36 @@ let^ other = require^ "lib/util.lh"
   クライアントの `context.diagnostics` は読まない — 出すのは同じ検査から作った物であり、
   読み返しても同じことを二通りに言うだけで、しかも古い
 
-構文解析の「ここには別のトークンが要る」に対する `fix.write-token` を持つ。
-そのトークンを、あった物の先頭に書く。確度は要確認である——構文解析器が気づいたのはそこだが、
-書き落としはもっと前にあるかもしれない。
+今ある修正案は、**源の1箇所で決まる物**である。語をひとつ書き換える・外す・前に置く。
 
-［補足］次に足すのは、検査器の1箇所で決まる置き換えである（`let^` を `var^` に、
-`override^` を足す・外す、`t^` を `t^{}` に）。近い名前の提案は探索を新しく要るので、
-その後になる。
+| 診断 | 題名 | 編集 |
+| --- | --- | --- |
+| `parse.expected-token` / `.expected-found` | `fix.write-token` | 要ったトークンを、あった物の先頭に書く |
+| `check.assign-to-let` | `fix.let-to-var` | 束縛している `let^` を `var^` に |
+| `check.public-is-immutable` | `fix.var-to-let` | その `var^` を `let^` に |
+| `check.member-exists` | `fix.write-override` / `fix.write-overload` | メンバの前に 14.12 の印を置く（2案） |
+| `check.nothing-to-override` | `fix.remove-marker` | その印を外す |
+| `check.bare-table-type` | `fix.table-members` | `t^` の直後に `{}` |
+| `check.scope-on-define` | `fix.remove-scope` | 名前の前のスコープ指定子を外す |
+| `check.annotation-repeated` / `.annotation-exclusive` | `fix.remove-annotation` | その注釈を行ごと外す |
+| `check.error-dropped` | `fix.hand-back` | 呼び出しの前に `try^` |
+| `check.coroutine-dropped` | `fix.delegate` | 呼び出しの前に `await^` |
+
+機械適用可は `fix.table-members` だけである。語が正しく、欠けているのは括弧だけだと
+診断文自身が言っている。残りは要確認で、理由はそれぞれ違う：
+`fix.write-token` は構文解析器が気づいた位置が書き落とした位置とは限らない。
+`fix.let-to-var` と `fix.hand-back` は「名前に書かない」「ここで捕まえる」という
+もう一方の出口を編集では言えない。印の2案はどちらを意味したかが書き手のものである。
+
+語が書かれていなければ書き換える場所も無いので、そのとき修正案は0件になる。
+`with^` と数える `for^` の焦点は構文が束縛するので（8.9）`check.assign-to-form` に
+修正案は付かず、これは診断文が `var^` を勧めないのと同じ理由である。
+
+［補足］次は**名前の近さで提案する物**（`check.undefined`、`check.no-member`、
+`check.ambiguous-member`、`check.no-such-annotation`）。編集の文字列を機械が作るので
+運搬機構が要り、候補の列挙は補完（`lhat/completion.h`）の物を使い回す。その次が
+複数行の挿入（`check.match-not-exhaustive` の選択肢、`check.missing-field` の欄）と
+一括適用の規則である。
 
 **L2 の答え**（補完のために木がどこまで残るか）。文の水準では今のパニックモード回復
 （`synchronize`）のままでよい — 失敗した文は木に残り、後続の文も読まれ、検査器は

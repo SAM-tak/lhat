@@ -87,7 +87,7 @@ L^ の処理系と道具が人に見せる文を、読み手の言語で出す�
 | 報告の見出し | `report` | 2 | `lhat_report_write`（`error:`・`note:`） |
 | トレースバックの定型 | `trace` | 4 | `lhat_machine_traceback`（`traceback:`・`in`・`at the top level`・`(coroutine)`。`f^` と `(finally^)` は訳さない） |
 | CLI | `cli` | 25 | `cli/main.c` |
-| 修正案の題名 | `fix` | 1 | `lhat_unit_diagnostic_fix_title`（07 §6.1） |
+| 修正案の題名 | `fix` | 11 | `lhat_unit_diagnostic_fix_title`（07 §6.1） |
 | デバッガ（DAP） | `dap` | 12 | `dap/adapter.c` |
 
 言語サーバが自分で書く文は診断の文面だけである。ホバーが出す定義の行は
