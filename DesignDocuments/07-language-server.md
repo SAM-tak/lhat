@@ -435,6 +435,7 @@ let^ other = require^ "lib/util.lh"
 | `check.annotation-repeated` / `.annotation-exclusive` | `fix.remove-annotation` | その注釈を行ごと外す |
 | `check.error-dropped` | `fix.hand-back` | 呼び出しの前に `try^` |
 | `check.coroutine-dropped` | `fix.delegate` | 呼び出しの前に `await^` |
+| `check.undefined`、`check.no-member(.named)`、`check.no-such-annotation` | `fix.near-name` | 書かれた名前を、いちばん近い名前に |
 
 機械適用可は `fix.table-members` だけである。語が正しく、欠けているのは括弧だけだと
 診断文自身が言っている。残りは要確認で、理由はそれぞれ違う：
@@ -446,10 +447,28 @@ let^ other = require^ "lib/util.lh"
 `with^` と数える `for^` の焦点は構文が束縛するので（8.9）`check.assign-to-form` に
 修正案は付かず、これは診断文が `var^` を勧めないのと同じ理由である。
 
-［補足］次は**名前の近さで提案する物**（`check.undefined`、`check.no-member`、
-`check.ambiguous-member`、`check.no-such-annotation`）。編集の文字列を機械が作るので
-運搬機構が要り、候補の列挙は補完（`lhat/completion.h`）の物を使い回す。その次が
-複数行の挿入（`check.match-not-exhaustive` の選択肢、`check.missing-field` の欄）と
+#### 近い名前
+
+`fix.near-name` は、書き損じのいちばんありそうな意味を差し出す。
+
+- **近さは編集距離**である。隣り合う2文字の入れ替えを1と数え（`lenght` は `length` から1）、
+  ASCII の大小は数えない。許すのは書かれた名前の長さの3分の1まで、少なくとも1。
+  同じ近さなら先に差し出された方を取る
+- **候補は、その場で読めて検査器が拒まない名前だけ**である。名前はスコープを内側から
+  （8.7改で自分の初期化式から読めない物は除く）、次にホストが束縛した物（05 の 8.2）。
+  メンバは受け手が書いて持つ物と組み込みの物（14.19）で、これは `.` の補完と
+  **同じ走査**（`lhat_check_written_members`・`lhat_check_builtin_members`）を通る。
+  構築の欄は雛形の欄だけ（メソッドは構築が書く物ではない）、誤りの欄は種別の欄に
+  2.3 の `message` と `cause`、注釈はそこに書く対象で登録された物だけである
+- 候補は報告のその場で、生きているスコープから数える。補完が読む記録はスコープが
+  閉じるときに書かれる物なので、元は同じである
+- 名前は検査結果が持つ文字列に写してから指す（`LhatCheckResult` の `fix_texts`）。
+  組み込みの `^` 付きの綴りは問い合わせの間しか無いからである
+
+［補足］`check.ambiguous-member` はここに入れない。14.5改 の逃げ道は
+`o.reset()` を `Draw.reset(o)` と書き直すことで、受け手を引数へ移す2箇所の編集と、
+どちらの側かの2案になる。近さの問題ではないので、次の複数編集と一緒に扱う。
+その次が複数行の挿入（`check.match-not-exhaustive` の選択肢、`check.missing-field` の欄）と
 一括適用の規則である。
 
 **L2 の答え**（補完のために木がどこまで残るか）。文の水準では今のパニックモード回復

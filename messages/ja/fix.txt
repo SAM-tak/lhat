@@ -21,3 +21,5 @@ remove-annotation = この注釈を外す
 hand-back = try^ と書いて失敗を呼び出し元へ返す
 # delegate = write await^ to delegate
 delegate = await^ と書いて委譲する
+# near-name = change to '{text}'
+near-name = 「{text}」に書き換える
