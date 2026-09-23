@@ -547,6 +547,43 @@ typedef struct {
 
 void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code);
 
+// 07 §6: the name nearest one that was written, among names offered one at a
+// time -- a misspelling's likeliest meaning. Near is an edit distance
+// (adjacent swaps count once, ASCII case not at all) of at most a third of
+// what was written and at least one; of two equally near, the first offered
+// wins, so an offerer walks innermost first. The spelling is copied, since
+// what offers it may hold it only for the call.
+#define CHK_NEAR_NAME 128
+
+typedef struct {
+    const char *written;
+    size_t written_length;
+    char best[CHK_NEAR_NAME];
+    size_t best_length;  // 0 while nothing near enough has been offered
+    size_t distance;
+} ChkNearest;
+
+// Answers whether looking is worth it: nothing is reported on a round that
+// only re-reads (chk_report), so there a search would find what no one sees.
+bool chk_nearest_start(Checker *c, ChkNearest *near, const char *written,
+                       size_t length);
+void chk_nearest_offer(ChkNearest *near, const char *name, size_t length);
+// The sinks for the two member walks (check.h), offering what they are
+// handed to the ChkNearest in `context`.
+void chk_nearest_member(void *context, const LhatTypeMember *member);
+void chk_nearest_builtin(void *context, const char *name, size_t length,
+                         LhatType *type);
+// Every name `c` can read from where it stands: its scopes innermost first,
+// then what the host bound (05 の 8.2).
+void chk_nearest_in_scope(Checker *c, ChkNearest *near);
+
+// Reports as chk_report_named does, offering the nearest name as the fix --
+// written over `spelt`, the node whose source is the misspelling -- when one
+// was near enough. `spelt` NULL offers nothing.
+void chk_report_near(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
+                     const char *name, size_t length, const LhatNode *spelt,
+                     const ChkNearest *near);
+
 // 07 §6 with the above: the whole of a report -- the name the diagnostic is
 // about (NULL for the codes that name none) and the fixes it knows how to
 // make (NULL for none, at most LHAT_FIX_SLOTS of them). chk_report and

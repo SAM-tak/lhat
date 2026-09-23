@@ -91,6 +91,11 @@ static size_t fix_case(const char *text, const char *id, size_t which,
                        LhatFix *fix, char *title, size_t title_capacity,
                        char *patched, size_t patched_capacity)
 {
+    title[0] = '\0';
+    patched[0] = '\0';
+    fix->edit_count = 0;
+    fix->confidence = LHAT_FIX_SUGGESTED;
+
     LhatProgram program;
     lhat_program_init(&program, true, load_one, (void *)text);
     lhat_program_check(&program, "main.lh");
@@ -340,6 +345,91 @@ static void test_dropped(void)
 }
 
 // ---------------------------------------------------------------------------
+// 07 §6: a misspelling, offered the nearest name that is there. The candidates
+// are the lists completion offers from the same spot, so a suggestion is
+// never a name the checker would refuse for another reason.
+
+// The one near name `text` draws for `id`, applied: answers whether the
+// source it makes is `expected` and checks clean.
+static void near_case(const char *text, const char *id, const char *near,
+                      const char *expected)
+{
+    LhatFix fix;
+    char title[128];
+    char patched[512];
+    char wanted[160];
+    LHAT_CHECK_EQ_INT(fix_case(text, id, 0, &fix, title, sizeof title,
+                               patched, sizeof patched),
+                      1);
+    LHAT_CHECK(fix.confidence == LHAT_FIX_SUGGESTED,
+               "a near name is a guess at what was meant");
+    snprintf(wanted, sizeof wanted, "change to '%s'", near);
+    LHAT_CHECK_EQ_STR(title, strlen(title), wanted);
+    LHAT_CHECK_EQ_STR(patched, strlen(patched), expected);
+    LHAT_CHECK(is_clean(patched), "and the source it makes is clean");
+}
+
+static void test_near(void)
+{
+    LHAT_TEST("a name no scope holds offers the one it was near");
+    near_case("let^ count = 1\nlet^ y = cuont + 1\n", "check.undefined",
+              "count", "let^ count = 1\nlet^ y = count + 1\n");
+
+    // A third of what was written, and at least one: four letters apart
+    // from everything in reach is not a misspelling of any of it.
+    LHAT_TEST("and nothing when nothing is near");
+    {
+        LhatFix fix;
+        char title[128];
+        char patched[256];
+        LHAT_CHECK_EQ_INT(fix_case("let^ count = 1\nlet^ y = zzzq + 1\n",
+                                   "check.undefined", 0, &fix, title,
+                                   sizeof title, patched, sizeof patched),
+                          0);
+    }
+
+    // 14.19: the built-ins are no type's list, so they are asked of the
+    // checker one spelling at a time -- the same way completion asks.
+    LHAT_TEST("a member no receiver holds offers a built-in one");
+    near_case("let^ s = \"abc\"\nlet^ n : number^ = s.lenght\n",
+              "check.no-member.named", "length",
+              "let^ s = \"abc\"\nlet^ n : number^ = s.length\n");
+
+    LHAT_TEST("and a written one, through the definition's chain");
+    {
+        char text[512];
+        char expected[512];
+        snprintf(text, sizeof text, "%s%s", BASE,
+                 "var^ o = Foo.new()\no.fo(\"x\")\n");
+        snprintf(expected, sizeof expected, "%s%s", BASE,
+                 "var^ o = Foo.new()\no.foo(\"x\")\n");
+        near_case(text, "check.no-member.named", "foo", expected);
+    }
+
+    // 14.11: what a construction writes is a field, so a method of the
+    // definition is not offered for one.
+    LHAT_TEST("a field the template does not hold offers one it does");
+    near_case("var^ C = def^{\n"
+              "    self^{ value := 1 },\n"
+              "    override^new := f^ n:number^ { self^{ valeu := n } },\n"
+              "}\n"
+              "var^ c = C.new(5)\n",
+              "check.no-member.named", "value",
+              "var^ C = def^{\n"
+              "    self^{ value := 1 },\n"
+              "    override^new := f^ n:number^ { self^{ value := n } },\n"
+              "}\n"
+              "var^ c = C.new(5)\n");
+
+    LHAT_TEST("a field an error kind does not declare offers one it does");
+    near_case("errordef^ IOError { NotFound { path : string^ } }\n"
+              "var^ e = error^ IOError.NotFound { paht = \"x\" }\n",
+              "check.no-member.named", "path",
+              "errordef^ IOError { NotFound { path : string^ } }\n"
+              "var^ e = error^ IOError.NotFound { path = \"x\" }\n");
+}
+
+// ---------------------------------------------------------------------------
 // The codes that know no fix, and the readings past the end.
 
 static void test_nothing(void)
@@ -379,6 +469,7 @@ int main(void)
     test_spellings();
     test_markers();
     test_dropped();
+    test_near();
     test_nothing();
     return lhat_test_report("test_fixes");
 }

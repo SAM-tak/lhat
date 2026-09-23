@@ -43,6 +43,148 @@ void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code)
     chk_report_fix(c, at, code, NULL, 0, NULL, 0);
 }
 
+// 07 §6: one text the result keeps for a fix.
+struct LhatFixText {
+    struct LhatFixText *next;
+    char text[];
+};
+
+static const char *keep_text(LhatCheckResult *result, const char *text,
+                             size_t length)
+{
+    struct LhatFixText *kept =
+        (struct LhatFixText *)lhat_alloc(sizeof *kept + length + 1);
+    if (kept == NULL) {
+        return NULL;
+    }
+    memcpy(kept->text, text, length);
+    kept->text[length] = '\0';
+    kept->next = result->fix_texts;
+    result->fix_texts = kept;
+    return kept->text;
+}
+
+static unsigned char fold(unsigned char byte)
+{
+    return byte >= 'A' && byte <= 'Z' ? (unsigned char)(byte - 'A' + 'a')
+                                      : byte;
+}
+
+// Optimal string alignment: insertions, deletions and substitutions, and a
+// swap of two neighbours as one edit -- 'lenght' is one away from 'length',
+// which is the mistake a hand makes. Both lengths are under CHK_NEAR_NAME.
+static size_t distance_between(const char *a, size_t a_length, const char *b,
+                               size_t b_length)
+{
+    size_t rows[3][CHK_NEAR_NAME + 1];
+    size_t *two = rows[0];
+    size_t *one = rows[1];
+    size_t *now = rows[2];
+    for (size_t j = 0; j <= b_length; j++) {
+        one[j] = j;
+    }
+    for (size_t i = 1; i <= a_length; i++) {
+        now[0] = i;
+        unsigned char x = fold((unsigned char)a[i - 1]);
+        for (size_t j = 1; j <= b_length; j++) {
+            unsigned char y = fold((unsigned char)b[j - 1]);
+            size_t best = one[j] + 1;
+            if (now[j - 1] + 1 < best) {
+                best = now[j - 1] + 1;
+            }
+            if (one[j - 1] + (x == y ? 0 : 1) < best) {
+                best = one[j - 1] + (x == y ? 0 : 1);
+            }
+            if (i > 1 && j > 1 && x == fold((unsigned char)b[j - 2]) &&
+                fold((unsigned char)a[i - 2]) == y && two[j - 2] + 1 < best) {
+                best = two[j - 2] + 1;
+            }
+            now[j] = best;
+        }
+        size_t *spare = two;
+        two = one;
+        one = now;
+        now = spare;
+    }
+    return one[b_length];
+}
+
+bool chk_nearest_start(Checker *c, ChkNearest *near, const char *written,
+                       size_t length)
+{
+    near->written = written;
+    near->written_length = length;
+    near->best_length = 0;
+    near->distance = 0;
+    return c->rereading == 0 && written != NULL && length > 0 &&
+           length < CHK_NEAR_NAME;
+}
+
+void chk_nearest_offer(ChkNearest *near, const char *name, size_t length)
+{
+    if (name == NULL || length == 0 || length >= CHK_NEAR_NAME ||
+        near->written == NULL) {
+        return;
+    }
+    // The name itself is not a suggestion: where it exists and was still
+    // refused, the reason is something other than its spelling.
+    if (length == near->written_length &&
+        memcmp(name, near->written, length) == 0) {
+        return;
+    }
+    size_t allowed = near->written_length / 3 > 0 ? near->written_length / 3
+                                                   : 1;
+    size_t apart = length > near->written_length ? length - near->written_length
+                                                 : near->written_length - length;
+    if (apart > allowed) {
+        return;
+    }
+    size_t distance =
+        distance_between(near->written, near->written_length, name, length);
+    if (distance > allowed ||
+        (near->best_length > 0 && distance >= near->distance)) {
+        return;
+    }
+    memcpy(near->best, name, length);
+    near->best_length = length;
+    near->distance = distance;
+}
+
+void chk_nearest_member(void *context, const LhatTypeMember *member)
+{
+    chk_nearest_offer((ChkNearest *)context, member->name, member->name_length);
+}
+
+void chk_nearest_builtin(void *context, const char *name, size_t length,
+                         LhatType *type)
+{
+    (void)type;
+    chk_nearest_offer((ChkNearest *)context, name, length);
+}
+
+void chk_report_near(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
+                     const char *name, size_t length, const LhatNode *spelt,
+                     const ChkNearest *near)
+{
+    LhatFixSlot fix;
+    size_t count = 0;
+    if (at != NULL && spelt != NULL && spelt->end > spelt->offset &&
+        near->best_length > 0 && c->rereading == 0) {
+        const char *kept = keep_text(c->result, near->best, near->best_length);
+        if (kept != NULL) {
+            // Suggested: a near name is a guess at what was meant, and the
+            // name that was written may be one still to be made.
+            fix.title = lhat_fix_message(LHAT_FIX_NEAR_NAME);
+            fix.confidence = LHAT_FIX_SUGGESTED;
+            fix.edit.offset = spelt->offset;
+            fix.edit.length = spelt->end - spelt->offset;
+            fix.edit.text = kept;
+            count = 1;
+        }
+    }
+    chk_report_fix(c, at, code, name, length, &fix, count);
+}
+
 void chk_member_declared_at(Checker *c, LhatTypeMember *member,
                            const LhatNode *at)
 {
@@ -3315,8 +3457,22 @@ void chk_check_annotations(Checker *c, const LhatNode *list, uint32_t target)
             }
         }
         if (found == NULL) {
-            chk_report_named(c, at->v.named.name,
-                             LHAT_CHECK_ERR_NO_SUCH_ANNOTATION, name, length);
+            // 07 §6: the nearest the host did register -- for what this is
+            // written above, since one registered elsewhere would be the
+            // next diagnostic.
+            ChkNearest near;
+            if (chk_nearest_start(c, &near, name, length)) {
+                for (size_t i = 0; i < c->require.annotation_count; i++) {
+                    const LhatAnnotationDecl *decl = &c->require.annotations[i];
+                    if ((decl->targets & target) != 0) {
+                        chk_nearest_offer(&near, decl->name,
+                                          strlen(decl->name));
+                    }
+                }
+            }
+            chk_report_near(c, at->v.named.name,
+                            LHAT_CHECK_ERR_NO_SUCH_ANNOTATION, name, length,
+                            at->v.named.name, &near);
             continue;
         }
         if ((found->targets & target) == 0) {
@@ -3872,6 +4028,70 @@ void lhat_check_bindings_at(const LhatCheckResult *result, uint32_t offset,
     }
 }
 
+#endif  // LHAT_WITH_RESOLUTIONS
+
+// 14.10改: a table is a sequence as well as a mapping, and the sequence half
+// is members whose names are the digits of their position. 01 の 3.1 spells
+// a name as an identifier, so a program can never write one of these.
+static bool is_positional(const LhatTypeMember *m)
+{
+    if (m->name_length == 0) {
+        return false;
+    }
+    for (size_t i = 0; i < m->name_length; i++) {
+        if (m->name[i] < '0' || m->name[i] > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+
+void lhat_check_written_members(const LhatType *receiver, LhatMemberSink sink,
+                                void *context)
+{
+    if (receiver == NULL || sink == NULL) {
+        return;
+    }
+    // 04 の 2.2: an error kind keeps its fields on a list of their own.
+    if (receiver->kind == LHAT_TYPE_ERROR_KIND) {
+        for (const LhatTypeMember *m = receiver->v.error.fields; m != NULL;
+             m = m->next) {
+            sink(context, m);
+        }
+        return;
+    }
+    if (receiver->kind != LHAT_TYPE_TABLE &&
+        receiver->kind != LHAT_TYPE_HOSTVALUE) {
+        return;
+    }
+
+    // 05 の 8.8改 and 14.7改2: two of the three places a member can be are
+    // links, so the chain is what the machine walks and this walks it too.
+    //
+    // Unlike rttype.c's walk (src/rttype.c), this does NOT stop at a host
+    // type's tag. That one keeps the tag rather than copying an engine's
+    // whole API into every descriptor, which is a size decision about what
+    // travels; here the host's API is the very thing a reader is asking for.
+    LhatChain walk = lhat_type_chain(receiver);
+    const LhatType *up;
+    while ((up = lhat_chain_next(&walk)) != NULL) {
+        for (const LhatTypeMember *m = up->v.table.members; m != NULL;
+             m = m->next) {
+            // The one rule, and it is the lookup's own: a member the search
+            // does not answer with is one a nearer type shadows, or one a
+            // delegate does not lend (14.7改2 lends only what takes a
+            // receiver).
+            if (lhat_type_find_member(receiver, m->name, m->name_length) != m) {
+                continue;
+            }
+            if (m->ambiguous || is_positional(m)) {
+                continue;
+            }
+            sink(context, m);
+        }
+    }
+}
+
 // 07 の 4 章: the built-ins, asked for one spelling at a time.
 //
 // A probe Checker: zeroed but for the result, which is every field the
@@ -3967,8 +4187,6 @@ void lhat_check_number_constants(LhatCheckResult *result,
     }
 }
 
-#endif  // LHAT_WITH_RESOLUTIONS
-
 void lhat_check_result_dispose(LhatCheckResult *result)
 {
     lhat_free(result->diagnostics);
@@ -3991,6 +4209,11 @@ void lhat_check_result_dispose(LhatCheckResult *result)
 #endif
     lhat_free(result->module_name);
     result->module_name = NULL;
+    while (result->fix_texts != NULL) {
+        struct LhatFixText *next = result->fix_texts->next;
+        lhat_free(result->fix_texts);
+        result->fix_texts = next;
+    }
     // Only the arena this result made for itself; a shared one belongs to
     // whoever passed it in.
     if (result->types == &result->owned) {

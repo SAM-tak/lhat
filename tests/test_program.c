@@ -4523,6 +4523,52 @@ static void test_documentation(void)
 // 02 の 18.5.1: two names the host registered as one choice. FILEUNIQUE counts
 // each registration on its own, so the pair is what only the host can say --
 // and having said it, the checker is the one that says where.
+// 07 §6: a name no host registered is offered the nearest one that was --
+// registered for what it is written above, since one registered elsewhere
+// would be the next diagnostic. The '@' is 18.2's mark and stays; what is
+// rewritten is the name.
+static void test_annotation_near(void)
+{
+    LhatProgram program;
+    Disk disk;
+    static const File misspelt[] = {
+        {"main.lh",
+         "module^ ns.main\n"
+         "@gmae\n"
+         "public^ let^ A = def^{ }\n"}};
+
+    LHAT_TEST("a misspelt annotation offers the registered one it was near");
+    {
+        program_with(&program, &disk, misspelt, 1);
+        // As near, and registered first, so it would win a tie -- but for
+        // something this is not written above, and a suggestion of it would
+        // only be refused as misplaced.
+        lhat_register_annotation(&program, "godot", "gmaes",
+                                 LHAT_ANNOTATION_FIELD);
+        lhat_register_annotation(&program, "godot", "game",
+                                 LHAT_ANNOTATION_PUBLIC);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_REQUIRE(root != NULL, "the unit is there");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_NO_SUCH_ANNOTATION),
+                   "reported");
+
+        const char *text = misspelt[0].text;
+        LhatFix fix;
+        LHAT_CHECK_EQ_INT(lhat_unit_diagnostic_fix_count(root, 0), 1);
+        if (lhat_unit_diagnostic_fix(root, 0, 0, &fix)) {
+            LHAT_CHECK_EQ_INT(fix.edits[0].offset,
+                              (size_t)(strstr(text, "gmae") - text));
+            LHAT_CHECK_EQ_INT(fix.edits[0].length, 4);
+            LHAT_CHECK_EQ_STR(fix.edits[0].text, strlen(fix.edits[0].text),
+                              "game");
+            char title[64];
+            lhat_unit_diagnostic_fix_title(root, 0, 0, title, sizeof title);
+            LHAT_CHECK_EQ_STR(title, strlen(title), "change to 'game'");
+        }
+    }
+    lhat_program_dispose(&program);
+}
+
 static void test_annotation_exclusion(void)
 {
     LhatProgram program;
@@ -5243,6 +5289,7 @@ int main(void)
     test_composing_across_units();
     test_annotations();
     test_annotation_exclusion();
+    test_annotation_near();
     test_annotation_requisite();
     test_empty_body();
     test_delegate_among_the_members();

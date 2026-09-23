@@ -538,6 +538,13 @@ typedef struct {
     // owned by the result. NULL when the unit declared none, which 3.2
     // allows. 5.5 needs it to say what the short form of require^ binds.
     char *module_name;
+
+    // 07 §6: the text of the fixes that write something the source does not
+    // hold -- a name found near the one written. Each is its own allocation
+    // on this chain, so what a diagnostic points at stays where it is however
+    // many more are kept, and a diagnostic a later round took back leaves
+    // its text here until the result goes.
+    struct LhatFixText *fix_texts;
 } LhatCheckResult;
 
 #if LHAT_WITH_RESOLUTIONS
@@ -555,6 +562,19 @@ const LhatResolution *lhat_check_resolution_at(const LhatCheckResult *result,
 const LhatMemberSite *lhat_check_member_site_at(const LhatCheckResult *result,
                                                 uint32_t offset);
 
+#endif  // LHAT_WITH_RESOLUTIONS
+
+// 07 の 4 章 and 07 §6: the members `receiver` holds as written -- every one
+// a lookup answers with, and no other. The search a member access uses is
+// what decides, so a member a nearer type shadows and one a delegate does
+// not lend (14.7改2) are left out; so are 14.5改's ambiguous ones, which
+// reaching is refused, and 14.10改's positions, which no name spells. What a
+// tool offers after a '.' and what a fix offers instead of a misspelling
+// are the one list.
+typedef void (*LhatMemberSink)(void *context, const LhatTypeMember *member);
+void lhat_check_written_members(const LhatType *receiver, LhatMemberSink sink,
+                                void *context);
+
 // 07 の 4 章 with 14.19: the built-in members `receiver` answers -- `length`
 // on a string, `push^` on a plain table, `resume` on a coroutine. No member
 // list holds them; they are the checker's own answers, and this asks the
@@ -562,8 +582,8 @@ const LhatMemberSite *lhat_check_member_site_at(const LhatCheckResult *result,
 //
 // The sink gets the spelling that answered (bare or hatted -- 01 の 2.3 makes
 // those different names) and the type the access would have. Written members
-// are NOT included: those are the type's own, and lhat_type_find_member is
-// what lists them.
+// are NOT included: those are the type's own, and
+// lhat_check_written_members above is what lists them.
 //
 // Types are made in `result`'s arena as the walk would make them, so they
 // live as long as the result does -- and the arena grows by one signature per
@@ -579,6 +599,8 @@ void lhat_check_builtin_members(LhatCheckResult *result, LhatType *receiver,
 // the whole answer rather than an addition to the one above.
 void lhat_check_number_constants(LhatCheckResult *result,
                                  LhatBuiltinSink sink, void *context);
+
+#if LHAT_WITH_RESOLUTIONS
 
 typedef void (*LhatBindingSink)(void *context, const LhatBindingSite *site);
 

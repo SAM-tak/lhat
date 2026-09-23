@@ -153,7 +153,12 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
         if (b == NULL) {
             // collect_bindings puts an ordinary root there before the walk,
             // so what reaches here is a hat identifier that is not L^.
-            chk_report_named(c, node, LHAT_CHECK_ERR_UNDEFINED, name, length);
+            ChkNearest near;
+            if (chk_nearest_start(c, &near, name, length)) {
+                chk_nearest_in_scope(c, &near);
+            }
+            chk_report_near(c, node, LHAT_CHECK_ERR_UNDEFINED, name, length,
+                            node, &near);
             return NULL;
         }
         if (b->type == NULL || b->type->kind == LHAT_TYPE_UNKNOWN ||

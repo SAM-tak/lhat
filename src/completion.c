@@ -113,75 +113,17 @@ static LhatCompletionKind kind_of_member(const LhatTypeMember *m)
     return LHAT_COMPLETION_FIELD;
 }
 
-// 14.10改: a table is a sequence as well as a mapping, and the sequence half
-// is members whose names are the digits of their position. 01 の 3.1 spells
-// a name as an identifier, so a program can never write one of these -- and
-// offering "1" where a member name goes would be offering a spelling the
-// language has no way to accept.
-static bool is_positional(const LhatTypeMember *m)
+// The written half: what the type itself holds, as the checker's walk lists
+// it (lhat_check_written_members), so what is offered is what an access
+// would accept.
+static void offer_written(void *context, const LhatTypeMember *m)
 {
-    if (m->name_length == 0) {
-        return false;
-    }
-    for (size_t i = 0; i < m->name_length; i++) {
-        if (!isdigit((unsigned char)m->name[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-// The written half: what the type itself holds. 05 の 8.9: a host value type
-// keeps its members on the same list a table keeps its own, and an error kind
-// keeps its fields on another.
-static void written_members(Fill *fill, const LhatType *receiver)
-{
-    if (receiver->kind == LHAT_TYPE_ERROR_KIND) {
-        for (const LhatTypeMember *m = receiver->v.error.fields; m != NULL;
-             m = m->next) {
-            add(fill, m->name, m->name_length, LHAT_COMPLETION_FIELD, NULL);
-        }
-        return;
-    }
-    if (receiver->kind != LHAT_TYPE_TABLE &&
-        receiver->kind != LHAT_TYPE_HOSTVALUE) {
-        return;
-    }
-
-    // 05 の 8.8改 and 14.7改2: two of the three places a member can be are
-    // links, so the chain is what the machine walks and this walks it too.
-    //
-    // Unlike rttype.c's walk (src/rttype.c), this does NOT stop at a host
-    // type's tag. That one keeps the tag rather than copying an engine's
-    // whole API into every descriptor, which is a size decision about what
-    // travels; here the host's API is the very thing a reader is asking for.
-    LhatChain walk = lhat_type_chain(receiver);
-    const LhatType *up;
-    while ((up = lhat_chain_next(&walk)) != NULL) {
-        for (const LhatTypeMember *m = up->v.table.members; m != NULL;
-             m = m->next) {
-            // The one rule, and it is the lookup's own: a member the search
-            // does not answer with is one a nearer type shadows, or one a
-            // delegate does not lend (14.7改2 lends only what takes a
-            // receiver). Asking here is what keeps this from ever offering
-            // a name the checker would refuse.
-            if (lhat_type_find_member(receiver, m->name, m->name_length) != m) {
-                continue;
-            }
-            // 14.5改: reaching one is refused outright, so offering it would
-            // offer a diagnostic.
-            if (m->ambiguous || is_positional(m)) {
-                continue;
-            }
-            char written[LHAT_COMPLETION_DETAIL];
-            lhat_type_write(m->type, written, sizeof written);
-            // 01 の 2.3: the hat is part of the name, so the label is the
-            // spelling the member was written with and nothing is inserted
-            // in its place.
-            add(fill, m->name, m->name_length, kind_of_member(m),
-                     written);
-        }
-    }
+    Fill *fill = (Fill *)context;
+    char written[LHAT_COMPLETION_DETAIL];
+    lhat_type_write(m->type, written, sizeof written);
+    // 01 の 2.3: the hat is part of the name, so the label is the spelling
+    // the member was written with and nothing is inserted in its place.
+    add(fill, m->name, m->name_length, kind_of_member(m), written);
 }
 
 
@@ -735,7 +677,7 @@ static void member_items(Fill *fill, const LhatUnit *unit, uint32_t offset)
         return;
     }
     // The written ones first, so the dedupe above has them to compare with.
-    written_members(fill, site->receiver);
+    lhat_check_written_members(site->receiver, offer_written, fill);
     lhat_check_builtin_members(result, site->receiver, offer_builtin, fill);
     if (program != NULL) {
         remember(program, site->receiver, fill, seen);

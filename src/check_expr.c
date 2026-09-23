@@ -686,6 +686,56 @@ static LhatType *initial_binding_type(Checker *c, const char *name,
     return NULL;
 }
 
+void chk_nearest_in_scope(Checker *c, ChkNearest *near)
+{
+    for (const Scope *s = c->scope; s != NULL; s = s->parent) {
+        for (const Binding *b = s->bindings; b != NULL; b = b->next) {
+            // 8.7改: unreadable from its own initialiser, so offering it
+            // there would offer the next diagnostic. A name that is not an
+            // identifier ('...') is no one's misspelling.
+            if (b->being_defined || b->name_length == 0 || b->name[0] == '.') {
+                continue;
+            }
+            chk_nearest_offer(near, b->name, b->name_length);
+        }
+    }
+    for (size_t i = 0; i < c->require.initial_count; i++) {
+        const char *bound = c->require.initial_names[i];
+        if (bound != NULL &&
+            initial_binding_type(c, bound, strlen(bound)) != NULL) {
+            chk_nearest_offer(near, bound, strlen(bound));
+        }
+    }
+}
+
+// 07 §6: a member the receiver does not hold, offered the nearest one it
+// does -- written or built in, the two lists a '.' completes from. A probe
+// (`node` NULL) looks for nothing, which is also what keeps the built-in
+// walk below from recursing: it asks this function's caller quietly.
+static void report_no_member(Checker *c, const LhatNode *node,
+                             LhatType *target, const char *name,
+                             size_t length)
+{
+    ChkNearest near;
+    bool looking = chk_nearest_start(c, &near, name, length);
+    if (node != NULL && looking) {
+        lhat_check_written_members(target, chk_nearest_member, &near);
+        lhat_check_builtin_members(c->result, target, chk_nearest_builtin,
+                                   &near);
+    }
+    chk_report_near(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length,
+                    node != NULL ? node->v.access.argument : NULL, &near);
+}
+
+// 14.11: what a template holds as a field. A method is a member of the
+// definition and not something a construction writes.
+static void offer_field(void *context, const LhatTypeMember *member)
+{
+    if (!chk_takes_receiver(member->type)) {
+        chk_nearest_member(context, member);
+    }
+}
+
 // 04 の 5.3 with 3.4: an error on its way out of the body being checked --
 // through a try^, or through catch^ arms that did not take it. Where the
 // result was written, this is where it is asked whether that admits it; where
@@ -867,7 +917,12 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
 #endif
             return bound;
         }
-        chk_report_named(c, node, LHAT_CHECK_ERR_UNDEFINED, name, length);
+        ChkNearest near;
+        if (chk_nearest_start(c, &near, name, length)) {
+            chk_nearest_in_scope(c, &near);
+        }
+        chk_report_near(c, node, LHAT_CHECK_ERR_UNDEFINED, name, length, node,
+                        &near);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
@@ -2653,7 +2708,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         if (builtin_named(name, length, "tostring", false)) {
             return builtin_tostring(c, target);  // 14.17
         }
-        chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
+        report_no_member(c, node, target, name, length);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     } else {
         // 14.17: nil^, bool^, number^, string^ and the rest hold no members
@@ -2780,7 +2835,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             signature->v.func.result = chk_simple(c, LHAT_TYPE_STRING);
             return signature;
         }
-        chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
+        report_no_member(c, node, target, name, length);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
@@ -3086,7 +3141,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         }
     }
 
-    chk_report_named(c, node, LHAT_CHECK_ERR_NO_MEMBER, name, length);
+    report_no_member(c, node, target, name, length);
     return chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
 
@@ -5889,8 +5944,14 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 const LhatTypeMember *held =
                     chk_find_member(instance, name, length);
                 if (held == NULL) {
-                    chk_report_named(c, field->v.entry.key,
-                                     LHAT_CHECK_ERR_NO_MEMBER, name, length);
+                    ChkNearest near;
+                    if (chk_nearest_start(c, &near, name, length)) {
+                        lhat_check_written_members(instance, offer_field,
+                                                   &near);
+                    }
+                    chk_report_near(c, field->v.entry.key,
+                                    LHAT_CHECK_ERR_NO_MEMBER, name, length,
+                                    field->v.entry.key, &near);
                     continue;
                 }
                 chk_expect(c, field->v.entry.value, value, held->type,
@@ -6452,8 +6513,16 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                     }
                 }
                 if (!found) {
-                    chk_report_named(c, entry, LHAT_CHECK_ERR_NO_MEMBER, name,
-                                     length);
+                    // 2.3's two are on every kind, so they are offered too.
+                    ChkNearest near;
+                    if (chk_nearest_start(c, &near, name, length)) {
+                        lhat_check_written_members(kind, chk_nearest_member,
+                                                   &near);
+                        chk_nearest_offer(&near, "message", 7);
+                        chk_nearest_offer(&near, "cause", 5);
+                    }
+                    chk_report_near(c, entry, LHAT_CHECK_ERR_NO_MEMBER, name,
+                                    length, entry->v.entry.key, &near);
                 }
             }
 

@@ -154,6 +154,7 @@ static const LhatMessageEntry FIX_MESSAGES[] = {
     [LHAT_FIX_HAND_BACK] = {"fix.hand-back",
         "write try^ to hand the failure back"},
     [LHAT_FIX_DELEGATE] = {"fix.delegate", "write await^ to delegate"},
+    [LHAT_FIX_NEAR_NAME] = {"fix.near-name", "change to '{text}'"},
 };
 
 size_t lhat_fix_slot_count(const LhatFixSlot *slots)

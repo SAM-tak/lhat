@@ -64,7 +64,8 @@ typedef enum {
     LHAT_FIX_REMOVE_SCOPE,
     LHAT_FIX_REMOVE_ANNOTATION,
     LHAT_FIX_HAND_BACK,
-    LHAT_FIX_DELEGATE
+    LHAT_FIX_DELEGATE,
+    LHAT_FIX_NEAR_NAME
 } LhatFixTitle;
 
 const LhatMessageEntry *lhat_fix_message(size_t which);
