@@ -12,6 +12,7 @@
 #define LHAT_PARSER_H
 
 #include "ast.h"
+#include "lhat/error.h"  // 07 §6: the fix a diagnostic carries
 #include "lhat/lexer.h"
 
 typedef enum {
@@ -143,7 +144,21 @@ typedef struct {
     LhatTokenKind found;
     LhatOpKind found_op;  // meaningful when `found` is LHAT_TOKEN_OP
     uint32_t length;
+
+    // 07 §6: the fix this diagnostic knows how to make, or no fix at all --
+    // `fix_title` NULL. One fix of one edit is all any diagnostic has so far;
+    // a diagnostic with more takes an array off the result, which is where
+    // the public LhatFix's edit count is already looking.
+    const LhatMessageEntry *fix_title;
+    LhatFixConfidence fix_confidence;
+    LhatFixEdit fix_edit;
 } LhatParseDiagnostic;
+
+// 07 §6: the fix `diagnostic` knows how to make, if it knows one. The edits
+// belong to the diagnostic and live as long as it does.
+size_t lhat_parse_fix_count(const LhatParseDiagnostic *diagnostic);
+bool lhat_parse_fix(const LhatParseDiagnostic *diagnostic, size_t which,
+                    LhatFix *out);
 
 typedef struct {
     LhatNode *root;  // a BLOCK holding the statements of the unit

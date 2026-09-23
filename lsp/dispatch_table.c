@@ -6,6 +6,7 @@
 #include "dispatch.h"
 
 #include "handlers/ast.h"
+#include "handlers/code_action.h"
 #include "handlers/completion.h"
 #include "handlers/definition.h"
 #include "handlers/disabled_code.h"
@@ -28,6 +29,7 @@ const LspRequestEntry LSP_REQUEST_TABLE[] = {
     {"textDocument/prepareRename", lsp_handle_prepare_rename},
     {"textDocument/rename", lsp_handle_rename},
     {"textDocument/completion", lsp_handle_completion},
+    {"textDocument/codeAction", lsp_handle_code_action},
     // 07 の 7 章: an extension of our own, so it is named under "lhat/".
     {"lhat/ast", lsp_handle_ast},
     {"lhat/typeOptions", lsp_handle_type_options},

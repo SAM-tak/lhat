@@ -154,6 +154,14 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     cJSON_AddItemToObject(completion, "triggerCharacters",
                           string_array(triggers, 2));
 
+    // 07 §6: the fixes a diagnostic knows how to make. The library works
+    // them out, so what the editor is told here is only that there are some.
+    cJSON *code_action = cJSON_CreateObject();
+    static const char *const kinds[] = {"quickfix"};
+    cJSON_AddItemToObject(code_action, "codeActionKinds",
+                          string_array(kinds, 1));
+    cJSON_AddItemToObject(capabilities, "codeActionProvider", code_action);
+
     // The outline, from the tree alone (document_symbol.h).
     cJSON_AddBoolToObject(capabilities, "documentSymbolProvider", true);
 

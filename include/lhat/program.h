@@ -421,6 +421,18 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
 // own (a binary one) or an index past the last.
 const char *lhat_unit_diagnostic_id(const LhatUnit *unit, size_t index);
 
+// 07 §6: the fixes this diagnostic knows how to make, and what one of them
+// is. A tool shows the title and applies the edits in the order they come.
+// A unit that reports nothing of its own (a binary one) answers none.
+size_t lhat_unit_diagnostic_fix_count(const LhatUnit *unit, size_t index);
+bool lhat_unit_diagnostic_fix(const LhatUnit *unit, size_t index, size_t which,
+                              LhatFix *out);
+// The title a fix is offered under, in the program's language (10 §7.1),
+// drawn with what its first edit writes. Follows lhat_report_write.
+size_t lhat_unit_diagnostic_fix_title(const LhatUnit *unit, size_t index,
+                                      size_t which, char *out,
+                                      size_t capacity);
+
 size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
                                   bool rich, char *out, size_t capacity);
 

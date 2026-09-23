@@ -49,6 +49,15 @@ const LhatMessageTable *lhat_program_message_tables(size_t *count);
 const LhatMessageTable *lhat_source_message_tables(size_t *count);
 const LhatMessageTable *lhat_report_message_tables(size_t *count);
 const LhatMessageTable *lhat_trace_message_tables(size_t *count);
+const LhatMessageTable *lhat_fix_message_tables(size_t *count);
+
+// 07 §6: which title a fix is offered under. The kinds are the library's own,
+// since a fix is worked out where a stage refused.
+typedef enum {
+    LHAT_FIX_WRITE_TOKEN
+} LhatFixTitle;
+
+const LhatMessageEntry *lhat_fix_message(size_t which);
 
 // The entry for `code`, or NULL when the table holds none. `table` has to be
 // the array itself rather than a pointer to it, since the length is read off

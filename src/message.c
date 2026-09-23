@@ -134,6 +134,21 @@ size_t lhat_message_render(const char *text, const LhatMessageArg *args,
 // 10 §6.3: the English, written out as a catalog -- one file per source, its
 // entries all commented out, for a translation to be made from.
 
+// 07 §6: the titles a fix is offered under. Each is drawn with `{text}` --
+// what the fix's first edit writes -- since a title that names it reads
+// better than one that does not ("write '}'", not "write the token").
+static const LhatMessageEntry FIX_MESSAGES[] = {
+    [LHAT_FIX_WRITE_TOKEN] = {"fix.write-token", "write '{text}'"},
+};
+
+LHAT_MESSAGE_TABLES(lhat_fix_message_tables,
+    {FIX_MESSAGES, LHAT_MESSAGE_COUNT(FIX_MESSAGES)})
+
+const LhatMessageEntry *lhat_fix_message(size_t which)
+{
+    return LHAT_MESSAGE_AT(FIX_MESSAGES, which);
+}
+
 typedef const LhatMessageTable *(*Tables)(size_t *count);
 
 // The sources this build holds, in the order 10 §3.1 lists them. A build
@@ -153,6 +168,7 @@ static const struct {
     {"source", lhat_source_message_tables},
     {"report", lhat_report_message_tables},
     {"trace", lhat_trace_message_tables},
+    {"fix", lhat_fix_message_tables},
 };
 
 const char *lhat_messages_source(size_t index)

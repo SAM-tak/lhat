@@ -489,6 +489,7 @@ if(LHAT_BUILD_LSP)
         lsp/ast_json.c
         lsp/call_info.c
         lsp/graph_types.c
+        lsp/code_action.c
         lsp/disabled_code.c
         lsp/handlers/disabled_code.c
         lsp/hover.c
@@ -497,6 +498,7 @@ if(LHAT_BUILD_LSP)
         lsp/handlers/text_document_sync.c
         lsp/handlers/semantic_tokens.c
         lsp/handlers/ast.c
+        lsp/handlers/code_action.c
         lsp/handlers/hover.c
         lsp/handlers/signature.c
         lsp/signature.c

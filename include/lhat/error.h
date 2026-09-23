@@ -89,6 +89,38 @@ size_t lhat_report_write(const struct LhatProgram *program,
                          const char *name, bool rich, char *out,
                          size_t capacity);
 
+// 07 §6: one edit a fix asks for -- where it begins, how much of the source
+// it replaces, and what goes there. A zero `length` inserts; an empty `text`
+// deletes. The text is borrowed and NUL-terminated: it is a spelling of the
+// language or a span of the source, never something to free.
+typedef struct {
+    uint32_t offset;
+    uint32_t length;
+    const char *text;
+} LhatFixEdit;
+
+// How sure a fix is. A machine fix is the one thing that was meant and may
+// be applied without being read; a suggested one is a guess about what was
+// meant, and wants a reader before it is applied.
+typedef enum {
+    LHAT_FIX_MACHINE,
+    LHAT_FIX_SUGGESTED
+} LhatFixConfidence;
+
+// 07 §6: what a quick fix would do about one diagnostic. The stage that
+// refused is the one that knows what would have been right, so the library
+// works this out and a tool only translates it -- a second guess at the
+// language's rules in every editor is what this avoids.
+//
+// `title_id` is 10 §4's ID of the text a reader sees; the text itself comes
+// from lhat_unit_diagnostic_fix_title, in the program's language.
+typedef struct {
+    const char *title_id;
+    LhatFixConfidence confidence;
+    const LhatFixEdit *edits;
+    size_t edit_count;
+} LhatFix;
+
 // 10 §4: a message's stable ID and its English text. The ID is what a
 // translation is written against and never changes meaning; the English is
 // the reference every other language translates (10 §2.2).

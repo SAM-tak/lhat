@@ -257,6 +257,7 @@ static void report(Parser *p, const LhatToken *at, LhatParseErrorCode code)
     d->column = at->column;
     d->has_expected = false;
     d->expected = LHAT_OP_LPAREN;  // read only when has_expected says so
+    d->fix_title = NULL;           // 07 §6: no fix until one is worked out
     d->found = at->kind;
     d->found_op = at->kind == LHAT_TOKEN_OP ? at->v.op : LHAT_OP_LPAREN;
     d->length = at->length;
@@ -275,6 +276,14 @@ static void report_expected(Parser *p, const LhatToken *at, LhatOpKind op)
         &p->result->diagnostics[p->result->diagnostic_count - 1];
     d->has_expected = true;
     d->expected = op;
+    // 07 §6: what would have been right is the token itself, written where
+    // the one that was there begins. Suggested rather than machine: the
+    // parser noticed it here, and what was left out may belong further back.
+    d->fix_title = lhat_fix_message(LHAT_FIX_WRITE_TOKEN);
+    d->fix_confidence = LHAT_FIX_SUGGESTED;
+    d->fix_edit.offset = d->offset;
+    d->fix_edit.length = 0;
+    d->fix_edit.text = lhat_op_name(op);
 }
 
 static LhatNode *make(Parser *p, LhatNodeKind kind, const LhatToken *at)
@@ -5553,6 +5562,24 @@ static size_t found_part(const LhatParseDiagnostic *d)
         case LHAT_TOKEN_OP:           return PART_OPERATOR;
         default:                      return PART_OTHER;
     }
+}
+
+size_t lhat_parse_fix_count(const LhatParseDiagnostic *diagnostic)
+{
+    return diagnostic != NULL && diagnostic->fix_title != NULL ? 1 : 0;
+}
+
+bool lhat_parse_fix(const LhatParseDiagnostic *diagnostic, size_t which,
+                    LhatFix *out)
+{
+    if (out == NULL || which >= lhat_parse_fix_count(diagnostic)) {
+        return false;
+    }
+    out->title_id = diagnostic->fix_title->id;
+    out->confidence = diagnostic->fix_confidence;
+    out->edits = &diagnostic->fix_edit;
+    out->edit_count = 1;
+    return true;
 }
 
 const char *lhat_parse_message_id(const LhatParseDiagnostic *diagnostic)

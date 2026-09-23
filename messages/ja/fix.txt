@@ -1,0 +1,3 @@
+# fix -- L^ の英語から訳した。
+# write-token = write '{text}'
+write-token = 「{text}」を書く

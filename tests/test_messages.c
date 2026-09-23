@@ -100,7 +100,7 @@ static const Table TABLES[] = {
 
 // Every source the library holds and the tables it hands over -- the codes'
 // texts, and the phrases, fixed words and wrapping sentences beside them.
-// The tests build with the front end, so all nine are here (10 §6.2).
+// The tests build with the front end, so all ten are here (10 §6.2).
 typedef const LhatMessageTable *(*Tables)(size_t *count);
 
 static const struct {
@@ -116,6 +116,7 @@ static const struct {
     {"source", lhat_source_message_tables},
     {"report", lhat_report_message_tables},
     {"trace", lhat_trace_message_tables},
+    {"fix", lhat_fix_message_tables},
 };
 
 // Every ID met, for the check that no two entries share one.

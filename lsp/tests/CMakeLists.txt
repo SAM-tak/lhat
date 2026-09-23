@@ -24,6 +24,11 @@ function(lhat_lsp_add_test name)
 endfunction()
 
 lhat_lsp_add_test(test_uri ${CMAKE_SOURCE_DIR}/lsp/uri.c)
+lhat_lsp_add_test(test_code_action
+    ${CMAKE_SOURCE_DIR}/lsp/code_action.c
+    ${CMAKE_SOURCE_DIR}/lsp/position.c
+    ${CMAKE_SOURCE_DIR}/lsp/lton.c
+)
 lhat_lsp_add_test(test_lton_server
     ${CMAKE_SOURCE_DIR}/lsp/lton.c
     ${CMAKE_SOURCE_DIR}/lsp/position.c
