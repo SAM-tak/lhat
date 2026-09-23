@@ -417,6 +417,52 @@ static void test_callable_origins(void)
     }
 }
 
+static void test_callable_receivers(void)
+{
+    const struct { const char *source; const char *binding; int inputs; } cases[] = {
+        { "let^ values = {1, 2, 3}\nlet^ out = values.slice^(1, 2)\n", "member", 2 },
+        { "let^ values = {1, 2, 3}\nlet^ out = values.slice^(1)\n", "member", 1 },
+        { "let^ values = {1, 2, 3}\nlet^ out = values.join^(\",\")\n", "member", 1 },
+        { "let^ values = {1, 2, 3}\nlet^ out = values.contains^(2)\n", "member", 1 },
+        { "let^ values = {1, 2, 3}\nlet^ out = values.clone^()\n", "member", 0 },
+        { "let^ values = {1, 2, 3}\nlet^ out = values.keys^()\n", "member", 0 },
+        { "let^ text = \"ABC\"\nlet^ out = text.tolower()\n", "member", 0 },
+        { "let^ value = 1\nlet^ out = value.tostring()\n", "member", 0 },
+        { "let^ Table = def^{ method = f^self^, value:number^ { value } }\n"
+          "let^ value = Table.new()\nlet^ out = value.method(1)\n", "member", 1 },
+        { "let^ method = f^self^, value:number^ { value }\nlet^ out = method({}, 1)\n", "argument", 2 },
+        { "let^ values = { slice^ = f^a:number^, b:number^ { a + b } }\n"
+          "let^ out = values.slice^(1, 2)\n", NULL, 2 },
+        { "let^ Table = def^{ method = f^value:number^ { value } }\n"
+          "let^ out = Table.method(1)\n", NULL, 1 },
+        { "let^ plain = f^value:number^ { value }\nlet^ out = plain(1)\n", NULL, 1 },
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof *cases; i++) {
+        LHAT_TEST("callable receivers distinguish bound built-ins, methods and ordinary functions");
+        Tree t; tree_of(&t, cases[i].source);
+        LhatCheckResult checked;
+        lhat_check(t.parsed.root, &t.lexer, true, &checked);
+        LHAT_CHECK_EQ_INT(t.parsed.diagnostic_count, 0);
+        LHAT_CHECK_EQ_INT(checked.diagnostic_count, 0);
+        t.unit.checked = checked;
+        cJSON_Delete(t.json); t.json = lsp_ast_json_for_unit(&t.unit);
+        cJSON *items = field(root_of(&t), "items");
+        cJSON *call = item(field(item(items, cJSON_GetArraySize(items) - 1), "values"), 0);
+        cJSON *info = cJSON_GetObjectItemCaseSensitive(call, "callable");
+        LHAT_CHECK(info != NULL, "callable metadata is missing");
+        LHAT_CHECK_EQ_INT(cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(info, "inputs")), cases[i].inputs);
+        cJSON *receiver = cJSON_GetObjectItemCaseSensitive(info, "receiver");
+        if (cases[i].binding == NULL) {
+            LHAT_CHECK(cJSON_IsNull(receiver), "ordinary function gained a receiver");
+        } else {
+            const char *binding = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(receiver, "binding"));
+            LHAT_CHECK(binding != NULL && strcmp(binding, cases[i].binding) == 0, "receiver binding is wrong");
+            LHAT_CHECK(cJSON_IsString(cJSON_GetObjectItemCaseSensitive(receiver, "type")), "receiver type is missing");
+        }
+        lhat_check_result_dispose(&checked); tree_dispose(&t);
+    }
+}
+
 int main(void)
 {
     test_shape();
@@ -429,5 +475,6 @@ int main(void)
     test_absent();
     test_callable_info();
     test_callable_origins();
+    test_callable_receivers();
     return lhat_test_report("test_ast_json");
 }

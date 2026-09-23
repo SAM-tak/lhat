@@ -160,14 +160,28 @@ cJSON *lsp_call_info(const LhatUnit *unit, const LhatNode *node)
     const LhatUnit *owner = unit;
     const LhatNode *literal = callee_literal(&owner, target, signature, 0);
     const LhatNode *param = literal == NULL ? NULL : literal->v.func.params;
+    bool member = target->kind == LHAT_NODE_MEMBER;
+    bool super = target->kind == LHAT_NODE_HAT_IDENT && target->v.name.length == 6 &&
+                 memcmp(unit->source.text + target->v.name.offset, "super^", 6) == 0;
+    const LhatResolution *resolved = member && target->v.access.argument != NULL
+        ? lhat_check_resolution_at(&unit->checked, target->v.access.argument->offset) : NULL;
     cJSON *info = cJSON_CreateObject();
     if (info == NULL) return NULL;
     cJSON *inputs = cJSON_AddArrayToObject(info, "inputs");
     cJSON *outputs = cJSON_AddArrayToObject(info, "outputs");
     cJSON_AddItemToObject(info, "signature", type_json(signature));
-    if (signature->v.func.takes_self && target->kind != LHAT_NODE_MEMBER &&
-        !(target->kind == LHAT_NODE_HAT_IDENT && target->v.name.length == 6 &&
-          memcmp(unit->source.text + target->v.name.offset, "super^", 6) == 0)) {
+    // Built-ins such as Slice expose an already-bound signature without a
+    // self parameter. Read the checker's resolution, not a list of spellings:
+    // written or host-registered functions with the same name are not methods.
+    if (signature->v.func.takes_self || (resolved != NULL && resolved->builtin)) {
+        const LhatNode *value = member ? target->v.access.target : super ? NULL : node->v.access.argument;
+        cJSON *self = cJSON_AddObjectToObject(info, "receiver");
+        cJSON_AddStringToObject(self, "binding", member ? "member" : super ? "implicit" : "argument");
+        cJSON_AddItemToObject(self, "type", type_json(value == NULL ? NULL : value->display_type));
+    } else {
+        cJSON_AddNullToObject(info, "receiver");
+    }
+    if (signature->v.func.takes_self && !member && !super) {
         cJSON *self = input_json(node->v.access.argument == NULL ? NULL : node->v.access.argument->display_type, owner, NULL);
         cJSON_AddStringToObject(self, "name", "self^");
         cJSON_AddItemToArray(inputs, self);
