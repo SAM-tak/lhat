@@ -9,7 +9,10 @@ name: ci
 on:
   push:
     branches: [main]
+    # Nothing the build or the suite reads. sample/ stays: tests load from it.
+    paths-ignore: ['**.md', 'DesignDocuments/**', 'media/**', 'LICENSE']
   pull_request:
+    paths-ignore: ['**.md', 'DesignDocuments/**', 'media/**', 'LICENSE']
 
 # A newer push on the same branch supersedes the run before it.
 concurrency:
