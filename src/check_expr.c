@@ -3197,7 +3197,7 @@ static LhatType *within_declared_positions(Checker *c, const LhatType *over,
     int64_t lo = 0;
     int64_t hi = 0;
     if (key == NULL || key->next != NULL ||
-        !chk_narrowed_bounds(c, key, &lo, &hi) || lo < 0) {
+        !chk_bounds_of(c, key, &lo, &hi) || lo < 0) {
         return NULL;
     }
     LhatType *reached = NULL;

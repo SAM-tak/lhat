@@ -46,8 +46,8 @@ let^Reader = def^{
         text = "",
         at = 0,
         ok = true^,
-        # The multiset of digits used. 1..9 index it directly, 0 goes unused
-        used = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+        # The multiset of digits used. Digit d is counted at d - 1
+        used = { 0, 0, 0, 0, 0, 0, 0, 0, 0 },
     },
 
     override^new = f^line { self^{ text = line } },
@@ -86,8 +86,9 @@ let^Reader = def^{
             self^.ok := false^
             return^ 0
         }
-        self^.used[d] += 1 # the if^d < 1 or^ d > 9 { above holds d to 1..9, so
-        # there is no nil check to make: this need not be self^.used[d] ?+= 1
+        self^.used[d - 1] += 1 # the if^d < 1 or^ d > 9 { above holds d to 1..9,
+        # so d - 1 is 0..8 and there is no nil check to make: this need not be
+        # self^.used[d - 1] ?+= 1
         self^.bump()
         return^d
     },
@@ -135,9 +136,9 @@ let^Reader = def^{
 }
 
 # Whether the four dealt and the four used are the same multiset. Each takes a
-# table of counts, indexed by the digit itself
+# table of counts, digit d at d - 1
 let^same = f^want, used {
-    for^i from^1 to^9 {
+    for^i from^0 to^8 {
         if^want[i] != used[i] { return^false^}
     }
     return^true^
@@ -145,17 +146,17 @@ let^same = f^want, used {
 
 do^{
     with^rng = try^std.random.new(0) {
-        let^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+        let^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
         var^shown = ""
         for^i from^1 to^4 {
             let^d = rng.range(1, 9)
             if^1 <= d <= 9 { # narrowing the range is what removes the nil check
-                want[d] += 1
+                want[d - 1] += 1
                 # L^ cannot tell from rng.range(1, 9) that d is within 1..9,
                 # so the if^1 <= d <= 9 {} around it is what says so.
             }
             # Without the narrowing it has to be written this way:
-            # want[d] ?+= 1
+            # want[d - 1] ?+= 1
             # which is shorter, and says a nil^ may be reached where none ever
             # is -- and would swallow one that arrived from somewhere unnoticed.
             shown := $"{shown} {d}"

@@ -733,6 +733,9 @@ LhatType *chk_narrowed_type(Checker *c, const LhatNode *path);
 // side nothing said anything about.
 bool chk_narrowed_bounds(Checker *c, const LhatNode *path, int64_t *lo,
                          int64_t *hi);
+// The same asked of an expression: a written number, a bounded path, or one
+// of those with a written number added or taken away.
+bool chk_bounds_of(Checker *c, const LhatNode *node, int64_t *lo, int64_t *hi);
 void chk_push_bounds(Checker *c, const LhatNode *path, int64_t lo, int64_t hi);
 void chk_pop_narrowings(Checker *c, Narrowing *mark);
 void chk_drop_narrowings_for(Checker *c, const LhatNode *target);

@@ -547,9 +547,23 @@ void chk_check_define(Checker *c, const LhatNode *node)
                 // whatever the source looks like.
                 b->fresh = chk_value_is_fresh(c, value, actual);
             }
+            // 13.11改: a let^ holds what its value held, and nothing writes it
+            // afterwards -- so a range read off the value stays true. Read
+            // before the drop below, since 'let^ d = d - 1' reads the old d.
+            // A construct's own binding (a counted for^'s focus, a with^) is
+            // left alone: the machine moves a focus, and bound_the_focus says
+            // what it may hold.
+            int64_t lo = 0;
+            int64_t hi = 0;
+            bool bounded = node->v.binding.immutable &&
+                           !node->v.binding.bound_by_form && tuple == NULL &&
+                           chk_bounds_of(c, value, &lo, &hi);
             // A new name of the same spelling makes any narrowing of the old
             // one stale, since the path now reaches something else.
             chk_drop_narrowings_for(c, target_name_node(target));
+            if (bounded) {
+                chk_push_bounds(c, target_name_node(target), lo, hi);
+            }
         }
         if (tuple == NULL && value != NULL) {
             value = value->next;
@@ -1567,9 +1581,9 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
 
 // 13.11改 with 16.4: 'for^ i from^ 1 to^ 9' says which whole numbers reach
 // the body, so the focus carries that the way a branch's condition makes one
-// carry what it tested. Both ends have to be written out -- a limit read off
-// a length names no number here, and 14.10's width subtyping puts no ceiling
-// on one anyway.
+// carry what it tested. Both ends have to have known bounds (chk_bounds_of)
+// -- a limit read off a length names no number here, and 14.10's width
+// subtyping puts no ceiling on one anyway.
 //
 // The step is passed over where it is written: with 'to^' the focus stays
 // between the two ends whatever a positive step skips, and a step that is not
@@ -1589,10 +1603,14 @@ static void bound_the_focus(Checker *c, const LhatNode *node)
     if (name == NULL || name->next != NULL || !chk_narrowable(name)) {
         return;
     }
-    int64_t from = 0;
-    int64_t limit = 0;
-    if (!chk_whole_literal(focus->v.binding.values, &from) ||
-        !chk_whole_literal(node->v.loop.bound, &limit)) {
+    // Either end may be a range rather than one number -- 'to^ d - 1' where d
+    // is bounded -- and the focus then stays inside the widest the two allow.
+    int64_t from_lo = 0;
+    int64_t from_hi = 0;
+    int64_t limit_lo = 0;
+    int64_t limit_hi = 0;
+    if (!chk_bounds_of(c, focus->v.binding.values, &from_lo, &from_hi) ||
+        !chk_bounds_of(c, node->v.loop.bound, &limit_lo, &limit_hi)) {
         return;
     }
     int64_t step = 1;
@@ -1601,9 +1619,9 @@ static void bound_the_focus(Checker *c, const LhatNode *node)
         return;
     }
     if (node->v.loop.kind == LHAT_FOR_TO) {
-        chk_push_bounds(c, name, from, limit);
+        chk_push_bounds(c, name, from_lo, limit_hi);
     } else {
-        chk_push_bounds(c, name, limit, from);
+        chk_push_bounds(c, name, limit_lo, from_hi);
     }
 }
 

@@ -1225,13 +1225,53 @@ static void test_bounded_keys(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    LHAT_TEST("a bound does not survive arithmetic");
-    check_text(&u,
-               "var^ f = p^ t:t^{ number^[9] } {\n"
-               "    for^ i from^0 to^7 { var^ n : number^ = t[i + 1] }\n"
-               "}\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
-    unit_dispose(&u);
+    // A written number added or taken away moves both ends. Read where it
+    // stands, so nothing is written back for a range to grow through.
+    static const char *const shifted[] = {
+        "    for^ i from^0 to^7 { var^ n : number^ = t[i + 1] }\n",
+        "    if^ 1 <= d <= 9 { var^ n : number^ = t[d - 1] }\n",
+        "    if^ 0 <= d <= 7 { var^ n : number^ = t[1 + d] }\n",
+        "    if^ 0 <= d <= 8 { var^ n : number^ = t[8 - d] }\n",
+        "    if^ 1 <= d <= 9 { let^ i = d - 1  var^ n : number^ = t[i] }\n",
+        "    if^ 1 <= d <= 9 { for^ i from^0 to^ d - 1 { var^ n : number^ = t[i] } }\n",
+        "    if^ 1 <= d <= 9 { t[d - 1] += 1 }\n",
+    };
+    for (size_t i = 0; i < sizeof shifted / sizeof *shifted; i++) {
+        LHAT_TEST("a bound moves by a written number added or taken away");
+        char text[256];
+        snprintf(text, sizeof text,
+                 "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n%s}\n",
+                 shifted[i]);
+        check_text(&u, text);
+        CHECK_CLEAN(&u);
+        unit_dispose(&u);
+    }
+
+    static const char *const unshifted[] = {
+        // past the last position
+        "    for^ i from^0 to^8 { var^ n : number^ = t[i + 1] }\n",
+        // before the first
+        "    if^ 0 <= d <= 8 { var^ n : number^ = t[d - 1] }\n",
+        // a var^ may be written over, so it keeps no range
+        "    if^ 1 <= d <= 9 { var^ i = d - 1  var^ n : number^ = t[i] }\n",
+        // only a written number added or taken away
+        "    if^ 1 <= d <= 9 { var^ n : number^ = t[d * 2 - 2] }\n",
+        "    if^ 0 <= d <= 4 { var^ n : number^ = t[d + d] }\n",
+        // a let^ inside a block leaves no range on a name outside it
+        "    let^ i = d\n"
+        "    if^ 0 <= d <= 8 { do^{ let^ i = d } }\n"
+        "    var^ n : number^ = t[i]\n",
+    };
+    for (size_t i = 0; i < sizeof unshifted / sizeof *unshifted; i++) {
+        LHAT_TEST("and anything past that shift keeps its nil^");
+        char text[256];
+        snprintf(text, sizeof text,
+                 "var^ f = p^ t:t^{ number^[9] }, d:number^ {\n%s}\n",
+                 unshifted[i]);
+        check_text(&u, text);
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+        unit_dispose(&u);
+    }
 
     // A limit read off a name says no number here. 14.10's width subtyping
     // puts no ceiling on a length either, so there is nothing to read.

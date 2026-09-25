@@ -2505,6 +2505,73 @@ bool chk_narrowed_bounds(Checker *c, const LhatNode *path, int64_t *lo,
     return false;
 }
 
+// One end moved by a written amount. An end nothing bounded stays unbounded,
+// and one that would run past the int64_t range stops at its edge -- which is
+// still an end nothing bounded, so it reads the same.
+static int64_t shift_end(int64_t end, int64_t by)
+{
+    if (end == INT64_MIN || end == INT64_MAX) {
+        return end;
+    }
+    if (by > 0 && end > INT64_MAX - by) {
+        return INT64_MAX;
+    }
+    if (by < 0 && end < INT64_MIN - by) {
+        return INT64_MIN;
+    }
+    return end + by;
+}
+
+// 13.11改: the whole numbers an expression may hold here -- a number written
+// down, a bounded path, or one of those with a written number added or taken
+// away. Nothing wider: a write is what would let a range grow round after
+// round in 3.4改2, and every form here is read where it stands and kept by
+// nothing but an index or a let^.
+bool chk_bounds_of(Checker *c, const LhatNode *node, int64_t *lo, int64_t *hi)
+{
+    int64_t k = 0;
+    if (chk_whole_literal(node, &k)) {
+        *lo = *hi = k;
+        return true;
+    }
+    if (node == NULL) {
+        return false;
+    }
+    if (chk_narrowable(node)) {
+        return chk_narrowed_bounds(c, node, lo, hi);
+    }
+    if (node->kind != LHAT_NODE_BINARY ||
+        (node->v.binary.op != LHAT_OP_ADD && node->v.binary.op != LHAT_OP_SUB)) {
+        return false;
+    }
+    bool subtract = node->v.binary.op == LHAT_OP_SUB;
+    int64_t a = 0;
+    int64_t b = 0;
+    if (chk_whole_literal(node->v.binary.right, &k) &&
+        chk_bounds_of(c, node->v.binary.left, &a, &b)) {
+        // 'd + k' and 'd - k'.
+        if (subtract) {
+            k = k == INT64_MIN ? INT64_MAX : -k;
+        }
+        *lo = shift_end(a, k);
+        *hi = shift_end(b, k);
+        return true;
+    }
+    if (chk_whole_literal(node->v.binary.left, &k) &&
+        chk_bounds_of(c, node->v.binary.right, &a, &b)) {
+        if (!subtract) {
+            *lo = shift_end(a, k);  // 'k + d'
+            *hi = shift_end(b, k);
+            return true;
+        }
+        // 'k - d' faces the other way: the far end of d is the near end here.
+        *lo = b == INT64_MAX ? INT64_MIN : shift_end(k, b == INT64_MIN ? INT64_MAX : -b);
+        *hi = a == INT64_MIN ? INT64_MAX : shift_end(k, -a);
+        return true;
+    }
+    return false;
+}
+
 static void push_narrowing(Checker *c, const LhatNode *path, LhatType *type)
 {
     if (type == NULL) {
