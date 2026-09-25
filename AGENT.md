@@ -42,11 +42,11 @@ L^ のGodotエンジン向けバインディング
 
 @../lhat-gdextension/
 
-### lhatove
+### lhat-love
 
 Love2D の L^ 使用版プロジェクト
 
-@../lhatove/
+@../lhat-love/
 
 ### Lua 5.5.1
 

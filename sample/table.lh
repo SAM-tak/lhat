@@ -1,0 +1,11 @@
+let^t2d = {
+    1, 2, 3,
+    4, 5, 6,
+    7, 8, 9,
+    kkk = "aaa"
+}
+print(t2d)
+for^k, v in^ t2d { print("t2d", k, v) }
+for^v in^ t2d { print("t2d array", v) }
+for^k in^ t2d.keys^() { print("t2d.keys", k) }
+for^v in^ t2d.values^() { print("t2d.values", v) }

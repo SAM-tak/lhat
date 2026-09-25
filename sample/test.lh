@@ -221,7 +221,9 @@ print(yy(2))
 
 let^s = "あいうえお"
 # print(s[2])
+print(s.at(0))
 print(s.at(1))
+print(s.at(-1))
 
 let^foo = f^x:number^ {print(x)}
 let^bar = f^{print("bar!") return^4 }

@@ -54,8 +54,9 @@ let^t2 = {
     d = 4,
     e = 5,
     iterate^ = f^self^{
-        var^c = 1
+        var^c = 0
         for^k in^self^.keys^() {
+            if^ k = "iterate^" { continue^}
             yield^k, self^[k], c
             c += 1
         }

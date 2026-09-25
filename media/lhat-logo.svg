@@ -40,7 +40,7 @@
      id="defs1">
     <linearGradient
        id="linearGradient18"
-       inkscape:collect="always">
+       inkscape:swatch="gradient">
       <stop
          style="stop-color:#00beff;stop-opacity:1;"
          offset="0"
@@ -150,7 +150,7 @@
        y="50.663479"
        ry="13.547368" />
     <rect
-       style="display:inline;opacity:1;fill:url(#radialGradient20);stroke:none;stroke-width:0.641413;stroke-linecap:round;stroke-linejoin:round;fill-rule:nonzero"
+       style="display:inline;opacity:1;fill:url(#radialGradient20);fill-rule:nonzero;stroke:none;stroke-width:0.641413;stroke-linecap:round;stroke-linejoin:round"
        id="rect10"
        width="204.1825"
        height="204.18248"
@@ -179,6 +179,6 @@
        y="0"><tspan
          x="352.86426"
          y="965.44029"
-         id="tspan1">[ɛlhæt]</tspan></text>
+         id="tspan2">[ɛlhæt]</tspan></text>
   </g>
 </svg>

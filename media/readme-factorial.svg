@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="58" viewBox="0 0 540 58" font-family="ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;DejaVu Sans Mono&quot;, monospace" font-size="14">
+  <title>Factorial in L^</title>
+  <rect x=".5" y=".5" width="539" height="57" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <text x="22" y="34" xml:space="preserve"><tspan fill="#dcdcaa">print</tspan><tspan fill="#d4d4d4">(f^</tspan><tspan fill="#9cdcfe">n</tspan><tspan fill="#d4d4d4">:</tspan><tspan fill="#4ec9b0">number</tspan><tspan fill="#d4d4d4">^{if^</tspan><tspan fill="#9cdcfe">n</tspan><tspan fill="#d4d4d4"> &lt; 2: 1 el^: </tspan><tspan fill="#9cdcfe">n</tspan><tspan fill="#d4d4d4"> * this^(</tspan><tspan fill="#9cdcfe">n</tspan><tspan fill="#d4d4d4"> - 1);}(10))</tspan></text>
+</svg>
