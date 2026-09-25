@@ -535,6 +535,24 @@ bool chk_is_super_name(Checker *c, const LhatNode *node)
            chk_name_is(name, length, "super^");
 }
 
+// 01 の 2.3: a hat name is the language's, so a written one declares nothing
+// of the writer's. A member key may still be one of the two a value answers
+// by whatever else it holds -- 14.17改's tostring^ and 16.3's iterate^, the
+// pair lhat_member_held_as folds -- and a parameter may not be any.
+void chk_refuse_hat_name(Checker *c, const LhatNode *node, bool member)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    if (node == NULL || node->kind != LHAT_NODE_HAT_IDENT ||
+        !chk_node_name(c, node, &name, &length)) {
+        return;
+    }
+    if (member && lhat_member_held_as(name, length) != length) {
+        return;
+    }
+    chk_report(c, node, LHAT_CHECK_ERR_HAT_NAME_RESERVED);
+}
+
 // ---------------------------------------------------------------------------
 // Scopes (8.7)
 // ---------------------------------------------------------------------------
@@ -948,6 +966,7 @@ static void resolve_members_into(Checker *c, LhatType *table,
             }
             continue;
         }
+        chk_refuse_hat_name(c, m->v.entry.key, true);
         if (!chk_node_name(c, m->v.entry.key, &name, &length)) {
             continue;
         }
@@ -4466,7 +4485,11 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "'_^' throws the value away, so it is not a name and there "
         "is nothing here to read; write a name where the value is "
         "wanted"},
-    [LHAT_CHECK_ERR_NOT_DISPOSABLE] = {"check.not-disposable",
+    [LHAT_CHECK_ERR_HAT_NAME_RESERVED] = {"check.hat-name-reserved",
+        "a name with a hat is the language's, not one to declare; "
+        "the only ones written as a member are tostring^ and "
+        "iterate^ -- drop the hat"},
+    [LHAT_CHECK_ERR_NOT_DISPOSABLE]= {"check.not-disposable",
         "with^ needs a value with a dispose() that returns nothing"},
     [LHAT_CHECK_ERR_FUNCTION_FALLS_OUT] = {"check.function-falls-out",
         "a function answers on every path; this one has a path "

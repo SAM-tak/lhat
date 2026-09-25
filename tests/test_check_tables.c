@@ -626,13 +626,40 @@ static void test_table_methods(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 01 の 2.3: a hat name is the language's. Only tostring^ and iterate^
+    // are written as members; nothing else declares one.
+    static const char *const refused[] = {
+        "let^ t = { width^ = 3, 1, 2 }\n",
+        "let^ D = def^{ width^ : number^ = 3 }\n",
+        "let^ D = def^{ self^{ width^ : number^ = 3 } }\n",
+        "let^ D = def^{ abstract^ width^ : number^ }\n",
+        "var^ x : t^{ width^ : number^ } = { width = 3 }\n",
+        "let^ g = p^ a^ : number^ { }\n",
+    };
+    for (size_t i = 0; i < sizeof refused / sizeof *refused; i++) {
+        LHAT_TEST("a hat name the writer declares is refused");
+        check_text(&u, refused[i]);
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_HAT_NAME_RESERVED);
+        unit_dispose(&u);
+    }
+
+    LHAT_TEST("tostring^, iterate^, a self^ receiver and _^ are still written");
+    check_text(&u,
+               "let^ t = {\n"
+               "    tostring^ = f^self^ -> string^ { return^ \"t\" },\n"
+               "    iterate^ = f^self^ { yield^ 1 },\n"
+               "}\n"
+               "let^ g = p^ _^ : number^ { }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("a plain table's method reads itself through self^");
     check_text(&u,
                "let^ u = {\n"
                "    hidden = 42,\n"
-               "    read^ = f^self^ -> number^ { return^ self^.hidden }\n"
+               "    read = f^self^ -> number^ { return^ self^.hidden }\n"
                "}\n"
-               "var^ n : number^ = u.read^()\n");
+               "var^ n : number^ = u.read()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 

@@ -356,12 +356,10 @@ static void test_counting(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 14.17改's order again: what is written under the name is what answers.
-    LHAT_TEST("a written length^ is what the type says");
-    check_text(&u,
-               "var^ t = { 1, length^ := \"nine\" }\n"
-               "var^ s : string^ = t.length^\n");
-    CHECK_CLEAN(&u);
+    // 01 の 2.3: length^ is the language's, so no table writes one of its own.
+    LHAT_TEST("a written length^ is refused");
+    check_text(&u, "var^ t = { 1, length^ := \"nine\" }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_HAT_NAME_RESERVED);
     unit_dispose(&u);
 }
 

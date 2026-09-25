@@ -431,8 +431,8 @@ static void test_callable_receivers(void)
         { "let^ Table = def^{ method = f^self^, value:number^ { value } }\n"
           "let^ value = Table.new()\nlet^ out = value.method(1)\n", "member", 1 },
         { "let^ method = f^self^, value:number^ { value }\nlet^ out = method({}, 1)\n", "argument", 2 },
-        { "let^ values = { slice^ = f^a:number^, b:number^ { a + b } }\n"
-          "let^ out = values.slice^(1, 2)\n", NULL, 2 },
+        { "let^ values = { slice = f^a:number^, b:number^ { a + b } }\n"
+          "let^ out = values.slice(1, 2)\n", NULL, 2 },
         { "let^ Table = def^{ method = f^value:number^ { value } }\n"
           "let^ out = Table.method(1)\n", NULL, 1 },
         { "let^ plain = f^value:number^ { value }\nlet^ out = plain(1)\n", NULL, 1 },

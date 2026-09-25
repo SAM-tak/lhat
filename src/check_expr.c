@@ -3493,6 +3493,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
 
         const char *name = NULL;
         size_t length = 0;
+        chk_refuse_hat_name(c, entry->v.entry.key, true);
         if (chk_node_name(c, entry->v.entry.key, &name, &length)) {
             // A seeded signature is written over with what the body turned
             // out to be -- one member, never two of one name.
@@ -3828,6 +3829,9 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
 
         const char *name = NULL;
         size_t length = 0;
+        if (!chk_is_discard(c, param->v.param.name)) {
+            chk_refuse_hat_name(c, param->v.param.name, false);
+        }
         if (chk_node_name(c, param->v.param.name, &name, &length)) {
             Binding *b = chk_scope_add(&body, name, length, type,
                                        param->v.param.name->offset);
@@ -5325,6 +5329,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         // 02 の 18.4: a member of a def^ takes one.
         chk_check_annotations(c, entry->v.entry.annotations,
                               LHAT_ANNOTATION_MEMBER);
+        chk_refuse_hat_name(c, entry->v.entry.key, true);
         if (entry->v.entry.key == NULL ||
             !chk_node_name(c, entry->v.entry.key, &name, &length)) {
             continue;
@@ -5369,6 +5374,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             // an @export-shaped annotation goes.
             chk_check_annotations(c, field->v.entry.annotations,
                                   LHAT_ANNOTATION_FIELD);
+            chk_refuse_hat_name(c, field->v.entry.key, true);
             if (!chk_node_name(c, field->v.entry.key, &name, &length)) {
                 continue;
             }

@@ -99,7 +99,10 @@ typedef enum {
     LHAT_CHECK_ERR_NOT_DISPOSABLE,      // 12.5: with^ needs a dispose()
     LHAT_CHECK_ERR_DISCARD_READ,        // 13.12: '_^' is not a name, so there
                                         // is nothing there to read back
-    LHAT_CHECK_ERR_ERROR_DROPPED,       // 04 の 8.3: the answer carries a
+    LHAT_CHECK_ERR_HAT_NAME_RESERVED,   // 01 の 2.3: a hat name is the
+                                        // language's, so a writer declares
+                                        // none but tostring^ and iterate^
+    LHAT_CHECK_ERR_ERROR_DROPPED,      // 04 の 8.3: the answer carries a
                                         // failure and nothing was done with it
 
     LHAT_CHECK_ERR_MEMBER_EXISTS,       // 14.12: same name, no marker
