@@ -453,7 +453,7 @@ static void test_task_checks(void)
         "{\"kind\":\"hostdata\",\"module\":\"std.task\",\"name\":\"Task\"}],"
         "\"functions\":["
         "{\"kind\":\"func\",\"module\":\"std.task\",\"name\":\"async\","
-        "\"signature\":\"p^c^ -> std.task.Task<ARG0.resultType>|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;\"},"
+        "\"signature\":\"p^c^{->*->*} -> std.task.Task<ARG0.resultType>|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;\"},"
         "{\"kind\":\"func\",\"module\":\"std.task\",\"name\":\"await\","
         "\"signature\":\"p^std.task.Task -> ARG0.T0|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;\"}]}";
     static const char *const sources[] = {
@@ -504,6 +504,21 @@ static void test_task_checks(void)
             }
             LHAT_CHECK(found, "LSP reports the same operator error as the CLI");
         }
+        lhat_program_dispose(&program);
+    }
+    LHAT_TEST("JSON async signature rejects required resume arguments");
+    {
+        const File file = {"main.lh",
+            "import^ std.task\n"
+            "let^ job = p^ { let^ n:number^ = yield^ 0 return^ n }\n"
+            "let^ t = std.task.async(job())\n"};
+        Disk disk = {&file, 1};
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &disk);
+        lsp_host_config_apply(config, &program);
+        const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL && lhat_program_has_errors(&program),
+                   "resume input is constrained in replayed signatures too");
         lhat_program_dispose(&program);
     }
     lsp_host_config_free(config);

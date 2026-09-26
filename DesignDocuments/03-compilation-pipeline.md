@@ -1342,7 +1342,7 @@ JSON から復元する機構ではない。
 
 ```lhat
 f^any^ -> ARG0;
-p^c^ -> std.task.Task<ARG0.resultType>|std.task.TaskError|std.error.OutOfMemory;
+p^c^{->*->*} -> std.task.Task<ARG0.resultType>|std.task.TaskError|std.error.OutOfMemory;
 ```
 
 `c^` は全コルーチンの上位型。コルーチン型の型属性は `resultType`

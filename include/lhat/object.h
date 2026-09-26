@@ -465,6 +465,7 @@ typedef struct LhatRuntimeType {
     // (which ends without a value) because what a resume answers differs.
     bool endless;
     bool coroutine_top;
+    bool receive_any, produce_any, result_any, kind_any;
 
     // 13.7's unbounded tail, one type throughout. STRUCTURE: the sequence
     // half beyond `parts`. SUBROUTINE: the element type of the last

@@ -553,20 +553,24 @@ static LhatNode *parse_type_coroutine(Parser *p)
     if (match_hat(p, "f")) {
         node->v.coroutine.is_function = true;
     } else if (!match_hat(p, "p")) {
-        report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_TYPE);
+        node->v.coroutine.kind_any = true;
     }
 
     // 15.2 with 13.8改: R is what one resume sends -- resume(a, b) writes as
     // many arguments as stand here, and several are the tuple the yield^'s
     // binding takes apart. Left out, nothing is sent in at all and a resume
     // takes no argument.
-    if (!check_op(p, LHAT_OP_RBRACE) && !check_op(p, LHAT_OP_ARROW)) {
+    if (match_op(p, LHAT_OP_MUL)) {
+        node->v.coroutine.receive_any = true;
+    } else if (!check_op(p, LHAT_OP_RBRACE) && !check_op(p, LHAT_OP_ARROW)) {
         node->v.coroutine.receive = parse_type_result(p);
     }
     if (match_op(p, LHAT_OP_ARROW)) {
         // Y. A yield^ with no value really does hand nil^ to the resumer, so
         // an empty Y here says that rather than saying nothing happens.
-        if (!check_op(p, LHAT_OP_RBRACE) && !check_op(p, LHAT_OP_ARROW)) {
+        if (match_op(p, LHAT_OP_MUL)) {
+            node->v.coroutine.produce_any = true;
+        } else if (!check_op(p, LHAT_OP_RBRACE) && !check_op(p, LHAT_OP_ARROW)) {
             node->v.coroutine.produce = parse_type_result(p);
         }
         if (match_op(p, LHAT_OP_ARROW)) {
@@ -581,7 +585,9 @@ static LhatNode *parse_type_coroutine(Parser *p)
             // reads as "none" rather than as arithmetic because a type is
             // all that may be here, and nothing in the type grammar begins
             // with '-'.
-            if (match_op(p, LHAT_OP_SUB)) {
+            if (match_op(p, LHAT_OP_MUL)) {
+                node->v.coroutine.result_any = true;
+            } else if (match_op(p, LHAT_OP_SUB)) {
                 node->v.coroutine.endless = true;
             } else if (!check_op(p, LHAT_OP_RBRACE)) {
                 node->v.coroutine.result = parse_type_result(p);  // 13.8改2

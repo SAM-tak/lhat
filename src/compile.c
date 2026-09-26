@@ -2314,6 +2314,13 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
             type->produce = lower_type(c, node->v.coroutine.produce);
             type->result = lower_type(c, node->v.coroutine.result);
             type->is_function = node->v.coroutine.is_function;  // 15.3改
+            type->endless = node->v.coroutine.endless;
+            type->receive_any = node->v.coroutine.receive_any;
+            type->produce_any = node->v.coroutine.produce_any;
+            type->result_any = node->v.coroutine.result_any;
+            type->kind_any = node->v.coroutine.kind_any;
+            type->coroutine_top = type->receive_any && type->produce_any &&
+                                  type->result_any && type->kind_any;
             return type;
         }
 

@@ -11,7 +11,7 @@
     "|std.task.TaskError.NotStarted|std.task.TaskError.Refused" \
     "|std.task.TaskError.Failed|std.error.OutOfMemory;"
 #define LHAT_TASK_ASYNC_SIGNATURE \
-    "p^c^ -> std.task.Task<ARG0.resultType>" LHAT_TASK_ERRORS
+    "p^c^{->*->*} -> std.task.Task<ARG0.resultType>" LHAT_TASK_ERRORS
 #define LHAT_TASK_AWAIT_SIGNATURE \
     "p^std.task.Task -> ARG0.T0" LHAT_TASK_ERRORS
 

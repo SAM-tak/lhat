@@ -878,7 +878,7 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
         case LHAT_TYPE_RT_COROUTINE: {
             if (type->coroutine_top) {
                 type_put_text(w, "c^");
-                break;
+                return;
             }
             // 13.9改: 'c^{f^R -> Y -> T}'. An empty slot is written by
             // leaving it out, so a NULL is not the "nothing written asks for
@@ -888,20 +888,23 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             // slot needs the second arrow even where Y is empty. '-' is the
             // third slot's other absence, a body that cannot end.
             type_put_text(w, "c^{");
-            type_put_text(w, type->is_function ? "f^" : "p^");
-            if (type->receive != NULL) {
+            if (!type->kind_any) type_put_text(w, type->is_function ? "f^" : "p^");
+            if (type->receive_any) type_put_text(w, "*");
+            else if (type->receive != NULL) {
                 write_runtime_result(w, type->receive);
             }
-            bool ends = type->endless || type->result != NULL;
-            if (type->produce != NULL || ends) {
+            bool ends = type->result_any || type->endless || type->result != NULL;
+            if (type->produce_any || type->produce != NULL || ends) {
                 type_put_text(w, " -> ");
-                if (type->produce != NULL) {
+                if (type->produce_any) type_put_text(w, "*");
+                else if (type->produce != NULL) {
                     write_runtime_result(w, type->produce);
                 }
             }
             if (ends) {
                 type_put_text(w, " -> ");
-                if (type->endless) {
+                if (type->result_any) type_put_text(w, "*");
+                else if (type->endless) {
                     type_put_text(w, "-");
                 } else {
                     write_runtime_result(w, type->result);
@@ -1071,6 +1074,8 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
             if (a->coroutine_top || b->coroutine_top) {
                 return a->coroutine_top == b->coroutine_top;
             }
+            if (a->receive_any != b->receive_any || a->produce_any != b->produce_any ||
+                a->result_any != b->result_any || a->kind_any != b->kind_any) return false;
             // apart from every type rather than normalised to any^ the way a
             // NULL is everywhere else here.
             if (a->endless != b->endless ||

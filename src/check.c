@@ -1890,9 +1890,16 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
             // hands one over whole (step_host_walk). What cannot carry one
             // refuses at its own site: an L^ body's yield^ (chk_unify_yield),
             // a tuple position (chk_check_tuple_position), a destructure.
-            return lhat_type_coro(c->result->types, receive, produce, result,
+            LhatType *type = lhat_type_coro(c->result->types, receive, produce, result,
                                   node->v.coroutine.endless,
                                   node->v.coroutine.is_function);
+            type->receive_any = node->v.coroutine.receive_any;
+            type->produce_any = node->v.coroutine.produce_any;
+            type->result_any = node->v.coroutine.result_any;
+            type->kind_any = node->v.coroutine.kind_any;
+            type->coroutine_top = type->receive_any && type->produce_any &&
+                                  type->result_any && type->kind_any;
+            return type;
         }
 
         default:

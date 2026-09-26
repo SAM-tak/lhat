@@ -32,7 +32,7 @@
 static const uint8_t MAGIC[4] = { 0x89, 'L', 'H', '^' };
 // 10.7: the signature table's, told apart from a unit's by the last byte.
 static const uint8_t TABLE_MAGIC[4] = { 0x89, 'L', 'H', 'S' };
-#define FORMAT_VERSION 3u
+#define FORMAT_VERSION 4u
 #define FLAG_DEBUG_NAMES 1u
 #define FLAG_STRICT 2u
 #define HEADER_BYTES 24u  // magic, format, flags, fingerprint, hash
@@ -740,6 +740,8 @@ static void emit_rt(Writer *w, Out *o, const LhatRuntimeType *rt)
                         (rt->self_last ? 4 : 0) | (rt->closed ? 8 : 0) |
                         (rt->endless ? 16 : 0) |
                         (rt->coroutine_top ? 32 : 0)));
+    put_u8(o, (uint8_t)((rt->receive_any ? 1 : 0) | (rt->produce_any ? 2 : 0) |
+                        (rt->result_any ? 4 : 0) | (rt->kind_any ? 8 : 0)));
     put_u32(o, obj_ref(w, rt->receive));
     put_u32(o, obj_ref(w, rt->produce));
     put_u32(o, obj_ref(w, rt->variadic));
@@ -1683,6 +1685,11 @@ static void read_rt(Reader *r)
     rt->closed = (flags & 8) != 0;
     rt->endless = (flags & 16) != 0;
     rt->coroutine_top = (flags & 32) != 0;
+    uint8_t wildcards = get_u8(in);
+    rt->receive_any = (wildcards & 1) != 0;
+    rt->produce_any = (wildcards & 2) != 0;
+    rt->result_any = (wildcards & 4) != 0;
+    rt->kind_any = (wildcards & 8) != 0;
     rt->receive = rt_at(r, get_u32(in));
     rt->produce = rt_at(r, get_u32(in));
     rt->variadic = rt_at(r, get_u32(in));

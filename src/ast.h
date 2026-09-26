@@ -560,6 +560,7 @@ struct LhatNode {
             LhatNode *receive;
             LhatNode *produce;
             LhatNode *result;
+            bool receive_any, produce_any, result_any, kind_any;
             bool endless;
             // 15.3改: which kind of body it came from, written as the front
             // half of 13.9's form ('c^{ f^R -> Y -> T }'). What may advance a

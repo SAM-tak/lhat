@@ -14,6 +14,44 @@
 
 // 02 の 15.5 and 15.8: what a call of a yieldable procedure answers, and the
 // mistake the answer makes catchable.
+static void test_coroutine_wildcards(void)
+{
+    LhatTypeArena arena;
+    lhat_type_arena_init(&arena);
+    static const char *const texts[] = {
+        "c^", "c^{*->*->*}", "c^{->*->*}",
+        "c^{p^ -> number^ -> string^}", "c^{f^ -> string^ -> number^}",
+        "c^{p^number^ -> number^ -> string^}",
+        "c^{p^(number^, string^) -> number^ -> string^}",
+        "c^{p^ -> (number^, string^) -> (number^, string^)}",
+        "c^{p^ -> number^ -> -}", "c^{p^ -> ->}",
+        "c^{*->->*}", "c^{p^ -> * -> *}"
+    };
+    LhatType *types[sizeof texts / sizeof *texts];
+    LHAT_TEST("coroutine wildcards parse and survive formatting");
+    for (size_t i = 0; i < sizeof texts / sizeof *texts; i++) {
+        types[i] = lhat_type_of_text(texts[i], strlen(texts[i]), &arena, NULL, NULL);
+        LHAT_CHECK(types[i] != NULL, "parsed %s", texts[i]);
+        char text[256];
+        lhat_type_write_full(types[i], text, sizeof text);
+        LhatType *again = lhat_type_of_text(text, strlen(text), &arena, NULL, NULL);
+        LHAT_CHECK(again != NULL && lhat_type_equal(types[i], again), "round trip %s", text);
+    }
+    LHAT_TEST("all wildcard slots and no body-kind constraint equal c top");
+    LHAT_CHECK(lhat_type_equal(types[0], types[1]), "c^ equals c^{*->*->*}");
+    LHAT_TEST("empty receive constrains only resume arguments");
+    for (size_t i = 3; i <= 9; i++) {
+        LHAT_CHECK(lhat_type_conforms(types[i], types[2]) == (i != 5 && i != 6),
+                   "receive constraint for %s", texts[i]);
+    }
+    LHAT_CHECK(!lhat_type_conforms(types[0], types[2]), "erased receive cannot be recovered");
+    LHAT_CHECK(!lhat_type_conforms(types[2], types[3]), "wildcard output cannot become specific");
+    LHAT_CHECK(!lhat_type_conforms(types[3], types[10]), "empty yield is not wildcard yield");
+    LHAT_CHECK(lhat_type_conforms(types[9], types[10]), "empty yield accepts nil yield");
+    LHAT_CHECK(!lhat_type_conforms(types[4], types[11]), "explicit p keeps its body-kind constraint");
+    lhat_type_arena_dispose(&arena);
+}
+
 static void test_coroutines(void)
 {
     Unit u;
@@ -971,6 +1009,7 @@ static void test_loop_condition(void)
 
 int main(void)
 {
+    test_coroutine_wildcards();
     test_coroutines();
     test_multi_value_receive();
     test_folded_answer();

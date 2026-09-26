@@ -128,7 +128,7 @@ LhatType *lhat_type_result_attribute(LhatTypeArena *arena, LhatType *type)
         return result;
     }
     if (type->kind != LHAT_TYPE_CORO) return NULL;
-    if (type->coroutine_top) return lhat_type_simple(arena, LHAT_TYPE_ANY);
+    if (type->coroutine_top || type->result_any) return lhat_type_simple(arena, LHAT_TYPE_ANY);
     return type->v.coroutine.result != NULL ? type->v.coroutine.result
                                            : lhat_type_simple(arena, LHAT_TYPE_NIL);
 }
@@ -260,7 +260,7 @@ const LhatCheckType *lhat_check_coroutine_result(LhatInstantiationContext *conte
     if (type == NULL || type->kind != LHAT_TYPE_CORO) {
         return NULL;
     }
-    if (type->coroutine_top) return lhat_check_type_any(context);
+    if (type->coroutine_top || type->result_any) return lhat_check_type_any(context);
     return type->v.coroutine.result != NULL &&
                    type->v.coroutine.result->kind != LHAT_TYPE_NONE
                ? type->v.coroutine.result
@@ -1657,8 +1657,8 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             // the body's kind (15.6改). One kind cannot stand where the other
             // is written -- an f^ holding a p^ coroutine could not advance it,
             // and a p^ one is not subject to 15.3改's containment either.
-            if (value->v.coroutine.is_function !=
-                target->v.coroutine.is_function) {
+            if (!target->kind_any && (value->kind_any ||
+                value->v.coroutine.is_function != target->v.coroutine.is_function)) {
                 return false;
             }
             // 13.9: an empty slot is a statement, not a gap, so it stands
@@ -1667,21 +1667,22 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             // not one that takes nil^ -- 14.12 already holds arities {0} and
             // {1} disjoint -- and a body that cannot end answers Y where one
             // ending without a value answers Y|nil^.
-            if (value->v.coroutine.endless != target->v.coroutine.endless ||
-                (value->v.coroutine.receive == NULL) !=
-                    (target->v.coroutine.receive == NULL) ||
-                (value->v.coroutine.result == NULL) !=
-                    (target->v.coroutine.result == NULL)) {
+            if ((!target->receive_any && (value->receive_any ||
+                 (value->v.coroutine.receive == NULL) != (target->v.coroutine.receive == NULL))) ||
+                (!target->produce_any && value->produce_any) ||
+                (!target->result_any && (value->result_any ||
+                 value->v.coroutine.endless != target->v.coroutine.endless ||
+                 (value->v.coroutine.result == NULL) != (target->v.coroutine.result == NULL)))) {
                 return false;
             }
             // What the coroutine receives is an input, so it varies the other
             // way round from what it produces and returns.
-            return conforms_in(target->v.coroutine.receive,
-                               value->v.coroutine.receive, seen) &&
-                   conforms_in(value->v.coroutine.produce,
-                               target->v.coroutine.produce, seen) &&
-                   conforms_in(value->v.coroutine.result,
-                               target->v.coroutine.result, seen);
+            return (target->receive_any || conforms_in(target->v.coroutine.receive,
+                               value->v.coroutine.receive, seen)) &&
+                   (target->produce_any || conforms_in(value->v.coroutine.produce,
+                               target->v.coroutine.produce, seen)) &&
+                   (target->result_any || conforms_in(value->v.coroutine.result,
+                               target->v.coroutine.result, seen));
 
         default:
             return true;  // the primitives, matched by kind above
@@ -2715,7 +2716,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         case LHAT_TYPE_CORO: {
             if (type->coroutine_top) {
                 put_text(sink, "c^");
-                break;
+                return;
             }
             // 13.9改: 'c^{ f^R -> Y -> T }', the three slots in the order a
             // coroutine lives them. An empty slot is written by leaving it
@@ -2724,21 +2725,24 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             // even where Y is empty. '-' is the third slot's other absence:
             // a body that cannot end. All of it reads back as what it says.
             put_text(sink, "c^{");
-            put_text(sink, type->v.coroutine.is_function ? "f^" : "p^");
-            if (type->v.coroutine.receive != NULL) {
+            if (!type->kind_any) put_text(sink, type->v.coroutine.is_function ? "f^" : "p^");
+            if (type->receive_any) put_text(sink, "*");
+            else if (type->v.coroutine.receive != NULL) {
                 write_result(sink, type->v.coroutine.receive, depth + 1);
             }
-            bool ends = type->v.coroutine.endless ||
+            bool ends = type->result_any || type->v.coroutine.endless ||
                         type->v.coroutine.result != NULL;
-            if (type->v.coroutine.produce != NULL || ends) {
+            if (type->produce_any || type->v.coroutine.produce != NULL || ends) {
                 put_text(sink, " -> ");
-                if (type->v.coroutine.produce != NULL) {
+                if (type->produce_any) put_text(sink, "*");
+                else if (type->v.coroutine.produce != NULL) {
                     write_result(sink, type->v.coroutine.produce, depth + 1);
                 }
             }
             if (ends) {
                 put_text(sink, " -> ");
-                if (type->v.coroutine.endless) {
+                if (type->result_any) put_text(sink, "*");
+                else if (type->v.coroutine.endless) {
                     put_text(sink, "-");
                 } else {
                     write_result(sink, type->v.coroutine.result, depth + 1);

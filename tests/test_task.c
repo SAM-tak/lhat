@@ -709,6 +709,16 @@ static void test_static_results(void)
     }
     LHAT_TEST("async takes exactly one coroutine, not a closure or its arguments");
     LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ job = p^ { let^ n:number^ = yield^ 0 return^ n }\n"
+        "let^ t = std.task.async(job())\n"), "resume argument rejected statically");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ job = p^ { let^ a:number^, b:string^ = yield^ 0 return^ a }\n"
+        "let^ t = std.task.async(job())\n"), "multiple resume arguments rejected statically");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ job = p^ { _yield^ 0 return^ 42 }\n"
+        "let^ erased:c^ = job()\nlet^ t = std.task.async(erased)\n"),
+        "erased receive shape cannot prove zero resume arguments");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
         "import^ std.task\nlet^ t = std.task.async(p^ ... { return^ 1 })\n"),
         "ordinary closure rejected");
     LHAT_CHECK(!lhat_test_check_text(regs, 2,

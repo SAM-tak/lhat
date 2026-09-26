@@ -17,6 +17,8 @@
 //
 // A JOB IS ONE COROUTINE whose body has not started. Arguments belong to
 // its construction, as in slow(1); async itself takes no other arguments.
+// Its parameter type c^{->*->*} also requires resume() to take no arguments;
+// yield and final-result slots are unconstrained by that coroutine pattern.
 // A body that need not suspend can use _yield^ to make an immediately ending
 // coroutine. Ordinary closures are not jobs. What crosses is what carry.h
 // carries; a coroutine that cannot cross answers TaskError.Refused.

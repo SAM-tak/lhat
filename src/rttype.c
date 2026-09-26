@@ -273,6 +273,10 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             rt->result = rt_from_checked(heap, type->v.coroutine.result, seen);
             rt->endless = type->v.coroutine.endless;
             rt->coroutine_top = type->coroutine_top;
+            rt->receive_any = type->receive_any;
+            rt->produce_any = type->produce_any;
+            rt->result_any = type->result_any;
+            rt->kind_any = type->kind_any;
             rt->is_function = type->v.coroutine.is_function;  // 15.3改
             return rt;
         }
