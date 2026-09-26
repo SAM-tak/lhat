@@ -238,6 +238,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_MEMBER:
         case LHAT_NODE_INDEX:
         case LHAT_NODE_CALL:
+        case LHAT_NODE_TYPE_APPLY:
             visit_one("target", node->v.access.target, visit, context);
             // A call's argument field is the list of them.
             visit_list("argument", node->v.access.argument, visit, context);
@@ -572,6 +573,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_TYPE_NAME:      return "type-name";
         case LHAT_NODE_TYPE_FUNC:      return "type-func";
         case LHAT_NODE_TYPE_CORO:      return "type-coro";
+        case LHAT_NODE_TYPE_APPLY:     return "type-apply";
         case LHAT_NODE_TYPE_TABLE:     return "type-table";
         case LHAT_NODE_TYPE_TUPLE:     return "type-tuple";
         case LHAT_NODE_TYPE_UNION:     return "type-union";

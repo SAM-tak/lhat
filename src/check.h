@@ -158,6 +158,11 @@ typedef enum {
                                         // no value inhabits both of
     LHAT_CHECK_ERR_BAD_KEY,             // 04 の 11.3: nil^ spells absence, so
                                         // it cannot also be a key
+    LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_ERROR,
+    LHAT_CHECK_ERR_TYPE_ARGUMENT_REFERENCE,
+    LHAT_CHECK_ERR_TYPE_ATTRIBUTE,
+    LHAT_CHECK_ERR_TYPE_SPECIALIZATION,
+    LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME,
     LHAT_CHECK_ERR_NO_OPERATOR,         // 11.3: an operator is answered by
                                         // the left operand, and this one
                                         // carries no answer for it
@@ -422,6 +427,9 @@ typedef struct {
     // What the name holds there. Belongs to the result's type arena, so it
     // is valid for as long as the result is.
     LhatType *type;
+    // The signature instantiated for this use as a callee, if any. Kept
+    // separate from the value's type so declaration hovers stay general.
+    const LhatType *call_signature;
 } LhatResolution;
 
 // 07 の 4 章: a place a member name may stand -- the '.' of an access, with

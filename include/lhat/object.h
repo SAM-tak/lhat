@@ -464,6 +464,7 @@ typedef struct LhatRuntimeType {
     // 13.9: the body cannot end, written '-'. Told apart from a NULL result
     // (which ends without a value) because what a resume answers differs.
     bool endless;
+    bool coroutine_top;
 
     // 13.7's unbounded tail, one type throughout. STRUCTURE: the sequence
     // half beyond `parts`. SUBROUTINE: the element type of the last

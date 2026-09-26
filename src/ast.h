@@ -104,6 +104,7 @@ typedef enum {
     LHAT_NODE_TYPE_NAME,     // number^, FooBar
     LHAT_NODE_TYPE_FUNC,     // f^A, B -> C;
     LHAT_NODE_TYPE_CORO,     // c^{ f^recv -> yield -> ret }  (13.9, 15.3改)
+    LHAT_NODE_TYPE_APPLY,    // nominal<arguments>; access target and argument list
     LHAT_NODE_TYPE_TABLE,    // t^{ member : type }
     LHAT_NODE_TYPE_TUPLE,    // (A, B)  (13.8改). Two positions or more: '(T)'
                              // is the grouping the type grammar already had

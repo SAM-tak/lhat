@@ -1,6 +1,7 @@
 // L^ (lhat) -- LSP server: lhat-host.json, what a host's C would register.
 
 #include "host_config.h"
+#include "../stdlib/task_check.h"
 
 #include <errno.h>
 #include <math.h>
@@ -420,8 +421,23 @@ static void apply_function(const cJSON *entry, LhatProgram *program)
         return;
     }
     if (strcmp(kind, "func") == 0) {
-        lhat_register_func(program, module, name, signature, stub_host_fn,
-                           NULL);
+        bool registered = lhat_register_func(program, module, name, signature,
+                                             stub_host_fn, NULL);
+        // A JSON signature cannot carry a C callback. Replay the standard
+        // task declarations with the very same static rules as the runtime.
+        // Match the full declaration so a custom API with a similar name is
+        // not assigned unrelated semantics. This also handles existing dumps.
+        if (registered && strcmp(module, "std.task") == 0) {
+            LhatInstantiationCheckHandler handler = NULL;
+            if (strcmp(name, "async") == 0 &&
+                strcmp(signature, LHAT_TASK_ASYNC_SIGNATURE) == 0) {
+                handler = task_check_async;
+            }
+            if (handler != NULL) {
+                lhat_register_instantiation_check_handler(program, module, NULL,
+                    name, 0, handler, NULL);
+            }
+        }
         return;
     }
 

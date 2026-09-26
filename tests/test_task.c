@@ -15,6 +15,7 @@
 
 #include "stdlibutil.h"
 #include "testutil.h"
+#include "program_internal.h"
 
 #include "../stdlib/async.h"
 #include "../stdlib/channel.h"
@@ -55,19 +56,18 @@ static void test_the_sketch(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // A closure job, with what follows handed over as its arguments --
-    // std.thread.spawn's shape, for a body that does not yield.
-    LHAT_TEST("a closure job takes the arguments written after it");
+    // Arguments belong to coroutine construction, not to async itself.
+    LHAT_TEST("an immediately ending coroutine carries its arguments");
     {
         LhatTestRan ran = run_source(
             "import^ std.task\n"
             "std.task.start(2) catch^ panic^ it^\n"
-            "let^ t = std.task.async(p^ ... {\n"
+            "let^ t = std.task.async((p^ ... { _yield^ 0\n"
             "    let^ a = ...[0]\n"
             "    let^ b = ...[1]\n"
             "    if^ a fits^ number^ and^ b fits^ number^ { return^ a * b }\n"
             "    return^ 0\n"
-            "}, 6, 7) catch^ panic^ it^\n"
+            "})(6, 7)) catch^ panic^ it^\n"
             "var^ n = 0\n"
             "if^ t fits^ std.task.Task {\n"
             "    let^ got = std.task.await(t)\n"
@@ -177,11 +177,9 @@ static void test_side_by_side(void)
             "import^ std.task\n"
             "import^ std.async\n"
             "std.task.start(1) catch^ panic^ it^\n"
-            // 15.5: spin has no yield^, so the closure itself is the job --
-            // spin() would run here and never come back.
-            "let^ spin = p^ ... { var^ i = 0 repeat^ { i += 1 } }\n"
+            "let^ spin = p^ { _yield^ 0 var^ i = 0 repeat^ { i += 1 } }\n"
             "let^ waits = p^ { yield^ std.async.timer(0.05) return^ 7 }\n"
-            "std.task.async(spin) catch^ panic^ it^\n"
+            "std.task.async(spin()) catch^ panic^ it^\n"
             "let^ t = std.task.async(waits())\n"
             "var^ n = 0\n"
             "if^ t fits^ std.task.Task {\n"
@@ -231,7 +229,7 @@ static void test_answers(void)
         LhatTestRan ran = run_source(
             "import^ std.task\n"
             "std.task.start(1) catch^ panic^ it^\n"
-            "let^ t = std.task.async(p^ ... { panic^ \"boom\" })\n"
+            "let^ t = std.task.async((p^ { _yield^ 0 panic^ \"boom\" })())\n"
             "var^ said = \"nothing\"\n"
             "if^ t fits^ std.task.Task {\n"
             "    repeat^ { if^ t.done() { break^ } }\n"
@@ -275,7 +273,7 @@ static void test_answers(void)
     {
         LhatTestRan ran = run_source(
             "import^ std.task\n"
-            "let^ t = std.task.async(p^ ... { return^ 1 })\n"
+            "let^ t = std.task.async((p^ { _yield^ 0 return^ 1 })())\n"
             "if^ t fits^ std.task.TaskError.NotStarted { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
@@ -308,7 +306,7 @@ static void test_answers(void)
             "import^ std.task\n"
             "import^ std.async\n"
             "std.task.start(1) catch^ panic^ it^\n"
-            "let^ t = std.task.async(p^ ... { return^ 5 })\n"
+            "let^ t = std.task.async((p^ { _yield^ 0 return^ 5 })())\n"
             "var^ n = 0\n"
             "if^ t fits^ std.task.Task {\n"
             "    let^ id = t.awaitable()\n"
@@ -344,11 +342,11 @@ static void test_task_crosses(void)
             "let^ c = std.channel.new()\n"
             "var^ n = 0\n"
             "if^ c fits^ std.channel.Channel {\n"
-            "    let^ first = std.task.async(p^ ... { return^ 20 })\n"
+            "    let^ first = std.task.async((p^ { _yield^ 0 return^ 20 })())\n"
             "    if^ first fits^ std.task.Task { c.push(first) catch^ nil^ }\n"
             // The second job takes the first's handle through the channel
             // and awaits it there.
-            "    let^ second = std.task.async(p^ ... {\n"
+            "    let^ second = std.task.async((p^ ... { _yield^ 0\n"
             "        import^ std.task\n"
             "        let^ mine = ...[0]\n"
             "        if^ mine fits^ std.channel.Channel {\n"
@@ -359,7 +357,7 @@ static void test_task_crosses(void)
             "            }\n"
             "        }\n"
             "        return^ 0\n"
-            "    }, c) catch^ panic^ it^\n"
+            "    })(c)) catch^ panic^ it^\n"
             "    if^ second fits^ std.task.Task {\n"
             "        let^ got = std.task.await(second)\n"
             "        if^ got fits^ number^ { n := got }\n"
@@ -528,9 +526,9 @@ static void test_runaway(void)
             "import^ std.task\n"
             "std.task.start(2) catch^ panic^ it^\n"
             // Two of them, so both workers are held.
-            "let^ spin = p^ ... { var^ n = 0 repeat^ { n := n + 1 } }\n"
-            "std.task.async(spin) catch^ panic^ it^\n"
-            "std.task.async(spin) catch^ panic^ it^\n"
+            "let^ spin = p^ { _yield^ 0 var^ n = 0 repeat^ { n := n + 1 } }\n"
+            "std.task.async(spin()) catch^ panic^ it^\n"
+            "std.task.async(spin()) catch^ panic^ it^\n"
             // What is asked here is only that the stop comes back at all.
             "std.task.stop()\n"
             "return^ std.task.workers()\n");
@@ -582,8 +580,156 @@ static void test_task_unit_boundary(void)
     }
 }
 
+static void test_await_union_projection(void)
+{
+    LHAT_TEST("await flattens a projected union together with all task errors");
+    static const char source[] =
+        "import^ std.task\n"
+        "let^ gen = p^ flag:bool^ { _yield^ 0 if^ flag { return^ 'ok' } return^ 40 }\n"
+        "let^ task:std.task.Task<string^|number^> = try^std.task.async(gen(true^))\n"
+        "let^ raw = std.task.await(task)\n"
+        "let^ handled = try^std.task.await(task)\n"
+        "let^ copy = raw\nlet^ copyHandled = handled\n";
+    LhatProgram *program = lhat_program_new(true, typed_task_load, (void *)source);
+    LHAT_CHECK(lhatstdlib_task_register(program), "task registered");
+    const LhatUnit *unit = lhat_program_check(program, "main.lh");
+    LHAT_CHECK(unit != NULL && !lhat_program_has_errors(program), "union task checks");
+    if (unit != NULL) {
+        const char *names[] = {"= raw", "= handled"};
+        const char *expected_text[] = {
+            "string^|number^|std.task.TaskError.NotStarted|std.task.TaskError.Refused"
+            "|std.task.TaskError.Failed|std.error.OutOfMemory",
+            "string^|number^"
+        };
+        for (size_t i = 0; i < 2; i++) {
+            uint32_t offset = (uint32_t)(strstr(source, names[i]) - source + 2);
+            const LhatResolution *use = lhat_check_resolution_at(&unit->checked, offset);
+            const LhatType *expected = lhat_type_of_text(expected_text[i],
+                strlen(expected_text[i]), &program->types, program->hosted, NULL);
+            char actual[512] = "(missing)";
+            if (use != NULL) lhat_type_write_full(use->type, actual, sizeof actual);
+            LHAT_CHECK(use != NULL && expected != NULL && lhat_type_equal(use->type, expected),
+                       "projected union has exactly the expected arms, got %s", actual);
+            size_t arms = 0;
+            if (use != NULL && use->type->kind == LHAT_TYPE_UNION) {
+                for (const LhatTypeList *a = use->type->v.composite.arms; a; a = a->next) {
+                    LHAT_CHECK(a->type->kind != LHAT_TYPE_UNION, "union is flattened");
+                    arms++;
+                }
+            }
+            LHAT_CHECK_EQ_INT(arms, i == 0 ? 6 : 2);
+        }
+    }
+    lhat_program_free(program);
+}
+
+static void test_await_inferred_type(void)
+{
+    static const char source[] =
+        "import^ std.task\n"
+        "let^ gen1 = p^ { yield^ 0 return^ 40 }\n"
+        "let^ t1 = try^std.task.async(gen1())\n"
+        "let^ raw = std.task.await(t1)\n"
+        "let^ handled = try^std.task.await(t1)\n"
+        "let^ copy = raw\n"
+        "let^ copyHandled = handled\n";
+    LHAT_TEST("inspect await's inferred result before and after try");
+    LhatProgram *program = lhat_program_new(true, typed_task_load, (void *)source);
+    LHAT_CHECK(lhatstdlib_task_register(program), "task registered");
+    const LhatUnit *unit = lhat_program_check(program, "main.lh");
+    LHAT_CHECK(unit != NULL && !lhat_program_has_errors(program), "source checks");
+    if (unit != NULL) {
+        uint32_t raw_offset = (uint32_t)(strstr(source, "= raw") - source + 2);
+        uint32_t handled_offset = (uint32_t)(strstr(source, "= handled") - source + 2);
+        const LhatResolution *raw = lhat_check_resolution_at(&unit->checked, raw_offset);
+        const LhatResolution *handled = lhat_check_resolution_at(&unit->checked, handled_offset);
+        const char expected_text[] =
+            "number^|std.task.TaskError.NotStarted|std.task.TaskError.Refused"
+            "|std.task.TaskError.Failed|std.error.OutOfMemory";
+        const LhatType *expected = lhat_type_of_text(expected_text,
+            strlen(expected_text), &program->types, program->hosted, NULL);
+        char actual[512] = "(missing)";
+        if (raw != NULL) lhat_type_write_full(raw->type, actual, sizeof actual);
+        LHAT_CHECK(expected != NULL && raw != NULL && raw->type != NULL &&
+                       raw->type->kind == LHAT_TYPE_UNION &&
+                       lhat_type_equal(raw->type, expected),
+                   "raw await must be exactly number plus task errors, got %s", actual);
+        LHAT_CHECK(handled != NULL && handled->type != NULL &&
+                       handled->type->kind == LHAT_TYPE_NUMBER,
+                   "try await must be exactly number, not any or unknown");
+    }
+    lhat_program_free(program);
+
+    LHAT_TEST("the reported two-job addition fails only without await error handling");
+    static const char prefix[] =
+        "import^ std.task\n"
+        "let^ gen1 = p^ { yield^ 0 return^ 40 }\n"
+        "let^ gen2 = p^ { yield^ 0 return^ 2 }\n"
+        "std.task.start(2) catch^ panic^ it^\n"
+        "let^ t1 = try^std.task.async(gen1())\n"
+        "let^ t2 = try^std.task.async(gen2())\n"
+        "var^ n = 0\n";
+    char text[1024];
+    snprintf(text, sizeof text, "%s%s", prefix,
+        "n += std.task.await(t1)\nn += std.task.await(t2)\n"
+        "std.task.stop()\nreturn^ n\n");
+    program = lhat_program_new(true, typed_task_load, text);
+    LHAT_CHECK(lhatstdlib_task_register(program), "task registered");
+    unit = lhat_program_check(program, "main.lh");
+    LHAT_CHECK(unit != NULL && lhat_program_has_errors(program),
+               "unhandled await cannot be added to a number");
+    if (unit != NULL) {
+        LHAT_CHECK_EQ_INT(unit->checked.diagnostic_count, 2);
+        for (size_t i = 0; i < unit->checked.diagnostic_count; i++) {
+            LHAT_CHECK_EQ_INT(unit->checked.diagnostics[i].code, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_ERROR);
+        }
+    }
+    lhat_program_free(program);
+    snprintf(text, sizeof text, "%s%s", prefix,
+        "n += try^std.task.await(t1)\nn += try^std.task.await(t2)\n"
+        "std.task.stop()\nreturn^ n\n");
+    LhatTestRan ran = run_source(text);
+    LHAT_CHECK_RAN_INTEGER(ran, 42);
+    lhat_test_ran_dispose(&ran);
+}
+
 static void test_static_results(void)
 {
+    LHAT_TEST("task type arguments can be written explicitly");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.task\n"
+            "std.task.start(1) catch^ panic^ it^\n"
+            "let^ job = p^ { _yield^ 0 return^ 42 }\n"
+            "let^ t:std.task.Task<number^>=try^std.task.async(job())\n"
+            "let^ n:number^ = try^std.task.await(t)\n"
+            "std.task.stop()\nreturn^ n\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 42);
+        lhat_test_ran_dispose(&ran);
+    }
+    LHAT_TEST("async takes exactly one coroutine, not a closure or its arguments");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ t = std.task.async(p^ ... { return^ 1 })\n"),
+        "ordinary closure rejected");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ t = std.task.async(42)\n"), "number rejected");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ job = p^ { _yield^ 0 return^ 42 }\n"
+        "let^ t = std.task.async(job(), 1)\n"), "extra argument rejected");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ job = p^ { _yield^ 0 return^ 42 }\n"
+        "let^ t:std.task.Task<string^> = try^std.task.async(job())\n"),
+        "wrong explicit type argument rejected");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ job = p^ { _yield^ 0 return^ 42 }\n"
+        "let^ t:std.task.Task = try^std.task.async(job())\n"
+        "if^ t fits^ std.task.Task<string^> { let^ s = try^std.task.await(t) }\n"),
+        "runtime fits cannot fabricate an erased type argument");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ job = p^ { _yield^ 0 return^ 42 }\n"
+        "let^ t:std.task.Task = try^std.task.async(job())\n"
+        "let^ other = t as^ std.task.Task<string^> catch^ panic^ it^\n"),
+        "runtime cast cannot fabricate an erased type argument");
     LHAT_TEST("final results survive aliases, members and instantiated calls");
     {
         LhatTestRan ran = run_source(
@@ -687,6 +833,8 @@ static void test_static_results(void)
 
 int main(void)
 {
+    test_await_inferred_type();
+    test_await_union_projection();
     test_task_unit_boundary();
     test_static_results();
     test_the_sketch();

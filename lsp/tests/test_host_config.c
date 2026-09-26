@@ -440,8 +440,104 @@ static void test_constants(void)
     lhat_program_dispose(&from);
 }
 
+static void test_task_checks(void)
+{
+    // The dumped declarative async signature is checked just as in the CLI;
+    // await projects Task's argument through the common signature evaluator.
+    static const char config_text[] =
+        "{\"types\":["
+        "{\"kind\":\"errordef\",\"module\":\"std\",\"name\":\"error\","
+        "\"variants\":[\"OutOfMemory\"]},"
+        "{\"kind\":\"errordef\",\"module\":\"std.task\",\"name\":\"TaskError\","
+        "\"variants\":[\"NotStarted\",\"Refused\",\"Failed\"]},"
+        "{\"kind\":\"hostdata\",\"module\":\"std.task\",\"name\":\"Task\"}],"
+        "\"functions\":["
+        "{\"kind\":\"func\",\"module\":\"std.task\",\"name\":\"async\","
+        "\"signature\":\"p^c^ -> std.task.Task<ARG0.resultType>|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;\"},"
+        "{\"kind\":\"func\",\"module\":\"std.task\",\"name\":\"await\","
+        "\"signature\":\"p^std.task.Task -> ARG0.T0|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;\"}]}";
+    static const char *const sources[] = {
+        "import^ std.task\nlet^ job = p^ { yield^ 0 return^ 42 }\n"
+        "let^ t = std.task.async(job()) catch^ panic^ it^\n"
+        "var^ n = 0\nn += std.task.await(t)\n",
+        "import^ std.task\nlet^ job = p^ { yield^ 0 return^ 42 }\n"
+        "let^ t = std.task.async(job()) catch^ panic^ it^\n"
+        "let^ n:number^ = std.task.await(t) catch^ panic^ it^\n",
+        "import^ std.task\nlet^ job = p^ { yield^ 0 return^ 42 }\n"
+        "let^ t = std.task.async(job()) catch^ panic^ it^\n"
+        "let^ n:string^ = std.task.await(t) catch^ panic^ it^\n"
+    };
+    LHAT_TEST("replayed task APIs preserve result types and error diagnostics");
+    LspHostConfig *config = lsp_host_config_parse(config_text, strlen(config_text));
+    LHAT_CHECK(config != NULL, "task config parsed");
+    for (size_t i = 0; i < 3; i++) {
+        const File file = {"main.lh", sources[i]};
+        Disk disk = {&file, 1};
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &disk);
+        lsp_host_config_apply(config, &program);
+        const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(unit != NULL, "source checked");
+        LHAT_CHECK(lhat_program_has_errors(&program) == (i != 1),
+                   "only the handled, correctly annotated result passes");
+        if (unit != NULL) {
+            uint32_t offset = (uint32_t)(strstr(sources[i], "await(t)") - sources[i]);
+            const LhatResolution *use = lhat_check_resolution_at(&unit->checked, offset);
+            LHAT_CHECK(use != NULL && use->call_signature != NULL,
+                       "callee use records its instantiated signature for tooling");
+            if (use != NULL && use->call_signature != NULL) {
+                char signature[512];
+                lhat_type_write_full(use->call_signature, signature, sizeof signature);
+                LHAT_CHECK(strstr(signature, "number^") != NULL &&
+                           strstr(signature, "any^") == NULL &&
+                           strstr(signature, "TaskError") != NULL,
+                           "call signature shows number and errors, got %s", signature);
+                lhat_type_write_full(use->type, signature, sizeof signature);
+                LHAT_CHECK(strstr(signature, "ARG0.T0") != NULL,
+                           "the general function type remains unchanged");
+            }
+        }
+        if (i == 0 && unit != NULL) {
+            bool found = false;
+            for (size_t j = 0; j < unit->checked.diagnostic_count; j++) {
+                found |= unit->checked.diagnostics[j].code == LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_ERROR;
+            }
+            LHAT_CHECK(found, "LSP reports the same operator error as the CLI");
+        }
+        lhat_program_dispose(&program);
+    }
+    lsp_host_config_free(config);
+}
+
 int main(void)
 {
+    LHAT_TEST("JSON alone carries a nonstandard host's dependent signature");
+    {
+        static const char text[] =
+            "{\"types\":[{\"kind\":\"hostdata\",\"module\":\"custom\",\"name\":\"Box\"}],"
+            "\"functions\":[{\"kind\":\"func\",\"module\":\"custom\",\"name\":\"wrap\","
+            "\"signature\":\"p^c^ -> custom.Box<ARG0.resultType>;\"},"
+            "{\"kind\":\"func\",\"module\":\"custom\",\"name\":\"unwrap\","
+            "\"signature\":\"p^custom.Box -> ARG0.T0;\"}]}";
+        static const File files[] = {{"main.lh",
+            "import^ custom\n"
+            "let^ job = p^ { _yield^ 0 return^ 42 }\n"
+            "let^ b:custom.Box<number^> = custom.wrap(job())\n"
+            "let^ n:number^ = custom.unwrap(b)\n"
+            "var^ total = 0\ntotal += custom.unwrap(b)\n"}};
+        Disk disk = {files, 1};
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &disk);
+        LspHostConfig *config = lsp_host_config_parse(text, strlen(text));
+        LHAT_CHECK(config != NULL, "dependent signature JSON parsed");
+        lsp_host_config_apply(config, &program);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program),
+                   "no named callback or Task-specific rule required");
+        lhat_program_dispose(&program);
+        lsp_host_config_free(config);
+    }
+    test_task_checks();
     test_round_trip();
     test_constants();
     test_without_config();

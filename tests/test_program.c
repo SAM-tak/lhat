@@ -5380,8 +5380,80 @@ static void test_host_instantiation_abi(void)
     lhat_program_dispose(&program);
 }
 
+static void test_declarative_result_types(void)
+{
+    LHAT_TEST("declarative argument types instantiate without a host handler");
+    static const File files[] = {{"main.lh",
+        "import^ test.generic\n"
+        "let^ id:f^any^ -> ARG0; = test.generic.id\n"
+        "let^ n:number^ = id(42)\n"
+        "let^ s:string^ = id('ok')\n"
+        "let^ nested:test.generic.Box<test.generic.Box<number^>>=test.generic.wrap(test.generic.wrap(42))\n"
+        "let^ gen = p^ { _yield^ 0 return^ 'ok' }\n"
+        "let^ job:c^ = gen()\n"
+        "let^ text:string^ = test.generic.result(gen())\n"
+        "let^ typed:test.generic.Box<string^>=test.generic.pack(gen())\n"
+        "let^ attribute:c^{p^ -> number^ -> string^}.resultType = 'ok'\n"
+        "let^ pair:test.generic.Box<number^,string^> = test.generic.pair(1, 's')\n"
+        "let^ member:string^ = nested.echo('ok')\n"
+        "let^ first:number^ = test.generic.first(pair)\n"
+        "let^ second:string^ = test.generic.second(pair)\n"
+        "let^ checked:bool^ = 1 < 2 fits^ number^ < 3\n"
+    }};
+    LhatProgram program;
+    Disk disk;
+    program_with(&program, &disk, files, 1);
+    LHAT_CHECK(lhat_register_hostdata_type(&program, "test.generic", "Box") != NULL,
+               "nominal base registered");
+    LHAT_CHECK(lhat_register_func(&program, "test.generic", "id",
+        "f^any^ -> ARG0;", host_one, NULL), "ARG0 registration");
+    LHAT_CHECK(lhat_register_func(&program, "test.generic", "wrap",
+        "f^any^ -> test.generic.Box<ARG0>;", host_one, NULL), "type argument registration");
+    LHAT_CHECK(lhat_register_func(&program, "test.generic", "result",
+        "p^c^ -> ARG0.resultType;", host_one, NULL), "type attribute registration");
+    LHAT_CHECK(lhat_register_func(&program, "test.generic", "pack",
+        "p^c^ -> test.generic.Box<ARG0.resultType>;", host_one, NULL), "nested type expression");
+    LHAT_CHECK(lhat_register_func(&program, "test.generic", "pair",
+        "f^any^, any^ -> test.generic.Box<ARG0, ARG1>;", host_one, NULL), "multiple arguments");
+    LHAT_CHECK(lhat_register_member(&program, "test.generic", "Box", "echo",
+        "f^self^, any^ -> ARG0;", host_one, NULL), "ARG0 excludes the receiver");
+    LHAT_CHECK(lhat_register_func(&program, "test.generic", "first",
+        "f^test.generic.Box -> ARG0.T0;", host_one, NULL), "first type argument projection");
+    LHAT_CHECK(lhat_register_func(&program, "test.generic", "second",
+        "f^test.generic.Box -> ARG0.T1;", host_one, NULL), "second type argument projection");
+    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program), "declarative signatures check");
+    if (root != NULL) {
+        for (size_t i = 0; i < root->checked.diagnostic_count; i++) {
+            fprintf(stderr, "declarative diagnostic: %s\n",
+                    lhat_check_error_message(root->checked.diagnostics[i].code));
+        }
+    }
+    LHAT_CHECK(lhat_program_compile(&program), "parameterized annotations compile");
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("invalid references and type attributes are refused at registration");
+    static const char *const invalid[] = {
+        "p^number^ -> ARG0.resultType;", "p^c^ -> ARG1.resultType;",
+        "p^c^ -> ARG0.missing;", "p^ARG0 -> number^;",
+        "p^...:any^ -> ARG0;", "p^ -> number^<string^>;",
+        "p^c^ -> ARG99999999999999999999999999999.resultType;",
+        "p^c^ -> t^{ value:ARG0.resultType };",
+        "p^number^ -> ARG0.T0;", "p^c^ -> ARG0.T0;",
+        "p^number^ -> ARG0.T99999999999999999999999999999;",
+        "p^c^ -> (f^number^ -> ARG1;);"
+    };
+    for (size_t i = 0; i < sizeof invalid / sizeof *invalid; i++) {
+        program_with(&program, &disk, NULL, 0);
+        LHAT_CHECK(!lhat_register_func(&program, "test.generic", "bad", invalid[i], host_one, NULL),
+                   "invalid signature rejected: %s", invalid[i]);
+        lhat_program_dispose(&program);
+    }
+}
+
 int main(void)
 {
+    test_declarative_result_types();
     test_host_instantiation();
     test_host_instantiation_abi();
     // 8.9: before anything is taken, so the refusal above is about the order

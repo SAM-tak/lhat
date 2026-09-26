@@ -15,12 +15,11 @@
 //     let^ a = std.task.await(t1)        # the two ran side by side
 //     let^ b = std.task.await(t2)
 //
-// A JOB IS EITHER of two things. A coroutine whose body has not started
-// (05 の 8.8改3) -- which is what `slow(1)` is, since 02 の 15.5 runs
-// nothing at the call -- or a `p^...` closure, with what follows it handed
-// over as its arguments (std.thread.spawn's shape). What crosses is what
-// carry.h carries; anything else answers TaskError.Refused with carry's own
-// reason for it.
+// A JOB IS ONE COROUTINE whose body has not started. Arguments belong to
+// its construction, as in slow(1); async itself takes no other arguments.
+// A body that need not suspend can use _yield^ to make an immediately ending
+// coroutine. Ordinary closures are not jobs. What crosses is what carry.h
+// carries; a coroutine that cannot cross answers TaskError.Refused.
 //
 // A JOB RUNS TO COMPLETION on the worker that took it. It never moves to
 // another, and no other job of the pool runs on that worker while it does.
@@ -41,11 +40,11 @@
 // A Task may cross machines (05 の 8.8改2), so a job may be handed the Task
 // of another job, and a Task may be pushed into a std.channel.
 //
-// For coroutine jobs the checker preserves the final result T as Task<T>
-// (diagnostic spelling, not source syntax). await answers T plus task errors;
+// The signature preserves the final result T as Task<T>, also writable in
+// source annotations. await answers T plus task errors;
 // yield types do not enter T. No result becomes nil. Multi-value and direct
 // host-value results are refused because await transports one ordinary value.
-// Closure jobs and explicitly erased Task annotations retain the any fallback.
+// Explicitly erased Task annotations retain the any fallback.
 // Static preservation does not extend what carry/uncarry can transport.
 //
 // THE POOL HOLDS THE PROGRAM'S BODIES. A worker runs protos the program

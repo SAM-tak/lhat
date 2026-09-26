@@ -103,11 +103,16 @@ typedef enum {
     // UNKNOWN above, which also covers table subtyping's silence, computed
     // keys, and other cases with nothing to report even under strict.
     LHAT_TYPE_PENDING,
+    // A result type expression referring to a signature's fixed parameter.
+    LHAT_TYPE_ARGUMENT,
 
     LHAT_TYPE_KIND_COUNT
 } LhatTypeKind;
 
 typedef struct LhatType LhatType;
+// Declarative result expressions. Runtime descriptors use their upper bound.
+LhatType *lhat_type_argument_bound(const LhatType *type);
+bool lhat_type_has_arguments(const LhatType *type);
 
 // A named member of a table or the fields a kind declares. The name is the
 // arena's own copy (lhat_type_add_member), so the text it was read from
@@ -185,11 +190,18 @@ typedef struct LhatTypeList {
 
 struct LhatType {
     LhatTypeKind kind;
+    bool coroutine_top;
     // Compile-time nominal specialization. Runtime representation is unchanged.
     LhatType *specialization_base;
     LhatTypeList *specialization_arguments;
 
     union {
+        struct {
+            size_t index;
+            LhatType *bound;
+            bool result_type;
+            size_t type_argument; // One-based projection index; zero means none.
+        } argument;
         struct {
             LhatTypeMember *members;
             // The end of that list, so an append does not walk it.
@@ -440,6 +452,11 @@ typedef struct {
     LhatTypeArenaBlock *blocks;
     size_t type_count;
 } LhatTypeArena;
+
+LhatType *lhat_type_result_attribute(LhatTypeArena *arena, LhatType *type);
+LhatType *lhat_type_argument_attribute(LhatTypeArena *arena, LhatType *type, size_t index);
+LhatType *lhat_type_instantiate_result(LhatTypeArena *arena, LhatType *type,
+                                      const LhatType *const *args, size_t count);
 
 void lhat_type_arena_init(LhatTypeArena *arena);
 void lhat_type_arena_dispose(LhatTypeArena *arena);

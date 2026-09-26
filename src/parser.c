@@ -774,7 +774,7 @@ static LhatNode *parse_type_table(Parser *p)
     return finish(p, node);
 }
 
-static LhatNode *parse_type_primary(Parser *p)
+static LhatNode *parse_type_atom(Parser *p)
 {
     if (check_hat(p, "f")) {
         return parse_type_function(p, true);
@@ -796,7 +796,8 @@ static LhatNode *parse_type_primary(Parser *p)
         }
         return marked;
     }
-    if (check_hat(p, "c")) {
+    if (check_hat(p, "c") && p->ahead.kind == LHAT_TOKEN_OP &&
+        p->ahead.v.op == LHAT_OP_LBRACE) {
         return parse_type_coroutine(p);
     }
     if (check_hat(p, "t")) {
@@ -856,21 +857,6 @@ static LhatNode *parse_type_primary(Parser *p)
         }
         advance(p);
 
-        // 04 の 14.4: an error kind is named through the declaration that
-        // introduced it, so a type may be a qualified name. A hat identifier
-        // is a segment too -- 05 の 8.9 hangs a host value's box under the
-        // type as `T.Box^`, and the checker judges the word.
-        while (check_op(p, LHAT_OP_DOT)) {
-            LhatToken at = p->current;
-            advance(p);
-            if (p->current.kind != LHAT_TOKEN_IDENT &&
-                p->current.kind != LHAT_TOKEN_HAT_IDENT) {
-                report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
-                break;
-            }
-            node = access_node(p, LHAT_NODE_MEMBER, &at, node,
-                               simple_node(p), false);
-        }
         return finish(p, node);
     }
 
@@ -878,6 +864,46 @@ static LhatNode *parse_type_primary(Parser *p)
 }
 
 // 13.5 and 14.5: '&' binds tighter than '|', as it does in TypeScript.
+static LhatNode *parse_type_primary(Parser *p)
+{
+    LhatNode *node = parse_type_atom(p);
+    while (check_op(p, LHAT_OP_DOT) ||
+           (check_op(p, LHAT_OP_LT) &&
+            (p->ahead.kind == LHAT_TOKEN_IDENT || p->ahead.kind == LHAT_TOKEN_HAT_IDENT ||
+             is_op(&p->ahead, LHAT_OP_LPAREN)))) {
+        LhatToken at = p->current;
+        if (check_op(p, LHAT_OP_LT)) {
+            advance(p);
+            LhatNode *head = NULL;
+            LhatNode *tail = NULL;
+            do {
+                lhat_node_append(&head, &tail, parse_type(p));
+            } while (match_op(p, LHAT_OP_COMMA));
+            // Split only in type position; shifts and comparisons elsewhere
+            // retain the lexer's ordinary tokenization.
+            if (check_op(p, LHAT_OP_RSHIFT) || check_op(p, LHAT_OP_GE)) {
+                p->previous = p->current;
+                p->previous.v.op = LHAT_OP_GT;
+                p->previous.length = 1;
+                p->current.v.op = check_op(p, LHAT_OP_RSHIFT) ? LHAT_OP_GT : LHAT_OP_EQ;
+                p->current.offset++;
+                p->current.length--;
+            } else {
+                expect_op(p, LHAT_OP_GT);
+            }
+            node = access_node(p, LHAT_NODE_TYPE_APPLY, &at, node, head, false);
+        } else {
+            advance(p);
+            if (p->current.kind != LHAT_TOKEN_IDENT && p->current.kind != LHAT_TOKEN_HAT_IDENT) {
+                report(p, &p->current, LHAT_PARSE_ERR_EXPECTED_NAME);
+                break;
+            }
+            node = access_node(p, LHAT_NODE_MEMBER, &at, node, simple_node(p), false);
+        }
+    }
+    return finish(p, node);
+}
+
 static LhatNode *parse_type_intersection(Parser *p)
 {
     LhatNode *left = parse_type_primary(p);

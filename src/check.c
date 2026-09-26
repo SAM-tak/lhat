@@ -2,6 +2,7 @@
 
 
 #include "check_internal.h"
+#include "instantiation_internal.h"
 #include "message.h"
 
 // ---------------------------------------------------------------------------
@@ -252,6 +253,7 @@ static void record_resolution(Checker *c, const LhatNode *at, const Binding *b,
     entry->builtin = false;  // a name a scope holds is the program's own
     entry->definition_path = NULL;  // bound in this unit, by this scope
     entry->type = type;
+    entry->call_signature = NULL;
 }
 
 void chk_record_resolution(Checker *c, const LhatNode *at, const Binding *b)
@@ -315,6 +317,7 @@ static void record_placed(Checker *c, const LhatNode *at, LhatType *type,
     entry->immutable = false;
     entry->builtin = builtin;
     entry->type = type;
+    entry->call_signature = NULL;
 }
 
 void chk_record_member_resolution(Checker *c, const LhatNode *at,
@@ -1090,6 +1093,8 @@ int chk_self_marker_at(const Checker *c, const LhatNode *params,
 
 LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node)
 {
+    LhatType *outer_signature = c->argument_signature;
+    c->argument_signature = NULL;
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
     func->v.func.closed = node->v.func.closed;  // 15.13
     func->v.func.answers_fresh = node->v.func.answers_fresh;  // 15.1改3
@@ -1123,8 +1128,10 @@ LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node)
         // '(A, B)' as an argument is already refused -- which is what leaves
         // 13.7's expansion rule with nothing to expand.
         c->tuple_allowed = true;
+        c->argument_signature = func;
         func->v.func.result = chk_resolve_type(c, node->v.func.return_type);
     }
+    c->argument_signature = outer_signature;
     return func;
 }
 
@@ -1342,6 +1349,39 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
+    size_t projection = 0;
+    bool type_argument = length > 1 && name[0] == 'T';
+    for (size_t i = 1; type_argument && i < length; i++) {
+        if (name[i] < '0' || name[i] > '9' ||
+            projection > (SIZE_MAX - 1 - (size_t)(name[i] - '0')) / 10) {
+            type_argument = false;
+        } else {
+            projection = projection * 10 + (size_t)(name[i] - '0');
+        }
+    }
+    if (outer->kind == LHAT_TYPE_ARGUMENT || outer->kind == LHAT_TYPE_CORO || type_argument ||
+        chk_name_is(name, length, "resultType")) {
+        LhatType *bound = lhat_type_argument_bound(outer);
+        LhatType *result = chk_name_is(name, length, "resultType")
+                              ? lhat_type_result_attribute(c->result->types, bound)
+                              : type_argument ? lhat_type_argument_attribute(c->result->types, bound, projection) : NULL;
+        if (result == NULL || (outer->kind == LHAT_TYPE_ARGUMENT &&
+            (outer->v.argument.result_type || outer->v.argument.type_argument != 0))) {
+            chk_report(c, node->v.access.argument, LHAT_CHECK_ERR_TYPE_ATTRIBUTE);
+            return chk_simple(c, LHAT_TYPE_UNKNOWN);
+        }
+        if (outer->kind == LHAT_TYPE_ARGUMENT) {
+            LhatType *expression = chk_simple(c, LHAT_TYPE_ARGUMENT);
+            expression->v.argument = outer->v.argument;
+            expression->v.argument.bound = result;
+            expression->v.argument.result_type = !type_argument;
+            expression->v.argument.type_argument = type_argument ? projection + 1 : 0;
+            result = expression;
+        }
+        record_type_name(c, node->v.access.argument, result);
+        return result;
+    }
+
     if (outer->kind == LHAT_TYPE_ERROR_SET || outer->kind == LHAT_TYPE_ENUM) {
         LhatType *kind = chk_kind_of_set(outer, name, length);
         if (kind != NULL) {
@@ -1549,6 +1589,37 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
             if (!chk_node_name(c, node, &name, &length)) {
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
+            if (length > 3 && memcmp(name, "ARG", 3) == 0) {
+                size_t index = 0;
+                bool digits = true;
+                for (size_t i = 3; i < length; i++) {
+                    if (name[i] < '0' || name[i] > '9') { digits = false; break; }
+                    if (index > (SIZE_MAX - 9) / 10) { index = SIZE_MAX; break; }
+                    index = index * 10 + (size_t)(name[i] - '0');
+                }
+                if (digits) {
+                    const LhatTypeList *param = c->argument_signature != NULL
+                                                   ? c->argument_signature->v.func.params : NULL;
+                    size_t position = index;
+                    while (param != NULL && position > 0) { param = param->next; position--; }
+                    if (param == NULL) {
+                        chk_report(c, node, LHAT_CHECK_ERR_TYPE_ARGUMENT_REFERENCE);
+                        return chk_simple(c, LHAT_TYPE_UNKNOWN);
+                    }
+                    LhatType *reference = chk_simple(c, LHAT_TYPE_ARGUMENT);
+                    reference->v.argument.index = index;
+                    reference->v.argument.bound = param->type;
+                    record_type_name(c, node, reference);
+                    return reference;
+                }
+            }
+            if (chk_name_is(name, length, "c^")) {
+                LhatType *any = chk_simple(c, LHAT_TYPE_ANY);
+                LhatType *top = lhat_type_coro(c->result->types, NULL, any, any, false, false);
+                top->coroutine_top = true;
+                record_type_name(c, node, top);
+                return top;
+            }
             LhatType *builtin = builtin_type(c, name, length);
             if (builtin != NULL) {
                 record_type_name(c, node, builtin);
@@ -1691,8 +1762,35 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
         case LHAT_NODE_MEMBER:
             return resolve_qualified_type(c, node);
 
-        case LHAT_NODE_TYPE_TABLE:
-            return resolve_table_type(c, node);
+        case LHAT_NODE_TYPE_APPLY: {
+            LhatType *base = chk_resolve_type(c, node->v.access.target);
+            const LhatCheckType *args[LHAT_CHECK_MAX_TRACKED_ARGS];
+            size_t count = 0;
+            for (const LhatNode *arg = node->v.access.argument; arg; arg = arg->next) {
+                // Type arguments describe types; they are not stored tuple values.
+                c->tuple_allowed = true;
+                LhatType *resolved = chk_resolve_type(c, arg);
+                if (count < LHAT_CHECK_MAX_TRACKED_ARGS) args[count++] = resolved;
+                else {
+                    chk_report(c, node, LHAT_CHECK_ERR_TYPE_SPECIALIZATION);
+                    return chk_simple(c, LHAT_TYPE_UNKNOWN);
+                }
+            }
+            LhatInstantiationContext context = { c->result->types, c->require.hosted };
+            LhatType *made = (LhatType *)lhat_check_type_specialize(&context, base, args, count);
+            if (made == NULL) chk_report(c, node, LHAT_CHECK_ERR_TYPE_SPECIALIZATION);
+            return made != NULL ? made : chk_simple(c, LHAT_TYPE_UNKNOWN);
+        }
+
+        case LHAT_NODE_TYPE_TABLE: {
+            // A structural declaration introduces its own member scope. The
+            // initial dependent-result grammar does not substitute its fields.
+            LhatType *outer = c->argument_signature;
+            c->argument_signature = NULL;
+            LhatType *table = resolve_table_type(c, node);
+            c->argument_signature = outer;
+            return table;
+        }
 
         case LHAT_NODE_TYPE_FUNC:
             return chk_resolve_func_type(c, node);
@@ -1822,7 +1920,8 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
     // of a construction (04 の 2.5), written in expression position, and
     // nothing of an expression's own stamp should be written over.
     if (node != NULL && resolved != NULL &&
-        (node->kind == LHAT_NODE_TYPE_NAME || node->kind == LHAT_NODE_MEMBER)) {
+        (node->kind == LHAT_NODE_TYPE_NAME || node->kind == LHAT_NODE_MEMBER ||
+         node->kind == LHAT_NODE_TYPE_APPLY)) {
         ((LhatNode *)node)->checked_type = resolved;
     }
     return resolved;
@@ -2134,12 +2233,13 @@ LhatType *chk_operator_member(Checker *c, const LhatType *type,
     return chk_builtin_operator(c, type->kind, name, length);
 }
 
-// 03 の 3.5: a gap in inference, and 13.7's any^ which is every value at
-// once, are both left to the machine rather than reported here.
+// An inference gap may settle in a later round. any^ is a known top type,
+// not a gap: an operator requiring a narrower type must reject it until the
+// source narrows it, just as an ordinary function parameter does.
 bool chk_operator_undecided(const LhatType *type)
 {
     return type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
-           type->kind == LHAT_TYPE_PENDING || type->kind == LHAT_TYPE_ANY;
+           type->kind == LHAT_TYPE_PENDING;
 }
 
 // ---------------------------------------------------------------------------
@@ -4451,6 +4551,17 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "an operator is answered by what stands to its left, or by "
         "what stands to its right when that side writes the self^ "
         "last; neither answers this one"},
+    [LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_ERROR] = {"check.operator-on-maybe-error",
+        "this operand may be an error value; handle it with try^ or catch^, "
+        "or narrow it with fits^ before using this operator"},
+    [LHAT_CHECK_ERR_TYPE_ARGUMENT_REFERENCE] = {"check.type-argument-reference",
+        "ARGn must name a fixed parameter of the enclosing signature, in its result type"},
+    [LHAT_CHECK_ERR_TYPE_ATTRIBUTE] = {"check.type-attribute",
+        "this type has no such type attribute; resultType requires a coroutine type and Tn requires a nominal type argument"},
+    [LHAT_CHECK_ERR_TYPE_SPECIALIZATION] = {"check.type-specialization",
+        "type arguments require an unspecialized nominal host type"},
+    [LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME] = {"check.type-argument-runtime",
+        "type arguments are erased at runtime; fits^ and as^ must use the unspecialized type"},
     [LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL] = {"check.operator-on-maybe-nil",
         "this may be nil^, and nil^ answers no operator; '?\?' "
         "gives it a value, or bind it to a name and narrow that -- "

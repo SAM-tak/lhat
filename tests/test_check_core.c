@@ -15,6 +15,62 @@
 // test can say every word in it is answered by something.
 #include "check_internal.h"
 
+static void test_any_operators(void)
+{
+    Unit u;
+    LHAT_TEST("any is not an inference gap on either side of addition");
+    check_text(&u, "let^ x:any^ = 1\nvar^ n = 0\nn += x\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+    check_relaxed_text(&u, "let^ x:any^ = 1\nvar^ n = 0\nn += x\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+    check_text(&u, "let^ x:any^ = 1\nlet^ n = x + 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    unit_dispose(&u);
+    LHAT_TEST("narrowing any makes numeric compound assignment valid");
+    check_text(&u,
+        "let^ x:any^ = 1\nvar^ n = 0\n"
+        "if^ x fits^ number^ { n += x }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
+static void test_error_operand_diagnostics(void)
+{
+    static const char *const expressions[] = {
+        "var^ n = 0 n += x", "let^ n = x + 1", "let^ n = 1 + x",
+        "let^ n = x + x", "let^ n = -x", "let^ b = x < 1"
+    };
+    Unit u;
+    char text[512];
+    LHAT_TEST("operators explain when error arms need handling");
+    for (size_t i = 0; i < sizeof expressions / sizeof *expressions; i++) {
+        snprintf(text, sizeof text,
+            "errordef^ E { Bad }\nlet^ f = p^ x:number^|E { %s }\n", expressions[i]);
+        check_text(&u, text);
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_ERROR);
+        CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+        unit_dispose(&u);
+    }
+    LHAT_TEST("error handling advice is not given for an unrelated mismatch");
+    check_text(&u,
+        "errordef^ E { Bad }\nlet^ f = p^ x:string^|E { let^ n = 1 + x }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_ERROR);
+    unit_dispose(&u);
+    LHAT_TEST("try catch and fits each make the numeric operand usable");
+    check_text(&u,
+        "errordef^ E { Bad }\nlet^ f = p^ x:number^|E {\n"
+        "var^ n = 0\n"
+        "n += try^x\n"
+        "n += x catch^ 0\n"
+        "if^ x fits^ number^ { n += x }\n"
+        "return^ n\n}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 static void test_names(void)
 {
     Unit u;
@@ -3337,6 +3393,8 @@ static void test_dropped_errors(void)
 
 int main(void)
 {
+    test_any_operators();
+    test_error_operand_diagnostics();
     test_names();
 #if LHAT_WITH_RESOLUTIONS
     test_resolutions_are_ordered();

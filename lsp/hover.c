@@ -305,7 +305,9 @@ bool lsp_hover_locate(const LhatUnit *unit, uint32_t offset, LspHoverPart *out)
         // the cut form (07 の 4 章: a shorter answer says more here), so
         // what is read back out is what fits.
         char inferred[LHAT_HOVER_TYPE_BUFFER];
-        size_t length = lhat_type_write(typed->type, inferred, sizeof inferred);
+        const LhatType *shown = resolved != NULL && resolved->call_signature != NULL
+                                   ? resolved->call_signature : typed->type;
+        size_t length = lhat_type_write(shown, inferred, sizeof inferred);
         if (length > sizeof inferred - 1) {
             length = strlen(inferred);
         }

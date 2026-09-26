@@ -23,6 +23,7 @@
 // however many tasks are parked.
 
 #include "task.h"
+#include "task_check.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -120,8 +121,6 @@ struct Task {
     // What to run: the job, and the arguments where it is a closure. Owned
     // here until a worker has rebuilt them.
     LhatCarried *job;
-    LhatCarried **arguments;
-    size_t argument_count;
 
     // What came of it. Written by the worker under `lock`, which is also
     // what `await` waits on.
@@ -149,14 +148,6 @@ struct Task {
 // A task, which knows nothing about L^
 // ---------------------------------------------------------------------------
 
-static void free_carried_values(LhatCarried **values, size_t count)
-{
-    for (size_t i = 0; i < count; i++) {
-        lhat_carried_free(values[i]);
-    }
-    lhat_free(values);
-}
-
 static void task_free(Task *task)
 {
     // A task dropped where it stood (the pool was torn down under it) still
@@ -166,7 +157,6 @@ static void task_free(Task *task)
         lhat_machine_dispose(task->machine);
     }
     lhat_carried_free(task->job);
-    free_carried_values(task->arguments, task->argument_count);
     lhat_carried_free(task->result);
     lhat_free(task->traceback);
     lhat_free(task->fault_text);
@@ -397,35 +387,9 @@ static StepResult task_begin(TaskModule *module, Task *task)
         return STEP_DONE;
     }
 
-    // A closure is called with whatever was written after it; a coroutine
-    // carried in (05 の 8.8改3) is already the thing to drive.
-    if (!lhat_is_object_kind(job, LHAT_OBJECT_SUBROUTINE)) {
-        task->driving = job;
-        task->driving_set = true;
-        task->ran = lhat_machine_resume(task->machine, job, NULL, 0);
-        return after_turn(module, task);
-    }
-
-    LhatValue *arguments =
-        task->argument_count > 0
-            ? (LhatValue *)lhat_calloc(task->argument_count, sizeof *arguments)
-            : NULL;
-    if (task->argument_count > 0 && arguments == NULL) {
-        task->status = LHAT_RUN_OUT_OF_MEMORY;
-        task->move = MOVE_NONE;
-        return STEP_DONE;
-    }
-    for (size_t i = 0; i < task->argument_count; i++) {
-        if (!lhat_uncarry(task->machine, task->arguments[i], &arguments[i])) {
-            lhat_free(arguments);
-            task->status = LHAT_RUN_OUT_OF_MEMORY;
-            task->move = MOVE_NONE;
-            return STEP_DONE;
-        }
-    }
-    task->ran = lhat_machine_call(task->machine, job, arguments,
-                                  task->argument_count);
-    lhat_free(arguments);
+    task->driving = job;
+    task->driving_set = true;
+    task->ran = lhat_machine_resume(task->machine, job, NULL, 0);
     return after_turn(module, task);
 }
 
@@ -771,19 +735,10 @@ static void task_async(LhatMachine *machine, void *context,
                                "std.task.start has not been called");
         return;
     }
-    // A closure that takes '...' and nothing else, or a job carry accepts on
-    // its own (a coroutine that has not started, 05 の 8.8改3).
-    if (lhat_is_object_kind(arguments[0], LHAT_OBJECT_SUBROUTINE)) {
-        const LhatProto *proto = lhat_closure_proto(arguments[0]);
-        if (proto == NULL || lhat_proto_yields(proto) ||
-            !lhat_proto_has_variadic(proto) ||
-            lhat_proto_parameters(proto) != 1) {
-            answers[0] = fail_with(
-                machine, module->refused,
-                "a closure job takes '...' alone and does not yield; "
-                "a yieldable one is handed over as the call of it");
-            return;
-        }
+    if (count != 1 || !lhat_is_object_kind(arguments[0], LHAT_OBJECT_COROUTINE)) {
+        answers[0] = fail_with(machine, module->refused,
+                               "async takes exactly one coroutine");
+        return;
     }
 
     Task *task = (Task *)lhat_calloc(1, sizeof *task);
@@ -802,25 +757,6 @@ static void task_async(LhatMachine *machine, void *context,
         task_let_go(task, NULL);
         answers[0] = error;
         return;
-    }
-    if (count > 1) {
-        task->arguments =
-            (LhatCarried **)lhat_calloc(count - 1, sizeof *task->arguments);
-        if (task->arguments == NULL) {
-            task_let_go(task, NULL);
-            answers[0] = fail_with(machine, module->out_of_memory,
-                                   "out of memory");
-            return;
-        }
-        task->argument_count = count - 1;
-        for (size_t i = 1; i < count; i++) {
-            if (!carry_argument(machine, module, arguments[i],
-                                &task->arguments[i - 1], &error)) {
-                task_let_go(task, NULL);
-                answers[0] = error;
-                return;
-            }
-        }
     }
 
     LhatValue out = lhat_nil();
@@ -1018,81 +954,6 @@ static void dispose_module(void *raw)
     lhat_free(module);
 }
 
-// Static results travel in Task's nominal specialization, independently of
-// the shared runtime tag. Transport failures remain ordinary task errors.
-#if LHAT_WITH_FRONTEND
-static const LhatCheckType *task_checked_errors(LhatInstantiationContext *context,
-                                               const LhatCheckType *result)
-{
-    static const char *const names[] = {
-        "std.task.TaskError.NotStarted", "std.task.TaskError.Refused",
-        "std.task.TaskError.Failed", "std.error.OutOfMemory"
-    };
-    for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
-        const LhatCheckType *error = lhat_check_type_named(context, names[i]);
-        if (error == NULL) return NULL;
-        result = lhat_check_type_union(context, result, error);
-    }
-    return result;
-}
-
-static LhatInstantiationStatus task_check_async(
-    LhatInstantiationContext *context, void *user,
-    const LhatCheckType *signature, const LhatCheckType *receiver,
-    const LhatCheckType *const *arguments, size_t count,
-    const LhatCheckType **resolved)
-{
-    (void)user;
-    (void)receiver;
-    if (count == 0) return LHAT_INSTANTIATION_DEFAULT;
-    if (lhat_check_type_pending(arguments[0])) return LHAT_INSTANTIATION_PENDING;
-    const LhatCheckType *result = NULL;
-    for (size_t i = 0; i < lhat_check_type_union_count(arguments[0]); i++) {
-        const LhatCheckType *job = lhat_check_type_union_at(arguments[0], i);
-        if (lhat_check_type_pending(job)) return LHAT_INSTANTIATION_PENDING;
-        const LhatCheckType *answer = lhat_check_coroutine_result(context, job);
-        // Closure jobs keep the declared fallback: their argument shapes are
-        // not instantiated by this API. A coroutine already has its result.
-        if (answer == NULL) return LHAT_INSTANTIATION_DEFAULT;
-        if (lhat_check_type_pending(answer)) return LHAT_INSTANTIATION_PENDING;
-        if (!lhat_check_type_single_slot(answer)) return LHAT_INSTANTIATION_REFUSED;
-        result = lhat_check_type_union(context, result, answer);
-    }
-    const LhatCheckType *base = lhat_check_type_named(context, "std.task.Task");
-    const LhatCheckType *task = lhat_check_type_specialize(context, base, &result, 1);
-    if (task == NULL) return LHAT_INSTANTIATION_REFUSED;
-    *resolved = lhat_check_signature_result(context, signature,
-                                           task_checked_errors(context, task));
-    return LHAT_INSTANTIATION_RESOLVED;
-}
-
-static LhatInstantiationStatus task_check_await(
-    LhatInstantiationContext *context, void *user,
-    const LhatCheckType *signature, const LhatCheckType *receiver,
-    const LhatCheckType *const *arguments, size_t count,
-    const LhatCheckType **resolved)
-{
-    (void)user;
-    (void)receiver;
-    if (count != 1) return LHAT_INSTANTIATION_DEFAULT;
-    const LhatCheckType *result = NULL;
-    const LhatCheckType *base = lhat_check_type_named(context, "std.task.Task");
-    for (size_t i = 0; i < lhat_check_type_union_count(arguments[0]); i++) {
-        const LhatCheckType *task = lhat_check_type_union_at(arguments[0], i);
-        if (lhat_check_type_pending(task)) return LHAT_INSTANTIATION_PENDING;
-        if (!lhat_check_type_same(lhat_check_type_base(task), base)) {
-            return LHAT_INSTANTIATION_DEFAULT;
-        }
-        const LhatCheckType *answer = lhat_check_type_argument(task, 0);
-        if (answer == NULL) return LHAT_INSTANTIATION_DEFAULT;
-        result = lhat_check_type_union(context, result, answer);
-    }
-    *resolved = lhat_check_signature_result(context, signature,
-                                           task_checked_errors(context, result));
-    return LHAT_INSTANTIATION_RESOLVED;
-}
-#endif
-
 bool lhatstdlib_task_register(LhatProgram *program)
 {
     if (!lhatstdlib_error_register(program)) {
@@ -1126,10 +987,6 @@ bool lhatstdlib_task_register(LhatProgram *program)
         return false;
     }
 
-#define TASK_ERRORS \
-    "|std.task.TaskError.NotStarted|std.task.TaskError.Refused" \
-    "|std.task.TaskError.Failed|std.error.OutOfMemory;"
-
     return lhat_register_func(program, "std.task", "start",
                               "p^ -> number^|std.error.OutOfMemory;",
                               task_start, module) &&
@@ -1142,18 +999,16 @@ bool lhatstdlib_task_register(LhatProgram *program)
                               module) &&
            lhat_register_func(program, "std.task", "workers",
                               "f^ -> number^;", task_workers, module) &&
-            // Untyped tasks and closure jobs retain the dynamic fallback.
+            // The signature computes the task argument from the coroutine.
            lhat_register_func(program, "std.task", "async",
-                              "p^any^, ...:any^ -> std.task.Task" TASK_ERRORS,
+                               LHAT_TASK_ASYNC_SIGNATURE,
                               task_async, module) &&
             lhat_register_func(program, "std.task", "await",
-                               "p^std.task.Task -> any^" TASK_ERRORS,
+                               LHAT_TASK_AWAIT_SIGNATURE,
                                task_await, module) &&
 #if LHAT_WITH_FRONTEND
             lhat_register_instantiation_check_handler(program, "std.task", NULL,
                 "async", 0, task_check_async, NULL) &&
-            lhat_register_instantiation_check_handler(program, "std.task", NULL,
-                "await", 0, task_check_await, NULL) &&
 #endif
            lhat_register_member(program, "std.task", "Task", "done",
                                 "f^self^ -> bool^;", task_done, module) &&
@@ -1170,5 +1025,4 @@ bool lhatstdlib_task_register(LhatProgram *program)
            lhat_register_hostdata_shared(program, "std.task", "Task",
                                          task_retain, task_let_go, NULL);
 
-#undef TASK_ERRORS
 }

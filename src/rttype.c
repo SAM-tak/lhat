@@ -26,6 +26,12 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
     if (type == NULL) {
         return NULL;
     }
+    if (type->kind == LHAT_TYPE_ARGUMENT) {
+        return rt_from_checked(heap, type->v.argument.bound, seen);
+    }
+    if (type->specialization_base != NULL) {
+        return rt_from_checked(heap, type->specialization_base, seen);
+    }
     if (type->kind == LHAT_TYPE_TABLE) {
         unsigned level = 1;
         for (const RtSeen *s = seen; s != NULL; s = s->outer) {
@@ -266,6 +272,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             rt->produce = rt_from_checked(heap, type->v.coroutine.produce, seen);
             rt->result = rt_from_checked(heap, type->v.coroutine.result, seen);
             rt->endless = type->v.coroutine.endless;
+            rt->coroutine_top = type->coroutine_top;
             rt->is_function = type->v.coroutine.is_function;  // 15.3改
             return rt;
         }

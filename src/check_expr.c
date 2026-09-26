@@ -7,6 +7,45 @@
 // Expressions
 // ---------------------------------------------------------------------------
 
+typedef struct RuntimeArgumentSeen {
+    const LhatType *type;
+    const struct RuntimeArgumentSeen *outer;
+} RuntimeArgumentSeen;
+
+static bool runtime_has_type_arguments(const LhatType *type, const RuntimeArgumentSeen *seen)
+{
+    if (type == NULL) return false;
+    for (const RuntimeArgumentSeen *s = seen; s != NULL; s = s->outer) {
+        if (s->type == type) return false;
+    }
+    RuntimeArgumentSeen here = {type, seen};
+    seen = &here;
+    if (type->specialization_base != NULL || type->kind == LHAT_TYPE_ARGUMENT) return true;
+    if (type->kind == LHAT_TYPE_UNION || type->kind == LHAT_TYPE_INTERSECT ||
+        type->kind == LHAT_TYPE_TUPLE) {
+        for (const LhatTypeList *a = type->v.composite.arms; a; a = a->next) {
+            if (runtime_has_type_arguments(a->type, seen)) return true;
+        }
+    } else if (type->kind == LHAT_TYPE_TABLE && !type->v.table.nominal) {
+        for (const LhatTypeMember *m = type->v.table.members; m; m = m->next) {
+            if (runtime_has_type_arguments(m->type, seen)) return true;
+        }
+        return runtime_has_type_arguments(type->v.table.variadic, seen) ||
+               runtime_has_type_arguments(type->v.table.index_value, seen);
+    } else if (type->kind == LHAT_TYPE_FUNC) {
+        for (const LhatTypeList *p = type->v.func.params; p; p = p->next) {
+            if (runtime_has_type_arguments(p->type, seen)) return true;
+        }
+        return runtime_has_type_arguments(type->v.func.result, seen) ||
+               runtime_has_type_arguments(type->v.func.variadic, seen);
+    } else if (type->kind == LHAT_TYPE_CORO) {
+        return runtime_has_type_arguments(type->v.coroutine.receive, seen) ||
+               runtime_has_type_arguments(type->v.coroutine.produce, seen) ||
+               runtime_has_type_arguments(type->v.coroutine.result, seen);
+    }
+    return false;
+}
+
 void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
                 LhatType *target, LhatCheckErrorCode code)
 {
@@ -75,6 +114,27 @@ static bool nil_arm_apart(Checker *c, LhatType *type, LhatType **bare)
     return true;
 }
 
+// Return the success arms only when a union actually contains both success
+// and error values. A plain error cannot be repaired by narrowing it.
+static LhatType *without_error_arms(Checker *c, LhatType *type)
+{
+    if (type == NULL || type->kind != LHAT_TYPE_UNION) return NULL;
+    LhatType *bare = NULL;
+    bool has_error = false;
+    for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+         arm = arm->next) {
+        LhatType *t = arm->type;
+        if (t != NULL && (t->kind == LHAT_TYPE_ERROR ||
+                         t->kind == LHAT_TYPE_ERROR_SET ||
+                         t->kind == LHAT_TYPE_ERROR_KIND)) {
+            has_error = true;
+        } else {
+            bare = lhat_type_union(c->result->types, bare, t);
+        }
+    }
+    return has_error ? bare : NULL;
+}
+
 // 11.3改: the one shape every operator is judged with. The left operand is
 // asked for the member 11.8 names, 11.1 makes that a function, 14.4 puts the
 // left operand in its self^ -- so the right operand is its argument and the
@@ -138,6 +198,25 @@ static bool compares_by(Checker *c, LhatType *left, LhatType *right,
                         true) != NULL;
 }
 
+// Diagnose missing error handling only if removing the error arms really
+// makes the operation valid. Do not hide an unrelated operand mismatch, or
+// reject an operator explicitly accepting error values.
+static unsigned operator_error_sides(Checker *c, LhatType *left, LhatType *right,
+                                     const char *name, size_t length)
+{
+    if (chk_operator_undecided(left) || chk_operator_undecided(right) ||
+        chk_param_var_for(c, left) != NULL || chk_param_var_for(c, right) != NULL) {
+        return 0;
+    }
+    LhatType *l = without_error_arms(c, left);
+    LhatType *r = without_error_arms(c, right);
+    if ((l == NULL && r == NULL) || compares_by(c, left, right, name, length) ||
+        !compares_by(c, l != NULL ? l : left, r != NULL ? r : right, name, length)) {
+        return 0;
+    }
+    return (l != NULL ? 1u : 0u) | (r != NULL ? 2u : 0u);
+}
+
 // 11.9 with 11.9改: what says how these two compare. An ordering has only
 // '<=>' to read; '=' and '≠' read an op^= first and fall back on '<=>',
 // which is the same order the machine looks them up in.
@@ -180,6 +259,11 @@ static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
     // right operand carry it -- relates a pair that 14.12 would otherwise
     // call separate, so the judgement below has to come second.
     bool related = related_pair(c, op, left, right);
+    if (!related && op != LHAT_OP_EQ && op != LHAT_OP_NE && op != LHAT_OP_IS &&
+        operator_error_sides(c, left, right, "<=>", 3) != 0) {
+        chk_report(c, at, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_ERROR);
+        return chk_simple(c, LHAT_TYPE_BOOL);
+    }
 
     // 14.12's disjointness says whether any value inhabits both. If none
     // does, and nothing says how they compare either, the answer is fixed
@@ -484,6 +568,13 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
     size_t length = 0;
     const char *name = chk_operator_name(op, &length);
     if (name == NULL) {
+        return NULL;
+    }
+
+    unsigned errors = operator_error_sides(c, left, right, name, length);
+    if (errors != 0) {
+        chk_report(c, (errors & 1u) != 0 ? node->v.binary.left : node->v.binary.right,
+                   LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_ERROR);
         return NULL;
     }
 
@@ -1170,6 +1261,9 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
     // the rest of the comparisons).
     if (op == LHAT_OP_FITS) {
         LhatType *asked = chk_resolve_type(c, node->v.binary.right);
+        if (runtime_has_type_arguments(asked, 0)) {
+            chk_report(c, node->v.binary.right, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
+        }
         // 13.7: any^ is the top of every value, so this holds of whatever is
         // on the left and the question is empty. 13.11 refuses to read the
         // left's inferred type against the right -- that would narrow the
@@ -1523,7 +1617,8 @@ static LhatType *host_call_answer(Checker *c, const LhatNode *node,
                                   const LhatType *signature,
                                   const LhatCheckType *const *arguments, size_t count)
 {
-    if (signature->v.func.instantiation_handler == NULL) {
+    bool dependent = lhat_type_has_arguments(signature->v.func.result);
+    if (signature->v.func.instantiation_handler == NULL && !dependent) {
         return chk_call_answer(c, signature);
     }
     const LhatType *receiver = NULL;
@@ -1536,11 +1631,30 @@ static LhatType *host_call_answer(Checker *c, const LhatNode *node,
         count--;
     }
     LhatInstantiationContext context = { c->result->types, c->require.hosted };
+    if (dependent) {
+        LhatType *answer = lhat_type_instantiate_result(c->result->types,
+            signature->v.func.result, arguments, count);
+        if (answer == NULL ||
+            lhat_type_tuple_arm_width(answer) != lhat_type_tuple_arm_width(signature->v.func.result) ||
+            lhat_type_hostvalue_arm(answer) != lhat_type_hostvalue_arm(signature->v.func.result)) {
+            chk_report(c, node, LHAT_CHECK_ERR_SHAPE_REFUSED);
+            return chk_simple(c, LHAT_TYPE_UNKNOWN);
+        }
+        signature = lhat_check_signature_result(&context, signature, answer);
+        if (signature == NULL) return chk_simple(c, LHAT_TYPE_UNKNOWN);
+    }
     const LhatCheckType *resolved = NULL;
-    LhatInstantiationStatus status = signature->v.func.instantiation_handler(
-        &context, signature->v.func.instantiation_context, signature, receiver,
-        arguments, count, &resolved);
-    if (status == LHAT_INSTANTIATION_DEFAULT) return chk_call_answer(c, signature);
+    LhatInstantiationStatus status = LHAT_INSTANTIATION_DEFAULT;
+    if (signature->v.func.instantiation_handler != NULL) {
+        status = signature->v.func.instantiation_handler(
+            &context, signature->v.func.instantiation_context, signature, receiver,
+            arguments, count, &resolved);
+    }
+    if (status == LHAT_INSTANTIATION_DEFAULT) {
+        if (!dependent) return chk_call_answer(c, signature);
+        resolved = signature;
+        status = LHAT_INSTANTIATION_RESOLVED;
+    }
     if (status == LHAT_INSTANTIATION_PENDING) return chk_simple(c, LHAT_TYPE_UNKNOWN);
     // A handler refines types, never the ABI or the procedure/function effect.
     if (status != LHAT_INSTANTIATION_RESOLVED || resolved == NULL ||
@@ -1557,6 +1671,21 @@ static LhatType *host_call_answer(Checker *c, const LhatNode *node,
         chk_report(c, node, LHAT_CHECK_ERR_SHAPE_REFUSED);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
+#if LHAT_WITH_RESOLUTIONS
+    // Record what this call actually used, without changing the registered
+    // function type or the type shown at its declaration.
+    const LhatNode *name = node->v.access.target;
+    if (name->kind == LHAT_NODE_MEMBER) name = name->v.access.argument;
+    if (name != NULL) {
+        for (size_t i = c->result->resolution_count; i > 0; i--) {
+            LhatResolution *at = &c->result->resolutions[i - 1];
+            if (at->use == name->offset && at->use_end == name->end) {
+                at->call_signature = resolved;
+                break;
+            }
+        }
+    }
+#endif
     return chk_call_answer(c, resolved);
 }
 
@@ -6049,6 +6178,15 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             // machine takes, where NEG handles its own type and comes to the
             // member for everything else.
             LhatType *number = chk_simple(c, LHAT_TYPE_NUMBER);
+            LhatType *success = without_error_arms(c, operand);
+            if (success != NULL && infer_unary_operator(c, operand) == NULL) {
+                LhatType *answer = lhat_type_conforms(success, number)
+                                       ? number : infer_unary_operator(c, success);
+                if (answer != NULL) {
+                    chk_report(c, node->v.unary.operand, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_ERROR);
+                    return answer;
+                }
+            }
             if (!lhat_type_conforms(operand, number)) {
                 LhatType *own = infer_unary_operator(c, operand);
                 if (own != NULL) {
@@ -6089,6 +6227,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 }
                 if (op == LHAT_OP_FITS) {
                     LhatType *asked = chk_resolve_type(c, operand);
+                    if (runtime_has_type_arguments(asked, 0)) {
+                        chk_report(c, operand, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
+                    }
                     if (asked != NULL && asked->kind == LHAT_TYPE_ANY) {
                         chk_report(c, operand, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
                     }
@@ -6166,6 +6307,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             LhatType *actual = chk_require_value(
                 c, node->v.ascription.value, chk_infer(c, node->v.ascription.value));
             LhatType *wanted = chk_resolve_type(c, node->v.ascription.type);
+            if (runtime_has_type_arguments(wanted, 0)) {
+                chk_report(c, node->v.ascription.type, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
+            }
             if (lhat_type_disjoint(actual, wanted)) {
                 // 11.6改3: a pair no value inhabits both of is settled at the
                 // type level, not a narrowing 13.11 keeps out of the

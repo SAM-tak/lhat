@@ -738,7 +738,8 @@ static void emit_rt(Writer *w, Out *o, const LhatRuntimeType *rt)
     put_u32(o, obj_ref(w, rt->result));
     put_u8(o, (uint8_t)((rt->is_function ? 1 : 0) | (rt->takes_self ? 2 : 0) |
                         (rt->self_last ? 4 : 0) | (rt->closed ? 8 : 0) |
-                        (rt->endless ? 16 : 0)));
+                        (rt->endless ? 16 : 0) |
+                        (rt->coroutine_top ? 32 : 0)));
     put_u32(o, obj_ref(w, rt->receive));
     put_u32(o, obj_ref(w, rt->produce));
     put_u32(o, obj_ref(w, rt->variadic));
@@ -1681,6 +1682,7 @@ static void read_rt(Reader *r)
     rt->self_last = (flags & 4) != 0;
     rt->closed = (flags & 8) != 0;
     rt->endless = (flags & 16) != 0;
+    rt->coroutine_top = (flags & 32) != 0;
     rt->receive = rt_at(r, get_u32(in));
     rt->produce = rt_at(r, get_u32(in));
     rt->variadic = rt_at(r, get_u32(in));

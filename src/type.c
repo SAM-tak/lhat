@@ -1,6 +1,7 @@
 // L^ (lhat) -- types: arena, construction, conformance and disjointness.
 
 #include "type.h"
+#include <stdio.h>
 #include "instantiation_internal.h"
 
 #include <limits.h>
@@ -90,6 +91,128 @@ bool lhat_check_type_pending(const LhatCheckType *type)
            type->kind == LHAT_TYPE_PENDING;
 }
 
+LhatType *lhat_type_argument_bound(const LhatType *type)
+{
+    return type != NULL && type->kind == LHAT_TYPE_ARGUMENT
+               ? type->v.argument.bound : (LhatType *)type;
+}
+
+bool lhat_type_has_arguments(const LhatType *type)
+{
+    if (type == NULL) return false;
+    if (type->kind == LHAT_TYPE_ARGUMENT) return true;
+    if (type->kind == LHAT_TYPE_CORO) {
+        return lhat_type_has_arguments(type->v.coroutine.receive) ||
+               lhat_type_has_arguments(type->v.coroutine.produce) ||
+               lhat_type_has_arguments(type->v.coroutine.result);
+    }
+    const LhatTypeList *items = type->specialization_arguments;
+    if (type->kind == LHAT_TYPE_UNION || type->kind == LHAT_TYPE_INTERSECT ||
+        type->kind == LHAT_TYPE_TUPLE) items = type->v.composite.arms;
+    for (; items != NULL; items = items->next) {
+        if (lhat_type_has_arguments(items->type)) return true;
+    }
+    return false;
+}
+
+LhatType *lhat_type_result_attribute(LhatTypeArena *arena, LhatType *type)
+{
+    if (type == NULL) return NULL;
+    if (type->kind == LHAT_TYPE_UNION) {
+        LhatType *result = NULL;
+        for (const LhatTypeList *arm = type->v.composite.arms; arm; arm = arm->next) {
+            LhatType *part = lhat_type_result_attribute(arena, arm->type);
+            if (part == NULL) return NULL;
+            result = lhat_type_union(arena, result, part);
+        }
+        return result;
+    }
+    if (type->kind != LHAT_TYPE_CORO) return NULL;
+    if (type->coroutine_top) return lhat_type_simple(arena, LHAT_TYPE_ANY);
+    return type->v.coroutine.result != NULL ? type->v.coroutine.result
+                                           : lhat_type_simple(arena, LHAT_TYPE_NIL);
+}
+
+LhatType *lhat_type_argument_attribute(LhatTypeArena *arena, LhatType *type, size_t index)
+{
+    if (type == NULL) return NULL;
+    if (type->kind == LHAT_TYPE_UNION) {
+        LhatType *result = NULL;
+        for (const LhatTypeList *a = type->v.composite.arms; a; a = a->next) {
+            LhatType *part = lhat_type_argument_attribute(arena, a->type, index);
+            if (part == NULL) return NULL;
+            result = lhat_type_union(arena, result, part);
+        }
+        return result;
+    }
+    if (type->kind != LHAT_TYPE_HOSTVALUE &&
+        !(type->kind == LHAT_TYPE_TABLE && type->v.table.nominal)) return NULL;
+    if (type->specialization_base == NULL) return lhat_type_simple(arena, LHAT_TYPE_ANY);
+    const LhatTypeList *arg = type->specialization_arguments;
+    while (arg != NULL && index != 0) { arg = arg->next; index--; }
+    return arg != NULL ? arg->type : NULL;
+}
+
+static LhatType *instantiate_result(LhatTypeArena *arena, LhatType *type,
+                                   const LhatType *const *args, size_t count,
+                                   unsigned depth)
+{
+    if (type == NULL || depth > 64) return type;
+    if (type->kind == LHAT_TYPE_ARGUMENT) {
+        if (type->v.argument.index >= count) return type->v.argument.bound;
+        LhatType *actual = (LhatType *)args[type->v.argument.index];
+        if (lhat_check_type_pending(actual)) return actual;
+        if (type->v.argument.type_argument != 0) {
+            LhatType *part = lhat_type_argument_attribute(arena, actual, type->v.argument.type_argument - 1);
+            return part != NULL ? part : type->v.argument.bound;
+        }
+        if (!type->v.argument.result_type) return actual;
+        LhatType *result = lhat_type_result_attribute(arena, actual);
+        return result != NULL ? result : type->v.argument.bound;
+    }
+    if (type->specialization_base != NULL) {
+        LhatType *made = new_type(arena, type->kind);
+        if (made == NULL) return type;
+        *made = *type;
+        made->specialization_arguments = NULL;
+        LhatTypeList **tail = &made->specialization_arguments;
+        for (const LhatTypeList *a = type->specialization_arguments; a; a = a->next) {
+            *tail = arena_alloc(arena, sizeof **tail);
+            if (*tail == NULL) return type;
+            (*tail)->type = instantiate_result(arena, a->type, args, count, depth + 1);
+            tail = &(*tail)->next;
+        }
+        return made;
+    }
+    if (type->kind == LHAT_TYPE_CORO && lhat_type_has_arguments(type)) {
+        LhatType *made = new_type(arena, LHAT_TYPE_CORO);
+        if (made == NULL) return type;
+        *made = *type;
+        made->v.coroutine.receive = instantiate_result(arena, type->v.coroutine.receive, args, count, depth + 1);
+        made->v.coroutine.produce = instantiate_result(arena, type->v.coroutine.produce, args, count, depth + 1);
+        made->v.coroutine.result = instantiate_result(arena, type->v.coroutine.result, args, count, depth + 1);
+        return made;
+    }
+    if (type->kind == LHAT_TYPE_UNION || type->kind == LHAT_TYPE_INTERSECT ||
+        type->kind == LHAT_TYPE_TUPLE) {
+        LhatType *result = type->kind == LHAT_TYPE_TUPLE ? lhat_type_tuple(arena) : NULL;
+        for (const LhatTypeList *a = type->v.composite.arms; a; a = a->next) {
+            LhatType *part = instantiate_result(arena, a->type, args, count, depth + 1);
+            if (type->kind == LHAT_TYPE_TUPLE) lhat_type_add_position(arena, result, part);
+            else if (type->kind == LHAT_TYPE_UNION) result = lhat_type_union(arena, result, part);
+            else result = lhat_type_intersect(arena, result, part);
+        }
+        return result;
+    }
+    return type;
+}
+
+LhatType *lhat_type_instantiate_result(LhatTypeArena *arena, LhatType *type,
+                                      const LhatType *const *args, size_t count)
+{
+    return instantiate_result(arena, type, args, count, 0);
+}
+
 const LhatCheckType *lhat_check_type_named(LhatInstantiationContext *context,
                                          const char *name)
 {
@@ -137,6 +260,7 @@ const LhatCheckType *lhat_check_coroutine_result(LhatInstantiationContext *conte
     if (type == NULL || type->kind != LHAT_TYPE_CORO) {
         return NULL;
     }
+    if (type->coroutine_top) return lhat_check_type_any(context);
     return type->v.coroutine.result != NULL &&
                    type->v.coroutine.result->kind != LHAT_TYPE_NONE
                ? type->v.coroutine.result
@@ -210,6 +334,12 @@ const LhatCheckType *lhat_check_type_specialize(LhatInstantiationContext *contex
     if (made == NULL) return NULL;
     *made = *base;
     made->specialization_base = (LhatType *)base;
+    // Registrations may add members after a signature has specialized this
+    // type. Follow the declaration rather than snapshotting its member index.
+    made->v.table.members = NULL;
+    made->v.table.tail = NULL;
+    made->v.table.index = NULL;
+    made->v.table.base = (LhatType *)base;
     LhatTypeList **tail = &made->specialization_arguments;
     for (size_t i = 0; i < count; i++) {
         if (arguments[i] == NULL) return NULL;
@@ -1182,6 +1312,17 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
     Assumed here = { value, target, seen };
     seen = &here;
 
+    if (value->kind == LHAT_TYPE_ARGUMENT && target->kind == LHAT_TYPE_ARGUMENT) {
+        return value->v.argument.index == target->v.argument.index &&
+               value->v.argument.result_type == target->v.argument.result_type &&
+               value->v.argument.type_argument == target->v.argument.type_argument &&
+               conforms_in(value->v.argument.bound, target->v.argument.bound, seen);
+    }
+    if (value->kind == LHAT_TYPE_ARGUMENT) {
+        return conforms_in(value->v.argument.bound, target, seen);
+    }
+    if (target->kind == LHAT_TYPE_ARGUMENT) return false;
+
     // A gap in inference is not a mismatch. Under relaxed it becomes a runtime
     // check (03 の 3.5); under strict, lhat_type_conforms_strict is the one
     // that refuses pending^ -- this function stays lenient for every caller
@@ -1510,6 +1651,8 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             return conforms_func(value, target, seen);
 
         case LHAT_TYPE_CORO:
+            if (target->coroutine_top) return true;
+            if (value->coroutine_top) return false;
             // 15.3改: advancing one runs its body, so start()/resume() carry
             // the body's kind (15.6改). One kind cannot stand where the other
             // is written -- an f^ holding a p^ coroutine could not advance it,
@@ -1693,6 +1836,8 @@ bool lhat_type_equal(const LhatType *a, const LhatType *b)
 static bool disjoint_in(const LhatType *a, const LhatType *b,
                         const Assumed *seen)
 {
+    a = lhat_type_argument_bound(a);
+    b = lhat_type_argument_bound(b);
     if (a == NULL || b == NULL) {
         return false;
     }
@@ -2320,6 +2465,17 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         return;
     }
 
+    if (type->kind == LHAT_TYPE_ARGUMENT) {
+        char text[48];
+        snprintf(text, sizeof text, "ARG%zu%s", type->v.argument.index,
+                 type->v.argument.result_type ? ".resultType" : "");
+        put_text(sink, text);
+        if (type->v.argument.type_argument != 0) {
+            snprintf(text, sizeof text, ".T%zu", type->v.argument.type_argument - 1);
+            put_text(sink, text);
+        }
+        return;
+    }
     if (type->specialization_base != NULL) {
         write_type(sink, type->specialization_base, depth + 1);
         put_text(sink, "<");
@@ -2539,6 +2695,10 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         }
 
         case LHAT_TYPE_CORO: {
+            if (type->coroutine_top) {
+                put_text(sink, "c^");
+                break;
+            }
             // 13.9改: 'c^{ f^R -> Y -> T }', the three slots in the order a
             // coroutine lives them. An empty slot is written by leaving it
             // out, and how many arrows are written is how many slots were --

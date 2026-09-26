@@ -20,11 +20,14 @@ char *lsp_signature_for_unit(const LhatUnit *unit, uint32_t offset)
 
     // Measure, then fill: type.h's contract, so what comes back is the whole
     // type rather than as much of it as some buffer happened to hold.
-    size_t wanted = lhat_type_write_full(resolved->type, NULL, 0);
+    const LhatResolution *use = lhat_check_resolution_at(&unit->checked, offset);
+    const LhatType *shown = use != NULL && use->call_signature != NULL
+                               ? use->call_signature : resolved->type;
+    size_t wanted = lhat_type_write_full(shown, NULL, 0);
     char *text = (char *)malloc(wanted + 1);
     if (text == NULL) {
         return NULL;
     }
-    lhat_type_write_full(resolved->type, text, wanted + 1);
+    lhat_type_write_full(shown, text, wanted + 1);
     return text;
 }

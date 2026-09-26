@@ -790,11 +790,11 @@ static void test_no_value(void)
     CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    LHAT_TEST("and 13.7's any^ is every value at once");
+    LHAT_TEST("any is a known top type and must narrow before concatenation");
     check_text(&u,
                "var^ x : any^ = \"a\"\n"
                "var^ v = x .. \"b\"\n");
-    CHECK_CLEAN(&u);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
     LHAT_TEST("a yield^ wants one to send out");

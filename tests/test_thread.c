@@ -232,7 +232,7 @@ static void test_arguments(void)
         LhatTestRan ran = run_source(
             WITH_SPAWN("std.thread.spawn(closed^p^ ... {\n"
                        "    var^ total = 0\n"
-                       "    for^ i, x in^ ... { total := total + x }\n"
+                       "    for^ i, x in^ ... { if^ x fits^ number^ { total += x } }\n"
                        "    return^ total\n"
                        "}, 3, 4, 5)"));
         LHAT_CHECK_RAN_INTEGER(ran, 12);
@@ -308,7 +308,7 @@ static void test_arguments(void)
             "let^ forward = p^ ... {\n"
             "    return^ std.thread.spawn(closed^p^ ... {\n"
             "        var^ total = 0\n"
-            "        for^ i, x in^ ... { total := total + x }\n"
+            "        for^ i, x in^ ... { if^ x fits^ number^ { total += x } }\n"
             "        return^ total\n"
             "    }, ...)\n"
             "}\n"

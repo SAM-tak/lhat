@@ -876,6 +876,10 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
         // described -- one resume takes R and answers Y -- which is where the
         // kind of the body goes, both kinds being possible (15.3改).
         case LHAT_TYPE_RT_COROUTINE: {
+            if (type->coroutine_top) {
+                type_put_text(w, "c^");
+                break;
+            }
             // 13.9改: 'c^{f^R -> Y -> T}'. An empty slot is written by
             // leaving it out, so a NULL is not the "nothing written asks for
             // any^" of every other position here -- it is the slot saying
@@ -1064,6 +1068,9 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         // f^ coroutine is not what may be done with a p^ one.
         case LHAT_TYPE_RT_COROUTINE:
             // 13.9: an empty slot is a statement of its own, so it is told
+            if (a->coroutine_top || b->coroutine_top) {
+                return a->coroutine_top == b->coroutine_top;
+            }
             // apart from every type rather than normalised to any^ the way a
             // NULL is everywhere else here.
             if (a->endless != b->endless ||
