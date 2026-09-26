@@ -10,9 +10,17 @@
 //
 // - std.math.vector2.Vector2 -- a host value (8.9), made by
 //   std.math.vector2.new(x, y). Two f32 components in stack slots, no heap,
-//   no lifetime. Fields x/y read and write directly; +, -, * (by number^),
-//   dot, cross (the scalar z of the 3D cross), length, normalized and
-//   tostring are registered members. Keeping one is the language's
+//   no lifetime. Fields x/y read and write directly; +, -, * (by number^ or
+//   a Vector2 for component-wise multiplication), / (by number^ or a
+//   Vector2 component-wise), dot^ / ⋅ and cross^ / × (the scalar z of the
+//   3D cross) are operators. length, normalized, lerp(other, t),
+//   rotate(radians), angle() = atan2(y, x) and tostring are registered
+//   members. Positive rotation is counter-clockwise in x-right/y-up
+//   coordinates; lerp does not clamp t.
+//   angle() answers 0 for the zero vector.
+//   Module functions zero(), one(), right(), left(), up() and down() return
+//   fresh Vector2 values; +y is up in these coordinates.
+//   Keeping one is the language's
 //   Vector2.Box^ (box^ / get / set) -- nothing for a library to provide.
 
 #ifndef LHATSTDLIB_MATHVECTOR2_H

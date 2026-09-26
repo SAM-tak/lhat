@@ -109,7 +109,8 @@ static bool is_unicode_space(uint32_t cp)
 static bool is_reserved_symbol(uint32_t cp)
 {
     return cp == 0x2260u || cp == 0x2264u || cp == 0x2265u ||
-           cp == 0x2266u || cp == 0x2267u;
+           cp == 0x2266u || cp == 0x2267u ||
+           cp == 0x00D7u || cp == 0x22C5u;
 }
 
 // Section 3.1 asks for UAX #31 XID_Start / XID_Continue. Shipping the full
@@ -928,6 +929,8 @@ static const OperatorEntry operator_table[] = {
     { "\xE2\x89\xA5", 3, LHAT_OP_GE },  // U+2265 GREATER-THAN OR EQUAL TO
     { "\xE2\x89\xA6", 3, LHAT_OP_LE },  // U+2266 LESS-THAN OVER EQUAL TO
     { "\xE2\x89\xA7", 3, LHAT_OP_GE },  // U+2267 GREATER-THAN OVER EQUAL TO
+    { "\xC3\x97", 2, LHAT_OP_CROSS }, // U+00D7 MULTIPLICATION SIGN
+    { "\xE2\x8B\x85", 3, LHAT_OP_DOT_PRODUCT }, // U+22C5 DOT OPERATOR
 
     { ":=", 2, LHAT_OP_REASSIGN },
     { "<<", 2, LHAT_OP_LSHIFT },

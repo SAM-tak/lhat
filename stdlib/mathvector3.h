@@ -11,10 +11,14 @@
 // - std.math.vector3.Vector3 -- a host value (8.9), made by
 //   std.math.vector3.new(x, y, z). Three f32 components in stack slots, no
 //   heap, no lifetime. Fields x/y/z read and write directly;
-//   +, -, * (by number^), dot, cross, length, normalized and tostring are
-//   registered members. This is the type arithmetic runs on. Keeping one
+//   +, -, * (by number^ or a Vector3 for component-wise multiplication),
+//   / (by number^ or a Vector3 component-wise), dot^ / ⋅ and cross^ / ×
+//   are operators; length, normalized, lerp(other, t) (unclamped) and
+//   tostring are registered members. Keeping one
 //   is the language's Vector3.Box^ (box^ / get / set) -- nothing for a
 //   library to provide.
+//   Module functions zero(), one(), right(), left(), up(), down(), forward()
+//   and back() return fresh values. +Z is forward, -Z is back.
 
 #ifndef LHATSTDLIB_MATHVECTOR3_H
 #define LHATSTDLIB_MATHVECTOR3_H

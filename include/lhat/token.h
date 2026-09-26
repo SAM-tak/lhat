@@ -122,6 +122,8 @@ typedef enum {
     LHAT_OP_ADD,
     LHAT_OP_SUB,
     LHAT_OP_MUL,
+    LHAT_OP_CROSS,       // cross^ or ×
+    LHAT_OP_DOT_PRODUCT, // dot^ or ⋅ (not member access '.')
     LHAT_OP_DIV,
     LHAT_OP_FLOORDIV,    // //   (01 の 6.1 freed this by putting comments on '#')
     LHAT_OP_MOD,         // %

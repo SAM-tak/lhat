@@ -9,8 +9,8 @@
 #ifndef LHAT_OPERATORS_H
 #define LHAT_OPERATORS_H
 
-// 02 の 11.8 with 11.9: the spellings op^ may write -- '..', the seven
-// arithmetic operators, '<=>' and '='. The last is the one comparison
+// 02 の 11.8 with 11.9: the member names op^ may write -- '..', the seven
+// arithmetic operators, cross/dot, '<=>' and '='. The last is the one comparison
 // written on its own: a type may know what equals what without knowing what
 // comes first, and 11.9 has '=' and '≠' read it before reaching for '<=>'.
 // The other four comparisons are read off '<=>' alone. One list, expanded
@@ -26,6 +26,8 @@
     X(ADD,       ADD,       "+",   1) \
     X(SUB,       SUB,       "-",   1) \
     X(MUL,       MUL,       "*",   1) \
+    X(CROSS,     CROSS,     "cross", 5) \
+    X(DOT_PRODUCT, DOT_PRODUCT, "dot", 3) \
     X(DIV,       DIV,       "/",   1) \
     X(FLOORDIV,  IDIV,      "//",  2) \
     X(MOD,       MOD,       "%",   1) \

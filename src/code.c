@@ -456,6 +456,8 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_ADD:         return "add";
         case LHAT_BC_SUB:         return "sub";
         case LHAT_BC_MUL:         return "mul";
+        case LHAT_BC_CROSS:       return "cross";
+        case LHAT_BC_DOT_PRODUCT: return "dot";
         case LHAT_BC_DIV:         return "div";
         case LHAT_BC_IDIV:        return "idiv";
         case LHAT_BC_MOD:         return "mod";

@@ -72,6 +72,8 @@ const char *lhat_op_name(LhatOpKind op)
         case LHAT_OP_ADD:        return "+";
         case LHAT_OP_SUB:        return "-";
         case LHAT_OP_MUL:        return "*";
+        case LHAT_OP_CROSS:      return "cross^";
+        case LHAT_OP_DOT_PRODUCT: return "dot^";
         case LHAT_OP_DIV:        return "/";
         case LHAT_OP_FLOORDIV:   return "//";
         case LHAT_OP_MOD:        return "%";

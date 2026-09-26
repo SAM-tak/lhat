@@ -528,6 +528,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         VM_LABEL(LHAT_BC_ADD),
         VM_LABEL(LHAT_BC_SUB),
         VM_LABEL(LHAT_BC_MUL),
+        VM_LABEL(LHAT_BC_CROSS),
+        VM_LABEL(LHAT_BC_DOT_PRODUCT),
         VM_LABEL(LHAT_BC_DIV),
         VM_LABEL(LHAT_BC_IDIV),
         VM_LABEL(LHAT_BC_MOD),
@@ -715,6 +717,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             VM_CASE(LHAT_BC_MOVE)
                 SET_R(a, R(b));
                 VM_NEXT();
+
+            VM_CASE(LHAT_BC_CROSS)
+            VM_CASE(LHAT_BC_DOT_PRODUCT)
+                goto call_operator;
 
             VM_CASE(LHAT_BC_ADD)
             VM_CASE(LHAT_BC_SUB)

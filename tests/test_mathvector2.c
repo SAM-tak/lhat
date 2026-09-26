@@ -25,6 +25,25 @@ static bool checks(const char *text)
 
 static void test_fields(void)
 {
+    LHAT_TEST("module functions provide independent Vector2 constants");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math.vector2\n"
+            "var^ zero = std.math.vector2.zero()\n"
+            "zero.x := 9\n"
+            "let^ another = std.math.vector2.zero()\n"
+            "if^ another.x = 0.0 and^ another.y = 0.0\n"
+            " and^ std.math.vector2.one().x = 1.0\n"
+            " and^ std.math.vector2.one().y = 1.0\n"
+            " and^ std.math.vector2.right().x = 1.0\n"
+            " and^ std.math.vector2.left().x = -1.0\n"
+            " and^ std.math.vector2.up().y = 1.0\n"
+            " and^ std.math.vector2.down().y = -1.0 { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
     LHAT_TEST("fields read the bytes back");
     {
         LhatTestRan ran = run_source(
@@ -55,6 +74,22 @@ static void test_fields(void)
 
 static void test_operators(void)
 {
+    LHAT_TEST("vector times vector multiplies the two components");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math.vector2\n"
+            "let^ a = std.math.vector2.new(2, -3)\n"
+            "let^ b = std.math.vector2.new(4, 5)\n"
+            "let^ c = a * b\n"
+            "let^ d = b * a\n"
+            "let^ s = 2 * a * 3\n"
+            "if^ c.x = 8.0 and^ c.y = -15.0 and^ d = c\n"
+            " and^ s.x = 12.0 and^ s.y = -18.0 { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
     LHAT_TEST("operators chain through stack temporaries");
     {
         LhatTestRan ran = run_source(
@@ -102,6 +137,49 @@ static void test_operators(void)
 
 static void test_methods(void)
 {
+    LHAT_TEST("angle reads atan2(y, x), including the zero convention");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math.vector2\n"
+            "let^ up = std.math.vector2.new(0, 1).angle()\n"
+            "let^ down = std.math.vector2.new(0, -1).angle()\n"
+            "let^ left = std.math.vector2.new(-1, 0).angle()\n"
+            "let^ zero = std.math.vector2.new(0, 0).angle()\n"
+            "if^ up > 1.57079 and^ up < 1.57080\n"
+            " and^ down < -1.57079 and^ down > -1.57080\n"
+            " and^ left > 3.14159 and^ left < 3.14160\n"
+            " and^ zero = 0.0 { return^ 1 }\nreturn^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("division, unclamped lerp and radian rotation");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math.vector2\n"
+            "let^ a = std.math.vector2.new(6, -12)\n"
+            "let^ b = std.math.vector2.new(2, -4)\n"
+            "let^ by = a / b\n"
+            "let^ scalar = a / 2\n"
+            "let^ mid = a.lerp(b, 0.5)\n"
+            "let^ beyond = a.lerp(b, 1.5)\n"
+            "let^ ccw = std.math.vector2.new(1, 0).rotate(1.5707963267948966)\n"
+            "let^ cw = std.math.vector2.new(1, 0).rotate(-1.5707963267948966)\n"
+            "if^ by.x = 3.0 and^ by.y = 3.0 and^ scalar.x = 3.0\n"
+            " and^ scalar.y = -6.0 and^ mid.x = 4.0 and^ mid.y = -8.0\n"
+            " and^ beyond.x = 0.0 and^ beyond.y = 0.0\n"
+            " and^ ccw.x < 0.000001 and^ ccw.x > -0.000001\n"
+            " and^ ccw.y = 1.0 and^ cw.y = -1.0 { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("division is not defined with a scalar on the left");
+    LHAT_CHECK(!checks("import^ std.math.vector2\n"
+                       "let^ a = 2 / std.math.vector2.new(1, 2)\n"),
+               "only vector / scalar is defined");
+
     LHAT_TEST("dot, length and normalized");
     {
         LhatTestRan ran = run_source(
@@ -109,7 +187,7 @@ static void test_methods(void)
             "let^ v = std.math.vector2.new(3, 4)\n"
             "let^ u = std.math.vector2.new(0, 2).normalized()\n"
             "let^ z = std.math.vector2.new(0, 0).normalized()\n"
-            "if^ v.length() = 5.0 and^ v.dot(v) = 25.0 and^ u.x = 0.0\n"
+            "if^ v.length() = 5.0 and^ v dot^ v = 25.0 and^ u.x = 0.0\n"
             "    and^ u.y = 1.0 and^ z.x = 0.0 and^ z.y = 0.0 {\n"
             "    return^ 1\n"
             "}\n"
@@ -127,8 +205,8 @@ static void test_methods(void)
             "let^ y = std.math.vector2.new(0, 1)\n"
             "let^ a = std.math.vector2.new(2, 3)\n"
             "let^ b = std.math.vector2.new(5, 7)\n"
-            "if^ x.cross(y) = 1.0 and^ y.cross(x) = -1.0\n"
-            "    and^ a.cross(b) = -1.0 and^ a.cross(a) = 0.0 {\n"
+            "if^ x cross^ y = 1.0 and^ y × x = -1.0\n"
+            "    and^ a cross^ b = -1.0 and^ a × a = 0.0 {\n"
             "    return^ 1\n"
             "}\n"
             "return^ 0\n");

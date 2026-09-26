@@ -1432,8 +1432,9 @@ static LhatNode *parse_def(Parser *p)
             // 11.9改: '=' is the exception. A type may know what equals what
             // with no order to put its values in, and writing a '<=>' for it
             // would be answering a question it has no answer to.
-            bool definable = symbol.kind == LHAT_TOKEN_OP &&
-                             (symbol.v.op == LHAT_OP_SPACESHIP ||
+            bool named_product = check_hat(p, "cross") || check_hat(p, "dot");
+            bool definable = named_product || (symbol.kind == LHAT_TOKEN_OP &&
+                              (symbol.v.op == LHAT_OP_SPACESHIP ||
                               symbol.v.op == LHAT_OP_EQ ||
                               symbol.v.op == LHAT_OP_CONCAT ||
                               symbol.v.op == LHAT_OP_ADD ||
@@ -1442,7 +1443,7 @@ static LhatNode *parse_def(Parser *p)
                               symbol.v.op == LHAT_OP_DIV ||
                               symbol.v.op == LHAT_OP_FLOORDIV ||
                               symbol.v.op == LHAT_OP_MOD ||
-                              symbol.v.op == LHAT_OP_POW);
+                               symbol.v.op == LHAT_OP_POW));
             if (!definable) {
                 // 8.6改: a compound spelling is worth its own answer. It is
                 // the one an overload would plausibly be written for, and
@@ -1471,7 +1472,9 @@ static LhatNode *parse_def(Parser *p)
             LhatNode *name = make(p, LHAT_NODE_IDENT, &symbol);
             if (name != NULL) {
                 name->v.name.offset = symbol.offset;
-                name->v.name.length = symbol.length;
+                // op^dot^ / op^cross^ name the bare operator member, not
+                // an ordinary hatted identifier. Drop the trailing hat.
+                name->v.name.length = symbol.length - (named_product ? 1 : 0);
                 name->v.name.hats = 0;
             }
             entry->v.entry.key = name;
@@ -2671,6 +2674,16 @@ static bool binary_info(const Parser *p, LhatOpKind *op, int *precedence,
     *right_associative = false;
 
     if (p->current.kind == LHAT_TOKEN_HAT_IDENT) {
+        if (check_hat(p, "cross")) {
+            *op = LHAT_OP_CROSS;
+            *precedence = PREC_MUL;
+            return true;
+        }
+        if (check_hat(p, "dot")) {
+            *op = LHAT_OP_DOT_PRODUCT;
+            *precedence = PREC_MUL;
+            return true;
+        }
         if (check_hat(p, "or")) {
             *op = LHAT_OP_OR;
             *precedence = PREC_OR;
@@ -2706,6 +2719,8 @@ static bool binary_info(const Parser *p, LhatOpKind *op, int *precedence,
             *precedence = PREC_ADD;
             return true;
         case LHAT_OP_MUL:
+        case LHAT_OP_CROSS:
+        case LHAT_OP_DOT_PRODUCT:
         case LHAT_OP_DIV:
         case LHAT_OP_FLOORDIV:
         case LHAT_OP_MOD:

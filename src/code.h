@@ -42,6 +42,8 @@ typedef enum {
     LHAT_BC_IDIV,       // 04 の 11.2: fails on zero
     LHAT_BC_MOD,        // the same
     LHAT_BC_POW,
+    LHAT_BC_CROSS,       // A B C: overloaded cross product
+    LHAT_BC_DOT_PRODUCT, // A B C: overloaded dot product
     // 03 の 5.1, measured first: the four common ones again with the right
     // operand a constant. A loop's `i + 1` was a LOADK re-run every turn,
     // and these fold it into the instruction. The block stays contiguous

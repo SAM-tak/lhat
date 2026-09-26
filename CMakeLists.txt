@@ -320,8 +320,11 @@ if(LHAT_BUILD_STDLIB)
         stdlib/load.c
         stdlib/lton.c
         stdlib/math.c
+        stdlib/mathcomplex.c
+        stdlib/mathquaternion.c
         stdlib/mathvector2.c
         stdlib/mathvector3.c
+        stdlib/mathvector4.c
         stdlib/random.c
         stdlib/regex.c
         stdlib/regex_engine.c
@@ -344,7 +347,8 @@ if(LHAT_BUILD_STDLIB)
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
     install(FILES stdlib/async.h stdlib/carry.h stdlib/channel.h stdlib/debug.h stdlib/error.h stdlib/io.h stdlib/json.h
-            stdlib/lton.h stdlib/math.h stdlib/mathvector2.h stdlib/mathvector3.h stdlib/random.h stdlib/regex.h stdlib/load.h
+             stdlib/lton.h stdlib/math.h stdlib/mathcomplex.h stdlib/mathquaternion.h
+             stdlib/mathvector2.h stdlib/mathvector3.h stdlib/mathvector4.h stdlib/random.h stdlib/regex.h stdlib/load.h
             stdlib/task.h
             stdlib/thread.h
         DESTINATION include/lhatstdlib)

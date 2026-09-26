@@ -34,6 +34,25 @@ static bool checks(const char *text)
 
 static void test_fields(void)
 {
+    LHAT_TEST("Vector3 constants include +Z forward and -Z back");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math.vector3\n"
+            "var^ a = std.math.vector3.zero()\n"
+            "a.z := 8\n"
+            "let^ b = std.math.vector3.zero()\n"
+            "if^ b.z = 0.0 and^ std.math.vector3.one().z = 1.0\n"
+            " and^ std.math.vector3.right().x = 1.0\n"
+            " and^ std.math.vector3.left().x = -1.0\n"
+            " and^ std.math.vector3.up().y = 1.0\n"
+            " and^ std.math.vector3.down().y = -1.0\n"
+            " and^ std.math.vector3.forward().z = 1.0\n"
+            " and^ std.math.vector3.back().z = -1.0 { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
     LHAT_TEST("fields read the bytes back");
     {
         LhatTestRan ran = run_source(
@@ -64,6 +83,54 @@ static void test_fields(void)
 
 static void test_operators(void)
 {
+    LHAT_TEST("Vector3 division and lerp keep all three components");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math.vector3\n"
+            "let^ a = std.math.vector3.new(6, -12, 20)\n"
+            "let^ b = std.math.vector3.new(2, -4, 5)\n"
+            "let^ by = a / b\n"
+            "let^ scalar = a / 2\n"
+            "let^ mid = a.lerp(b, 0.5)\n"
+            "let^ beyond = a.lerp(b, 2)\n"
+            "if^ by.x = 3.0 and^ by.y = 3.0 and^ by.z = 4.0\n"
+            " and^ scalar.z = 10.0 and^ mid.x = 4.0 and^ mid.y = -8.0\n"
+            " and^ mid.z = 12.5 and^ beyond.x = -2.0 and^ beyond.z = -10.0\n"
+            " { return^ 1 }\nreturn^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("vector times vector multiplies all three components");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math.vector3\n"
+            "let^ a = std.math.vector3.new(2, -3, 4)\n"
+            "let^ b = std.math.vector3.new(5, 6, -7)\n"
+            "let^ c = a * b\n"
+            "let^ d = (a * 2) * b\n"
+            "if^ c.x = 10.0 and^ c.y = -18.0 and^ c.z = -28.0\n"
+            " and^ d.x = 20.0 and^ d.y = -36.0 and^ d.z = -56.0\n"
+            " { return^ 1 }\nreturn^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("cross keeps its vector result and orientation");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.math.vector3\n"
+            "let^ x = std.math.vector3.new(1, 0, 0)\n"
+            "let^ y = std.math.vector3.new(0, 1, 0)\n"
+            "let^ z = x cross^ y\n"
+            "let^ neg = y × x\n"
+            "if^ z.x = 0.0 and^ z.y = 0.0 and^ z.z = 1.0\n"
+            " and^ neg.z = -1.0 { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
     LHAT_TEST("operators chain through stack temporaries");
     {
         // ((a + b) * 2 - a).dot(unit x) = (2*1+2*10-1) = 21 when a=(1,2,3),
@@ -127,7 +194,7 @@ static void test_operators(void)
             "import^ std.math.vector3\n"
             "let^ v = std.math.vector3.new(3, 4, 0)\n"
             "let^ u = std.math.vector3.new(2, 0, 0).normalized()\n"
-            "if^ v.length() = 5.0 and^ v.dot(v) = 25.0 and^ u.x = 1.0 {\n"
+            "if^ v.length() = 5.0 and^ v ⋅ v = 25.0 and^ u.x = 1.0 {\n"
             "    return^ 1\n"
             "}\n"
             "return^ 0\n");

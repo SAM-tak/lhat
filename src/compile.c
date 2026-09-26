@@ -3959,6 +3959,8 @@ static bool binary_opcode(LhatOpKind op, LhatOpcode *out)
         case LHAT_OP_ADD:      *out = LHAT_BC_ADD;  return true;
         case LHAT_OP_SUB:      *out = LHAT_BC_SUB;  return true;
         case LHAT_OP_MUL:      *out = LHAT_BC_MUL;  return true;
+        case LHAT_OP_CROSS:    *out = LHAT_BC_CROSS; return true;
+        case LHAT_OP_DOT_PRODUCT: *out = LHAT_BC_DOT_PRODUCT; return true;
         case LHAT_OP_DIV:      *out = LHAT_BC_DIV;  return true;
         case LHAT_OP_FLOORDIV: *out = LHAT_BC_IDIV; return true;
         case LHAT_OP_MOD:      *out = LHAT_BC_MOD;  return true;
@@ -7631,4 +7633,3 @@ LhatCompileResult lhat_compile_next(LhatCompileSession *session,
     units.host_type_count = session->host_type_count;
     return compile_unit(session, unit, lexer, &units, out);
 }
-

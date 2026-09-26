@@ -1208,6 +1208,8 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
         case LHAT_OP_ADD:
         case LHAT_OP_SUB:
         case LHAT_OP_MUL:
+        case LHAT_OP_CROSS:
+        case LHAT_OP_DOT_PRODUCT:
         case LHAT_OP_DIV:
         case LHAT_OP_FLOORDIV:
         case LHAT_OP_MOD:

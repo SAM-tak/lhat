@@ -20,7 +20,7 @@ print($"length = {v.length()}")
 
 let^doubled = v * 2
 print($"doubled.x = {doubled.x}")
-print($"dot = {v.dot(doubled)}")
+print($"dot = {v dot^ doubled}")
 print($"-doubled.x = {(-doubled).x}")
 print($"(2 * doubled).x = {(2 * doubled).x}")
 

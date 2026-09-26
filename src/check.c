@@ -2096,10 +2096,12 @@ LhatType *chk_builtin_operator(Checker *c, LhatTypeKind carrier,
     LhatTypeKind takes;
     if (carrier == LHAT_TYPE_STRING && chk_name_is(name, length, "..")) {
         takes = LHAT_TYPE_STRING;  // 11.2: joining two strings answers one
-    } else if (carrier == LHAT_TYPE_NUMBER && length > 0 && name[0] != '.') {
-        // 14.8 makes number^ one type, and every arithmetic operator on it
-        // takes and answers one. '..' is the only name reaching here that
-        // starts with a dot, and joining numbers is not arithmetic (11.2).
+    } else if (carrier == LHAT_TYPE_NUMBER && length > 0 && name[0] != '.' &&
+               !chk_name_is(name, length, "cross") &&
+               !chk_name_is(name, length, "dot")) {
+        // 14.8 makes number^ one type, and its arithmetic operators take
+        // and answer one. Products are supplied by types, not by number^;
+        // '..' likewise is not numeric arithmetic (11.2).
         takes = LHAT_TYPE_NUMBER;
     } else {
         // 11.8: bool^ carries none. and^, or^ and '!' are the built-in
@@ -2114,9 +2116,9 @@ LhatType *chk_builtin_operator(Checker *c, LhatTypeKind carrier,
 }
 
 // 11.1: an operator is a function, and 11.3 asks structurally whether a type
-// carries it. 01 の 6 章 spells a member name as an identifier, so an
-// operator is a name no program can write by hand and nothing of the
-// writer's can collide with it.
+// carries it. Symbolic operators cannot be ordinary member names. The named
+// products cross/dot are introduced through op^cross^ and op^dot^, and share
+// their member names with host registrations.
 LhatType *chk_operator_member(Checker *c, const LhatType *type,
                               const char *name, size_t length)
 {
