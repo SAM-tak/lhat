@@ -187,7 +187,7 @@ print(t[1, 2])
 #### 静的型付きChannel
 
 現状 `std.channel.Channel` は動的型になってしまって、実行時 `fits^` によるナローイング必須な設計になってしまっている。
-ホスト関数のインスタンス検査を可能にする、と言う話と同義、だと思う。
+ホスト関数のインスタンス化検査を可能にする、と言う話と同義、だと思う。
 
 ### 検討項目
 
@@ -216,7 +216,7 @@ hash^ ユーザー定義のハッシュ。これがないと値比較でテー�
 ```lhat
 band^
 bor^
-xor^
+bxor^
 ```
 
 うーん… Lua は「なにげに & | を使ってなかった」が大きいんだよなぁ
@@ -240,7 +240,8 @@ std.bit.or = f^a:number^, b:number^-> number^;
 std.bit.xor = f^a:number^, b:number^-> number^;
 std.bit.not = f^a:number^-> number^;
 std.bit.eq = f^a:number^, b:number^-> bool;
-std.bit.on = f^a:number^-> bool^; # 0じゃなかったらtrueなんだけど、もっといい名前ない？any?
+std.bit.any = f^a:number^, bool^-> bool^;
+std.bit.all = f^a:number^, bool^-> bool^;
 
 std.bit.Error.NotInteger # local errordef。エラーは、返したほうがいい、んじゃないかな…
 
@@ -250,7 +251,7 @@ let^a = std.bit.new(number1) # Bit64 にして返す
 let^b = std.bit.new(number2)
 let^c = a.and(b).not()
 let^c = -(a * b) # これが等価、と言うアイデアもある。…だめか？二項の - が XOR ということになる…
-if^ c.on() { print("ビット立ってる") }
+if^ c.any(true^) { print("ビット立ってる") }
 c = c.shift(-8).shift(8) # 良くないか…？ left が + 方向ということだが。
 c = c >> 8 << 8 # 突然？却下かなぁ…
 c = c."»"(-8)."«"(8) # 一応こういうことも可能は可能だ。一応。
@@ -264,9 +265,7 @@ c = c.rightshift(8).leftshift(8) # 無難か…？いや、やっぱleft right �
 
 #### パラメトリック多相
 
-インスタンス検査が入ったことで実質パラメトリック多相を実現している、という認識。
-
-が、課題としてホスト関数のインスタンス検査対応が現在できていない。
+インスタンス化検査が入ったことで実質パラメトリック多相を実現している、という認識。
 
 #### comptime^
 
@@ -350,7 +349,7 @@ let^vtos = {
 ~~これのついでで、現在不定長の型アノテーションが `t^{...:number^}` 等であるのを `t^{number^[]}` にしたい。~~（済）
 
 ~~関数の使用形も型推論の材料にすること（３パス目？）~~
-「インスタンス検査」として実装済み。
+「インスタンス化検査」として実装済み。
 
 ### もしかしたら今後やりたいこと
 

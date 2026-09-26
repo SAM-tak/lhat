@@ -1,0 +1,11 @@
+import^std.task
+let^gen1 = p^{ yield^0 return^40 }
+let^gen2 = p^{ yield^0 return^2 }
+std.task.start(2) catch^panic^it^
+let^t1 = try^std.task.async(gen1())
+let^t2 = try^std.task.async(gen2())
+var^n = 0
+n += try^std.task.await(t1)
+n += try^std.task.await(t2)
+std.task.stop()
+print(n) # may print '42'
