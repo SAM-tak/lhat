@@ -21,6 +21,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "lhat/instantiation.h"
 
 #include "lhat/error.h"   // 10 §6.3: the entries a catalog is checked against
 #include "lhat/module.h"  // what a compile answers with, and why one stopped
@@ -857,6 +858,12 @@ bool lhat_register_annotation_requisite(LhatProgram *program,
 bool lhat_register_func(LhatProgram *program, const char *module,
                         const char *name, const char *signature,
                         LhatHostFn call, void *context);
+
+// Attach to the zero-based overload arm of a registered function/member,
+// before checking. With the frontend disabled this is a successful no-op.
+bool lhat_register_instantiation_check_handler(
+    LhatProgram *program, const char *module, const char *type, const char *name,
+    size_t arm, LhatInstantiationCheckHandler handler, void *context);
 
 // 05 の 8.7改: a value rather than a subroutine -- an enum's number, a
 // limit, a name a host wants readable as itself. `type` is NULL for a

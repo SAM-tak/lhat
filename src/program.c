@@ -2498,6 +2498,37 @@ bool lhat_register_func(LhatProgram *program, const char *module,
                          module, NULL, name, signature, call, context);
 }
 
+bool lhat_register_instantiation_check_handler(
+    LhatProgram *program, const char *module, const char *type, const char *name,
+    size_t arm, LhatInstantiationCheckHandler handler, void *context)
+{
+    if (program == NULL || module == NULL || name == NULL || handler == NULL) return false;
+#if LHAT_WITH_FRONTEND
+    LhatType *owner = hosted_table(program, hosted_root(program), module);
+    if (type != NULL) {
+        const LhatTypeMember *member = hosted_member(owner, type);
+        owner = member != NULL ? member->type : NULL;
+    }
+    if (owner == NULL) return false;
+    const LhatTypeMember *member = hosted_member(owner, name);
+    LhatType *signature = member != NULL ? member->type : NULL;
+    if (signature != NULL && signature->kind == LHAT_TYPE_INTERSECT) {
+        const LhatTypeList *at = signature->v.composite.arms;
+        while (at != NULL && arm-- > 0) at = at->next;
+        signature = at != NULL ? at->type : NULL;
+    } else if (arm != 0) {
+        return false;
+    }
+    if (signature == NULL || signature->kind != LHAT_TYPE_FUNC ||
+        signature->v.func.instantiation_handler != NULL) return false;
+    signature->v.func.instantiation_handler = handler;
+    signature->v.func.instantiation_context = context;
+#else
+    (void)type; (void)arm; (void)context;
+#endif
+    return true;
+}
+
 // 05 の 8.7改: the shared road of the four constant registrations. No
 // signature text and no lhat_type_of_text: an enum dump registers
 // thousands of these, and lhat_type_simple answers the one shared node

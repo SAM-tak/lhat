@@ -1018,6 +1018,81 @@ static void dispose_module(void *raw)
     lhat_free(module);
 }
 
+// Static results travel in Task's nominal specialization, independently of
+// the shared runtime tag. Transport failures remain ordinary task errors.
+#if LHAT_WITH_FRONTEND
+static const LhatCheckType *task_checked_errors(LhatInstantiationContext *context,
+                                               const LhatCheckType *result)
+{
+    static const char *const names[] = {
+        "std.task.TaskError.NotStarted", "std.task.TaskError.Refused",
+        "std.task.TaskError.Failed", "std.error.OutOfMemory"
+    };
+    for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
+        const LhatCheckType *error = lhat_check_type_named(context, names[i]);
+        if (error == NULL) return NULL;
+        result = lhat_check_type_union(context, result, error);
+    }
+    return result;
+}
+
+static LhatInstantiationStatus task_check_async(
+    LhatInstantiationContext *context, void *user,
+    const LhatCheckType *signature, const LhatCheckType *receiver,
+    const LhatCheckType *const *arguments, size_t count,
+    const LhatCheckType **resolved)
+{
+    (void)user;
+    (void)receiver;
+    if (count == 0) return LHAT_INSTANTIATION_DEFAULT;
+    if (lhat_check_type_pending(arguments[0])) return LHAT_INSTANTIATION_PENDING;
+    const LhatCheckType *result = NULL;
+    for (size_t i = 0; i < lhat_check_type_union_count(arguments[0]); i++) {
+        const LhatCheckType *job = lhat_check_type_union_at(arguments[0], i);
+        if (lhat_check_type_pending(job)) return LHAT_INSTANTIATION_PENDING;
+        const LhatCheckType *answer = lhat_check_coroutine_result(context, job);
+        // Closure jobs keep the declared fallback: their argument shapes are
+        // not instantiated by this API. A coroutine already has its result.
+        if (answer == NULL) return LHAT_INSTANTIATION_DEFAULT;
+        if (lhat_check_type_pending(answer)) return LHAT_INSTANTIATION_PENDING;
+        if (!lhat_check_type_single_slot(answer)) return LHAT_INSTANTIATION_REFUSED;
+        result = lhat_check_type_union(context, result, answer);
+    }
+    const LhatCheckType *base = lhat_check_type_named(context, "std.task.Task");
+    const LhatCheckType *task = lhat_check_type_specialize(context, base, &result, 1);
+    if (task == NULL) return LHAT_INSTANTIATION_REFUSED;
+    *resolved = lhat_check_signature_result(context, signature,
+                                           task_checked_errors(context, task));
+    return LHAT_INSTANTIATION_RESOLVED;
+}
+
+static LhatInstantiationStatus task_check_await(
+    LhatInstantiationContext *context, void *user,
+    const LhatCheckType *signature, const LhatCheckType *receiver,
+    const LhatCheckType *const *arguments, size_t count,
+    const LhatCheckType **resolved)
+{
+    (void)user;
+    (void)receiver;
+    if (count != 1) return LHAT_INSTANTIATION_DEFAULT;
+    const LhatCheckType *result = NULL;
+    const LhatCheckType *base = lhat_check_type_named(context, "std.task.Task");
+    for (size_t i = 0; i < lhat_check_type_union_count(arguments[0]); i++) {
+        const LhatCheckType *task = lhat_check_type_union_at(arguments[0], i);
+        if (lhat_check_type_pending(task)) return LHAT_INSTANTIATION_PENDING;
+        if (!lhat_check_type_same(lhat_check_type_base(task), base)) {
+            return LHAT_INSTANTIATION_DEFAULT;
+        }
+        const LhatCheckType *answer = lhat_check_type_argument(task, 0);
+        if (answer == NULL) return LHAT_INSTANTIATION_DEFAULT;
+        result = lhat_check_type_union(context, result, answer);
+    }
+    *resolved = lhat_check_signature_result(context, signature,
+                                           task_checked_errors(context, result));
+    return LHAT_INSTANTIATION_RESOLVED;
+}
+#endif
+
 bool lhatstdlib_task_register(LhatProgram *program)
 {
     if (!lhatstdlib_error_register(program)) {
@@ -1067,14 +1142,19 @@ bool lhatstdlib_task_register(LhatProgram *program)
                               module) &&
            lhat_register_func(program, "std.task", "workers",
                               "f^ -> number^;", task_workers, module) &&
-           // What a job answers is what carry carries, so any^ and the
-           // caller narrows -- the same reading std.thread's join takes.
+            // Untyped tasks and closure jobs retain the dynamic fallback.
            lhat_register_func(program, "std.task", "async",
                               "p^any^, ...:any^ -> std.task.Task" TASK_ERRORS,
                               task_async, module) &&
-           lhat_register_func(program, "std.task", "await",
-                              "p^std.task.Task -> any^" TASK_ERRORS,
-                              task_await, module) &&
+            lhat_register_func(program, "std.task", "await",
+                               "p^std.task.Task -> any^" TASK_ERRORS,
+                               task_await, module) &&
+#if LHAT_WITH_FRONTEND
+            lhat_register_instantiation_check_handler(program, "std.task", NULL,
+                "async", 0, task_check_async, NULL) &&
+            lhat_register_instantiation_check_handler(program, "std.task", NULL,
+                "await", 0, task_check_await, NULL) &&
+#endif
            lhat_register_member(program, "std.task", "Task", "done",
                                 "f^self^ -> bool^;", task_done, module) &&
            lhat_register_member(program, "std.task", "Task", "failed",

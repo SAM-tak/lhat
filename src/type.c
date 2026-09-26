@@ -1,6 +1,7 @@
 // L^ (lhat) -- types: arena, construction, conformance and disjointness.
 
 #include "type.h"
+#include "instantiation_internal.h"
 
 #include <limits.h>
 #include <stdlib.h>
@@ -82,6 +83,156 @@ static LhatType *new_type(LhatTypeArena *arena, LhatTypeKind kind)
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
+
+bool lhat_check_type_pending(const LhatCheckType *type)
+{
+    return type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
+           type->kind == LHAT_TYPE_PENDING;
+}
+
+const LhatCheckType *lhat_check_type_named(LhatInstantiationContext *context,
+                                         const char *name)
+{
+    if (name == NULL) return NULL;
+    const LhatType *type = context->hosted;
+    while (type != NULL && *name != '\0') {
+        const char *end = strchr(name, '.');
+        size_t length = end != NULL ? (size_t)(end - name) : strlen(name);
+        if (type->kind == LHAT_TYPE_ERROR_SET || type->kind == LHAT_TYPE_ENUM) {
+            const LhatTypeList *kind = type->v.error.kinds;
+            for (; kind != NULL; kind = kind->next) {
+                if (kind->type->v.error.name_length == length &&
+                    memcmp(kind->type->v.error.name, name, length) == 0) break;
+            }
+            type = kind != NULL ? kind->type : NULL;
+        } else {
+            const LhatTypeMember *member = lhat_type_find_member(type, name, length);
+            type = member != NULL ? (member->named_type != NULL
+                                        ? member->named_type : member->type) : NULL;
+        }
+        if (end == NULL) break;
+        name = end + 1;
+    }
+    return type;
+}
+
+const LhatCheckType *lhat_check_type_result(const LhatCheckType *type)
+{
+    return type != NULL && type->kind == LHAT_TYPE_FUNC ? type->v.func.result : NULL;
+}
+
+const LhatCheckType *lhat_check_type_any(LhatInstantiationContext *context)
+{
+    return new_type(context->arena, LHAT_TYPE_ANY);
+}
+
+const LhatCheckType *lhat_check_type_nil(LhatInstantiationContext *context)
+{
+    return new_type(context->arena, LHAT_TYPE_NIL);
+}
+
+const LhatCheckType *lhat_check_coroutine_result(LhatInstantiationContext *context,
+                                               const LhatCheckType *type)
+{
+    if (type == NULL || type->kind != LHAT_TYPE_CORO) {
+        return NULL;
+    }
+    return type->v.coroutine.result != NULL &&
+                   type->v.coroutine.result->kind != LHAT_TYPE_NONE
+               ? type->v.coroutine.result
+                                             : lhat_check_type_nil(context);
+}
+
+bool lhat_check_type_single_slot(const LhatCheckType *type)
+{
+    if (type == NULL || type->kind == LHAT_TYPE_NONE ||
+        type->kind == LHAT_TYPE_HOSTVALUE || type->kind == LHAT_TYPE_TUPLE) {
+        return false;
+    }
+    if (type->kind == LHAT_TYPE_UNION) {
+        for (const LhatTypeList *a = type->v.composite.arms; a; a = a->next) {
+            if (!lhat_check_type_single_slot(a->type)) return false;
+        }
+    }
+    return true;
+}
+
+bool lhat_check_type_same(const LhatCheckType *a, const LhatCheckType *b)
+{
+    return a != NULL && b != NULL && lhat_type_equal(a, b);
+}
+
+size_t lhat_check_type_union_count(const LhatCheckType *type)
+{
+    if (type == NULL) return 0;
+    if (type->kind != LHAT_TYPE_UNION) return 1;
+    size_t count = 0;
+    for (const LhatTypeList *a = type->v.composite.arms; a; a = a->next) count++;
+    return count;
+}
+
+const LhatCheckType *lhat_check_type_union_at(const LhatCheckType *type, size_t index)
+{
+    if (type == NULL) return NULL;
+    if (type->kind != LHAT_TYPE_UNION) return index == 0 ? type : NULL;
+    const LhatTypeList *a = type->v.composite.arms;
+    while (a != NULL && index-- > 0) a = a->next;
+    return a != NULL ? a->type : NULL;
+}
+
+const LhatCheckType *lhat_check_type_union(LhatInstantiationContext *context,
+                                         const LhatCheckType *a, const LhatCheckType *b)
+{
+    return lhat_type_union(context->arena, (LhatType *)a, (LhatType *)b);
+}
+
+const LhatCheckType *lhat_check_type_base(const LhatCheckType *type)
+{
+    return type != NULL && type->specialization_base != NULL
+               ? type->specialization_base : type;
+}
+
+const LhatCheckType *lhat_check_type_argument(const LhatCheckType *type, size_t index)
+{
+    const LhatTypeList *a = type != NULL ? type->specialization_arguments : NULL;
+    while (a != NULL && index-- > 0) a = a->next;
+    return a != NULL ? a->type : NULL;
+}
+
+const LhatCheckType *lhat_check_type_specialize(LhatInstantiationContext *context,
+    const LhatCheckType *base, const LhatCheckType *const *arguments, size_t count)
+{
+    if (base == NULL || count == 0 || arguments == NULL ||
+        base->specialization_base != NULL ||
+        !((base->kind == LHAT_TYPE_TABLE && base->v.table.nominal) ||
+          base->kind == LHAT_TYPE_HOSTVALUE)) return NULL;
+    LhatType *made = new_type(context->arena, base->kind);
+    if (made == NULL) return NULL;
+    *made = *base;
+    made->specialization_base = (LhatType *)base;
+    LhatTypeList **tail = &made->specialization_arguments;
+    for (size_t i = 0; i < count; i++) {
+        if (arguments[i] == NULL) return NULL;
+        *tail = arena_alloc(context->arena, sizeof **tail);
+        if (*tail == NULL) return NULL;
+        (*tail)->type = (LhatType *)arguments[i];
+        tail = &(*tail)->next;
+    }
+    return made;
+}
+
+const LhatCheckType *lhat_check_signature_result(LhatInstantiationContext *context,
+    const LhatCheckType *signature, const LhatCheckType *result)
+{
+    if (signature == NULL || signature->kind != LHAT_TYPE_FUNC ||
+        signature->v.func.yields || result == NULL) return NULL;
+    LhatType *made = new_type(context->arena, LHAT_TYPE_FUNC);
+    if (made == NULL) return NULL;
+    *made = *signature;
+    made->v.func.result = (LhatType *)result;
+    made->v.func.answers = NULL;
+    return made;
+}
 
 LhatType *lhat_type_simple(LhatTypeArena *arena, LhatTypeKind kind)
 {
@@ -1047,6 +1198,29 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
         return value->kind == target->kind;
     }
 
+    // Nominal arguments are invariant. Only the source may erase them;
+    // composites reach this rule separately for each arm below.
+    if ((value->specialization_base != NULL || target->specialization_base != NULL) &&
+        value->kind != LHAT_TYPE_UNION && target->kind != LHAT_TYPE_UNION &&
+        value->kind != LHAT_TYPE_INTERSECT && target->kind != LHAT_TYPE_INTERSECT &&
+        target->kind != LHAT_TYPE_ANY) {
+        if (target->specialization_base == NULL) {
+            return conforms_in(value->specialization_base, target, seen);
+        }
+        if (value->specialization_base == NULL ||
+            !conforms_in(value->specialization_base, target->specialization_base, seen) ||
+            !conforms_in(target->specialization_base, value->specialization_base, seen)) {
+            return false;
+        }
+        const LhatTypeList *a = value->specialization_arguments;
+        const LhatTypeList *b = target->specialization_arguments;
+        for (; a != NULL && b != NULL; a = a->next, b = b->next) {
+            if (!conforms_in(a->type, b->type, seen) ||
+                !conforms_in(b->type, a->type, seen)) return false;
+        }
+        return a == NULL && b == NULL;
+    }
+
     // 05 の 8.9: a host value fits exactly its own type and nothing wider.
     // Checked before any^'s shortcut on purpose: any^ is the top of every
     // value that can live anywhere a value lives, and a host value cannot
@@ -1613,6 +1787,12 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         return true;  // different primitives, or a primitive and a structure
     }
 
+    // Specializations share runtime identity. A runtime fits^ test cannot
+    // distinguish their arguments, and the erased base overlaps all of them.
+    if (a->specialization_base != NULL || b->specialization_base != NULL) {
+        return disjoint_in(lhat_check_type_base(a), lhat_check_type_base(b), seen);
+    }
+
     // 05 の 8.9: identity is the tag, so two host value types overlap exactly
     // when they are the same registration. There is no structure to combine
     // the way two tables below might.
@@ -2140,6 +2320,13 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         return;
     }
 
+    if (type->specialization_base != NULL) {
+        write_type(sink, type->specialization_base, depth + 1);
+        put_text(sink, "<");
+        write_list(sink, type->specialization_arguments, depth + 1, ", ", false);
+        put_text(sink, ">");
+        return;
+    }
     switch (type->kind) {
         case LHAT_TYPE_UNKNOWN:
         case LHAT_TYPE_PENDING:

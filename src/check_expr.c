@@ -1,6 +1,7 @@
 // L^ (lhat) -- the type checking stage: expressions.
 
 #include "check_internal.h"
+#include "instantiation_internal.h"
 
 // ---------------------------------------------------------------------------
 // Expressions
@@ -1518,6 +1519,47 @@ static const LhatTypeList *fill_position(Checker *c, const LhatNode *at,
     return param != NULL ? param->next : NULL;
 }
 
+static LhatType *host_call_answer(Checker *c, const LhatNode *node,
+                                  const LhatType *signature,
+                                  const LhatCheckType *const *arguments, size_t count)
+{
+    if (signature->v.func.instantiation_handler == NULL) {
+        return chk_call_answer(c, signature);
+    }
+    const LhatType *receiver = NULL;
+    if (signature->v.func.takes_self && node->v.access.target->kind == LHAT_NODE_MEMBER) {
+        receiver = chk_infer(c, node->v.access.target->v.access.target);
+    }
+    if (signature->v.func.takes_self && receiver == NULL && count > 0) {
+        receiver = arguments[0];
+        arguments++;
+        count--;
+    }
+    LhatInstantiationContext context = { c->result->types, c->require.hosted };
+    const LhatCheckType *resolved = NULL;
+    LhatInstantiationStatus status = signature->v.func.instantiation_handler(
+        &context, signature->v.func.instantiation_context, signature, receiver,
+        arguments, count, &resolved);
+    if (status == LHAT_INSTANTIATION_DEFAULT) return chk_call_answer(c, signature);
+    if (status == LHAT_INSTANTIATION_PENDING) return chk_simple(c, LHAT_TYPE_UNKNOWN);
+    // A handler refines types, never the ABI or the procedure/function effect.
+    if (status != LHAT_INSTANTIATION_RESOLVED || resolved == NULL ||
+        resolved->kind != LHAT_TYPE_FUNC ||
+        resolved->v.func.params != signature->v.func.params ||
+        resolved->v.func.variadic != signature->v.func.variadic ||
+        resolved->v.func.is_function != signature->v.func.is_function ||
+        resolved->v.func.takes_self != signature->v.func.takes_self ||
+        resolved->v.func.self_last != signature->v.func.self_last ||
+        resolved->v.func.yields != signature->v.func.yields ||
+        lhat_type_tuple_arm_width(resolved->v.func.result) !=
+            lhat_type_tuple_arm_width(signature->v.func.result) ||
+        !lhat_type_conforms(resolved->v.func.result, signature->v.func.result)) {
+        chk_report(c, node, LHAT_CHECK_ERR_SHAPE_REFUSED);
+        return chk_simple(c, LHAT_TYPE_UNKNOWN);
+    }
+    return chk_call_answer(c, resolved);
+}
+
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
     // 3.4改: the arguments first where the callee is a literal, so what they
@@ -1810,7 +1852,8 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                 }
                 // 15.5: a yielding arm answers the coroutine it makes, the
                 // same as the plain call below.
-                return lhat_type_call_answer(arm->type);
+                return host_call_answer(c, node, arm->type,
+                                         (const LhatCheckType *const *)args, tracked);
             }
         }
         chk_report(c, node, LHAT_CHECK_ERR_MISMATCH);
@@ -1874,12 +1917,20 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     bool other_spread = false;
     bool tuple_spread = false;
     size_t taken = 0;   // arguments read, which given_types is indexed by
+    const LhatCheckType *host_arguments[LHAT_CHECK_MAX_TRACKED_ARGS];
+    size_t host_count = 0;
+    bool host_overflow = false;
     for (const LhatNode *arg = node->v.access.argument; arg != NULL;
          arg = arg->next) {
         if (arg->kind == LHAT_NODE_SPREAD) {
             LhatType *spread = chk_infer(c, arg->v.jump.value);
             size_t positions = lhat_type_tuple_width(spread);
             for (size_t i = 0; i < positions; i++) {
+                if (host_count < LHAT_CHECK_MAX_TRACKED_ARGS) {
+                    host_arguments[host_count++] = lhat_type_tuple_at(spread, i);
+                } else {
+                    host_overflow = true;
+                }
                 param = fill_position(c, arg, callee, param, &skip,
                                       lhat_type_tuple_at(spread, i));
                 filled++;
@@ -1922,6 +1973,11 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             c->expected_func = outer_expected;
         }
         taken++;
+        if (host_count < LHAT_CHECK_MAX_TRACKED_ARGS) {
+            host_arguments[host_count++] = actual;
+        } else {
+            host_overflow = true;
+        }
         filled++;
         // 13.8改: an argument is one value. A tuple in one is what would
         // bring back 13.7's expansion rule (Lua's truncate-except-in-tail-
@@ -1959,6 +2015,9 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     if (!callee->v.func.yields && callee->v.func.result == NULL &&
         callee == c->this_type) {
         return NULL;
+    }
+    if (!miscounted && !other_spread && !host_overflow) {
+        return host_call_answer(c, node, callee, host_arguments, host_count);
     }
     return chk_call_answer(c, callee);
 }

@@ -542,8 +542,153 @@ static void test_runaway(void)
     }
 }
 
+static char *typed_task_load(void *context, const char *path, size_t *length)
+{
+    const char *text = strcmp(path, "main.lh") == 0 ? (const char *)context :
+        strcmp(path, "jobs.lh") == 0 ?
+        "module^ jobs\n"
+        "import^ std.task\n"
+        "public^ let^ make = p^ {\n"
+        " let^ job = p^ { yield^ 0 return^ 42 }\n"
+        " return^ std.task.async(job()) catch^ panic^ it^\n"
+        "}\n" : NULL;
+    if (text == NULL) return NULL;
+    *length = strlen(text);
+    char *copy = malloc(*length + 1);
+    if (copy != NULL) memcpy(copy, text, *length + 1);
+    return copy;
+}
+
+static void test_task_unit_boundary(void)
+{
+    static const char *const roots[] = {
+        "require^ 'jobs.lh'\nimport^ std.task\n"
+        "let^ n:number^ = std.task.await(jobs.make()) catch^ panic^ it^\n",
+        "require^ 'jobs.lh'\nimport^ std.task\n"
+        "let^ n:string^ = std.task.await(jobs.make()) catch^ panic^ it^\n"
+    };
+    LHAT_TEST("task specialization survives a source-unit export boundary");
+    for (size_t i = 0; i < 2; i++) {
+        LhatProgram *program = lhat_program_new(true, typed_task_load, (void *)roots[i]);
+        LHAT_CHECK(lhatstdlib_task_register(program), "task registered");
+        const LhatUnit *root = lhat_program_check(program, "main.lh");
+        LHAT_CHECK(root != NULL, "root loaded");
+        LHAT_CHECK(lhat_program_has_errors(program) == (i == 1),
+            "only the wrong result annotation fails across units");
+        if (i == 0) {
+            LHAT_CHECK(lhat_program_compile(program), "exported task compiles");
+        }
+        lhat_program_free(program);
+    }
+}
+
+static void test_static_results(void)
+{
+    LHAT_TEST("final results survive aliases, members and instantiated calls");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.task\n"
+            "std.task.start(1) catch^ panic^ it^\n"
+            "let^ job = p^ { yield^ 'not the final type' return^ { n = 42 } }\n"
+            "let^ pass = f^ x { return^ x }\n"
+            "let^ task = std.task.async(job()) catch^ panic^ it^\n"
+            "let^ box = { task = pass(task) }\n"
+            "let^ answer = std.task.await(box.task) catch^ panic^ it^\n"
+            "let^ n:number^ = answer.n\n"
+            "std.task.stop()\n"
+            "return^ n\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 42);
+        lhat_test_ran_dispose(&ran);
+    }
+    LHAT_TEST("independent call shapes do not overwrite each other's result");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.task\n"
+            "std.task.start(1) catch^ panic^ it^\n"
+            "let^ num = p^ { yield^ 0 return^ 42 }\n"
+            "let^ str = p^ { yield^ 0 return^ 'ok' }\n"
+            "let^ a = std.task.async(num()) catch^ panic^ it^\n"
+            "let^ b = std.task.async(str()) catch^ panic^ it^\n"
+            "let^ read = p^ t { return^ std.task.await(t) catch^ panic^ it^ }\n"
+            "let^ n:number^ = read(a)\n"
+            "let^ s:string^ = read(b)\n"
+            "std.task.stop()\n"
+            "return^ n\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 42);
+        lhat_test_ran_dispose(&ran);
+    }
+    LHAT_TEST("a wrong final-result annotation is refused");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\n"
+        "let^ job = p^ { yield^ 0 return^ 42 }\n"
+        "let^ t = std.task.async(job()) catch^ panic^ it^\n"
+        "let^ bad:string^ = std.task.await(t) catch^ panic^ it^\n"),
+        "number task cannot answer string");
+    LHAT_TEST("a mutable binding cannot silently change its task argument");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\n"
+        "let^ num = p^ { yield^ 0 return^ 42 }\n"
+        "let^ str = p^ { yield^ 0 return^ 'ok' }\n"
+        "var^ t = std.task.async(num()) catch^ panic^ it^\n"
+        "t := std.task.async(str()) catch^ panic^ it^\n"
+        "let^ n:number^ = std.task.await(t) catch^ panic^ it^\n"),
+        "incompatible assignment cannot keep the old result type");
+    LHAT_TEST("task errors remain in the refined result");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\n"
+        "let^ job = p^ { yield^ 0 return^ 42 }\n"
+        "let^ t = std.task.async(job()) catch^ panic^ it^\n"
+        "let^ bad:number^ = std.task.await(t)\n"),
+        "await still requires error handling");
+    LHAT_TEST("erasing a task's arguments cannot restore a precise answer");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\n"
+        "let^ job = p^ { yield^ 0 return^ 42 }\n"
+        "let^ t:std.task.Task = std.task.async(job()) catch^ panic^ it^\n"
+        "let^ bad:number^ = std.task.await(t) catch^ panic^ it^\n"),
+        "plain Task answers any");
+    LHAT_TEST("multi-value results cannot be promised by single-slot await");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\n"
+        "let^ job = p^ { yield^ 0 return^ (1, 2) }\n"
+        "let^ t = std.task.async(job()) catch^ panic^ it^\n"),
+        "tuple result refused");
+    LHAT_TEST("no-value coroutine result becomes nil");
+    LHAT_CHECK(lhat_test_check_text(regs, 2,
+        "import^ std.task\n"
+        "let^ job = p^ { yield^ 0 }\n"
+        "let^ t = std.task.async(job()) catch^ panic^ it^\n"
+        "let^ n:nil^ = std.task.await(t) catch^ panic^ it^\n"),
+        "no result transports nil");
+    LHAT_TEST("a branch keeps both task result types");
+    LHAT_CHECK(lhat_test_check_text(regs, 2,
+        "import^ std.task\n"
+        "let^ num = p^ { yield^ 0 return^ 42 }\n"
+        "let^ str = p^ { yield^ 0 return^ 'ok' }\n"
+        "let^ choose = p^ flag:bool^ {\n"
+        " if^ flag { return^ std.task.async(num()) catch^ panic^ it^ }\n"
+        " return^ std.task.async(str()) catch^ panic^ it^\n"
+        "}\n"
+        "let^ t = choose(true^)\n"
+        "let^ n:number^|string^ = std.task.await(t) catch^ panic^ it^\n"),
+        "the union remains precise");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\n"
+        "let^ num = p^ { yield^ 0 return^ 42 }\n"
+        "let^ str = p^ { yield^ 0 return^ 'ok' }\n"
+        "let^ choose = p^ flag:bool^ {\n"
+        " if^ flag { return^ std.task.async(num()) catch^ panic^ it^ }\n"
+        " return^ std.task.async(str()) catch^ panic^ it^\n"
+        "}\n"
+        "let^ t = choose(true^)\n"
+        "let^ n:number^ = std.task.await(t) catch^ panic^ it^\n"),
+        "neither task arm can disappear during merging");
+}
+
 int main(void)
 {
+    test_task_unit_boundary();
+    test_static_results();
     test_the_sketch();
     test_side_by_side();
     test_answers();

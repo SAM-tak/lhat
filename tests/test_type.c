@@ -13,6 +13,7 @@
 #include "lhat/object.h"  // 05 の 8.8's tag, which a host type is written as
 #include "testutil.h"
 #include "type.h"
+#include "instantiation_internal.h"
 
 typedef struct {
     LhatTypeArena arena;
@@ -52,6 +53,36 @@ static LhatType *table2(Types *t, const char *a, LhatType *at,
     LhatType *s = table1(t, a, at);
     lhat_type_add_member(&t->arena, s, b, strlen(b), bt);
     return s;
+}
+
+static void test_specializations(void)
+{
+    Types t;
+    types_init(&t);
+    LhatInstantiationContext context = { &t.arena, NULL };
+    LhatType *base = table0(&t);
+    base->v.table.nominal = true;
+    const LhatCheckType *number = simple(&t, LHAT_TYPE_NUMBER);
+    const LhatCheckType *string = simple(&t, LHAT_TYPE_STRING);
+    const LhatCheckType *any = simple(&t, LHAT_TYPE_ANY);
+    const LhatCheckType *n = lhat_check_type_specialize(&context, base, &number, 1);
+    const LhatCheckType *n2 = lhat_check_type_specialize(&context, base, &number, 1);
+    const LhatCheckType *s = lhat_check_type_specialize(&context, base, &string, 1);
+    const LhatCheckType *a = lhat_check_type_specialize(&context, base, &any, 1);
+    LHAT_TEST("nominal specialization is invariant and erases one way");
+    LHAT_CHECK(lhat_type_equal(n, n2), "separate constructions compare equal");
+    LHAT_CHECK(lhat_type_conforms(n, base), "specialization erases");
+    LHAT_CHECK(!lhat_type_conforms(base, n), "erasure cannot be reversed");
+    LHAT_CHECK(!lhat_type_conforms(n, s), "different arguments stay different");
+    LHAT_CHECK(!lhat_type_conforms(n, a), "arguments are not covariant");
+    LHAT_CHECK(!lhat_type_conforms(a, n), "arguments are not contravariant");
+    LHAT_CHECK(!lhat_type_disjoint(n, base), "runtime base test can match");
+    LHAT_CHECK(!lhat_type_disjoint(n, s), "runtime tags cannot test arguments");
+    const LhatCheckType *both = lhat_check_type_union(&context, n, s);
+    LHAT_CHECK_EQ_INT(lhat_check_type_union_count(both), 2);
+    LHAT_CHECK(lhat_type_conforms(both, base), "a union erases arm by arm");
+    LHAT_CHECK(!lhat_type_conforms(both, n), "a union cannot lose an argument");
+    types_dispose(&t);
 }
 
 static void test_primitives(void)
@@ -893,6 +924,7 @@ static void test_ambiguous_shapes(void)
 
 int main(void)
 {
+    test_specializations();
     test_primitives();
     test_writing_whole();
     test_structures();

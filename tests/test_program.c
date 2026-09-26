@@ -5277,8 +5277,113 @@ static void test_reload_call(void)
     lhat_program_dispose(&program);
 }
 
+static LhatInstantiationStatus instantiate_identity(
+    LhatInstantiationContext *context, void *user,
+    const LhatCheckType *signature, const LhatCheckType *receiver,
+    const LhatCheckType *const *args, size_t count,
+    const LhatCheckType **resolved)
+{
+    (void)user;
+    const LhatCheckType *answer = receiver != NULL ? receiver
+                                  : count > 0 ? args[0] : NULL;
+    if (lhat_check_type_pending(answer)) return LHAT_INSTANTIATION_PENDING;
+    *resolved = lhat_check_signature_result(context, signature, answer);
+    return LHAT_INSTANTIATION_RESOLVED;
+}
+
+static void test_host_instantiation(void)
+{
+    LHAT_TEST("host call shapes survive overloads, aliases, spreads and exports");
+    static const File files[] = {
+        {"main.lh",
+         "require^ 'lib.lh'\n"
+         "import^ test.generic\n"
+         "let^ n:number^ = lib.n\n"
+         "let^ id = test.generic.id\n"
+         "let^ s:string^ = id('ok')\n"
+         "let^ spread:number^ = test.generic.id((42, 'extra')...)\n"
+         "let^ box = test.generic.box()\n"
+         "let^ a:test.generic.Box = box.same()\n"
+         "let^ method = box.same\n"
+         "let^ b:test.generic.Box = method(box)\n"},
+        {"lib.lh",
+         "module^ lib\n"
+         "import^ test.generic\n"
+         "public^ let^ n = test.generic.id(42)\n"}
+    };
+    LhatProgram program;
+    Disk disk;
+    program_with(&program, &disk, files, 2);
+    LHAT_CHECK(lhat_register_func(&program, "test.generic", "id",
+        "f^any^ -> any^;", host_one, NULL), "register first arm");
+    LHAT_CHECK(lhat_register_func(&program, "test.generic", "id",
+        "f^any^, any^ -> any^;", host_one, NULL), "register second arm");
+    for (size_t i = 0; i < 2; i++) {
+        LHAT_CHECK(lhat_register_instantiation_check_handler(&program,
+            "test.generic", NULL, "id", i, instantiate_identity, NULL),
+            "register overload handler");
+    }
+    LHAT_CHECK(!lhat_register_instantiation_check_handler(&program,
+        "test.generic", NULL, "id", 2, instantiate_identity, NULL),
+        "missing arm refused");
+    LHAT_CHECK(!lhat_register_instantiation_check_handler(&program,
+        "test.generic", NULL, "id", 0, instantiate_identity, NULL),
+        "duplicate handler refused");
+    LHAT_CHECK(lhat_register_hostdata_type(&program, "test.generic", "Box") != NULL,
+        "register receiver type");
+    LHAT_CHECK(lhat_register_func(&program, "test.generic", "box",
+        "f^ -> test.generic.Box;", host_one, NULL), "register constructor");
+    LHAT_CHECK(lhat_register_member(&program, "test.generic", "Box", "same",
+        "f^self^ -> any^;", host_one, NULL), "register member");
+    LHAT_CHECK(lhat_register_instantiation_check_handler(&program,
+        "test.generic", "Box", "same", 0, instantiate_identity, NULL),
+        "register receiver handler");
+    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+        root->checked.diagnostic_count == 0, "host call shapes checked");
+    lhat_program_dispose(&program);
+}
+
+static LhatInstantiationStatus instantiate_function_result(
+    LhatInstantiationContext *context, void *user,
+    const LhatCheckType *signature, const LhatCheckType *receiver,
+    const LhatCheckType *const *args, size_t count,
+    const LhatCheckType **resolved)
+{
+    (void)user;
+    (void)receiver;
+    const LhatCheckType *result = count == 1 ? lhat_check_type_result(args[0]) : NULL;
+    if (lhat_check_type_pending(result)) return LHAT_INSTANTIATION_PENDING;
+    *resolved = lhat_check_signature_result(context, signature, result);
+    return LHAT_INSTANTIATION_RESOLVED;
+}
+
+static void test_host_instantiation_abi(void)
+{
+    LHAT_TEST("host instantiation cannot expand a single-slot return ABI");
+    static const File files[] = {
+        {"main.lh",
+         "import^ test.generic\n"
+         "let^ result = test.generic.invoke(f^ { return^ (1, 2) })\n"}
+    };
+    LhatProgram program;
+    Disk disk;
+    program_with(&program, &disk, files, 1);
+    LHAT_CHECK(lhat_register_func(&program, "test.generic", "invoke",
+        "f^any^ -> any^;", host_one, NULL), "register single-slot host function");
+    LHAT_CHECK(lhat_register_instantiation_check_handler(&program,
+        "test.generic", NULL, "invoke", 0, instantiate_function_result, NULL),
+        "register result handler");
+    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL && lhat_program_has_errors(&program),
+        "tuple refinement is refused");
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
+    test_host_instantiation();
+    test_host_instantiation_abi();
     // 8.9: before anything is taken, so the refusal above is about the order
     // rather than about this test running second.
     test_port();

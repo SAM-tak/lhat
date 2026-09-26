@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "chain.h"
+#include "lhat/instantiation.h"
 
 // The build's own knobs, LHAT_WITH_RESOLUTIONS among them. Named here rather
 // than left to whoever includes this first: a member's size depends on it, so
@@ -184,6 +185,9 @@ typedef struct LhatTypeList {
 
 struct LhatType {
     LhatTypeKind kind;
+    // Compile-time nominal specialization. Runtime representation is unchanged.
+    LhatType *specialization_base;
+    LhatTypeList *specialization_arguments;
 
     union {
         struct {
@@ -306,6 +310,8 @@ struct LhatType {
         // `variadic` holds the element type of a trailing '...' (13.7).
         struct {
             LhatTypeList *params;
+            LhatInstantiationCheckHandler instantiation_handler;
+            void *instantiation_context;
             LhatType *result;
             LhatType *variadic;
             bool is_function;  // f^ rather than p^ (15 章)

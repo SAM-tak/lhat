@@ -41,6 +41,13 @@
 // A Task may cross machines (05 の 8.8改2), so a job may be handed the Task
 // of another job, and a Task may be pushed into a std.channel.
 //
+// For coroutine jobs the checker preserves the final result T as Task<T>
+// (diagnostic spelling, not source syntax). await answers T plus task errors;
+// yield types do not enter T. No result becomes nil. Multi-value and direct
+// host-value results are refused because await transports one ordinary value.
+// Closure jobs and explicitly erased Task annotations retain the any fallback.
+// Static preservation does not extend what carry/uncarry can transport.
+//
 // THE POOL HOLDS THE PROGRAM'S BODIES. A worker runs protos the program
 // owns, so the pool has to stop before the program is disposed of.
 // std.task.stop() is that, and this module's own disposal does it as a
