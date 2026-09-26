@@ -25,6 +25,7 @@
 #include "io.h"
 #include "load.h"
 #include "math.h"
+#include "mathvector2.h"
 #include "mathvector3.h"
 #include "random.h"
 #include "regex.h"
@@ -324,6 +325,7 @@ int main(void)
                            lhatstdlib_regex_register(program) &&
                            lhatstdlib_load_register(program) &&
                            lhatstdlib_math_register(program) &&
+                           lhatstdlib_mathvector2_register(program) &&
                            lhatstdlib_mathvector3_register(program) &&
                            lhatstdlib_debug_register(program),
                        "the library registered");

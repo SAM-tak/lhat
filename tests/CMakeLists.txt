@@ -134,6 +134,8 @@ if(LHAT_BUILD_STDLIB)
 
     lhat_add_test(test_math stdlib)
     target_link_libraries(test_math PRIVATE lhatstdlib)
+    lhat_add_test(test_mathvector2 stdlib)
+    target_link_libraries(test_mathvector2 PRIVATE lhatstdlib)
     lhat_add_test(test_mathvector3 stdlib)
     target_link_libraries(test_mathvector3 PRIVATE lhatstdlib)
 

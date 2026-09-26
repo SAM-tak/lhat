@@ -30,7 +30,8 @@
 //   lerp                 f^number^, number^, number^ -> number^;   (a, b, t)
 //
 // '**' already takes any exponent (14.8改), so there is no pow here.
-// std.math.vector3 (mathvector3.h) is a module of its own under this one.
+// std.math.vector2 (mathvector2.h) and std.math.vector3 (mathvector3.h) are
+// modules of their own under this one.
 
 #ifndef LHATSTDLIB_MATH_H
 #define LHATSTDLIB_MATH_H

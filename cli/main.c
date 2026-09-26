@@ -36,6 +36,7 @@
 #include "stdlib/json.h"
 #include "stdlib/lton.h"
 #include "stdlib/math.h"
+#include "stdlib/mathvector2.h"
 #include "stdlib/mathvector3.h"
 #include "stdlib/random.h"
 #include "stdlib/regex.h"
@@ -997,6 +998,7 @@ static bool bind_host_names(LhatProgram *program)
         !lhatstdlib_random_register(program) ||
         !lhatstdlib_regex_register(program) ||
         !lhatstdlib_math_register(program) ||
+        !lhatstdlib_mathvector2_register(program) ||
         !lhatstdlib_mathvector3_register(program) ||
         !lhatstdlib_debug_register(program) ||
         !lhatstdlib_async_register(program) ||
