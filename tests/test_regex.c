@@ -80,7 +80,7 @@ static void test_match(void)
     {
         LhatTestRan ran = run_source(WITH_REGEX(
             "\"(\\\\d+)-(\\\\d+)\"",
-            "    let^ caps = r.captures(\"12-34\")\n"
+            "    let^ caps = r.captures(\"12-34\") catch^ panic^ it^\n"
             "    r.dispose()\n"
             "    if^ caps? {\n"
             "        return^ (caps[0] ?? \"\") .. \"/\" .. (caps[1] ?? \"\")"

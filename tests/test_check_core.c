@@ -15,6 +15,61 @@
 // test can say every word in it is answered by something.
 #include "check_internal.h"
 
+static void test_error_handling_inference_gaps(void)
+{
+    Unit u;
+    static const char *const expressions[] = {
+        "try^ e[0] catch^ 0", "e[0] catch^ 0", "try^ e[0]", "e[0] ?? 0"
+    };
+    char source[256];
+    LHAT_TEST("fallbacks cannot decide the successful type of an untyped lookup");
+    for (size_t i = 0; i < sizeof expressions / sizeof *expressions; i++) {
+        snprintf(source, sizeof source,
+                 "let^ e = {aaa = 'aaaa'}\nlet^ i = %s\nlet^ copy = i\n", expressions[i]);
+        check_text(&u, source);
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_TYPE_UNDECIDED);
+        if (i == 0) CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_FAIL);
+        const char *use = strstr(u.source.text, "= i\n");
+        const LhatResolution *resolution = lhat_check_resolution_at(
+            &u.checked, (uint32_t)(use - u.source.text + 2));
+        LHAT_CHECK(resolution != NULL && lhat_type_has_gap(resolution->type),
+                   "the result retains its inference gap, not just the fallback type");
+        unit_dispose(&u);
+        check_relaxed_text(&u, source);
+        if (i == 0) {
+            CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_FAIL);
+        } else {
+            CHECK_CLEAN(&u);
+        }
+        unit_dispose(&u);
+    }
+    LHAT_TEST("try is an identity on non-error values");
+    check_text(&u,
+        "let^ n:number^ = try^ 42\n"
+        "let^ s:string^ = try^ 'ok'\n"
+        "let^ empty:nil^ = try^ nil^\n"
+        "let^ twice:number^ = try^ try^ 42\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+    LHAT_TEST("catch still rejects a left operand with no errors");
+    check_text(&u, "let^ i = try^ 42 catch^ 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_FAIL);
+    unit_dispose(&u);
+    LHAT_TEST("successful try excludes errors even through an open-typed binding");
+    check_text(&u,
+        "let^ e = {aaa = 'aaaa'}\nlet^ value = try^ e[0]\n"
+        "let^ i = value catch^ 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_FAIL);
+    unit_dispose(&u);
+    LHAT_TEST("a known successful value remains typed after error handling");
+    check_text(&u,
+        "errordef^ E { Bad }\n"
+        "let^ f = p^ x:number^|E { let^ n:number^ = x catch^ 0 return^ n }\n"
+        "let^ table = {1, 2}\nlet^ n:number^ = try^ table[0]\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+}
+
 static void test_any_operators(void)
 {
     Unit u;
@@ -3393,6 +3448,7 @@ static void test_dropped_errors(void)
 
 int main(void)
 {
+    test_error_handling_inference_gaps();
     test_any_operators();
     test_error_operand_diagnostics();
     test_names();

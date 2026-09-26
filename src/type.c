@@ -1820,6 +1820,9 @@ bool lhat_type_equal(const LhatType *a, const LhatType *b)
                  (a->kind == LHAT_TYPE_UNKNOWN || a->kind == LHAT_TYPE_PENDING);
     bool b_gap = b != NULL &&
                  (b->kind == LHAT_TYPE_UNKNOWN || b->kind == LHAT_TYPE_PENDING);
+    if (a != NULL && b != NULL && a->excludes_error != b->excludes_error) {
+        return false;
+    }
     if (a_gap != b_gap) {
         return false;
     }
@@ -1832,6 +1835,17 @@ bool lhat_type_equal(const LhatType *a, const LhatType *b)
 // ---------------------------------------------------------------------------
 // Disjointness (14.12)
 // ---------------------------------------------------------------------------
+
+static bool only_errors(const LhatType *type)
+{
+    if (type == NULL) return false;
+    if (is_error_type(type)) return true;
+    if (type->kind != LHAT_TYPE_UNION) return false;
+    for (const LhatTypeList *arm = type->v.composite.arms; arm; arm = arm->next) {
+        if (!only_errors(arm->type)) return false;
+    }
+    return true;
+}
 
 static bool disjoint_in(const LhatType *a, const LhatType *b,
                         const Assumed *seen)
@@ -1854,7 +1868,10 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
     Assumed here = { a, b, seen };
     seen = &here;
 
-    // Neither a gap in inference nor the top rules anything out.
+    if ((a->excludes_error && only_errors(b)) ||
+        (b->excludes_error && only_errors(a))) return true;
+
+    // Neither a gap in inference nor the top rules anything else out.
     if (a->kind == LHAT_TYPE_UNKNOWN || b->kind == LHAT_TYPE_UNKNOWN ||
         a->kind == LHAT_TYPE_PENDING || b->kind == LHAT_TYPE_PENDING ||
         a->kind == LHAT_TYPE_ANY || b->kind == LHAT_TYPE_ANY) {
@@ -2080,11 +2097,12 @@ static LhatType *build_composite(LhatTypeArena *arena, LhatTypeKind kind,
 
     // 13.7: any^ admits every value, so a union with it is it. An
     // intersection with it adds no requirement, so it is the other side.
-    if (a->kind == LHAT_TYPE_ANY || b->kind == LHAT_TYPE_ANY) {
+    if ((a->kind == LHAT_TYPE_ANY && !a->excludes_error) ||
+        (b->kind == LHAT_TYPE_ANY && !b->excludes_error)) {
         if (kind == LHAT_TYPE_UNION) {
-            return a->kind == LHAT_TYPE_ANY ? a : b;
+            return a->kind == LHAT_TYPE_ANY && !a->excludes_error ? a : b;
         }
-        return a->kind == LHAT_TYPE_ANY ? b : a;
+        return a->kind == LHAT_TYPE_ANY && !a->excludes_error ? b : a;
     }
 
     LhatType *node = new_type(arena, kind);

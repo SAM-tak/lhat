@@ -191,6 +191,7 @@ typedef struct LhatTypeList {
 struct LhatType {
     LhatTypeKind kind;
     bool coroutine_top;
+    bool excludes_error; // A successful error-handling path, even if its type is open.
     // Compile-time nominal specialization. Runtime representation is unchanged.
     LhatType *specialization_base;
     LhatTypeList *specialization_arguments;

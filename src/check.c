@@ -1984,6 +1984,12 @@ LhatType *chk_without(Checker *c, LhatType *type, LhatType *unwanted)
     if (type == NULL) {
         return NULL;
     }
+    // Inference gaps conform permissively, but that does not prove every
+    // possible value belongs to the removed arm. Keep the gap so a fallback
+    // cannot supply the entire result type of an unresolved successful path.
+    if (type->kind == LHAT_TYPE_UNKNOWN || type->kind == LHAT_TYPE_PENDING) {
+        return type;
+    }
     if (type->kind == LHAT_TYPE_UNION) {
         LhatType *kept = NULL;
         for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
@@ -2009,9 +2015,7 @@ LhatType *chk_without(Checker *c, LhatType *type, LhatType *unwanted)
 
 bool chk_can_be(const LhatType *type, const LhatType *wanted)
 {
-    return type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
-           type->kind == LHAT_TYPE_PENDING ||
-           !lhat_type_disjoint(type, wanted);
+    return type == NULL || !lhat_type_disjoint(type, wanted);
 }
 
 // 13.2: nothing inhabits "no value", so it cannot stand where one is wanted.
@@ -4489,7 +4493,7 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "a kind is a type, not a value; error^Kind{ ... } is what "
         "makes one: {kind}"},
     [LHAT_CHECK_ERR_CANNOT_FAIL] = {"check.cannot-fail",
-        "the left of catch^ or try^ cannot return an error"},
+        "the left of catch^ cannot return an error"},
     [LHAT_CHECK_ERR_CANNOT_BE_NIL] =
         {"check.cannot-be-nil", "the left of ?? cannot be nil^"},
     [LHAT_CHECK_ERR_TRY_OUTSIDE] = {"check.try-outside",

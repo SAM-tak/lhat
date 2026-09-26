@@ -1169,6 +1169,27 @@ static LhatType *concat_table_types(Checker *c, const LhatNode *node,
     return joined;
 }
 
+static LhatType *successful_error_result(Checker *c, LhatType *type)
+{
+    if (type == NULL) return NULL;
+    if (type->kind == LHAT_TYPE_UNION) {
+        LhatType *result = NULL;
+        for (const LhatTypeList *arm = type->v.composite.arms; arm; arm = arm->next) {
+            result = lhat_type_union(c->result->types, result,
+                                     successful_error_result(c, arm->type));
+        }
+        return result;
+    }
+    if (type->kind == LHAT_TYPE_UNKNOWN || type->kind == LHAT_TYPE_PENDING ||
+        type->kind == LHAT_TYPE_ANY) {
+        LhatType *result = chk_simple(c, type->kind == LHAT_TYPE_UNKNOWN
+                                           ? LHAT_TYPE_PENDING : type->kind);
+        result->excludes_error = true;
+        return result;
+    }
+    return type;
+}
+
 LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
 {
     LhatOpKind op = node->v.binary.op;
@@ -1222,6 +1243,13 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
                                                 : LHAT_CHECK_ERR_CANNOT_BE_NIL);
         }
         LhatType *kept = chk_without(c, left, unwanted);
+        if (op == LHAT_OP_CATCH) kept = successful_error_result(c, kept);
+        // An untyped lookup can succeed with a value we know nothing about.
+        // Handling its failure does not infer that value from the fallback.
+        // Mark this result as an inference gap so strict bindings diagnose it.
+        if (kept != NULL && kept->kind == LHAT_TYPE_UNKNOWN) {
+            kept = chk_simple(c, LHAT_TYPE_PENDING);
+        }
         // 04 の 4.1改: nothing joins what the left is worth without its error
         // arm, so the whole is exactly that. 'x as^ T catch^ panic^ it^' is
         // T, which is what makes this the assertion. 13.8改's width question
@@ -6436,7 +6464,8 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             // chk_error_leaves's job, and only to refuse one.
             LhatType *error = chk_any_error(c);
             if (!chk_can_be(value, error)) {
-                chk_report(c, node, LHAT_CHECK_ERR_CANNOT_FAIL);
+                // try^ is an identity on an expression that cannot fail.
+                return value;
             } else if (c->catch_frame != NULL) {
                 // 04 の 4.5: catch^ arms stand between this and the
                 // caller. What leaves here reaches them, and 5.3 is asked of
@@ -6450,7 +6479,8 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             } else {
                 chk_error_leaves(c, node, chk_only(c, value, error));
             }
-            return chk_without(c, value, error);
+            LhatType *kept = chk_without(c, value, error);
+            return successful_error_result(c, kept);
         }
 
         // 02 の 14.16: the operand is still checked -- an error inside it is
