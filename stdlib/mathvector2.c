@@ -18,6 +18,6 @@ bool lhatstdlib_mathvector2_register(LhatProgram *program)
            math_register_constant(program, &shared, 1, "one", (MathValue){{1, 1}}) &&
            math_register_constant(program, &shared, 2, "right", (MathValue){{1, 0}}) &&
            math_register_constant(program, &shared, 3, "left", (MathValue){{-1, 0}}) &&
-           math_register_constant(program, &shared, 4, "up", (MathValue){{0, 1}}) &&
-           math_register_constant(program, &shared, 5, "down", (MathValue){{0, -1}});
+           math_register_constant(program, &shared, 4, "up", (MathValue){{0, -1}}) &&
+           math_register_constant(program, &shared, 5, "down", (MathValue){{0, 1}});
 }

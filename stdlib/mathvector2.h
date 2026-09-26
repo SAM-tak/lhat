@@ -15,11 +15,11 @@
 //   Vector2 component-wise), dot^ / ⋅ and cross^ / × (the scalar z of the
 //   3D cross) are operators. length, normalized, lerp(other, t),
 //   rotate(radians), angle() = atan2(y, x) and tostring are registered
-//   members. Positive rotation is counter-clockwise in x-right/y-up
-//   coordinates; lerp does not clamp t.
+//   members. Coordinates are x-right/y-down: positive rotation turns +x
+//   toward +y, clockwise on screen; lerp does not clamp t.
 //   angle() answers 0 for the zero vector.
 //   Module functions zero(), one(), right(), left(), up() and down() return
-//   fresh Vector2 values; +y is up in these coordinates.
+//   fresh Vector2 values; +y is down in these coordinates.
 //   Keeping one is the language's
 //   Vector2.Box^ (box^ / get / set) -- nothing for a library to provide.
 

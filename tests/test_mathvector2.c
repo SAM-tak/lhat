@@ -37,8 +37,8 @@ static void test_fields(void)
             " and^ std.math.vector2.one().y = 1.0\n"
             " and^ std.math.vector2.right().x = 1.0\n"
             " and^ std.math.vector2.left().x = -1.0\n"
-            " and^ std.math.vector2.up().y = 1.0\n"
-            " and^ std.math.vector2.down().y = -1.0 { return^ 1 }\n"
+            " and^ std.math.vector2.up().y = -1.0\n"
+            " and^ std.math.vector2.down().y = 1.0 { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);

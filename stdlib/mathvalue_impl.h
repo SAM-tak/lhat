@@ -255,7 +255,8 @@ static void math_angle(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-// Mathematical x-right/y-up coordinates: positive radians rotate CCW.
+// x-right/y-down coordinates: positive radians turn +x toward +y, clockwise
+// on screen.
 static void math_rotate(LhatMachine *machine, void *context,
                         const LhatValue *args, size_t count,
                         LhatValue *answers, int *answer_count)
