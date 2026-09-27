@@ -2621,6 +2621,13 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
+    // 04 section 11.4: relaxed and optional access step past nil^. Do this
+    // before testing for an undecided receiver: ?|nil^ becomes ?.
+    // Optional access restores its nil^ arm through nil_propagated.
+    if (!c->strict || node->v.access.nil_safe) {
+        target = chk_without_nil_arm(c, target);
+    }
+
     if (target == NULL || target->kind == LHAT_TYPE_UNKNOWN ||
         target->kind == LHAT_TYPE_PENDING) {
         // 03 の 3.4: a parameter read for a member has to carry one, and
@@ -2630,22 +2637,15 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
         // type pending^ too, not merely unknown^ -- the gap has to survive
         // for strict to see it if it reaches somewhere a concrete type was
         // wanted.
-        return chk_simple(c, target != NULL && target->kind == LHAT_TYPE_PENDING
-                              ? LHAT_TYPE_PENDING
-                              : LHAT_TYPE_UNKNOWN);
-    }
-
-    // 04 の 11.4: under relaxed, a T|nil^ value may be referenced as T.
-    // The checker steps aside; a nil^ actually arriving meets the machine's
-    // own instruction check and panics where it lands, with 11.6's line.
-    // strict keeps refusing -- narrowing (fits^, ??, ?.) is the spelling
-    // there. Only nil^ is stepped past: a union of two real types still has
-    // no one member type to answer with.
-    //
-    // '?.' is that spelling, so it steps past under strict too -- and
-    // unlike relaxed it says so in the answer (nil_propagated).
-    if (!c->strict || node->v.access.nil_safe) {
-        target = chk_without_nil_arm(c, target);
+        LhatType *answer = chk_simple(
+            c, target != NULL && target->kind == LHAT_TYPE_PENDING
+                   ? LHAT_TYPE_PENDING : LHAT_TYPE_UNKNOWN);
+        // A non-nil receiver does not prove that this key is present.
+        // Pending inference keeps its provisional answer until it settles.
+        return c->writing_to == node || answer->kind == LHAT_TYPE_PENDING
+                   ? answer
+                   : lhat_type_union(c->result->types, answer,
+                                     chk_simple(c, LHAT_TYPE_NIL));
     }
 
     return chk_member_of(c, target, name, length, node, named_type);

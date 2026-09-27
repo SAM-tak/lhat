@@ -56,7 +56,7 @@ public^let^joined:p^std.thread.ThreadHandle -> c^{p^-> number^ ->
 ]#
 public^let^Scheduler: t^{
     self^{
-        tasks : t^{},
+        tasks : t^{[number^]:c^{p^ -> number^}|nil^},
         waits : t^{},
         live : number^,
         add : p^self^, c^{ p^ -> number^} -> number^;,
@@ -68,7 +68,7 @@ public^let^Scheduler: t^{
     new : f^ -> Self^;
 } = def^{
     self^{
-        tasks = { },      # コルーチン
+        tasks : t^{[number^]:c^{p^ -> number^}|nil^} = { },
         waits = { },      # 待っている期限 id。0 なら起きている
         live  = 0,
     },

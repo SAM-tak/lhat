@@ -710,6 +710,40 @@ static void test_nil_propagation(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    LHAT_TEST("optional access does not invent missing members or their types");
+    check_text(&u,
+               "let^ spawn = {}?[0]\n"
+               "let^ x, y = spawn?.x ?? 10, spawn?.y ?? 20\n");
+    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TYPE_UNDECIDED);
+    unit_dispose(&u);
+
+    LHAT_TEST("optional coordinates with known element types accept defaults");
+    check_text(&u,
+               "let^ collect = f^ -> t^{t^{x:number^, y:number^}[]} { return^ {} }\n"
+               "let^ spawn = collect()?[0]\n"
+               "let^ x, y = spawn?.x ?? 10, spawn?.y ?? 20\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a non-nil undecided receiver can still have absent members");
+    check_text(&u,
+               "var^ x, y = 10, 20\n"
+               "let^ spawn = {}?[0]\n"
+               "if^ spawn? { x, y := spawn.x, spawn.y }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("structural narrowing proves that the members exist");
+    check_text(&u,
+               "var^ x, y = 10, 20\n"
+               "let^ spawn = {}?[0]\n"
+               "if^ spawn fits^ t^{x:number^, y:number^} {\n"
+               "    x, y := spawn.x, spawn.y\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 13.11: `narrowable` refuses a '?.' path, so a narrowing recorded for
     // one name never leaks onto the nil-safe reach through it.
     LHAT_TEST("a '?.' path is not narrowed");

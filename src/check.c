@@ -3089,6 +3089,12 @@ void chk_narrow_from(Checker *c, const LhatNode *condition, bool truth)
     LhatType *inside =
         holds ? chk_only(c, current, tested) : chk_without(c, current, tested);
 
+    // A successful runtime test supplies the shape an undecided arm lacked.
+    if (holds && inside != NULL &&
+        (inside->kind == LHAT_TYPE_UNKNOWN || inside->kind == LHAT_TYPE_PENDING)) {
+        inside = tested;
+    }
+
     // 03 の 3.4: a parameter still being decided says nothing to narrow, so
     // both sides hand its own object straight back. Inside the branch that
     // object would be read as the parameter itself and every use of it as a
