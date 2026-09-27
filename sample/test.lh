@@ -227,5 +227,6 @@ print(s.at(-1))
 
 let^foo = f^x:number^{ print(x) }
 let^bar = f^{ print("bar!") return^4 }
-let^blah = foo bar() print(foo, bar, blah)
+# let^blah = foo; (bar()) print(foo, bar, blah)
+let^blah = foo do^{(bar())} print(foo, bar, blah) # やっぱ現行のルールで別にいいのでは
 print(0 < u < 3 < v = 0 and^ blah = blah)
