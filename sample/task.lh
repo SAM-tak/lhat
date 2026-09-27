@@ -1,11 +1,34 @@
 import^std.task
+import^std.channel
+
+try^std.task.start(2)
+
 let^gen1 = p^{ yield^0 return^40 }
 let^gen2 = p^{ yield^0 return^2 }
-std.task.start(2) catch^panic^it^
+
 let^t1 = try^std.task.async(gen1())
 let^t2 = try^std.task.async(gen2())
 var^n = 0
 n += try^std.task.await(t1)
 n += try^std.task.await(t2)
-std.task.stop()
 print(n) # may print '42'
+
+#[~
+let^c = try^std.channel.new(std.task.Task<number^>)
+]#
+let^c = try^std.channel.new(typeof^t1)
+n := 0
+let^first = try^std.task.async(p^{
+    _yield^0
+    return^20
+}())
+try^c.push(first)
+let^second = try^std.task.async(p^mine {
+    _yield^0
+    let^handed = mine.demand(2)
+    return^ if^handed?: std.task.await(handed) catch^ 0 + 1 el^: 0;
+}(c))
+n := try^std.task.await(second)
+print(n) # may print '21'
+
+std.task.stop()
