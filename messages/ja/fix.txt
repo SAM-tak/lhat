@@ -23,3 +23,5 @@ hand-back = try^ と書いて失敗を呼び出し元へ返す
 delegate = await^ と書いて委譲する
 # near-name = change to '{text}'
 near-name = 「{text}」に書き換える
+# all = apply every fix that needs no reading
+all = 読まずに当ててよい修正をすべて当てる

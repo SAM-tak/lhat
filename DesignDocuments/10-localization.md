@@ -87,7 +87,7 @@ L^ の処理系と道具が人に見せる文を、読み手の言語で出す�
 | 報告の見出し | `report` | 2 | `lhat_report_write`（`error:`・`note:`） |
 | トレースバックの定型 | `trace` | 4 | `lhat_machine_traceback`（`traceback:`・`in`・`at the top level`・`(coroutine)`。`f^` と `(finally^)` は訳さない） |
 | CLI | `cli` | 25 | `cli/main.c` |
-| 修正案の題名 | `fix` | 12 | `lhat_unit_diagnostic_fix_title`（07 §6.1） |
+| 修正案の題名 | `fix` | 13 | `lhat_unit_diagnostic_fix_title`・`lhat_unit_fix_all_title`（07 §6.1） |
 | デバッガ（DAP） | `dap` | 12 | `dap/adapter.c` |
 
 言語サーバが自分で書く文は診断の文面だけである。ホバーが出す定義の行は
@@ -293,7 +293,7 @@ usage = 使い方: lhat [オプション] <ファイル> [引数...]
 焼き込むのは英語だけなので変換器が要らず、書き出し（6.3）が原本の役を果たす。
 
 ［補足］前段を持たない実行時専用のビルド（05 §10.7）には、`compile` `run` `program` `source` `report` `trace` の英語が入り、
-`check` `parse` `lex` は入らない。
+`check` `parse` `lex` `fix` は入らない。
 カタログの読み手は前段に属さないので、そこでもほかの言語を読める。
 
 ### 6.3 英語を書き出す
@@ -347,7 +347,7 @@ size_t lhat_messages_write_catalog(const char *source,
 
 - CLI — `lhat --dump-messages DIR`。`DIR/<出どころ>.txt` を出どころの数だけ書く
 - `lhat_messages_source` は、このビルドが持つ出どころを順に答える。
-  前段を持たないビルドでは `check` `parse` `lex` が並ばない（6.2）
+  前段を持たないビルドでは `check` `parse` `lex` `fix` が並ばない（6.2）
 - `lhat_messages_write_english` は、ライブラリが持つ出どころ1つ分を書く
 - `lhat_messages_write_catalog` は、道具が自分の表を同じ書式で書くためのものである。
   CLI は `cli` を、デバッガは `dap` を、ホストは自分の分をこれで書く
