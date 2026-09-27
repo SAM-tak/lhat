@@ -5440,6 +5440,8 @@ static void test_declarative_result_types(void)
         "p^c^ -> ARG99999999999999999999999999999.resultType;",
         "p^c^ -> t^{ value:ARG0.resultType };",
         "p^number^ -> ARG0.T0;", "p^c^ -> ARG0.T0;",
+        "p^number^ -> self^.T0;", "p^type^<number^,string^> -> number^;",
+        "p^type^ -> ARG0.T1;",
         "p^number^ -> ARG0.T99999999999999999999999999999;",
         "p^c^ -> (f^number^ -> ARG1;);"
     };

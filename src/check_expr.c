@@ -2121,7 +2121,8 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                      : (param != NULL ? param->type : callee->v.func.variadic);
         // 3.4改: read back where the seeding above already inferred it.
         LhatType *actual;
-        if (seeded && taken < given_count) {
+        if (seeded && taken < given_count &&
+            !(wanted != NULL && wanted->kind == LHAT_TYPE_TABLE && wanted->v.table.is_typeinfo)) {
             actual = given_types[taken];
         } else {
             LhatType *outer_expected = c->expected_func;
@@ -2562,8 +2563,8 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
                            LhatType **named_type)
 {
     // 02 の 14.8改2: number^ carries a few static members -- the constants.
-    // The word is no value of its own (a bare number^ stays an unknown
-    // name), so this is read off the tree before the target is inferred.
+    // The parser keeps number^.inf/nan as static member accesses rather
+    // than descriptor attributes, so read them before inferring the target.
     const LhatNode *on = node->v.access.target;
     const char *on_name = NULL;
     size_t on_length = 0;
@@ -2684,6 +2685,9 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             chk_report(c, node, LHAT_CHECK_ERR_NO_RESULT_TYPE);
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
+        if (runtime_has_type_arguments(answer, NULL)) {
+            chk_report(c, node, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
+        }
         if (node != NULL) {
             ((LhatNode *)node->v.access.argument)->checked_type = answer;
             ((LhatNode *)node)->v.access.type_spelling = true;
@@ -2691,7 +2695,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         if (named_type != NULL) {
             *named_type = answer;
         }
-        return chk_typeinfo_type(c);
+        return chk_typeinfo_of(c, answer);
     }
 
     // 04 の 2.3: every kind carries message and cause without declaring them
@@ -3108,7 +3112,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
                 if (named_type != NULL && m->names_type) {
                     *named_type = m->named_type;
                 }
-                return m->type;
+                return lhat_type_instantiate_receiver(c->result->types, m->type, target);
             }
         }
         const char *second =
@@ -6007,7 +6011,33 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
             named_type = NULL;
         }
     }
-    LhatType *type = infer_node(c, node, named_type);
+    LhatType *context_named = NULL;
+    bool expects_descriptor = c->expected_func != NULL &&
+        c->expected_func->kind == LHAT_TYPE_TABLE && c->expected_func->v.table.is_typeinfo;
+    if (node != NULL) ((LhatNode *)node)->descriptor_type = NULL;
+    LhatType **capture = named_type;
+    if (capture == NULL && expects_descriptor && node != NULL && run_of_names(node, true)) {
+        capture = &context_named;
+    }
+    LhatType *outer_expected = c->expected_func;
+    if (expects_descriptor) c->expected_func = NULL;
+    LhatType *type = infer_node(c, node, capture);
+    c->expected_func = outer_expected;
+    if (expects_descriptor && capture != NULL && *capture == NULL &&
+        node != NULL && run_of_names(node, true) &&
+        type != NULL && type->kind == LHAT_TYPE_TABLE && !type->v.table.is_typeinfo) {
+        // Host declarations and def^ values carry their type through their
+        // declaration shape rather than through an explicit alias marker.
+        *capture = chk_resolve_type(c, node);
+    }
+    if (expects_descriptor && capture != NULL && *capture != NULL &&
+        !(type != NULL && type->kind == LHAT_TYPE_TABLE && type->v.table.is_typeinfo)) {
+        if (runtime_has_type_arguments(*capture, NULL)) {
+            chk_report(c, node, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
+        }
+        ((LhatNode *)node)->descriptor_type = *capture;
+        type = chk_typeinfo_of(c, *capture);
+    }
 #if LHAT_WITH_RESOLUTIONS
     if (node != NULL) ((LhatNode *)node)->display_type = type;
 #endif
@@ -6485,14 +6515,17 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
 
         // 02 の 14.16: the operand is still checked -- an error inside it is
         // still an error -- but what the operand's own type turns out to be
-        // plays no part in typeof^'s own type, which is the uniform TypeInfo
-        // carrier regardless. The descriptive payload is filled in at run
+        // usually leaves typeof^ with the erased descriptor type. Primitive
+        // tags can be represented exactly and retain type^<T>. The payload is filled in at run
         // time by reflect_type reading the actual value, unless 03 の 5.11a's
         // narrow exception applies -- kept here on the node itself for
         // compile_expression to read back.
         case LHAT_NODE_TYPEOF: {
             LhatType *operand = chk_infer(c, node->v.jump.value);
             ((LhatNode *)node)->checked_type = operand;
+            if (operand != NULL && (operand->kind == LHAT_TYPE_NIL ||
+                operand->kind == LHAT_TYPE_BOOL || operand->kind == LHAT_TYPE_NUMBER ||
+                operand->kind == LHAT_TYPE_STRING)) return chk_typeinfo_of(c, operand);
             return chk_typeinfo_type(c);
         }
 
@@ -6504,11 +6537,14 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             c->in_type_value = true;
             LhatType *named = chk_resolve_type(c, node->v.jump.value);
             c->in_type_value = outer_in_type_value;
+            if (runtime_has_type_arguments(named, NULL)) {
+                chk_report(c, node, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
+            }
             ((LhatNode *)node)->checked_type = named;
             if (named_type != NULL) {
                 *named_type = named;
             }
-            return chk_typeinfo_type(c);
+            return chk_typeinfo_of(c, named);
         }
 
         case LHAT_NODE_IF_EXPR: {

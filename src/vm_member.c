@@ -71,6 +71,9 @@ LhatRuntimeType *vm_tag_type(LhatHeap *heap, LhatValue value)
     if (lhat_is_object_kind(value, LHAT_OBJECT_STRING)) {
         return lhat_type_rt_new(heap, LHAT_TYPE_RT_STRING);
     }
+    if (lhat_is_object_kind(value, LHAT_OBJECT_TYPE)) {
+        return lhat_type_rt_new(heap, LHAT_TYPE_RT_TYPEINFO);
+    }
     if (lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE)) {
         // 13.9: R and Y have no written form, so wherever they are
         // known at all it is through 03 の 5.11a's checked_type, already

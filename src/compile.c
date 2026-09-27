@@ -4266,6 +4266,10 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
     c->offset = node->offset;
     c->column = node->column;
 
+    if (node->descriptor_type != NULL) {
+        load_type_constant(c, (const LhatType *)node->descriptor_type, into);
+        return;
+    }
     switch (node->kind) {
         case LHAT_NODE_INT:
             load_constant(c, into, lhat_integer((int64_t)node->v.integer.value));

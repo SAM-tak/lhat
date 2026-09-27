@@ -1,6 +1,7 @@
 // L^ (lhat) -- the type checking stage: statements.
 
 #include "check_internal.h"
+#include "instantiation_internal.h"
 
 // ---------------------------------------------------------------------------
 // Statements
@@ -84,7 +85,8 @@ LhatType *chk_environment_type(Checker *c)
     return env;
 }
 
-// Every descriptor has this value type, independently of the type it names.
+// The erased supertype shared by all descriptors. Written type values add
+// the represented type as an invariant argument through chk_typeinfo_of.
 // The marker distinguishes descriptors from type-bearing tables even when
 // another unit's checker constructed them.
 LhatType *chk_typeinfo_type(Checker *c)
@@ -102,6 +104,14 @@ LhatType *chk_typeinfo_type(Checker *c)
                          chk_simple(c, LHAT_TYPE_STRING));
     c->typeinfo_type = info;
     return info;
+}
+
+LhatType *chk_typeinfo_of(Checker *c, LhatType *represented)
+{
+    if (represented == NULL) return chk_typeinfo_type(c);
+    LhatInstantiationContext context = {c->result->types, c->require.hosted};
+    const LhatCheckType *args[] = {represented};
+    return (LhatType *)lhat_check_type_specialize(&context, chk_typeinfo_type(c), args, 1);
 }
 
 // 8.8: everything before the last segment holds the one written after it, so
@@ -2854,4 +2864,3 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             break;
     }
 }
-

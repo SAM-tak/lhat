@@ -1335,6 +1335,37 @@ JSON から復元する機構ではない。
 
 ##### 3.4改6 署名内の型式 `ARGn`［実装済み］
 
+メンバ署名では `self^.T0` によって実際の受け手の第0型引数を参照できる。
+これは型位置での参照であり、実行時のメンバ読み出しではない。
+メンバ取得時に受け手から引数型と返り値型を具体化するため、通常の引数検査・
+オーバーロード選択が具体化後の引数型を使用する。`ARG0` は引き続き受け手を
+数えない。受け手を持たない署名に `self^.T0` を書くことは拒否する。
+
+型値の静的型 `type^<T>` を使い、Channel の型付き生成を次のように記述する。
+
+```lhat
+# std.channel.new / named の追加オーバーロード
+p^type^ -> std.channel.Channel<ARG0.T0>|std.channel.ChannelError.Refused|std.error.OutOfMemory;
+p^string^, type^ -> std.channel.Channel<ARG1.T0>|std.channel.ChannelError.Refused|std.error.OutOfMemory;
+# Channel.push / demand
+p^self^, self^.T0 -> number^|std.channel.ChannelError.Refused|std.error.OutOfMemory;
+p^self^ -> self^.T0|nil^;
+```
+
+従来の `new()` と `named(name)` は型なしの Channel を返す。
+型付き Channel は実行時の型記述子を本体に保持し、型情報を消去した参照からの
+書き込みにも同じ要素型検査を行う。同名で異なる型を指定した場合、および
+既存の型なし Channel に後付けで型を指定した場合は `ChannelError.Refused`。
+型なしの名前検索で型付き Channel を取得することは許容する。
+`demand()` は atomic 内では待たずに空なら nil を返すため、常に `T|nil^`。
+`atomic` のコールバックにも受け手の要素型を渡す。
+
+Channel は型記述子のグラフを専用ヒープへ複製する。型記述子中の宣言の同一性は
+元の宣言を参照するため、名前付き Channel は従来どおりプログラムの破棄前に
+`lhatstdlib_channel_forget_named` で解放する。要素は1スロットで転送できる型に
+限り、タプル・直接ホスト値などの記述子は拒否する。
+これらの静的変換は JSON に保存された署名だけで LSP でも使用できる。
+
 返り値型には、固定仮引数の位置を指す型式 `ARG0`, `ARG1`, … を書ける。
 暗黙の受け手は数えず、可変長の末尾は参照対象にしない。
 登録時には仮引数型で属性の有無を検査し、呼び出し時には実引数の静的な型を

@@ -2098,10 +2098,17 @@ static LhatNode *parse_primary(Parser *p)
                 expect_op(p, LHAT_OP_RPAREN);
                 return finish(p, node);
             }
+            if ((check_hat(p, "number") && !is_op(&p->ahead, LHAT_OP_DOT)) || check_hat(p, "string") ||
+                check_hat(p, "bool") || check_hat(p, "any") || check_hat(p, "type") ||
+                (check_hat(p, "c") &&
+                 !is_op(&p->ahead, LHAT_OP_LBRACE))) {
+                LhatToken head = p->current;
+                return type_value_from(p, &head, parse_type(p));
+            }
             // 02 の 13.14: 't^{' and 'c^{' open nothing an expression
             // could be, so the spelling is a written type standing as a
             // value -- all of it, parse_type taking the unions too. A bare
-            // 't^' or 'c^' stays the name it always was, and in a header
+            // 't^' stays a name, and in a header
             // the '{' is the body's (the same care self^{ takes below).
             if ((check_hat(p, "t") || check_hat(p, "c")) &&
                 is_op(&p->ahead, LHAT_OP_LBRACE) && !p->brace_is_body) {

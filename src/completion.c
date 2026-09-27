@@ -471,6 +471,7 @@ static const Word WORDS[] = {
     {"string^", LHAT_COMPLETION_CLASS},
     {"bool^", LHAT_COMPLETION_CLASS},
     {"any^", LHAT_COMPLETION_CLASS},
+    {"type^", LHAT_COMPLETION_CLASS},
     {"error^", LHAT_COMPLETION_CLASS},
     {"localerror^", LHAT_COMPLETION_CLASS},
     {"t^", LHAT_COMPLETION_CLASS},

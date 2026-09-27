@@ -158,7 +158,7 @@ static void test_number_members(void)
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
     }
-    LHAT_CHECK(!checks("return^ number^\n"), "the bare word is still no value");
+    LHAT_CHECK(checks("return^ number^\n"), "the bare type is a type descriptor value");
 
     // 14.8改: '**' takes any exponent now, and always answers a real.
     LHAT_TEST("** takes a fractional exponent");

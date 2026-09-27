@@ -244,6 +244,7 @@ typedef struct {
     bool hosted_signature;
     // Only the result of the innermost written signature may name ARGn.
     LhatType *argument_signature;
+    bool receiver_type_expression;
 
     // 05 の 6.1: how an import is answered. Absent when a unit is checked on
     // its own, in which case a require^ cannot be followed.
@@ -812,6 +813,7 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
                                     LhatType **named_type);
 LhatType *chk_environment_type(Checker *c);
 LhatType *chk_typeinfo_type(Checker *c);
+LhatType *chk_typeinfo_of(Checker *c, LhatType *represented);
 // 15.5 with 13.2: what a call of this signature answers -- the coroutine a
 // yielding body makes, its result, or NONE where it answers no value.
 LhatType *chk_call_answer(Checker *c, const LhatType *callee);

@@ -32,6 +32,21 @@
 //                              is handed
 //   std.channel.named(name)    one the whole process shares under that
 //                              name, made by the first ask
+//   std.channel.new(T)         a typed channel, where T is a type value
+//   std.channel.named(name,T) a shared typed channel; an existing name must
+//                              already have exactly that element type
+//
+// For example new(number^) has static type Channel<number^> after handling
+// its errors. Type values carry type^<T>; ARGn.T0 projects their represented
+// type, and member signatures use self^.T0 for the receiver's element type.
+// push/supply check T statically, and the shared channel also checks writes
+// at runtime, including writes through an erased Channel or named(name).
+// A conflicting type, or a typed request for an existing untyped name,
+// answers ChannelError.Refused. An untyped request may access a typed name.
+// The channel owns a copy of the descriptor graph. Declaration identities
+// within it have the same lifetime requirements as queued values below.
+// Element types must fit one transported value; tuple/direct-hostvalue
+// descriptors are refused. Carry's existing restrictions still apply.
 //
 // And what it answers:
 //
@@ -48,6 +63,10 @@
 //   atomic(fn)                 calls fn(self) with the channel held, so a
 //                              read and the write that follows it are one
 //   dispose()                  gives this hold back (12.5)
+//
+// For Channel<T>, pop/peek/demand return T|nil^, including demand() without
+// a timeout: inside atomic it does not wait. take() preserves T|nil^ as its
+// coroutine result (rebuilding a carried value may fail and return nil^).
 //
 // A nil^ pushed and an empty channel read the same through pop (04 の 11.3
 // gives every read a nil^ arm, and a queue is a read); demand tells them

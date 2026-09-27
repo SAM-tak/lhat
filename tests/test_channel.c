@@ -14,6 +14,7 @@
 #include "../stdlib/carry.h"
 #include "../stdlib/channel.h"
 #include "../stdlib/thread.h"
+#include "../stdlib/task.h"
 #include "port/thread.h"
 
 // The contract's state. One per process, like the tag it is declared on:
@@ -228,13 +229,140 @@ static void test_sharing_contract(void)
 
 static const LhatTestRegister regs[] = {lhatstdlib_channel_register};
 static const LhatTestRegister with_thread[] = {lhatstdlib_channel_register,
-                                               lhatstdlib_thread_register};
+                                                lhatstdlib_thread_register};
+static const LhatTestRegister with_task[] = {lhatstdlib_channel_register,
+                                             lhatstdlib_task_register};
 
 // Every case names a channel of its own, since the table of names is the
 // process's and the cases run in one.
 static LhatTestRan run_source(const char *text)
 {
     return lhat_test_run(regs, 1, text);
+}
+
+static void test_typed_channels(void)
+{
+    LHAT_TEST("named host types and aliases become descriptors in type-value positions");
+    {
+        LhatTestRan result = lhat_test_run(with_task, 2,
+            "import^ std.channel\nimport^ std.task\n"
+            "let^ ch:std.channel.Channel<std.task.Task> = try^std.channel.new(std.task.Task)\n"
+            "let^ Alias = std.task.Task\n"
+            "let^ second = try^std.channel.named('task-type-alias', Alias)\n"
+            "let^ typ:type^<std.task.Task> = std.task.Task\n"
+            "let^ third = try^std.channel.new(typ)\n"
+            "std.task.start(1) catch^ panic^ it^\n"
+            "let^ gen = p^ { _yield^ 0 return^ 42 }\n"
+            "let^ task = try^std.task.async(gen())\ntry^ch.push(task)\n"
+            "let^ received = ch.demand()\nvar^ n = 0\n"
+            "if^ received? { let^ answer = std.task.await(received) catch^ panic^ it^\n"
+            "if^ answer fits^ number^ { n := answer } }\n"
+            "std.task.stop()\nreturn^ n\n");
+        LHAT_CHECK_RAN_INTEGER(result, 42);
+        lhat_test_ran_dispose(&result);
+        LHAT_CHECK(!lhat_test_check_text(with_task, 2,
+            "import^ std.channel\nimport^ std.task\n"
+            "let^ ch = try^std.channel.new(std.task.Task)\ntry^ch.push(42)\n"),
+            "a channel of tasks rejects numbers statically");
+    }
+    LHAT_TEST("type values carry their represented type into channel signatures");
+    LhatTestRan ran = run_source(
+        "import^ std.channel\n"
+        "let^ typ:type^<number^> = number^\n"
+        "let^ ch:std.channel.Channel<number^> = try^std.channel.new(typ)\n"
+        "try^ch.push(42)\n"
+        "let^ n:number^ = ch.demand() ?? 0\nreturn^ n\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 42);
+    lhat_test_ran_dispose(&ran);
+    LHAT_TEST("nil descriptors can be passed through typed type-value bindings");
+    ran = run_source(
+        "import^ std.channel\nlet^ typ:type^<nil^> = typeof^(nil^)\n"
+        "let^ ch:std.channel.Channel<nil^> = try^std.channel.new(typ)\n"
+        "try^ch.push(nil^)\nlet^ n:nil^ = ch.pop()\nreturn^ 1\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+    LHAT_TEST("typed channel writes and reads reject mismatched annotations");
+    LHAT_CHECK(!lhat_test_check_text(regs, 1,
+        "let^ t:type^<string^> = number^\n"), "type values retain invariant represented types");
+    LHAT_CHECK(!lhat_test_check_text(regs, 1,
+        "import^ std.channel\nlet^ ch:std.channel.Channel<string^> = try^std.channel.new(number^)\n"),
+        "constructor result follows the supplied type value");
+    static const char *const invalid[] = {
+        "try^ch.push('wrong')", "try^ch.supply('wrong', 0)",
+        "let^ n:string^|nil^ = ch.pop()", "let^ n:string^|nil^ = ch.demand(0)",
+        "let^ n:number^ = ch.peek()"
+    };
+    char source[512];
+    for (size_t i = 0; i < sizeof invalid / sizeof *invalid; i++) {
+        snprintf(source, sizeof source,
+            "import^ std.channel\nlet^ ch = try^std.channel.new(number^)\n%s\n", invalid[i]);
+        LHAT_CHECK(!lhat_test_check_text(regs, 1, source), "rejected %s", invalid[i]);
+    }
+    LHAT_TEST("union elements and nil fallback retain all permitted arms");
+    ran = run_source(
+        "import^ std.channel\nlet^ ch = try^std.channel.new(number^|string^)\n"
+        "try^ch.push('ok')\nlet^ value:number^|string^|nil^ = ch.pop()\n"
+        "if^ value fits^ string^ { return^ value }\nreturn^ 'bad'\n");
+    LHAT_CHECK_RAN_TEXT(ran, "ok");
+    lhat_test_ran_dispose(&ran);
+    LHAT_TEST("erasing a typed channel cannot bypass its write constraint");
+    ran = run_source(
+        "import^ std.channel\nlet^ ch = try^std.channel.new(number^)\n"
+        "let^ erased:std.channel.Channel = ch\n"
+        "let^ bad = erased.push('wrong')\n"
+        "if^ bad fits^ std.channel.ChannelError.Refused { return^ ch.count() }\nreturn^ -1\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 0);
+    lhat_test_ran_dispose(&ran);
+    LHAT_TEST("named channel schema survives the creating machine");
+    ran = run_source(
+        "import^ std.channel\nlet^ ch = try^std.channel.named('typed-persist', number^)\n"
+        "try^ch.push(42)\nreturn^ 1\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+    ran = run_source(
+        "import^ std.channel\nlet^ ch = try^std.channel.named('typed-persist', number^)\n"
+        "let^ wrong = std.channel.named('typed-persist', string^)\n"
+        "if^ wrong fits^ std.channel.ChannelError.Refused { return^ ch.pop() ?? 0 }\nreturn^ -1\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 42);
+    lhat_test_ran_dispose(&ran);
+    LHAT_TEST("an existing untyped named channel cannot acquire a type retroactively");
+    ran = run_source(
+        "import^ std.channel\nlet^ old = try^std.channel.named('untyped-existing')\n"
+        "let^ typed = std.channel.named('untyped-existing', number^)\n"
+        "if^ typed fits^ std.channel.ChannelError.Refused { return^ 1 }\nreturn^ 0\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+    LHAT_TEST("atomic demand still includes nil on an empty typed channel");
+    ran = run_source(
+        "import^ std.channel\nlet^ ch = try^std.channel.new(number^)\n"
+        "var^ result = 0\nch.atomic(p^ held { result := held.demand() ?? 7 })\nreturn^ result\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 7);
+    lhat_test_ran_dispose(&ran);
+    LHAT_TEST("structural element types are checked through erased writers");
+    ran = run_source(
+        "import^ std.channel\nlet^ ch = try^std.channel.new(t^{value:number^})\n"
+        "let^ erased:std.channel.Channel = ch\n"
+        "let^ bad = erased.push({value='wrong'})\n"
+        "if^ bad fits^ std.channel.ChannelError.Refused {\n"
+        " try^ch.push({value=42})\nlet^ got = ch.pop()\n"
+        " if^ got? { return^ got.value }\n}\nreturn^ -1\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 42);
+    lhat_test_ran_dispose(&ran);
+    LHAT_TEST("typed channel validation is shared across machines");
+    ran = lhat_test_run(with_thread, 2,
+        "import^ std.channel\nimport^ std.thread\n"
+        "let^ ch = try^std.channel.new(number^)\n"
+        "let^ h = try^std.thread.spawn(p^ ... {\n"
+        " let^ erased = ...[0]\nif^ erased fits^ std.channel.Channel {\n"
+        " let^ bad = erased.push('wrong')\n"
+        " if^ bad fits^ std.channel.ChannelError.Refused { try^erased.push(42) }\n"
+        "}\n}, ch)\nh.join()\nreturn^ ch.demand(0) ?? 0\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 42);
+    lhat_test_ran_dispose(&ran);
+    LHAT_TEST("take retains the element type as its coroutine result");
+    LHAT_CHECK(lhat_test_check_text(regs, 1,
+        "import^ std.channel\nlet^ ch = try^std.channel.new(number^)\n"
+        "let^ job:c^{f^ -> number^ -> number^|nil^} = ch.take()\n"), "typed take result");
 }
 
 static void test_one_machine(void)
@@ -513,6 +641,7 @@ static void test_between_machines(void)
 
 int main(void)
 {
+    test_typed_channels();
     test_sharing_contract();
     test_one_machine();
     test_between_machines();

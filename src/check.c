@@ -1094,6 +1094,10 @@ int chk_self_marker_at(const Checker *c, const LhatNode *params,
 LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node)
 {
     LhatType *outer_signature = c->argument_signature;
+    bool outer_receiver = c->receiver_type_expression;
+    for (const LhatNode *p = node->v.func.params; p; p = p->next) {
+        if (chk_self_marker_at(c, node->v.func.params, p)) c->receiver_type_expression = true;
+    }
     c->argument_signature = NULL;
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
     func->v.func.closed = node->v.func.closed;  // 15.13
@@ -1132,6 +1136,7 @@ LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node)
         func->v.func.result = chk_resolve_type(c, node->v.func.return_type);
     }
     c->argument_signature = outer_signature;
+    c->receiver_type_expression = outer_receiver;
     return func;
 }
 
@@ -1362,7 +1367,10 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     if (outer->kind == LHAT_TYPE_ARGUMENT || outer->kind == LHAT_TYPE_CORO || type_argument ||
         chk_name_is(name, length, "resultType")) {
         LhatType *bound = lhat_type_argument_bound(outer);
-        LhatType *result = chk_name_is(name, length, "resultType")
+        LhatType *result = type_argument && outer->kind == LHAT_TYPE_ARGUMENT &&
+                          outer->v.argument.index == SIZE_MAX
+                              ? chk_simple(c, LHAT_TYPE_ANY)
+                              : chk_name_is(name, length, "resultType")
                               ? lhat_type_result_attribute(c->result->types, bound)
                               : type_argument ? lhat_type_argument_attribute(c->result->types, bound, projection) : NULL;
         if (result == NULL || (outer->kind == LHAT_TYPE_ARGUMENT &&
@@ -1663,6 +1671,13 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
             // that answers with is a type holding itself, and the relations
             // walk one of those until the stack is gone -- a crash with no
             // diagnostic at all.
+            if (chk_name_is(name, length, "type^")) return chk_typeinfo_type(c);
+            if (chk_name_is(name, length, "self^") && c->receiver_type_expression) {
+                LhatType *receiver = chk_simple(c, LHAT_TYPE_ARGUMENT);
+                receiver->v.argument.index = SIZE_MAX;
+                receiver->v.argument.bound = chk_simple(c, LHAT_TYPE_ANY);
+                return receiver;
+            }
             if (chk_name_is(name, length, "self^") ||
                 chk_name_is(name, length, "def^")) {
                 chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
@@ -1777,6 +1792,10 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
                 }
             }
             LhatInstantiationContext context = { c->result->types, c->require.hosted };
+            if (base != NULL && base->kind == LHAT_TYPE_TABLE && base->v.table.is_typeinfo && count != 1) {
+                chk_report(c, node, LHAT_CHECK_ERR_TYPE_SPECIALIZATION);
+                return chk_simple(c, LHAT_TYPE_UNKNOWN);
+            }
             LhatType *made = (LhatType *)lhat_check_type_specialize(&context, base, args, count);
             if (made == NULL) chk_report(c, node, LHAT_CHECK_ERR_TYPE_SPECIALIZATION);
             return made != NULL ? made : chk_simple(c, LHAT_TYPE_UNKNOWN);
@@ -1786,9 +1805,12 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
             // A structural declaration introduces its own member scope. The
             // initial dependent-result grammar does not substitute its fields.
             LhatType *outer = c->argument_signature;
+            bool outer_receiver = c->receiver_type_expression;
             c->argument_signature = NULL;
+            c->receiver_type_expression = false;
             LhatType *table = resolve_table_type(c, node);
             c->argument_signature = outer;
+            c->receiver_type_expression = outer_receiver;
             return table;
         }
 
@@ -4572,7 +4594,7 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_TYPE_SPECIALIZATION] = {"check.type-specialization",
         "type arguments require an unspecialized nominal host type"},
     [LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME] = {"check.type-argument-runtime",
-        "type arguments are erased at runtime; fits^ and as^ must use the unspecialized type"},
+        "type arguments are erased at runtime; runtime type descriptors, fits^ and as^ must use the unspecialized type"},
     [LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL] = {"check.operator-on-maybe-nil",
         "this may be nil^, and nil^ answers no operator; '?\?' "
         "gives it a value, or bind it to a name and narrow that -- "

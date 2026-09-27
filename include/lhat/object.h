@@ -403,7 +403,8 @@ typedef enum
     // signature carrying it is visibly not a type, which is the honest
     // answer when part of it was never decided. Which member or parameter it
     // was is what the writer needs, and that is what this shows.
-    LHAT_TYPE_RT_UNKNOWN
+    LHAT_TYPE_RT_UNKNOWN,
+    LHAT_TYPE_RT_TYPEINFO
 } LhatRuntimeTypeKind;
 
 // STRUCTURE's named half. Given its own tag rather than left anonymous inside
@@ -871,6 +872,10 @@ LhatHostValueBox *lhat_hostvalue_box_new(LhatHeap *heap,
                                          const LhatHostValueTag *tag);
 
 LhatRuntimeType *lhat_type_rt_new(LhatHeap *heap, LhatRuntimeTypeKind kind);
+// Copies descriptor nodes and strings into heap. Nominal declaration/tag
+// identities are borrowed, as in ordinary descriptors, and must outlive it.
+// NULL on allocation failure or an excessively deep descriptor graph.
+LhatRuntimeType *lhat_runtime_type_clone(LhatHeap *heap, const LhatRuntimeType *type);
 
 // Both return false only when out of memory.
 bool lhat_type_rt_add_part(LhatRuntimeType *type, LhatRuntimeType *part);

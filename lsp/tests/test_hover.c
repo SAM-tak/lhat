@@ -588,7 +588,7 @@ int main(void)
         expect_contains(text, "string^|nil^");
         free(text);
         text = hover_text(&c, last_offset(&c, "U.signature"));
-        expect_contains(text, "signature : string^");
+        expect_contains(text, "type^<");
         free(text);
         check_dispose(&c);
     }

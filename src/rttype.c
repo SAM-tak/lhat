@@ -138,6 +138,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
         }
 
         case LHAT_TYPE_TABLE: {
+            if (type->v.table.is_typeinfo) return lhat_type_rt_new(heap, LHAT_TYPE_RT_TYPEINFO);
             // 05 の 8.8: a registered type is its declaration and nothing
             // else -- the machine asks a value for the tag (object.c's
             // satisfies), never for the members. Converting those would also

@@ -526,6 +526,38 @@ static void test_task_checks(void)
 
 int main(void)
 {
+    LHAT_TEST("type values and receiver projections work through JSON without callbacks");
+    {
+        static const char text[] =
+            "{\"types\":[{\"kind\":\"hostdata\",\"module\":\"typed\",\"name\":\"Box\"}],"
+            "\"functions\":[{\"kind\":\"func\",\"module\":\"typed\",\"name\":\"new\","
+            "\"signature\":\"p^type^ -> typed.Box<ARG0.T0>;\"},"
+            "{\"kind\":\"member\",\"module\":\"typed\",\"type\":\"Box\",\"name\":\"put\","
+            "\"signature\":\"p^self^, self^.T0;\"},"
+            "{\"kind\":\"member\",\"module\":\"typed\",\"type\":\"Box\",\"name\":\"get\","
+            "\"signature\":\"p^self^ -> self^.T0;\"}]}";
+        LspHostConfig *config = lsp_host_config_parse(text, strlen(text));
+        const char *sources[] = {
+            "import^ typed\nlet^ b = typed.new(number^)\nb.put(42)\nlet^ n:number^ = b.get()\n",
+            "import^ typed\nlet^ b = typed.new(number^)\nb.put('wrong')\n",
+            "import^ typed\nlet^ b = typed.new(number^)\nlet^ n:string^ = b.get()\n",
+            "import^ typed\nlet^ typ:type^<typed.Box> = typed.Box\n"
+            "let^ b = typed.new(typed.Box)\nlet^ value = typed.new(number^)\n"
+            "b.put(value)\nlet^ n:typed.Box = b.get()\n"
+        };
+        for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
+            const File file = {"main.lh", sources[i]};
+            Disk disk = {&file, 1};
+            LhatProgram program;
+            lhat_program_init(&program, true, disk_load, &disk);
+            lsp_host_config_apply(config, &program);
+            const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+            LHAT_CHECK(unit != NULL && lhat_program_has_errors(&program) == (i != 0 && i != 3),
+                       "receiver parameters and results instantiate from JSON");
+            lhat_program_dispose(&program);
+        }
+        lsp_host_config_free(config);
+    }
     LHAT_TEST("JSON alone carries a nonstandard host's dependent signature");
     {
         static const char text[] =

@@ -192,7 +192,7 @@ cJSON *lsp_graph_type_options_result(const LhatUnit *unit, uint32_t offset, int 
         char written[4096];
         if (lhat_type_write_full(site.actual, written, sizeof written) < sizeof written) offer(&out, written);
     }
-    static const char *builtins[] = {"number^", "string^", "bool^", "nil^", "any^", "unknown^", "t^{}", "error^", "localerror^"};
+    static const char *builtins[] = {"number^", "string^", "bool^", "nil^", "any^", "type^", "unknown^", "t^{}", "error^", "localerror^"};
     for (size_t i = 0; i < sizeof builtins / sizeof *builtins; i++) offer(&out, builtins[i]);
     offer_names(&out, out.names, "", 0);
     cJSON *reply = cJSON_CreateObject();

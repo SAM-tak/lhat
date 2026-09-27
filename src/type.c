@@ -147,6 +147,7 @@ LhatType *lhat_type_argument_attribute(LhatTypeArena *arena, LhatType *type, siz
     }
     if (type->kind != LHAT_TYPE_HOSTVALUE &&
         !(type->kind == LHAT_TYPE_TABLE && type->v.table.nominal)) return NULL;
+    if (type->kind == LHAT_TYPE_TABLE && type->v.table.is_typeinfo && index != 0) return NULL;
     if (type->specialization_base == NULL) return lhat_type_simple(arena, LHAT_TYPE_ANY);
     const LhatTypeList *arg = type->specialization_arguments;
     while (arg != NULL && index != 0) { arg = arg->next; index--; }
@@ -211,6 +212,91 @@ LhatType *lhat_type_instantiate_result(LhatTypeArena *arena, LhatType *type,
                                       const LhatType *const *args, size_t count)
 {
     return instantiate_result(arena, type, args, count, 0);
+}
+
+static LhatType *instantiate_receiver(LhatTypeArena *arena, LhatType *type,
+                                      LhatType *receiver, unsigned depth, bool within_receiver)
+{
+    if (type == NULL || depth > 64) return type;
+    if (type->kind == LHAT_TYPE_FUNC && type->v.func.takes_self) {
+        if (within_receiver) return type;
+        within_receiver = true;
+    }
+    if (type->kind == LHAT_TYPE_ARGUMENT) {
+        if (type->v.argument.index != SIZE_MAX) return type;
+        if (type->v.argument.type_argument != 0) {
+            LhatType *part = lhat_type_argument_attribute(arena, receiver, type->v.argument.type_argument - 1);
+            return part != NULL ? part : type->v.argument.bound;
+        }
+        return receiver;
+    }
+    if (type->kind != LHAT_TYPE_FUNC && type->kind != LHAT_TYPE_UNION &&
+        type->kind != LHAT_TYPE_INTERSECT && type->kind != LHAT_TYPE_TUPLE &&
+        type->kind != LHAT_TYPE_CORO && type->specialization_base == NULL) return type;
+    LhatType *made = new_type(arena, type->kind);
+    if (made == NULL) return type;
+    *made = *type;
+    const LhatTypeList *items = NULL;
+    LhatTypeList **tail = NULL;
+    if (type->specialization_base != NULL) {
+        items = type->specialization_arguments;
+        tail = &made->specialization_arguments;
+    } else if (type->kind == LHAT_TYPE_FUNC) {
+        items = type->v.func.params;
+        tail = &made->v.func.params;
+        made->v.func.result = instantiate_receiver(arena, type->v.func.result, receiver, depth + 1, within_receiver);
+        made->v.func.variadic = instantiate_receiver(arena, type->v.func.variadic, receiver, depth + 1, within_receiver);
+    } else if (type->kind == LHAT_TYPE_CORO) {
+        made->v.coroutine.receive = instantiate_receiver(arena, type->v.coroutine.receive, receiver, depth + 1, within_receiver);
+        made->v.coroutine.produce = instantiate_receiver(arena, type->v.coroutine.produce, receiver, depth + 1, within_receiver);
+        made->v.coroutine.result = instantiate_receiver(arena, type->v.coroutine.result, receiver, depth + 1, within_receiver);
+        return made;
+    } else {
+        // Rebuild unions through the ordinary normalization path.
+        LhatType *result = type->kind == LHAT_TYPE_TUPLE ? lhat_type_tuple(arena) : NULL;
+        for (const LhatTypeList *a = type->v.composite.arms; a; a = a->next) {
+            LhatType *part = instantiate_receiver(arena, a->type, receiver, depth + 1, within_receiver);
+            if (type->kind == LHAT_TYPE_TUPLE) lhat_type_add_position(arena, result, part);
+            else if (type->kind == LHAT_TYPE_UNION) result = lhat_type_union(arena, result, part);
+            else result = lhat_type_intersect(arena, result, part);
+        }
+        return result;
+    }
+    *tail = NULL;
+    for (; items; items = items->next) {
+        *tail = arena_alloc(arena, sizeof **tail);
+        if (*tail == NULL) return type;
+        (*tail)->type = instantiate_receiver(arena, items->type, receiver, depth + 1, within_receiver);
+        tail = &(*tail)->next;
+    }
+    return made;
+}
+
+static bool has_receiver_expression(const LhatType *type, unsigned depth)
+{
+    if (type == NULL || depth > 64) return false;
+    if (type->kind == LHAT_TYPE_ARGUMENT) return type->v.argument.index == SIZE_MAX;
+    const LhatTypeList *items = type->specialization_arguments;
+    if (type->kind == LHAT_TYPE_FUNC) {
+        if (has_receiver_expression(type->v.func.result, depth + 1) ||
+            has_receiver_expression(type->v.func.variadic, depth + 1)) return true;
+        items = type->v.func.params;
+    } else if (type->kind == LHAT_TYPE_CORO) {
+        return has_receiver_expression(type->v.coroutine.receive, depth + 1) ||
+               has_receiver_expression(type->v.coroutine.produce, depth + 1) ||
+               has_receiver_expression(type->v.coroutine.result, depth + 1);
+    } else if (type->kind == LHAT_TYPE_UNION || type->kind == LHAT_TYPE_INTERSECT ||
+               type->kind == LHAT_TYPE_TUPLE) items = type->v.composite.arms;
+    for (; items; items = items->next) {
+        if (has_receiver_expression(items->type, depth + 1)) return true;
+    }
+    return false;
+}
+
+LhatType *lhat_type_instantiate_receiver(LhatTypeArena *arena, LhatType *type, LhatType *receiver)
+{
+    if (!has_receiver_expression(type, 0)) return type;
+    return instantiate_receiver(arena, type, receiver, 0, false);
 }
 
 const LhatCheckType *lhat_check_type_named(LhatInstantiationContext *context,
@@ -1515,6 +1601,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             // pointer may be read as the base's, which is the whole of what
             // this refusal was protecting.
             if (target->v.table.nominal) {
+                if (target->v.table.is_typeinfo && value->v.table.is_typeinfo) return true;
                 return value == target || nominal_derives(value, target);
             }
             // 14.7改: what a definition's instances carry is part of what the
@@ -1994,6 +2081,7 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         // call them overlapping.
         if (a->v.table.nominal || b->v.table.nominal) {
             if (a->v.table.nominal && b->v.table.nominal) {
+                if (a->v.table.is_typeinfo && b->v.table.is_typeinfo) return false;
                 // 8.8改: unless one was declared under the other, in which
                 // case a value of the derived one inhabits both. 14.12 reads
                 // this, so two registrations taking a base and a derived
@@ -2488,6 +2576,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         char text[48];
         snprintf(text, sizeof text, "ARG%zu%s", type->v.argument.index,
                  type->v.argument.result_type ? ".resultType" : "");
+        if (type->v.argument.index == SIZE_MAX) snprintf(text, sizeof text, "self^");
         put_text(sink, text);
         if (type->v.argument.type_argument != 0) {
             snprintf(text, sizeof text, ".T%zu", type->v.argument.type_argument - 1);
@@ -2525,6 +2614,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             return;
 
         case LHAT_TYPE_TABLE: {
+            if (type->v.table.is_typeinfo) { put_text(sink, "type^"); return; }
             // 05 の 8.8: a host type is named the way it was registered, the
             // same as a host value below and as the machine's own writer
             // already does (object.c). Its members are reachable like any

@@ -37,6 +37,8 @@ typedef struct {
 } Waiter;
 
 typedef struct Channel {
+    LhatHeap type_heap;
+    LhatRuntimeType *element_type;
     LhatMutex lock;
     LhatCondition changed;
 
@@ -150,6 +152,7 @@ static void channel_free(Channel *channel)
                                          channel->capacity]);
     }
     lhat_free(channel->items);
+    lhat_object_free_all(&channel->type_heap);
     lhat_condition_destroy(&channel->changed);
     lhat_mutex_destroy(&channel->lock);
     lhat_free(channel);
@@ -340,14 +343,36 @@ static void channel_dispose(LhatMachine *machine, void *context,
     }
 }
 
+static bool channel_element_type(const LhatRuntimeType *type)
+{
+    if (type == NULL || type->kind == LHAT_TYPE_RT_TUPLE ||
+        type->kind == LHAT_TYPE_RT_HOSTVALUE || type->kind == LHAT_TYPE_RT_UNKNOWN) return false;
+    if (type->kind == LHAT_TYPE_RT_UNION || type->kind == LHAT_TYPE_RT_INTERSECT) {
+        for (size_t i = 0; i < type->part_count; i++) {
+            if (!channel_element_type(type->parts[i])) return false;
+        }
+    }
+    return true;
+}
+
 static void channel_make(LhatMachine *machine, void *context,
                          const LhatValue *arguments, size_t count,
                          LhatValue *answers, int *answer_count)
 {
     const ChannelModule *module = (const ChannelModule *)context;
-    (void)arguments;
-    (void)count;
     Channel *channel = channel_new();
+    const LhatRuntimeType *type = count > 0 && lhat_is_object_kind(arguments[0], LHAT_OBJECT_TYPE)
+                                     ? (const LhatRuntimeType *)lhat_as_object(arguments[0]) : NULL;
+    if (count > 0 && !channel_element_type(type)) {
+        if (channel != NULL) channel_let_go(channel, NULL);
+        answers[0] = fail_with(machine, module->refused, "a channel requires a single-slot element type");
+        *answer_count = 1;
+        return;
+    }
+    if (channel != NULL && type != NULL) {
+        channel->element_type = lhat_runtime_type_clone(&channel->type_heap, type);
+        if (channel->element_type == NULL) { channel_let_go(channel, NULL); channel = NULL; }
+    }
     LhatValue out = lhat_nil();
     if (channel == NULL) {
         answers[0] = fail_with(machine, module->out_of_memory,
@@ -389,18 +414,29 @@ static struct {
     size_t capacity;
 } names;
 
-static Channel *named_channel(const char *name, size_t length)
+static Channel *named_channel(const char *name, size_t length, const LhatRuntimeType *type,
+                              bool *mismatch)
 {
     lhat_mutex_lock(&names.lock);
     for (size_t i = 0; i < names.count; i++) {
         if (strlen(names.entries[i].name) == length &&
             memcmp(names.entries[i].name, name, length) == 0) {
             Channel *found = names.entries[i].channel;
+            if (type != NULL && (found->element_type == NULL ||
+                !lhat_runtime_type_equal(type, found->element_type))) {
+                *mismatch = true;
+                lhat_mutex_unlock(&names.lock);
+                return NULL;
+            }
             lhat_mutex_unlock(&names.lock);
             return found;
         }
     }
     Channel *made = channel_new();  // the table's own hold
+    if (made != NULL && type != NULL) {
+        made->element_type = lhat_runtime_type_clone(&made->type_heap, type);
+        if (made->element_type == NULL) { channel_let_go(made, NULL); made = NULL; }
+    }
     char *kept = (char *)lhat_alloc(length + 1);
     if (made == NULL || kept == NULL) {
         lhat_free(kept);
@@ -458,12 +494,21 @@ static void channel_named(LhatMachine *machine, void *context,
                           LhatValue *answers, int *answer_count)
 {
     const ChannelModule *module = (const ChannelModule *)context;
-    (void)count;
     const LhatString *name =
         (const LhatString *)lhat_as_object(arguments[0]);
-    Channel *channel = named_channel(name->text, name->length);
+    const LhatRuntimeType *type = count > 1 && lhat_is_object_kind(arguments[1], LHAT_OBJECT_TYPE)
+                                     ? (const LhatRuntimeType *)lhat_as_object(arguments[1]) : NULL;
+    if (count > 1 && !channel_element_type(type)) {
+        answers[0] = fail_with(machine, module->refused, "a channel requires a single-slot element type");
+        *answer_count = 1;
+        return;
+    }
+    bool mismatch = false;
+    Channel *channel = named_channel(name->text, name->length, type, &mismatch);
     LhatValue out = lhat_nil();
-    if (channel == NULL || !answer_channel(machine, module, channel, &out)) {
+    if (mismatch) {
+        answers[0] = fail_with(machine, module->refused, "the named channel has a different or unspecified element type");
+    } else if (channel == NULL || !answer_channel(machine, module, channel, &out)) {
         answers[0] = fail_with(machine, module->out_of_memory,
                                "a channel could not be made");
     } else {
@@ -479,10 +524,15 @@ static void channel_named(LhatMachine *machine, void *context,
 // Takes the value apart, or answers the error a refusal is. `*carried` is
 // NULL when this answered false.
 static bool carry_argument(LhatMachine *machine, const ChannelModule *module,
-                           LhatValue value, LhatCarried **carried,
+                            const Channel *channel, LhatValue value, LhatCarried **carried,
                            LhatValue *error)
 {
     const char *refused = NULL;
+    if (channel->element_type != NULL && !lhat_value_satisfies(value, channel->element_type)) {
+        *carried = NULL;
+        *error = fail_with(machine, module->refused, "the value does not fit the channel element type");
+        return false;
+    }
     if (lhat_carry(value, carried, &refused)) {
         return true;
     }
@@ -507,7 +557,7 @@ static void channel_push(LhatMachine *machine, void *context,
     LhatValue error = lhat_nil();
     if (channel == NULL) {
         answers[0] = lhat_nil();
-    } else if (!carry_argument(machine, module, arguments[1], &item, &error)) {
+    } else if (!carry_argument(machine, module, channel, arguments[1], &item, &error)) {
         answers[0] = error;
     } else {
         enter(channel, machine);
@@ -545,7 +595,7 @@ static void channel_supply(LhatMachine *machine, void *context,
         *answer_count = 1;
         return;
     }
-    if (!carry_argument(machine, module, arguments[1], &item, &error)) {
+    if (!carry_argument(machine, module, channel, arguments[1], &item, &error)) {
         answers[0] = error;
         *answer_count = 1;
         return;
@@ -961,27 +1011,33 @@ bool lhatstdlib_channel_register(LhatProgram *program)
                               "p^ -> std.channel.Channel"
                               "|std.error.OutOfMemory;",
                               channel_make, module) &&
+           lhat_register_func(program, "std.channel", "new",
+                              "p^type^ -> std.channel.Channel<ARG0.T0>" REFUSAL,
+                              channel_make, module) &&
            lhat_register_func(program, "std.channel", "named",
                               "p^string^ -> std.channel.Channel"
                               "|std.error.OutOfMemory;",
                               channel_named, module) &&
+           lhat_register_func(program, "std.channel", "named",
+                              "p^string^, type^ -> std.channel.Channel<ARG1.T0>" REFUSAL,
+                              channel_named, module) &&
            lhat_register_member(program, "std.channel", "Channel", "push",
-                                "p^self^, any^ -> number^" REFUSAL,
+                                 "p^self^, self^.T0 -> number^" REFUSAL,
                                 channel_push, module) &&
            // 14.12: the two shapes of a wait are two arms of one name, the
            // way a host writes an optional argument (love does the same).
            lhat_register_member(program, "std.channel", "Channel", "supply",
-                                "p^self^, any^ -> bool^" REFUSAL,
+                                 "p^self^, self^.T0 -> bool^" REFUSAL,
                                 channel_supply, module) &&
            lhat_register_member(program, "std.channel", "Channel", "supply",
-                                "p^self^, any^, number^ -> bool^" REFUSAL,
+                                 "p^self^, self^.T0, number^ -> bool^" REFUSAL,
                                 channel_supply, module) &&
            lhat_register_member(program, "std.channel", "Channel", "pop",
-                                "p^self^ -> any^;", channel_pop, module) &&
+                                 "p^self^ -> self^.T0|nil^;", channel_pop, module) &&
            lhat_register_member(program, "std.channel", "Channel", "demand",
-                                "p^self^ -> any^;", channel_demand, module) &&
+                                 "p^self^ -> self^.T0|nil^;", channel_demand, module) &&
            lhat_register_member(program, "std.channel", "Channel", "demand",
-                                "p^self^, number^ -> any^;", channel_demand,
+                                 "p^self^, number^ -> self^.T0|nil^;", channel_demand,
                                 module) &&
            lhat_register_member(program, "std.channel", "Channel",
                                 "awaitable", "f^self^ -> number^;",
@@ -989,10 +1045,10 @@ bool lhatstdlib_channel_register(LhatProgram *program)
            // What await^ delegates to. c^ says a coroutine; what it ends
            // with is the value taken off the channel.
            lhat_register_member(program, "std.channel", "Channel", "take",
-                                "f^self^ -> c^{f^ -> number^ -> any^};",
+                                 "f^self^ -> c^{f^ -> number^ -> self^.T0|nil^};",
                                 channel_take, module) &&
            lhat_register_member(program, "std.channel", "Channel", "peek",
-                                "p^self^ -> any^;", channel_peek, module) &&
+                                 "p^self^ -> self^.T0|nil^;", channel_peek, module) &&
            lhat_register_member(program, "std.channel", "Channel", "count",
                                 "f^self^ -> number^;", channel_count,
                                 module) &&
@@ -1005,7 +1061,7 @@ bool lhatstdlib_channel_register(LhatProgram *program)
            // it closes over, which a fixed-arity closure cannot do through a
            // variadic signature.
            lhat_register_member(program, "std.channel", "Channel", "atomic",
-                                "p^self^, p^std.channel.Channel;;",
+                                 "p^self^, p^std.channel.Channel<self^.T0>;;",
                                 channel_atomic, module) &&
            lhat_register_member(program, "std.channel", "Channel", "dispose",
                                 "p^self^;", channel_dispose,

@@ -457,6 +457,7 @@ typedef struct {
 
 LhatType *lhat_type_result_attribute(LhatTypeArena *arena, LhatType *type);
 LhatType *lhat_type_argument_attribute(LhatTypeArena *arena, LhatType *type, size_t index);
+LhatType *lhat_type_instantiate_receiver(LhatTypeArena *arena, LhatType *type, LhatType *receiver);
 LhatType *lhat_type_instantiate_result(LhatTypeArena *arena, LhatType *type,
                                       const LhatType *const *args, size_t count);
 

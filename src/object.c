@@ -411,6 +411,68 @@ static bool hostdata_derives(LhatValue value, const LhatHostDataTag *tag)
     return false;
 }
 
+typedef struct TypeCloneSeen {
+    const LhatRuntimeType *source;
+    LhatRuntimeType *copy;
+    const struct TypeCloneSeen *outer;
+} TypeCloneSeen;
+
+static LhatRuntimeType *clone_runtime_type(LhatHeap *heap, const LhatRuntimeType *source,
+                                         const TypeCloneSeen *seen, unsigned depth)
+{
+    if (source == NULL) return NULL;
+    for (const TypeCloneSeen *s = seen; s; s = s->outer) {
+        if (s->source == source) return s->copy;
+    }
+    if (depth > 128) return NULL;
+    LhatRuntimeType *copy = lhat_type_rt_new(heap, source->kind);
+    if (copy == NULL) return NULL;
+    LhatObject header = copy->header;
+    *copy = *source;
+    copy->header = header;
+    copy->parts = NULL;
+    copy->part_count = 0;
+    copy->members = NULL;
+    copy->member_count = 0;
+    TypeCloneSeen here = {source, copy, seen};
+#define CLONE_TYPE_FIELD(field) \
+    copy->field = clone_runtime_type(heap, source->field, &here, depth + 1); \
+    if (source->field != NULL && copy->field == NULL) return NULL
+    CLONE_TYPE_FIELD(result);
+    CLONE_TYPE_FIELD(receive);
+    CLONE_TYPE_FIELD(produce);
+    CLONE_TYPE_FIELD(variadic);
+    CLONE_TYPE_FIELD(index_key);
+    CLONE_TYPE_FIELD(index_value);
+    CLONE_TYPE_FIELD(instance);
+#undef CLONE_TYPE_FIELD
+#define CLONE_NAME(field) \
+    if (source->field != NULL) { \
+        copy->field = lhat_string_new(heap, source->field->text, source->field->length); \
+        if (copy->field == NULL) return NULL; \
+    }
+    CLONE_NAME(enum_name);
+    CLONE_NAME(enum_owner_name);
+#undef CLONE_NAME
+    for (size_t i = 0; i < source->part_count; i++) {
+        LhatRuntimeType *part = clone_runtime_type(heap, source->parts[i], &here, depth + 1);
+        if ((part == NULL && source->parts[i] != NULL) || !lhat_type_rt_add_part(copy, part)) return NULL;
+    }
+    for (size_t i = 0; i < source->member_count; i++) {
+        const LhatRuntimeTypeMember *m = &source->members[i];
+        LhatString *name = lhat_string_new(heap, m->name->text, m->name->length);
+        LhatRuntimeType *type = clone_runtime_type(heap, m->type, &here, depth + 1);
+        if (name == NULL || (type == NULL && m->type != NULL) ||
+            !lhat_type_rt_add_member(copy, name, type)) return NULL;
+    }
+    return copy;
+}
+
+LhatRuntimeType *lhat_runtime_type_clone(LhatHeap *heap, const LhatRuntimeType *type)
+{
+    return clone_runtime_type(heap, type, NULL, 0);
+}
+
 bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
 {
     if (type == NULL) {
@@ -432,6 +494,8 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
             return lhat_is_number(value);
         case LHAT_TYPE_RT_STRING:
             return lhat_is_object_kind(value, LHAT_OBJECT_STRING);
+        case LHAT_TYPE_RT_TYPEINFO:
+            return lhat_is_object_kind(value, LHAT_OBJECT_TYPE);
         case LHAT_TYPE_RT_TABLE: {
             // 14.10: at least these members, which is what makes the judgement
             // structural rather than a question about where it came from.
@@ -791,6 +855,9 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
         case LHAT_TYPE_RT_ANY:
             type_put_text(w, "any^");
             return;
+        case LHAT_TYPE_RT_TYPEINFO:
+            type_put_text(w, "type^");
+            return;
         // 03 の 3.4: not a type. 05 の 8.7 has a signature read back as a type
         // expression, and one with this in it will not -- which is the point.
         // A place inference did not decide is where an annotation is wanted,
@@ -1061,6 +1128,7 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         // to any^ rather than to this, which keeps "nobody wrote one" apart
         // from "inference could not say".
         case LHAT_TYPE_RT_UNKNOWN:
+        case LHAT_TYPE_RT_TYPEINFO:
             return true;
         // 04 の 2.7: error^ and localerror^ are two types, not one.
         case LHAT_TYPE_RT_ERROR:
