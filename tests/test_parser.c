@@ -4229,8 +4229,32 @@ static void test_typeof(void)
     LHAT_CHECK_EQ_INT(first_value(&p)->v.jump.value->kind, LHAT_NODE_INT);
     parse_dispose(&p);
 
-    LHAT_TEST("the parentheses are not optional");
+    LHAT_TEST("the parentheses are optional");
     parse_text(&p, "var^ t = typeof^ 5\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_TYPEOF);
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.jump.value->kind, LHAT_NODE_INT);
+    parse_dispose(&p);
+
+    LHAT_TEST("bare typeof includes calls and members but not binary operators");
+    parse_text(&p, "var^ t = typeof^obj.make().value = number^\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_BINARY);
+    const LhatNode *operand = first_value(&p)->v.binary.left;
+    LHAT_CHECK_EQ_INT(operand->kind, LHAT_NODE_TYPEOF);
+    LHAT_CHECK_EQ_INT(operand->v.jump.value->kind, LHAT_NODE_MEMBER);
+    LHAT_CHECK_EQ_INT(operand->v.jump.value->v.access.target->kind, LHAT_NODE_CALL);
+    parse_dispose(&p);
+
+    LHAT_TEST("grouping a bare typeof exposes descriptor members");
+    parse_text(&p, "var^ t = (typeof^obj).signature\n");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    LHAT_CHECK_EQ_INT(first_value(&p)->kind, LHAT_NODE_MEMBER);
+    LHAT_CHECK_EQ_INT(first_value(&p)->v.access.target->kind, LHAT_NODE_TYPEOF);
+    parse_dispose(&p);
+
+    LHAT_TEST("a bare typeof still requires an operand");
+    parse_text(&p, "var^ t = typeof^\n");
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     parse_dispose(&p);
 

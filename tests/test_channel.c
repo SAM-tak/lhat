@@ -243,8 +243,10 @@ static LhatTestRan run_source(const char *text)
 static void test_typed_channels(void)
 {
     LHAT_TEST("explicit and typeof task descriptors preserve results across workers");
-    static const char *const descriptors[] = {"std.task.Task<number^>", "typeof^(task)"};
-    for (size_t i = 0; i < 2; i++) {
+    static const char *const descriptors[] = {
+        "std.task.Task<number^>", "typeof^(task)", "typeof^task"
+    };
+    for (size_t i = 0; i < sizeof descriptors / sizeof *descriptors; i++) {
         char source[2048];
         snprintf(source, sizeof source,
             "import^ std.channel\nimport^ std.task\ntry^std.task.start(2)\n"

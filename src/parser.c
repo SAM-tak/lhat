@@ -2091,9 +2091,9 @@ static LhatNode *parse_primary(Parser *p)
             if (check_hat(p, "def") && is_op(&p->ahead, LHAT_OP_LBRACE)) {
                 return parse_def(p);
             }
-            // 02 の 14.16: always parenthesized, and always exactly one
-            // operand -- a primary in its own right rather than a prefix
-            // operator with a precedence of its own.
+            // 02 の 14.16: the delimited form remains a primary, so
+            // typeof^(x).signature reads the descriptor's member. The bare
+            // prefix form is handled at the unary level below.
             if (check_hat(p, "typeof")) {
                 LhatToken at = p->current;
                 advance(p);
@@ -2523,6 +2523,18 @@ static LhatNode *parse_power(Parser *p)
 
 static LhatNode *parse_unary(Parser *p)
 {
+    // Like try^, the bare form includes calls and member accesses in its
+    // operand, but leaves binary operators outside. Keep typeof^(...) on
+    // the primary path to preserve the existing delimited spelling.
+    if (check_hat(p, "typeof") && !is_op(&p->ahead, LHAT_OP_LPAREN)) {
+        LhatToken at = p->current;
+        advance(p);
+        LhatNode *node = make(p, LHAT_NODE_TYPEOF, &at);
+        if (node == NULL) return NULL;
+        node->v.jump.value = parse_unary(p);
+        return finish(p, node);
+    }
+
     // 05 の 5 章. Unary like try^, so '(require^ "m").f' needs the brackets
     // that say what is being reached into.
     if (check_hat(p, "require")) {

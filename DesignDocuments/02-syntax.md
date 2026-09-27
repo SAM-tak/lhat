@@ -7871,6 +7871,15 @@ Scala が `abstract override` に同じ制約を課している。
 
 ### 14.16 `typeof^` — 値の型を文字列で得る
 
+括弧なしの `typeof^式` も書ける。`try^` と同じ優先順位の前置演算子で、
+呼び出し・メンバアクセスはオペランドに含み、二項演算は含まない。
+`typeof^obj.member` はメンバの型を返し、`typeof^x = number^` は型記述子同士を
+比較する。複合式全体の型は `typeof^(a + b)` と書く。
+
+従来の括弧付き形式は区切られた式として維持する。`typeof^(obj).signature`
+と `(typeof^obj).signature` はともに obj の型記述子の署名を返す。
+`std.channel.new(typeof^t1)` のような引数位置でも括弧は追加不要。
+
 > **`typeof^(式)` は、検査器がその式に決定した型を返す。
 > 検査を経ていない場合は、値のタグが O(1) で言えることだけを返す。
 > `typeof^(式).signature` は、それを 14.10 の構造そのままの文字列にする。**
