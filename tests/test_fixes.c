@@ -430,6 +430,62 @@ static void test_near(void)
 }
 
 // ---------------------------------------------------------------------------
+// 07 §6: the fixes that need no reading, all at once -- a machine fix that
+// is its diagnostic's only one, in source order.
+
+static void test_all(void)
+{
+    LHAT_TEST("every fix that needs no reading comes at once, in order");
+    {
+        static const char *const text = "var^ a : t^ = { }\n"
+                                        "let^ x = 1\n"
+                                        "x := 2\n"
+                                        "var^ b : t^ = { }\n";
+        LhatProgram program;
+        lhat_program_init(&program, true, load_one, (void *)text);
+        lhat_program_check(&program, "main.lh");
+        const LhatUnit *unit = lhat_program_units(&program);
+        LHAT_REQUIRE(unit != NULL, "the unit is there");
+
+        // The var^ the write to a let^ offers is a guess, so it stays out.
+        LhatFixEdit edits[4];
+        size_t count = lhat_unit_fix_all(unit, NULL, 0);
+        LHAT_CHECK_EQ_INT(count, 2);
+        LHAT_CHECK_EQ_INT(lhat_unit_fix_all(unit, edits, 4), 2);
+        LHAT_CHECK(count == 2 && edits[0].offset < edits[1].offset,
+                   "in the order they stand in the source");
+
+        char title[64];
+        lhat_unit_fix_all_title(unit, title, sizeof title);
+        LHAT_CHECK_EQ_STR(title, strlen(title),
+                          "apply every fix that needs no reading");
+
+        // Applied together, what they answered is gone and what wanted
+        // reading is still there to be read.
+        LhatFix all = {NULL, LHAT_FIX_MACHINE, edits, count < 4 ? count : 4};
+        char patched[256];
+        apply(text, &all, patched, sizeof patched);
+        LHAT_CHECK_EQ_STR(patched, strlen(patched),
+                          "var^ a : t^{} = { }\n"
+                          "let^ x = 1\n"
+                          "x := 2\n"
+                          "var^ b : t^{} = { }\n");
+        lhat_program_dispose(&program);
+    }
+
+    LHAT_TEST("and none where every fix wants reading");
+    {
+        static const char *const text = "let^ x = 1\nx := 2\n";
+        LhatProgram program;
+        lhat_program_init(&program, true, load_one, (void *)text);
+        lhat_program_check(&program, "main.lh");
+        LHAT_CHECK_EQ_INT(
+            lhat_unit_fix_all(lhat_program_units(&program), NULL, 0), 0);
+        lhat_program_dispose(&program);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The codes that know no fix, and the readings past the end.
 
 static void test_nothing(void)
@@ -470,6 +526,7 @@ int main(void)
     test_markers();
     test_dropped();
     test_near();
+    test_all();
     test_nothing();
     return lhat_test_report("test_fixes");
 }

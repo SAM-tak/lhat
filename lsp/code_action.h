@@ -23,4 +23,15 @@
 cJSON *lsp_code_actions_for_unit(const LhatUnit *unit, const char *uri,
                                  uint32_t from, uint32_t to);
 
+// 07 §6: one CodeAction of kind source.fixAll holding every edit of
+// lhat_unit_fix_all -- what an editor applies on save or from its "fix all"
+// command. NULL when there is nothing to apply, since an action that does
+// nothing is one more line in a menu.
+cJSON *lsp_fix_all_for_unit(const LhatUnit *unit, const char *uri);
+
+// Whether a CodeActionContext's `only` asks for `kind`. LSP's kinds are a
+// dotted hierarchy, so asking for "source" asks for "source.fixAll" too.
+// `only` NULL -- the client did not narrow -- asks for every kind.
+bool lsp_code_action_wanted(const cJSON *only, const char *kind);
+
 #endif  // LSP_CODE_ACTION_H

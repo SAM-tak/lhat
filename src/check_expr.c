@@ -4964,11 +4964,8 @@ static size_t marker_removal(const LhatNode *entry, LhatFixSlot *out)
     if (key == NULL || key->offset <= entry->offset) {
         return 0;
     }
-    out->title = lhat_fix_message(LHAT_FIX_REMOVE_MARKER);
-    out->confidence = LHAT_FIX_SUGGESTED;
-    out->edit.offset = entry->offset;
-    out->edit.length = key->offset - entry->offset;
-    out->edit.text = "";
+    *out = lhat_fix_slot(LHAT_FIX_REMOVE_MARKER, LHAT_FIX_SUGGESTED,
+                         entry->offset, key->offset - entry->offset, "");
     return 1;
 }
 
@@ -4986,11 +4983,8 @@ static size_t marker_choices(const LhatNode *entry, LhatFixSlot *out)
         {LHAT_FIX_WRITE_OVERLOAD, "overload^ "},
     };
     for (size_t i = 0; i < sizeof WORDS / sizeof WORDS[0]; i++) {
-        out[i].title = lhat_fix_message(WORDS[i].title);
-        out[i].confidence = LHAT_FIX_SUGGESTED;
-        out[i].edit.offset = entry->offset;
-        out[i].edit.length = 0;
-        out[i].edit.text = WORDS[i].text;
+        out[i] = lhat_fix_slot(WORDS[i].title, LHAT_FIX_SUGGESTED,
+                               entry->offset, 0, WORDS[i].text);
     }
     return sizeof WORDS / sizeof WORDS[0];
 }

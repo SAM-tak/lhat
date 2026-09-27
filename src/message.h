@@ -65,10 +65,18 @@ typedef enum {
     LHAT_FIX_REMOVE_ANNOTATION,
     LHAT_FIX_HAND_BACK,
     LHAT_FIX_DELEGATE,
-    LHAT_FIX_NEAR_NAME
+    LHAT_FIX_NEAR_NAME,
+    LHAT_FIX_ALL
 } LhatFixTitle;
 
 const LhatMessageEntry *lhat_fix_message(size_t which);
+
+// A fix of one edit, which is what most of them are; lhat_fix_slot_add puts
+// the next edit behind it, and answers false when the slot has no room.
+LhatFixSlot lhat_fix_slot(LhatFixTitle title, LhatFixConfidence confidence,
+                          uint32_t offset, uint32_t length, const char *text);
+bool lhat_fix_slot_add(LhatFixSlot *slot, uint32_t offset, uint32_t length,
+                       const char *text);
 
 // The entry for `code`, or NULL when the table holds none. `table` has to be
 // the array itself rather than a pointer to it, since the length is read off

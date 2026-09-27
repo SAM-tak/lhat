@@ -134,11 +134,16 @@ typedef struct {
 // what the codes with two ways out want -- write override^ or overload^ --
 // and every other code fills one.
 #define LHAT_FIX_SLOTS 2
+// And two edits is the most one fix makes so far: 14.5改's way out names the
+// side where the receiver stood and hands the receiver in as an argument.
+// The edits come in the order they stand in the source and never overlap.
+#define LHAT_FIX_EDITS 2
 
 typedef struct {
     const LhatMessageEntry *title;
     LhatFixConfidence confidence;
-    LhatFixEdit edit;
+    LhatFixEdit edits[LHAT_FIX_EDITS];
+    size_t edit_count;
 } LhatFixSlot;
 
 // How many fixes `slots` holds, and the `which`th of them as a reader sees

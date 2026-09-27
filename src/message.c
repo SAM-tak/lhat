@@ -134,63 +134,10 @@ size_t lhat_message_render(const char *text, const LhatMessageArg *args,
 // 10 §6.3: the English, written out as a catalog -- one file per source, its
 // entries all commented out, for a translation to be made from.
 
-// 07 §6: the titles a fix is offered under. A title names what the fix
-// writes, since that is what a reader is choosing between; `{text}` is what
-// the fix's first edit writes, for the one title that stands for any token
-// ("write '}'", not "write the token").
-static const LhatMessageEntry FIX_MESSAGES[] = {
-    [LHAT_FIX_WRITE_TOKEN] = {"fix.write-token", "write '{text}'"},
-    [LHAT_FIX_LET_TO_VAR] = {"fix.let-to-var",
-        "write var^ where the name is bound"},
-    [LHAT_FIX_VAR_TO_LET] = {"fix.var-to-let", "bind with let^"},
-    [LHAT_FIX_WRITE_OVERRIDE] = {"fix.write-override", "write override^"},
-    [LHAT_FIX_WRITE_OVERLOAD] = {"fix.write-overload", "write overload^"},
-    [LHAT_FIX_REMOVE_MARKER] = {"fix.remove-marker", "remove the marker"},
-    [LHAT_FIX_TABLE_MEMBERS] = {"fix.table-members", "write 't^{}'"},
-    [LHAT_FIX_REMOVE_SCOPE] = {"fix.remove-scope",
-        "remove the scope specifier"},
-    [LHAT_FIX_REMOVE_ANNOTATION] = {"fix.remove-annotation",
-        "remove this annotation"},
-    [LHAT_FIX_HAND_BACK] = {"fix.hand-back",
-        "write try^ to hand the failure back"},
-    [LHAT_FIX_DELEGATE] = {"fix.delegate", "write await^ to delegate"},
-    [LHAT_FIX_NEAR_NAME] = {"fix.near-name", "change to '{text}'"},
-};
-
-size_t lhat_fix_slot_count(const LhatFixSlot *slots)
-{
-    size_t count = 0;
-    while (slots != NULL && count < LHAT_FIX_SLOTS &&
-           slots[count].title != NULL) {
-        count++;
-    }
-    return count;
-}
-
-bool lhat_fix_slot_read(const LhatFixSlot *slots, size_t which, LhatFix *out)
-{
-    if (out == NULL || which >= lhat_fix_slot_count(slots)) {
-        return false;
-    }
-    out->title_id = slots[which].title->id;
-    out->confidence = slots[which].confidence;
-    out->edits = &slots[which].edit;
-    out->edit_count = 1;
-    return true;
-}
-
-LHAT_MESSAGE_TABLES(lhat_fix_message_tables,
-    {FIX_MESSAGES, LHAT_MESSAGE_COUNT(FIX_MESSAGES)})
-
-const LhatMessageEntry *lhat_fix_message(size_t which)
-{
-    return LHAT_MESSAGE_AT(FIX_MESSAGES, which);
-}
-
 typedef const LhatMessageTable *(*Tables)(size_t *count);
 
 // The sources this build holds, in the order 10 §3.1 lists them. A build
-// without the front end holds no check, parse or lex to write (10 §6.2).
+// without the front end holds no check, parse, lex or fix to write (10 §6.2).
 static const struct {
     const char *name;
     Tables tables;
@@ -206,7 +153,9 @@ static const struct {
     {"source", lhat_source_message_tables},
     {"report", lhat_report_message_tables},
     {"trace", lhat_trace_message_tables},
+#if LHAT_WITH_FRONTEND
     {"fix", lhat_fix_message_tables},
+#endif
 };
 
 const char *lhat_messages_source(size_t index)

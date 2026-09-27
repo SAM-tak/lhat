@@ -4782,11 +4782,8 @@ size_t lhat_unit_diagnostic_count(const LhatUnit *unit)
            unit->checked.diagnostic_count;
 }
 
-// One index over three arrays, in the order 03 の 1.1 runs them. Answers
-// false past the end, which is what makes every entry point here one bounds
-// test rather than three.
-static bool stage_of(const LhatUnit *unit, size_t index, LhatStage *stage,
-                     size_t *within)
+bool lhat_unit_stage_of(const LhatUnit *unit, size_t index, LhatStage *stage,
+                        size_t *within)
 {
     if (unit == NULL || !unit->loaded) {
         return false;
@@ -4818,7 +4815,7 @@ LhatUnitDiagnostic lhat_unit_diagnostic(const LhatUnit *unit, size_t index)
 
     LhatStage stage = LHAT_STAGE_LEXER;
     size_t within = 0;
-    if (!stage_of(unit, index, &stage, &within)) {
+    if (!lhat_unit_stage_of(unit, index, &stage, &within)) {
         return out;
     }
     out.stage = stage;
@@ -4860,7 +4857,7 @@ bool lhat_unit_diagnostic_relaxed_ok(const LhatUnit *unit, size_t index)
 {
     LhatStage stage = LHAT_STAGE_LEXER;
     size_t within = 0;
-    if (!stage_of(unit, index, &stage, &within) || stage != LHAT_STAGE_CHECKER) {
+    if (!lhat_unit_stage_of(unit, index, &stage, &within) || stage != LHAT_STAGE_CHECKER) {
         return false;
     }
     // 03 の 3.1's three: a gap left in a result, a parameter or a binding,
@@ -4882,7 +4879,7 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
 {
     LhatStage stage = LHAT_STAGE_LEXER;
     size_t within = 0;
-    if (!stage_of(unit, index, &stage, &within)) {
+    if (!lhat_unit_stage_of(unit, index, &stage, &within)) {
         if (out != NULL && capacity > 0) {
             out[0] = '\0';
         }
@@ -4925,82 +4922,11 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
 #endif
 }
 
-#if LHAT_WITH_FRONTEND
-// 07 §6: the fixes the diagnostic at `index` carries, whichever stage made
-// it. The lexer works none out -- a byte it cannot read says nothing about
-// what belonged there -- so its diagnostics answer none.
-static const LhatFixSlot *fix_slots_at(const LhatUnit *unit, size_t index)
-{
-    LhatStage stage = LHAT_STAGE_LEXER;
-    size_t within = 0;
-    if (!stage_of(unit, index, &stage, &within)) {
-        return NULL;
-    }
-    switch (stage) {
-        case LHAT_STAGE_PARSER:
-            return unit->parsed.diagnostics[within].fixes;
-        case LHAT_STAGE_CHECKER:
-            return unit->checked.diagnostics[within].fixes;
-        case LHAT_STAGE_LEXER:
-        default:
-            return NULL;
-    }
-}
-#endif
-
-size_t lhat_unit_diagnostic_fix_count(const LhatUnit *unit, size_t index)
-{
-#if !LHAT_WITH_FRONTEND
-    (void)unit;
-    (void)index;
-    return 0;
-#else
-    return lhat_fix_slot_count(fix_slots_at(unit, index));
-#endif
-}
-
-bool lhat_unit_diagnostic_fix(const LhatUnit *unit, size_t index, size_t which,
-                              LhatFix *out)
-{
-#if !LHAT_WITH_FRONTEND
-    (void)unit;
-    (void)index;
-    (void)which;
-    (void)out;
-    return false;
-#else
-    return lhat_fix_slot_read(fix_slots_at(unit, index), which, out);
-#endif
-}
-
-size_t lhat_unit_diagnostic_fix_title(const LhatUnit *unit, size_t index,
-                                      size_t which, char *out, size_t capacity)
-{
-#if !LHAT_WITH_FRONTEND
-    (void)unit;
-    (void)index;
-    (void)which;
-    return lhat_message_render("", NULL, 0, out, capacity);
-#else
-    const LhatFixSlot *slots = fix_slots_at(unit, index);
-    LhatFix fix;
-    if (!lhat_fix_slot_read(slots, which, &fix)) {
-        return lhat_message_render("", NULL, 0, out, capacity);
-    }
-    const LhatMessageEntry *title = slots[which].title;
-    const char *text =
-        lhat_program_text(unit->program, title->id, title->text);
-    const char *wrote = fix.edits[0].text != NULL ? fix.edits[0].text : "";
-    const LhatMessageArg arg = {"text", wrote, strlen(wrote)};
-    return lhat_message_render(text, &arg, 1, out, capacity);
-#endif
-}
-
 const char *lhat_unit_diagnostic_id(const LhatUnit *unit, size_t index)
 {
     LhatStage stage = LHAT_STAGE_LEXER;
     size_t within = 0;
-    if (!stage_of(unit, index, &stage, &within)) {
+    if (!lhat_unit_stage_of(unit, index, &stage, &within)) {
         return NULL;
     }
 #if !LHAT_WITH_FRONTEND

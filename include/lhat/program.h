@@ -425,6 +425,11 @@ const char *lhat_unit_diagnostic_id(const LhatUnit *unit, size_t index);
 // 07 §6: the fixes this diagnostic knows how to make, and what one of them
 // is. A tool shows the title and applies the edits in the order they come.
 // A unit that reports nothing of its own (a binary one) answers none.
+//
+// This and the fix-all pair below are the front end's (src/fix.c): the
+// parser and the checker work fixes out, so a build without
+// LHAT_WITH_FRONTEND has none of the five, the way it has no
+// lhat/completion.h.
 size_t lhat_unit_diagnostic_fix_count(const LhatUnit *unit, size_t index);
 bool lhat_unit_diagnostic_fix(const LhatUnit *unit, size_t index, size_t which,
                               LhatFix *out);
@@ -433,6 +438,20 @@ bool lhat_unit_diagnostic_fix(const LhatUnit *unit, size_t index, size_t which,
 size_t lhat_unit_diagnostic_fix_title(const LhatUnit *unit, size_t index,
                                       size_t which, char *out,
                                       size_t capacity);
+
+// 07 §6: every edit of the fixes that may be applied without being read --
+// a diagnostic's fix when it is machine-applicable and the only one it has,
+// the same one an editor may put first -- in source order. No two meet: a
+// fix with an edit meeting one already taken is left out whole, for the next
+// check to offer again, so applying these and checking once more answers
+// what they held back. Filled and counted as the other lists are, so
+// measuring is a call with (NULL, 0).
+size_t lhat_unit_fix_all(const LhatUnit *unit, LhatFixEdit *into,
+                         size_t capacity);
+// The title that whole is offered under, in the program's language.
+// Follows lhat_report_write.
+size_t lhat_unit_fix_all_title(const LhatUnit *unit, char *out,
+                               size_t capacity);
 
 size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
                                   bool rich, char *out, size_t capacity);

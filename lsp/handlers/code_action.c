@@ -26,6 +26,12 @@ typedef struct {
     int start_character;
     int end_line;
     int end_character;
+    // 07 §6: what `context.only` asked for. The fixes of the diagnostics in
+    // the range answer "quickfix"; every fix that needs no reading answers
+    // "source.fixAll", and only when asked -- an editor asks for it on save
+    // or from its own command, not from the light bulb.
+    bool quick;
+    bool all;
     cJSON *actions;  // the array to answer with, or NULL until one is made
 } CodeActionRequest;
 
@@ -36,8 +42,14 @@ static void offer(void *context, const LhatUnit *unit)
         lsp_unit_offset_at(unit, request->start_line, request->start_character);
     uint32_t to =
         lsp_unit_offset_at(unit, request->end_line, request->end_character);
-    request->actions =
-        lsp_code_actions_for_unit(unit, request->uri, from, to);
+    request->actions = request->quick
+                           ? lsp_code_actions_for_unit(unit, request->uri, from,
+                                                       to)
+                           : cJSON_CreateArray();
+    cJSON *all = request->all ? lsp_fix_all_for_unit(unit, request->uri) : NULL;
+    if (all != NULL) {
+        cJSON_AddItemToArray(request->actions, all);
+    }
 }
 
 // One end of the range the editor asked about. Absent or malformed reads as
@@ -77,6 +89,13 @@ cJSON *lsp_handle_code_action(LspServer *server, const cJSON *params)
     const cJSON *range = cJSON_GetObjectItemCaseSensitive(params, "range");
     read_position(range, "start", &request.start_line, &request.start_character);
     read_position(range, "end", &request.end_line, &request.end_character);
+    const cJSON *context = cJSON_GetObjectItemCaseSensitive(params, "context");
+    const cJSON *only = cJSON_GetObjectItemCaseSensitive(context, "only");
+    if (!cJSON_IsArray(only)) {
+        only = NULL;
+    }
+    request.quick = lsp_code_action_wanted(only, "quickfix");
+    request.all = only != NULL && lsp_code_action_wanted(only, "source.fixAll");
 
     lsp_workspace_with_unit(&server->workspace, path, offer, &request);
     free(path);

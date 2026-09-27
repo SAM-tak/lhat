@@ -125,7 +125,7 @@ int main(void)
         cJSON *actions = lsp_code_actions_for_unit(&c.unit, uri, 0,
                                                    (uint32_t)c.source.length);
         LHAT_CHECK(actions != NULL && cJSON_GetArraySize(actions) == 0,
-                   "the checker works none out yet");
+                   "a value that does not fit has no one fix");
         cJSON_Delete(actions);
         dispose(&c);
     }
@@ -153,6 +153,64 @@ int main(void)
                    "an empty array, not nothing at all");
         cJSON_Delete(actions);
         dispose(&c);
+    }
+
+    // 07 §6: every fix that needs no reading, as the one action an editor
+    // applies on save. The write to a let^ is a guess, so it stays out.
+    LHAT_TEST("the fixes that need no reading come as one source.fixAll");
+    {
+        Checked c;
+        check_text(&c, "var^ a : t^ = { }\nlet^ x = 1\nx := 2\n"
+                       "var^ b : t^ = { }\n");
+        cJSON *all = lsp_fix_all_for_unit(&c.unit, uri);
+        LHAT_REQUIRE(all != NULL, "there is something to apply");
+        const char *kind = string_at(all, "kind");
+        LHAT_CHECK(kind != NULL && strcmp(kind, "source.fixAll") == 0,
+                   "it is the fix-all kind");
+        const char *title = string_at(all, "title");
+        LHAT_CHECK(title != NULL &&
+                       strcmp(title, "apply every fix that needs no reading") ==
+                           0,
+                   "under its own title: '%s'", title != NULL ? title : "");
+        const cJSON *edits = cJSON_GetObjectItemCaseSensitive(
+            cJSON_GetObjectItemCaseSensitive(
+                cJSON_GetObjectItemCaseSensitive(all, "edit"), "changes"),
+            uri);
+        LHAT_CHECK(cJSON_IsArray(edits) && cJSON_GetArraySize(edits) == 2,
+                   "the two braces and not the var^");
+        cJSON_Delete(all);
+        dispose(&c);
+    }
+
+    LHAT_TEST("and nothing at all where every fix wants reading");
+    {
+        Checked c;
+        check_text(&c, "let^ x = 1\nx := 2\n");
+        LHAT_CHECK(lsp_fix_all_for_unit(&c.unit, uri) == NULL,
+                   "no action that would do nothing");
+        dispose(&c);
+    }
+
+    // LSP's kinds are a dotted hierarchy: asking for "source" asks for
+    // every kind under it, and not asking narrows nothing.
+    LHAT_TEST("what context.only asks for decides which kinds answer");
+    {
+        cJSON *source = cJSON_Parse("[\"source\"]");
+        cJSON *quick = cJSON_Parse("[\"quickfix\"]");
+        cJSON *near = cJSON_Parse("[\"source.fix\"]");
+        LHAT_CHECK(lsp_code_action_wanted(source, "source.fixAll"),
+                   "source takes in source.fixAll");
+        LHAT_CHECK(!lsp_code_action_wanted(source, "quickfix"),
+                   "and not quickfix");
+        LHAT_CHECK(!lsp_code_action_wanted(quick, "source.fixAll"),
+                   "quickfix does not take in source.fixAll");
+        LHAT_CHECK(!lsp_code_action_wanted(near, "source.fixAll"),
+                   "a prefix counts at a dot and nowhere else");
+        LHAT_CHECK(lsp_code_action_wanted(NULL, "quickfix"),
+                   "not narrowing asks for everything");
+        cJSON_Delete(source);
+        cJSON_Delete(quick);
+        cJSON_Delete(near);
     }
 
     return lhat_test_report("test_code_action");

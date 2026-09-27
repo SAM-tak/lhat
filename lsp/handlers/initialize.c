@@ -166,9 +166,9 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     // 07 §6: the fixes a diagnostic knows how to make. The library works
     // them out, so what the editor is told here is only that there are some.
     cJSON *code_action = cJSON_CreateObject();
-    static const char *const kinds[] = {"quickfix"};
+    static const char *const kinds[] = {"quickfix", "source.fixAll"};
     cJSON_AddItemToObject(code_action, "codeActionKinds",
-                          string_array(kinds, 1));
+                          string_array(kinds, 2));
     cJSON_AddItemToObject(capabilities, "codeActionProvider", code_action);
 
     // The outline, from the tree alone (document_symbol.h).

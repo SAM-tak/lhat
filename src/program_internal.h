@@ -533,4 +533,10 @@ const LhatType *lhat_program_enum_identity(LhatProgram *program,
 const LhatRuntimeType *lhat_program_signature_type(LhatProgram *program,
                                                    const char *text);
 
+// 07 §6 and the diagnostic accessors: one index over the three stages'
+// arrays, in the order 03 の 1.1 runs them. Answers false past the end, which
+// is what makes every entry point one bounds test rather than three.
+bool lhat_unit_stage_of(const LhatUnit *unit, size_t index, LhatStage *stage,
+                        size_t *within);
+
 #endif  // LHAT_PROGRAM_INTERNAL_H

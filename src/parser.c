@@ -281,11 +281,8 @@ static void report_expected(Parser *p, const LhatToken *at, LhatOpKind op)
     // 07 §6: what would have been right is the token itself, written where
     // the one that was there begins. Suggested rather than machine: the
     // parser noticed it here, and what was left out may belong further back.
-    d->fixes[0].title = lhat_fix_message(LHAT_FIX_WRITE_TOKEN);
-    d->fixes[0].confidence = LHAT_FIX_SUGGESTED;
-    d->fixes[0].edit.offset = d->offset;
-    d->fixes[0].edit.length = 0;
-    d->fixes[0].edit.text = lhat_op_name(op);
+    d->fixes[0] = lhat_fix_slot(LHAT_FIX_WRITE_TOKEN, LHAT_FIX_SUGGESTED,
+                                d->offset, 0, lhat_op_name(op));
 }
 
 static LhatNode *make(Parser *p, LhatNodeKind kind, const LhatToken *at)

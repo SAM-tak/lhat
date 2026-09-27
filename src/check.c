@@ -175,11 +175,9 @@ void chk_report_near(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
         if (kept != NULL) {
             // Suggested: a near name is a guess at what was meant, and the
             // name that was written may be one still to be made.
-            fix.title = lhat_fix_message(LHAT_FIX_NEAR_NAME);
-            fix.confidence = LHAT_FIX_SUGGESTED;
-            fix.edit.offset = spelt->offset;
-            fix.edit.length = spelt->end - spelt->offset;
-            fix.edit.text = kept;
+            fix = lhat_fix_slot(LHAT_FIX_NEAR_NAME, LHAT_FIX_SUGGESTED,
+                                spelt->offset, spelt->end - spelt->offset,
+                                kept);
             count = 1;
         }
     }
@@ -475,11 +473,8 @@ static size_t annotation_removal(const Checker *c, const LhatNode *at,
     if (from > 0 && source->text[from - 1] == '@') {
         from--;
     }
-    out->title = lhat_fix_message(LHAT_FIX_REMOVE_ANNOTATION);
-    out->confidence = LHAT_FIX_SUGGESTED;
-    out->edit.offset = from;
-    out->edit.length = (uint32_t)(through - from);
-    out->edit.text = "";
+    *out = lhat_fix_slot(LHAT_FIX_REMOVE_ANNOTATION, LHAT_FIX_SUGGESTED, from,
+                         (uint32_t)(through - from), "");
     return 1;
 }
 
@@ -1693,9 +1688,9 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
                 // 07 §6: and so the fix is the braces, written where the
                 // word ends. Machine-appliable: the sentence above says
                 // there is one thing this could have been.
-                const LhatFixSlot braces = {
-                    lhat_fix_message(LHAT_FIX_TABLE_MEMBERS), LHAT_FIX_MACHINE,
-                    {node->end, 0, "{}"}};
+                const LhatFixSlot braces = lhat_fix_slot(
+                    LHAT_FIX_TABLE_MEMBERS, LHAT_FIX_MACHINE, node->end, 0,
+                    "{}");
                 chk_report_fix(c, node, LHAT_CHECK_ERR_BARE_TABLE_TYPE, NULL,
                                0, &braces, 1);
                 return lhat_type_table(c->result->types);

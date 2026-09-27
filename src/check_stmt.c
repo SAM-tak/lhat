@@ -300,9 +300,9 @@ void chk_check_define(Checker *c, const LhatNode *node)
         // the other way out is the accessor this paragraph describes, which
         // no one edit writes.
         const LhatSpan word = node->v.binding.keyword;
-        const LhatFixSlot bind = {lhat_fix_message(LHAT_FIX_VAR_TO_LET),
-                                  LHAT_FIX_SUGGESTED,
-                                  {word.offset, word.length, "let^"}};
+        const LhatFixSlot bind = lhat_fix_slot(
+            LHAT_FIX_VAR_TO_LET, LHAT_FIX_SUGGESTED, word.offset, word.length,
+            "let^");
         chk_report_fix(c, node, LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE, NULL, 0,
                        &bind, word.length > 0 ? 1 : 0);
     }
@@ -357,9 +357,9 @@ void chk_check_define(Checker *c, const LhatNode *node)
                 bare != NULL && bare->offset > spelt->offset
                     ? bare->offset - spelt->offset
                     : 0;
-            const LhatFixSlot drop = {lhat_fix_message(LHAT_FIX_REMOVE_SCOPE),
-                                      LHAT_FIX_SUGGESTED,
-                                      {spelt->offset, sigil, ""}};
+            const LhatFixSlot drop = lhat_fix_slot(
+                LHAT_FIX_REMOVE_SCOPE, LHAT_FIX_SUGGESTED, spelt->offset, sigil,
+                "");
             chk_report_fix(c, target, LHAT_CHECK_ERR_SCOPE_ON_DEFINE, NULL, 0,
                            &drop, sigil > 0 ? 1 : 0);
         }
@@ -1217,10 +1217,9 @@ static void check_immutable_write(Checker *c, const LhatNode *target)
         // 07 §6: and where there is one, the fix is that word becoming
         // var^. Suggested: not writing to the name is the other way out, and
         // an edit cannot say that.
-        const LhatFixSlot change = {lhat_fix_message(LHAT_FIX_LET_TO_VAR),
-                                    LHAT_FIX_SUGGESTED,
-                                    {b->keyword.offset, b->keyword.length,
-                                     "var^"}};
+        const LhatFixSlot change = lhat_fix_slot(
+            LHAT_FIX_LET_TO_VAR, LHAT_FIX_SUGGESTED, b->keyword.offset,
+            b->keyword.length, "var^");
         chk_report_fix(c, name_node,
                        b->bound_by_form ? LHAT_CHECK_ERR_ASSIGN_TO_FORM
                                         : LHAT_CHECK_ERR_ASSIGN_TO_LET,
@@ -2454,9 +2453,9 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 // 07 §6: await^ in front of it runs the body here, which is
                 // the reading that keeps the statement. Keeping the coroutine
                 // wants a name, and naming it is the writer's to do.
-                const LhatFixSlot run = {lhat_fix_message(LHAT_FIX_DELEGATE),
-                                         LHAT_FIX_SUGGESTED,
-                                         {node->offset, 0, "await^ "}};
+                const LhatFixSlot run = lhat_fix_slot(
+                    LHAT_FIX_DELEGATE, LHAT_FIX_SUGGESTED, node->offset, 0,
+                    "await^ ");
                 chk_report_fix(c, node, LHAT_CHECK_ERR_COROUTINE_DROPPED, NULL,
                                0, &run, 1);
             }
@@ -2471,9 +2470,9 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 // 07 §6: try^ in front of it hands the failure to the caller.
                 // Suggested twice over -- the body has to declare the arm
                 // (04 の 5.3), and catching it here may be what was meant.
-                const LhatFixSlot hand = {lhat_fix_message(LHAT_FIX_HAND_BACK),
-                                          LHAT_FIX_SUGGESTED,
-                                          {node->offset, 0, "try^ "}};
+                const LhatFixSlot hand = lhat_fix_slot(
+                    LHAT_FIX_HAND_BACK, LHAT_FIX_SUGGESTED, node->offset, 0,
+                    "try^ ");
                 chk_report_fix(c, node, LHAT_CHECK_ERR_ERROR_DROPPED, NULL, 0,
                                &hand, 1);
             }
