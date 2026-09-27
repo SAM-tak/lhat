@@ -13,8 +13,19 @@ Meant to be embedded. The language builds as a library that reaches its
 surroundings through a handful of functions a host can replace, and a host
 registers what it provides by writing the type out in C.
 
+## Existing Language Bindings
+
+- [Godot](https://github.com/SAM-tak/lhat-gdextension)
+- [LOVE 2D](https://github.com/SAM-tak/lhat-love)
+- [UnrealEngine](https://github.com/SAM-tak/lhat-UE) (Early Experimental)
+
+## IDE Support
+
+- [VSCode](https://marketplace.visualstudio.com/items?itemName=SAMtak.lhat)
+
 ## Main Features
 
+- Strong Statically Typing
 - Gradual Typing
 - Bidirectional Type inference
 - Small Footprints & Less Depenencies
