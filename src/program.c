@@ -1905,6 +1905,20 @@ bool lhat_register_hostdata_shared(LhatProgram *program, const char *module,
     return false;
 }
 
+bool lhat_register_hostdata_type_arguments(LhatProgram *program, const char *module,
+                                          const char *name, LhatHostTypeArgumentFn read,
+                                          void *context)
+{
+    if (program == NULL || module == NULL || name == NULL) return false;
+    for (size_t i = 0; i < program->host_type_entry_count; i++) {
+        const LhatHostTypeEntry *at = &program->host_type_entries[i];
+        if (strcmp(at->module, module) == 0 && strcmp(at->name, name) == 0) {
+            return lhat_registry_set_type_arguments(at->tag, read, context);
+        }
+    }
+    return false;
+}
+
 // lhat_register_error_kind の失敗経路が繰り返し要る後始末: variant_copies
 // の先頭 filled_count 個(まだ何も書かれていない calloc 直後なら 0)と、
 // 配列自体2つ。variants/variant_copies のどちらかが NULL でも(要素数0の

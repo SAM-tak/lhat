@@ -1315,6 +1315,14 @@ LhatValue lhat_coroutine_fresh_slot(LhatValue coroutine, size_t index)
                : lhat_nil();
 }
 
+const LhatRuntimeType *lhat_coroutine_result_type(LhatValue coroutine)
+{
+    if (!lhat_is_object_kind(coroutine, LHAT_OBJECT_COROUTINE)) return NULL;
+    const LhatCoroutine *body = (const LhatCoroutine *)lhat_as_object(coroutine);
+    return body->closure != NULL && body->closure->proto != NULL
+               ? body->closure->proto->result_type : NULL;
+}
+
 LhatValue lhat_coroutine_fresh_closure(LhatValue coroutine)
 {
     const LhatCoroutine *co = fresh_body(coroutine);

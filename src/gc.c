@@ -182,6 +182,8 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
                 reach(gray, (LhatObject *)type->members[i].type);
             }
             reach(gray, (LhatObject *)type->result);
+            reach(gray, (LhatObject *)type->receive);
+            reach(gray, (LhatObject *)type->produce);
             reach(gray, (LhatObject *)type->variadic);
             reach(gray, (LhatObject *)type->index_key);
             reach(gray, (LhatObject *)type->index_value);

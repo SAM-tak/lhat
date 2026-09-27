@@ -527,6 +527,9 @@ bool lhat_coroutine_is_fresh_body(LhatValue coroutine);
 size_t lhat_coroutine_fresh_width(LhatValue coroutine);
 LhatValue lhat_coroutine_fresh_slot(LhatValue coroutine, size_t index);
 LhatValue lhat_coroutine_fresh_closure(LhatValue coroutine);
+// Borrowed final-result metadata of a body coroutine; NULL for no result or
+// a coroutine without a body. Clone it before retaining it across machines.
+const LhatRuntimeType *lhat_coroutine_result_type(LhatValue coroutine);
 
 // The other half: a coroutine of `closure` with that register image, made
 // rather than called. A call would lay the arguments out a second time --

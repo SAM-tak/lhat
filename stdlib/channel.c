@@ -181,6 +181,12 @@ static void leave(Channel *channel, LhatMachine *machine)
 
 // 05 の 8.8改2's retain/let_go, which is also how the module's own code
 // keeps a channel while it is only in the table of names.
+static const LhatRuntimeType *channel_type_argument(const void *pointer, size_t index, void *context)
+{
+    (void)context;
+    return index == 0 ? ((const Channel *)pointer)->element_type : NULL;
+}
+
 static void channel_retain(void *pointer, void *context)
 {
     Channel *channel = (Channel *)pointer;
@@ -1068,6 +1074,8 @@ bool lhatstdlib_channel_register(LhatProgram *program)
                                 (void *)module->tag) &&
            // 8.8改2: a channel crosses machines as its pointer, which is
            // what lets one be pushed into another or handed to spawn.
+           lhat_register_hostdata_type_arguments(program, "std.channel", "Channel",
+                                                 channel_type_argument, NULL) &&
            lhat_register_hostdata_shared(program, "std.channel", "Channel",
                                          channel_retain, channel_let_go,
                                          NULL);

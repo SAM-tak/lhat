@@ -479,6 +479,25 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
         return true;  // nothing was written, so nothing is asked
     }
     switch (type->kind) {
+        case LHAT_TYPE_RT_APPLIED: {
+            const LhatRuntimeType *base = type->result;
+            if (base == NULL || !lhat_value_satisfies(value, base)) return false;
+            if (base->kind == LHAT_TYPE_RT_TYPEINFO) {
+                return type->part_count == 1 &&
+                    lhat_runtime_type_equal((const LhatRuntimeType *)lhat_as_object(value), type->parts[0]);
+            }
+            if (base->kind != LHAT_TYPE_RT_HOSTDATA || base->hostdata_tag == NULL ||
+                base->hostdata_tag->type_argument == NULL) return false;
+            const LhatHostDataTag *tag = base->hostdata_tag;
+            const void *pointer = ((const LhatHostData *)lhat_as_object(value))->pointer;
+            if (pointer == NULL) return false;
+            for (size_t i = 0; i < type->part_count; i++) {
+                const LhatRuntimeType *argument = tag->type_argument(pointer, i, tag->type_argument_context);
+                if (argument == NULL || !lhat_runtime_type_equal(argument, type->parts[i])) return false;
+            }
+            // A specialization has an exact argument count, not a prefix.
+            return tag->type_argument(pointer, type->part_count, tag->type_argument_context) == NULL;
+        }
         case LHAT_TYPE_RT_ANY:
         // 03 の 3.4: inference did not decide, so nothing is being asked --
         // the same answer as a place nobody wrote. Only 14.16's writing tells
@@ -858,6 +877,15 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
         case LHAT_TYPE_RT_TYPEINFO:
             type_put_text(w, "type^");
             return;
+        case LHAT_TYPE_RT_APPLIED:
+            write_runtime_type(w, type->result);
+            type_put_text(w, "<");
+            for (size_t i = 0; i < type->part_count; i++) {
+                if (i != 0) type_put_text(w, ", ");
+                write_runtime_type(w, type->parts[i]);
+            }
+            type_put_text(w, ">");
+            return;
         // 03 の 3.4: not a type. 05 の 8.7 has a signature read back as a type
         // expression, and one with this in it will not -- which is the point.
         // A place inference did not decide is where an annotation is wanted,
@@ -1118,6 +1146,12 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         return false;
     }
     switch (a->kind) {
+        case LHAT_TYPE_RT_APPLIED:
+            if (a->part_count != b->part_count || !lhat_runtime_type_equal(a->result, b->result)) return false;
+            for (size_t i = 0; i < a->part_count; i++) {
+                if (!lhat_runtime_type_equal(a->parts[i], b->parts[i])) return false;
+            }
+            return true;
         case LHAT_TYPE_RT_ANY:
         case LHAT_TYPE_RT_NIL:
         case LHAT_TYPE_RT_BOOL:

@@ -2,6 +2,7 @@
 
 #include "check_internal.h"
 #include "instantiation_internal.h"
+#include "rttype.h"
 
 // ---------------------------------------------------------------------------
 // Expressions
@@ -12,7 +13,7 @@ typedef struct RuntimeArgumentSeen {
     const struct RuntimeArgumentSeen *outer;
 } RuntimeArgumentSeen;
 
-static bool runtime_has_type_arguments(const LhatType *type, const RuntimeArgumentSeen *seen)
+static bool runtime_has_unresolved_arguments(const LhatType *type, const RuntimeArgumentSeen *seen)
 {
     if (type == NULL) return false;
     for (const RuntimeArgumentSeen *s = seen; s != NULL; s = s->outer) {
@@ -20,28 +21,34 @@ static bool runtime_has_type_arguments(const LhatType *type, const RuntimeArgume
     }
     RuntimeArgumentSeen here = {type, seen};
     seen = &here;
-    if (type->specialization_base != NULL || type->kind == LHAT_TYPE_ARGUMENT) return true;
+    if (type->kind == LHAT_TYPE_ARGUMENT) return true;
+    if (type->specialization_base != NULL) {
+        for (const LhatTypeList *a = type->specialization_arguments; a; a = a->next) {
+            if (runtime_has_unresolved_arguments(a->type, seen)) return true;
+        }
+        return false;
+    }
     if (type->kind == LHAT_TYPE_UNION || type->kind == LHAT_TYPE_INTERSECT ||
         type->kind == LHAT_TYPE_TUPLE) {
         for (const LhatTypeList *a = type->v.composite.arms; a; a = a->next) {
-            if (runtime_has_type_arguments(a->type, seen)) return true;
+            if (runtime_has_unresolved_arguments(a->type, seen)) return true;
         }
     } else if (type->kind == LHAT_TYPE_TABLE && !type->v.table.nominal) {
         for (const LhatTypeMember *m = type->v.table.members; m; m = m->next) {
-            if (runtime_has_type_arguments(m->type, seen)) return true;
+            if (runtime_has_unresolved_arguments(m->type, seen)) return true;
         }
-        return runtime_has_type_arguments(type->v.table.variadic, seen) ||
-               runtime_has_type_arguments(type->v.table.index_value, seen);
+        return runtime_has_unresolved_arguments(type->v.table.variadic, seen) ||
+               runtime_has_unresolved_arguments(type->v.table.index_value, seen);
     } else if (type->kind == LHAT_TYPE_FUNC) {
         for (const LhatTypeList *p = type->v.func.params; p; p = p->next) {
-            if (runtime_has_type_arguments(p->type, seen)) return true;
+            if (runtime_has_unresolved_arguments(p->type, seen)) return true;
         }
-        return runtime_has_type_arguments(type->v.func.result, seen) ||
-               runtime_has_type_arguments(type->v.func.variadic, seen);
+        return runtime_has_unresolved_arguments(type->v.func.result, seen) ||
+               runtime_has_unresolved_arguments(type->v.func.variadic, seen);
     } else if (type->kind == LHAT_TYPE_CORO) {
-        return runtime_has_type_arguments(type->v.coroutine.receive, seen) ||
-               runtime_has_type_arguments(type->v.coroutine.produce, seen) ||
-               runtime_has_type_arguments(type->v.coroutine.result, seen);
+        return runtime_has_unresolved_arguments(type->v.coroutine.receive, seen) ||
+               runtime_has_unresolved_arguments(type->v.coroutine.produce, seen) ||
+               runtime_has_unresolved_arguments(type->v.coroutine.result, seen);
     }
     return false;
 }
@@ -1289,7 +1296,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
     // the rest of the comparisons).
     if (op == LHAT_OP_FITS) {
         LhatType *asked = chk_resolve_type(c, node->v.binary.right);
-        if (runtime_has_type_arguments(asked, 0)) {
+        if (runtime_has_unresolved_arguments(asked, 0)) {
             chk_report(c, node->v.binary.right, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
         }
         // 13.7: any^ is the top of every value, so this holds of whatever is
@@ -2685,7 +2692,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             chk_report(c, node, LHAT_CHECK_ERR_NO_RESULT_TYPE);
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
-        if (runtime_has_type_arguments(answer, NULL)) {
+        if (runtime_has_unresolved_arguments(answer, NULL)) {
             chk_report(c, node, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
         }
         if (node != NULL) {
@@ -6032,7 +6039,7 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
     }
     if (expects_descriptor && capture != NULL && *capture != NULL &&
         !(type != NULL && type->kind == LHAT_TYPE_TABLE && type->v.table.is_typeinfo)) {
-        if (runtime_has_type_arguments(*capture, NULL)) {
+        if (runtime_has_unresolved_arguments(*capture, NULL)) {
             chk_report(c, node, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
         }
         ((LhatNode *)node)->descriptor_type = *capture;
@@ -6285,7 +6292,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 }
                 if (op == LHAT_OP_FITS) {
                     LhatType *asked = chk_resolve_type(c, operand);
-                    if (runtime_has_type_arguments(asked, 0)) {
+                    if (runtime_has_unresolved_arguments(asked, 0)) {
                         chk_report(c, operand, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
                     }
                     if (asked != NULL && asked->kind == LHAT_TYPE_ANY) {
@@ -6365,7 +6372,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             LhatType *actual = chk_require_value(
                 c, node->v.ascription.value, chk_infer(c, node->v.ascription.value));
             LhatType *wanted = chk_resolve_type(c, node->v.ascription.type);
-            if (runtime_has_type_arguments(wanted, 0)) {
+            if (runtime_has_unresolved_arguments(wanted, 0)) {
                 chk_report(c, node->v.ascription.type, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
             }
             if (lhat_type_disjoint(actual, wanted)) {
@@ -6513,19 +6520,14 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             return successful_error_result(c, kept);
         }
 
-        // 02 の 14.16: the operand is still checked -- an error inside it is
-        // still an error -- but what the operand's own type turns out to be
-        // usually leaves typeof^ with the erased descriptor type. Primitive
-        // tags can be represented exactly and retain type^<T>. The payload is filled in at run
-        // time by reflect_type reading the actual value, unless 03 の 5.11a's
-        // narrow exception applies -- kept here on the node itself for
-        // compile_expression to read back.
+        // 02 の 14.16: preserve the checked type in both the descriptor value
+        // and type^<T>. Match the compiler's error/tag fallback: those answers
+        // have erased type^, since their exact descriptor is known only at run.
         case LHAT_NODE_TYPEOF: {
             LhatType *operand = chk_infer(c, node->v.jump.value);
             ((LhatNode *)node)->checked_type = operand;
-            if (operand != NULL && (operand->kind == LHAT_TYPE_NIL ||
-                operand->kind == LHAT_TYPE_BOOL || operand->kind == LHAT_TYPE_NUMBER ||
-                operand->kind == LHAT_TYPE_STRING)) return chk_typeinfo_of(c, operand);
+            if (operand != NULL && !lhat_rt_mentions_error(operand) &&
+                !runtime_has_unresolved_arguments(operand, NULL)) return chk_typeinfo_of(c, operand);
             return chk_typeinfo_type(c);
         }
 
@@ -6537,7 +6539,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             c->in_type_value = true;
             LhatType *named = chk_resolve_type(c, node->v.jump.value);
             c->in_type_value = outer_in_type_value;
-            if (runtime_has_type_arguments(named, NULL)) {
+            if (runtime_has_unresolved_arguments(named, NULL)) {
                 chk_report(c, node, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
             }
             ((LhatNode *)node)->checked_type = named;

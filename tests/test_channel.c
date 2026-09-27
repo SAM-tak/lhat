@@ -242,6 +242,82 @@ static LhatTestRan run_source(const char *text)
 
 static void test_typed_channels(void)
 {
+    LHAT_TEST("explicit and typeof task descriptors preserve results across workers");
+    static const char *const descriptors[] = {"std.task.Task<number^>", "typeof^(task)"};
+    for (size_t i = 0; i < 2; i++) {
+        char source[2048];
+        snprintf(source, sizeof source,
+            "import^ std.channel\nimport^ std.task\ntry^std.task.start(2)\n"
+            "let^ task = try^std.task.async((p^ { _yield^ 0 return^ 41 })())\n"
+            "let^ typ:type^<std.task.Task<number^>> = %s\n"
+            "let^ ch = try^std.channel.new(typ)\ntry^ch.push(task)\n"
+            "let^ worker = try^std.task.async(closed^p^ mine { _yield^ 0\n"
+            "import^ std.task\nlet^ t = mine.demand(2)\n"
+            "if^ t? { return^ (try^std.task.await(t)) + 1 }\nreturn^ 0\n}(ch))\n"
+            "let^ n:number^ = try^std.task.await(worker)\nstd.task.stop()\nreturn^ n\n", descriptors[i]);
+        LhatTestRan result = lhat_test_run(with_task, 2, source);
+        LHAT_CHECK_RAN_INTEGER(result, 42);
+        lhat_test_ran_dispose(&result);
+    }
+    LHAT_TEST("erased writes and casts check actual task type arguments");
+    {
+        LhatTestRan result = lhat_test_run(with_task, 2,
+            "import^ std.channel\nimport^ std.task\ntry^std.task.start(1)\n"
+            "let^ task = try^std.task.async((p^ { _yield^ 0 return^ 'wrong' })())\n"
+            "let^ erased:std.task.Task = task\nvar^ n = 0\n"
+            "if^ erased fits^ std.task.Task<number^> { n += 100 }\n"
+            "if^ erased fits^ std.task.Task<string^> { n += 1 }\n"
+            "let^ cast = erased as^ std.task.Task<number^>\n"
+            "if^ cast fits^ localerror^ { n += 1 }\n"
+            "let^ ch:std.channel.Channel = try^std.channel.new(std.task.Task<number^>)\n"
+            "let^ bad = ch.push(erased)\n"
+            "if^ bad fits^ std.channel.ChannelError.Refused { n += 1 }\n"
+            "std.task.stop()\nreturn^ n\n");
+        LHAT_CHECK_RAN_INTEGER(result, 3);
+        lhat_test_ran_dispose(&result);
+    }
+    LHAT_TEST("nested channel schemas retain invariant nominal arguments");
+    {
+        LhatTestRan result = run_source(
+            "import^ std.channel\n"
+            "let^ outer = try^std.channel.new(std.channel.Channel<number^>)\n"
+            "let^ good = try^std.channel.new(number^)\ntry^outer.push(good)\n"
+            "let^ erased:std.channel.Channel = outer\n"
+            "let^ bad = erased.push(try^std.channel.new(string^))\n"
+            "if^ bad fits^ std.channel.ChannelError.Refused { return^ outer.count() }\nreturn^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(result, 1);
+        lhat_test_ran_dispose(&result);
+    }
+    LHAT_TEST("named channels compare the complete nominal application");
+    {
+        LhatTestRan result = lhat_test_run(with_task, 2,
+            "import^ std.channel\nimport^ std.task\n"
+            "let^ one = try^std.channel.named('applied-task-schema', std.task.Task<number^>)\n"
+            "let^ same = try^std.channel.named('applied-task-schema', std.task.Task<number^>)\n"
+            "let^ wrong = std.channel.named('applied-task-schema', std.task.Task<string^>)\n"
+            "if^ wrong fits^ std.channel.ChannelError.Refused { return^ same.count() }\nreturn^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(result, 0);
+        lhat_test_ran_dispose(&result);
+    }
+    LHAT_TEST("nested type values expose complete signatures");
+    {
+        LhatTestRan result = lhat_test_run(with_task, 2,
+            "import^ std.channel\nimport^ std.task\n"
+            "return^ std.channel.Channel<std.task.Task<(number^|nil^)>>.signature\n");
+        LHAT_CHECK_RAN_TEXT(result, "std.channel.Channel<std.task.Task<number^|nil^>>");
+        lhat_test_ran_dispose(&result);
+    }
+    LHAT_TEST("typeof preserves static erasure and typed writes reject wrong task results");
+    LHAT_CHECK(!lhat_test_check_text(with_task, 2,
+        "import^ std.channel\nimport^ std.task\n"
+        "let^ task:std.task.Task = try^std.task.async((p^ { _yield^ 0 return^ 42 })())\n"
+        "let^ typ:type^<std.task.Task<number^>> = typeof^(task)\n"),
+        "typeof does not recover a statically erased argument");
+    LHAT_CHECK(!lhat_test_check_text(with_task, 2,
+        "import^ std.channel\nimport^ std.task\n"
+        "let^ ch = try^std.channel.new(std.task.Task<number^>)\n"
+        "let^ task = try^std.task.async((p^ { _yield^ 0 return^ 'wrong' })())\n"
+        "try^ch.push(task)\n"), "task result mismatch rejected statically");
     LHAT_TEST("named host types and aliases become descriptors in type-value positions");
     {
         LhatTestRan result = lhat_test_run(with_task, 2,

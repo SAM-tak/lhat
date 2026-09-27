@@ -869,35 +869,40 @@ static LhatNode *parse_type_atom(Parser *p)
     return error_node(p, LHAT_PARSE_ERR_EXPECTED_TYPE);
 }
 
-// 13.5 and 14.5: '&' binds tighter than '|', as it does in TypeScript.
-static LhatNode *parse_type_primary(Parser *p)
+static LhatNode *parse_type_application(Parser *p, LhatNode *node)
 {
-    LhatNode *node = parse_type_atom(p);
+    LhatToken at = p->current;
+    advance(p);
+    LhatNode *head = NULL;
+    LhatNode *tail = NULL;
+    do {
+        lhat_node_append(&head, &tail, parse_type(p));
+    } while (match_op(p, LHAT_OP_COMMA));
+    // Split only in type position; shifts and comparisons elsewhere retain
+    // the lexer's ordinary tokenization.
+    if (check_op(p, LHAT_OP_RSHIFT) || check_op(p, LHAT_OP_GE)) {
+        p->previous = p->current;
+        p->previous.v.op = LHAT_OP_GT;
+        p->previous.length = 1;
+        p->current.v.op = check_op(p, LHAT_OP_RSHIFT) ? LHAT_OP_GT : LHAT_OP_EQ;
+        p->current.offset++;
+        p->current.length--;
+    } else {
+        expect_op(p, LHAT_OP_GT);
+    }
+    return finish(p, access_node(p, LHAT_NODE_TYPE_APPLY, &at, node, head, false));
+}
+
+// 13.5 and 14.5: '&' binds tighter than '|', as it does in TypeScript.
+static LhatNode *parse_type_suffix(Parser *p, LhatNode *node)
+{
     while (check_op(p, LHAT_OP_DOT) ||
            (check_op(p, LHAT_OP_LT) &&
             (p->ahead.kind == LHAT_TOKEN_IDENT || p->ahead.kind == LHAT_TOKEN_HAT_IDENT ||
              is_op(&p->ahead, LHAT_OP_LPAREN)))) {
         LhatToken at = p->current;
         if (check_op(p, LHAT_OP_LT)) {
-            advance(p);
-            LhatNode *head = NULL;
-            LhatNode *tail = NULL;
-            do {
-                lhat_node_append(&head, &tail, parse_type(p));
-            } while (match_op(p, LHAT_OP_COMMA));
-            // Split only in type position; shifts and comparisons elsewhere
-            // retain the lexer's ordinary tokenization.
-            if (check_op(p, LHAT_OP_RSHIFT) || check_op(p, LHAT_OP_GE)) {
-                p->previous = p->current;
-                p->previous.v.op = LHAT_OP_GT;
-                p->previous.length = 1;
-                p->current.v.op = check_op(p, LHAT_OP_RSHIFT) ? LHAT_OP_GT : LHAT_OP_EQ;
-                p->current.offset++;
-                p->current.length--;
-            } else {
-                expect_op(p, LHAT_OP_GT);
-            }
-            node = access_node(p, LHAT_NODE_TYPE_APPLY, &at, node, head, false);
+            node = parse_type_application(p, node);
         } else {
             advance(p);
             if (p->current.kind != LHAT_TOKEN_IDENT && p->current.kind != LHAT_TOKEN_HAT_IDENT) {
@@ -908,6 +913,11 @@ static LhatNode *parse_type_primary(Parser *p)
         }
     }
     return finish(p, node);
+}
+
+static LhatNode *parse_type_primary(Parser *p)
+{
+    return parse_type_suffix(p, parse_type_atom(p));
 }
 
 static LhatNode *parse_type_intersection(Parser *p)
@@ -2326,6 +2336,35 @@ static bool ends_in_truncated_member(const LhatNode *node)
            node->v.access.argument == NULL;
 }
 
+// Look ahead without allocating AST nodes or consuming comparison operators.
+static bool type_application_ahead(const Parser *p)
+{
+    if (!check_op(p, LHAT_OP_LT) ||
+        p->previous.offset + p->previous.length != p->current.offset) return false;
+    LhatLexer probe = *p->lexer;
+    LhatToken token = p->ahead;
+    int angles = 1, brackets = 0;
+    while (token.kind != LHAT_TOKEN_EOF) {
+        if (is_op(&token, LHAT_OP_LPAREN) || is_op(&token, LHAT_OP_LBRACE) ||
+            is_op(&token, LHAT_OP_LBRACKET)) brackets++;
+        else if (is_op(&token, LHAT_OP_RPAREN) || is_op(&token, LHAT_OP_RBRACE) ||
+                 is_op(&token, LHAT_OP_RBRACKET)) {
+            if (brackets == 0) return false;
+            brackets--;
+        } else if (is_op(&token, LHAT_OP_LT)) angles++;
+        else if (is_op(&token, LHAT_OP_GT)) angles--;
+        else if (is_op(&token, LHAT_OP_RSHIFT)) angles -= 2;
+        else if (is_op(&token, LHAT_OP_EQ) && brackets == 0) return false;
+        if (angles <= 0) {
+            if (angles != 0 || brackets != 0) return false;
+            token = lhat_lexer_next(&probe);
+            return token.preceded_by_newline || !starts_expression(&token);
+        }
+        token = lhat_lexer_next(&probe);
+    }
+    return false;
+}
+
 static LhatNode *parse_postfix(Parser *p)
 {
     LhatToken start = p->current;
@@ -2428,6 +2467,13 @@ static LhatNode *parse_postfix(Parser *p)
             continue;
         }
 
+        if (!guarded && names_only(node) && type_application_ahead(p)) {
+            LhatNode *leaf = node;
+            while (leaf->kind == LHAT_NODE_MEMBER) leaf = leaf->v.access.target;
+            leaf->kind = LHAT_NODE_TYPE_NAME;
+            node = type_value_from(p, &start, parse_type_application(p, node));
+            continue;
+        }
         break;
     }
     // 11.7改2: the run is over, so this is the access the nil^ arm goes on.

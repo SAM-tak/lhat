@@ -30,7 +30,15 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
         return rt_from_checked(heap, type->v.argument.bound, seen);
     }
     if (type->specialization_base != NULL) {
-        return rt_from_checked(heap, type->specialization_base, seen);
+        LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_APPLIED);
+        if (rt == NULL) return NULL;
+        rt->result = rt_from_checked(heap, type->specialization_base, seen);
+        if (rt->result == NULL) return NULL;
+        for (const LhatTypeList *a = type->specialization_arguments; a; a = a->next) {
+            LhatRuntimeType *argument = rt_from_checked(heap, a->type, seen);
+            if (argument == NULL || !lhat_type_rt_add_part(rt, argument)) return NULL;
+        }
+        return rt;
     }
     if (type->kind == LHAT_TYPE_TABLE) {
         unsigned level = 1;
@@ -368,6 +376,14 @@ static bool mentions_error(const LhatType *type, const RtSeen *seen)
     if (type == NULL) {
         return false;
     }
+    if (type->specialization_base != NULL) {
+        for (const LhatTypeList *a = type->specialization_arguments; a; a = a->next) {
+            if (mentions_error(a->type, seen)) return true;
+        }
+        return mentions_error(type->specialization_base, seen);
+    }
+    // A nominal descriptor uses its declaration identity, not its members.
+    if (type->kind == LHAT_TYPE_TABLE && type->v.table.nominal) return false;
     if (type->kind == LHAT_TYPE_TABLE) {
         for (const RtSeen *s = seen; s != NULL; s = s->outer) {
             if (s->type == type) {

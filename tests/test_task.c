@@ -730,16 +730,16 @@ static void test_static_results(void)
         "import^ std.task\nlet^ job = p^ { _yield^ 0 return^ 42 }\n"
         "let^ t:std.task.Task<string^> = try^std.task.async(job())\n"),
         "wrong explicit type argument rejected");
-    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+    LHAT_CHECK(lhat_test_check_text(regs, 2,
         "import^ std.task\nlet^ job = p^ { _yield^ 0 return^ 42 }\n"
         "let^ t:std.task.Task = try^std.task.async(job())\n"
         "if^ t fits^ std.task.Task<string^> { let^ s = try^std.task.await(t) }\n"),
-        "runtime fits cannot fabricate an erased type argument");
-    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "runtime fits checks preserved type arguments");
+    LHAT_CHECK(lhat_test_check_text(regs, 2,
         "import^ std.task\nlet^ job = p^ { _yield^ 0 return^ 42 }\n"
         "let^ t:std.task.Task = try^std.task.async(job())\n"
         "let^ other = t as^ std.task.Task<string^> catch^ panic^ it^\n"),
-        "runtime cast cannot fabricate an erased type argument");
+        "runtime cast checks preserved type arguments");
     LHAT_TEST("final results survive aliases, members and instantiated calls");
     {
         LhatTestRan ran = run_source(

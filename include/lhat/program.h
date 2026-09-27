@@ -757,6 +757,12 @@ bool lhat_register_hostdata_shared(LhatProgram *program, const char *module,
                                    const char *name, LhatHostHoldFn retain,
                                    LhatHostHoldFn let_go, void *context);
 
+// Exposes per-object nominal type arguments to runtime type checks. Like the
+// sharing contract, this callback must agree across registrations of a tag.
+bool lhat_register_hostdata_type_arguments(LhatProgram *program, const char *module,
+                                          const char *name, LhatHostTypeArgumentFn read,
+                                          void *context);
+
 // A member of a type registered earlier. `signature` describes it; a p^ or f^
 // whose first parameter is written self^ is an instance method (14.4).
 //

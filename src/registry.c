@@ -198,6 +198,19 @@ bool lhat_registry_set_hold(const LhatHostDataTag *tag, LhatHostHoldFn retain,
     return true;
 }
 
+bool lhat_registry_set_type_arguments(const LhatHostDataTag *tag,
+                                      LhatHostTypeArgumentFn read, void *context)
+{
+    if (tag == NULL || read == NULL) return false;
+    LhatHostDataTag *mine = (LhatHostDataTag *)tag;
+    if (mine->type_argument != NULL) {
+        return mine->type_argument == read && mine->type_argument_context == context;
+    }
+    mine->type_argument = read;
+    mine->type_argument_context = context;
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // 05 の 8.9: host values
 // ---------------------------------------------------------------------------

@@ -32,7 +32,7 @@
 static const uint8_t MAGIC[4] = { 0x89, 'L', 'H', '^' };
 // 10.7: the signature table's, told apart from a unit's by the last byte.
 static const uint8_t TABLE_MAGIC[4] = { 0x89, 'L', 'H', 'S' };
-#define FORMAT_VERSION 5u
+#define FORMAT_VERSION 6u
 #define FLAG_DEBUG_NAMES 1u
 #define FLAG_STRICT 2u
 #define HEADER_BYTES 24u  // magic, format, flags, fingerprint, hash
@@ -1620,7 +1620,7 @@ static void read_rt(Reader *r)
 {
     In *in = &r->in;
     uint8_t kind = get_u8(in);
-    if (kind > LHAT_TYPE_RT_TYPEINFO) {
+    if (kind > LHAT_TYPE_RT_APPLIED) {
         fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
         return;
     }

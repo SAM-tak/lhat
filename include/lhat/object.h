@@ -404,7 +404,10 @@ typedef enum
     // answer when part of it was never decided. Which member or parameter it
     // was is what the writer needs, and that is what this shows.
     LHAT_TYPE_RT_UNKNOWN,
-    LHAT_TYPE_RT_TYPEINFO
+    LHAT_TYPE_RT_TYPEINFO,
+    // Nominal application: result is the base descriptor, parts are invariant
+    // type arguments. Uses the same owned graph edges as other descriptors.
+    LHAT_TYPE_RT_APPLIED
 } LhatRuntimeTypeKind;
 
 // STRUCTURE's named half. Given its own tag rather than left anonymous inside
@@ -658,6 +661,11 @@ typedef void (*LhatHostHoldFn)(void *pointer, void *context);
 // Compared by identity alone -- 7.3's rule made into an object, and the one
 // thing standing between a Texture and the C code that expects a Sound. The
 // names are for diagnostics and belong to the program.
+// Returns immutable type metadata owned by the host object, or NULL when the
+// argument is unknown. It must remain valid while that object is alive.
+typedef const LhatRuntimeType *(*LhatHostTypeArgumentFn)(const void *pointer,
+                                                        size_t index, void *context);
+
 typedef struct LhatHostDataTag {
     const char *module;
     const char *name;
@@ -692,6 +700,8 @@ typedef struct LhatHostDataTag {
     LhatHostHoldFn retain;
     LhatHostHoldFn let_go;
     void *hold_context;
+    LhatHostTypeArgumentFn type_argument;
+    void *type_argument_context;
 } LhatHostDataTag;
 
 // 05 の 8.8改: which declaration hands a value of `tag`'s type back -- its

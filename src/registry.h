@@ -59,6 +59,8 @@ bool lhat_registry_set_release(const LhatHostDataTag *tag, LhatHostFn release,
 // already set and it is not this one.
 bool lhat_registry_set_hold(const LhatHostDataTag *tag, LhatHostHoldFn retain,
                             LhatHostHoldFn let_go, void *context);
+bool lhat_registry_set_type_arguments(const LhatHostDataTag *tag,
+                                      LhatHostTypeArgumentFn read, void *context);
 
 // 8.9: the same for a host value type. `size` is the payload the host
 // declared; a second declaration of a different size is refused (NULL),

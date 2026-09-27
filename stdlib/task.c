@@ -105,6 +105,9 @@ typedef enum {
 typedef enum { STEP_AGAIN, STEP_PARK, STEP_DONE } StepResult;
 
 struct Task {
+    // Immutable result metadata, owned independently of the originating VM.
+    LhatHeap type_heap;
+    LhatRuntimeType *result_type;
     TaskModule *module;
 
     // 03 の 4.3改: the task's own machine, made the first time it runs and
@@ -158,11 +161,18 @@ static void task_free(Task *task)
     }
     lhat_carried_free(task->job);
     lhat_carried_free(task->result);
+    lhat_object_free_all(&task->type_heap);
     lhat_free(task->traceback);
     lhat_free(task->fault_text);
     lhat_condition_destroy(&task->done);
     lhat_mutex_destroy(&task->lock);
     lhat_free(task);
+}
+
+static const LhatRuntimeType *task_type_argument(const void *pointer, size_t index, void *context)
+{
+    (void)context;
+    return index == 0 ? ((const Task *)pointer)->result_type : NULL;
 }
 
 static void task_retain(void *pointer, void *context)
@@ -751,6 +761,15 @@ static void task_async(LhatMachine *machine, void *context,
     lhat_condition_init(&task->done);
     task->module = module;
     task->holds = 1;  // the wrapper answered below
+    const LhatRuntimeType *result_type = lhat_coroutine_result_type(arguments[0]);
+    task->result_type = result_type != NULL
+                           ? lhat_runtime_type_clone(&task->type_heap, result_type)
+                           : lhat_type_rt_new(&task->type_heap, LHAT_TYPE_RT_NIL);
+    if (task->result_type == NULL) {
+        task_let_go(task, NULL);
+        answers[0] = fail_with(machine, module->out_of_memory, "out of memory");
+        return;
+    }
 
     LhatValue error = lhat_nil();
     if (!carry_argument(machine, module, arguments[0], &task->job, &error)) {
@@ -1022,6 +1041,8 @@ bool lhatstdlib_task_register(LhatProgram *program)
                                 "p^self^;", task_dispose,
                                 (void *)module->tag) &&
            // 8.8改2: a Task crosses machines, so a job may be handed one.
+           lhat_register_hostdata_type_arguments(program, "std.task", "Task",
+                                                 task_type_argument, NULL) &&
            lhat_register_hostdata_shared(program, "std.task", "Task",
                                          task_retain, task_let_go, NULL);
 
