@@ -54,6 +54,19 @@ void lsp_rpc_send_error(LspRpcOut *out, const cJSON *id, int code,
     send_envelope(out, envelope);
 }
 
+void lsp_rpc_send_request(LspRpcOut *out, const char *id, const char *method,
+                          cJSON *params)
+{
+    cJSON *envelope = cJSON_CreateObject();
+    cJSON_AddStringToObject(envelope, "jsonrpc", "2.0");
+    cJSON_AddStringToObject(envelope, "id", id);
+    cJSON_AddStringToObject(envelope, "method", method);
+    if (params != NULL) {
+        cJSON_AddItemToObject(envelope, "params", params);
+    }
+    send_envelope(out, envelope);
+}
+
 void lsp_rpc_send_notification(LspRpcOut *out, const char *method,
                                cJSON *params)
 {

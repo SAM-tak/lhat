@@ -26,6 +26,11 @@ typedef struct LspServer {
     LhatThread worker_thread;
     bool worker_started;
 
+    // Negotiated before starting the worker, then read-only. Request ids
+    // belong to the worker; refresh responses need no state update.
+    bool semantic_tokens_refresh_supported;
+    unsigned long long semantic_tokens_refresh_serial;
+
     bool shutdown_requested;  // "shutdown" request handled; only "exit" may follow
     bool should_exit;         // "exit" notification seen; lsp_server_run returns
 

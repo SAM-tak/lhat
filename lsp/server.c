@@ -20,6 +20,8 @@ void lsp_server_init(LspServer *server, FILE *out_stream)
     lsp_rpc_out_init(&server->out, out_stream);
     lsp_queue_init(&server->queue);
     server->worker_started = false;
+    server->semantic_tokens_refresh_supported = false;
+    server->semantic_tokens_refresh_serial = 0;
     server->shutdown_requested = false;
     server->should_exit = false;
     server->published_paths = NULL;

@@ -90,6 +90,22 @@ void lsp_server_publish_diagnostics(LspServer *server)
     server->published_capacity = state.current_capacity;
 }
 
+static void refresh_semantic_tokens(LspServer *server)
+{
+    if (!server->semantic_tokens_refresh_supported) {
+        return;
+    }
+    // A request during the debounce window can read the previous tree.
+    // Once the new tree is ready, invalidate that answer even if there are
+    // no diagnostics and no further keystroke. This also covers dependents
+    // whose types changed without edits to their own source.
+    char id[64];
+    snprintf(id, sizeof id, "semantic-refresh-%llu",
+             ++server->semantic_tokens_refresh_serial);
+    lsp_rpc_send_request(&server->out, id, "workspace/semanticTokens/refresh",
+                         NULL);
+}
+
 static int worker_main(void *arg)
 {
     LspServer *server = (LspServer *)arg;
@@ -102,6 +118,7 @@ static int worker_main(void *arg)
     // next in the same batch.
     lsp_workspace_recheck_all(&server->workspace);
     lsp_server_publish_diagnostics(server);
+    refresh_semantic_tokens(server);
 
     for (;;) {
         char **paths = NULL;
@@ -133,6 +150,7 @@ static int worker_main(void *arg)
         }
         free(paths);
         lsp_server_publish_diagnostics(server);
+        refresh_semantic_tokens(server);
     }
     return 0;
 }

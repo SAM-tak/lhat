@@ -118,6 +118,15 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     workspace_paths_dispose(&paths);
     read_language(server, params);
 
+    const cJSON *client_capabilities =
+        cJSON_GetObjectItemCaseSensitive(params, "capabilities");
+    const cJSON *client_workspace =
+        cJSON_GetObjectItemCaseSensitive(client_capabilities, "workspace");
+    const cJSON *client_semantic_tokens =
+        cJSON_GetObjectItemCaseSensitive(client_workspace, "semanticTokens");
+    server->semantic_tokens_refresh_supported = cJSON_IsTrue(
+        cJSON_GetObjectItemCaseSensitive(client_semantic_tokens, "refreshSupport"));
+
     cJSON *result = cJSON_CreateObject();
     cJSON *capabilities = cJSON_CreateObject();
     cJSON *sync = cJSON_CreateObject();

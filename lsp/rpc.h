@@ -35,4 +35,9 @@ void lsp_rpc_send_error(LspRpcOut *out, const cJSON *id, int code,
 void lsp_rpc_send_notification(LspRpcOut *out, const char *method,
                                cJSON *params);
 
+// A server-initiated request. The caller supplies a unique id; params may
+// be NULL to omit them. Takes ownership of params, copies id.
+void lsp_rpc_send_request(LspRpcOut *out, const char *id, const char *method,
+                          cJSON *params);
+
 #endif  // LSP_RPC_H
