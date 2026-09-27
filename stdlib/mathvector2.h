@@ -18,6 +18,7 @@
 //   members. Coordinates are x-right/y-down: positive rotation turns +x
 //   toward +y, clockwise on screen; lerp does not clamp t.
 //   angle() answers 0 for the zero vector.
+//   abs() returns a Vector2 of component-wise absolute values, without mutation.
 //   Module functions zero(), one(), right(), left(), up() and down() return
 //   fresh Vector2 values; +y is down in these coordinates.
 //   Keeping one is the language's

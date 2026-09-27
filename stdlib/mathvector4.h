@@ -6,6 +6,7 @@
 // tostring follow Vector2/Vector3. Zero stays zero when
 // normalized; there is no 4D cross product. The language supplies Box^.
 // Module functions zero() and one() return fresh Vector4 values.
+// abs() returns a Vector4 of component-wise absolute values, without mutation.
 #ifndef LHATSTDLIB_MATHVECTOR4_H
 #define LHATSTDLIB_MATHVECTOR4_H
 

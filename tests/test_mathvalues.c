@@ -2,12 +2,16 @@
 #include "stdlibutil.h"
 #include "testutil.h"
 
+#include "../stdlib/math.h"
 #include "../stdlib/mathcomplex.h"
+#include "../stdlib/mathvector2.h"
 #include "../stdlib/mathquaternion.h"
 #include "../stdlib/mathvector3.h"
 #include "../stdlib/mathvector4.h"
 
 static const LhatTestRegister regs[] = {
+    lhatstdlib_math_register,
+    lhatstdlib_mathvector2_register,
     lhatstdlib_mathcomplex_register,
     lhatstdlib_mathvector3_register,
     lhatstdlib_mathquaternion_register,
@@ -17,6 +21,66 @@ static const LhatTestRegister regs[] = {
 static LhatTestRan run_source(const char *source)
 {
     return lhat_test_run(regs, sizeof regs / sizeof regs[0], source);
+}
+
+static void test_inferred_scalar_field_writes(void)
+{
+    LHAT_TEST("narrowed operator results lose speculative host-value widths");
+    static const char *const expressions[] = {"a * b", "a + b", "a * 2"};
+    static const int expected[] = {300, 103, 200};
+    for (size_t i = 0; i < sizeof expressions / sizeof *expressions; i++) {
+        char source[1024];
+        snprintf(source, sizeof source,
+            "import^ std.math\n"
+            "let^ g = f^ a, b { return^ %s }\n"
+            "let^ T = def^{ self^{ x = 100 },\n"
+            " update = p^self^, dt:number^ { self^.x := g(self^.x, dt) }, }\n"
+            "let^ t = T.new()\nt.update(3)\n"
+            "if^ t.x = %d { return^ 1 }\nreturn^ 0\n",
+            expressions[i], expected[i]);
+        LhatTestRan ran = run_source(source);
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("inferred rubberstep result can be assigned to an instance field");
+    LhatTestRan ran = run_source(
+        "import^ std.math\n"
+        "let^ rubberstep = f^current, target, halfLife, deltaTime {\n"
+        " let^ delta = target - current\n"
+        " if^ delta.abs() > 0 {\n"
+        "  let^ omega = 1.0 / std.math.max(0.00000001, halfLife ** 2)\n"
+        "  let^ a = 0.5 * omega * deltaTime ** 2\n"
+        "  let^ a2 = a ** 2\n"
+        "  return^ current + delta * (omega * deltaTime * (1.0 + a + 0.48 * a2 + 0.235 * a2 * a)).clamp(0, 1)\n"
+        " }\nreturn^ target\n}\n"
+        "let^ T = def^{ self^{ x = 100 },\n"
+        " update = p^self^, dt:number^ { self^.x := rubberstep(self^.x, -100, 0.5, dt) }, }\n"
+        "let^ t = T.new()\nt.update(0.5)\nt.update(0.5)\n"
+        "if^ t.x = -100 { return^ 1 }\nreturn^ 0\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+}
+
+static void test_vector_abs(void)
+{
+    LHAT_TEST("vector abs returns component-wise magnitudes without changing the source");
+    LhatTestRan ran = run_source(
+        "import^ std.math\n"
+        "let^ a = std.math.vector2.new(-2, 3)\n"
+        "let^ b = std.math.vector3.new(0, -4, -5)\n"
+        "let^ c = std.math.vector4.new(-6, 7, -8, -9)\n"
+        "let^ aa:std.math.vector2.Vector2 = a.abs()\n"
+        "let^ bb:std.math.vector3.Vector3 = b.abs()\n"
+        "let^ cc:std.math.vector4.Vector4 = c.abs()\n"
+        "if^ aa.x = 2 and^ aa.y = 3\n"
+        " and^ bb.x = 0 and^ bb.y = 4 and^ bb.z = 5\n"
+        " and^ cc.x = 6 and^ cc.y = 7 and^ cc.z = 8 and^ cc.w = 9\n"
+        " and^ a.x = -2 and^ b.y = -4 and^ b.z = -5\n"
+        " and^ c.x = -6 and^ c.z = -8 and^ c.w = -9 { return^ 1 }\n"
+        "return^ 0\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
 }
 
 static void test_vector4(void)
@@ -380,6 +444,8 @@ static void test_operator_syntax(void)
 
 int main(void)
 {
+    test_inferred_scalar_field_writes();
+    test_vector_abs();
     test_operator_syntax();
     test_vector4();
     test_complex();

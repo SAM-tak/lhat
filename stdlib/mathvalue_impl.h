@@ -405,6 +405,24 @@ static void math_length(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
+#if defined(MATH_VECTOR2) || defined(MATH_VECTOR3) || defined(MATH_VECTOR4)
+static void math_abs(LhatMachine *machine, void *context,
+                     const LhatValue *args, size_t count,
+                     LhatValue *answers, int *answer_count)
+{
+    const MathModule *module = (const MathModule *)context;
+    MathValue v;
+    if (count < 1 || !math_arg(module, args[0], &v)) {
+        return;
+    }
+    for (size_t i = 0; i < MATH_DIM; i++) {
+        v.component[i] = fabsf(v.component[i]);
+    }
+    answers[0] = math_value(machine, module, v);
+    *answer_count = 1;
+}
+#endif
+
 static void math_normalized(LhatMachine *machine, void *context,
                             const LhatValue *args, size_t count,
                             LhatValue *answers, int *answer_count)
@@ -584,6 +602,11 @@ static bool math_register(LhatProgram *program, MathModule *module,
            lhat_register_hostvalue_member(program, MATH_MODULE, MATH_TYPE, "cross",
                                           "f^self^, " MATH_FULL " -> " MATH_FULL ";",
                                           math_cross, module) &&
+#endif
+#if defined(MATH_VECTOR2) || defined(MATH_VECTOR3) || defined(MATH_VECTOR4)
+           lhat_register_hostvalue_member(program, MATH_MODULE, MATH_TYPE, "abs",
+                                           "f^self^ -> " MATH_FULL ";",
+                                           math_abs, module) &&
 #endif
            lhat_register_hostvalue_member(program, MATH_MODULE, MATH_TYPE, "length",
                                           "f^self^ -> number^;", math_length, module) &&

@@ -6069,6 +6069,16 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
     if (node != NULL &&
         (chk_is_hostvalue(type) || lhat_type_tuple_arm_width(type) > 0)) {
         ((LhatNode *)node)->checked_type = type;
+    } else if (node != NULL && node->kind != LHAT_NODE_FUNC &&
+               node->kind != LHAT_NODE_TYPEOF && node->kind != LHAT_NODE_TYPE_VALUE) {
+        // Rechecking after inference narrows an overload may turn a wide
+        // result into a scalar. The previous width stamp must not survive
+        // that pass. These three node kinds own a different checked_type:
+        // the function signature, typeof operand, or represented type.
+        const LhatType *previous = (const LhatType *)node->checked_type;
+        if (chk_is_hostvalue(previous) || lhat_type_tuple_arm_width(previous) > 0) {
+            ((LhatNode *)node)->checked_type = NULL;
+        }
     }
     return type;
 }
