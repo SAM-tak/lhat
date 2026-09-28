@@ -233,6 +233,7 @@ struct LhatNode {
     const struct LhatNode *checked_binding;
     const struct LhatNode *checked_this_body; // Function literal named by this^/this^^.
     const struct LhatNode *checked_receiver; // Implicit self^ for super calls / self{...}.
+    bool checked_super_call; // A direct super^ call, including static replacements.
     const struct LhatDefinition *checked_definition;
     const struct LhatTypeMember *checked_host_member; // Resolved member of L^.
     const struct LhatModuleRoot *checked_module_root;

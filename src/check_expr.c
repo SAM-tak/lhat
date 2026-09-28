@@ -996,6 +996,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
                 chk_report(c, node, LHAT_CHECK_ERR_SUPER_OUTSIDE);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
+            ((LhatNode *)node)->checked_binding = c->super_binding;
 #if LHAT_WITH_RESOLUTIONS
             chk_record_typed_resolution(c, node, c->super_type);
 #endif
@@ -1781,7 +1782,8 @@ static LhatType *host_call_answer(Checker *c, const LhatNode *node,
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
     ((LhatNode *)node)->checked_receiver = NULL;
-    if (chk_is_super_name(c, node->v.access.target)) {
+    ((LhatNode *)node)->checked_super_call = chk_is_super_name(c, node->v.access.target);
+    if (node->checked_super_call) {
         Binding *receiver = chk_scope_find(c->scope, "self^", 5, NULL);
         ((LhatNode *)node)->checked_receiver = receiver != NULL ? receiver->declaration : NULL;
     }
@@ -5860,7 +5862,9 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             // intersection when 14.12's overload^ put several there, since
             // the write replaces the member as a whole.
             LhatType *outer_super = c->super_type;
+            const LhatNode *outer_super_binding = c->super_binding;
             c->super_type = NULL;
+            c->super_binding = NULL;
             if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE) {
                 // 14.15改: with nothing under the name yet, the shape super^
                 // will have is the one written here. 14.12 has the
@@ -5868,6 +5872,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 // wider, result narrower -- so what is written is admissible
                 // wherever the original is, and taking it for super^ cannot
                 // promise more than the base gives.
+                c->super_binding = entry;
                 c->super_type =
                     hidden != NULL
                         ? hidden->type
@@ -5916,6 +5921,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 chk_scope_close(c, &receiver);
             }
             c->super_type = outer_super;
+            c->super_binding = outer_super_binding;
             // 14.12: two members of one name in a single def^ need a marker
             // too, so what is already there has to include this def^'s
             // earlier entries and not only what the base brought.

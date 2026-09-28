@@ -315,6 +315,10 @@ static void test_execution_pipeline_parity(void)
         "let^ Derived = Base .. def^{self^{y := 2}}\n"
         "let^ d = Derived.new()\nreturn^ d.x + d.y\n",
         "return^ twice(21)\n",
+        "let^ A = def^{self^{}, m = f^self^ -> number^ {return^ 40}}\n"
+        "let^ D = A .. def^{self^{}, override^ m = f^self^ -> number^ {"
+        "let^ read = f^ -> number^ {return^ super^()}\nreturn^ read() + 2}}\n"
+        "return^ D.new().m()\n",
         "let^ Base = def^{self^{x := 0}, override^new = f^ n:number^ {self^{x = n}}}\n"
         "let^ Derived = Base .. def^{self^{y := 0}, override^new = f^ n:number^ {"
         "super^(n)\nself^{y = 2}}}\nlet^ d = Derived.new(40)\nreturn^ d.x + d.y\n",
@@ -402,6 +406,8 @@ static void test_execution_pipeline_parity(void)
                                    right.nodes[j]->checked_definition != NULL);
                 LHAT_CHECK_EQ_BOOL(left.nodes[j]->checked_import_global,
                                    right.nodes[j]->checked_import_global);
+                LHAT_CHECK_EQ_BOOL(left.nodes[j]->checked_super_call,
+                                   right.nodes[j]->checked_super_call);
                 const LhatModuleRoot *module_left = left.nodes[j]->checked_module_root;
                 const LhatModuleRoot *module_right = right.nodes[j]->checked_module_root;
                 LHAT_CHECK_EQ_BOOL(module_left != NULL, module_right != NULL);

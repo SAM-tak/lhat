@@ -452,6 +452,7 @@ typedef struct {
     // 02 の 14.12改: what an override^ is writing over, which is what super^
     // names. NULL anywhere else, so 14.12's marker is what makes it a name.
     LhatType *super_type;
+    const LhatNode *super_binding; // Override entry introducing the replaced value.
 
     // 02 の 14.11: the written new whose literal chk_infer_def is walking.
     // chk_infer_func reads it to know the body it opens is a constructor's:

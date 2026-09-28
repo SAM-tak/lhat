@@ -525,6 +525,109 @@ static void test_self_binding_identity(void)
     }
 }
 
+static void test_super_binding_identity(void)
+{
+    static const char *const sources[] = {
+        "let^ decoy = f^ -> number^ {return^ 1000}\n"
+        "let^ A = def^{self^{}, m = f^self^ -> number^ {return^ 40}}\n"
+        "let^ D = A .. def^{self^{}, override^ m = f^self^ -> number^ {"
+        "let^ read = f^ -> number^ {return^ super^()}\nreturn^ read() + 2}}\n"
+        "return^ D.new().m()\n",
+        "let^ decoy = f^ -> number^ {return^ 1000}\n"
+        "let^ A = def^{self^{}, m = f^ -> number^ {return^ 40}}\n"
+        "let^ D = A .. def^{self^{}, override^ m = f^ -> number^ {return^ super^() + 2}}\n"
+        "return^ D.m()\n",
+        "let^ decoy = f^ -> number^ {return^ 1000}\n"
+        "let^ A = def^{self^{x := 0}, override^new = f^ n:number^ {self^{x = n}}}\n"
+        "let^ B = A .. def^{self^{}, override^new = f^ n:number^ {super^(n + 1)}}\n"
+        "let^ D = B .. def^{self^{}, override^new = f^ n:number^ {super^(n + 1)}}\n"
+        "return^ D.new(40).x\n",
+        "let^ decoy = f^ -> number^ {return^ 1000}\n"
+        "let^ A = def^{self^{}, m = f^self^ -> number^ {return^ 20}}\n"
+        "let^ D = A .. def^{self^{}, override^ m = f^self^ -> number^ {"
+        "let^ Inner = A .. def^{self^{}, override^ m = f^self^ -> number^ {"
+        "return^ super^() + 2}}\nreturn^ Inner.new().m() + super^()}}\n"
+        "return^ D.new().m()\n",
+    };
+    for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
+        LHAT_TEST(sources[i]);
+        Unit u;
+        check_text(&u, sources[i]);
+        CHECK_CLEAN(&u);
+        const LhatNode *decoy = u.parsed.root->v.list.items->v.binding.targets;
+        Nodes nodes = {0};
+        collect(&nodes, NULL, false, u.parsed.root);
+        size_t uses = 0, calls = 0;
+        LhatNode *use = NULL;
+        for (size_t j = 0; j < nodes.count; j++) {
+            LhatNode *node = (LhatNode *)nodes.nodes[j];
+            if (node->checked_super_call) calls++;
+            const char *name = NULL;
+            size_t length = 0;
+            if (node->kind != LHAT_NODE_HAT_IDENT ||
+                !lhat_node_name(node, u.lexer.source->text, u.lexer.strings,
+                                &name, &length) ||
+                length != 6 || memcmp(name, "super^", 6) != 0) continue;
+            LHAT_CHECK(node->checked_binding != NULL &&
+                       node->checked_binding->v.entry.modifier == LHAT_DEF_OVERRIDE,
+                       "super^ identifies the override's replaced-value binding");
+            // Both value lookup and implicit receiver passing must survive a
+            // display spelling which looks like an ordinary static function.
+            node->v.name = decoy->v.name;
+            use = node;
+            uses++;
+        }
+        LHAT_CHECK(uses > 0 && calls > 0, "the case exercises direct super calls");
+        LhatProto *proto = NULL;
+        LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                          LHAT_COMPILE_OK);
+        if (proto != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LhatRunResult ran = lhat_run(machine, proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK(lhat_is_integer(ran.value), "integer result");
+            if (lhat_is_integer(ran.value)) LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            lhat_machine_dispose(machine);
+            lhat_proto_free(proto);
+        }
+        if (use != NULL) {
+            use->checked_binding = u.parsed.root->v.list.items;
+            proto = NULL;
+            LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                              LHAT_COMPILE_UNDEFINED);
+            lhat_proto_free(proto);
+        }
+        unit_dispose(&u);
+    }
+}
+
+static void test_super_repl_composition(void)
+{
+    LHAT_TEST("REPL composition preserves a prior override's super binding");
+    TestSession *session = test_session_new();
+    Run one, two;
+    compile_next_text(&one, session,
+        "let^ Base = def^{self^{}, m = f^self^ -> number^ {return^ 40}}\n"
+        "let^ Middle = Base .. def^{self^{}, override^ m = f^self^ -> number^ {"
+        "return^ super^() + 2}}\n");
+    compile_next_text(&two, session,
+        "let^ Derived = Middle .. def^{self^{}}\nreturn^ Derived.new().m()\n");
+    LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(two.compiled, LHAT_COMPILE_OK);
+    if (one.compiled == LHAT_COMPILE_OK && two.compiled == LHAT_COMPILE_OK) {
+        LhatMachine *machine = lhat_machine_new();
+        lhat_run(machine, one.proto);
+        LhatRunResult result = lhat_run(machine, two.proto);
+        LHAT_CHECK_EQ_INT(result.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_integer(result.value), "integer result");
+        if (lhat_is_integer(result.value)) LHAT_CHECK_EQ_INT(lhat_as_integer(result.value), 42);
+        lhat_machine_dispose(machine);
+    }
+    test_session_dispose(session);
+    compiled_dispose(&two);
+    compiled_dispose(&one);
+}
+
 static void test_error_declaration_identity(void)
 {
     Run r;
@@ -616,6 +719,8 @@ int main(void)
     test_variadic_binding_identity();
     test_def_binding_identity();
     test_self_binding_identity();
+    test_super_binding_identity();
+    test_super_repl_composition();
     test_error_declaration_identity();
     test_definition_origins();
     return lhat_test_report("test_pipeline");

@@ -1793,16 +1793,6 @@ static bool emit_binding_read(Compiler *c, const LhatNode *binding,
     return false;
 }
 
-// 02 の 14.12改: whether this is super^ written out. Only the hatted spelling
-// means it, so an ordinary name `super` is untouched.
-static bool is_super_ident(Compiler *c, const LhatNode *node)
-{
-    const char *name = NULL;
-    size_t length = 0;
-    return node != NULL && node->kind == LHAT_NODE_HAT_IDENT &&
-           node_name(c, node, &name, &length) && name_is(name, length, "super^");
-}
-
 static void compile_default_new(Compiler *c, const LhatNode *node,
                                 uint8_t definition);
 
@@ -1977,8 +1967,8 @@ static void compile_self_assign(Compiler *c, const LhatNode *node,
 // 14.12改: what super^ means inside an override^ new -- the hook of the new
 // written before it, run against the same receiver. Every written new ahead
 // of `stop_entry` in the chain is compiled once more as a hook (the same
-// body without the construction), each bound over the one before it, so the
-// name reads newest-first the way locals do. The chain starts on a hook that
+// body without the construction). Each override identity is bound to its
+// predecessor's hook. The chain starts on a hook that
 // does nothing: the default new has nothing to run but the construction.
 static void bind_new_hooks(Compiler *c, const DefChain *chain,
                            size_t stop_part, const LhatNode *stop_entry)
@@ -2006,10 +1996,6 @@ static void bind_new_hooks(Compiler *c, const DefChain *chain,
     }
     uint8_t hook = reserve(c);
     emit(c, lhat_encode_abx(LHAT_BC_CLOSURE, hook, (uint16_t)index));
-    if (declare_local(c, "super^", 6, hook, 1) == NULL) {
-        return;
-    }
-
     for (size_t i = 0; i <= stop_part && i < chain->count; i++) {
         const LhatLexer *enclosing_lexer = c->lexer;
         const LhatNode *enclosing_scope = c->foreign_scope;
@@ -2031,17 +2017,21 @@ static void bind_new_hooks(Compiler *c, const DefChain *chain,
                 entry->v.entry.value->kind != LHAT_NODE_FUNC) {
                 continue;
             }
+            Local *replaced = declare_local(c, "super^", 6, hook, 1);
+            if (replaced == NULL) {
+                break;
+            }
+            replaced->declaration = entry;
             hook = reserve(c);
             compile_subroutine_as(c, entry->v.entry.value, hook,
                                   LHAT_BODY_NEW_HOOK);
-            if (declare_local(c, "super^", 6, hook, 1) == NULL) {
-                break;
-            }
         }
         c->lexer = enclosing_lexer;
         c->foreign_scope = enclosing_scope;
         c->foreign_module = enclosing_module;
     }
+    Local *replaced = declare_local(c, "super^", 6, hook, 1);
+    if (replaced != NULL) replaced->declaration = stop_entry;
 }
 
 // 14.1 and 14.3: a definition is a table of the members every instance
@@ -2162,7 +2152,9 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
             } else if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE) {
                 uint8_t hidden = reserve(c);
                 emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, hidden, into, key));
-                declare_local(c, "super^", 6, hidden, 1);
+                Local *replaced = declare_local(c, "super^", 6, hidden, 1);
+                if (replaced == NULL) break;
+                replaced->declaration = entry;
             }
 
             if (entry->v.entry.value->kind == LHAT_NODE_FUNC) {
@@ -2528,7 +2520,7 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     // of this same definition, so the receiver is the self^ the body already
     // holds -- laid out here the way a method call lays it out, and the
     // machine skips it when the hidden member turns out to take none.
-    bool super_call = !method && is_super_ident(c, target);
+    bool super_call = !method && node->checked_super_call;
     if (method) {
         // 05 の 8.9: a host value receiver takes its width of slots, and the
         // machine reads the member off its head tag -- so the receiver run
@@ -3811,12 +3803,14 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             // must carry the identity chosen by analysis. Unresolved references
             // are not rebound by searching compiler scopes.
             if ((name_is(name, length, "it^") || name_is(name, length, "...") ||
-                 name_is(name, length, "def^") || name_is(name, length, "self^")) &&
+                 name_is(name, length, "def^") || name_is(name, length, "self^") ||
+                 name_is(name, length, "super^")) &&
                 node->checked_binding == NULL) {
                 fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
                 return;
             }
-            // Remaining special bindings still use the legacy lookup below.
+            // Bindings not yet carrying identities (notably enums) still
+            // use the legacy lookup below; see the pipeline migration inventory.
             if (!(node->checked_binding != NULL
                       ? emit_binding_read(c, node->checked_binding, name, length, into)
                       : resolve_name(c, name, length, into))) {
