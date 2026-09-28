@@ -141,10 +141,56 @@ static void test_binding_identity(void)
     unit_dispose(&u);
 }
 
+static void test_error_declaration_identity(void)
+{
+    Run r;
+    LHAT_TEST("same-spelled error declarations in nested scopes stay distinct");
+    run_text(&r,
+        "errordef^ E {K {value := 40}}\n"
+        "var^ total = 0\n"
+        "do^{\n"
+        "  errordef^ E {K {value := 2}}\n"
+        "  var^ inner = error^ E.K\n"
+        "  total := inner.value\n"
+        "}\n"
+        "var^ outer = error^ E.K\nreturn^ total + outer.value\n");
+    CHECK_INTEGER(&r, 42);
+    LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
+    run_dispose(&r);
+
+    LHAT_TEST("error defaults retain the declaration's lexical binding");
+    run_text(&r,
+        "var^ x = 42\ndo^{errordef^ E {K {value := x}}\n"
+        "do^{var^ x = 100\nvar^ e = error^ E.K\nreturn^ e.value}}\n");
+    CHECK_INTEGER(&r, 42);
+    LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
+    run_dispose(&r);
+
+    LHAT_TEST("REPL error defaults are read with their declaring source");
+    TestSession *session = test_session_new();
+    Run one, two;
+    compile_next_text(&one, session, "errordef^ E {K {value := 42}}\n");
+    compile_next_text(&two, session, "var^ e = error^ E.K\nreturn^ e.value\n");
+    LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(two.compiled, LHAT_COMPILE_OK);
+    if (one.compiled == LHAT_COMPILE_OK && two.compiled == LHAT_COMPILE_OK) {
+        LhatMachine *machine = lhat_machine_new();
+        lhat_run(machine, one.proto);
+        LhatRunResult result = lhat_run(machine, two.proto);
+        LHAT_CHECK_EQ_INT(result.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(result.value), 42);
+        lhat_machine_dispose(machine);
+    }
+    test_session_dispose(session);
+    compiled_dispose(&two);
+    compiled_dispose(&one);
+}
+
 int main(void)
 {
     test_policy_parity();
     test_nominal_type_lowering();
     test_binding_identity();
+    test_error_declaration_identity();
     return lhat_test_report("test_pipeline");
 }

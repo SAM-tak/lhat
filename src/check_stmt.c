@@ -1818,6 +1818,7 @@ static void check_errordef(Checker *c, const LhatNode *node)
         LhatType *type = lhat_type_error_kind(c->result->types, set, kind_name,
                                               kind_length);
         ((LhatNode *)kind)->checked_type = type;
+        if (type != NULL) type->v.error.declaration = kind;
         chk_kind_declared_at(c, type, kind->v.named.name);
         for (const LhatNode *field = kind->v.named.members; field != NULL;
              field = field->next) {

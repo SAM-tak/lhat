@@ -6091,7 +6091,8 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
     // more a FUNC or a TYPEOF than HOSTVALUE is, so those stamps stay
     // untouched.
     if (node != NULL &&
-        (chk_is_hostvalue(type) || lhat_type_tuple_arm_width(type) > 0)) {
+        (node->kind == LHAT_NODE_ERROR_NEW ||
+         chk_is_hostvalue(type) || lhat_type_tuple_arm_width(type) > 0)) {
         ((LhatNode *)node)->checked_type = type;
     } else if (node != NULL && node->kind != LHAT_NODE_FUNC &&
                node->kind != LHAT_NODE_TYPEOF && node->kind != LHAT_NODE_TYPE_VALUE) {

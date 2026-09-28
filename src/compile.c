@@ -238,15 +238,11 @@ typedef struct DefDecl {
 } DefDecl;
 
 typedef struct ErrorDecl {
-    const char *name;
-    size_t length;
     const LhatNode *node;         // the errordef^, for the field defaults
     // 03 の 4.3: read the node through the lexer it came from. An earlier
     // input of a session is still where its offsets mean something.
     const LhatLexer *lexer;
-    const LhatErrorKind *group;   // stands for the whole declaration
     const LhatErrorKind **kinds;  // one per kind, in declaration order
-    size_t kind_count;
 } ErrorDecl;
 
 // Where the compiler stands: the statement or expression it is under, which
@@ -1062,13 +1058,12 @@ static Compiler *root_of(Compiler *c)
     return c;
 }
 
-static const ErrorDecl *find_error_decl(Compiler *c, const char *name,
-                                        size_t length)
+static const ErrorDecl *find_error_decl(Compiler *c, const LhatNode *node)
 {
     const Compiler *root = root_of(c);
     for (size_t i = 0; i < root->error_count; i++) {
         const ErrorDecl *decl = &root->errors[i];
-        if (decl->length == length && memcmp(decl->name, name, length) == 0) {
+        if (decl->node == node) {
             return decl;
         }
     }
@@ -1086,7 +1081,7 @@ static void declare_error(Compiler *c, const LhatNode *node)
         fail(c, LHAT_COMPILE_UNSUPPORTED);
         return;
     }
-    if (find_error_decl(c, name, length) != NULL) {
+    if (find_error_decl(c, node) != NULL) {
         return;  // already registered; 8.7's pre-pass may reach it twice
     }
 
@@ -1163,13 +1158,9 @@ static void declare_error(Compiler *c, const LhatNode *node)
     }
 
     ErrorDecl *decl = &root->errors[root->error_count++];
-    decl->name = name;
-    decl->length = length;
     decl->node = node;
     decl->lexer = c->lexer;
-    decl->group = group;
     decl->kinds = kinds;
-    decl->kind_count = kind_count;
 }
 
 // 8.7's rule read for types: an errordef^ is visible across the scope it is
@@ -1183,179 +1174,28 @@ static void declare_errors(Compiler *c, const LhatNode *statements)
     }
 }
 
-typedef struct {
-    const char *text;
-    size_t length;
-} QualifierSegment;
-
-// Flattens a chain of MEMBER nodes into [root, ..., leaf] -- "io.IOError.
-// NotFound" becomes [io, IOError, NotFound]. 0 when a segment along the way
-// is not a plain name, or there are more than fit in `capacity`.
-static size_t flatten_qualified_path(Compiler *c, const LhatNode *node,
-                                     QualifierSegment *segments,
-                                     size_t capacity)
+// Map the already-resolved error kind to its runtime identity and source.
+// No spelling or qualification is interpreted by the emitter.
+static const LhatErrorKind *compiled_error_kind(Compiler *c, const LhatType *type,
+                                                const LhatLexer **lexer)
 {
-    if (node->kind == LHAT_NODE_MEMBER) {
-        size_t count = flatten_qualified_path(c, node->v.access.target,
-                                              segments, capacity);
-        if (count == 0 || count >= capacity) {
-            return 0;
-        }
-        const char *text = NULL;
-        size_t length = 0;
-        if (!node_name(c, node->v.access.argument, &text, &length)) {
-            return 0;
-        }
-        segments[count].text = text;
-        segments[count].length = length;
-        return count + 1;
-    }
-    if (capacity == 0) {
-        return 0;
-    }
-    const char *text = NULL;
-    size_t length = 0;
-    if (!node_name(c, node, &text, &length)) {
-        return 0;
-    }
-    segments[0].text = text;
-    segments[0].length = length;
-    return 1;
-}
-
-// segments[from..to), joined by ".", spells exactly `entry_text`.
-static bool segments_match(const QualifierSegment *segments, size_t from,
-                           size_t to, const char *entry_text)
-{
-    for (size_t i = from; i < to; i++) {
-        size_t seg_len = segments[i].length;
-        if (strncmp(entry_text, segments[i].text, seg_len) != 0) {
-            return false;
-        }
-        entry_text += seg_len;
-        if (i + 1 < to) {
-            if (*entry_text != '.') {
-                return false;
-            }
-            entry_text++;
-        }
-    }
-    return *entry_text == '\0';
-}
-
-// 05 の 8.7 の誤り版: what lhat_register_error_kind (program.h) put in
-// LhatUnits.host_errors. Tried only once the unit's own errordef^s have had
-// their chance (resolve_kind below) -- import^'s own rule, so a local name
-// always wins and the answer for a host name does not depend on what else
-// this unit happens to declare.
-static const LhatErrorKind *resolve_host_kind(Compiler *c, const LhatNode *path,
-                                              bool *from_host)
-{
-    const LhatUnits *units = root_of(c)->units;
-    if (units == NULL || units->host_errors == NULL) {
+    *lexer = NULL;
+    if (type == NULL || type->kind != LHAT_TYPE_ERROR_KIND) {
         return NULL;
     }
-
-    QualifierSegment segments[LHAT_MAX_QUALIFIER_SEGMENTS];
-    size_t count = flatten_qualified_path(c, path, segments,
-                                          LHAT_MAX_QUALIFIER_SEGMENTS);
-    if (count < 2) {
-        return NULL;  // a module name alone never reaches a kind
-    }
-
-    for (size_t i = 0; i < units->host_error_count; i++) {
-        const LhatHostErrorKind *entry = &units->host_errors[i];
-
-        // "module...Name.Variant" -- the last segment names one kind.
-        if (count >= 3 &&
-            segments_match(segments, 0, count - 2, entry->module) &&
-            segments_match(segments, count - 2, count - 1, entry->name)) {
-            const char *wanted = segments[count - 1].text;
-            size_t wanted_length = segments[count - 1].length;
-            for (size_t v = 0; v < entry->variant_count; v++) {
-                size_t vlen = strlen(entry->variant_names[v]);
-                if (vlen == wanted_length &&
-                    memcmp(entry->variant_names[v], wanted, vlen) == 0) {
-                    if (from_host != NULL) {
-                        *from_host = true;
-                    }
-                    return entry->variants[v];
-                }
+    if (type->v.error.declaration == NULL) return type->v.error.runtime_kind;
+    Compiler *root = root_of(c);
+    for (size_t i = 0; i < root->error_count; i++) {
+        const ErrorDecl *decl = &root->errors[i];
+        size_t index = 0;
+        for (const LhatNode *k = decl->node->v.named.members; k != NULL; k = k->next, index++) {
+            if (k == type->v.error.declaration) {
+                *lexer = decl->lexer;
+                return decl->kinds[index];
             }
-        }
-
-        // "module...Name" -- the declaration as a whole (04 の 2.3: what
-        // fits^ against the union, rather than one kind, asks for).
-        if (segments_match(segments, 0, count - 1, entry->module) &&
-            segments_match(segments, count - 1, count, entry->name)) {
-            return entry->group;
         }
     }
     return NULL;
-}
-
-// Resolves the 'IOError' or 'IOError.NotFound' a use writes. `kind_node`
-// comes back as the ERROR_KIND declaring the fields, or NULL either when the
-// whole declaration was named or when the answer came from a host
-// registration (05 の 8.7 の誤り版) rather than an errordef^ in this unit --
-// a host kind has no AST of fields to point at. `from_host`, when not NULL,
-// is set to say which of those two NULL cases it was; compile_error_new is
-// the only caller that needs to tell them apart.
-static const LhatErrorKind *resolve_kind(Compiler *c, const LhatNode *path,
-                                         const LhatNode **kind_node,
-                                         bool *from_host)
-{
-    *kind_node = NULL;
-    if (from_host != NULL) {
-        *from_host = false;
-    }
-    if (path == NULL) {
-        return NULL;
-    }
-
-    const LhatNode *group_node = path;
-    const LhatNode *member = NULL;
-    if (path->kind == LHAT_NODE_MEMBER) {
-        group_node = path->v.access.target;
-        member = path->v.access.argument;
-    }
-
-    const char *name = NULL;
-    size_t length = 0;
-    const ErrorDecl *decl = node_name(c, group_node, &name, &length)
-                                ? find_error_decl(c, name, length)
-                                : NULL;
-    if (decl != NULL) {
-        if (member == NULL) {
-            return decl->group;
-        }
-
-        const char *wanted = NULL;
-        size_t wanted_length = 0;
-        if (node_name(c, member, &wanted, &wanted_length)) {
-            // The declaration may be an earlier input's, and its offsets
-            // index that input's text rather than this one's.
-            Compiler reading = *c;
-            reading.lexer = decl->lexer;
-
-            size_t index = 0;
-            for (const LhatNode *k = decl->node->v.named.members; k != NULL;
-                 k = k->next, index++) {
-                const char *kind_name = NULL;
-                size_t kind_length = 0;
-                if (node_name(&reading, k->v.named.name, &kind_name,
-                              &kind_length) &&
-                    kind_length == wanted_length &&
-                    memcmp(kind_name, wanted, wanted_length) == 0) {
-                    *kind_node = k;
-                    return decl->kinds[index];
-                }
-            }
-        }
-        return NULL;
-    }
-
-    return resolve_host_kind(c, path, from_host);
 }
 
 static void load_string_bytes(Compiler *c, uint8_t into, const char *text,
@@ -1481,16 +1321,17 @@ static bool error_field_given(Compiler *c, const LhatNode *node,
 // construction, rather than stored anywhere.
 static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
 {
-    const LhatNode *kind_node = NULL;
-    bool from_host = false;
+    const LhatType *type = node->checked_type;
+    const LhatLexer *declaring_lexer = NULL;
     const LhatErrorKind *kind =
-        resolve_kind(c, node->v.named.name, &kind_node, &from_host);
-    if (kind == NULL || (kind_node == NULL && !from_host)) {
+        compiled_error_kind(c, type, &declaring_lexer);
+    if (kind == NULL) {
         // Naming the declaration rather than one of its kinds leaves nothing
         // to construct: 2.3 makes it the union, not a type of its own.
         fail(c, LHAT_COMPILE_UNDEFINED);
         return;
     }
+    const LhatNode *kind_node = type->v.error.declaration;
 
     uint8_t mark = c->next_register;
     uint8_t holder = reserve(c);
@@ -1519,7 +1360,7 @@ static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
     // The declared fields the construction left out. 2.2 makes a default an
     // expression evaluated at each construction rather than a stored value,
     // which is why it is compiled here and not once at the declaration.
-    // kind_node is NULL for a host-registered kind (from_host above) --
+    // kind_node is NULL for a host-registered kind --
     // v1 registers none of those with fields, so there is nothing to add.
     for (const LhatNode *field =
              kind_node != NULL ? kind_node->v.named.members : NULL;
@@ -1530,7 +1371,8 @@ static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
         }
         const char *name = NULL;
         size_t length = 0;
-        if (!node_name(c, field->v.param.name, &name, &length)) {
+        if (!lhat_node_name(field->v.param.name, declaring_lexer->source->text,
+                            declaring_lexer->strings, &name, &length)) {
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
@@ -1541,7 +1383,10 @@ static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
         uint8_t key = reserve(c);
         uint8_t value = reserve(c);
         load_string_bytes(c, key, name, length);
+        const LhatLexer *caller_lexer = c->lexer;
+        c->lexer = declaring_lexer;
         compile_expression(c, fallback, value);
+        c->lexer = caller_lexer;
         emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
         c->next_register = at;
     }

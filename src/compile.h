@@ -69,9 +69,9 @@ typedef struct {
     const char *const *initial_members;
     size_t initial_count;
 
-    // What the program's lhat_register_error_kind calls registered, so that
-    // resolve_kind can answer a name none of this unit's own errordef^s
-    // declared. NULL/0 when the host registered none.
+    // Host registration metadata retained with the session configuration.
+    // Error construction uses the checked type's linked identity, not a
+    // second lookup through this table. NULL/0 when none were registered.
     const LhatHostErrorKind *host_errors;
     size_t host_error_count;
 
