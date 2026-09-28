@@ -141,6 +141,77 @@ static void test_binding_identity(void)
     unit_dispose(&u);
 }
 
+static void test_focus_and_catch_identity(void)
+{
+    static const char *const sources[] = {
+        // Both counted-loop focuses, including a stacked reach captured by a body.
+        "for^ 40 to^ 40 {for^ 2 to^ 2 {"
+        "let^ read = f^ {return^ it^^ + it^}\nreturn^ read()}}\n",
+        // A counted focus remains distinct from a named walking target.
+        "for^ 40 to^ 40 {for^ n in^ {2} {return^ it^ + n}}\n",
+        // Narrowing must preserve the catch binding's identity.
+        "errordef^ E {A {n:number^}, B}\n"
+        "let^ fail = f^ {return^ error^ E.A{n := 42}}\n"
+        "return^ fail() catch^ if^ it^ fits^ E.A: it^.n el^: 0 ;\n",
+        // Catch arms introduce an identity separate from the enclosing focus.
+        "errordef^ E {A}\nlet^ fail = f^ {return^ error^ E.A{}}\n"
+        "for^ 42 to^ 42 {do^{var^ ignored = try^ fail()\ncatch^:\n"
+        "let^ read = f^ {return^ it^^}\nreturn^ read()}}\n",
+        // An expression catch's error remains available to an escaping closure.
+        "errordef^ E {A {n:number^}}\n"
+        "let^ fail = f^ {return^ error^ E.A{n := 42}}\n"
+        "let^ read = fail() catch^ (f^ {return^ it^.n})\nreturn^ read()\n",
+    };
+    for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
+        LHAT_TEST(sources[i]);
+        Unit u;
+        check_text(&u, sources[i]);
+        CHECK_CLEAN(&u);
+        Nodes nodes = {0};
+        collect(&nodes, NULL, false, u.parsed.root);
+        size_t uses = 0;
+        for (size_t j = 0; j < nodes.count; j++) {
+            LhatNode *node = (LhatNode *)nodes.nodes[j];
+            const char *name = NULL;
+            size_t length = 0;
+            if (node->kind != LHAT_NODE_HAT_IDENT ||
+                !lhat_node_name(node, u.lexer.source->text, u.lexer.strings,
+                                &name, &length) ||
+                length != 3 || memcmp(name, "it^", 3) != 0) continue;
+            LHAT_CHECK(node->checked_binding != NULL, "it^ has a resolved declaration");
+            if (node->checked_binding == node) continue;
+#if LHAT_WITH_RESOLUTIONS
+            const LhatResolution *resolution = lhat_check_resolution_at(&u.checked, node->offset);
+            LHAT_CHECK(resolution != NULL && resolution->has_definition,
+                       "tooling retains the implicit binding's definition");
+            if (resolution != NULL && node->checked_binding != NULL) {
+                LHAT_CHECK_EQ_INT(resolution->definition, node->checked_binding->offset);
+                LHAT_CHECK(lhat_type_equal(resolution->type, node->checked_type),
+                           "tooling retains the narrowed reference type");
+            }
+#endif
+            // The written reach no longer selects a binding after analysis.
+            // Even a deliberately impossible count must use the recorded identity.
+            node->v.name.hats = 7;
+            uses++;
+        }
+        LHAT_CHECK(uses > 0, "the case exercises implicit references");
+        LhatProto *proto = NULL;
+        LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                          LHAT_COMPILE_OK);
+        if (proto != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LhatRunResult ran = lhat_run(machine, proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK(lhat_is_integer(ran.value), "integer result");
+            if (lhat_is_integer(ran.value)) LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            lhat_machine_dispose(machine);
+            lhat_proto_free(proto);
+        }
+        unit_dispose(&u);
+    }
+}
+
 static void test_error_declaration_identity(void)
 {
     Run r;
@@ -226,6 +297,7 @@ int main(void)
     test_policy_parity();
     test_nominal_type_lowering();
     test_binding_identity();
+    test_focus_and_catch_identity();
     test_error_declaration_identity();
     test_definition_origins();
     return lhat_test_report("test_pipeline");

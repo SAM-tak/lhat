@@ -940,6 +940,10 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
         outer->reached = true;
+        ((LhatNode *)node)->checked_binding = outer->declaration;
+#if LHAT_WITH_RESOLUTIONS
+        chk_record_resolution(c, node, outer);
+#endif
         return outer->type;
     }
 
@@ -1267,6 +1271,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
                                             chk_only(c, left, unwanted), node->offset);
             if (caught != NULL) {
                 caught->reached = true;
+                caught->declaration = node;
             }
             // Either way the right side is read under it^ -- 'panic^ it^'
             // is the form this exists for, and the value panic^ carries is
@@ -6202,6 +6207,26 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
         case LHAT_NODE_FOCUS: {
             // 13.11: a branch may know more about this path than the binding.
             LhatType *narrowed = chk_narrowed_type(c, node);
+            if (narrowed != NULL &&
+                (node->kind == LHAT_NODE_HAT_IDENT || node->kind == LHAT_NODE_FOCUS)) {
+                chk_infer_name(c, node, named_type);
+#if LHAT_WITH_RESOLUTIONS
+                const char *name = NULL;
+                size_t length = 0;
+                Binding *binding = NULL;
+                if (chk_node_name(c, node, &name, &length)) {
+                    binding = node->kind == LHAT_NODE_HAT_IDENT && node->v.name.hats > 1
+                        ? chk_scope_find_skipping(c->scope, name, length, node->v.name.hats - 1)
+                        : read_binding_from(c->scope, name, length, NULL);
+                }
+                if (binding != NULL) {
+                    chk_record_narrowed_resolution(c, node, binding, narrowed);
+                } else {
+                    chk_record_typed_resolution(c, node, narrowed);
+                }
+#endif
+                return narrowed;
+            }
             if (narrowed == NULL || named_type != NULL) {
                 LhatType *held = chk_infer_name(c, node, named_type);
                 if (narrowed == NULL) {

@@ -315,6 +315,11 @@ static void test_execution_pipeline_parity(void)
         "let^ Derived = Base .. def^{self^{y := 2}}\n"
         "let^ d = Derived.new()\nreturn^ d.x + d.y\n",
         "return^ twice(21)\n",
+        "for^ 40 to^ 40 {for^ 2 to^ 2 {"
+        "let^ read = f^ {return^ it^^ + it^}\nreturn^ read()}}\n",
+        "errordef^ E {A {n:number^}, B}\n"
+        "let^ fail = f^ {return^ error^ E.A{n := 42}}\n"
+        "return^ fail() catch^ if^ it^ fits^ E.A: it^.n el^: 0 ;\n",
         "import^ lib.draw\nreturn^ p^ {import^ lib.draw\nreturn^ lib.draw.line()}\n",
     };
     char base[512], config[512], path[512];

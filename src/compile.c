@@ -1469,7 +1469,9 @@ static void compile_catch_wide(Compiler *c, const LhatNode *node, uint8_t into,
     emit(c, lhat_encode_abc(LHAT_BC_ISERROR, test, caught, 0));
     size_t past = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
 
-    declare_local(c, "it^", 3, caught, 1);  // catch^ opens no brace of its own
+    Local *binding = declare_local(c, "it^", 3, caught, 1);
+    if (binding == NULL) return;
+    binding->declaration = node;  // catch^ opens no brace of its own
     // 04 の 4.1改: the arm that does not come back. Nothing is written into
     // `into` and nothing needs to be -- what falls through to the join below
     // is the left having succeeded, and this side never reaches it. The same
@@ -3774,6 +3776,16 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             // this^ is an instruction rather than a binding, so its stacked
             // form is a capture of its own (resolve_this).
             if (node->kind == LHAT_NODE_HAT_IDENT && node->v.name.hats > 1) {
+                if (node->checked_binding != NULL) {
+                    if (!emit_binding_read(c, node, name, length, into)) {
+                        fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
+                    }
+                    return;
+                }
+                if (name_is(name, length, "it^")) {
+                    fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
+                    return;
+                }
                 size_t levels = node->v.name.hats - 1;
                 if (name_is(name, length, "this^")) {
                     // The body `levels` out has to exist, and be a body --
@@ -3846,8 +3858,14 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     return;
                 }
             }
-            // Lexical declarations use their checked identity. Special and
-            // implicit bindings still use the legacy lookup below.
+            // Focus and catch references, like lexical declarations, must
+            // carry the identity chosen by analysis. An unresolved it^ is
+            // not rebound by counting compiler scopes.
+            if (name_is(name, length, "it^") && node->checked_binding == NULL) {
+                fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
+                return;
+            }
+            // Remaining special bindings still use the legacy lookup below.
             if (!(node->checked_binding != NULL
                       ? emit_binding_read(c, node, name, length, into)
                       : resolve_name(c, name, length, into))) {
@@ -5195,7 +5213,9 @@ static void compile_arms(Compiler *c, TryContext *context,
 
         // 4.2: it^ is the error, and the register it is already in.
         size_t local_mark = c->local_count;
-        declare_local(c, "it^", 3, caught, 1);
+        Local *binding = declare_local(c, "it^", 3, caught, 1);
+        if (binding == NULL) return;
+        binding->declaration = arm;
         compile_statement(c, arm->v.clause.body);
         release_locals(c, local_mark);
 
@@ -5414,9 +5434,11 @@ static void declare_targets(Compiler *c, const LhatNode *focus)
             emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, (uint8_t)(slot + i), 0,
                                     0));
         }
-        if (declare_local(c, name, length, slot, (uint8_t)width) == NULL) {
+        Local *binding = declare_local(c, name, length, slot, (uint8_t)width);
+        if (binding == NULL) {
             return;
         }
+        binding->declaration = target_of(element)->checked_binding;
     }
 }
 

@@ -1779,6 +1779,8 @@ static void check_focus(Checker *c, const LhatNode *node)
                                    target_name_node(element)->offset);
         if (b != NULL) {
             b->reached = true;  // 8.7: a turn of the loop has bound it
+            b->declaration = target_name_node(element);
+            ((LhatNode *)b->declaration)->checked_binding = b->declaration;
             // 8.9: what each turn binds is the walk's to say, so the focus of
             // an in^ is a let^ -- 16.3 already refuses the ':=' and the
             // introducer that would have said otherwise, since there is no
@@ -2275,6 +2277,7 @@ static void check_arms(Checker *c, const LhatNode *owner, LhatType *caught,
                           here != NULL ? here : chk_any_error(c), arm->offset);
         if (bound != NULL) {
             bound->reached = true;
+            bound->declaration = arm;
         }
         // An arm is one path among several, so a let^ written in it is as
         // uncertain as one inside an if^ clause.
