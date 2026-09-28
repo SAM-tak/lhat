@@ -17,10 +17,22 @@ typedef struct RtSeen {
     LhatRuntimeType *runtime;
 } RtSeen;
 
-static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
-                                        const LhatType *type,
-                                        const RtSeen *seen)
+typedef struct {
+    LhatHeap *heap;
+    // A missing child descriptor must not silently weaken a runtime type.
+    // NULL remains valid for absent/NONE slots; actual failures poison this
+    // conversion, whose partial objects remain owned by the caller's heap.
+    bool failed;
+} RtBuild;
+
+static LhatRuntimeType *rt_from_checked(RtBuild *build, const LhatType *type,
+                                        const RtSeen *seen);
+
+static LhatRuntimeType *build_rt(RtBuild *build,
+                                         const LhatType *type,
+                                         const RtSeen *seen)
 {
+    LhatHeap *heap = build->heap;
     if (type == NULL) {
         return NULL;
     }
@@ -28,15 +40,15 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
         if (s->type == type && s->runtime != NULL) return s->runtime;
     }
     if (type->kind == LHAT_TYPE_ARGUMENT) {
-        return rt_from_checked(heap, type->v.argument.bound, seen);
+        return rt_from_checked(build, type->v.argument.bound, seen);
     }
     if (type->specialization_base != NULL) {
         LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_APPLIED);
         if (rt == NULL) return NULL;
-        rt->result = rt_from_checked(heap, type->specialization_base, seen);
+        rt->result = rt_from_checked(build, type->specialization_base, seen);
         if (rt->result == NULL) return NULL;
         for (const LhatTypeList *a = type->specialization_arguments; a; a = a->next) {
-            LhatRuntimeType *argument = rt_from_checked(heap, a->type, seen);
+            LhatRuntimeType *argument = rt_from_checked(build, a->type, seen);
             if (argument == NULL || !lhat_type_rt_add_part(rt, argument)) return NULL;
         }
         return rt;
@@ -70,6 +82,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
                 rt->enum_decl = type;
                 rt->enum_name = lhat_string_new(heap, type->v.error.name,
                                                 type->v.error.name_length);
+                if (rt->enum_name == NULL) return NULL;
             }
             return rt;
         }
@@ -80,11 +93,13 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
                 rt->enum_decl = type->v.error.set;
                 rt->enum_name = lhat_string_new(heap, type->v.error.name,
                                                 type->v.error.name_length);
+                if (rt->enum_name == NULL) return NULL;
                 size_t index = 0;
                 if (type->v.error.set != NULL) {
                     rt->enum_owner_name = lhat_string_new(
                         heap, type->v.error.set->v.error.name,
                         type->v.error.set->v.error.name_length);
+                    if (rt->enum_owner_name == NULL) return NULL;
                     size_t at = 0;
                     for (const LhatTypeList *k =
                              type->v.error.set->v.error.kinds;
@@ -174,7 +189,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             RtSeen within = { type->v.table.instance, seen };
             if (type->v.table.instance != NULL) {
                 rt->instance =
-                    rt_from_checked(heap, type->v.table.instance, seen);
+                    rt_from_checked(build, type->v.table.instance, seen);
                 seen = &within;
             }
             // 14.10: the sequence half first, in position order, the way a
@@ -186,7 +201,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
                 if (m == NULL) {
                     break;
                 }
-                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, m->type, seen))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(build, m->type, seen))) {
                     return NULL;
                 }
                 sequence++;
@@ -231,17 +246,17 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
                         lhat_string_new(heap, m->name, m->name_length);
                     if (name == NULL ||
                         !lhat_type_rt_add_member(
-                            rt, name, rt_from_checked(heap, m->type, seen))) {
+                            rt, name, rt_from_checked(build, m->type, seen))) {
                         return NULL;
                     }
                 }
             }
             if (type->v.table.variadic != NULL) {
-                rt->variadic = rt_from_checked(heap, type->v.table.variadic, seen);
+                rt->variadic = rt_from_checked(build, type->v.table.variadic, seen);
             }
             if (type->v.table.index_key != NULL) {
-                rt->index_key = rt_from_checked(heap, type->v.table.index_key, seen);
-                rt->index_value = rt_from_checked(heap, type->v.table.index_value, seen);
+                rt->index_key = rt_from_checked(build, type->v.table.index_key, seen);
+                rt->index_value = rt_from_checked(build, type->v.table.index_value, seen);
             }
             lhat_type_rt_sort_members(rt);
             return rt;
@@ -259,17 +274,17 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             rt->self_last = type->v.func.self_last;
             rt->closed = type->v.func.closed;  // 15.13
             for (LhatTypeList *p = type->v.func.params; p != NULL; p = p->next) {
-                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, p->type, seen))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(build, p->type, seen))) {
                     return NULL;
                 }
             }
             if (type->v.func.variadic != NULL) {
-                rt->variadic = rt_from_checked(heap, type->v.func.variadic, seen);
+                rt->variadic = rt_from_checked(build, type->v.func.variadic, seen);
             }
             // 15.5: what a call answers -- the coroutine where the body
             // yields (13.9). 14.16's typeof^ comes through here, and what a
             // reader wants from a signature is what a call hands back.
-            rt->result = rt_from_checked(heap, lhat_type_call_answer(type), seen);
+            rt->result = rt_from_checked(build, lhat_type_call_answer(type), seen);
             return rt;
         }
 
@@ -280,9 +295,9 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             }
             // 13.9: an empty slot stays empty. rt_from_checked answers NULL
             // for a NULL, which is what the writer reads as "left out".
-            rt->receive = rt_from_checked(heap, type->v.coroutine.receive, seen);
-            rt->produce = rt_from_checked(heap, type->v.coroutine.produce, seen);
-            rt->result = rt_from_checked(heap, type->v.coroutine.result, seen);
+            rt->receive = rt_from_checked(build, type->v.coroutine.receive, seen);
+            rt->produce = rt_from_checked(build, type->v.coroutine.produce, seen);
+            rt->result = rt_from_checked(build, type->v.coroutine.result, seen);
             rt->endless = type->v.coroutine.endless;
             rt->coroutine_top = type->coroutine_top;
             rt->receive_any = type->receive_any;
@@ -319,7 +334,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             }
             for (LhatTypeList *a = type->v.composite.arms; a != NULL;
                  a = a->next) {
-                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, a->type, seen))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(build, a->type, seen))) {
                     return NULL;
                 }
             }
@@ -333,7 +348,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             }
             for (LhatTypeList *a = type->v.composite.arms; a != NULL;
                  a = a->next) {
-                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, a->type, seen))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(build, a->type, seen))) {
                     return NULL;
                 }
             }
@@ -350,7 +365,7 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             }
             for (LhatTypeList *a = type->v.composite.arms; a != NULL;
                  a = a->next) {
-                if (!lhat_type_rt_add_part(rt, rt_from_checked(heap, a->type, seen))) {
+                if (!lhat_type_rt_add_part(rt, rt_from_checked(build, a->type, seen))) {
                     return NULL;
                 }
             }
@@ -450,9 +465,20 @@ static bool mentions_error(const LhatType *type, const RtSeen *seen)
     }
 }
 
+static LhatRuntimeType *rt_from_checked(RtBuild *build, const LhatType *type,
+                                        const RtSeen *seen)
+{
+    if (build->failed) return NULL;
+    while (type != NULL && type->kind == LHAT_TYPE_ARGUMENT) type = type->v.argument.bound;
+    LhatRuntimeType *rt = build_rt(build, type, seen);
+    if (rt == NULL && type != NULL && type->kind != LHAT_TYPE_NONE) build->failed = true;
+    return build->failed ? NULL : rt;
+}
+
 LhatRuntimeType *lhat_rt_from_checked(LhatHeap *heap, const LhatType *type)
 {
-    return rt_from_checked(heap, type, NULL);
+    RtBuild build = {heap, false};
+    return rt_from_checked(&build, type, NULL);
 }
 
 bool lhat_rt_mentions_error(const LhatType *type)

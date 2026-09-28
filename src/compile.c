@@ -384,7 +384,7 @@ static void emit_move_wide(Compiler *c, uint8_t into, uint8_t from,
 static void emit(Compiler *c, LhatInstruction instruction)
 {
     if (lhat_chunk_emit(&c->proto->chunk, instruction, c->line) == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
     }
 }
 
@@ -393,7 +393,7 @@ static size_t emit_jump(Compiler *c, LhatOpcode op, uint8_t a)
     size_t at = lhat_chunk_emit(&c->proto->chunk, lhat_encode_jump(op, a, 0),
                                 c->line);
     if (at == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
     }
     return at;
 }
@@ -526,7 +526,8 @@ static void load_constant(Compiler *c, uint8_t into, LhatValue value)
 {
     size_t k = lhat_chunk_constant(&c->proto->chunk, value);
     if (k == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, c->proto->chunk.constant_count > 0xFFFF
+                    ? LHAT_COMPILE_TOO_COMPLEX : LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
     emit(c, lhat_encode_abx(LHAT_BC_LOADK, into, (uint16_t)k));
@@ -544,7 +545,8 @@ static Local *declare_local(Compiler *c, const char *name, size_t length,
                                               reg, width)
                        : SIZE_MAX;
     if (table == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, c->local_count >= LHAT_MAX_LOCALS
+                    ? LHAT_COMPILE_TOO_COMPLEX : LHAT_COMPILE_OUT_OF_MEMORY);
         return NULL;
     }
     Local *local = &c->locals[c->local_count++];
@@ -608,7 +610,8 @@ static size_t capture_binding(Compiler *c, const LhatNode *binding,
     }
     size_t added = lhat_proto_add_upvalue(c->proto, source, (uint8_t)index, name, length);
     if (added == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, c->proto->upvalue_count >= LHAT_MAX_UPVALUES
+                    ? LHAT_COMPILE_TOO_COMPLEX : LHAT_COMPILE_OUT_OF_MEMORY);
         return SIZE_MAX;
     }
     c->upvalue_bindings[added].declaration = binding;
@@ -643,7 +646,8 @@ static size_t capture_this_body(Compiler *c, const LhatNode *body)
                                        (uint8_t)outer, "this^", 5);
     }
     if (added == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, c->proto->upvalue_count >= LHAT_MAX_UPVALUES
+                    ? LHAT_COMPILE_TOO_COMPLEX : LHAT_COMPILE_OUT_OF_MEMORY);
         return SIZE_MAX;
     }
     c->upvalue_bindings[added].this_body = body;
@@ -784,7 +788,7 @@ static void declare_error(Compiler *c, const LhatNode *node)
         ErrorDecl *bigger =
             (ErrorDecl *)lhat_realloc(root->errors, grown * sizeof *bigger);
         if (bigger == NULL) {
-            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
             return;
         }
         root->errors = bigger;
@@ -804,7 +808,7 @@ static void declare_error(Compiler *c, const LhatNode *node)
         lhat_error_kind_new(&chunk->heap, NULL, node->v.named.local, group_name);
     if (group_name == NULL || group == NULL || kinds == NULL) {
         lhat_free(kinds);
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
 
@@ -839,7 +843,7 @@ static void declare_error(Compiler *c, const LhatNode *node)
                          : NULL;
         if (kind == NULL) {
             lhat_free(kinds);
-            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
             return;
         }
         kinds[index] = kind;
@@ -894,7 +898,8 @@ static void load_string_bytes(Compiler *c, uint8_t into, const char *text,
 {
     size_t k = lhat_chunk_string(&c->proto->chunk, text, length);
     if (k == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, c->proto->chunk.constant_count > 0xFFFF
+                    ? LHAT_COMPILE_TOO_COMPLEX : LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
     emit(c, lhat_encode_abx(LHAT_BC_LOADK, into, (uint16_t)k));
@@ -982,7 +987,8 @@ static void load_kind(Compiler *c, uint8_t into, const LhatErrorKind *kind)
     size_t k = lhat_chunk_constant(&c->proto->chunk,
                                    lhat_object((LhatObject *)(void *)kind));
     if (k == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, c->proto->chunk.constant_count > 0xFFFF
+                    ? LHAT_COMPILE_TOO_COMPLEX : LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
     emit(c, lhat_encode_abx(LHAT_BC_LOADK, into, (uint16_t)k));
@@ -1285,12 +1291,16 @@ static void compile_enumdef(Compiler *c, const LhatNode *node)
     LhatHeap *owner_heap = &root_of(c)->proto->chunk.heap;
     LhatRuntimeType *decl_rt = lhat_type_rt_new(owner_heap, LHAT_TYPE_RT_ENUM);
     if (decl_rt == NULL) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
     decl_rt->enum_decl = node->checked_type;  // NULL unchecked: fits^ needs
                                               // the checker anyway
     decl_rt->enum_name = lhat_string_new(owner_heap, name, length);
+    if (decl_rt->enum_name == NULL) {
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
+        return;
+    }
 
     const Local *binding = local_for_binding(c, node->v.named.name->checked_binding);
     if (binding == NULL) {
@@ -1301,7 +1311,8 @@ static void compile_enumdef(Compiler *c, const LhatNode *node)
     size_t k = lhat_chunk_constant(&c->proto->chunk,
                                    lhat_object((LhatObject *)decl_rt));
     if (k == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, c->proto->chunk.constant_count > 0xFFFF
+                    ? LHAT_COMPILE_TOO_COMPLEX : LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
     emit(c, lhat_encode_abx(LHAT_BC_NEWENUM, reg, (uint16_t)k));
@@ -1404,6 +1415,16 @@ static void compile_fits(Compiler *c, const LhatNode *node, uint8_t into)
 
 // All written types have been resolved by the common semantic pass. Code
 // generation translates that result; it never interprets type syntax again.
+static LhatRuntimeType *runtime_type(Compiler *c, const LhatType *type)
+{
+    while (type != NULL && type->kind == LHAT_TYPE_ARGUMENT) type = type->v.argument.bound;
+    LhatRuntimeType *rt = lhat_rt_from_checked(&root_of(c)->proto->chunk.heap, type);
+    if (rt == NULL && type != NULL && type->kind != LHAT_TYPE_NONE) {
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
+    }
+    return rt;
+}
+
 static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 {
     if (node == NULL) {
@@ -1413,7 +1434,7 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
         fail(c, LHAT_COMPILE_UNSUPPORTED);
         return NULL;
     }
-    return lhat_rt_from_checked(&root_of(c)->proto->chunk.heap, node->checked_type);
+    return runtime_type(c, node->checked_type);
 }
 
 // ---------------------------------------------------------------------------
@@ -1652,7 +1673,7 @@ static void bind_new_hooks(Compiler *c, const DefChain *chain,
 {
     LhatProto *idle = lhat_proto_new();
     if (idle == NULL) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
     idle->is_function = true;
@@ -1662,13 +1683,14 @@ static void bind_new_hooks(Compiler *c, const DefChain *chain,
     size_t index = lhat_proto_add(c->proto, idle);
     if (index == SIZE_MAX) {
         lhat_proto_free(idle);
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, c->proto->proto_count > 0xFFFF
+                    ? LHAT_COMPILE_TOO_COMPLEX : LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
     if (lhat_chunk_emit(&idle->chunk,
                         lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0),
                         c->line) == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
     uint8_t hook = reserve(c);
@@ -2000,7 +2022,7 @@ static void compile_default_new(Compiler *c, const LhatNode *node,
 {
     LhatProto *proto = lhat_proto_new();
     if (proto == NULL) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
     proto->is_function = true;
@@ -2008,7 +2030,8 @@ static void compile_default_new(Compiler *c, const LhatNode *node,
     size_t index = lhat_proto_add(c->proto, proto);
     if (index == SIZE_MAX) {
         lhat_proto_free(proto);
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, c->proto->proto_count > 0xFFFF
+                    ? LHAT_COMPILE_TOO_COMPLEX : LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
 
@@ -2394,13 +2417,18 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
 {
     LhatProto *proto = lhat_proto_new();
     if (proto == NULL) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
     // 04 の 11.6改: the debug label, when the site said one. Cleared either
     // way, so a body written inside this one never inherits it.
     if (c->pending_name != NULL) {
         proto->debug_name = (char *)lhat_alloc(c->pending_name_length + 1);
+        if (proto->debug_name == NULL) {
+            lhat_proto_free(proto);
+            fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
+            return;
+        }
         if (proto->debug_name != NULL) {
             memcpy(proto->debug_name, c->pending_name,
                    c->pending_name_length);
@@ -2423,7 +2451,8 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
     size_t index = lhat_proto_add(c->proto, proto);
     if (index == SIZE_MAX) {
         lhat_proto_free(proto);
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, c->proto->proto_count > 0xFFFF
+                    ? LHAT_COMPILE_TOO_COMPLEX : LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
 
@@ -2446,7 +2475,7 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
             (struct LhatRuntimeType **)lhat_realloc(NULL,
                                                     sizeof *receiver_types);
         if (receiver_types == NULL) {
-            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
             return;
         }
         receiver_types[0] = NULL;
@@ -2574,12 +2603,11 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
                                                ((size_t)proto->parameters + 1) *
                                                    sizeof *types);
         if (types == NULL) {
-            fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
             return;
         }
         proto->parameter_types = types;
-        types[proto->parameters] = lhat_rt_from_checked(
-            &root_of(c)->proto->chunk.heap, settled_type);
+        types[proto->parameters] = runtime_type(c, settled_type);
         proto->parameters++;
     }
     // 05 の 8.9: see the wide-parameter refusal inside the loop -- '...'
@@ -2624,14 +2652,13 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
     // The resolved signature already preserves explicit any^ and inferred
     // types alike. A constructor hook does not return the constructed value.
     proto->result_type = kind != LHAT_BODY_NEW_HOOK && signature != NULL
-        ? lhat_rt_from_checked(&root_of(c)->proto->chunk.heap, signature->v.func.result)
+        ? runtime_type(c, signature->v.func.result)
         : NULL;
 
     // 15.2, 13.9: Y and R have no written form at all -- 03 の 5.11a's
     // checked_type is the only place either can come from, written or not.
     if (node->v.func.yields && node->checked_type != NULL) {
         const LhatType *checked = (const LhatType *)node->checked_type;
-        LhatHeap *owner = &root_of(c)->proto->chunk.heap;
         // 15.5: taken off the coroutine the checker assembled rather than off
         // the three fields, so the defaults 13.9 fills in (a body producing
         // nothing produces nil^; one that ends without a value ends with
@@ -2641,9 +2668,9 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         const LhatType *made = lhat_type_call_answer(checked);
         if (made != NULL && made->kind == LHAT_TYPE_CORO) {
             proto->yield_produce_type =
-                lhat_rt_from_checked(owner, made->v.coroutine.produce);
+                runtime_type(c, made->v.coroutine.produce);
             proto->yield_receive_type =
-                lhat_rt_from_checked(owner, made->v.coroutine.receive);
+                runtime_type(c, made->v.coroutine.receive);
             // 13.9: an empty R means a resume of this takes no argument;
             // 13.8改 makes a tuple R that many arguments. An endless body's
             // empty T is a different absence from one that ends without a
@@ -2656,12 +2683,12 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
                     ? (uint8_t)receive_width
                     : (made->v.coroutine.receive != NULL ? 1 : 0);
             proto->yield_endless = made->v.coroutine.endless;
-            proto->result_type = lhat_rt_from_checked(owner, made->v.coroutine.result);
+            proto->result_type = runtime_type(c, made->v.coroutine.result);
         } else {
             proto->yield_produce_type =
-                lhat_rt_from_checked(owner, checked->v.func.yield_produce);
+                runtime_type(c, checked->v.func.yield_produce);
             proto->yield_receive_type =
-                lhat_rt_from_checked(owner, checked->v.func.yield_receive);
+                runtime_type(c, checked->v.func.yield_receive);
         }
     }
 
@@ -2689,7 +2716,7 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
             ? lhat_encode_abc(LHAT_BC_RETURN, self_slot, 0, 0)
             : lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0);
     if (lhat_chunk_emit(&proto->chunk, last, inner.line) == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
     }
 
     emit(c, lhat_encode_abx(LHAT_BC_CLOSURE, into, (uint16_t)index));
@@ -2975,7 +3002,7 @@ static void load_type_constant(Compiler *c, const LhatType *checked,
             ? lhat_rt_from_checked(&c->proto->chunk.heap, checked)
             : lhat_type_rt_new(&c->proto->chunk.heap, LHAT_TYPE_RT_UNKNOWN);
     if (rt == NULL) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
     load_constant(c, into, lhat_object((LhatObject *)rt));
@@ -3117,7 +3144,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                         : lhat_rt_from_checked(&c->proto->chunk.heap, checked);
                 c->next_register = mark;
                 if (rt == NULL) {
-                    fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                    fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
                     return;
                 }
                 load_constant(c, into, lhat_object((LhatObject *)rt));
@@ -4599,7 +4626,7 @@ static size_t emit_cleanup_push(Compiler *c)
                                 lhat_encode_abx(LHAT_BC_PUSHCLEANUP, 0, 0),
                                 c->line);
     if (at == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
     }
     c->cleanup_depth++;
     return at;
@@ -6102,7 +6129,7 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
 
     LhatProto *proto = lhat_proto_new();
     if (proto == NULL) {
-        result.status = LHAT_COMPILE_TOO_COMPLEX;
+        result.status = LHAT_COMPILE_OUT_OF_MEMORY;
         return result;
     }
 
@@ -6112,6 +6139,29 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
     c.proto = proto;
     c.result = &result;
     c.interactive_session = session != NULL;
+
+    // Publish retained state only after every allocation has succeeded. Old
+    // kind objects belong to earlier protos; only the registry array is copied.
+    LhatCompileSession *original_session = session;
+    LhatCompileSession staged_session;
+    size_t retained_errors = session != NULL ? session->error_count : 0;
+    size_t retained_names = session != NULL ? session->count : 0;
+    if (session != NULL) {
+        staged_session = *session;
+        staged_session.errors = NULL;
+        staged_session.error_capacity = retained_errors;
+        if (retained_errors != 0) {
+            staged_session.errors = lhat_alloc(retained_errors * sizeof *session->errors);
+            if (staged_session.errors == NULL) {
+                lhat_proto_free(proto);
+                result.status = LHAT_COMPILE_OUT_OF_MEMORY;
+                return result;
+            }
+            memcpy(staged_session.errors, session->errors,
+                   retained_errors * sizeof *session->errors);
+        }
+        session = &staged_session;
+    }
 
     // 03 の 4.3: what earlier inputs left is already in scope and already in
     // registers, so this one names it where it stands and numbers its own
@@ -6189,7 +6239,7 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         session->error_count = c.error_count;
         session->error_capacity = c.error_capacity;
     } else {
-        for (size_t i = 0; i < c.error_count; i++) {
+        for (size_t i = retained_errors; i < c.error_count; i++) {
             lhat_free((void *)c.errors[i].kinds);
         }
         lhat_free(c.errors);
@@ -6220,8 +6270,15 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
                 }
                 char *kept = (char *)lhat_alloc(c.locals[i].length + 1);
                 if (kept == NULL) {
+                    for (size_t j = retained_names; j < session->count; j++) {
+                        lhat_free(session->names[j].name);
+                    }
+                    for (size_t j = retained_errors; j < session->error_count; j++) {
+                        lhat_free((void *)session->errors[j].kinds);
+                    }
+                    lhat_free(session->errors);
                     lhat_proto_free(proto);
-                    result.status = LHAT_COMPILE_TOO_COMPLEX;
+                    result.status = LHAT_COMPILE_OUT_OF_MEMORY;
                     return result;
                 }
                 memcpy(kept, c.locals[i].name, c.locals[i].length);
@@ -6239,6 +6296,8 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         // What the next input will find already filled is exactly what this
         // one has to leave sharable when its frame goes.
         proto->kept = session->next_register;
+        lhat_free(original_session->errors);
+        *original_session = *session;
     }
 
     *out = proto;

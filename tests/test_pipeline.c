@@ -1,6 +1,132 @@
 // The semantic result, not the diagnostic policy, determines generated code.
 #include "fixture.h"
 #include "code.h"
+#include "lhat/port.h"
+#include <stdlib.h>
+
+static size_t allocation_count;
+static size_t fail_allocation;
+static size_t live_allocations;
+
+static bool refuse_allocation(void)
+{
+    return ++allocation_count == fail_allocation;
+}
+
+static void *test_alloc(void *context, size_t size)
+{
+    (void)context;
+    if (refuse_allocation()) return NULL;
+    void *p = malloc(size);
+    if (p != NULL) live_allocations++;
+    return p;
+}
+
+static void *test_calloc(void *context, size_t count, size_t size)
+{
+    (void)context;
+    if (refuse_allocation()) return NULL;
+    void *p = calloc(count, size);
+    if (p != NULL) live_allocations++;
+    return p;
+}
+
+static void *test_realloc(void *context, void *pointer, size_t size)
+{
+    (void)context;
+    if (refuse_allocation()) return NULL;
+    bool fresh = pointer == NULL;
+    void *p = realloc(pointer, size);
+    if (p != NULL && fresh) live_allocations++;
+    return p;
+}
+
+static void test_free(void *context, void *pointer)
+{
+    (void)context;
+    if (pointer != NULL) live_allocations--;
+    free(pointer);
+}
+
+static void test_compile_allocation_failures(void)
+{
+    static const char *const sources[] = {
+        "var^ x = 1\nlet^ f = f^n:number^ -> number^ {return^ x + n}\nreturn^ f(2)\n",
+        "errordef^ E { Bad }\nlet^ f = f^ {return^ error^E.Bad{}}\n"
+        "do^{ try^ f() catch^ E.Bad: return^ 42 }\n",
+        "let^ D = def^{self^{x = 42}, m = f^self^ {return^ self^.x}}\nreturn^ D.new().m()\n",
+        "enum^ E { V = 42 }\nrepeat^ 2 { if^ false^ {next^} break^ }\nreturn^ E.V.value\n",
+        "let^ f = f^t:t^{x:number^} -> number^ {return^ t.x}\nreturn^ f({x = 42})\n",
+        "let^ gen = p^ {yield^ 42}\nlet^ c = gen()\nreturn^ c.start()\n",
+    };
+    for (size_t s = 0; s < sizeof sources / sizeof *sources; s++) {
+        LHAT_TEST("compiler allocation failures report OOM and release partial output");
+        Unit u;
+        check_text(&u, sources[s]);
+        CHECK_CLEAN(&u);
+        size_t baseline = live_allocations;
+        allocation_count = 0;
+        LhatProto *proto = NULL;
+        LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status, LHAT_COMPILE_OK);
+        size_t count = allocation_count;
+        lhat_proto_free(proto);
+        for (size_t n = 1; n <= count; n++) {
+            allocation_count = 0;
+            fail_allocation = n;
+            proto = NULL;
+            LhatCompileResult result = lhat_compile(&u.checked, &u.lexer, &proto);
+            fail_allocation = 0;
+            LHAT_CHECK(result.status == LHAT_COMPILE_OUT_OF_MEMORY || result.status == LHAT_COMPILE_OK,
+                       "source %zu allocation %zu returned status %d", s, n, result.status);
+            if (result.status != LHAT_COMPILE_OK) {
+                LHAT_CHECK(proto == NULL, "failed compile publishes no proto");
+            } else {
+                // Optional fast paths may fall back after a failed allocation,
+                // but successful compilation must still mean correct output.
+                LhatMachine *machine = lhat_machine_new();
+                LhatRunResult ran = lhat_run(machine, proto);
+                LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+                LHAT_CHECK(lhat_is_integer(ran.value) &&
+                           lhat_as_integer(ran.value) == (s == 0 ? 3 : 42),
+                           "allocation %zu may not silently change output", n);
+                lhat_machine_dispose(machine);
+            }
+            lhat_proto_free(proto);
+            LHAT_CHECK_EQ_INT(live_allocations, baseline);
+        }
+        unit_dispose(&u);
+    }
+
+    LHAT_TEST("local storage limit remains a complexity error rather than OOM");
+    char source[8192];
+    size_t used = 0;
+    for (int i = 0; i < 210; i++) {
+        used += (size_t)sprintf(source + used, "var^ n%d = 1\n", i);
+    }
+    Unit u;
+    check_text(&u, source);
+    CHECK_CLEAN(&u);
+    LhatProto *proto = NULL;
+    LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                      LHAT_COMPILE_TOO_COMPLEX);
+    lhat_proto_free(proto);
+    unit_dispose(&u);
+
+    LHAT_TEST("a full constant pool rejects additions before allocating but reuses existing entries");
+    LhatChunk chunk;
+    lhat_chunk_init(&chunk);
+    for (size_t i = 0; i <= 0xFFFF; i++) {
+        LHAT_CHECK_EQ_INT(lhat_chunk_constant_raw(&chunk, lhat_integer((int64_t)i)), i);
+    }
+    allocation_count = 0;
+    fail_allocation = 1;
+    LHAT_CHECK(lhat_chunk_constant_raw(&chunk, lhat_nil()) == SIZE_MAX, "pool is full");
+    LHAT_CHECK(lhat_chunk_string(&chunk, "new", 3) == SIZE_MAX, "new string exceeds pool limit");
+    LHAT_CHECK_EQ_INT(lhat_chunk_constant(&chunk, lhat_integer(42)), 42);
+    LHAT_CHECK_EQ_INT(allocation_count, 0);
+    fail_allocation = 0;
+    lhat_chunk_dispose(&chunk);
+}
 
 typedef struct {
     const LhatNode *nodes[1024];
@@ -753,6 +879,59 @@ static void test_session_storage_identity(void)
     }
 }
 
+static void test_session_allocation_rollback(void)
+{
+    LHAT_TEST("a failed REPL compile preserves retained names and error kinds for retry");
+    size_t allocations = 1;
+    for (size_t n = 1; n <= allocations; n++) {
+        TestSession *session = test_session_new();
+        Unit units[3];
+        LhatProto *protos[3] = {0};
+        check_next_text(&units[0], session->checks,
+                        "errordef^ E { Bad }\nvar^ x = 41\n");
+        CHECK_CLEAN(&units[0]);
+        LHAT_CHECK_EQ_INT(lhat_compile_next(session->compiles, &units[0].checked,
+                                            &units[0].lexer, &protos[0]).status, LHAT_COMPILE_OK);
+        check_next_text(&units[1], session->checks,
+                        "errordef^ F { Bad }\nvar^ y = 1\nlet^ e = error^E.Bad{}\n");
+        CHECK_CLEAN(&units[1]);
+        size_t baseline = live_allocations;
+        allocation_count = 0;
+        fail_allocation = n;
+        LhatCompileResult result = lhat_compile_next(session->compiles, &units[1].checked,
+                                                    &units[1].lexer, &protos[1]);
+        fail_allocation = 0;
+        if (result.status != LHAT_COMPILE_OK) {
+            LHAT_CHECK_EQ_INT(result.status, LHAT_COMPILE_OUT_OF_MEMORY);
+            LHAT_CHECK(protos[1] == NULL, "failed input publishes no proto");
+            LHAT_CHECK_EQ_INT(live_allocations, baseline);
+            allocation_count = 0;
+            LHAT_CHECK_EQ_INT(lhat_compile_next(session->compiles, &units[1].checked,
+                                                &units[1].lexer, &protos[1]).status, LHAT_COMPILE_OK);
+        }
+        allocations = allocation_count;
+        check_next_text(&units[2], session->checks, "return^ x + y\n");
+        CHECK_CLEAN(&units[2]);
+        LHAT_CHECK_EQ_INT(lhat_compile_next(session->compiles, &units[2].checked,
+                                            &units[2].lexer, &protos[2]).status, LHAT_COMPILE_OK);
+        if (protos[0] != NULL && protos[1] != NULL && protos[2] != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_run(machine, protos[0]);
+            lhat_run(machine, protos[1]);
+            LhatRunResult ran = lhat_run(machine, protos[2]);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK(lhat_is_integer(ran.value) && lhat_as_integer(ran.value) == 42,
+                       "retry retains both inputs");
+            lhat_machine_dispose(machine);
+        }
+        test_session_dispose(session);
+        for (size_t i = 0; i < 3; i++) {
+            lhat_proto_free(protos[i]);
+            unit_dispose(&units[i]);
+        }
+    }
+}
+
 static void test_missing_binding_metadata(void)
 {
     static const char *const sources[] = {
@@ -886,6 +1065,9 @@ static void test_definition_origins(void)
 
 int main(void)
 {
+    LhatAllocator allocator = {test_alloc, test_calloc, test_realloc, test_free, NULL};
+    if (!lhat_set_allocator(&allocator)) return 1;
+    test_compile_allocation_failures();
     test_policy_parity();
     test_nominal_type_lowering();
     test_binding_identity();
@@ -900,6 +1082,7 @@ int main(void)
     test_enum_binding_identity();
     test_storage_binding_identity();
     test_session_storage_identity();
+    test_session_allocation_rollback();
     test_missing_binding_metadata();
     test_error_declaration_identity();
     test_definition_origins();

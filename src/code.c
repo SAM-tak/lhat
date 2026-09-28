@@ -240,11 +240,11 @@ bool lhat_proto_give_units(LhatProto *unit, const LhatProto **protos,
 
 size_t lhat_proto_add(LhatProto *parent, LhatProto *child)
 {
-    LHAT_GROW(parent->protos, parent->proto_count, parent->proto_capacity, 4,
-              return SIZE_MAX);
     if (parent->proto_count > 0xFFFF) {
         return SIZE_MAX;
     }
+    LHAT_GROW(parent->protos, parent->proto_count, parent->proto_capacity, 4,
+              return SIZE_MAX);
     parent->protos[parent->proto_count] = child;
     return parent->proto_count++;
 }
@@ -272,11 +272,11 @@ size_t lhat_proto_add_upvalue(LhatProto *proto, LhatUpvalueSource source,
         }
     }
 
-    LHAT_GROW(proto->upvalues, proto->upvalue_count, proto->upvalue_capacity,
-              4, return SIZE_MAX);
     if (proto->upvalue_count > 0xFF) {
         return SIZE_MAX;
     }
+    LHAT_GROW(proto->upvalues, proto->upvalue_count, proto->upvalue_capacity,
+              4, return SIZE_MAX);
     char *copied = copy_text(name, length);
     if (copied == NULL) {
         return SIZE_MAX;
@@ -373,22 +373,22 @@ size_t lhat_chunk_constant(LhatChunk *chunk, LhatValue value)
         }
     }
 
-    LHAT_GROW(chunk->constants, chunk->constant_count,
-              chunk->constant_capacity, 8, return SIZE_MAX);
     if (chunk->constant_count > 0xFFFF) {
         return SIZE_MAX;
     }
+    LHAT_GROW(chunk->constants, chunk->constant_count,
+              chunk->constant_capacity, 8, return SIZE_MAX);
     chunk->constants[chunk->constant_count] = value;
     return chunk->constant_count++;
 }
 
 size_t lhat_chunk_constant_raw(LhatChunk *chunk, LhatValue value)
 {
-    LHAT_GROW(chunk->constants, chunk->constant_count,
-              chunk->constant_capacity, 8, return SIZE_MAX);
     if (chunk->constant_count > 0xFFFF) {
         return SIZE_MAX;
     }
+    LHAT_GROW(chunk->constants, chunk->constant_count,
+              chunk->constant_capacity, 8, return SIZE_MAX);
     chunk->constants[chunk->constant_count] = value;
     return chunk->constant_count++;
 }
@@ -399,11 +399,11 @@ size_t lhat_chunk_member_cache(LhatChunk *chunk, uint16_t key)
     // two questions -- 'a.m' and 'b.m' meet different receivers -- and one
     // cache between them would be the two knocking each other out. One per
     // site is the point.
-    LHAT_GROW(chunk->member_caches, chunk->member_cache_count,
-              chunk->member_cache_capacity, 8, return SIZE_MAX);
     if (chunk->member_cache_count > 0xFFFF) {
         return SIZE_MAX;
     }
+    LHAT_GROW(chunk->member_caches, chunk->member_cache_count,
+              chunk->member_cache_capacity, 8, return SIZE_MAX);
     LhatMemberCache *made = &chunk->member_caches[chunk->member_cache_count];
     memset(made, 0, sizeof *made);
     made->key = key;
@@ -427,6 +427,9 @@ size_t lhat_chunk_string(LhatChunk *chunk, const char *text, size_t length)
         }
     }
 
+    if (chunk->constant_count > 0xFFFF) {
+        return SIZE_MAX;
+    }
     LhatString *string = lhat_string_new(&chunk->heap, text, length);
     if (string == NULL) {
         return SIZE_MAX;
