@@ -456,14 +456,15 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
         if (!read || lhat_is_hostvalue(binding.value)) {
             continue;  // a host value's slots cannot be copied one-for-one
         }
-        if (seeded >= LHAT_MAX_LOCALS ||
+        const LhatNode *declaration = lhat_check_session_seed(checks, binding.name,
+                                                             strlen(binding.name));
+        if (seeded >= LHAT_MAX_LOCALS || declaration == NULL ||
             !lhat_compile_session_seed(session, binding.name,
-                                       strlen(binding.name),
-                                       (uint8_t)seeded)) {
+                                        strlen(binding.name),
+                                        (uint8_t)seeded, declaration)) {
             overfull = true;
             break;
         }
-        lhat_check_session_seed(checks, binding.name, strlen(binding.name));
         seeds[seeded++] = binding.value;
     }
     if (overfull) {

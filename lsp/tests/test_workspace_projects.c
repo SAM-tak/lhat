@@ -315,6 +315,8 @@ static void test_execution_pipeline_parity(void)
         "let^ Derived = Base .. def^{self^{y := 2}}\n"
         "let^ d = Derived.new()\nreturn^ d.x + d.y\n",
         "return^ twice(21)\n",
+        "let^ read = f^ -> number^ {return^ E.V.value}\nenum^ E {V = 42}\nreturn^ read()\n",
+        "var^ root.a = 40\ndo^{var^ root.b = 2}\nreturn^ root.a + root.b\n",
         "let^ A = def^{self^{}, m = f^self^ -> number^ {return^ 40}}\n"
         "let^ D = A .. def^{self^{}, override^ m = f^self^ -> number^ {"
         "let^ read = f^ -> number^ {return^ super^()}\nreturn^ read() + 2}}\n"

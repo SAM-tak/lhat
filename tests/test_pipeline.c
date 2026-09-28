@@ -628,6 +628,131 @@ static void test_super_repl_composition(void)
     compiled_dispose(&one);
 }
 
+static void test_enum_binding_identity(void)
+{
+    LHAT_TEST("enum reads and captures use the resolved declaration");
+    Unit u;
+    check_text(&u,
+        "enum^ Wrong {V = 100}\nenum^ E {V = 42}\n"
+        "let^ read = f^ -> number^ {return^ E.V.value}\nreturn^ read()\n");
+    CHECK_CLEAN(&u);
+    const LhatNode *wrong = u.parsed.root->v.list.items->v.named.name;
+    const LhatNode *wanted = u.parsed.root->v.list.items->next->v.named.name;
+    Nodes nodes = {0};
+    collect(&nodes, NULL, false, u.parsed.root);
+    size_t uses = 0;
+    for (size_t i = 0; i < nodes.count; i++) {
+        LhatNode *node = (LhatNode *)nodes.nodes[i];
+        if (node != wanted && node->checked_binding == wanted) {
+            node->v.name = wrong->v.name;
+            uses++;
+        }
+    }
+    LHAT_CHECK_EQ_INT(uses, 1);
+    LhatProto *proto = NULL;
+    LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status, LHAT_COMPILE_OK);
+    if (proto != NULL) {
+        LhatMachine *machine = lhat_machine_new();
+        LhatRunResult ran = lhat_run(machine, proto);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_integer(ran.value), "integer result");
+        if (lhat_is_integer(ran.value)) LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+        lhat_machine_dispose(machine);
+        lhat_proto_free(proto);
+    }
+    unit_dispose(&u);
+}
+
+static void test_storage_binding_identity(void)
+{
+    static const char *const bodies[] = {
+        "let^ pair = f^ -> (number^, number^) {return^ 40, 2}\n"
+        "let^ a, b = pair()\nreturn^ a + b\n",
+        "var^ total = 0\nfor^ n from^ 1 to^ 6 {total := total + n}\nreturn^ total * 2\n",
+        "var^ root.a = 40\ndo^{var^ root.b = 2}\nreturn^ root.a + root.b\n",
+        "var^ a = 2\nvar^ b = 40\na, b := b, a\nreturn^ a + b\n",
+        "let^ state = {n := 0}\n"
+        "let^ Resource = def^{self^{}, dispose = p^self^ {state.n := state.n + 2}}\n"
+        "with^ resource = Resource.new() {state.n := 40}\nreturn^ state.n\n",
+        "let^ read = f^ -> number^ {return^ E.V.value}\nenum^ E {V = 42}\nreturn^ read()\n",
+        "let^ _^ = 1\nlet^ _^ = 2\nreturn^ 42\n",
+    };
+    for (size_t i = 0; i < sizeof bodies / sizeof *bodies; i++) {
+        LHAT_TEST(bodies[i]);
+        char source[2048];
+        snprintf(source, sizeof source, "let^ decoy = 1000\n%s", bodies[i]);
+        Unit u;
+        check_text(&u, source);
+        CHECK_CLEAN(&u);
+        const LhatNode *decoy = u.parsed.root->v.list.items->v.binding.targets;
+        Nodes nodes = {0};
+        collect(&nodes, NULL, false, u.parsed.root);
+        for (size_t j = 0; j < nodes.count; j++) {
+            LhatNode *node = (LhatNode *)nodes.nodes[j];
+            // Distinct declarations now have the same display name, while
+            // references keep the checker's identities. Every storage choice
+            // (including initialization and cleanup) must follow those IDs.
+            if (node->kind == LHAT_NODE_IDENT && node->checked_binding != NULL) {
+                node->v.name = decoy->v.name;
+            }
+        }
+        LhatProto *proto = NULL;
+        LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                          LHAT_COMPILE_OK);
+        if (proto != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LhatRunResult ran = lhat_run(machine, proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK(lhat_is_integer(ran.value), "integer result");
+            if (lhat_is_integer(ran.value)) LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            lhat_machine_dispose(machine);
+            lhat_proto_free(proto);
+        }
+        unit_dispose(&u);
+    }
+}
+
+static void test_session_storage_identity(void)
+{
+    LHAT_TEST("REPL slot retention and redefinition use IDs despite colliding display names");
+    static const char *const sources[] = {
+        "let^ decoy = 1000\nvar^ x = 38\nvar^ y = 2\n",
+        "var^ x = x + 2\n",
+        "return^ x + y\n",
+    };
+    TestSession *session = test_session_new();
+    Unit units[3];
+    LhatProto *protos[3] = {0};
+    for (size_t i = 0; i < 3; i++) {
+        check_next_text(&units[i], session->checks, sources[i]);
+        CHECK_CLEAN(&units[i]);
+        if (i == 0) {
+            const LhatNode *first = units[i].parsed.root->v.list.items;
+            for (const LhatNode *s = first->next; s != NULL; s = s->next) {
+                s->v.binding.targets->v.name = first->v.binding.targets->v.name;
+            }
+        }
+        LHAT_CHECK_EQ_INT(lhat_compile_next(session->compiles, &units[i].checked,
+                                            &units[i].lexer, &protos[i]).status,
+                          LHAT_COMPILE_OK);
+    }
+    if (protos[0] != NULL && protos[1] != NULL && protos[2] != NULL) {
+        LhatMachine *machine = lhat_machine_new();
+        lhat_run(machine, protos[0]);
+        lhat_run(machine, protos[1]);
+        LhatRunResult ran = lhat_run(machine, protos[2]);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_integer(ran.value), "integer result");
+        if (lhat_is_integer(ran.value)) LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+        lhat_machine_dispose(machine);
+    }
+    test_session_dispose(session);
+    for (size_t i = 0; i < 3; i++) {
+        lhat_proto_free(protos[i]);
+        unit_dispose(&units[i]);
+    }
+}
+
 static void test_error_declaration_identity(void)
 {
     Run r;
@@ -721,6 +846,9 @@ int main(void)
     test_self_binding_identity();
     test_super_binding_identity();
     test_super_repl_composition();
+    test_enum_binding_identity();
+    test_storage_binding_identity();
+    test_session_storage_identity();
     test_error_declaration_identity();
     test_definition_origins();
     return lhat_test_report("test_pipeline");

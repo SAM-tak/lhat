@@ -711,7 +711,8 @@ typedef struct LhatCheckSession LhatCheckSession;
 
 LhatCheckSession *lhat_check_session_new(void);
 // A debugger binding whose static type is unavailable.
-void lhat_check_session_seed(LhatCheckSession *session, const char *name,
+// Returns a session-owned declaration identity for the copied frame binding.
+const LhatNode *lhat_check_session_seed(LhatCheckSession *session, const char *name,
                              size_t length);
 
 // Frees the session, the names it copied and every type in its arena. Nothing

@@ -107,7 +107,7 @@ void lhat_compile_session_hosted(LhatCompileSession *session,
 // registers and seeds their names here, then compiles one input against
 // them. False when the session is full or out of memory.
 bool lhat_compile_session_seed(LhatCompileSession *session, const char *name,
-                               size_t length, uint8_t reg);
+                               size_t length, uint8_t reg, const LhatNode *declaration);
 
 // Compiles `unit` as the next input of `session`. The top-level names already
 // in it are in scope, and the ones this input declares stay for the next.

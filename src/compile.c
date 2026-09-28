@@ -693,7 +693,7 @@ static const Local *local_for_binding(const Compiler *c, const LhatNode *binding
 static size_t capture_binding(Compiler *c, const LhatNode *binding,
                                const char *name, size_t length)
 {
-    if (c->parent == NULL) return SIZE_MAX;
+    if (c->parent == NULL || binding == NULL) return SIZE_MAX;
     for (size_t i = 0; i < c->proto->upvalue_count; i++) {
         if (c->upvalue_names[i].declaration == binding) return i;
     }
@@ -1543,10 +1543,12 @@ static void compile_enumdef(Compiler *c, const LhatNode *node)
                                               // the checker anyway
     decl_rt->enum_name = lhat_string_new(owner_heap, name, length);
 
-    uint8_t reg = reserve(c);
-    if (declare_local(c, name, length, reg, 1) == NULL) {
+    const Local *binding = local_for_binding(c, node->v.named.name->checked_binding);
+    if (binding == NULL) {
+        fail(c, LHAT_COMPILE_UNDEFINED);
         return;
     }
+    uint8_t reg = binding->reg;
     size_t k = lhat_chunk_constant(&c->proto->chunk,
                                    lhat_object((LhatObject *)decl_rt));
     if (k == SIZE_MAX) {
@@ -1773,6 +1775,18 @@ static bool emit_binding_read(Compiler *c, const LhatNode *binding,
     while (part != NULL && part->foreign_scope == NULL) part = part->parent;
     if (part == NULL || part->foreign_module == NULL) return false;
     for (const LhatNode *s = part->foreign_scope; s != NULL; s = s->next) {
+        if (s->kind == LHAT_NODE_ENUMDEF && s->v.named.name == binding) {
+            const char *key = NULL;
+            size_t key_length = 0;
+            if (!lhat_node_name(s->v.named.name, part->lexer->source->text, part->lexer->strings,
+                                &key, &key_length)) return false;
+            if (!s->v.named.exported) {
+                fail_named(c, LHAT_COMPILE_NOT_PUBLISHED, key, key_length);
+                return true;
+            }
+            emit_modules_read(c, part->foreign_module, key, key_length, into);
+            return true;
+        }
         if (s->kind != LHAT_NODE_DEFINE) continue;
         for (const LhatNode *target = s->v.binding.targets; target != NULL; target = target->next) {
             const LhatNode *declared = target->kind == LHAT_NODE_PARAM
@@ -3809,8 +3823,8 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
                 return;
             }
-            // Bindings not yet carrying identities (notably enums) still
-            // use the legacy lookup below; see the pipeline migration inventory.
+            // Removing this legacy fallback for references without an identity
+            // is the remaining step in the pipeline migration inventory.
             if (!(node->checked_binding != NULL
                       ? emit_binding_read(c, node->checked_binding, name, length, into)
                       : resolve_name(c, name, length, into))) {
@@ -4085,16 +4099,13 @@ static void compile_path_prefix(Compiler *c, const LhatNode *node, uint8_t into)
             emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
             return;
         }
-        const Local *local = node->checked_binding != NULL
-            ? local_for_binding(c, node->checked_binding) : find_local(c, name, length);
+        const Local *local = local_for_binding(c, node->checked_binding);
         if (local != NULL) {
             ensure_table(c, local->reg);
             emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, local->reg, 0));
             return;
         }
-        size_t upvalue = node->checked_binding != NULL
-            ? capture_binding(c, node->checked_binding, name, length)
-            : find_upvalue(c, name, length);
+        size_t upvalue = capture_binding(c, node->checked_binding, name, length);
         if (upvalue == SIZE_MAX) {
             fail(c, LHAT_COMPILE_UNDEFINED);
             return;
@@ -4144,6 +4155,19 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             local->declaration = root->declaration;
             continue;
         }
+        if (s->kind == LHAT_NODE_ENUMDEF) {
+            const LhatNode *name_node = s->v.named.name;
+            const char *name = NULL;
+            size_t length = 0;
+            if (!node_name(c, name_node, &name, &length)) continue;
+            if (local_for_binding(c, name_node->checked_binding) != NULL) continue;
+            uint8_t slot = reserve(c);
+            emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, slot, 0, 0));
+            Local *local = declare_local(c, name, length, slot, 1);
+            if (local == NULL) return;
+            local->declaration = name_node->checked_binding;
+            continue;
+        }
         if (s->kind != LHAT_NODE_DEFINE) {
             continue;
         }
@@ -4180,8 +4204,8 @@ static void declare_names(Compiler *c, const LhatNode *statements)
                     return;
                 }
                 if (is_environment(root, name, length) ||
-                    find_local(c, name, length) != NULL ||
-                    find_upvalue(c, name, length) != SIZE_MAX) {
+                    root->checked_binding != root ||
+                    local_for_binding(c, root->checked_binding) != NULL) {
                     continue;
                 }
             } else if (!node_name(c, define_target_name(target), &name,
@@ -4198,9 +4222,7 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             // 02 の 13.12: and a '_^' is written as often as it likes, so the
             // second one takes the same slot rather than a fresh one. Nothing
             // reads it back, which is what makes sharing the place harmless.
-            if ((c->session_top ||
-                 node_is_discard(c, define_target_name(target))) &&
-                find_local(c, name, length) != NULL) {
+            if (local_for_binding(c, define_target_name(target)->checked_binding) != NULL) {
                 continue;
             }
 
@@ -4250,12 +4272,7 @@ static void mark_being_defined(Compiler *c, const LhatNode *targets, bool on)
         if (define_target_is_path(target)) {
             continue;
         }
-        const char *name = NULL;
-        size_t length = 0;
-        if (!node_name(c, define_target_name(target), &name, &length)) {
-            continue;
-        }
-        Local *local = (Local *)find_local(c, name, length);
+        Local *local = (Local *)local_for_binding(c, define_target_name(target)->checked_binding);
         if (local == NULL ||
             (size_t)(local - c->locals) < c->session_locals) {
             continue;
@@ -4360,7 +4377,7 @@ static void compile_tuple_define(Compiler *c, const LhatNode *node,
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
-        const Local *local = find_local(c, name, length);
+        const Local *local = local_for_binding(c, define_target_name(target)->checked_binding);
         if (local == NULL) {
             fail(c, LHAT_COMPILE_UNDEFINED);
             return;
@@ -4446,7 +4463,7 @@ static void compile_define(Compiler *c, const LhatNode *node)
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
-        const Local *local = find_local(c, name, length);
+        const Local *local = local_for_binding(c, define_target_name(target)->checked_binding);
         if (local == NULL) {
             mark_being_defined(c, node->v.binding.targets, false);
             fail(c, LHAT_COMPILE_UNDEFINED);
@@ -4705,9 +4722,7 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
             continue;
         }
 
-        const Local *local = w->target->checked_binding != NULL
-            ? local_for_binding(c, w->target->checked_binding)
-            : find_local(c, name, length);
+        const Local *local = local_for_binding(c, w->target->checked_binding);
         if (local != NULL) {
             // 05 の 8.9: as wide as the name is.
             emit_move_wide(c, local->reg, w->value,
@@ -4716,9 +4731,7 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
             continue;
         }
 
-        size_t upvalue = w->target->checked_binding != NULL
-            ? capture_binding(c, w->target->checked_binding, name, length)
-            : find_upvalue(c, name, length);
+        size_t upvalue = capture_binding(c, w->target->checked_binding, name, length);
         if (upvalue == SIZE_MAX) {
             fail(c, LHAT_COMPILE_UNDEFINED);
             return;
@@ -4769,18 +4782,8 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
             // to be the local's registers themselves -- a copy would take
             // the write with it when the scratch is released.
             const Local *hv_owner = NULL;
-            {
-                const char *owner_name = NULL;
-                size_t owner_length = 0;
-                if (node_name(c, target->v.access.target, &owner_name,
-                              &owner_length)) {
-                    const Local *found =
-                        find_local(c, owner_name, owner_length);
-                    if (found != NULL && found->width > 1) {
-                        hv_owner = found;
-                    }
-                }
-            }
+            const Local *found = local_for_binding(c, target->v.access.target->checked_binding);
+            if (found != NULL && found->width > 1) hv_owner = found;
             uint8_t mark = c->next_register;
             uint8_t into = hv_owner != NULL
                                ? hv_owner->reg
@@ -4884,9 +4887,7 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
             continue;
         }
 
-        const Local *local = target->checked_binding != NULL
-            ? local_for_binding(c, target->checked_binding)
-            : find_local(c, name, length);
+        const Local *local = local_for_binding(c, target->checked_binding);
         if (local != NULL) {
             if (value != NULL) {
                 size_t past = skip_name_when_absent(
@@ -4900,9 +4901,7 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
 
         // 8.6 is the reason 5.4 shares a place rather than a value: a ':='
         // written inside a nested subroutine has to reach the outer binding.
-        size_t upvalue = target->checked_binding != NULL
-            ? capture_binding(c, target->checked_binding, name, length)
-            : find_upvalue(c, name, length);
+        size_t upvalue = capture_binding(c, target->checked_binding, name, length);
         if (upvalue == SIZE_MAX) {
             fail(c, LHAT_COMPILE_UNDEFINED);
             return;
@@ -5076,12 +5075,7 @@ static const Local *numeric_focus(Compiler *c, const LhatNode *focus)
     if (target == NULL || target->next != NULL) {
         return NULL;
     }
-    const char *name = NULL;
-    size_t length = 0;
-    if (!node_name(c, define_target_name(target), &name, &length)) {
-        return NULL;
-    }
-    return find_local(c, name, length);
+    return local_for_binding(c, define_target_name(target)->checked_binding);
 }
 
 // 16.4: to^ and downto^ are sugar over the conditional form, and this is that
@@ -5289,13 +5283,8 @@ static void compile_with(Compiler *c, const LhatNode *node)
          binding = binding->next) {
         compile_statement(c, binding);
 
-        const char *name = NULL;
-        size_t length = 0;
-        const Local *local = NULL;
-        if (node_name(c, define_target_name(binding->v.binding.targets), &name,
-                      &length)) {
-            local = find_local(c, name, length);
-        }
+        const Local *local = local_for_binding(c,
+            define_target_name(binding->v.binding.targets)->checked_binding);
         if (local == NULL || count >= LHAT_MAX_LOCALS) {
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
@@ -6223,7 +6212,7 @@ LhatCompileSession *lhat_compile_session_new(void)
 }
 
 bool lhat_compile_session_seed(LhatCompileSession *session, const char *name,
-                               size_t length, uint8_t reg)
+                               size_t length, uint8_t reg, const LhatNode *declaration)
 {
     if (session == NULL || session->count >= LHAT_MAX_LOCALS) {
         return false;
@@ -6239,7 +6228,7 @@ bool lhat_compile_session_seed(LhatCompileSession *session, const char *name,
     session->names[session->count].name = copy;
     session->names[session->count].length = length;
     session->names[session->count].reg = reg;
-    session->names[session->count].declaration = NULL;
+    session->names[session->count].declaration = declaration;
     session->count++;
     if (session->next_register <= reg) {
         session->next_register = (uint8_t)(reg + 1);
@@ -6421,7 +6410,7 @@ static void compile_exports(Compiler *c, const LhatNode *statements,
             if (!node_name(c, define_target_name(named), &name, &length)) {
                 continue;
             }
-            const Local *local = find_local(c, name, length);
+            const Local *local = local_for_binding(c, define_target_name(named)->checked_binding);
             if (local == NULL) {
                 continue;
             }
@@ -6602,9 +6591,8 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         for (size_t i = session->count; i < c.local_count; i++) {
             size_t at = session->count;
             for (size_t seen = 0; seen < session->count; seen++) {
-                if (session->names[seen].length == c.locals[i].length &&
-                    memcmp(session->names[seen].name, c.locals[i].name,
-                           c.locals[i].length) == 0) {
+                if (c.locals[i].declaration != NULL &&
+                    session->names[seen].declaration == c.locals[i].declaration) {
                     at = seen;
                     break;
                 }

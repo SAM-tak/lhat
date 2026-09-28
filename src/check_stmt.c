@@ -179,6 +179,7 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
 #if LHAT_WITH_RESOLUTIONS
         chk_record_resolution(c, node, b);
 #endif
+        ((LhatNode *)node)->checked_binding = b->declaration;
         return holds_members(c, node, b->type);
     }
 
@@ -1906,7 +1907,12 @@ static void check_enumdef(Checker *c, const LhatNode *node)
         return;
     }
     LhatType *decl = lhat_type_enum_decl(c->result->types, name, length);
-    chk_scope_add(c->scope, name, length, decl, node->offset)->reached = true;
+    Binding *binding = chk_scope_add(c->scope, name, length, decl, node->offset);
+    if (binding != NULL) {
+        binding->reached = true;
+        binding->declaration = node->v.named.name;
+        ((LhatNode *)node->v.named.name)->checked_binding = binding->declaration;
+    }
     // The compiler stamps this declaration into the RT_ENUM descriptor --
     // what fits^ compares.
     ((LhatNode *)node)->checked_type = decl;
@@ -1984,6 +1990,7 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
             bool discard = chk_is_discard(c, target_name_node(target));
             Binding *already = chk_scope_find_local(c->scope, name, length);
             if (discard && already != NULL) {
+                ((LhatNode *)target_name_node(target))->checked_binding = already->declaration;
                 continue;
             }
             if (already != NULL) {

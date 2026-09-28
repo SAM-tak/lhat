@@ -3887,6 +3887,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
 // program's units.
 struct LhatCheckSession {
     LhatTypeArena types;
+    LhatAstArena seeds;
     struct {
         char *name;
         size_t length;
@@ -3981,6 +3982,7 @@ LhatCheckSession *lhat_check_session_new(void)
         (LhatCheckSession *)lhat_calloc(1, sizeof *session);
     if (session != NULL) {
         lhat_type_arena_init(&session->types);
+        lhat_arena_init(&session->seeds);
     }
     return session;
 }
@@ -3995,6 +3997,7 @@ void lhat_check_session_dispose(LhatCheckSession *session)
     }
     lhat_free(session->names);
     lhat_type_arena_dispose(&session->types);
+    lhat_arena_dispose(&session->seeds);
     lhat_free(session);
 }
 
@@ -4039,12 +4042,18 @@ static void session_keep(LhatCheckSession *session, const char *name,
     session->count++;
 }
 
-void lhat_check_session_seed(LhatCheckSession *session, const char *name,
+const LhatNode *lhat_check_session_seed(LhatCheckSession *session, const char *name,
                              size_t length)
 {
+    LhatNode *declaration = lhat_node_new(&session->seeds, LHAT_NODE_IDENT, NULL);
+    if (declaration == NULL) return NULL;
     session_keep(session, name, length,
                  lhat_type_simple(&session->types, LHAT_TYPE_UNKNOWN), false,
-                 NULL, NULL, NULL, NULL, false);
+                 NULL, declaration, NULL, NULL, false);
+    for (size_t i = 0; i < session->count; i++) {
+        if (session->names[i].declaration == declaration) return declaration;
+    }
+    return NULL;
 }
 
 void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
