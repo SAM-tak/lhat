@@ -3921,14 +3921,19 @@ static void test_composing_across_units(void)
         static const File reexported[] = {
             {"base.lh", "module^ ns.base\n"
                 "public^ let^ amount = 40\n"
-                "public^ let^ Base = def^{self^{}, get = f^self^ {return^ amount}}\n"},
+                "public^ let^ Base = def^{self^{}, get = f^self^ {return^ amount},"
+                " ownerBase = f^self^ -> any^ {return^ def^}}\n"},
             {"middle.lh", "module^ ns.middle\n"
                 "let^ original = require^ \"base.lh\"\n"
-                "public^ let^ Middle = original.Base .. def^{self^{y := 2}}\n"},
+                "public^ let^ Middle = original.Base .. def^{self^{y := 2},"
+                " ownerMiddle = f^self^ -> any^ {return^ def^}}\n"},
             {"main.lh", "let^ library = require^ \"middle.lh\"\n"
                 "let^ alias = library\n"
                 "let^ Derived = alias.Middle .. def^{self^{}}\n"
-                "let^ d = Derived.new()\nreturn^ d.get() + d.y\n"},
+                "let^ d = Derived.new()\n"
+                "if^ !(d.ownerBase() is^ Derived) {return^ 0}\n"
+                "if^ !(d.ownerMiddle() is^ Derived) {return^ 0}\n"
+                "return^ d.get() + d.y\n"},
         };
         program_with(&program, &disk, reexported, 3);
         const LhatUnit *root = lhat_program_check(&program, "main.lh");

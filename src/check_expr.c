@@ -5612,6 +5612,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     Binding *owner = chk_scope_add(&members, "def^", 4, definition, node->offset);
     if (owner != NULL) {
         owner->reached = true;
+        owner->declaration = node;
     }
 
     Scope *outer = c->scope;

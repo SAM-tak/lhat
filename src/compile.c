@@ -52,6 +52,8 @@ typedef struct {
     size_t length;
     uint8_t reg;  // 5.2: a name is a slot in the frame like anything else
     const LhatNode *declaration;
+    // Composition maps each source def^ identity to this one emitted table.
+    const struct DefChain *definition_chain;
     // 01 の 8 章: which scope declared it, counted from this subroutine's
     // own body outwards -- what '$^' walks past. See Compiler.scope_depth.
     uint32_t depth;
@@ -646,6 +648,7 @@ static Local *declare_local(Compiler *c, const char *name, size_t length,
     local->being_defined = false;
     local->table = table;
     local->declaration = NULL;
+    local->definition_chain = NULL;
     return local;
 }
 
@@ -717,6 +720,12 @@ static const Local *local_for_binding(const Compiler *c, const LhatNode *binding
     if (binding == NULL) return NULL;
     for (size_t i = c->local_count; i > 0; i--) {
         if (c->locals[i - 1].declaration == binding) return &c->locals[i - 1];
+        const DefChain *chain = c->locals[i - 1].definition_chain;
+        if (chain != NULL) {
+            for (size_t j = 0; j < chain->count; j++) {
+                if (chain->parts[j] == binding) return &c->locals[i - 1];
+            }
+        }
     }
     return NULL;
 }
@@ -2109,10 +2118,12 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     // is a name of it -- the checker binds self^ and def^ into the Scope
     // it pushes here, so both sides count this one the same.
     c->scope_depth++;
-    if (declare_local(c, "def^", 4, into, 1) == NULL) {
+    Local *definition = declare_local(c, "def^", 4, into, 1);
+    if (definition == NULL) {
         c->scope_depth--;
         return;
     }
+    definition->definition_chain = &chain;
 
     const DefChain *enclosing = c->building;
     c->building = &chain;
@@ -2393,10 +2404,13 @@ static void compile_default_new(Compiler *c, const LhatNode *node,
     uint8_t slot = reserve(&inner);
     uint8_t inner_mark = inner.next_register;
     uint8_t owner = reserve(&inner);
-    if (!resolve_name(&inner, "def^", 4, owner)) {
+    size_t captured = c->building != NULL && c->building->count > 0
+        ? capture_binding(&inner, c->building->parts[0], "def^", 4) : SIZE_MAX;
+    if (captured == SIZE_MAX) {
         fail(&inner, LHAT_COMPILE_UNDEFINED);
         return;
     }
+    emit(&inner, lhat_encode_abc(LHAT_BC_GETUPVAL, owner, (uint8_t)captured, 0));
     emit(&inner, lhat_encode_abc(LHAT_BC_NEWINSTANCE, slot, owner, 0));
     inner.next_register = inner_mark;
     emit(&inner, lhat_encode_abc(LHAT_BC_RETURN, slot, 0, 0));
@@ -2965,10 +2979,13 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         self_slot = reserve(&inner);
         uint8_t owner_mark = inner.next_register;
         uint8_t owner = reserve(&inner);
-        if (!resolve_name(&inner, "def^", 4, owner)) {
+        size_t captured = c->building != NULL && c->building->count > 0
+            ? capture_binding(&inner, c->building->parts[0], "def^", 4) : SIZE_MAX;
+        if (captured == SIZE_MAX) {
             fail(&inner, LHAT_COMPILE_UNDEFINED);
             return;
         }
+        emit(&inner, lhat_encode_abc(LHAT_BC_GETUPVAL, owner, (uint8_t)captured, 0));
         emit(&inner, lhat_encode_abc(LHAT_BC_NEWINSTANCE, self_slot, owner, 0));
         inner.next_register = owner_mark;
         if (declare_local(&inner, "self^", 5, self_slot, 1) == NULL) {
@@ -3789,7 +3806,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 return;
             }
             // 01 の 2.3: checked identities handle stacked references above
-            // or below. Only self^^/def^^ still need the legacy name search.
+            // or below. Only self^^ still needs the legacy name search.
             if (node->kind == LHAT_NODE_HAT_IDENT && node->v.name.hats > 1) {
                 if (node->checked_binding != NULL) {
                     if (!emit_binding_read(c, node, name, length, into)) {
@@ -3797,7 +3814,8 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     }
                     return;
                 }
-                if (name_is(name, length, "it^") || name_is(name, length, "this^")) {
+                if (name_is(name, length, "it^") || name_is(name, length, "this^") ||
+                    name_is(name, length, "def^")) {
                     fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
                     return;
                 }
@@ -3850,7 +3868,8 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             // Focus, catch and variadic references, like lexical declarations,
             // must carry the identity chosen by analysis. Unresolved references
             // are not rebound by searching compiler scopes.
-            if ((name_is(name, length, "it^") || name_is(name, length, "...")) &&
+            if ((name_is(name, length, "it^") || name_is(name, length, "...") ||
+                 name_is(name, length, "def^")) &&
                 node->checked_binding == NULL) {
                 fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
                 return;

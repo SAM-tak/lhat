@@ -371,6 +371,82 @@ static void test_variadic_binding_identity(void)
     }
 }
 
+static void test_def_binding_identity(void)
+{
+    static const char *const sources[] = {
+        "let^ Outer = def^{self^{}, tag = 40, read = f^self^ -> number^ {"
+        "let^ Inner = def^{self^{}, tag = 2, read = f^self^ -> number^ {"
+        "return^ def^^.tag + def^.tag}}\nreturn^ Inner.new().read()}}\n"
+        "let^ Derived = Outer .. def^{self^{}}\nreturn^ Derived.new().read()\n",
+        // Source identities from both operands map to the composed table.
+        "let^ A = def^{self^{}, ownerA = f^self^ -> any^ {return^ def^}}\n"
+        "let^ B = def^{self^{}, ownerB = f^self^ -> any^ {return^ def^}}\n"
+        "let^ D = A .. B\nlet^ d = D.new()\n"
+        "if^ d.ownerA() is^ D and^ d.ownerB() is^ D and^ A.new().ownerA() is^ A "
+        "{return^ 42}\nreturn^ 0\n",
+    };
+    for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
+        LHAT_TEST(sources[i]);
+        Unit u;
+        check_text(&u, sources[i]);
+        CHECK_CLEAN(&u);
+        Nodes nodes = {0};
+        collect(&nodes, NULL, false, u.parsed.root);
+        size_t uses = 0;
+        for (size_t j = 0; j < nodes.count; j++) {
+            LhatNode *node = (LhatNode *)nodes.nodes[j];
+            const char *name = NULL;
+            size_t length = 0;
+            if (node->kind != LHAT_NODE_HAT_IDENT ||
+                !lhat_node_name(node, u.lexer.source->text, u.lexer.strings,
+                                &name, &length) ||
+                length != 4 || memcmp(name, "def^", 4) != 0) continue;
+            LHAT_CHECK(node->checked_binding != NULL &&
+                       node->checked_binding->kind == LHAT_NODE_DEF,
+                       "def^ identifies its source definition");
+            node->v.name.hats = 9;
+            uses++;
+        }
+        LHAT_CHECK(uses > 0, "the case exercises definition references");
+        LhatProto *proto = NULL;
+        LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                          LHAT_COMPILE_OK);
+        if (proto != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LhatRunResult ran = lhat_run(machine, proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK(lhat_is_integer(ran.value), "integer result");
+            if (lhat_is_integer(ran.value)) LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            lhat_machine_dispose(machine);
+            lhat_proto_free(proto);
+        }
+        unit_dispose(&u);
+    }
+
+    LHAT_TEST("REPL composition maps prior def^ identities to the new table");
+    TestSession *session = test_session_new();
+    Run one, two;
+    compile_next_text(&one, session,
+        "let^ Base = def^{self^{}, owner = f^self^ -> any^ {return^ def^}}\n");
+    compile_next_text(&two, session,
+        "let^ Derived = Base .. def^{self^{}}\n"
+        "if^ Derived.new().owner() is^ Derived {return^ 42}\nreturn^ 0\n");
+    LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(two.compiled, LHAT_COMPILE_OK);
+    if (one.compiled == LHAT_COMPILE_OK && two.compiled == LHAT_COMPILE_OK) {
+        LhatMachine *machine = lhat_machine_new();
+        lhat_run(machine, one.proto);
+        LhatRunResult result = lhat_run(machine, two.proto);
+        LHAT_CHECK_EQ_INT(result.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_integer(result.value), "integer result");
+        if (lhat_is_integer(result.value)) LHAT_CHECK_EQ_INT(lhat_as_integer(result.value), 42);
+        lhat_machine_dispose(machine);
+    }
+    test_session_dispose(session);
+    compiled_dispose(&two);
+    compiled_dispose(&one);
+}
+
 static void test_error_declaration_identity(void)
 {
     Run r;
@@ -460,6 +536,7 @@ int main(void)
     test_this_body_identity();
     test_this_body_repl_composition();
     test_variadic_binding_identity();
+    test_def_binding_identity();
     test_error_declaration_identity();
     test_definition_origins();
     return lhat_test_report("test_pipeline");

@@ -315,6 +315,9 @@ static void test_execution_pipeline_parity(void)
         "let^ Derived = Base .. def^{self^{y := 2}}\n"
         "let^ d = Derived.new()\nreturn^ d.x + d.y\n",
         "return^ twice(21)\n",
+        "let^ Base = def^{self^{}, owner = f^self^ -> any^ {return^ def^}}\n"
+        "let^ Derived = Base .. def^{self^{}}\n"
+        "if^ Derived.new().owner() is^ Derived {return^ 42}\nreturn^ 0\n",
         "let^ make = f^ ...:number^ -> (f^ -> number^;) {"
         "return^ f^ -> number^ {return^ (...[0] ?? 0)}}\n"
         "let^ read = make(42)\nreturn^ read()\n",
