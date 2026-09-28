@@ -1780,6 +1780,11 @@ static LhatType *host_call_answer(Checker *c, const LhatNode *node,
 
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
+    ((LhatNode *)node)->checked_receiver = NULL;
+    if (chk_is_super_name(c, node->v.access.target)) {
+        Binding *receiver = chk_scope_find(c->scope, "self^", 5, NULL);
+        ((LhatNode *)node)->checked_receiver = receiver != NULL ? receiver->declaration : NULL;
+    }
     // 3.4改: the arguments first where the callee is a literal, so what they
     // are is known before the body that takes them is read. Inferred once --
     // the loop below reads them back rather than asking again, since asking
@@ -3697,6 +3702,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
                 chk_scope_add(&receiver, "self^", 5, table, node->offset);
             if (bound != NULL) {
                 bound->reached = true;
+                bound->declaration = entry->v.entry.value;
             }
             c->scope = &receiver;
         }
@@ -5886,6 +5892,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                                                node->offset);
                 if (bound != NULL) {
                     bound->reached = true;
+                    bound->declaration = entry->v.entry.value;
                 }
                 c->scope = &receiver;
             }
@@ -6296,6 +6303,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             // constructor entry); the self_link arm keeps a refused stray
             // measured against the definition it sits in.
             Binding *receiver = chk_scope_find(c->scope, "self^", 5, NULL);
+            ((LhatNode *)node)->checked_receiver = receiver != NULL ? receiver->declaration : NULL;
             LhatType *instance = receiver != NULL      ? receiver->type
                                  : c->self_link != NULL ? c->self_link->type
                                                         : NULL;

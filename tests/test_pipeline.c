@@ -447,6 +447,84 @@ static void test_def_binding_identity(void)
     compiled_dispose(&one);
 }
 
+static void test_self_binding_identity(void)
+{
+    static const char *const sources[] = {
+        "let^ Outer = def^{self^{x := 40}, read = f^self^ -> number^ {"
+        "let^ Inner = def^{self^{y := 2}, read = f^self^ -> number^ {"
+        "return^ self^^.x + self^.y}}\nreturn^ Inner.new().read()}}\n"
+        "let^ Derived = Outer .. def^{self^{}}\nreturn^ Derived.new().read()\n",
+        "let^ t = {n = 42, make = f^self^ -> (f^ -> number^;) {"
+        "return^ f^ -> number^ {return^ self^.n}}}\n"
+        "let^ read = t.make()\nreturn^ read()\n",
+        "let^ Base = def^{self^{x := 0}, override^new = f^ n:number^ {self^{x = n}}}\n"
+        "let^ Derived = Base .. def^{self^{y := 0}, override^new = f^ n:number^ {"
+        "super^(n)\nself^{y = 2}}}\nlet^ d = Derived.new(40)\nreturn^ d.x + d.y\n",
+        "let^ D = def^{self^{x := 40}, op^+ = f^ n:number^, self^ -> number^ {"
+        "return^ n + self^.x}}\nreturn^ 2 + D.new()\n",
+    };
+    for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
+        LHAT_TEST(sources[i]);
+        Unit u;
+        check_text(&u, sources[i]);
+        CHECK_CLEAN(&u);
+        Nodes nodes = {0};
+        collect(&nodes, NULL, false, u.parsed.root);
+        size_t uses = 0;
+        for (size_t j = 0; j < nodes.count; j++) {
+            LhatNode *node = (LhatNode *)nodes.nodes[j];
+            if (node->checked_receiver != NULL) {
+                LHAT_CHECK(node->checked_receiver->kind == LHAT_NODE_FUNC,
+                           "implicit receiver identifies its introducing body");
+                uses++;
+            }
+            const char *name = NULL;
+            size_t length = 0;
+            if (node->kind != LHAT_NODE_HAT_IDENT ||
+                !lhat_node_name(node, u.lexer.source->text, u.lexer.strings,
+                                &name, &length) ||
+                length != 5 || memcmp(name, "self^", 5) != 0) continue;
+            bool parameter = false;
+            for (size_t k = 0; k < nodes.count; k++) {
+                if (nodes.nodes[k]->kind == LHAT_NODE_PARAM &&
+                    nodes.nodes[k]->v.param.name == node) parameter = true;
+            }
+            if (parameter) continue;
+            LHAT_CHECK(node->checked_binding != NULL &&
+                       node->checked_binding->kind == LHAT_NODE_FUNC,
+                       "self^ identifies its introducing body");
+            node->v.name.hats = 9;
+            uses++;
+        }
+        LHAT_CHECK(uses > 0, "the case exercises receiver references");
+        LhatProto *proto = NULL;
+        LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                          LHAT_COMPILE_OK);
+        if (proto != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LhatRunResult ran = lhat_run(machine, proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK(lhat_is_integer(ran.value), "integer result");
+            if (lhat_is_integer(ran.value)) LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            lhat_machine_dispose(machine);
+            lhat_proto_free(proto);
+        }
+        for (size_t j = 0; j < nodes.count; j++) {
+            LhatNode *node = (LhatNode *)nodes.nodes[j];
+            if (node->checked_receiver == NULL) continue;
+            const LhatNode *receiver = node->checked_receiver;
+            node->checked_receiver = u.parsed.root->v.list.items;
+            proto = NULL;
+            LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                              node->kind == LHAT_NODE_SELF_TABLE
+                                  ? LHAT_COMPILE_UNSUPPORTED : LHAT_COMPILE_UNDEFINED);
+            lhat_proto_free(proto);
+            node->checked_receiver = receiver;
+        }
+        unit_dispose(&u);
+    }
+}
+
 static void test_error_declaration_identity(void)
 {
     Run r;
@@ -537,6 +615,7 @@ int main(void)
     test_this_body_repl_composition();
     test_variadic_binding_identity();
     test_def_binding_identity();
+    test_self_binding_identity();
     test_error_declaration_identity();
     test_definition_origins();
     return lhat_test_report("test_pipeline");

@@ -108,12 +108,9 @@ typedef struct Compiler {
         size_t length;
         const LhatNode *declaration;
         const LhatNode *this_body;
-        // 01 の 2.3: how many inner bindings of the name this capture
-        // was resolved past -- it^^ and it^ are two different targets under
-        // one spelling, so the cache tells them apart by the count. SIZE_MAX
-        // marks a capture_at entry, which no name search may ever answer
-        // with: a '$…name' capture was aimed at a place, not at a name.
-        size_t skip;
+        // Only legacy name lookups may reuse name-keyed captures. Resolved
+        // identities and explicit storage locations have independent keys.
+        bool by_name;
     } upvalue_names[LHAT_MAX_UPVALUES];
 
     // Slots below this hold live names; everything above is scratch for the
@@ -592,38 +589,6 @@ static const Local *find_local_to_read(const Compiler *c, const char *name,
     return NULL;
 }
 
-// 5.4: a name not held here is looked for in the enclosing subroutines, and
-// found means a place to share rather than a value to copy. Each level on the
-// way down records how it reaches the level above -- a register when the
-// parent holds it, or one of the parent's own upvalues when it does not.
-// Returns SIZE_MAX when there is no such name anywhere.
-// The same backwards search find_local does, passing over the innermost
-// `*skip` bindings of the name -- 01 の 2.3's stacked reach, where it^^
-// means the it^ one binding out. What was not consumed stays in `*skip`, so
-// the search may continue into an enclosing body.
-//
-// 02 の 8.7改: a being-defined local is passed over here too -- this is the
-// road a nested body's capture takes (find_upvalue), and a body written in
-// an initialiser must not capture the very binding being made; it captures
-// what the name meant outside, as any other read there does.
-static const Local *find_local_skipping(const Compiler *c, const char *name,
-                                        size_t length, size_t *skip)
-{
-    for (size_t i = c->local_count; i > 0; i--) {
-        const Local *local = &c->locals[i - 1];
-        if (local->being_defined) {
-            continue;
-        }
-        if (local->length == length && memcmp(local->name, name, length) == 0) {
-            if (*skip == 0) {
-                return local;
-            }
-            (*skip)--;
-        }
-    }
-    return NULL;
-}
-
 // 5.2: a name is a slot in the frame, declared here and nowhere else. The
 // same declaration writes the chunk's table of names (09 の 4 章), which is
 // where the debugger reads what a register was called. NULL, with the
@@ -663,8 +628,7 @@ static void release_locals(Compiler *c, size_t mark)
     c->local_count = mark;
 }
 
-static size_t find_upvalue_skipping(Compiler *c, const char *name,
-                                    size_t length, size_t skip)
+static size_t find_upvalue(Compiler *c, const char *name, size_t length)
 {
     if (c->parent == NULL) {
         return SIZE_MAX;
@@ -672,7 +636,7 @@ static size_t find_upvalue_skipping(Compiler *c, const char *name,
 
     for (size_t i = 0; i < c->proto->upvalue_count; i++) {
         if (c->upvalue_names[i].length == length &&
-            c->upvalue_names[i].skip == skip &&
+            c->upvalue_names[i].by_name &&
             memcmp(c->upvalue_names[i].name, name, length) == 0) {
             return i;
         }
@@ -680,10 +644,7 @@ static size_t find_upvalue_skipping(Compiler *c, const char *name,
 
     LhatUpvalueSource source = LHAT_UPVALUE_OUTER;
     uint8_t index = 0;
-    size_t remaining = skip;
-
-    const Local *local = find_local_skipping(c->parent, name, length,
-                                             &remaining);
+    const Local *local = find_local(c->parent, name, length);
     if (local != NULL) {
         // 05 の 8.9: an upvalue is one slot and a capture outlives the
         // frame, so a host value is never captured. The checker refused
@@ -696,8 +657,7 @@ static size_t find_upvalue_skipping(Compiler *c, const char *name,
         source = LHAT_UPVALUE_REGISTER;
         index = local->reg;
     } else {
-        size_t outer = find_upvalue_skipping(c->parent, name, length,
-                                             remaining);
+        size_t outer = find_upvalue(c->parent, name, length);
         if (outer == SIZE_MAX) {
             return SIZE_MAX;
         }
@@ -711,7 +671,7 @@ static size_t find_upvalue_skipping(Compiler *c, const char *name,
     }
     c->upvalue_names[added].name = name;
     c->upvalue_names[added].length = length;
-    c->upvalue_names[added].skip = skip;
+    c->upvalue_names[added].by_name = true;
     return added;
 }
 
@@ -759,14 +719,9 @@ static size_t capture_binding(Compiler *c, const LhatNode *binding,
     }
     c->upvalue_names[added].name = name;
     c->upvalue_names[added].length = length;
-    c->upvalue_names[added].skip = SIZE_MAX;
+    c->upvalue_names[added].by_name = false;
     c->upvalue_names[added].declaration = binding;
     return added;
-}
-
-static size_t find_upvalue(Compiler *c, const char *name, size_t length)
-{
-    return find_upvalue_skipping(c, name, length, 0);
 }
 
 // 15.10: capture the closure of the body selected by semantic analysis.
@@ -802,7 +757,7 @@ static size_t capture_this_body(Compiler *c, const LhatNode *body)
     }
     c->upvalue_names[added].name = "this^";
     c->upvalue_names[added].length = 5;
-    c->upvalue_names[added].skip = SIZE_MAX;
+    c->upvalue_names[added].by_name = false;
     c->upvalue_names[added].this_body = body;
     return added;
 }
@@ -918,7 +873,7 @@ static size_t capture_at(Compiler *c, const char *name, size_t length,
     }
     c->upvalue_names[added].name = name;
     c->upvalue_names[added].length = length;
-    c->upvalue_names[added].skip = SIZE_MAX;
+    c->upvalue_names[added].by_name = false;
     return added;
 }
 
@@ -1797,15 +1752,16 @@ static bool resolve_name(Compiler *c, const char *name, size_t length,
 
 // A lexical use carries its declaration, independent of scope depth or name.
 // Only storage placement and capture transport are decided here.
-static bool emit_binding_read(Compiler *c, const LhatNode *node,
+static bool emit_binding_read(Compiler *c, const LhatNode *binding,
                                const char *name, size_t length, uint8_t into)
 {
-    const Local *local = local_for_binding(c, node->checked_binding);
+    if (binding == NULL) return false;
+    const Local *local = local_for_binding(c, binding);
     if (local != NULL) {
         emit_move_wide(c, into, local->reg, local->width);
         return true;
     }
-    size_t upvalue = capture_binding(c, node->checked_binding, name, length);
+    size_t upvalue = capture_binding(c, binding, name, length);
     if (upvalue != SIZE_MAX) {
         emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into, (uint8_t)upvalue, 0));
         return true;
@@ -1821,7 +1777,7 @@ static bool emit_binding_read(Compiler *c, const LhatNode *node,
         for (const LhatNode *target = s->v.binding.targets; target != NULL; target = target->next) {
             const LhatNode *declared = target->kind == LHAT_NODE_PARAM
                                           ? target->v.param.name : target;
-            if (declared != node->checked_binding) continue;
+            if (declared != binding) continue;
             const char *key = NULL;
             size_t key_length = 0;
             if (!lhat_node_name(declared, part->lexer->source->text, part->lexer->strings,
@@ -1989,7 +1945,7 @@ static void compile_self_assign(Compiler *c, const LhatNode *node,
     uint8_t mark = c->next_register;
     uint8_t self = reserve(c);
     // 14.11: outside a body that holds a receiver the spelling means nothing.
-    if (!resolve_name(c, "self^", 5, self)) {
+    if (!emit_binding_read(c, node->checked_receiver, "self^", 5, self)) {
         fail(c, LHAT_COMPILE_UNSUPPORTED);
         return;
     }
@@ -2626,11 +2582,14 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     } else if (super_call) {
         compile_expression(c, target, callee);
         uint8_t receiver = reserve(c);
-        if (!resolve_name(c, "self^", 5, receiver)) {
+        if (node->checked_receiver == NULL) {
             // A static member has no self^ to hand over, and 14.4 says its
             // replacement takes none either. The plain call form is right.
             c->next_register = (uint8_t)(callee + 1);
             super_call = false;
+        } else if (!emit_binding_read(c, node->checked_receiver, "self^", 5, receiver)) {
+            fail(c, LHAT_COMPILE_UNDEFINED);
+            return;
         }
     } else {
         compile_expression(c, target, callee);
@@ -2831,9 +2790,11 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         proto->parameter_types = receiver_types;
         proto->parameters = 1;
         self_slot = reserve(&inner);
-        if (declare_local(&inner, "self^", 5, self_slot, 1) == NULL) {
+        Local *receiver = declare_local(&inner, "self^", 5, self_slot, 1);
+        if (receiver == NULL) {
             return;
         }
+        receiver->declaration = node;
     }
 
     // 5.3: the parameters are the frame's first registers, in order.
@@ -2937,7 +2898,7 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         if (parameter == NULL) {
             return;
         }
-        parameter->declaration = param->v.param.variadic
+        parameter->declaration = is_receiver ? node : param->v.param.variadic
             ? param->checked_binding
             : (param->v.param.name != NULL ? param->v.param.name->checked_binding : NULL);
 
@@ -2988,9 +2949,11 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         emit(&inner, lhat_encode_abc(LHAT_BC_GETUPVAL, owner, (uint8_t)captured, 0));
         emit(&inner, lhat_encode_abc(LHAT_BC_NEWINSTANCE, self_slot, owner, 0));
         inner.next_register = owner_mark;
-        if (declare_local(&inner, "self^", 5, self_slot, 1) == NULL) {
+        Local *receiver = declare_local(&inner, "self^", 5, self_slot, 1);
+        if (receiver == NULL) {
             return;
         }
+        receiver->declaration = node;
         inner.in_constructor = true;
         inner.constructor_self = self_slot;
     }
@@ -3805,36 +3768,15 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
-            // 01 の 2.3: checked identities handle stacked references above
-            // or below. Only self^^ still needs the legacy name search.
+            // 01 の 2.3: every stacked reference uses its checked identity.
             if (node->kind == LHAT_NODE_HAT_IDENT && node->v.name.hats > 1) {
                 if (node->checked_binding != NULL) {
-                    if (!emit_binding_read(c, node, name, length, into)) {
+                    if (!emit_binding_read(c, node->checked_binding, name, length, into)) {
                         fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
                     }
                     return;
                 }
-                if (name_is(name, length, "it^") || name_is(name, length, "this^") ||
-                    name_is(name, length, "def^")) {
-                    fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
-                    return;
-                }
-                size_t levels = node->v.name.hats - 1;
-                size_t skip = levels;
-                const Local *outer = find_local_skipping(c, name, length,
-                                                         &skip);
-                if (outer != NULL) {
-                    emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, outer->reg, 0));
-                    return;
-                }
-                size_t up = find_upvalue_skipping(c, name, length, skip);
-                if (up == SIZE_MAX) {
-                    // Fewer bindings of the name than the hats count out.
-                    fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
-                    return;
-                }
-                emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into, (uint8_t)up,
-                                        0));
+                fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
                 return;
             }
             // 01 の 2.2: three hat identifiers are values in themselves.
@@ -3869,14 +3811,14 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             // must carry the identity chosen by analysis. Unresolved references
             // are not rebound by searching compiler scopes.
             if ((name_is(name, length, "it^") || name_is(name, length, "...") ||
-                 name_is(name, length, "def^")) &&
+                 name_is(name, length, "def^") || name_is(name, length, "self^")) &&
                 node->checked_binding == NULL) {
                 fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
                 return;
             }
             // Remaining special bindings still use the legacy lookup below.
             if (!(node->checked_binding != NULL
-                      ? emit_binding_read(c, node, name, length, into)
+                      ? emit_binding_read(c, node->checked_binding, name, length, into)
                       : resolve_name(c, name, length, into))) {
                 fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
             }
@@ -3892,7 +3834,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 return;
             }
             if (node->checked_binding != NULL) {
-                if (!emit_binding_read(c, node, name, length, into)) {
+                if (!emit_binding_read(c, node->checked_binding, name, length, into)) {
                     fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
                 }
                 return;

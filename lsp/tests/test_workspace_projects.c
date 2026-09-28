@@ -315,6 +315,9 @@ static void test_execution_pipeline_parity(void)
         "let^ Derived = Base .. def^{self^{y := 2}}\n"
         "let^ d = Derived.new()\nreturn^ d.x + d.y\n",
         "return^ twice(21)\n",
+        "let^ Base = def^{self^{x := 0}, override^new = f^ n:number^ {self^{x = n}}}\n"
+        "let^ Derived = Base .. def^{self^{y := 0}, override^new = f^ n:number^ {"
+        "super^(n)\nself^{y = 2}}}\nlet^ d = Derived.new(40)\nreturn^ d.x + d.y\n",
         "let^ Base = def^{self^{}, owner = f^self^ -> any^ {return^ def^}}\n"
         "let^ Derived = Base .. def^{self^{}}\n"
         "if^ Derived.new().owner() is^ Derived {return^ 42}\nreturn^ 0\n",
@@ -385,6 +388,12 @@ static void test_execution_pipeline_parity(void)
                 const LhatNode *y = right.nodes[j]->checked_binding;
                 const LhatNode *body_left = left.nodes[j]->checked_this_body;
                 const LhatNode *body_right = right.nodes[j]->checked_this_body;
+                const LhatNode *receiver_left = left.nodes[j]->checked_receiver;
+                const LhatNode *receiver_right = right.nodes[j]->checked_receiver;
+                LHAT_CHECK_EQ_BOOL(receiver_left != NULL, receiver_right != NULL);
+                if (receiver_left != NULL && receiver_right != NULL) {
+                    LHAT_CHECK_EQ_INT(receiver_left->offset, receiver_right->offset);
+                }
                 LHAT_CHECK_EQ_BOOL(body_left != NULL, body_right != NULL);
                 if (body_left != NULL && body_right != NULL) {
                     LHAT_CHECK_EQ_INT(body_left->offset, body_right->offset);
