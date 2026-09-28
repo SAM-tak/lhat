@@ -315,6 +315,11 @@ static void test_execution_pipeline_parity(void)
         "let^ Derived = Base .. def^{self^{y := 2}}\n"
         "let^ d = Derived.new()\nreturn^ d.x + d.y\n",
         "return^ twice(21)\n",
+        "let^ make = f^ ...:number^ -> (f^ -> number^;) {"
+        "return^ f^ -> number^ {return^ (...[0] ?? 0)}}\n"
+        "let^ read = make(42)\nreturn^ read()\n",
+        "let^ read = f^ -> number^ {let^ n = ...[0]\n"
+        "if^ n fits^ number^ {return^ n}\nreturn^ 0}\nreturn^ read()\n",
         "let^ count = f^ n:number^ -> number^ {"
         "let^ inner = f^ -> number^ {if^ n = 0 {return^ 0}\n"
         "return^ this^^(n - 1) + 1}\nreturn^ inner()}\nreturn^ count(42)\n",

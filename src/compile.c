@@ -2923,8 +2923,9 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         if (parameter == NULL) {
             return;
         }
-        parameter->declaration = param->v.param.name != NULL
-                                     ? param->v.param.name->checked_binding : NULL;
+        parameter->declaration = param->v.param.variadic
+            ? param->checked_binding
+            : (param->v.param.name != NULL ? param->v.param.name->checked_binding : NULL);
 
         // 14.12: the search that resolves an overloaded call asks each
         // candidate what it takes, so each body carries that with it. For
@@ -3846,10 +3847,11 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     return;
                 }
             }
-            // Focus and catch references, like lexical declarations, must
-            // carry the identity chosen by analysis. An unresolved it^ is
-            // not rebound by counting compiler scopes.
-            if (name_is(name, length, "it^") && node->checked_binding == NULL) {
+            // Focus, catch and variadic references, like lexical declarations,
+            // must carry the identity chosen by analysis. Unresolved references
+            // are not rebound by searching compiler scopes.
+            if ((name_is(name, length, "it^") || name_is(name, length, "...")) &&
+                node->checked_binding == NULL) {
                 fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
                 return;
             }
@@ -6609,7 +6611,8 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         // 02 の 13.7 with 05 の 3.2: a script's '...' is its one parameter,
         // register 0 -- laid down by whatever runs it, the way a body's is
         // (lhat_run builds the collector; a require^'s CALL collects).
-        declare_local(&c, "...", 3, reserve(&c), 1);
+        Local *arguments = declare_local(&c, "...", 3, reserve(&c), 1);
+        if (arguments != NULL) arguments->declaration = unit->checked_binding;
         proto->parameters = 1;
         proto->parameter_slots = 1;
         proto->has_variadic = true;

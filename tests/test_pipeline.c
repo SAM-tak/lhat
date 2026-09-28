@@ -133,7 +133,7 @@ static void test_binding_identity(void)
     LHAT_TEST("a missing resolved storage location is not rebound by spelling");
     check_text(&u, "var^ x = 1\nreturn^ x\n");
     LhatNode *use = u.parsed.root->v.list.items->next->v.jump.value;
-    use->checked_binding = u.parsed.root;
+    use->checked_binding = u.parsed.root->v.list.items->next;
     proto = NULL;
     LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
                       LHAT_COMPILE_UNDEFINED);
@@ -304,6 +304,73 @@ static void test_this_body_repl_composition(void)
     compiled_dispose(&one);
 }
 
+static void test_variadic_binding_identity(void)
+{
+    static const char *const sources[] = {
+        "let^ decoy = {100}\n"
+        "let^ outer = f^ ...:number^ -> number^ {"
+        "let^ inner = f^ ...:number^ -> number^ {return^ (...[0] ?? 0)}\n"
+        "return^ (...[0] ?? 0) + inner(2)}\nreturn^ outer(40)\n",
+        "let^ decoy = {100}\n"
+        "let^ make = f^ ...:number^ -> (f^ -> number^;) {"
+        "return^ f^ -> number^ {return^ (...[0] ?? 0)}}\n"
+        "let^ read = make(42)\nreturn^ read()\n",
+        "let^ decoy = {100}\n"
+        "let^ sum = f^ ...:number^ -> number^ {var^ total = 0\n"
+        "for^ k, n in^ ... {total := total + n}\nreturn^ total}\n"
+        "let^ forward = f^ ...:number^ -> number^ {return^ sum(2, ...)}\n"
+        "return^ forward(40)\n",
+        // The script collector is a binding too, captured by a non-variadic body.
+        "let^ decoy = {100}\nlet^ read = f^ -> number^ {let^ n = ...[0]\n"
+        "if^ n fits^ number^ {return^ n}\nreturn^ 0}\nreturn^ read()\n",
+    };
+    for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
+        LHAT_TEST(sources[i]);
+        Unit u;
+        check_text(&u, sources[i]);
+        CHECK_CLEAN(&u);
+        const LhatNode *decoy = u.parsed.root->v.list.items->v.binding.targets;
+        Nodes nodes = {0};
+        collect(&nodes, NULL, false, u.parsed.root);
+        size_t uses = 0;
+        for (size_t j = 0; j < nodes.count; j++) {
+            LhatNode *node = (LhatNode *)nodes.nodes[j];
+            const char *name = NULL;
+            size_t length = 0;
+            if (node->kind != LHAT_NODE_HAT_IDENT ||
+                !lhat_node_name(node, u.lexer.source->text, u.lexer.strings,
+                                &name, &length) ||
+                length != 3 || memcmp(name, "...", 3) != 0) continue;
+            LHAT_CHECK(node->checked_binding != NULL, "collector has a declaration identity");
+            if (node->checked_binding != NULL) {
+                LHAT_CHECK(node->checked_binding == u.parsed.root ||
+                           (node->checked_binding->kind == LHAT_NODE_PARAM &&
+                            node->checked_binding->v.param.variadic),
+                           "collector belongs to the script or a variadic parameter");
+            }
+            // All collectors now display the same competing lexical name.
+            // Neither reads, captures, nor spread emission may rebind them.
+            node->v.name = decoy->v.name;
+            uses++;
+        }
+        LHAT_CHECK(uses > 0, "the case exercises collector references");
+        LhatProto *proto = NULL;
+        LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                          LHAT_COMPILE_OK);
+        if (proto != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LhatValue argument = lhat_integer(42);
+            LhatRunResult ran = lhat_run_arguments(machine, proto, &argument, 1);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK(lhat_is_integer(ran.value), "integer result");
+            if (lhat_is_integer(ran.value)) LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            lhat_machine_dispose(machine);
+            lhat_proto_free(proto);
+        }
+        unit_dispose(&u);
+    }
+}
+
 static void test_error_declaration_identity(void)
 {
     Run r;
@@ -392,6 +459,7 @@ int main(void)
     test_focus_and_catch_identity();
     test_this_body_identity();
     test_this_body_repl_composition();
+    test_variadic_binding_identity();
     test_error_declaration_identity();
     test_definition_origins();
     return lhat_test_report("test_pipeline");

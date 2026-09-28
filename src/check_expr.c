@@ -4101,6 +4101,8 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
             if (b != NULL) {
                 b->reached = true;
                 b->is_parameter = true;
+                b->declaration = param;
+                ((LhatNode *)param)->checked_binding = param;
             }
             continue;
         }

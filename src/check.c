@@ -3843,6 +3843,8 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
             if (b != NULL) {
                 b->reached = true;
                 b->is_parameter = true;
+                b->declaration = unit;
+                ((LhatNode *)unit)->checked_binding = unit;
             }
         }
     }
