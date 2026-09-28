@@ -543,8 +543,8 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
         }
     }
 
-    lhat_compile_session_dispose(session);
 done:
+    lhat_compile_session_dispose(session);
     lhat_check_result_dispose(&checked);
     lhat_check_session_dispose(checks);
     lhat_parse_result_dispose(&parsed);
