@@ -908,6 +908,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
                          LhatType **named_type)
 {
     ((LhatNode *)node)->checked_binding = NULL;
+    ((LhatNode *)node)->checked_scope_invalid = false;
     ((LhatNode *)node)->checked_this_body = NULL;
     ((LhatNode *)node)->checked_host_member = NULL;
     ((LhatNode *)node)->checked_module_root = NULL;
@@ -1021,6 +1022,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
     if (node->kind == LHAT_NODE_SCOPE) {
         from = chk_scope_from(c->scope, node);
         if (from == NULL) {
+            ((LhatNode *)node)->checked_scope_invalid = true;
             chk_report(c, node, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }

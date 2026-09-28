@@ -753,6 +753,57 @@ static void test_session_storage_identity(void)
     }
 }
 
+static void test_missing_binding_metadata(void)
+{
+    static const char *const sources[] = {
+        "var^ x = 42\nreturn^ x\n",
+        "var^ x = 41\nreturn^ x + 1\n",
+        "var^ x = 42\nlet^ read = f^ -> number^ {return^ x}\nreturn^ read()\n",
+        "var^ x = 42\ndo^{var^ x = 0\nreturn^ $x}\n",
+        "var^ x = 40\ndo^{$x := 42}\nreturn^ x\n",
+        "enum^ x {V = 42}\nreturn^ x.V.value\n",
+    };
+    for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
+        LHAT_TEST("missing metadata never falls back to names or scope specifiers");
+        Unit u;
+        check_text(&u, sources[i]);
+        CHECK_CLEAN(&u);
+        Nodes nodes = {0};
+        collect(&nodes, NULL, false, u.parsed.root);
+        bool removed = false;
+        for (size_t j = 0; j < nodes.count; j++) {
+            LhatNode *node = (LhatNode *)nodes.nodes[j];
+            const char *name = NULL;
+            size_t length = 0;
+            if (node->checked_binding != NULL && node->checked_binding != node &&
+                lhat_node_name(node, u.lexer.source->text, u.lexer.strings, &name, &length) &&
+                length == 1 && name[0] == 'x') {
+                node->checked_binding = NULL;
+                removed = true;
+                break;
+            }
+        }
+        LHAT_CHECK(removed, "the reference metadata was removed");
+        LhatProto *proto = NULL;
+        LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                          LHAT_COMPILE_UNDEFINED);
+        lhat_proto_free(proto);
+        unit_dispose(&u);
+    }
+
+    LHAT_TEST("an invalid scope remains an analysis error after changing the written reach");
+    Unit u;
+    check_text(&u, "var^ x = 42\nreturn^ $^^x\n");
+    LhatNode *use = u.parsed.root->v.list.items->next->v.jump.value;
+    LHAT_CHECK(use->checked_scope_invalid, "analysis rejected the scope reach");
+    use->v.scope.depth = 0;
+    LhatProto *proto = NULL;
+    LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                      LHAT_COMPILE_SCOPE_TOO_FAR);
+    lhat_proto_free(proto);
+    unit_dispose(&u);
+}
+
 static void test_error_declaration_identity(void)
 {
     Run r;
@@ -849,6 +900,7 @@ int main(void)
     test_enum_binding_identity();
     test_storage_binding_identity();
     test_session_storage_identity();
+    test_missing_binding_metadata();
     test_error_declaration_identity();
     test_definition_origins();
     return lhat_test_report("test_pipeline");

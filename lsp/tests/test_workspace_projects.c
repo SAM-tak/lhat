@@ -315,6 +315,7 @@ static void test_execution_pipeline_parity(void)
         "let^ Derived = Base .. def^{self^{y := 2}}\n"
         "let^ d = Derived.new()\nreturn^ d.x + d.y\n",
         "return^ twice(21)\n",
+        "var^ x = 42\nreturn^ $^^x\n",
         "let^ read = f^ -> number^ {return^ E.V.value}\nenum^ E {V = 42}\nreturn^ read()\n",
         "var^ root.a = 40\ndo^{var^ root.b = 2}\nreturn^ root.a + root.b\n",
         "let^ A = def^{self^{}, m = f^self^ -> number^ {return^ 40}}\n"
@@ -410,6 +411,8 @@ static void test_execution_pipeline_parity(void)
                                    right.nodes[j]->checked_import_global);
                 LHAT_CHECK_EQ_BOOL(left.nodes[j]->checked_super_call,
                                    right.nodes[j]->checked_super_call);
+                LHAT_CHECK_EQ_BOOL(left.nodes[j]->checked_scope_invalid,
+                                   right.nodes[j]->checked_scope_invalid);
                 const LhatModuleRoot *module_left = left.nodes[j]->checked_module_root;
                 const LhatModuleRoot *module_right = right.nodes[j]->checked_module_root;
                 LHAT_CHECK_EQ_BOOL(module_left != NULL, module_right != NULL);

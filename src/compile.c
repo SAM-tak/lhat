@@ -54,20 +54,11 @@ typedef struct {
     const LhatNode *declaration;
     // Composition maps each source def^ identity to this one emitted table.
     const struct DefChain *definition_chain;
-    // 01 の 8 章: which scope declared it, counted from this subroutine's
-    // own body outwards -- what '$^' walks past. See Compiler.scope_depth.
-    uint32_t depth;
     // 05 の 8.9: how many consecutive slots the name holds -- 1 for
     // everything but a host value, whose registered width the checker's
     // stamp (or the written annotation) decided at declaration. Reading or
     // writing the name moves this many slots.
     uint8_t width;
-    // 02 の 8.7改: its own let^'s value is being compiled right now. A name
-    // read there -- a nested body's capture included -- resolves past this
-    // local to whatever the name meant outside, mirroring the checker's
-    // Binding.being_defined. Set and cleared around the one value by
-    // compile_define/compile_tuple_define, never true between statements.
-    bool being_defined;
     // 09 の 4 章: its entry in the chunk's table of names, closed when the
     // scope is (release_locals).
     size_t table;
@@ -89,8 +80,8 @@ typedef struct DefChain {
     size_t count;
 } DefChain;
 
-// One subroutine being compiled. The chain of parents is what a name search
-// walks when it is not found here, which is how 5.4 decides what to capture.
+// One subroutine being compiled. Parent frames transport captures selected
+// by semantic identity; they do not repeat lexical name resolution.
 typedef struct Compiler {
     struct Compiler *parent;
     const LhatLexer *lexer;
@@ -104,14 +95,9 @@ typedef struct Compiler {
     size_t local_count;
 
     struct {
-        const char *name;
-        size_t length;
         const LhatNode *declaration;
         const LhatNode *this_body;
-        // Only legacy name lookups may reuse name-keyed captures. Resolved
-        // identities and explicit storage locations have independent keys.
-        bool by_name;
-    } upvalue_names[LHAT_MAX_UPVALUES];
+    } upvalue_bindings[LHAT_MAX_UPVALUES];
 
     // Slots below this hold live names; everything above is scratch for the
     // expression being compiled, released as soon as it is consumed.
@@ -137,16 +123,6 @@ typedef struct Compiler {
 
     LoopContext *loop;  // the innermost loop being compiled, NULL outside one
     TryContext *trying;  // 04 の 4.5: and the innermost statements with arms
-
-    // 01 の 8 章: how many scopes are open here, counting this subroutine's
-    // body as 0. A scope is what a '{' opens when names become visible in
-    // it -- a block, a loop body, an if^ arm, a def^ body -- which is
-    // exactly where the checker pushes a Scope, so '$^' counts the same on
-    // both sides. A table literal, a self^{ }, an error^ construction and
-    // an interpolation hole hold entries or an expression rather than
-    // bindings, and open none; catch^'s it^ and with^'s names are written
-    // without braces at all and so add none either.
-    uint32_t scope_depth;
 
     // 03 の 4.3: the statements being declared are the top level of a
     // session's input, where a name written again keeps the slot it had.
@@ -211,7 +187,7 @@ typedef struct Compiler {
     const LhatUnits *units;
 
     // 05 の 5.3: set while a part written in another unit is being compiled.
-    // A name free in it is that unit's, and resolve_name reaches it the only
+    // A name free in it is that unit's, and emit_binding_read reaches it the only
     // way a body somewhere else can -- through L^.modules.
     const LhatNode *foreign_scope;
     const char *foreign_module;
@@ -551,44 +527,6 @@ static void load_constant(Compiler *c, uint8_t into, LhatValue value)
     emit(c, lhat_encode_abx(LHAT_BC_LOADK, into, (uint16_t)k));
 }
 
-static const Local *find_local(const Compiler *c, const char *name,
-                               size_t length)
-{
-    // Backwards, so an inner name shadows an outer one of the same spelling
-    // as 02 の 8.6 intends.
-    for (size_t i = c->local_count; i > 0; i--) {
-        const Local *local = &c->locals[i - 1];
-        if (local->length == length && memcmp(local->name, name, length) == 0) {
-            return local;
-        }
-    }
-    return NULL;
-}
-
-// 02 の 8.7改: the same search, for a name written as a value to read. A
-// binding does not stand in its own initialiser -- anywhere in it, a nested
-// body's capture included -- so this one runs past it and finds whatever the
-// name meant outside, which is what the checker resolved the read to, and
-// the two have to agree or the read lands in the wrong slot.
-//
-// Only reads. The other questions find_local answers -- which slot a
-// definition writes into, whether a name is a module root, whether a path
-// starts at a local -- are about the binding itself and want it found.
-static const Local *find_local_to_read(const Compiler *c, const char *name,
-                                       size_t length)
-{
-    for (size_t i = c->local_count; i > 0; i--) {
-        const Local *local = &c->locals[i - 1];
-        if (local->being_defined) {
-            continue;
-        }
-        if (local->length == length && memcmp(local->name, name, length) == 0) {
-            return local;
-        }
-    }
-    return NULL;
-}
-
 // 5.2: a name is a slot in the frame, declared here and nowhere else. The
 // same declaration writes the chunk's table of names (09 の 4 章), which is
 // where the debugger reads what a register was called. NULL, with the
@@ -608,9 +546,7 @@ static Local *declare_local(Compiler *c, const char *name, size_t length,
     local->name = name;
     local->length = length;
     local->reg = reg;
-    local->depth = c->scope_depth;
     local->width = width;
-    local->being_defined = false;
     local->table = table;
     local->declaration = NULL;
     local->definition_chain = NULL;
@@ -626,53 +562,6 @@ static void release_locals(Compiler *c, size_t mark)
         chunk->locals[c->locals[i].table].to = (uint32_t)chunk->count;
     }
     c->local_count = mark;
-}
-
-static size_t find_upvalue(Compiler *c, const char *name, size_t length)
-{
-    if (c->parent == NULL) {
-        return SIZE_MAX;
-    }
-
-    for (size_t i = 0; i < c->proto->upvalue_count; i++) {
-        if (c->upvalue_names[i].length == length &&
-            c->upvalue_names[i].by_name &&
-            memcmp(c->upvalue_names[i].name, name, length) == 0) {
-            return i;
-        }
-    }
-
-    LhatUpvalueSource source = LHAT_UPVALUE_OUTER;
-    uint8_t index = 0;
-    const Local *local = find_local(c->parent, name, length);
-    if (local != NULL) {
-        // 05 の 8.9: an upvalue is one slot and a capture outlives the
-        // frame, so a host value is never captured. The checker refused
-        // this first (LHAT_CHECK_ERR_HOSTVALUE_ESCAPES); this is the
-        // backstop for a compile without checking.
-        if (local->width > 1) {
-            fail(c, LHAT_COMPILE_UNSUPPORTED);
-            return SIZE_MAX;
-        }
-        source = LHAT_UPVALUE_REGISTER;
-        index = local->reg;
-    } else {
-        size_t outer = find_upvalue(c->parent, name, length);
-        if (outer == SIZE_MAX) {
-            return SIZE_MAX;
-        }
-        index = (uint8_t)outer;
-    }
-
-    size_t added = lhat_proto_add_upvalue(c->proto, source, index, name, length);
-    if (added == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
-        return SIZE_MAX;
-    }
-    c->upvalue_names[added].name = name;
-    c->upvalue_names[added].length = length;
-    c->upvalue_names[added].by_name = true;
-    return added;
 }
 
 static const Local *local_for_binding(const Compiler *c, const LhatNode *binding)
@@ -695,7 +584,7 @@ static size_t capture_binding(Compiler *c, const LhatNode *binding,
 {
     if (c->parent == NULL || binding == NULL) return SIZE_MAX;
     for (size_t i = 0; i < c->proto->upvalue_count; i++) {
-        if (c->upvalue_names[i].declaration == binding) return i;
+        if (c->upvalue_bindings[i].declaration == binding) return i;
     }
     const Local *local = local_for_binding(c->parent, binding);
     size_t index;
@@ -717,10 +606,7 @@ static size_t capture_binding(Compiler *c, const LhatNode *binding,
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
         return SIZE_MAX;
     }
-    c->upvalue_names[added].name = name;
-    c->upvalue_names[added].length = length;
-    c->upvalue_names[added].by_name = false;
-    c->upvalue_names[added].declaration = binding;
+    c->upvalue_bindings[added].declaration = binding;
     return added;
 }
 
@@ -734,7 +620,7 @@ static size_t capture_this_body(Compiler *c, const LhatNode *body)
 {
     if (c->parent == NULL || body == NULL) return SIZE_MAX;
     for (size_t i = 0; i < c->proto->upvalue_count; i++) {
-        if (c->upvalue_names[i].this_body == body) {
+        if (c->upvalue_bindings[i].this_body == body) {
             return i;
         }
     }
@@ -755,138 +641,26 @@ static size_t capture_this_body(Compiler *c, const LhatNode *body)
         fail(c, LHAT_COMPILE_TOO_COMPLEX);
         return SIZE_MAX;
     }
-    c->upvalue_names[added].name = "this^";
-    c->upvalue_names[added].length = 5;
-    c->upvalue_names[added].by_name = false;
-    c->upvalue_names[added].this_body = body;
+    c->upvalue_bindings[added].this_body = body;
     return added;
 }
 
 // ---------------------------------------------------------------------------
-// Scope specifiers (01 の 8 章)
+// Storage for checked scope-qualified references (01 の 8 章)
 // ---------------------------------------------------------------------------
 
 static Compiler *root_of(Compiler *c);
 
-// The same backwards search find_local does, but blind to anything declared
-// deeper than `max_depth` -- which is how '$^' looks past the scope it was
-// written in without looking past the name it wants.
-static const Local *find_local_at(const Compiler *c, const char *name,
-                                  size_t length, uint32_t max_depth)
-{
-    for (size_t i = c->local_count; i > 0; i--) {
-        const Local *local = &c->locals[i - 1];
-        if (local->depth <= max_depth && local->length == length &&
-            memcmp(local->name, name, length) == 0) {
-            return local;
-        }
-    }
-    return NULL;
-}
-
-// Where a specifier says to start looking, counted either way. 01 の 8 章:
-// '$^' steps out of the scope the name was written in and '$^^' out of that
-// one too; '$' names the unit, '$$' the one scope inside it and '$$$' the
-// one inside that. Crossing into an enclosing subroutine spends every scope
-// still open in this one plus its body's own, since 5.4 makes that body one
-// scope the way any block is -- which is what lets an absolute index run
-// through a chain of them as one numbering.
-//
-// Answers false when there are not that many scopes.
-static bool scope_start(Compiler *c, const LhatNode *node, Compiler **owner,
-                        uint32_t *max_depth)
-{
-    if (node->v.scope.kind == LHAT_SCOPE_FILE) {
-        // The absolute index counts inwards, so it is turned into a place in
-        // the chain by asking how many scopes stand outside each body.
-        uint32_t total = 0;
-        for (Compiler *at = c; at != NULL; at = at->parent) {
-            total += at->scope_depth + 1;
-        }
-        if (node->v.scope.depth >= total) {
-            return false;  // naming a scope further in than the one here
-        }
-        uint32_t inside = 0;
-        for (Compiler *at = c; at != NULL; at = at->parent) {
-            inside += at->scope_depth + 1;
-            uint32_t outside = total - inside;
-            if (node->v.scope.depth >= outside) {
-                *owner = at;
-                *max_depth = node->v.scope.depth - outside;
-                return true;
-            }
-        }
-        return false;
-    }
-    uint32_t out = node->v.scope.depth;
-    Compiler *at = c;
-    while (out > at->scope_depth) {
-        out -= at->scope_depth + 1;
-        at = at->parent;
-        if (at == NULL) {
-            return false;
-        }
-    }
-    *owner = at;
-    *max_depth = at->scope_depth - out;
-    return true;
-}
-
-// 5.4's capture, aimed at one place rather than at the nearest name. The
-// ordinary find_upvalue searches by name from the innermost enclosing body,
-// which would stop at a shadow the specifier was written to look past.
-static size_t capture_at(Compiler *c, const char *name, size_t length,
-                         const Compiler *owner, uint32_t max_depth)
-{
-    if (c->parent == NULL) {
-        return SIZE_MAX;
-    }
-
-    bool from_register = false;
-    uint8_t index = 0;
-    if (c->parent == owner) {
-        const Local *local = find_local_at(c->parent, name, length, max_depth);
-        if (local == NULL) {
-            return SIZE_MAX;
-        }
-        from_register = true;
-        index = local->reg;
-    } else {
-        size_t outer = capture_at(c->parent, name, length, owner, max_depth);
-        if (outer == SIZE_MAX) {
-            return SIZE_MAX;
-        }
-        index = (uint8_t)outer;
-    }
-
-    // Not shared with the upvalues find_upvalue names: two of them over one
-    // slot read and write the same place, and giving this one its own entry
-    // keeps a name from being taken for a target it was not resolved to --
-    // the SIZE_MAX skip is what keeps every name search from answering with
-    // this entry.
-    size_t added = lhat_proto_add_upvalue(
-        c->proto, from_register ? LHAT_UPVALUE_REGISTER : LHAT_UPVALUE_OUTER,
-        index, name, length);
-    if (added == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
-        return SIZE_MAX;
-    }
-    c->upvalue_names[added].name = name;
-    c->upvalue_names[added].length = length;
-    c->upvalue_names[added].by_name = false;
-    return added;
-}
-
-// What a '$…name' resolves to. `reg` is filled when the name is a register of
-// this body, `upvalue` when it is a place an enclosing one holds.
+// Where a checked reference is stored. The invalid-scope answer is retained
+// from analysis, including when the low-level API emits code with diagnostics.
 typedef enum {
-    SCOPED_NONE,      // no such name from there outwards
-    SCOPED_TOO_FAR,   // fewer scopes are open than the specifier counts
+    SCOPED_NONE,      // no resolved storage
+    SCOPED_TOO_FAR,   // analysis rejected the scope specifier
     SCOPED_REGISTER,
     SCOPED_UPVALUE
 } ScopedKind;
 
-static ScopedKind resolve_scoped(Compiler *c, const LhatNode *node,
+static ScopedKind binding_location(Compiler *c, const LhatNode *node,
                                  const char *name, size_t length,
                                  uint8_t *reg, size_t *upvalue)
 {
@@ -899,34 +673,7 @@ static ScopedKind resolve_scoped(Compiler *c, const LhatNode *node,
         *upvalue = capture_binding(c, node->checked_binding, name, length);
         return *upvalue != SIZE_MAX ? SCOPED_UPVALUE : SCOPED_NONE;
     }
-    Compiler *owner = NULL;
-    uint32_t max_depth = 0;
-    if (!scope_start(c, node, &owner, &max_depth)) {
-        return SCOPED_TOO_FAR;
-    }
-
-    // 01 の 8 章: a specifier says where to begin, not where to stop, so an
-    // ancestor further out still answers when the scope named holds nothing.
-    for (Compiler *at = owner; at != NULL; at = at->parent) {
-        const Local *local = find_local_at(at, name, length, max_depth);
-        if (local != NULL) {
-            if (at == c) {
-                *reg = local->reg;
-                return SCOPED_REGISTER;
-            }
-            size_t index = capture_at(c, name, length, at, max_depth);
-            if (index == SIZE_MAX) {
-                return SCOPED_NONE;
-            }
-            *upvalue = index;
-            return SCOPED_UPVALUE;
-        }
-        // Every scope of an enclosing body is open to the search.
-        if (at->parent != NULL) {
-            max_depth = at->parent->scope_depth;
-        }
-    }
-    return SCOPED_NONE;
+    return node->checked_scope_invalid ? SCOPED_TOO_FAR : SCOPED_NONE;
 }
 
 static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into);
@@ -982,12 +729,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into);
 static void compile_bind_path(Compiler *c, const LhatNode *node,
                                const char *path, uint8_t value);
 static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node);
-static bool resolve_name(Compiler *c, const char *name, size_t length,
-                         uint8_t into);
 static const LhatNode *template_of(const LhatNode *def);
-static const LhatNode *unit_binding(const LhatNode *statements,
-                                    const LhatLexer *lexer, const char *name,
-                                    size_t length, bool exported_only);
 
 static void compile_import_path(Compiler *c, const LhatNode *path, uint8_t into,
                                 uint8_t key);
@@ -1696,62 +1438,6 @@ static void emit_modules_read(Compiler *c, const char *path, const char *name,
     c->next_register = mark;
 }
 
-// 05 の 5.3: a name free in a body flattened here out of another unit. What
-// can be reached is what lives under L^.modules -- what that unit published,
-// and the roots it imported. Its own top-level names are registers in a
-// frame this body does not have, and saying so is worth more than "no such
-// name" about a name that is plainly there in the other file.
-static bool resolve_foreign_name(Compiler *c, const char *name, size_t length,
-                                 uint8_t into)
-{
-    Compiler *part = c;
-    while (part != NULL && part->foreign_scope == NULL) {
-        part = part->parent;
-    }
-    if (part == NULL || part->foreign_module == NULL) {
-        return false;
-    }
-
-    if (unit_binding(part->foreign_scope, part->lexer, name, length, true) !=
-        NULL) {
-        emit_modules_read(c, part->foreign_module, name, length, into);
-        return true;
-    }
-    if (unit_binding(part->foreign_scope, part->lexer, name, length, false) !=
-        NULL) {
-        fail_named(c, LHAT_COMPILE_NOT_PUBLISHED, name, length);
-        return true;  // reported; nothing more to try
-    }
-    return false;
-}
-
-static bool resolve_name(Compiler *c, const char *name, size_t length,
-                         uint8_t into)
-{
-    const Local *local = find_local_to_read(c, name, length);
-    if (local != NULL) {
-        // 05 の 8.9: a host value name moves as its width of slots. The
-        // destination was sized by the same checker stamp, so the two
-        // agree. (emit_move_wide drops a self-move, which was always a
-        // no-op here.)
-        emit_move_wide(c, into, local->reg,
-                       local->width > 1 ? local->width : 1);
-        return true;
-    }
-    size_t upvalue = find_upvalue(c, name, length);
-    if (upvalue != SIZE_MAX) {
-        emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into, (uint8_t)upvalue, 0));
-        return true;
-    }
-    // 05 の 5.3: this body was written in another unit and flattened here
-    // (14.2), so what is free in it is that unit's. Host initial names have
-    // already been resolved on their use nodes and never reach this path.
-    if (resolve_foreign_name(c, name, length, into)) {
-        return true;
-    }
-    return false;
-}
-
 // A lexical use carries its declaration, independent of scope depth or name.
 // Only storage placement and capture transport are decided here.
 static bool emit_binding_read(Compiler *c, const LhatNode *binding,
@@ -1809,36 +1495,6 @@ static bool emit_binding_read(Compiler *c, const LhatNode *binding,
 
 static void compile_default_new(Compiler *c, const LhatNode *node,
                                 uint8_t definition);
-
-// The value a unit's top level binds to `name`, read through the lexer that
-// unit's names are spans into. `exported_only` asks 05 の 4 章's question:
-// what another unit may name is what this one published.
-static const LhatNode *unit_binding(const LhatNode *statements,
-                                    const LhatLexer *lexer, const char *name,
-                                    size_t length, bool exported_only)
-{
-    for (const LhatNode *s = statements; s != NULL; s = s->next) {
-        if (s->kind != LHAT_NODE_DEFINE ||
-            (exported_only && !s->v.binding.exported)) {
-            continue;
-        }
-        const LhatNode *target = s->v.binding.targets;
-        const LhatNode *value = s->v.binding.values;
-        if (target == NULL || target->next != NULL || value == NULL) {
-            continue;
-        }
-        const char *spelt = NULL;
-        size_t spelt_length = 0;
-        if (!lhat_node_name(define_target_name(target), lexer->source->text,
-                            lexer->strings, &spelt, &spelt_length)) {
-            continue;
-        }
-        if (spelt_length == length && memcmp(spelt, name, length) == 0) {
-            return value;
-        }
-    }
-    return NULL;
-}
 
 // Flatten the semantic composition tree. The emitter never follows source
 // names, require expressions or exported spellings to rediscover its parts.
@@ -2074,13 +1730,8 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     // is what lets a method or an initialiser reach it -- through the capture
     // of 5.4, with nothing special added.
     size_t local_mark = c->local_count;
-    // 01 の 8 章: the def^'s '{' opens a scope for '$^' to count, and def^
-    // is a name of it -- the checker binds self^ and def^ into the Scope
-    // it pushes here, so both sides count this one the same.
-    c->scope_depth++;
     Local *definition = declare_local(c, "def^", 4, into, 1);
     if (definition == NULL) {
-        c->scope_depth--;
         return;
     }
     definition->definition_chain = &chain;
@@ -2330,7 +1981,6 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
 
     c->building = enclosing;
     release_locals(c, local_mark);
-    c->scope_depth--;
 }
 
 // The new of 14.11 that a definition gets when it declares none: a function
@@ -3069,15 +2719,8 @@ static bool binary_opcode(LhatOpKind op, LhatOpcode *out)
     }
 }
 
-// The local a bare name would be read out of, when reading it is one MOVE
-// and nothing else -- what lets a binary operand be read in place. The
-// conditions mirror compile_expression's own path to resolve_name exactly:
-// a plain ident (16.2's focus included), or a hat name with one hat that is
-// not one of the five the case above recognises before it looks anything
-// up. find_local_to_read is the same search resolve_name makes, so a hit
-// here is precisely "the compile would have been emit_move_wide from this
-// register" -- width and all, since the machine reads an operand's width
-// off its head wherever it sits.
+// Read an operand in place only when its semantic identity maps to a local.
+// Missing metadata must not be repaired by a spelling-based optimization.
 static const Local *forwardable_local(Compiler *c, const LhatNode *node)
 {
     if (node != NULL && node->checked_this_body != NULL) return NULL;
@@ -3086,21 +2729,7 @@ static const Local *forwardable_local(Compiler *c, const LhatNode *node)
     if (node != NULL && node->checked_binding != NULL) {
         return local_for_binding(c, node->checked_binding);
     }
-    const char *name = NULL;
-    size_t length = 0;
-    if (node == NULL ||
-        (node->kind != LHAT_NODE_IDENT && node->kind != LHAT_NODE_FOCUS &&
-         node->kind != LHAT_NODE_HAT_IDENT) ||
-        !node_name(c, node, &name, &length)) {
-        return NULL;
-    }
-    if (node->kind == LHAT_NODE_HAT_IDENT &&
-        (node->v.name.hats > 1 || name_is(name, length, "true^") ||
-         name_is(name, length, "false^") || name_is(name, length, "nil^") ||
-         name_is(name, length, "this^") || name_is(name, length, "L^"))) {
-        return NULL;
-    }
-    return find_local_to_read(c, name, length);
+    return NULL;
 }
 
 // Whether evaluating this node writes no local: a name or a literal. What
@@ -3823,11 +3452,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
                 return;
             }
-            // Removing this legacy fallback for references without an identity
-            // is the remaining step in the pipeline migration inventory.
-            if (!(node->checked_binding != NULL
-                      ? emit_binding_read(c, node->checked_binding, name, length, into)
-                      : resolve_name(c, name, length, into))) {
+            if (!emit_binding_read(c, node->checked_binding, name, length, into)) {
                 fail_named(c, LHAT_COMPILE_UNDEFINED, name, length);
             }
             return;
@@ -3849,7 +3474,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             }
             uint8_t reg = 0;
             size_t upvalue = 0;
-            switch (resolve_scoped(c, node, name, length, &reg, &upvalue)) {
+            switch (binding_location(c, node, name, length, &reg, &upvalue)) {
                 case SCOPED_REGISTER:
                     emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, reg, 0));
                     return;
@@ -4260,27 +3885,6 @@ static void declare_names(Compiler *c, const LhatNode *statements)
 // Reaching here at all means the checker settled the width (tuple_width_of
 // reads its stamp), and the two sides are reconciled by the machine at the
 // pop, where a callee compiled separately is caught.
-// 02 の 8.7改: marks (or unmarks) every scope name this define binds, so
-// reads inside the value resolve past them to what the names meant outside
-// -- the checker's Binding.being_defined, mirrored. A session's names stay
-// readable (03 の 4.3) and a path target binds no scope name, so neither is
-// marked.
-static void mark_being_defined(Compiler *c, const LhatNode *targets, bool on)
-{
-    for (const LhatNode *target = targets; target != NULL;
-         target = target->next) {
-        if (define_target_is_path(target)) {
-            continue;
-        }
-        Local *local = (Local *)local_for_binding(c, define_target_name(target)->checked_binding);
-        if (local == NULL ||
-            (size_t)(local - c->locals) < c->session_locals) {
-            continue;
-        }
-        local->being_defined = on;
-    }
-}
-
 // 15.4 with 13.8改: a yield^ several names take apart. What goes out is the
 // one-slot form's value or its own run of positions, laid from `into`; what
 // the resume sends comes back as a run -- head in `into`, positions in the
@@ -4339,9 +3943,7 @@ static void compile_tuple_define(Compiler *c, const LhatNode *node,
     uint8_t mark = c->next_register;
     uint8_t head = reserve_wide(c, positions + 1);
     // 8.7改: the whole right side reads the old world.
-    mark_being_defined(c, node->v.binding.targets, true);
     compile_run_source(c, node->v.binding.values, head, positions + 1);
-    mark_being_defined(c, node->v.binding.targets, false);
     // 13.8改: what stands between a value that is not a run and the slots
     // after it being read as positions nobody wrote. The type settled this
     // wherever the checker ran; a separately compiled callee is what lands
@@ -4426,7 +4028,6 @@ static void compile_define(Compiler *c, const LhatNode *node)
     }
     // 8.7改: the whole right side reads the old world -- every name this
     // statement binds is passed over while any of its values compiles.
-    mark_being_defined(c, node->v.binding.targets, true);
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
         // 8.8: the place is a member of a table the path reaches. Everything
@@ -4438,7 +4039,6 @@ static void compile_define(Compiler *c, const LhatNode *node)
             // 05 の 8.9: a path lands in a table, and a table never holds a
             // host value; the checker refused this first.
             if (width_of(value) > 1) {
-                mark_being_defined(c, node->v.binding.targets, false);
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
@@ -4459,13 +4059,11 @@ static void compile_define(Compiler *c, const LhatNode *node)
         const char *name = NULL;
         size_t length = 0;
         if (!node_name(c, define_target_name(target), &name, &length)) {
-            mark_being_defined(c, node->v.binding.targets, false);
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
         }
         const Local *local = local_for_binding(c, define_target_name(target)->checked_binding);
         if (local == NULL) {
-            mark_being_defined(c, node->v.binding.targets, false);
             fail(c, LHAT_COMPILE_UNDEFINED);
             return;
         }
@@ -4482,17 +4080,8 @@ static void compile_define(Compiler *c, const LhatNode *node)
             emit(c, lhat_encode_abc(LHAT_BC_CLOSEONE, local->reg, 0, 0));
         }
         if (value != NULL) {
-            // 8.7改: found first, then hidden -- the destination is this
-            // local, and the whole statement's names were marked
-            // being_defined before this loop, so the value reads what they
-            // meant outside.
-            //
-            // 03 の 4.3 is the exception, and the same one 8.7 already makes:
-            // a name an earlier input bound, written again, is that place
-            // written again rather than a new one beside it. 'var^ x = x + 1'
-            // at a prompt reads what the slot holds, which is the whole of
-            // what a prompt is for -- mark_being_defined leaves session
-            // names alone.
+            // Analysis has already selected the outer binding for reads in
+            // an initializer, or the retained binding for a REPL redefinition.
             if (value->kind == LHAT_NODE_FUNC) {
                 c->pending_name = name;
                 c->pending_name_length = length;
@@ -4501,7 +4090,6 @@ static void compile_define(Compiler *c, const LhatNode *node)
             value = value->next;
         }
     }
-    mark_being_defined(c, node->v.binding.targets, false);
 }
 
 // One target of a multiple assignment, carried from the pass that reads to the
@@ -4703,7 +4291,7 @@ static void compile_reassign_parallel(Compiler *c, const LhatNode *node)
             uint8_t reg = 0;
             size_t at = 0;
             ScopedKind found =
-                resolve_scoped(c, w->target, name, length, &reg, &at);
+                binding_location(c, w->target, name, length, &reg, &at);
             if (found == SCOPED_TOO_FAR) {
                 fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
                 return;
@@ -4859,7 +4447,7 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
             uint8_t reg = 0;
             size_t at = 0;
             ScopedKind found =
-                resolve_scoped(c, target, name, length, &reg, &at);
+                binding_location(c, target, name, length, &reg, &at);
             if (found == SCOPED_TOO_FAR) {
                 fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
                 return;
@@ -5115,12 +4703,10 @@ static void catch_begin(Compiler *c, TryContext *context)
 // guard wrote, with the error already in `caught`. Reaching the end of what
 // they guard with nothing raised jumps past them.
 //
-// What the guarded statements declared from `hidden` on stays declared --
-// a finally^ after the arms reads it -- but no arm reads it: an arm may be
-// entered before any of it was bound, which is how 8.7改's being_defined
-// already reads a name, so the mark is borrowed for the arms' stretch.
+// Analysis already excludes the guarded statements' bindings from the arms.
+// Their slots remain available to a finally^ after the arms.
 static void compile_arms(Compiler *c, TryContext *context,
-                         const LhatNode *arms, size_t hidden)
+                         const LhatNode *arms)
 {
     c->trying = context->enclosing;
     uint8_t caught = context->caught;
@@ -5128,11 +4714,6 @@ static void compile_arms(Compiler *c, TryContext *context,
     size_t no_error = emit_jump(c, LHAT_BC_JUMP, 0);
     for (size_t i = 0; i < context->count; i++) {
         lhat_chunk_patch_here(&c->proto->chunk, context->jumps[i]);
-    }
-
-    size_t declared = c->local_count;
-    for (size_t i = hidden; i < declared; i++) {
-        c->locals[i].being_defined = true;
     }
 
     // 13.11's judgement, arm by arm. The bare one asks nothing, and 4.5 puts
@@ -5174,9 +4755,6 @@ static void compile_arms(Compiler *c, TryContext *context,
         emit_error_escape(c, caught);
     }
 
-    for (size_t i = hidden; i < declared; i++) {
-        c->locals[i].being_defined = false;
-    }
     for (size_t i = 0; i < leaving_count; i++) {
         lhat_chunk_patch_here(&c->proto->chunk, leaving[i]);
     }
@@ -5194,10 +4772,9 @@ static void compile_caught(Compiler *c, const LhatNode *statements,
     }
     TryContext context;
     catch_begin(c, &context);
-    size_t hidden = c->local_count;
     c->trying = &context;
     open_statements(c, statements);
-    compile_arms(c, &context, arms, hidden);
+    compile_arms(c, &context, arms);
 }
 
 // 02 の 10.1: finally^ belongs to blocks in general, not to loops. A block
@@ -5254,9 +4831,7 @@ static void compile_block_in_scope(Compiler *c, const LhatNode *block)
 // own Scope too, so both sides count this the same.
 static void compile_block(Compiler *c, const LhatNode *block)
 {
-    c->scope_depth++;
     compile_block_in_scope(c, block);
-    c->scope_depth--;
 }
 
 // 02 の 12 章: with^ names a resource and the block's end disposes of it.
@@ -5384,7 +4959,7 @@ static void bind_targets(Compiler *c, const LhatNode *focus, size_t local_mark,
 {
     if (count == 1) {
         // 05 の 8.9: a host value focus moves as its width of slots, the
-        // same slot-for-slot copy resolve_name makes.
+        // same slot-for-slot copy emit_binding_read makes.
         const Local *local = &c->locals[local_mark];
         emit_move_wide(c, local->reg, from,
                        local->width > 1 ? local->width : 1);
@@ -5698,13 +5273,11 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     // 01 の 8 章 counts that scope: the body's '{' is one for '$^' to walk.
     // 04 の 4.5: the arms close main^, so they are one turn's too, and a
     // turn an arm took goes on to the next like any other.
-    c->scope_depth++;
     size_t main_locals = c->local_count;
     uint8_t main_registers = c->next_register;
     compile_caught(c, body != NULL ? body->v.list.items : NULL,
                    body != NULL ? body->v.list.arms : NULL);
     end_statements(c, main_locals, main_registers);
-    c->scope_depth--;
 
     // 9.11: where a next^ lands. The rest of the body is what it skipped;
     // the step below is not -- without it a counted loop would never move,
@@ -5942,11 +5515,9 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 lhat_chunk_patch_here(&c->proto->chunk, leaving[i]);
             }
             if (arms != NULL) {
-                compile_arms(c, &context, arms, c->local_count);
+                compile_arms(c, &context, arms);
             }
-            c->scope_depth++;
             compile_cleanup(c, cleanup, entry, push);
-            c->scope_depth--;
             c->next_register = register_mark;
             return;
         }
@@ -6499,9 +6070,8 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
     // registers, so this one names it where it stands and numbers its own
     // from above.
     if (session != NULL) {
-        // 03 の 4.3: the session's top level is this input's top level,
-        // which 01 の 8 章 makes what '$' names -- scope_depth is 0 here. A
-        // session's slots are one wide (declare_names).
+        // 03 の 4.3: retain earlier bindings by identity. A session's slots
+        // are one wide (declare_names).
         for (size_t i = 0; i < session->count; i++) {
             Local *local = declare_local(&c, session->names[i].name, session->names[i].length,
                                          session->names[i].reg, 1);
