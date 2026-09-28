@@ -163,7 +163,7 @@ int main(void)
         check_text(&c, "var^ a : t^ = { }\nlet^ x = 1\nx := 2\n"
                        "var^ b : t^ = { }\n");
         cJSON *all = lsp_fix_all_for_unit(&c.unit, uri);
-        LHAT_REQUIRE(all != NULL, "there is something to apply");
+        LHAT_CHECK(all != NULL, "there is something to apply");
         const char *kind = string_at(all, "kind");
         LHAT_CHECK(kind != NULL && strcmp(kind, "source.fixAll") == 0,
                    "it is the fix-all kind");
