@@ -31,6 +31,7 @@ typedef struct Binding {
     size_t name_length;
     LhatType *type;
     const LhatNode *declaration;
+    const LhatDefinition *definition;
     // 03 の 3.4改2: what the walk before this one left under the name, which
     // is what this walk started from. NULL until a second walk is run, and
     // read only to tell a walk that learned something from one that answered
@@ -236,6 +237,7 @@ typedef struct {
     // The tree points into both the source text and the lexer's decoded
     // string storage, so the lexer is what has to outlive the result.
     const LhatLexer *lexer;
+    const LhatNode *unit;
     LhatCheckResult *result;
 
     // 05 の 8.3: resolving a registered host signature (lhat_type_of_text).

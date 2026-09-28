@@ -533,6 +533,8 @@ void chk_check_define(Checker *c, const LhatNode *node)
             if (b != NULL) {
                 // Collected before the walk, so this is where its let^ runs.
                 b->type = annotated != NULL ? annotated : actual;
+                b->definition = tuple == NULL && value != NULL
+                                    ? value->checked_definition : NULL;
                 b->reached = true;
                 // 03 の 3.4改4: which literal the name means, for the call
                 // sites that hand it their shapes. Only a let^'s -- a var^
@@ -2078,6 +2080,7 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
             // and the place to point at is the declaration here.
             LhatTypeMember *made = lhat_type_add_member(
                 c->result->types, table, name, length, b->type);
+            if (made != NULL) made->definition = b->definition;
             // 02 の 13.14: an exported name bound to a type^ value carries
             // what it names, so another unit may write m.T where a type
             // stands.

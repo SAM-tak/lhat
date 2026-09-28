@@ -1100,6 +1100,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
         }
     }
     ((LhatNode *)node)->checked_binding = b->declaration;
+    ((LhatNode *)node)->checked_definition = b->definition;
 #if LHAT_WITH_RESOLUTIONS
     chk_record_resolution(c, node, b);
 #endif
@@ -1314,7 +1315,18 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
     // the left already provides, which is what 14.12 needs to see.
     if (op == LHAT_OP_CONCAT && node->v.binary.right != NULL &&
         node->v.binary.right->kind == LHAT_NODE_DEF) {
-        return chk_infer_def(c, node->v.binary.right, left);
+        LhatType *result = chk_infer_def(c, node->v.binary.right, left);
+        const LhatDefinition *a = node->v.binary.left->checked_definition;
+        const LhatDefinition *b = node->v.binary.right->checked_definition;
+        if (a != NULL && b != NULL) {
+            LhatDefinition *joined = lhat_definition_new(c->result->types, NULL);
+            if (joined != NULL) {
+                joined->left = a;
+                joined->right = b;
+            }
+            ((LhatNode *)node)->checked_definition = joined;
+        }
+        return result;
     }
 
     // 13.11: fits^ takes a type on the right, so the right side is not a
@@ -3148,6 +3160,9 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
 #endif
                 if (named_type != NULL && m->names_type) {
                     *named_type = m->named_type;
+                }
+                if (node != NULL && target->v.table.is_module) {
+                    ((LhatNode *)node)->checked_definition = m->definition;
                 }
                 return lhat_type_instantiate_receiver(c->result->types, m->type, target);
             }
@@ -5338,6 +5353,16 @@ static void compose_member(Checker *c, const LhatNode *node, LhatType *into,
 LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
                                   LhatType *left, LhatType *right)
 {
+    const LhatDefinition *a = node->v.binary.left->checked_definition;
+    const LhatDefinition *b = node->v.binary.right->checked_definition;
+    if (a != NULL && b != NULL) {
+        LhatDefinition *joined = lhat_definition_new(c->result->types, NULL);
+        if (joined != NULL) {
+            joined->left = a;
+            joined->right = b;
+        }
+        ((LhatNode *)node)->checked_definition = joined;
+    }
     LhatType *definition = lhat_type_table(c->result->types);
     LhatType *instance = lhat_type_table(c->result->types);
     definition->v.table.is_definition = true;
@@ -5495,6 +5520,13 @@ typedef struct {
 
 LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
 {
+    LhatDefinition *origin = lhat_definition_new(c->result->types, c->result->module_name);
+    if (origin != NULL) {
+        origin->literal = node;
+        origin->lexer = c->lexer;
+        origin->statements = c->unit != NULL ? c->unit->v.list.items : NULL;
+    }
+    ((LhatNode *)node)->checked_definition = origin;
     LhatType *definition = lhat_type_table(c->result->types);
     LhatType *instance = lhat_type_table(c->result->types);
     // 14.5: '..' between two definitions is composition, never a call of an
@@ -6033,6 +6065,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
 LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
                                     LhatType **named_type)
 {
+    if (node != NULL) ((LhatNode *)node)->checked_definition = NULL;
     if (named_type != NULL) {
         *named_type = NULL;
         // Only a spelling or a name path carries an alias. Nested calls to
@@ -6188,6 +6221,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             ((LhatNode *)node)->checked_binding = NULL;
             if (b != NULL) {
                 ((LhatNode *)node)->checked_binding = b->declaration;
+                ((LhatNode *)node)->checked_definition = b->definition;
             }
 #if LHAT_WITH_RESOLUTIONS
             if (b != NULL) {

@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "chain.h"
+#include "lhat/lexer.h"
 #include "lhat/instantiation.h"
 
 // The build's own knobs, LHAT_WITH_RESOLUTIONS among them. Named here rather
@@ -110,6 +111,17 @@ typedef enum {
 } LhatTypeKind;
 
 typedef struct LhatType LhatType;
+// Compile-time definition provenance, independent of structural type equality.
+// A leaf names source syntax; a join preserves composition order. All nodes
+// live in the semantic arena; source trees and lexers are borrowed.
+typedef struct LhatDefinition {
+    const struct LhatDefinition *left;
+    const struct LhatDefinition *right;
+    const struct LhatNode *literal;
+    const struct LhatNode *statements;
+    const LhatLexer *lexer;
+    const char *module;
+} LhatDefinition;
 // Declarative result expressions. Runtime descriptors use their upper bound.
 LhatType *lhat_type_argument_bound(const LhatType *type);
 bool lhat_type_has_arguments(const LhatType *type);
@@ -121,6 +133,7 @@ typedef struct LhatTypeMember {
     const char *name;
     size_t name_length;
     LhatType *type;
+    const LhatDefinition *definition; // Statically resolved exported definition.
     // 02 Section 13.14: this member names a type -- a written or inherited
     // alias exported by public^ let^. `named_type` is its meaning in a
     // type position; `type` above stays the value's own (a typeinfo), so
@@ -456,6 +469,8 @@ typedef struct {
     LhatTypeArenaBlock *blocks;
     size_t type_count;
 } LhatTypeArena;
+
+LhatDefinition *lhat_definition_new(LhatTypeArena *arena, const char *module);
 
 LhatType *lhat_type_result_attribute(LhatTypeArena *arena, LhatType *type);
 LhatType *lhat_type_argument_attribute(LhatTypeArena *arena, LhatType *type, size_t index);

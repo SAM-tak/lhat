@@ -155,6 +155,7 @@ typedef struct Compiler {
     // 03 の 4.3: the statements being declared are the top level of a
     // session's input, where a name written again keeps the slot it had.
     bool session_top;
+    bool interactive_session;
 
     // 03 の 4.3: how many of `locals` were seeded from the session rather
     // than declared by this input. A let^ over one of those is a name from
@@ -198,12 +199,6 @@ typedef struct Compiler {
     size_t error_count;
     size_t error_capacity;
 
-    // The def^ bound to each name, so that '..' and a definition's prototype
-    // can be resolved without running anything (14.2).
-    struct DefDecl *defs;
-    size_t def_count;
-    size_t def_capacity;
-
     // The definition being compiled, whose members the entries write and
     // whose prototype the template builds; def^ names it.
     const DefChain *building;
@@ -219,23 +214,12 @@ typedef struct Compiler {
     // is being compiled on its own, and then a require^ has nowhere to go.
     const LhatUnits *units;
 
-    // 14.2: the unit's own top level, for a composition naming a definition
-    // another unit published -- what a require^ brought in is found there.
-    // Only the root holds it; a nested body asks through root_of.
-    const LhatNode *statements;
-
     // 05 の 5.3: set while a part written in another unit is being compiled.
     // A name free in it is that unit's, and resolve_name reaches it the only
     // way a body somewhere else can -- through L^.modules.
     const LhatNode *foreign_scope;
     const char *foreign_module;
 } Compiler;
-
-typedef struct DefDecl {
-    const char *name;
-    size_t length;
-    DefChain chain;
-} DefDecl;
 
 typedef struct ErrorDecl {
     const LhatNode *node;         // the errordef^, for the field defaults
@@ -1960,19 +1944,6 @@ static bool is_super_ident(Compiler *c, const LhatNode *node)
 static void compile_default_new(Compiler *c, const LhatNode *node,
                                 uint8_t definition);
 
-static const DefDecl *find_def_decl(Compiler *c, const char *name,
-                                    size_t length)
-{
-    const Compiler *root = root_of(c);
-    for (size_t i = 0; i < root->def_count; i++) {
-        const DefDecl *decl = &root->defs[i];
-        if (decl->length == length && memcmp(decl->name, name, length) == 0) {
-            return decl;
-        }
-    }
-    return NULL;
-}
-
 // The value a unit's top level binds to `name`, read through the lexer that
 // unit's names are spans into. `exported_only` asks 05 の 4 章's question:
 // what another unit may name is what this one published.
@@ -2003,191 +1974,31 @@ static const LhatNode *unit_binding(const LhatNode *statements,
     return NULL;
 }
 
-// The same walk as def_chain_of, over another unit's tree. A name is looked
-// up in that unit's own top level; a path from there into a third unit is
-// not followed, since 5.1 resolves a require^ against the unit that wrote it
-// and the resolver here answers for the unit being compiled.
-//
-// `depth` is what stops a name bound to itself: only a def^ literal grows
-// the chain, so nothing else would.
-static bool def_chain_foreign(const LhatNode *statements,
-                              const LhatLexer *lexer, const char *module,
-                              const LhatNode *node, DefChain *out, size_t depth)
+// Flatten the semantic composition tree. The emitter never follows source
+// names, require expressions or exported spellings to rediscover its parts.
+static bool append_definition(Compiler *c, const LhatDefinition *origin,
+                               DefChain *out, size_t depth)
 {
-    if (node == NULL || depth > LHAT_MAX_DEF_CHAIN) {
-        return false;
+    if (origin == NULL || depth > LHAT_MAX_DEF_CHAIN) return false;
+    if (origin->literal == NULL) {
+        return append_definition(c, origin->left, out, depth + 1) &&
+               append_definition(c, origin->right, out, depth + 1);
     }
-    if (node->kind == LHAT_NODE_DEF) {
-        if (out->count >= LHAT_MAX_DEF_CHAIN) {
-            return false;
-        }
-        out->lexers[out->count] = lexer;
-        out->scopes[out->count] = statements;
-        out->modules[out->count] = module;
-        out->parts[out->count++] = node;
-        return true;
-    }
-    if (node->kind == LHAT_NODE_BINARY && node->v.binary.op == LHAT_OP_CONCAT) {
-        return def_chain_foreign(statements, lexer, module,
-                                 node->v.binary.left, out, depth + 1) &&
-               def_chain_foreign(statements, lexer, module,
-                                 node->v.binary.right, out, depth + 1);
-    }
-
-    const char *name = NULL;
-    size_t length = 0;
-    if (!lhat_node_name(node, lexer->source->text, lexer->strings, &name,
-                        &length)) {
-        return false;
-    }
-    const LhatNode *value =
-        unit_binding(statements, lexer, name, length, false);
-    return def_chain_foreign(statements, lexer, module, value, out, depth + 1);
-}
-
-// 05 の 5.3: 'lib.Thing' where lib is what a require^ answered. The tree is
-// what crosses, not the value -- so 14.2's chain is still fixed at the
-// definition and the flattening is still a compile-time one.
-static bool def_chain_across(Compiler *c, const LhatNode *node, DefChain *out)
-{
+    if (out->count >= LHAT_MAX_DEF_CHAIN) return false;
     Compiler *root = root_of(c);
-    if (c->units == NULL || c->units->resolve == NULL ||
-        c->units->body == NULL || root->statements == NULL) {
-        return false;
-    }
-
-    const char *root_name = NULL;
-    size_t root_length = 0;
-    if (!node_name(c, node->v.access.target, &root_name, &root_length)) {
-        return false;
-    }
-    const LhatNode *required = unit_binding(root->statements, root->lexer,
-                                            root_name, root_length, false);
-    if (required == NULL || required->kind != LHAT_NODE_REQUIRE ||
-        required->v.jump.value == NULL) {
-        return false;
-    }
-    const LhatNode *path = required->v.jump.value;
-    const char *module = NULL;
-    size_t which = c->units->resolve(
-        c->units->context, root->lexer->strings + path->v.string.offset,
-        path->v.string.length, &module);
-    // 05 の 5.5: a unit that declared no path publishes nowhere, so a body of
-    // it flattened here would have no way back to what it named.
-    if (which == LHAT_NO_UNIT || module == NULL) {
-        return false;
-    }
-
-    const LhatNode *statements = NULL;
-    const LhatLexer *lexer = NULL;
-    if (!c->units->body(c->units->context, which, &statements, &lexer)) {
-        return false;
-    }
-
-    // The member is written here, so its spelling is read here; what it is
-    // compared against was written there.
-    const char *member = NULL;
-    size_t member_length = 0;
-    if (!node_name(c, node->v.access.argument, &member, &member_length)) {
-        return false;
-    }
-    const LhatNode *value =
-        unit_binding(statements, lexer, member, member_length, true);
-    return def_chain_foreign(statements, lexer, module, value, out, 0);
-}
-
-// The chain an expression stands for: a def^ literal is one link, and a
-// composition is whatever the left names followed by the right. 14.2 makes
-// this decidable without running anything, which is the point of fixing the
-// chain at the definition.
-static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out)
-{
-    if (node == NULL) {
-        return false;
-    }
-    if (node->kind == LHAT_NODE_DEF) {
-        if (out->count >= LHAT_MAX_DEF_CHAIN) {
-            return false;
-        }
-        out->lexers[out->count] = c->lexer;
-        out->scopes[out->count] = c->foreign_scope;
-        out->modules[out->count] = c->foreign_module;
-        out->parts[out->count++] = node;
-        return true;
-    }
-    // 14.5: composition is '..', and the order matters -- the right side is
-    // what may override.
-    if (node->kind == LHAT_NODE_BINARY && node->v.binary.op == LHAT_OP_CONCAT) {
-        return def_chain_of(c, node->v.binary.left, out) &&
-               def_chain_of(c, node->v.binary.right, out);
-    }
-    if (node->kind == LHAT_NODE_MEMBER) {
-        return def_chain_across(c, node, out);
-    }
-
-    const char *name = NULL;
-    size_t length = 0;
-    if (!node_name(c, node, &name, &length)) {
-        return false;
-    }
-    const DefDecl *decl = find_def_decl(c, name, length);
-    if (decl == NULL) {
-        return false;
-    }
-    for (size_t i = 0; i < decl->chain.count; i++) {
-        if (out->count >= LHAT_MAX_DEF_CHAIN) {
-            return false;
-        }
-        out->lexers[out->count] = decl->chain.lexers[i];
-        out->scopes[out->count] = decl->chain.scopes[i];
-        out->modules[out->count] = decl->chain.modules[i];
-        out->parts[out->count++] = decl->chain.parts[i];
-    }
+    bool foreign = origin->lexer != root->lexer && !root->interactive_session;
+    if (foreign && origin->module == NULL) return false;
+    size_t at = out->count++;
+    out->parts[at] = origin->literal;
+    out->lexers[at] = origin->lexer;
+    out->scopes[at] = foreign ? origin->statements : NULL;
+    out->modules[at] = foreign ? origin->module : NULL;
     return true;
 }
 
-// 14.9 keeps the name out of the definition, so it is picked up from the
-// let^ that binds it. That is enough for 14.2's chain to be followed.
-static void declare_defs(Compiler *c, const LhatNode *statements)
+static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out)
 {
-    for (const LhatNode *s = statements; s != NULL; s = s->next) {
-        if (s->kind != LHAT_NODE_DEFINE) {
-            continue;
-        }
-        const LhatNode *target = s->v.binding.targets;
-        const LhatNode *value = s->v.binding.values;
-        if (target == NULL || target->next != NULL || value == NULL) {
-            continue;
-        }
-
-        DefChain chain;
-        chain.count = 0;
-        if (!def_chain_of(c, value, &chain)) {
-            continue;
-        }
-        const char *name = NULL;
-        size_t length = 0;
-        if (!node_name(c, define_target_name(target), &name, &length)) {
-            continue;
-        }
-
-        Compiler *root = root_of(c);
-        if (root->def_count == root->def_capacity) {
-            size_t grown = root->def_capacity ? root->def_capacity * 2 : 4;
-            DefDecl *bigger =
-                (DefDecl *)lhat_realloc(root->defs, grown * sizeof *bigger);
-            if (bigger == NULL) {
-                fail(c, LHAT_COMPILE_TOO_COMPLEX);
-                return;
-            }
-            root->defs = bigger;
-            root->def_capacity = grown;
-        }
-        DefDecl *decl = &root->defs[root->def_count++];
-        decl->name = name;
-        decl->length = length;
-        decl->chain = chain;
-    }
+    return node != NULL && append_definition(c, node->checked_definition, out, 0);
 }
 
 // The template of one def^, or NULL. 14.13 allows one per definition, and it
@@ -5276,7 +5087,6 @@ static void open_statements(Compiler *c, const LhatNode *statements)
 {
     declare_errors(c, statements);
     declare_names(c, statements);
-    declare_defs(c, statements);
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
         compile_statement(c, s);
     }
@@ -5318,7 +5128,6 @@ static void compile_session_statements(Compiler *c, const LhatNode *statements)
     c->session_top = true;
     declare_names(c, statements);
     c->session_top = false;
-    declare_defs(c, statements);
 
     // 03 の 4.3: an input answers with the value of its last statement, when
     // that statement is an expression. 02 の 8.2 makes a call one and gives
@@ -6530,18 +6339,8 @@ struct LhatCompileSession {
     size_t count;
     uint8_t next_register;
 
-    // 14.2 and 04 の 2.4: what a def^ composes onto and what an errordef^
-    // declared are worked out while compiling and never reach the machine, so
-    // an input that needs them needs what an earlier one found.
-    //
-    // Both point into the input that made them -- a DefChain at its syntax
-    // tree, an ErrorDecl at the kind objects on its proto -- so a session's
-    // inputs have to outlive it. The tree was already needed for that reason;
-    // this only makes the requirement reach further back.
-    struct DefDecl *defs;
-    size_t def_count;
-    size_t def_capacity;
-
+    // Runtime error identities survive across inputs. Definition composition
+    // is retained by the semantic session instead of a second name registry.
     struct ErrorDecl *errors;
     size_t error_count;
     size_t error_capacity;
@@ -6632,7 +6431,6 @@ void lhat_compile_session_dispose(LhatCompileSession *session)
         lhat_free((void *)session->errors[i].kinds);
     }
     lhat_free(session->errors);
-    lhat_free(session->defs);
     lhat_free(session);
 }
 
@@ -6877,6 +6675,7 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
     c.lexer = lexer;
     c.proto = proto;
     c.result = &result;
+    c.interactive_session = session != NULL;
 
     // 03 の 4.3: what earlier inputs left is already in scope and already in
     // registers, so this one names it where it stands and numbers its own
@@ -6900,22 +6699,15 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         // 14.2 and 04 の 2.4: taken over rather than copied. What the entries
         // point at belongs to the input that made it, which the session keeps
         // -- so the session hands the arrays across and this input grows them.
-        c.defs = session->defs;
-        c.def_count = session->def_count;
-        c.def_capacity = session->def_capacity;
         c.errors = session->errors;
         c.error_count = session->error_count;
         c.error_capacity = session->error_capacity;
-        session->defs = NULL;
-        session->def_count = 0;
-        session->def_capacity = 0;
         session->errors = NULL;
         session->error_count = 0;
         session->error_capacity = 0;
     }
 
     c.units = units;
-    c.statements = unit != NULL ? unit->v.list.items : NULL;
     proto->is_unit = true;
     const char *module_name = units != NULL ? units->module_name : NULL;
     bool registers = units != NULL && units->registers;
@@ -6936,7 +6728,6 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         // pool -- 05 の 4 章 reads the exports off the slots the body left.
         declare_errors(&c, unit->v.list.items);
         declare_names(&c, unit->v.list.items);
-        declare_defs(&c, unit->v.list.items);
         for (const LhatNode *s = unit->v.list.items; s != NULL; s = s->next) {
             compile_statement(&c, s);
         }
@@ -6958,9 +6749,6 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
     // one they were the compiler's, and the kind objects they point at belong
     // to the chunk and stay either way.
     if (session != NULL && result.status == LHAT_COMPILE_OK) {
-        session->defs = c.defs;
-        session->def_count = c.def_count;
-        session->def_capacity = c.def_capacity;
         session->errors = c.errors;
         session->error_count = c.error_count;
         session->error_capacity = c.error_capacity;
@@ -6969,7 +6757,6 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
             lhat_free((void *)c.errors[i].kinds);
         }
         lhat_free(c.errors);
-        lhat_free(c.defs);
     }
 
     if (result.status != LHAT_COMPILE_OK) {

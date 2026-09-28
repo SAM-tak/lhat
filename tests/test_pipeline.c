@@ -186,11 +186,47 @@ static void test_error_declaration_identity(void)
     compiled_dispose(&one);
 }
 
+static void test_definition_origins(void)
+{
+    Run r;
+    LHAT_TEST("composition follows the shadowing definition, not the first spelling");
+    run_text(&r,
+        "var^ Base = def^{self^{x := 1}}\n"
+        "do^{var^ Base = def^{self^{x := 40}}\n"
+        "let^ Alias = Base\n"
+        "var^ Derived = Alias .. def^{self^{y := 2}}\n"
+        "var^ d = Derived.new()\nreturn^ d.x + d.y}\n");
+    CHECK_INTEGER(&r, 42);
+    LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
+    run_dispose(&r);
+
+    LHAT_TEST("a deferred composition can use a later resolved declaration");
+    run_text(&r,
+        "var^ make = f^ {\n"
+        "  var^ Derived = Base .. def^{self^{y := 2}}\n"
+        "  var^ d = Derived.new()\nreturn^ d.x + d.y}\n"
+        "var^ Base = def^{self^{x := 40}}\nreturn^ make()\n");
+    CHECK_INTEGER(&r, 42);
+    LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
+    run_dispose(&r);
+
+    LHAT_TEST("knowing a call's result type does not prove a static composition origin");
+    Unit u;
+    check_text(&u,
+        "let^ make = f^ {return^ def^{self^{x := 1}}}\n"
+        "let^ Dynamic = make()\nlet^ Derived = Dynamic .. def^{self^{y := 2}}\n");
+    const LhatNode *value = u.parsed.root->v.list.items->next->next->v.binding.values;
+    LHAT_CHECK(value->checked_definition == NULL,
+               "a runtime call must not be replaced by flattening its result type");
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_policy_parity();
     test_nominal_type_lowering();
     test_binding_identity();
     test_error_declaration_identity();
+    test_definition_origins();
     return lhat_test_report("test_pipeline");
 }

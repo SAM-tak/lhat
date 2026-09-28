@@ -231,6 +231,7 @@ struct LhatNode {
     // analysis even without tool resolutions; codegen maps it to storage.
     // Borrowed from the parsed trees, which outlive checking and compilation.
     const struct LhatNode *checked_binding;
+    const struct LhatDefinition *checked_definition;
     // A named type used where a type^ value is expected. Keep the original
     // name/member tree for tooling; compile this occurrence as a descriptor.
     void *descriptor_type;

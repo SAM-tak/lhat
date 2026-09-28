@@ -70,6 +70,19 @@ static void *arena_alloc(LhatTypeArena *arena, size_t size)
     return p;
 }
 
+LhatDefinition *lhat_definition_new(LhatTypeArena *arena, const char *module)
+{
+    LhatDefinition *origin = arena_alloc(arena, sizeof *origin);
+    if (origin != NULL && module != NULL) {
+        size_t size = strlen(module) + 1;
+        char *copy = arena_alloc(arena, size);
+        if (copy == NULL) return NULL;
+        memcpy(copy, module, size);
+        origin->module = copy;
+    }
+    return origin;
+}
+
 static LhatType *new_type(LhatTypeArena *arena, LhatTypeKind kind)
 {
     LhatType *type = (LhatType *)arena_alloc(arena, sizeof *type);

@@ -3883,6 +3883,36 @@ static void test_composing_across_units(void)
     }
     lhat_program_dispose(&program);
 
+    // Definition provenance also crosses re-exports and local module aliases.
+    LHAT_TEST("composition retains each part's origin through three units");
+    {
+        static const File reexported[] = {
+            {"base.lh", "module^ ns.base\n"
+                "public^ let^ amount = 40\n"
+                "public^ let^ Base = def^{self^{}, get = f^self^ {return^ amount}}\n"},
+            {"middle.lh", "module^ ns.middle\n"
+                "let^ original = require^ \"base.lh\"\n"
+                "public^ let^ Middle = original.Base .. def^{self^{y := 2}}\n"},
+            {"main.lh", "let^ library = require^ \"middle.lh\"\n"
+                "let^ alias = library\n"
+                "let^ Derived = alias.Middle .. def^{self^{}}\n"
+                "let^ d = Derived.new()\nreturn^ d.get() + d.y\n"},
+        };
+        program_with(&program, &disk, reexported, 3);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program), "the program checked");
+        bool compiled = lhat_program_compile(&program);
+        LHAT_CHECK(compiled, "all origins are available to the emitter");
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            lhat_machine_dispose(machine);
+        }
+        lhat_program_dispose(&program);
+    }
+
     // 02 の 14.7改2 with 03 の 4.3: the delegate the base declared, when the
     // base was written in another unit. The chain crosses (def_chain_across),
     // so the entry is found -- but its spelling is that unit's, and reading

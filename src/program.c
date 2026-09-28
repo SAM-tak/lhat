@@ -452,28 +452,6 @@ static size_t resolve_unit(void *context, const char *path, size_t length,
     return remember_edge(r->requiring, unit);
 }
 
-// 02 の 14.2: the tree of a unit already parsed, for a composition in another
-// unit that has to be flattened where it is written. Everything the graph
-// reached is still here -- 6.2 checked it before any of this compiled -- so
-// this only has to find it.
-static bool resolve_unit_body(void *context, size_t unit,
-                              const LhatNode **out_statements,
-                              const LhatLexer **out_lexer)
-{
-    Resolution *r = (Resolution *)context;
-    if (unit >= r->requiring->referenced_count) {
-        return false;
-    }
-    const LhatUnit *u = r->requiring->referenced[unit];
-    if (!u->loaded || u->parsed.root == NULL) {
-        return false;
-    }
-    *out_statements = u->parsed.root->v.list.items;
-    *out_lexer = &u->lexer;
-    return *out_statements != NULL;
-}
-
-
 // ---------------------------------------------------------------------------
 // 02 の 18: what a unit wrote as annotations
 // ---------------------------------------------------------------------------
@@ -3058,7 +3036,6 @@ static bool compile_one(LhatProgram *program, LhatUnit *u, bool registers)
 
     LhatUnits units;
     units.resolve = resolve_unit;
-    units.body = resolve_unit_body;
     units.context = &resolution;
     units.module_name = u->checked.module_name;
     units.registers = registers;

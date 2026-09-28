@@ -311,6 +311,9 @@ static void test_execution_pipeline_parity(void)
         "var^ x = 1\nvar^ f = p^ n:number^ {x := x + n}\nf(2)\nreturn^ x\n",
         "var^ t:t^{x:number^}|nil^ = nil^\nreturn^ t.x\n",
         "var^ x:number^ = 'wrong'\nreturn^ x\n",
+        "let^ Base = def^{self^{x := 40}}\n"
+        "let^ Derived = Base .. def^{self^{y := 2}}\n"
+        "let^ d = Derived.new()\nreturn^ d.x + d.y\n",
     };
     char base[512], config[512], path[512];
     LHAT_REQUIRE(make_temporary_directory(base, sizeof base), "temporary directory");
@@ -353,6 +356,8 @@ static void test_execution_pipeline_parity(void)
             for (size_t j = 0; j < left.count && j < right.count; j++) {
                 const LhatNode *x = left.nodes[j]->checked_binding;
                 const LhatNode *y = right.nodes[j]->checked_binding;
+                LHAT_CHECK_EQ_BOOL(left.nodes[j]->checked_definition != NULL,
+                                   right.nodes[j]->checked_definition != NULL);
                 LHAT_CHECK_EQ_BOOL(x != NULL, y != NULL);
                 if (x != NULL && y != NULL) LHAT_CHECK_EQ_INT(x->offset, y->offset);
             }
