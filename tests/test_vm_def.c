@@ -1094,6 +1094,17 @@ static void test_isa(void)
     run_dispose(&r);
 
     // 14.10: at least these members.
+    LHAT_TEST("optional named fields accept nil but still check non-nil values");
+    run_text(&r,
+             "let^ D = def^{self^{x:number^|nil^ = nil^}}\n"
+             "let^ Alias = D\nlet^ value = Alias.new()\n"
+             "return^ (value fits^ Alias) and^ ({} fits^ t^{x:number^|nil^})"
+             " and^ ({x = 42} fits^ t^{x:number^|nil^})"
+             " and^ !({x = \"wrong\"} fits^ t^{x:number^|nil^})"
+             " and^ !({} fits^ t^{x:number^})\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
     LHAT_TEST("a structure asks for the members it names");
     run_text(&r, "return^ { a := 1, b := 2 } fits^ t^{ a : number^ }\n");
     CHECK_BOOL(&r, true);

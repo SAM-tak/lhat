@@ -549,8 +549,9 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                     table, lhat_object((LhatObject *)(void *)
                                            type->members[i]
                                                .name));
-                if (lhat_is_nil(held) ||
-                    !lhat_value_satisfies(held, type->members[i].type)) {
+                // A nil-valued (or absent) member satisfies an optional
+                // field. The member's type decides, not its presence alone.
+                if (!lhat_value_satisfies(held, type->members[i].type)) {
                     return false;
                 }
             }

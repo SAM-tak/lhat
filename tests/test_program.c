@@ -166,6 +166,41 @@ static void test_dependencies(void)
     lhat_program_dispose(&program);
 }
 
+static void test_definition_alias_fits_optional_fields(void)
+{
+    LHAT_TEST("definition aliases and qualified names accept nil fields consistently");
+    static const File files[] = {
+        {"fighter.lh",
+         "module^ vp.fighter\n"
+         "public^ let^ Fighter = def^{self^{x = 42, owner:Fighter|nil^ = nil^}}\n"},
+        {"main.lh",
+         "require^\"fighter.lh\"\n"
+         "let^ Fighter = vp.fighter.Fighter\nlet^ Alias = Fighter\n"
+         "let^ instance = Fighter.new()\n"
+         "let^ accepts = p^me:Fighter { return^ me fits^ Alias }\n"
+         "let^ good = (instance fits^ vp.fighter.Fighter) and^"
+         " (instance fits^ Fighter) and^ (instance fits^ Alias) and^ accepts(instance)\n"
+         "let^ wrong = {x = \"bad\"}\n"
+         "return^ good and^ !(wrong fits^ Fighter) and^ !(wrong fits^ vp.fighter.Fighter)\n"},
+    };
+    LhatProgram program;
+    Disk disk;
+    program_with(&program, &disk, files, 2);
+    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program), "checked");
+    bool compiled = lhat_program_compile(&program);
+    LHAT_CHECK(compiled, "compiled");
+    if (compiled && root != NULL) {
+        LhatMachine *machine = lhat_machine_new();
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_bool(ran.value) && lhat_as_bool(ran.value),
+                   "nil optional fields agree through all aliases and annotations");
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+}
+
 static void test_require_inference_rewalk(void)
 {
     static const char *const paths[] = {"sprite", "vp.sprite", "game.vp.sprite"};
@@ -5721,6 +5756,7 @@ int main(void)
     // rather than about this test running second.
     test_port();
     test_dependencies();
+    test_definition_alias_fits_optional_fields();
     test_require_inference_rewalk();
     test_loading();
     test_cycles();
