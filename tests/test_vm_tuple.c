@@ -37,6 +37,23 @@ static void test_multi_value_return(void)
 {
     Run r;
 
+    LHAT_TEST("forwarded tuple survives cleanup without tail frame reuse");
+    run_checked_text(&r,
+        "var^ log = 0\n"
+        "let^ pair = f^ -> (number^, string^) { return^ 42, \"ok\" }\n"
+        "let^ forward = p^ -> (number^, string^) {\n"
+        " return^ pair()\nfinally^: log := log + 1\n}\n"
+        "let^ n, s = forward()\nreturn^ n.tostring^() .. s .. log.tostring^()\n");
+    CHECK_STRING(&r, "42ok1");
+    run_dispose(&r);
+
+    LHAT_TEST("tuple literals can be returned through the wide protocol");
+    run_checked_text(&r,
+        "let^ pair = f^ -> (number^, number^) { return^ (4, 2) }\n"
+        "let^ n, m = pair()\nreturn^ n * 10 + m\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
     LHAT_TEST("several values come back and several names take them");
     run_checked_text(&r,
                      "var^ divmod = f^ a:number^, b:number^ "

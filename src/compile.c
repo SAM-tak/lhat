@@ -5458,6 +5458,26 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 c->next_register = mark;
                 return;
             }
+            // Forward a checked tuple through the same wide call protocol as
+            // destructuring. Even a tail call may return here (host calls and
+            // frames with cleanups), so retain all positions for RETURN.
+            size_t positions = tuple_width_of(node->v.jump.value);
+            if (positions > 1 && is_run_source(node->v.jump.value)) {
+                if (positions > LHAT_MAX_TUPLE) {
+                    fail(c, LHAT_COMPILE_TOO_COMPLEX);
+                    return;
+                }
+                uint8_t head = reserve_wide(c, positions + 1);
+                c->tail_call = node->v.jump.value->kind == LHAT_NODE_CALL &&
+                               c->cleanup_depth == 0;
+                compile_run_source(c, node->v.jump.value, head, positions + 1);
+                c->tail_call = false;
+                emit(c, lhat_encode_abc(LHAT_BC_CHECKRUN, head, (uint8_t)positions, 0));
+                emit(c, lhat_encode_abc(LHAT_BC_RETURN, (uint8_t)(head + 1),
+                                        (uint8_t)positions, 0));
+                c->next_register = mark;
+                return;
+            }
             // 05 の 8.9: a returned host value needs its whole width here;
             // the machine reads that width off the head when the frame pops.
             uint8_t slot = reserve_for(c, node->v.jump.value);

@@ -3376,6 +3376,36 @@ static void test_host_tuple(void)
     LhatProgram program;
     Disk disk;
 
+    for (int cleanup = 0; cleanup < 2; cleanup++) {
+        LHAT_TEST("return forwards a host tuple with and without tail-call permission");
+        char source[1024];
+        snprintf(source, sizeof source,
+            "import^ system.num\nvar^ log = 0\n"
+            "let^ D = def^{ size = p^self^ -> (number^, number^) {\n"
+            "return^ system.num.divmod(7, 2)\n%s} }\n"
+            "let^ q, r = D.new().size()\nreturn^ q * 10 + r + log\n",
+            cleanup ? "finally^: log := log + 1\n" : "");
+        File files[] = {{"main.lh", source}};
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(lhat_register_func(&program, "system.num", "divmod",
+            "f^number^, number^ -> (number^, number^);", host_divmod, NULL),
+            "the host tuple function registered");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program), "checked");
+        bool compiled = lhat_program_compile(&program);
+        LHAT_CHECK(compiled, "compiled");
+        if (compiled && root != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LHAT_CHECK(lhat_program_install(&program, machine), "installed");
+            LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK(lhat_is_integer(ran.value) && lhat_as_integer(ran.value) == 31 + cleanup,
+                       "both positions and cleanup effects survive forwarding");
+            lhat_machine_dispose(machine);
+        }
+        lhat_program_dispose(&program);
+    }
+
     LHAT_TEST("a host answers several values");
     {
         static const File files[] = {
