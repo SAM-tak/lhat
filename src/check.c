@@ -3892,6 +3892,8 @@ struct LhatCheckSession {
         LhatType *named_type;
         const LhatNode *declaration;
         const LhatDefinition *definition;
+        const LhatModuleRoot *module_root;
+        bool import_root;
         // 8.9: which word bound it, so that a let^ in one input is still a
         // let^ when a later one writes ':=' -- and a var^ over it makes the
         // name writable again, the way 03 の 4.3 makes a redefinition the
@@ -4000,7 +4002,8 @@ void lhat_check_session_dispose(LhatCheckSession *session)
 static void session_keep(LhatCheckSession *session, const char *name,
                          size_t length, LhatType *type, bool immutable,
                          LhatType *named_type, const LhatNode *declaration,
-                         const LhatDefinition *definition)
+                         const LhatDefinition *definition,
+                         const LhatModuleRoot *module_root, bool import_root)
 {
     for (size_t i = 0; i < session->count; i++) {
         if (session->names[i].length == length &&
@@ -4010,6 +4013,8 @@ static void session_keep(LhatCheckSession *session, const char *name,
             session->names[i].named_type = named_type;
             session->names[i].declaration = declaration;
             session->names[i].definition = definition;
+            session->names[i].module_root = module_root;
+            session->names[i].import_root = import_root;
             return;
         }
     }
@@ -4027,6 +4032,8 @@ static void session_keep(LhatCheckSession *session, const char *name,
     session->names[session->count].named_type = named_type;
     session->names[session->count].declaration = declaration;
     session->names[session->count].definition = definition;
+    session->names[session->count].module_root = module_root;
+    session->names[session->count].import_root = import_root;
     session->count++;
 }
 
@@ -4034,7 +4041,8 @@ void lhat_check_session_seed(LhatCheckSession *session, const char *name,
                              size_t length)
 {
     session_keep(session, name, length,
-                 lhat_type_simple(&session->types, LHAT_TYPE_UNKNOWN), false, NULL, NULL, NULL);
+                 lhat_type_simple(&session->types, LHAT_TYPE_UNKNOWN), false,
+                 NULL, NULL, NULL, NULL, false);
 }
 
 void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
@@ -4100,6 +4108,8 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
             b->from_session = true;
             b->declaration = session->names[i].declaration;
             b->definition = session->names[i].definition;
+            b->module_root = session->names[i].module_root;
+            b->import_root = session->names[i].import_root;
             b->immutable = session->names[i].immutable;
             b->named_type = session->names[i].named_type;
             b->names_type = b->named_type != NULL;
@@ -4124,7 +4134,8 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     // already, so only the names are copied.
     for (Binding *b = scope.bindings; b != NULL; b = b->next) {
         session_keep(session, b->name, b->name_length, b->type, b->immutable,
-                     b->named_type, b->declaration, b->definition);
+                     b->named_type, b->declaration, b->definition,
+                     b->module_root, b->import_root);
     }
     session->environment = checker.environment;
     session->typeinfo_type = checker.typeinfo_type;

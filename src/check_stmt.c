@@ -766,6 +766,19 @@ static bool import_subsumes(const LhatType *module, const LhatType *standing)
     return true;
 }
 
+// Retain the checker's chosen namespace binding for code generation.
+static void record_module_root(Checker *c, const LhatNode *node, Binding *binding)
+{
+    if (binding == NULL) return;
+    if (binding->declaration == NULL) binding->declaration = node;
+    if (binding->module_root == NULL) {
+        binding->module_root = lhat_module_root_new(c->result->types,
+            binding->declaration, binding->name, binding->name_length, NULL);
+    }
+    ((LhatNode *)node)->checked_module_root = binding->module_root;
+    ((LhatNode *)node)->checked_binding = binding->declaration;
+}
+
 // The last segment of a written path, which is the name an import^ standing
 // alone binds -- the rest are the tables it sits in.
 static void check_import(Checker *c, const LhatNode *node, bool binds)
@@ -797,6 +810,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         // collision 8.7 is about.
         Binding *standing = chk_scope_find_local(c->scope, name, length);
         if (standing != NULL) {
+            record_module_root(c, node, standing);
             // 8.7: and an import^ of a child path put a table here holding
             // that child. The module named now is the host's own, which
             // holds the child too -- so it takes the place of the stand-in
@@ -817,6 +831,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         if (only != NULL) {
             only->reached = true;
             only->import_root = true;  // 05 の 8.7, read rather than captured
+            record_module_root(c, node, only);
         }
         return;
     }
@@ -831,7 +846,8 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
     if (!chk_node_name(c, root_node, &name, &length)) {
         return;
     }
-    Binding *root = chk_scope_find(c->scope, name, length, NULL);
+    Scope *root_scope = NULL;
+    Binding *root = chk_scope_find(c->scope, name, length, &root_scope);
     if (root == NULL) {
         root = chk_scope_add(c->scope, name, length,
                              chk_module_root_table(c), node->offset);
@@ -840,6 +856,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         }
         root->reached = true;
         root->import_root = true;  // 05 の 8.7, read rather than captured
+        root_scope = c->scope;
     } else if (root->type == NULL || root->type->kind == LHAT_TYPE_UNKNOWN ||
                root->type->kind == LHAT_TYPE_PENDING) {
         root->type = chk_module_root_table(c);
@@ -848,6 +865,12 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
     // path_table said so while it was the walk below, and the walk below is
     // import^'s own now.
     root->reached = true;
+
+    record_module_root(c, node, root);
+    ((LhatNode *)root_node)->checked_binding = root->declaration;
+    ((LhatNode *)root_node)->checked_module_root = root->module_root;
+    ((LhatNode *)root_node)->checked_import_global = root->import_root &&
+        c->body_scope != NULL && !chk_scope_within_body(c, root_scope);
 
     // 8.7: the tables an import^ builds are the machine's own (8.6), and
     // this walk is what fills them -- path_table is the writer's, and
@@ -889,6 +912,16 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
 // come from that text, and 8.8's rules then hold one for one: a table is
 // made where the path does not reach one, and the last segment is a name
 // being introduced.
+static void record_required_root(Checker *c, const LhatNode *node,
+                                  Binding *binding, const char *module)
+{
+    record_module_root(c, node, binding);
+    if (binding != NULL) {
+        ((LhatNode *)node)->checked_module_root = lhat_module_root_new(c->result->types,
+            binding->declaration, binding->name, binding->name_length, module);
+    }
+}
+
 static void check_require_stmt(Checker *c, const LhatNode *node)
 {
     const LhatNode *path = node->v.jump.value;
@@ -932,6 +965,7 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
             chk_scope_add(c->scope, segment, length, exports, node->offset);
         if (only != NULL) {
             only->reached = true;
+            record_required_root(c, node, only, module_name);
         }
         return;
     }
@@ -956,6 +990,7 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
     // is in no registry to read back, so the root is captured like any other
     // name from here on -- even if an import^ also landed on it.
     root->import_root = false;
+    record_required_root(c, node, root, module_name);
 
     LhatType *owner = holds_members(c, node, root->type);
     while (owner != NULL && segment[length] == '.') {
@@ -1927,8 +1962,12 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
                 if (root->kind != LHAT_NODE_HAT_IDENT &&
                     chk_node_name(c, root, &name, &length) &&
                     chk_scope_find(c->scope, name, length, NULL) == NULL) {
-                    chk_scope_add(c->scope, name, length,
-                                  chk_simple(c, LHAT_TYPE_PENDING), root->offset);
+                    Binding *b = chk_scope_add(c->scope, name, length,
+                                              chk_simple(c, LHAT_TYPE_PENDING), root->offset);
+                    if (b != NULL) {
+                        b->declaration = root;
+                        ((LhatNode *)root)->checked_binding = root;
+                    }
                 }
                 continue;
             }

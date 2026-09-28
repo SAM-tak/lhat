@@ -909,6 +909,8 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
 {
     ((LhatNode *)node)->checked_binding = NULL;
     ((LhatNode *)node)->checked_host_member = NULL;
+    ((LhatNode *)node)->checked_module_root = NULL;
+    ((LhatNode *)node)->checked_import_global = false;
     const char *name = NULL;
     size_t length = 0;
     if (!chk_node_name(c, node, &name, &length)) {
@@ -1103,6 +1105,9 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
     }
     ((LhatNode *)node)->checked_binding = b->declaration;
     ((LhatNode *)node)->checked_definition = b->definition;
+    ((LhatNode *)node)->checked_module_root = b->module_root;
+    ((LhatNode *)node)->checked_import_global = b->import_root &&
+        c->body_scope != NULL && !chk_scope_within_body(c, found_in);
 #if LHAT_WITH_RESOLUTIONS
     chk_record_resolution(c, node, b);
 #endif
@@ -6223,6 +6228,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             ((LhatNode *)node)->checked_binding = NULL;
             ((LhatNode *)node)->checked_host_member =
                 b == NULL && name != NULL ? initial_binding_member(c, name, length) : NULL;
+            ((LhatNode *)node)->checked_module_root = b != NULL ? b->module_root : NULL;
+            ((LhatNode *)node)->checked_import_global = b != NULL && b->import_root &&
+                c->body_scope != NULL && !chk_scope_within_body(c, found);
             if (b != NULL) {
                 ((LhatNode *)node)->checked_binding = b->declaration;
                 ((LhatNode *)node)->checked_definition = b->definition;

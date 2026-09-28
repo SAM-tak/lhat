@@ -233,6 +233,8 @@ struct LhatNode {
     const struct LhatNode *checked_binding;
     const struct LhatDefinition *checked_definition;
     const struct LhatTypeMember *checked_host_member; // Resolved member of L^.
+    const struct LhatModuleRoot *checked_module_root;
+    bool checked_import_global; // Read this root from L^.modules, not a capture.
     // A named type used where a type^ value is expected. Keep the original
     // name/member tree for tooling; compile this occurrence as a descriptor.
     void *descriptor_type;

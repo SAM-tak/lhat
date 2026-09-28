@@ -594,6 +594,7 @@ static void test_await_union_projection(void)
     LHAT_CHECK(lhatstdlib_task_register(program), "task registered");
     const LhatUnit *unit = lhat_program_check(program, "main.lh");
     LHAT_CHECK(unit != NULL && !lhat_program_has_errors(program), "union task checks");
+#if LHAT_WITH_RESOLUTIONS
     if (unit != NULL) {
         const char *names[] = {"= raw", "= handled"};
         const char *expected_text[] = {
@@ -620,6 +621,7 @@ static void test_await_union_projection(void)
             LHAT_CHECK_EQ_INT(arms, i == 0 ? 6 : 2);
         }
     }
+#endif
     lhat_program_free(program);
 }
 
@@ -638,6 +640,7 @@ static void test_await_inferred_type(void)
     LHAT_CHECK(lhatstdlib_task_register(program), "task registered");
     const LhatUnit *unit = lhat_program_check(program, "main.lh");
     LHAT_CHECK(unit != NULL && !lhat_program_has_errors(program), "source checks");
+#if LHAT_WITH_RESOLUTIONS
     if (unit != NULL) {
         uint32_t raw_offset = (uint32_t)(strstr(source, "= raw") - source + 2);
         uint32_t handled_offset = (uint32_t)(strstr(source, "= handled") - source + 2);
@@ -658,6 +661,7 @@ static void test_await_inferred_type(void)
                        handled->type->kind == LHAT_TYPE_NUMBER,
                    "try await must be exactly number, not any or unknown");
     }
+#endif
     lhat_program_free(program);
 
     LHAT_TEST("the reported two-job addition fails only without await error handling");

@@ -122,6 +122,14 @@ typedef struct LhatDefinition {
     const LhatLexer *lexer;
     const char *module;
 } LhatDefinition;
+
+// The lexical root introduced or reused by an import/require statement.
+typedef struct LhatModuleRoot {
+    const struct LhatNode *declaration;
+    const char *name;
+    size_t length;
+    const char *path; // Full declared module path on require statements only.
+} LhatModuleRoot;
 // Declarative result expressions. Runtime descriptors use their upper bound.
 LhatType *lhat_type_argument_bound(const LhatType *type);
 bool lhat_type_has_arguments(const LhatType *type);
@@ -471,6 +479,9 @@ typedef struct {
 } LhatTypeArena;
 
 LhatDefinition *lhat_definition_new(LhatTypeArena *arena, const char *module);
+LhatModuleRoot *lhat_module_root_new(LhatTypeArena *arena,
+                                    const struct LhatNode *declaration,
+                                    const char *name, size_t length, const char *path);
 
 LhatType *lhat_type_result_attribute(LhatTypeArena *arena, LhatType *type);
 LhatType *lhat_type_argument_attribute(LhatTypeArena *arena, LhatType *type, size_t index);

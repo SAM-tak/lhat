@@ -83,6 +83,27 @@ LhatDefinition *lhat_definition_new(LhatTypeArena *arena, const char *module)
     return origin;
 }
 
+LhatModuleRoot *lhat_module_root_new(LhatTypeArena *arena,
+                                    const struct LhatNode *declaration,
+                                    const char *name, size_t length, const char *path)
+{
+    LhatModuleRoot *root = arena_alloc(arena, sizeof *root);
+    char *copy = arena_alloc(arena, length + 1);
+    if (root == NULL || copy == NULL) return NULL;
+    memcpy(copy, name, length);
+    root->name = copy;
+    root->length = length;
+    root->declaration = declaration;
+    if (path != NULL) {
+        size_t size = strlen(path) + 1;
+        char *kept = arena_alloc(arena, size);
+        if (kept == NULL) return NULL;
+        memcpy(kept, path, size);
+        root->path = kept;
+    }
+    return root;
+}
+
 static LhatType *new_type(LhatTypeArena *arena, LhatTypeKind kind)
 {
     LhatType *type = (LhatType *)arena_alloc(arena, sizeof *type);

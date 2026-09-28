@@ -315,6 +315,7 @@ static void test_execution_pipeline_parity(void)
         "let^ Derived = Base .. def^{self^{y := 2}}\n"
         "let^ d = Derived.new()\nreturn^ d.x + d.y\n",
         "return^ twice(21)\n",
+        "import^ lib.draw\nreturn^ p^ {import^ lib.draw\nreturn^ lib.draw.line()}\n",
     };
     char base[512], config[512], path[512];
     LHAT_REQUIRE(make_temporary_directory(base, sizeof base), "temporary directory");
@@ -325,7 +326,9 @@ static void test_execution_pipeline_parity(void)
         char configuration[512];
         snprintf(configuration, sizeof configuration,
             "{\"strict\":%s,\"functions\":[{\"kind\":\"global\","
-            "\"name\":\"doubleValue\",\"signature\":\"f^number^ -> number^;\"}],"
+            "\"name\":\"doubleValue\",\"signature\":\"f^number^ -> number^;\"},"
+            "{\"kind\":\"func\",\"module\":\"lib.draw\",\"name\":\"line\","
+            "\"signature\":\"f^ -> number^;\"}],"
             "\"bindings\":[{\"name\":\"twice\",\"member\":\"L^.doubleValue\"}]}",
             strict ? "true" : "false");
         LHAT_REQUIRE(write_file(config, configuration),
@@ -366,6 +369,18 @@ static void test_execution_pipeline_parity(void)
                 const LhatNode *y = right.nodes[j]->checked_binding;
                 LHAT_CHECK_EQ_BOOL(left.nodes[j]->checked_definition != NULL,
                                    right.nodes[j]->checked_definition != NULL);
+                LHAT_CHECK_EQ_BOOL(left.nodes[j]->checked_import_global,
+                                   right.nodes[j]->checked_import_global);
+                const LhatModuleRoot *module_left = left.nodes[j]->checked_module_root;
+                const LhatModuleRoot *module_right = right.nodes[j]->checked_module_root;
+                LHAT_CHECK_EQ_BOOL(module_left != NULL, module_right != NULL);
+                if (module_left != NULL && module_right != NULL) {
+                    LHAT_CHECK_EQ_INT(module_left->declaration->offset, module_right->declaration->offset);
+                    LHAT_CHECK_EQ_INT(module_left->length, module_right->length);
+                    LHAT_CHECK(module_left->length == module_right->length &&
+                               memcmp(module_left->name, module_right->name, module_left->length) == 0,
+                               "both pipelines resolve the same module root");
+                }
                 const LhatTypeMember *host_left = left.nodes[j]->checked_host_member;
                 const LhatTypeMember *host_right = right.nodes[j]->checked_host_member;
                 LHAT_CHECK_EQ_BOOL(host_left != NULL, host_right != NULL);

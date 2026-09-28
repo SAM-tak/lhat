@@ -60,11 +60,6 @@ typedef struct {
     // stamp (or the written annotation) decided at declaration. Reading or
     // writing the name moves this many slots.
     uint8_t width;
-    // 05 の 8.7: the root an import^ bound, which a nested body reads off
-    // L^.modules rather than capturing. See resolve_name. A require^ root
-    // wearing the same name clears this: a unit's value was made by running
-    // it and is in no registry to read back.
-    bool import_root;
     // 02 の 8.7改: its own let^'s value is being compiled right now. A name
     // read there -- a nested body's capture included -- resolves past this
     // local to whatever the name meant outside, mirroring the checker's
@@ -646,7 +641,6 @@ static Local *declare_local(Compiler *c, const char *name, size_t length,
     local->reg = reg;
     local->depth = c->scope_depth;
     local->width = width;
-    local->import_root = false;
     local->being_defined = false;
     local->table = table;
     local->declaration = NULL;
@@ -1019,8 +1013,8 @@ static void compile_for_once(Compiler *c, const LhatNode *node, uint8_t into,
                              bool as_expression);
 static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out);
 static void compile_def(Compiler *c, const LhatNode *node, uint8_t into);
-static const char *required_module_name(Compiler *c, const LhatNode *node);
-static void compile_bind_path(Compiler *c, const char *path, uint8_t value);
+static void compile_bind_path(Compiler *c, const LhatNode *node,
+                               const char *path, uint8_t value);
 static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node);
 static bool resolve_name(Compiler *c, const char *name, size_t length,
                          uint8_t into);
@@ -1707,22 +1701,6 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 // 02 の 14 章: the object model
 // ---------------------------------------------------------------------------
 
-// Whether this name is a root an import^ bound in a body around this one.
-// Its own body's is an ordinary local and is read as one; only the step out
-// is what a capture would otherwise be.
-static bool import_root_outside(const Compiler *c, const char *name,
-                                size_t length)
-{
-    for (const Compiler *outer = c->parent; outer != NULL;
-         outer = outer->parent) {
-        const Local *local = find_local(outer, name, length);
-        if (local != NULL) {
-            return local->import_root;
-        }
-    }
-    return false;
-}
-
 // L^.modules, then one key per segment of `path`, then `name` if there is
 // one. The same walk an import^ makes, which is what makes it the only walk
 // a body somewhere else can make: a registration is an object on the heap of
@@ -1748,33 +1726,6 @@ static void emit_modules_read(Compiler *c, const char *path, const char *name,
     c->next_register = mark;
 }
 
-// 05 の 8.7: an import^ that unit wrote. The root is what a name of it
-// begins with, and reaching it is the same walk here as there.
-static bool foreign_import_root(const LhatNode *statements,
-                                const LhatLexer *lexer, const char *name,
-                                size_t length)
-{
-    for (const LhatNode *s = statements; s != NULL; s = s->next) {
-        if (s->kind != LHAT_NODE_IMPORT_STMT) {
-            continue;
-        }
-        const LhatNode *root = s->v.jump.value;
-        while (root != NULL && root->kind == LHAT_NODE_MEMBER) {
-            root = root->v.access.target;
-        }
-        const char *spelt = NULL;
-        size_t spelt_length = 0;
-        if (!lhat_node_name(root, lexer->source->text, lexer->strings, &spelt,
-                            &spelt_length)) {
-            continue;
-        }
-        if (spelt_length == length && memcmp(spelt, name, length) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
 // 05 の 5.3: a name free in a body flattened here out of another unit. What
 // can be reached is what lives under L^.modules -- what that unit published,
 // and the roots it imported. Its own top-level names are registers in a
@@ -1791,10 +1742,6 @@ static bool resolve_foreign_name(Compiler *c, const char *name, size_t length,
         return false;
     }
 
-    if (foreign_import_root(part->foreign_scope, part->lexer, name, length)) {
-        emit_modules_read(c, NULL, name, length, into);
-        return true;
-    }
     if (unit_binding(part->foreign_scope, part->lexer, name, length, true) !=
         NULL) {
         emit_modules_read(c, part->foreign_module, name, length, into);
@@ -1819,24 +1766,6 @@ static bool resolve_name(Compiler *c, const char *name, size_t length,
         // no-op here.)
         emit_move_wide(c, into, local->reg,
                        local->width > 1 ? local->width : 1);
-        return true;
-    }
-    // 05 の 8.7: an import^ root standing outside this body is read back off
-    // L^.modules rather than captured. A registration is an object on the
-    // heap of the machine it was installed on, so a capture would hand this
-    // body the maker's -- which is what a body run on another machine
-    // (std.thread's spawn) must not have, and is why that refuses a closure
-    // with captures at all. Reading it here is the same walk the import^
-    // itself made, on whichever machine is running.
-    if (import_root_outside(c, name, length)) {
-        uint8_t mark = c->next_register;
-        uint8_t key = reserve(c);
-        emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
-        load_string_bytes(c, key, "modules", 7);
-        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
-        load_string_bytes(c, key, name, length);
-        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
-        c->next_register = mark;
         return true;
     }
     size_t upvalue = find_upvalue(c, name, length);
@@ -3158,6 +3087,7 @@ static bool binary_opcode(LhatOpKind op, LhatOpcode *out)
 // off its head wherever it sits.
 static const Local *forwardable_local(Compiler *c, const LhatNode *node)
 {
+    if (node != NULL && node->checked_import_global) return NULL;
     if (node != NULL && node->checked_host_member != NULL) return NULL;
     if (node != NULL && node->checked_binding != NULL) {
         return local_for_binding(c, node->checked_binding);
@@ -3444,6 +3374,11 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         c->next_register = mark;
         return;
     }
+    if (node->checked_import_global && node->checked_module_root != NULL) {
+        const LhatModuleRoot *root = node->checked_module_root;
+        emit_modules_read(c, NULL, root->name, root->length, into);
+        return;
+    }
     switch (node->kind) {
         case LHAT_NODE_INT:
             load_constant(c, into, lhat_integer((int64_t)node->v.integer.value));
@@ -3618,12 +3553,13 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
         case LHAT_NODE_REQUIRE:
         case LHAT_NODE_REQUIRE_STMT: {
             const LhatNode *path = node->v.jump.value;
-            if (c->units == NULL || c->units->resolve == NULL || path == NULL) {
+            const LhatUnits *units = root_of(c)->units;
+            if (units == NULL || units->resolve == NULL || path == NULL) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
-            size_t which = c->units->resolve(
-                c->units->context, c->lexer->strings + path->v.string.offset,
+            size_t which = units->resolve(
+                units->context, c->lexer->strings + path->v.string.offset,
                 path->v.string.length, NULL);
             // Bx is 16 bits, so a program of more units than that cannot be
             // written down -- the same ceiling 5.2 puts on constants.
@@ -4168,6 +4104,11 @@ static void ensure_table_at(Compiler *c, uint8_t slot, uint8_t owner,
 // hold a member (8.8), so what is found here is a table or nothing.
 static void compile_path_prefix(Compiler *c, const LhatNode *node, uint8_t into)
 {
+    if (node->checked_import_global && node->checked_module_root != NULL) {
+        const LhatModuleRoot *root = node->checked_module_root;
+        emit_modules_read(c, NULL, root->name, root->length, into);
+        return;
+    }
     if (node->kind != LHAT_NODE_MEMBER) {
         // The root: a slot of this frame, or a place an enclosing one holds.
         const char *name = NULL;
@@ -4181,13 +4122,16 @@ static void compile_path_prefix(Compiler *c, const LhatNode *node, uint8_t into)
             emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
             return;
         }
-        const Local *local = find_local(c, name, length);
+        const Local *local = node->checked_binding != NULL
+            ? local_for_binding(c, node->checked_binding) : find_local(c, name, length);
         if (local != NULL) {
             ensure_table(c, local->reg);
             emit(c, lhat_encode_abc(LHAT_BC_MOVE, into, local->reg, 0));
             return;
         }
-        size_t upvalue = find_upvalue(c, name, length);
+        size_t upvalue = node->checked_binding != NULL
+            ? capture_binding(c, node->checked_binding, name, length)
+            : find_upvalue(c, name, length);
         if (upvalue == SIZE_MAX) {
             fail(c, LHAT_COMPILE_UNDEFINED);
             return;
@@ -4227,51 +4171,14 @@ static void declare_names(Compiler *c, const LhatNode *statements)
         // path the unit declared. The rest of the path is members of it.
         if (s->kind == LHAT_NODE_REQUIRE_STMT ||
             s->kind == LHAT_NODE_IMPORT_STMT) {
-            const char *module_name = NULL;
-            if (s->kind == LHAT_NODE_IMPORT_STMT) {
-                // 05 の 8.7: the path is written here, so the root is read
-                // off the tree rather than off the unit that was required.
-                const LhatNode *root_node = s->v.jump.value;
-                while (root_node != NULL &&
-                       root_node->kind == LHAT_NODE_MEMBER) {
-                    root_node = root_node->v.access.target;
-                }
-                size_t length = 0;
-                if (!node_name(c, root_node, &module_name, &length)) {
-                    continue;
-                }
-                if (find_local(c, module_name, length) != NULL) {
-                    continue;
-                }
-                uint8_t slot = reserve(c);
-                emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, slot, 0, 0));
-                Local *local = declare_local(c, module_name, length, slot, 1);
-                if (local == NULL) {
-                    return;
-                }
-                // 05 の 8.7: what is under this root came out of L^.modules,
-                // so a nested body can read it back rather than capture it.
-                local->import_root = true;
-                continue;
-            }
-            module_name = required_module_name(c, s);
-            if (module_name == NULL) {
-                continue;  // reported when the statement is compiled
-            }
-            size_t root = strcspn(module_name, ".");
-            const Local *taken = find_local(c, module_name, root);
-            if (taken != NULL) {
-                // 05 の 5.5 landing under a root an import^ also made: what
-                // this puts there is a unit's value and is in no registry, so
-                // the root goes back to being captured like any other name.
-                ((Local *)taken)->import_root = false;
-                continue;
-            }
+            const LhatModuleRoot *root = s->checked_module_root;
+            if (root == NULL || root->declaration != s ||
+                local_for_binding(c, root->declaration) != NULL) continue;
             uint8_t slot = reserve(c);
             emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, slot, 0, 0));
-            if (declare_local(c, module_name, root, slot, 1) == NULL) {
-                return;
-            }
+            Local *local = declare_local(c, root->name, root->length, slot, 1);
+            if (local == NULL) return;
+            local->declaration = root->declaration;
             continue;
         }
         if (s->kind != LHAT_NODE_DEFINE) {
@@ -4353,7 +4260,9 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             if (declared == NULL) {
                 return;
             }
-            declared->declaration = define_target_name(target)->checked_binding;
+            declared->declaration = define_target_is_path(target)
+                ? define_target_root(target)->checked_binding
+                : define_target_name(target)->checked_binding;
         }
     }
 }
@@ -6110,11 +6019,7 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, slot));
                 lhat_chunk_patch_here(&c->proto->chunk, there);
             } else {
-                const char *name = NULL;
-                size_t length = 0;
-                const Local *local =
-                    node_name(c, path, &name, &length)
-                        ? find_local(c, name, length) : NULL;
+                const Local *local = local_for_binding(c, node->checked_binding);
                 if (local == NULL) {
                     fail(c, LHAT_COMPILE_UNDEFINED);
                     return;
@@ -6128,7 +6033,8 @@ static void compile_statement(Compiler *c, const LhatNode *node)
         // 05 の 5.5: bring the unit in, then put it where the path it
         // declared says. 8.8 makes the tables on the way, here as there.
         case LHAT_NODE_REQUIRE_STMT: {
-            const char *module_name = required_module_name(c, node);
+            const char *module_name = node->checked_module_root != NULL
+                                          ? node->checked_module_root->path : NULL;
             if (module_name == NULL) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
@@ -6136,7 +6042,7 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             uint8_t mark = c->next_register;
             uint8_t slot = reserve(c);
             compile_expression(c, node, slot);
-            compile_bind_path(c, module_name, slot);
+            compile_bind_path(c, node, module_name, slot);
             c->next_register = mark;
             return;
         }
@@ -6414,43 +6320,43 @@ static void compile_import_path(Compiler *c, const LhatNode *path, uint8_t into,
     emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
 }
 
-// 05 の 5.5: the path a require^ standing alone brings a unit in under, or
-// NULL when there is no such unit or it declared none.
-static const char *required_module_name(Compiler *c, const LhatNode *node)
-{
-    const LhatNode *path = node->v.jump.value;
-    if (c->units == NULL || c->units->resolve == NULL || path == NULL) {
-        return NULL;
-    }
-    const char *module_name = NULL;
-    size_t which = c->units->resolve(
-        c->units->context, c->lexer->strings + path->v.string.offset,
-        path->v.string.length, &module_name);
-    return which == LHAT_NO_UNIT ? NULL : module_name;
-}
-
 // Puts `value` where a dotted path says, making the tables on the way. 02 の
 // 8.8 is the written form of this; here the path is a string rather than a
 // tree, since it came from what the required unit declared.
-static void compile_bind_path(Compiler *c, const char *path, uint8_t value)
+static void compile_bind_path(Compiler *c, const LhatNode *node,
+                               const char *path, uint8_t value)
 {
     size_t length = strcspn(path, ".");
-    const Local *root = find_local(c, path, length);
-    if (root == NULL) {
+    const LhatModuleRoot *binding = node->checked_module_root;
+    if (binding == NULL) {
+        fail(c, LHAT_COMPILE_UNDEFINED);
+        return;
+    }
+    const Local *root = local_for_binding(c, binding->declaration);
+    size_t upvalue = root == NULL
+        ? capture_binding(c, binding->declaration, binding->name, binding->length) : SIZE_MAX;
+    if (root == NULL && upvalue == SIZE_MAX) {
         fail(c, LHAT_COMPILE_UNDEFINED);
         return;
     }
     // One segment names the place itself, so there is nothing to reach into.
     if (path[length] == '\0') {
-        emit(c, lhat_encode_abc(LHAT_BC_MOVE, root->reg, value, 0));
+        if (root != NULL) emit(c, lhat_encode_abc(LHAT_BC_MOVE, root->reg, value, 0));
+        else emit(c, lhat_encode_abc(LHAT_BC_SETUPVAL, value, (uint8_t)upvalue, 0));
         return;
     }
 
     uint8_t mark = c->next_register;
     uint8_t owner = reserve(c);
     uint8_t key = reserve(c);
-    ensure_table(c, root->reg);
-    emit(c, lhat_encode_abc(LHAT_BC_MOVE, owner, root->reg, 0));
+    if (root != NULL) {
+        ensure_table(c, root->reg);
+        emit(c, lhat_encode_abc(LHAT_BC_MOVE, owner, root->reg, 0));
+    } else {
+        emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, owner, (uint8_t)upvalue, 0));
+        ensure_table(c, owner);
+        emit(c, lhat_encode_abc(LHAT_BC_SETUPVAL, owner, (uint8_t)upvalue, 0));
+    }
 
     const char *segment = path + length + 1;
     length = strcspn(segment, ".");

@@ -13,6 +13,7 @@
 #include "lhat/port.h"
 #include "program_internal.h"
 #include "compile.h"
+#include "fixture.h"
 #include "testutil.h"
 #include "lhat/value.h"
 #include "lhat/vm.h"
@@ -5514,8 +5515,115 @@ static void test_declarative_result_types(void)
     }
 }
 
+static void test_module_binding_identity(void)
+{
+    LhatProgram program;
+    Disk disk;
+    LHAT_TEST("a nested require extends the resolved outer namespace");
+    static const File files[] = {
+        {"first.lh", "module^ shared.first\npublic^ let^ n = 20\n"},
+        {"second.lh", "module^ shared.second\npublic^ let^ n = 22\n"},
+        {"main.lh", "require^ \"first.lh\"\n"
+            "let^ load = p^ {require^ \"second.lh\"}\nload()\n"
+            "return^ shared.first.n + shared.second.n\n"},
+    };
+    program_with(&program, &disk, files, 3);
+    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program), "namespace checked");
+    bool compiled = lhat_program_compile(&program);
+    LHAT_CHECK(compiled, "namespace compiled");
+    if (compiled && root != NULL) {
+        LhatMachine *machine = lhat_machine_new();
+        LhatRunResult ran = lhat_run(machine, root->proto);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("a repeated import inside a closure reads the registry without capturing");
+    static const File imports[] = {
+        {"main.lh", "import^ lib.draw\n"
+            "return^ p^ {import^ lib.draw\nreturn^ lib.draw.line()}\n"},
+    };
+    program_with(&program, &disk, imports, 1);
+    lhat_register_func(&program, "lib.draw", "line", "f^ -> number^;", host_one, NULL);
+    root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program), "import checked");
+    compiled = lhat_program_compile(&program);
+    LHAT_CHECK(compiled, "import compiled");
+    if (compiled && root != NULL) {
+        LHAT_CHECK_EQ_INT(root->proto->proto_count, 1);
+        if (root->proto->proto_count == 1) {
+            LHAT_CHECK_EQ_INT(root->proto->protos[0]->upvalue_count, 0);
+        }
+        LhatMachine *machine = lhat_machine_new();
+        lhat_program_install(&program, machine);
+        LhatRunResult made = lhat_run(machine, root->proto);
+        LHAT_CHECK_EQ_INT(made.status, LHAT_RUN_OK);
+        LhatRunResult ran = lhat_machine_call(machine, made.value, NULL, 0);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1);
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("require on an import namespace switches subsequent reads to the lexical binding");
+    static const File mixed[] = {
+        {"data.lh", "module^ lib.data\npublic^ let^ n = 42\n"},
+        {"main.lh", "import^ lib.draw\nrequire^ \"data.lh\"\n"
+            "let^ read = f^ {return^ lib.data.n}\nreturn^ read()\n"},
+    };
+    program_with(&program, &disk, mixed, 2);
+    lhat_register_func(&program, "lib.draw", "line", "f^ -> number^;", host_one, NULL);
+    root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program), "mixed namespace checked");
+    compiled = lhat_program_compile(&program);
+    LHAT_CHECK(compiled, "mixed namespace compiled");
+    if (compiled && root != NULL) {
+        LHAT_CHECK_EQ_INT(root->proto->proto_count, 1);
+        if (root->proto->proto_count == 1) {
+            LHAT_CHECK_EQ_INT(root->proto->protos[0]->upvalue_count, 1);
+        }
+        LhatMachine *machine = lhat_machine_new();
+        lhat_program_install(&program, machine);
+        LhatRunResult ran = lhat_run(machine, root->proto);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("a REPL keeps the imported root's identity and registry access policy");
+    program_with(&program, &disk, NULL, 0);
+    lhat_register_func(&program, "lib.draw", "line", "f^ -> number^;", host_one, NULL);
+    TestSession *session = test_session_new();
+    lhat_program_install_checks(&program, session->checks);
+    Run first, second;
+    compile_next_text(&first, session, "import^ lib.draw\n");
+    compile_next_text(&second, session, "return^ p^ {return^ lib.draw.line()}\n");
+    LHAT_CHECK_EQ_INT(first.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(second.compiled, LHAT_COMPILE_OK);
+    if (second.compiled == LHAT_COMPILE_OK && second.proto->proto_count == 1) {
+        LHAT_CHECK_EQ_INT(second.proto->protos[0]->upvalue_count, 0);
+        LhatMachine *machine = lhat_machine_new();
+        lhat_program_install(&program, machine);
+        lhat_run(machine, first.proto);
+        LhatRunResult made = lhat_run(machine, second.proto);
+        LhatRunResult ran = lhat_machine_call(machine, made.value, NULL, 0);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 1);
+        lhat_machine_dispose(machine);
+    }
+    test_session_dispose(session);
+    compiled_dispose(&second);
+    compiled_dispose(&first);
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
+    test_module_binding_identity();
     test_declarative_result_types();
     test_host_instantiation();
     test_host_instantiation_abi();
