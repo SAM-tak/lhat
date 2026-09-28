@@ -227,6 +227,10 @@ struct LhatNode {
     // stage's; compile_subroutine (vm.c) is the reader, and casts it back.
     // NULL until checking runs, and unset entirely when it never does.
     void *checked_type;
+    // Stable declaration identity for lexical bindings. Written by semantic
+    // analysis even without tool resolutions; codegen maps it to storage.
+    // Borrowed from the parsed trees, which outlive checking and compilation.
+    const struct LhatNode *checked_binding;
     // A named type used where a type^ value is expected. Keep the original
     // name/member tree for tooling; compile this occurrence as a descriptor.
     void *descriptor_type;

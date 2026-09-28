@@ -159,6 +159,13 @@ static void test_machine(void)
         Run one, two;
         compile_next_text(&one, s, "var^ x = 1\n");
         compile_next_text(&two, s, "var^ x = x + 10\nreturn^ x\n");
+        const LhatNode *original = one.parsed.root->v.list.items->v.binding.targets;
+        const LhatNode *redefined = two.parsed.root->v.list.items->v.binding.targets;
+        const LhatNode *read = two.parsed.root->v.list.items->next->v.jump.value;
+        LHAT_CHECK(redefined->checked_binding == original,
+                   "a REPL redefinition preserves the original binding");
+        LHAT_CHECK(read->checked_binding == original,
+                   "the next input resolves to that same binding");
         lhat_run(m, one.proto);
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, two.proto).value), 11);
         lhat_machine_dispose(m);

@@ -1958,6 +1958,7 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
                 // here on, and the other way round.
                 already->immutable = s->v.binding.immutable;
                 already->keyword = s->v.binding.keyword;
+                ((LhatNode *)target_name_node(target))->checked_binding = already->declaration;
                 continue;
             }
             Binding *b =
@@ -1969,6 +1970,8 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
             // visible throughout the scope either way.
             if (b != NULL) {
                 b->immutable = s->v.binding.immutable;
+                b->declaration = target_name_node(target);
+                ((LhatNode *)b->declaration)->checked_binding = b->declaration;
                 b->bound_by_form = s->v.binding.bound_by_form;
                 // 07 §6: which word, for a fix that offers the other one.
                 b->keyword = s->v.binding.keyword;

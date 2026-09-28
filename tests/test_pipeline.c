@@ -92,9 +92,59 @@ static void test_nominal_type_lowering(void)
     run_dispose(&r);
 }
 
+static void test_binding_identity(void)
+{
+    LHAT_TEST("code generation follows resolved declarations, not use spellings");
+    Unit u;
+    check_text(&u,
+        "var^ y = 100\nvar^ x = 40\n"
+        "var^ bump = p^ {x := x + 2}\n"
+        "bump()\nreturn^ x\n");
+    CHECK_CLEAN(&u);
+    Nodes nodes = {0};
+    collect(&nodes, NULL, false, u.parsed.root);
+    const LhatNode *x = u.parsed.root->v.list.items->next->v.binding.targets;
+    const LhatNode *y = u.parsed.root->v.list.items->v.binding.targets;
+    size_t uses = 0;
+    for (size_t i = 0; i < nodes.count; i++) {
+        LhatNode *node = (LhatNode *)nodes.nodes[i];
+        if (node != x && node->checked_binding == x && node->kind == LHAT_NODE_IDENT) {
+            // An emitter must consume the semantic reference even when the
+            // display spelling changes after checking. This covers writes,
+            // captures and the read-in-place operand optimization together.
+            node->v.name = y->v.name;
+            uses++;
+        }
+    }
+    LHAT_CHECK_EQ_INT(uses, 3);
+    LhatProto *proto = NULL;
+    LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status, LHAT_COMPILE_OK);
+    if (proto != NULL) {
+        LhatMachine *machine = lhat_machine_new();
+        LhatRunResult ran = lhat_run(machine, proto);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_integer(ran.value), "integer result");
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+        lhat_machine_dispose(machine);
+        lhat_proto_free(proto);
+    }
+    unit_dispose(&u);
+
+    LHAT_TEST("a missing resolved storage location is not rebound by spelling");
+    check_text(&u, "var^ x = 1\nreturn^ x\n");
+    LhatNode *use = u.parsed.root->v.list.items->next->v.jump.value;
+    use->checked_binding = u.parsed.root;
+    proto = NULL;
+    LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                      LHAT_COMPILE_UNDEFINED);
+    lhat_proto_free(proto);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_policy_parity();
     test_nominal_type_lowering();
+    test_binding_identity();
     return lhat_test_report("test_pipeline");
 }

@@ -276,9 +276,105 @@ static void test_current_unit(void)
     remove_directory(base);
 }
 
+static char *parity_load(void *context, const char *path, size_t *length)
+{
+    (void)path;
+    const char *text = context;
+    *length = strlen(text);
+    char *copy = malloc(*length + 1);
+    if (copy != NULL) memcpy(copy, text, *length + 1);
+    return copy;
+}
+
+typedef struct {
+    const LhatNode *nodes[256];
+    size_t count;
+} BindingTree;
+
+static void binding_tree(void *context, const char *field, bool list,
+                          const LhatNode *node)
+{
+    (void)field;
+    (void)list;
+    BindingTree *tree = context;
+    if (tree->count >= sizeof tree->nodes / sizeof *tree->nodes) {
+        LHAT_CHECK(false, "binding tree exceeds test capacity");
+        return;
+    }
+    tree->nodes[tree->count++] = node;
+    lhat_node_visit_children(node, binding_tree, tree);
+}
+
+static void test_execution_pipeline_parity(void)
+{
+    static const char *const sources[] = {
+        "var^ x = 1\nvar^ f = p^ n:number^ {x := x + n}\nf(2)\nreturn^ x\n",
+        "var^ t:t^{x:number^}|nil^ = nil^\nreturn^ t.x\n",
+        "var^ x:number^ = 'wrong'\nreturn^ x\n",
+    };
+    char base[512], config[512], path[512];
+    LHAT_REQUIRE(make_temporary_directory(base, sizeof base), "temporary directory");
+    join(config, sizeof config, base, "lhat-host.json");
+    join(path, sizeof path, base, "main.lh");
+    for (size_t mode = 0; mode < 2; mode++) {
+        bool strict = mode == 0;
+        LHAT_REQUIRE(write_file(config, strict ? "{\"strict\":true}" : "{\"strict\":false}"),
+                     "write configuration");
+        for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
+            LHAT_TEST("workspace and execution pipeline agree on diagnostics and bindings");
+            LHAT_REQUIRE(write_file(path, sources[i]), "write source");
+            const char *folders[] = {base};
+            LspWorkspace workspace;
+            lsp_workspace_init(&workspace, folders, 1);
+            lsp_workspace_discover_projects(&workspace);
+            lsp_workspace_recheck_affected(&workspace, path);
+            LspProject *project = project_at(&workspace, base);
+            LHAT_REQUIRE(project != NULL && project->roots != NULL, "workspace root");
+            LhatProgram *editor = &project->roots->program;
+
+            LhatProgram execution;
+            lhat_program_init(&execution, strict, parity_load, (void *)sources[i]);
+            const LhatUnit *a = lhat_program_check(&execution, path);
+            const LhatUnit *b = editor->units;
+            LHAT_REQUIRE(a != NULL && b != NULL, "both entry points checked the source");
+            LHAT_CHECK_EQ_BOOL(editor->strict, strict);
+            LHAT_CHECK_EQ_BOOL(lhat_program_has_errors(&execution), lhat_program_has_errors(editor));
+            LHAT_CHECK_EQ_INT(lhat_unit_diagnostic_count(a), lhat_unit_diagnostic_count(b));
+            LHAT_CHECK_EQ_INT(a->checked.diagnostic_count, b->checked.diagnostic_count);
+            for (size_t j = 0; j < a->checked.diagnostic_count && j < b->checked.diagnostic_count; j++) {
+                LHAT_CHECK_EQ_INT(a->checked.diagnostics[j].code, b->checked.diagnostics[j].code);
+                LHAT_CHECK_EQ_INT(a->checked.diagnostics[j].offset, b->checked.diagnostics[j].offset);
+                LHAT_CHECK_EQ_BOOL(a->checked.diagnostics[j].relaxed_ok, b->checked.diagnostics[j].relaxed_ok);
+            }
+            BindingTree left = {0}, right = {0};
+            binding_tree(&left, NULL, false, a->parsed.root);
+            binding_tree(&right, NULL, false, b->parsed.root);
+            LHAT_CHECK_EQ_INT(left.count, right.count);
+            for (size_t j = 0; j < left.count && j < right.count; j++) {
+                const LhatNode *x = left.nodes[j]->checked_binding;
+                const LhatNode *y = right.nodes[j]->checked_binding;
+                LHAT_CHECK_EQ_BOOL(x != NULL, y != NULL);
+                if (x != NULL && y != NULL) LHAT_CHECK_EQ_INT(x->offset, y->offset);
+            }
+            // CLI execution gates code generation on semantic errors, just
+            // as the workspace does; the low-level emitter itself does not.
+            bool compiled = !lhat_program_has_errors(&execution) &&
+                            lhat_program_compile(&execution);
+            LHAT_CHECK_EQ_BOOL(compiled, !lhat_program_has_errors(editor));
+            LHAT_CHECK_EQ_BOOL(a->proto != NULL, b->proto != NULL);
+            lhat_program_dispose(&execution);
+            lsp_workspace_dispose(&workspace);
+        }
+    }
+    remove(path);
+    remove(config);
+    remove_directory(base);
+}
+
 int main(void)
 {
     test_nearest_project_wins_inside_each_workspace_folder();
     test_current_unit();
+    test_execution_pipeline_parity();
     return lhat_test_report("test_workspace_projects");
 }

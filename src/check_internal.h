@@ -30,6 +30,7 @@ typedef struct Binding {
     const char *name;
     size_t name_length;
     LhatType *type;
+    const LhatNode *declaration;
     // 03 の 3.4改2: what the walk before this one left under the name, which
     // is what this walk started from. NULL until a second walk is run, and
     // read only to tell a walk that learned something from one that answered

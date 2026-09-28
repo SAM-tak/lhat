@@ -887,9 +887,27 @@ void chk_error_leaves(Checker *c, const LhatNode *at, LhatType *escaping)
         lhat_type_union(c->result->types, c->inferred_result, escaping);
 }
 
+// One binding selection for both ordinary and flow-narrowed reads. Narrowing
+// changes the value type, never the declaration denoted by the source name.
+static Binding *read_binding_from(Scope *from, const char *name, size_t length,
+                                   Scope **found_in)
+{
+    Binding *b = chk_scope_find(from, name, length, found_in);
+    if (b != NULL && b->being_defined && *found_in != NULL) {
+        Scope *outer = NULL;
+        Binding *shadowed = chk_scope_find((*found_in)->parent, name, length, &outer);
+        if (shadowed != NULL) {
+            b = shadowed;
+            *found_in = outer;
+        }
+    }
+    return b;
+}
+
 LhatType *chk_infer_name(Checker *c, const LhatNode *node,
                          LhatType **named_type)
 {
+    ((LhatNode *)node)->checked_binding = NULL;
     const char *name = NULL;
     size_t length = 0;
     if (!chk_node_name(c, node, &name, &length)) {
@@ -1001,7 +1019,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
     // tells a name this body bound from one still waiting further out, and
     // 15.13 and 05 の 8.9 each measure it against a boundary of their own.
     Scope *found_in = NULL;
-    Binding *b = chk_scope_find(from, name, length, &found_in);
+    Binding *b = read_binding_from(from, name, length, &found_in);
     // 8.7改: a binding does not stand in its own initialiser -- anywhere in
     // it, a deferred body included. What it holds is being worked out right
     // here, so the name still means what it meant outside; recursion by the
@@ -1009,15 +1027,6 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
     // stronger one -- it carries the literal's own signature where the name
     // held only a seed). Where nothing outside answers, the read falls
     // through to the report below, which is the same one it always got.
-    if (b != NULL && b->being_defined && found_in != NULL) {
-        Scope *outer = NULL;
-        Binding *shadowed =
-            chk_scope_find(found_in->parent, name, length, &outer);
-        if (shadowed != NULL) {
-            b = shadowed;
-            found_in = outer;
-        }
-    }
     if (b == NULL) {
         // 05 の 8.2: what the host bound before anything ran. Asked after
         // every scope, so a let^ of the same spelling shadows it -- and what
@@ -1090,6 +1099,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
             chk_report(c, node, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
         }
     }
+    ((LhatNode *)node)->checked_binding = b->declaration;
 #if LHAT_WITH_RESOLUTIONS
     chk_record_resolution(c, node, b);
 #endif
@@ -4083,6 +4093,8 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
             Binding *b = chk_scope_add(&body, name, length, type,
                                        param->v.param.name->offset);
             if (b != NULL) {
+                b->declaration = param->v.param.name;
+                ((LhatNode *)b->declaration)->checked_binding = b->declaration;
                 b->reached = true;
                 b->is_parameter = true;
             }
@@ -6155,7 +6167,6 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                     return held;
                 }
             }
-#if LHAT_WITH_RESOLUTIONS
             // Record the narrowed value type at the same declaration. An
             // alias lookup above may also have recorded the original value
             // type; settling the records keeps this more precise answer.
@@ -6167,10 +6178,17 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             // and nothing else, which is what a member already does.
             const char *name = NULL;
             size_t length = 0;
-            Binding *b = node->kind == LHAT_NODE_IDENT &&
+            Scope *from = node->kind == LHAT_NODE_SCOPE
+                              ? chk_scope_from(c->scope, node) : c->scope;
+            Scope *found = NULL;
+            Binding *b = (node->kind == LHAT_NODE_IDENT || node->kind == LHAT_NODE_SCOPE) &&
                                  chk_node_name(c, node, &name, &length)
-                             ? chk_scope_find(c->scope, name, length, NULL)
-                             : NULL;
+                             ? read_binding_from(from, name, length, &found) : NULL;
+            ((LhatNode *)node)->checked_binding = NULL;
+            if (b != NULL) {
+                ((LhatNode *)node)->checked_binding = b->declaration;
+            }
+#if LHAT_WITH_RESOLUTIONS
             if (b != NULL) {
                 chk_record_narrowed_resolution(c, node, b, narrowed);
             } else {
