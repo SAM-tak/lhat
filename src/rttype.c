@@ -4,11 +4,8 @@
 #include "rttype.h"
 
 
-// Converts one of the checker's own LhatType objects into the shape
-// lower_type builds from a written annotation. Used only where nothing was
-// written at all -- lower_type already has nothing to read there, so this is
-// a fallback onto what infer_func (check.c) settled instead, not a second
-// opinion on what was written.
+// Converts resolved types into runtime descriptors, for both written
+// annotations and inferred signatures.
 //
 // A checker type may hold itself (an instance whose member answers one), so
 // the structures on the way in are remembered on the C stack. Meeting one
@@ -17,6 +14,7 @@
 typedef struct RtSeen {
     const LhatType *type;
     const struct RtSeen *outer;
+    LhatRuntimeType *runtime;
 } RtSeen;
 
 static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
@@ -25,6 +23,9 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
 {
     if (type == NULL) {
         return NULL;
+    }
+    for (const RtSeen *s = seen; s != NULL; s = s->outer) {
+        if (s->type == type && s->runtime != NULL) return s->runtime;
     }
     if (type->kind == LHAT_TYPE_ARGUMENT) {
         return rt_from_checked(heap, type->v.argument.bound, seen);
@@ -51,12 +52,12 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
                 }
                 return rt;
             }
-            level++;
+            if (s->type->kind == LHAT_TYPE_TABLE) level++;
         }
     }
     // 13.13 counts structures and nothing else -- a signature is transparent,
     // so only a table joins the chain the hats are counted along.
-    RtSeen here = { type, seen };
+    RtSeen here = { type, seen, NULL };
     if (type->kind == LHAT_TYPE_TABLE) {
         seen = &here;
     }
@@ -251,6 +252,8 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
             if (rt == NULL) {
                 return NULL;
             }
+            RtSeen function = {type, seen, rt};
+            seen = &function;
             rt->is_function = type->v.func.is_function;
             rt->takes_self = type->v.func.takes_self;
             rt->self_last = type->v.func.self_last;
@@ -299,9 +302,12 @@ static LhatRuntimeType *rt_from_checked(LhatHeap *heap,
         case LHAT_TYPE_ERROR:
         case LHAT_TYPE_ERROR_SET:
         case LHAT_TYPE_ERROR_KIND: {
-            LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_ERROR);
+            LhatRuntimeType *rt = lhat_type_rt_new(
+                heap, type->v.error.runtime_kind != NULL
+                          ? LHAT_TYPE_RT_ERROR_KIND : LHAT_TYPE_RT_ERROR);
             if (rt != NULL) {
                 rt->error_local = type->v.error.local;
+                rt->error_kind = type->v.error.runtime_kind;
             }
             return rt;
         }

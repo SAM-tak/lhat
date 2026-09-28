@@ -30,7 +30,7 @@ static bool first_diagnostic_start(const char *text, bool relaxed, Pos *out)
     LhatParseResult parsed;
     lhat_parse(&lexer, &parsed);
     LhatCheckResult checked;
-    lhat_check(parsed.root, &lexer, true, &checked);
+    lhat_check(parsed.root, &lexer, !relaxed, &checked);
 
     LhatUnit unit;
     memset(&unit, 0, sizeof unit);
@@ -167,8 +167,20 @@ static void test_relaxed_severity(void)
                    "strict reports the gap");
         LHAT_CHECK_EQ_INT(strict_pos.severity, 1);
         LHAT_CHECK(first_diagnostic_start(text, true, &relaxed_pos),
-                   "and so does a tool checking strict regardless");
+                    "relaxed retains the same diagnostic");
         LHAT_CHECK_EQ_INT(relaxed_pos.severity, 2);
+    }
+
+    LHAT_TEST("nil access is an error or warning with identical positions");
+    {
+        const char *text = "var^ t:t^{x:number^}|nil^ = nil^\nlet^ x = t.x\n";
+        Pos a, b;
+        LHAT_CHECK(first_diagnostic_start(text, false, &a), "strict reports nil access");
+        LHAT_CHECK(first_diagnostic_start(text, true, &b), "relaxed reports nil access");
+        LHAT_CHECK_EQ_INT(a.severity, 1);
+        LHAT_CHECK_EQ_INT(b.severity, 2);
+        LHAT_CHECK_EQ_INT(a.line, b.line);
+        LHAT_CHECK_EQ_INT(a.character, b.character);
     }
 
     LHAT_TEST("but an ordinary mismatch stays an error under either");

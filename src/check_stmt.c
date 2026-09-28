@@ -499,7 +499,7 @@ void chk_check_define(Checker *c, const LhatNode *node)
         // chk_rounds_next rolls back everything but the last walk. The arity
         // cases below say their own thing about a target with no value, so
         // they are left to say it.
-        if (c->strict && annotated == NULL && tuple == NULL && value != NULL &&
+        if (annotated == NULL && tuple == NULL && value != NULL &&
             lhat_type_has_gap(held)) {
             chk_report(c, target, LHAT_CHECK_ERR_TYPE_UNDECIDED);
         }
@@ -1706,7 +1706,7 @@ static void check_focus(Checker *c, const LhatNode *node)
         if (annotated != NULL) {
             chk_expect(c, element, taken, annotated, LHAT_CHECK_ERR_MISMATCH);
             type = annotated;
-        } else if (c->strict &&
+        } else if (
                    (type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
                     lhat_type_has_gap(type)) &&
                    c->result->diagnostic_count == already) {
@@ -1805,6 +1805,7 @@ static void check_errordef(Checker *c, const LhatNode *node)
     // off the set, so nothing below has to be told twice.
     LhatType *set = lhat_type_error_set(c->result->types, name, length,
                                         node->v.named.local);
+    ((LhatNode *)node)->checked_type = set;
     chk_scope_add(c->scope, name, length, set, node->offset)->reached = true;
 
     for (const LhatNode *kind = node->v.named.members; kind != NULL;
@@ -1816,6 +1817,7 @@ static void check_errordef(Checker *c, const LhatNode *node)
         }
         LhatType *type = lhat_type_error_kind(c->result->types, set, kind_name,
                                               kind_length);
+        ((LhatNode *)kind)->checked_type = type;
         chk_kind_declared_at(c, type, kind->v.named.name);
         for (const LhatNode *field = kind->v.named.members; field != NULL;
              field = field->next) {

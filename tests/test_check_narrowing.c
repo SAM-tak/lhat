@@ -575,19 +575,18 @@ static void test_narrowing(void)
     unit_dispose(&u);
 }
 
-// 04 の 11.4 with 03 の 3.5: relaxed steps past nil^ in a union and lets
-// the machine's own instruction check answer at run time; strict keeps
-// refusing, since narrowing is the spelling there. No check is inserted --
-// 3.5 withdrew that -- so what these pin is only the checker's posture.
+// Both policies retain the successful access type and the nil diagnostic;
+// only its severity changes.
 static void test_relaxed_nil_reference(void)
 {
     Unit u;
 
-    LHAT_TEST("relaxed lets a T|nil^ member reference through");
+    LHAT_TEST("relaxed warns about a nil arm without rejecting the access");
     check_relaxed_text(&u,
                        "var^ f = f^ -> t^{ a : number^ }|nil^ { return^ nil^ }\n"
                        "var^ t = f()\n"
-                       "var^ x : number^ = t.a\n");
+                        "var^ x : number^ = t.a\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ACCESS_ON_MAYBE_NIL);
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -595,8 +594,8 @@ static void test_relaxed_nil_reference(void)
     check_text(&u,
                "var^ f = f^ -> t^{ a : number^ }|nil^ { return^ nil^ }\n"
                "var^ t = f()\n"
-               "var^ x : number^ = t.a\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+                "var^ x : number^ = t.a\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ACCESS_ON_MAYBE_NIL);
     unit_dispose(&u);
 
     // Only nil^ is stepped past: two real types still have no one member
@@ -687,8 +686,8 @@ static void test_nil_propagation(void)
                "var^ f = f^ -> t^{ a : t^{ b : number^ }|nil^ }|nil^ "
                "{ return^ nil^ }\n"
                "var^ t = f()\n"
-               "var^ n : number^ = t?.a.b ?? 0\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+                "var^ n : number^ = t?.a.b ?? 0\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ACCESS_ON_MAYBE_NIL);
     unit_dispose(&u);
 
     // '(' makes no node of its own, so a bracket a writer put there to group

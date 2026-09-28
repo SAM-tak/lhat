@@ -213,13 +213,6 @@ typedef struct Compiler {
     bool in_constructor;
     uint8_t constructor_self;
 
-    // 14.9: the definitions lower_def_chain is inside right now, kept on the
-    // root the way `defs` is. A def^ reached again while its own shape is
-    // being built is answered by its name alone rather than descended into.
-    // One chain per level of nesting, so the bound is the two multiplied.
-    const LhatNode *lowering[LHAT_MAX_TYPE_NESTING * LHAT_MAX_DEF_CHAIN];
-    size_t lowering_count;
-
     // 05 の 5 章: where a require^ inside this unit leads. NULL when the unit
     // is being compiled on its own, and then a require^ has nowhere to go.
     const LhatUnits *units;
@@ -1075,6 +1068,9 @@ static void declare_error(Compiler *c, const LhatNode *node)
     }
 
     size_t index = 0;
+    if (node->checked_type != NULL) {
+        ((LhatType *)node->checked_type)->v.error.runtime_kind = group;
+    }
     for (const LhatNode *k = node->v.named.members; k != NULL;
          k = k->next, index++) {
         const char *kind_name = NULL;
@@ -1106,6 +1102,9 @@ static void declare_error(Compiler *c, const LhatNode *node)
             return;
         }
         kinds[index] = kind;
+        if (k->checked_type != NULL) {
+            ((LhatType *)k->checked_type)->v.error.runtime_kind = kind;
+        }
     }
 
     ErrorDecl *decl = &root->errors[root->error_count++];
@@ -1302,63 +1301,6 @@ static const LhatErrorKind *resolve_kind(Compiler *c, const LhatNode *path,
     }
 
     return resolve_host_kind(c, path, from_host);
-}
-
-// 05 の 8.8 の fits^ 版: what lhat_register_hostdata_type (program.h) put
-// in LhatUnits.host_types. "module...Name" only -- a hostdata type has no
-// variant to walk into the way an errordef^'s declaration does; 8.8's
-// identity is the tag alone.
-static const LhatHostDataTag *resolve_host_type_tag(Compiler *c,
-                                                     const LhatNode *path)
-{
-    const LhatUnits *units = root_of(c)->units;
-    if (units == NULL || units->host_types == NULL) {
-        return NULL;
-    }
-
-    QualifierSegment segments[LHAT_MAX_QUALIFIER_SEGMENTS];
-    size_t count = flatten_qualified_path(c, path, segments,
-                                          LHAT_MAX_QUALIFIER_SEGMENTS);
-    if (count < 2) {
-        return NULL;  // a module name alone never reaches a type
-    }
-
-    for (size_t i = 0; i < units->host_type_count; i++) {
-        const LhatHostTypeEntry *entry = &units->host_types[i];
-        if (segments_match(segments, 0, count - 1, entry->module) &&
-            segments_match(segments, count - 1, count, entry->name)) {
-            return entry->tag;
-        }
-    }
-    return NULL;
-}
-
-// 05 の 8.9: the same for a host value type, out of
-// LhatUnits.hostvalue_types. This is how a written annotation carries a
-// width into the compiler when the checker's stamp is not there to.
-static const LhatHostValueTag *resolve_hostvalue_type_tag(Compiler *c,
-                                                          const LhatNode *path)
-{
-    const LhatUnits *units = root_of(c)->units;
-    if (units == NULL || units->hostvalue_types == NULL || path == NULL) {
-        return NULL;
-    }
-
-    QualifierSegment segments[LHAT_MAX_QUALIFIER_SEGMENTS];
-    size_t count = flatten_qualified_path(c, path, segments,
-                                          LHAT_MAX_QUALIFIER_SEGMENTS);
-    if (count < 2) {
-        return NULL;
-    }
-
-    for (size_t i = 0; i < units->hostvalue_type_count; i++) {
-        const LhatHostValueTypeEntry *entry = &units->hostvalue_types[i];
-        if (segments_match(segments, 0, count - 1, entry->module) &&
-            segments_match(segments, count - 1, count, entry->name)) {
-            return entry->tag;
-        }
-    }
-    return NULL;
 }
 
 static void load_string_bytes(Compiler *c, uint8_t into, const char *text,
@@ -1863,470 +1805,18 @@ static void compile_fits(Compiler *c, const LhatNode *node, uint8_t into)
     c->next_register = mark;
 }
 
-// One entry of a def^ -- a keyed member or a field of its template -- as a
-// member of the shape the definition promises.
-//
-// A type is read only where one was written: 14.15's 'abstract^ name : type'
-// puts the type where a value would otherwise be, and everything else carries
-// an initialiser whose type is the checker's business (03 の 4.2 keeps this
-// path independent of whether checking ran). A member with no type asks only
-// that the name is there, which is what lhat_value_satisfies does with one.
-// 14.7改 with 14.4: whether an instance carries this entry of a def^. What is
-// reached through one is what is handed a receiver, which the signature says
-// -- written out where 14.15 declares the member, and in the literal's own
-// parameter list otherwise. 14.11's new and a static member are the
-// definition's, and asking a value for one of those would ask for what an
-// instance was never meant to answer.
-static bool entry_takes_receiver(Compiler *c, const LhatNode *entry)
-{
-    const LhatNode *written = entry->v.entry.value;
-    if (written == NULL || (written->kind != LHAT_NODE_FUNC &&
-                            written->kind != LHAT_NODE_TYPE_FUNC)) {
-        return false;
-    }
-    const LhatNode *params = written->v.func.params;
-    for (const LhatNode *param = params; param != NULL; param = param->next) {
-        // 11.3改: first or last, and nowhere else -- the same two places
-        // compile_func reads a receiver from.
-        if (param != params && param->next != NULL) {
-            continue;
-        }
-        const LhatNode *marker = param->v.param.name != NULL
-                                     ? param->v.param.name
-                                     : param->v.param.type;
-        const char *name = NULL;
-        size_t length = 0;
-        if (node_name(c, marker, &name, &length) &&
-            name_is(name, length, "self^")) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool add_shape_member(Compiler *c, LhatRuntimeType *into,
-                             const LhatNode *entry, bool of_template)
-{
-    const char *name = NULL;
-    size_t length = 0;
-    // 14.14改: a computed key names no member, so it asks for nothing.
-    if (entry->v.entry.computed || entry->v.entry.key == NULL ||
-        !node_name(c, entry->v.entry.key, &name, &length)) {
-        return true;
-    }
-    // 14.7改: the shape is what the definition promises about its instances,
-    // so a member they do not carry is not part of it. A template field is
-    // theirs whatever it holds.
-    if (!of_template && !entry_takes_receiver(c, entry)) {
-        return true;
-    }
-
-    LhatRuntimeType *member =
-        entry->v.entry.declared ? lower_type(c, entry->v.entry.value) : NULL;
-
-    // 14.5: the parts are walked in order and the later one is what answers,
-    // so a name written again replaces what an earlier part put there.
-    for (size_t i = 0; i < into->member_count; i++) {
-        const LhatString *written = into->members[i].name;
-        if (written->length == length &&
-            memcmp(written->text, name, length) == 0) {
-            into->members[i].type = member;
-            return true;
-        }
-    }
-
-    LhatHeap *owner = &root_of(c)->proto->chunk.heap;
-    LhatString *text = lhat_string_new(owner, name, length);
-    return text != NULL && lhat_type_rt_add_member(into, text, member);
-}
-
-// 14.9: a definition is a shape and its name is a label, so a name standing
-// for one asks exactly what 14.10's t^{ ... } asks -- with the members read
-// off the def^ rather than written out. 14.2 settles the chain without running
-// anything (def_chain_of), which is what puts both halves of the promise in
-// reach here: the template's fields (14.11) are what an instance carries, and
-// the keyed entries are what it reaches through the definition (14.3).
-static LhatRuntimeType *lower_def_chain(Compiler *c, const DefChain *chain)
-{
-    LhatRuntimeType *type =
-        lhat_type_rt_new(&root_of(c)->proto->chunk.heap, LHAT_TYPE_RT_TABLE);
-    if (type == NULL) {
-        return NULL;
-    }
-
-    const LhatLexer *enclosing = c->lexer;
-    const LhatNode *enclosing_scope = c->foreign_scope;
-    const char *enclosing_module = c->foreign_module;
-    for (size_t i = 0; i < chain->count; i++) {
-        // 03 の 4.3: a part read from an earlier input carries offsets into
-        // that input's text, so the lexer travels with it -- the same swap
-        // compile_def makes to read the same names.
-        c->lexer = chain->lexers[i];
-        c->foreign_scope = chain->scopes[i];
-        c->foreign_module = chain->modules[i];
-        for (const LhatNode *entry = chain->parts[i]->v.list.items;
-             entry != NULL; entry = entry->next) {
-            if (!add_shape_member(c, type, entry, false)) {
-                c->lexer = enclosing;
-                c->foreign_scope = enclosing_scope;
-                c->foreign_module = enclosing_module;
-                return NULL;
-            }
-        }
-        const LhatNode *fields = template_of(chain->parts[i]);
-        for (const LhatNode *field = fields != NULL ? fields->v.list.items : NULL;
-             field != NULL; field = field->next) {
-            if (!add_shape_member(c, type, field, true)) {
-                c->lexer = enclosing;
-                c->foreign_scope = enclosing_scope;
-                c->foreign_module = enclosing_module;
-                return NULL;
-            }
-        }
-    }
-    c->lexer = enclosing;
-                c->foreign_scope = enclosing_scope;
-                c->foreign_module = enclosing_module;
-
-    // The order rt_from_checked leaves its own structures in, so 11.3's
-    // structural comparison lines two of them up without a search.
-    lhat_type_rt_sort_members(type);
-    return type;
-}
-
-// 02 の 14.12: what a parameter was written to take, in the form the machine
-// can ask a value about. 03 の 2.1's tags are what make the question
-// answerable at all; 13.11's is^ and 3.3's relaxed checks want the same
-// descriptor.
-//
-// Anything not covered answers `any^`, which asks nothing -- a conservative
-// direction, since the checker has already refused what is statically wrong.
-// 05 の 8.9 with 08: what the checker resolved this written type to, as a
-// descriptor. The words a type is written with are what lower_type below
-// matches against the registrations, and they run out at a name bound to a
-// type or to a module ('let^ Vector3 = vector3.Vector3'). The checker
-// resolved the name properly and left what it found here (check.c's
-// chk_resolve_type), so this is where the words running out stops being the
-// end of the question.
-//
-// NULL when nothing checked, which is a compile 03 の 4.2 allows and which
-// then answers exactly as it did before.
-static LhatRuntimeType *from_checked_type(Compiler *c, const LhatNode *node)
-{
-    const LhatType *checked =
-        node != NULL ? (const LhatType *)node->checked_type : NULL;
-    return checked != NULL
-               ? lhat_rt_from_checked(&root_of(c)->proto->chunk.heap, checked)
-               : NULL;
-}
-
+// All written types have been resolved by the common semantic pass. Code
+// generation translates that result; it never interprets type syntax again.
 static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 {
-    Compiler *root = root_of(c);
-    LhatHeap *owner = &root->proto->chunk.heap;
-
     if (node == NULL) {
         return NULL;
     }
-
-    switch (node->kind) {
-        // 13.5 and 14.5: the parser leaves both as a left-leaning tree of two
-        // sides (parse_type, parse_type_intersection), so the arms are
-        // gathered by walking it rather than by reading a list. An arm that
-        // lowers to nothing takes the whole type with it: a union is only as
-        // exact as its widest arm, and one that asks nothing would make the
-        // union ask nothing while still looking like a real question.
-        case LHAT_NODE_TYPE_UNION:
-        case LHAT_NODE_TYPE_INTERSECT: {
-            LhatRuntimeType *type = lhat_type_rt_new(
-                owner, node->kind == LHAT_NODE_TYPE_UNION
-                           ? LHAT_TYPE_RT_UNION
-                           : LHAT_TYPE_RT_INTERSECT);
-            if (type == NULL) {
-                return NULL;
-            }
-            const LhatNode *sides[2] = {node->v.binary.left,
-                                        node->v.binary.right};
-            for (size_t i = 0; i < 2; i++) {
-                LhatRuntimeType *arm = lower_type(c, sides[i]);
-                if (arm == NULL || !lhat_type_rt_add_part(type, arm)) {
-                    return NULL;
-                }
-            }
-            return type;
-        }
-
-        case LHAT_NODE_TYPE_TUPLE: {
-            // 13.8改: the positions, in order, held the way a union's arms
-            // are. A position that lowers to nothing takes the tuple with it,
-            // for the reason the union above gives.
-            LhatRuntimeType *type = lhat_type_rt_new(owner, LHAT_TYPE_RT_TUPLE);
-            if (type == NULL) {
-                return NULL;
-            }
-            for (const LhatNode *item = node->v.list.items; item != NULL;
-                 item = item->next) {
-                LhatRuntimeType *position = lower_type(c, item);
-                if (position == NULL || !lhat_type_rt_add_part(type, position)) {
-                    return NULL;
-                }
-            }
-            return type;
-        }
-
-        // The section reads as a structure of its own, which is what it is --
-        // 14.7改 has a definition carry what its instances are.
-        case LHAT_NODE_SELF_TABLE:
-        case LHAT_NODE_TYPE_TABLE: {
-            // 14.10: the structure asks for at least these members.
-            LhatRuntimeType *type =
-                lhat_type_rt_new(owner, LHAT_TYPE_RT_TABLE);
-            if (type == NULL) {
-                return NULL;
-            }
-            for (const LhatNode *member = node->v.list.items; member != NULL;
-                 member = member->next) {
-                const char *name = NULL;
-                size_t length = 0;
-                if (member->v.entry.value != NULL &&
-                    member->v.entry.value->kind == LHAT_NODE_SELF_TABLE) {
-                    type->instance = lower_type(c, member->v.entry.value);
-                    continue;
-                }
-                if (member->v.entry.variadic) {
-                    type->variadic = lower_type(c, member->v.entry.value);
-                    continue;
-                }
-                if (member->v.entry.key == NULL) {
-                    uint32_t repeat = member->v.entry.repeat > 0
-                                          ? member->v.entry.repeat : 1;
-                    LhatRuntimeType *item = lower_type(c, member->v.entry.value);
-                    for (uint32_t i = 0; i < repeat; i++) {
-                        if (!lhat_type_rt_add_part(type, item)) {
-                            return NULL;
-                        }
-                    }
-                    continue;
-                }
-                if (member->v.entry.computed) {
-                    type->index_key = lower_type(c, member->v.entry.key);
-                    type->index_value = lower_type(c, member->v.entry.value);
-                    continue;
-                }
-                if (!node_name(c, member->v.entry.key, &name, &length)) {
-                    continue;
-                }
-                LhatString *text = lhat_string_new(owner, name, length);
-                if (text == NULL ||
-                    !lhat_type_rt_add_member(type, text,
-                                             lower_type(c, member->v.entry.value))) {
-                    return NULL;
-                }
-            }
-            return type;
-        }
-
-        case LHAT_NODE_MEMBER:
-        case LHAT_NODE_TYPE_NAME: {
-            // 05 の 8.9: the box under a host value type -- `T.Box^`. The
-            // path in front names the value type; the word makes it the box.
-            if (node->kind == LHAT_NODE_MEMBER) {
-                const char *last = NULL;
-                size_t last_length = 0;
-                if (node_name(c, node->v.access.argument, &last,
-                              &last_length) &&
-                    name_is(last, last_length, "Box^")) {
-                    const LhatHostValueTag *held =
-                        resolve_hostvalue_type_tag(c, node->v.access.target);
-                    if (held == NULL) {
-                        // The words did not reach the type; the checker's
-                        // answer might. Still NULL where nothing checked.
-                        return from_checked_type(c, node);
-                    }
-                    LhatRuntimeType *type =
-                        lhat_type_rt_new(owner, LHAT_TYPE_RT_HOSTVALUE_BOX);
-                    if (type != NULL) {
-                        type->hostvalue_tag = held;
-                    }
-                    return type;
-                }
-            }
-
-            // 04 の 2.7: the kinds the language declares for itself live
-            // under localerror^. Read before resolve_kind for the reason
-            // the builtin spellings are read before def_chain_of: nothing
-            // may bind a name over one of these, since there is no name to
-            // bind -- 'localerror^' is a hat word and not a binding.
-            if (node->kind == LHAT_NODE_MEMBER) {
-                const char *outer = NULL;
-                size_t outer_length = 0;
-                const char *last = NULL;
-                size_t last_length = 0;
-                if (node_name(c, node->v.access.target, &outer, &outer_length) &&
-                    name_is(outer, outer_length, "localerror^") &&
-                    node_name(c, node->v.access.argument, &last, &last_length) &&
-                    name_is(last, last_length, "CastFailure")) {
-                    const LhatErrorKind *builtin = lhat_registry_cast_failure();
-                    if (builtin == NULL) {
-                        return NULL;
-                    }
-                    LhatRuntimeType *type =
-                        lhat_type_rt_new(owner, LHAT_TYPE_RT_ERROR_KIND);
-                    if (type != NULL) {
-                        type->error_kind = builtin;
-                    }
-                    return type;
-                }
-            }
-
-            // 04 の 2.4: a kind is the object its declaration made, so a
-            // qualified name resolves to that rather than to any structure.
-            const LhatNode *unused = NULL;
-            const LhatErrorKind *kind = resolve_kind(c, node, &unused, NULL);
-            if (kind != NULL) {
-                LhatRuntimeType *type =
-                    lhat_type_rt_new(owner, LHAT_TYPE_RT_ERROR_KIND);
-                if (type != NULL) {
-                    type->error_kind = kind;
-                }
-                return type;
-            }
-
-            // 05 の 8.8: a host-registered type, which resolve_kind never
-            // answers -- it only reaches an errordef^-shaped kind. Tried
-            // after it for the same reason compile_fits tries it last:
-            // a local declaration is what a name means first.
-            const LhatHostDataTag *tag = resolve_host_type_tag(c, node);
-            if (tag != NULL) {
-                LhatRuntimeType *type =
-                    lhat_type_rt_new(owner, LHAT_TYPE_RT_HOSTDATA);
-                if (type != NULL) {
-                    type->hostdata_tag = tag;
-                }
-                return type;
-            }
-            // 05 の 8.9: a host value type, written the same qualified way.
-            const LhatHostValueTag *value_tag =
-                resolve_hostvalue_type_tag(c, node);
-            if (value_tag != NULL) {
-                LhatRuntimeType *type =
-                    lhat_type_rt_new(owner, LHAT_TYPE_RT_HOSTVALUE);
-                if (type != NULL) {
-                    type->hostvalue_tag = value_tag;
-                }
-                return type;
-            }
-
-            const char *name = NULL;
-            size_t length = 0;
-            if (!node_name(c, node, &name, &length)) {
-                // A qualified path none of the lookups above reached -- which
-                // is what a module bound to a name comes to, since they all
-                // match the registrations by the words. The checker's answer
-                // is the one thing left that knows better.
-                return from_checked_type(c, node);
-            }
-            // 13.13: the back edge of a written structure. Asking nothing
-            // there ends the walk, which is what the def^ chain below already
-            // does when a shape is written from inside itself -- a descriptor
-            // is a finite question about one value, so the recursion is where
-            // it stops rather than something to unfold.
-            if (name_is(name, length, "Self^")) {
-                return NULL;
-            }
-            LhatRuntimeTypeKind simple = LHAT_TYPE_RT_ANY;
-            // 14.8: one type, and int^/float^ are the two representations of
-            // it -- the three spellings check.c's resolve_type reads together.
-            if (name_is(name, length, "number^") || name_is(name, length, "int^") ||
-                name_is(name, length, "float^")) {
-                simple = LHAT_TYPE_RT_NUMBER;
-            } else if (name_is(name, length, "string^")) {
-                simple = LHAT_TYPE_RT_STRING;
-            } else if (name_is(name, length, "bool^")) {
-                simple = LHAT_TYPE_RT_BOOL;
-            } else if (name_is(name, length, "nil^")) {
-                simple = LHAT_TYPE_RT_NIL;
-            } else if (name_is(name, length, "error^") ||
-                       name_is(name, length, "localerror^")) {
-                // 04 の 2.7: two tops, told apart below by error_local.
-                simple = LHAT_TYPE_RT_ERROR;
-            } else if (name_is(name, length, "any^")) {
-                return NULL;  // asks nothing
-            } else {
-                // 14.9: a definition's name stands for its shape, which 14.2
-                // lets the compiler assemble without running anything.
-                DefChain chain;
-                chain.count = 0;
-                if (!def_chain_of(c, node, &chain)) {
-                    // Nothing the words reach: not a kind, not a registered
-                    // type, not a builtin, not a definition. A name bound to
-                    // one of those is exactly this case, so the checker's
-                    // answer is read before giving up.
-                    return from_checked_type(c, node);
-                }
-
-                // A definition whose shape is already being built is one of
-                // 14.15's mutually annotated pairs, or a field annotated with
-                // its own definition. Answering by name alone ends the walk
-                // where descending would not.
-                size_t room = sizeof root->lowering / sizeof root->lowering[0];
-                for (size_t i = 0; i < chain.count; i++) {
-                    for (size_t j = 0; j < root->lowering_count; j++) {
-                        if (root->lowering[j] == chain.parts[i]) {
-                            return NULL;
-                        }
-                    }
-                }
-                if (root->lowering_count + chain.count > room) {
-                    return NULL;  // nested deeper than a written shape needs
-                }
-
-                size_t mark = root->lowering_count;
-                for (size_t i = 0; i < chain.count; i++) {
-                    root->lowering[root->lowering_count++] = chain.parts[i];
-                }
-                LhatRuntimeType *shape = lower_def_chain(c, &chain);
-                root->lowering_count = mark;
-                return shape;
-            }
-            LhatRuntimeType *made = lhat_type_rt_new(owner, simple);
-            // 04 の 2.7: which of the two tops was written.
-            if (made != NULL && simple == LHAT_TYPE_RT_ERROR) {
-                made->error_local = name_is(name, length, "localerror^");
-            }
-            return made;
-        }
-
-        case LHAT_NODE_TYPE_FUNC:
-            return lhat_type_rt_new(owner, LHAT_TYPE_RT_SUBROUTINE);
-        case LHAT_NODE_TYPE_APPLY:
-            return from_checked_type(c, node);
-        // 13.9 with 15.3改: a written 'c^{ f^R -> Y -> T }' names its three
-        // slots and the kind of the body -- read each rather than leaving the
-        // bare tag alone.
-        case LHAT_NODE_TYPE_CORO: {
-            LhatRuntimeType *type =
-                lhat_type_rt_new(owner, LHAT_TYPE_RT_COROUTINE);
-            if (type == NULL) {
-                return NULL;
-            }
-            type->receive = lower_type(c, node->v.coroutine.receive);
-            type->produce = lower_type(c, node->v.coroutine.produce);
-            type->result = lower_type(c, node->v.coroutine.result);
-            type->is_function = node->v.coroutine.is_function;  // 15.3改
-            type->endless = node->v.coroutine.endless;
-            type->receive_any = node->v.coroutine.receive_any;
-            type->produce_any = node->v.coroutine.produce_any;
-            type->result_any = node->v.coroutine.result_any;
-            type->kind_any = node->v.coroutine.kind_any;
-            type->coroutine_top = type->receive_any && type->produce_any &&
-                                  type->result_any && type->kind_any;
-            return type;
-        }
-
-        default:
-            return NULL;
+    if (node->checked_type == NULL) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return NULL;
     }
+    return lhat_rt_from_checked(&root_of(c)->proto->chunk.heap, node->checked_type);
 }
 
 // ---------------------------------------------------------------------------
@@ -3760,7 +3250,7 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
             // 03 の 4.2: a compile that never checked has no settled
             // signature to read, so the written spelling is what is left.
             param_hostvalue =
-                resolve_hostvalue_type_tag(&inner, param->v.param.type);
+                hostvalue_of(param->v.param.type);
         }
         size_t param_width = param_hostvalue != NULL ? param_hostvalue->width
                                                      : 1;
@@ -3795,24 +3285,8 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
             return;
         }
         proto->parameter_types = types;
-        types[proto->parameters] = lower_type(c, param->v.param.type);
-        if (param->v.param.type == NULL && settled_type != NULL) {
-            // Nothing was written, so lower_type had nothing to read --
-            // but the checker settled what the body actually asks of this
-            // parameter (03 の 3.4's ParamVar), and `settled_type` above is
-            // already that, stepped in time with the written list. The
-            // result type does the same a few lines below and for the same
-            // reasons: reaching for it only where nothing was written
-            // leaves a compile that never checked exactly as it was
-            // (03 の 4.2), and a written any^ still wins because this
-            // fires only when the annotation is absent.
-            //
-            // 3.1③ is why this is not a guess in a unit that checked:
-            // a parameter neither written nor settled is already an error
-            // there (LHAT_CHECK_ERR_PARAM_UNDECIDED).
-            types[proto->parameters] = lhat_rt_from_checked(
-                &root_of(c)->proto->chunk.heap, settled_type);
-        }
+        types[proto->parameters] = lhat_rt_from_checked(
+            &root_of(c)->proto->chunk.heap, settled_type);
         proto->parameters++;
     }
     // 05 の 8.9: see the wide-parameter refusal inside the loop -- '...'
@@ -3849,22 +3323,11 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         inner.constructor_self = self_slot;
     }
 
-    // 02 の 14.16: kept the same way parameter_types is, for typeof^ to
-    // reconstruct the signature without touching the checker's types (03 の
-    // 4.2 -- what runs cannot depend on whether checking did).
-    proto->result_type = lower_type(c, node->v.func.return_type);
-    if (node->v.func.return_type == NULL && node->checked_type != NULL &&
-        kind != LHAT_BODY_NEW_HOOK) {
-        // Nothing was written, so lower_type had nothing to read -- but
-        // infer_func (check.c) already settled what the body actually
-        // answers (03 の 3.4). Reaching for that only when checking ran
-        // keeps compiling without it unaffected (test_vm.c does this on
-        // purpose), and an explicitly written any^ above still wins since
-        // this only fires when return_type itself is absent.
-        const LhatType *checked = (const LhatType *)node->checked_type;
-        proto->result_type = lhat_rt_from_checked(
-            &root_of(c)->proto->chunk.heap, checked->v.func.result);
-    }
+    // The resolved signature already preserves explicit any^ and inferred
+    // types alike. A constructor hook does not return the constructed value.
+    proto->result_type = kind != LHAT_BODY_NEW_HOOK && signature != NULL
+        ? lhat_rt_from_checked(&root_of(c)->proto->chunk.heap, signature->v.func.result)
+        : NULL;
 
     // 15.2, 13.9: Y and R have no written form at all -- 03 の 5.11a's
     // checked_type is the only place either can come from, written or not.
@@ -3895,29 +3358,7 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
                     ? (uint8_t)receive_width
                     : (made->v.coroutine.receive != NULL ? 1 : 0);
             proto->yield_endless = made->v.coroutine.endless;
-            // What lower_type made above can name an error kind (04 の 2.4)
-            // and what is rebuilt from a checked type cannot, so anything
-            // written is lowered from where it was written rather than
-            // rebuilt. What is taken from the written form is 13.9's three
-            // types, never the c^{ … } around them: tag_type (vm.c) puts that
-            // back, so leaving it here would wrap the coroutine twice.
-            const LhatNode *written = node->v.func.return_type;
-            if (written == NULL) {
-                proto->result_type =
-                    lhat_rt_from_checked(owner, made->v.coroutine.result);
-            } else if (written->kind == LHAT_NODE_TYPE_CORO) {
-                proto->result_type = lower_type(c, written->v.coroutine.result);
-                // Omitted R or Y is 13.9's nil^ default, which only the
-                // assembled type has -- so those two are left as they were.
-                if (written->v.coroutine.produce != NULL) {
-                    proto->yield_produce_type =
-                        lower_type(c, written->v.coroutine.produce);
-                }
-                if (written->v.coroutine.receive != NULL) {
-                    proto->yield_receive_type =
-                        lower_type(c, written->v.coroutine.receive);
-                }
-            }
+            proto->result_type = lhat_rt_from_checked(owner, made->v.coroutine.result);
         } else {
             proto->yield_produce_type =
                 lhat_rt_from_checked(owner, checked->v.func.yield_produce);
@@ -5110,7 +4551,7 @@ static void declare_names(Compiler *c, const LhatNode *statements)
             }
             if (width == 1 && target->kind == LHAT_NODE_PARAM) {
                 const LhatHostValueTag *tag =
-                    resolve_hostvalue_type_tag(c, target->v.param.type);
+                    hostvalue_of(target->v.param.type);
                 if (tag != NULL) {
                     width = tag->width;
                 }
@@ -7613,21 +7054,21 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
     return result;
 }
 
-LhatCompileResult lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
+LhatCompileResult lhat_compile(const LhatCheckResult *checked, const LhatLexer *lexer,
                                LhatProto **out)
 {
-    return compile_unit(NULL, unit, lexer, NULL, out);
+    return compile_unit(NULL, checked != NULL ? checked->unit : NULL, lexer, NULL, out);
 }
 
-LhatCompileResult lhat_compile_module(const LhatNode *unit,
+LhatCompileResult lhat_compile_module(const LhatCheckResult *checked,
                                       const LhatLexer *lexer,
                                       const LhatUnits *units, LhatProto **out)
 {
-    return compile_unit(NULL, unit, lexer, units, out);
+    return compile_unit(NULL, checked != NULL ? checked->unit : NULL, lexer, units, out);
 }
 
 LhatCompileResult lhat_compile_next(LhatCompileSession *session,
-                                    const LhatNode *unit,
+                                    const LhatCheckResult *checked,
                                     const LhatLexer *lexer, LhatProto **out)
 {
     // 05 の 8.2: the session carries the host's bindings where a file has a
@@ -7644,5 +7085,5 @@ LhatCompileResult lhat_compile_next(LhatCompileSession *session,
     units.host_error_count = session->host_error_count;
     units.host_types = session->host_types;
     units.host_type_count = session->host_type_count;
-    return compile_unit(session, unit, lexer, &units, out);
+    return compile_unit(session, checked != NULL ? checked->unit : NULL, lexer, &units, out);
 }

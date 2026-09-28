@@ -4,10 +4,20 @@
 #include "check_internal.h"
 #include "instantiation_internal.h"
 #include "message.h"
+#include "registry.h"
 
 // ---------------------------------------------------------------------------
 // Diagnostics
 // ---------------------------------------------------------------------------
+
+size_t lhat_check_error_count(const LhatCheckResult *result)
+{
+    size_t count = 0;
+    for (size_t i = 0; i < result->diagnostic_count; i++) {
+        if (result->strict || !result->diagnostics[i].relaxed_ok) count++;
+    }
+    return count;
+}
 
 void chk_report_fix(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
                     const char *name, size_t name_length,
@@ -26,6 +36,11 @@ void chk_report_fix(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
 
     LhatCheckDiagnostic *d = &r->diagnostics[r->diagnostic_count++];
     d->code = code;
+    d->relaxed_ok = code == LHAT_CHECK_ERR_ACCESS_ON_MAYBE_NIL ||
+                   code == LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL ||
+                   code == LHAT_CHECK_ERR_RESULT_UNDECIDED ||
+                   code == LHAT_CHECK_ERR_PARAM_UNDECIDED ||
+                   code == LHAT_CHECK_ERR_TYPE_UNDECIDED;
     d->offset = at->offset;
     d->line = at->line;
     d->column = at->column;
@@ -761,6 +776,7 @@ LhatType *chk_cast_failure_type(Checker *c)
                                           "localerror^.CastFailure", 23);
     if (kind != NULL) {
         kind->v.error.local = true;
+        kind->v.error.runtime_kind = lhat_registry_cast_failure();
     }
     c->cast_failure_type = kind;
     return kind;
@@ -1751,7 +1767,7 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
 
             // 2.2 gives a type to a def^ and an errordef^, and to nothing
             // else. Being in scope is not enough to be written here.
-            if (!names_a_type(declared->type)) {
+            if (declared->is_parameter || !names_a_type(declared->type)) {
                 chk_report(c, node, LHAT_CHECK_ERR_UNKNOWN_TYPE);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
@@ -1943,9 +1959,8 @@ LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
     // two kinds it gives up on: an IDENT reaching here is the qualified name
     // of a construction (04 の 2.5), written in expression position, and
     // nothing of an expression's own stamp should be written over.
-    if (node != NULL && resolved != NULL &&
-        (node->kind == LHAT_NODE_TYPE_NAME || node->kind == LHAT_NODE_MEMBER ||
-         node->kind == LHAT_NODE_TYPE_APPLY)) {
+    if (node != NULL && resolved != NULL && node->kind != LHAT_NODE_IDENT &&
+        node->kind != LHAT_NODE_HAT_IDENT) {
         ((LhatNode *)node)->checked_type = resolved;
     }
     return resolved;
@@ -3471,7 +3486,7 @@ void chk_settle_param_vars(Checker *c, ParamVar *mark)
         // stricter setting.
         if (settled != NULL && settled != pv->slot) {
             *pv->slot = *settled;
-        } else if (settled == NULL && c->strict && pv->node != NULL) {
+        } else if (settled == NULL && pv->node != NULL) {
             // 3.1③: strict leaves nothing undecided in a unit. There is no
             // demand to read this off, and no annotation either, so the
             // signature this parameter is part of has a hole in it that every
@@ -3793,7 +3808,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     memset(&checker, 0, sizeof checker);
     checker.lexer = lexer;
     checker.result = result;
-    checker.strict = strict;
+    result->strict = strict;
     checker.scope = &scope;
     if (require != NULL) {
         checker.require = *require;
@@ -3859,6 +3874,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     chk_dispose_instantiations(&checker);
     lhat_free(checker.annotation_seen);
     chk_scope_close(&checker, &scope);
+    result->unit = unit;
 }
 
 // 03 の 4.3: the names the inputs so far have bound, with their types. The
@@ -4006,6 +4022,13 @@ static void session_keep(LhatCheckSession *session, const char *name,
     session->count++;
 }
 
+void lhat_check_session_seed(LhatCheckSession *session, const char *name,
+                             size_t length)
+{
+    session_keep(session, name, length,
+                 lhat_type_simple(&session->types, LHAT_TYPE_UNKNOWN), false, NULL);
+}
+
 void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
                      const LhatLexer *lexer, bool strict,
                      LhatCheckResult *result)
@@ -4027,7 +4050,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     memset(&checker, 0, sizeof checker);
     checker.lexer = lexer;
     checker.result = result;
-    checker.strict = strict;
+    result->strict = strict;
     checker.scope = &scope;
     checker.session = true;  // 05 の 8.9: a prompt's top level, see Checker
     // 05 の 8.6: one L^ for the whole session, so what an input registers in
@@ -4098,6 +4121,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     chk_dispose_operator_carriers(&checker);
     chk_dispose_instantiations(&checker);
     chk_scope_close(&checker, &scope);
+    result->unit = unit;
 }
 
 void lhat_check(const LhatNode *unit, const LhatLexer *lexer, bool strict,
@@ -4139,7 +4163,7 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
         memset(&checker, 0, sizeof checker);
         checker.lexer = &lexer;
         checker.result = &result;
-        checker.strict = true;
+        result.strict = true;
         checker.hosted_signature = true;
         checker.scope = &scope;
         // 13.13: the owner is the structure the text is written inside.
@@ -4596,6 +4620,8 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "type arguments require an unspecialized nominal host type"},
     [LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME] = {"check.type-argument-runtime",
         "type arguments are erased at runtime; runtime type descriptors, fits^ and as^ must use the unspecialized type"},
+    [LHAT_CHECK_ERR_ACCESS_ON_MAYBE_NIL] = {"check.access-on-maybe-nil",
+        "this access may reach nil^; narrow the receiver or use optional access"},
     [LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL] = {"check.operator-on-maybe-nil",
         "this may be nil^, and nil^ answers no operator; '?\?' "
         "gives it a value, or bind it to a name and narrow that -- "

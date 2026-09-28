@@ -1995,7 +1995,10 @@ static bool register_error_kind(LhatProgram *program, const char *module,
         free_variant_arrays(variant_copies, variants, 0);
         return false;
     }
-    for (size_t i = 0; i < variant_count; i++) {
+    set->v.error.runtime_kind = group;
+    LhatTypeList *checked_kind = set->v.error.kinds;
+    for (size_t i = 0; i < variant_count; i++, checked_kind = checked_kind->next) {
+        checked_kind->type->v.error.runtime_kind = variants[i];
         variant_copies[i] = duplicate(variant_names[i]);
         if (variant_copies[i] == NULL) {
             free_variant_arrays(variant_copies, variants, i);
@@ -3074,7 +3077,7 @@ static bool compile_one(LhatProgram *program, LhatUnit *u, bool registers)
     u->referenced_count = 0;
     u->referenced_capacity = 0;
     LhatCompileResult compiled =
-        lhat_compile_module(u->parsed.root, &u->lexer, &units, &u->proto);
+        lhat_compile_module(&u->checked, &u->lexer, &units, &u->proto);
     if (compiled.status != LHAT_COMPILE_OK) {
         // Kept so the caller can say which form stopped it rather than
         // only that something did -- and which unit, since the position
@@ -4416,7 +4419,7 @@ bool lhat_unit_ok(const LhatUnit *unit)
     return unit != NULL && unit->loaded && unit->state == LHAT_UNIT_DONE &&
            unit->lexer.diagnostic_count == 0 &&
            unit->parsed.diagnostic_count == 0 &&
-           unit->checked.diagnostic_count == 0;
+           lhat_check_error_count(&unit->checked) == 0;
 }
 
 LhatCompileStatus lhat_program_compile_status(const LhatProgram *program)
@@ -4860,18 +4863,7 @@ bool lhat_unit_diagnostic_relaxed_ok(const LhatUnit *unit, size_t index)
     if (!lhat_unit_stage_of(unit, index, &stage, &within) || stage != LHAT_STAGE_CHECKER) {
         return false;
     }
-    // 03 の 3.1's three: a gap left in a result, a parameter or a binding,
-    // reaching a place with nothing else to say about it. The only codes
-    // check.c reports behind `c->strict &&` -- everything else is reported
-    // the same under both, so relaxed would not have waved it through.
-    switch (unit->checked.diagnostics[within].code) {
-        case LHAT_CHECK_ERR_RESULT_UNDECIDED:
-        case LHAT_CHECK_ERR_PARAM_UNDECIDED:
-        case LHAT_CHECK_ERR_TYPE_UNDECIDED:
-            return true;
-        default:
-            return false;
-    }
+    return unit->checked.diagnostics[within].relaxed_ok;
 }
 
 size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
@@ -4963,7 +4955,9 @@ size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
 
     LhatUnitDiagnostic d = lhat_unit_diagnostic(unit, index);
     LhatReport report;
-    report.kind = LHAT_REPORT_ERROR;
+    report.kind = unit->program != NULL && !unit->program->strict &&
+                          lhat_unit_diagnostic_relaxed_ok(unit, index)
+                      ? LHAT_REPORT_WARNING : LHAT_REPORT_ERROR;
     report.message = message;
     report.offset = d.offset;
     report.line = d.line;
@@ -5010,7 +5004,7 @@ bool lhat_program_has_errors(const LhatProgram *program)
             return true;
         }
         if (u->lexer.diagnostic_count > 0 || u->parsed.diagnostic_count > 0 ||
-            u->checked.diagnostic_count > 0) {
+            lhat_check_error_count(&u->checked) > 0) {
             return true;
         }
     }

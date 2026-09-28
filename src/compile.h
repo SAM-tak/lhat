@@ -13,6 +13,7 @@
 #include <stddef.h>
 
 #include "ast.h"
+#include "check.h"
 #include "code.h"
 #include "hosted.h"
 #include "lhat/lexer.h"
@@ -87,15 +88,18 @@ typedef struct {
 } LhatUnits;
 
 // Compiles one unit into a proto, which owns the bodies written inside it.
+// Requires a completed semantic result whose arena remains alive. Frontends
+// decide whether diagnostics permit execution before calling this low-level
+// emitter; VM tests may also emit analyzed programs with expected failures.
 // The lexer has to be the one the tree came from, since names and strings are
 // spans into it. The caller frees the proto with lhat_proto_free().
-LhatCompileResult lhat_compile(const LhatNode *unit, const LhatLexer *lexer,
+LhatCompileResult lhat_compile(const LhatCheckResult *checked, const LhatLexer *lexer,
                                LhatProto **out);
 
 // The same, as one unit of a program: `units` says where a require^ inside it
 // leads, and what path this unit registers itself under. Passing NULL is
 // lhat_compile.
-LhatCompileResult lhat_compile_module(const LhatNode *unit,
+LhatCompileResult lhat_compile_module(const LhatCheckResult *checked,
                                       const LhatLexer *lexer,
                                       const LhatUnits *units, LhatProto **out);
 
@@ -144,7 +148,7 @@ bool lhat_compile_session_seed(LhatCompileSession *session, const char *name,
 // The proto answers where the machine has to leave the stack alone, so a run
 // of it belongs to the machine the earlier inputs ran on and no other.
 LhatCompileResult lhat_compile_next(LhatCompileSession *session,
-                                    const LhatNode *unit,
+                                    const LhatCheckResult *checked,
                                     const LhatLexer *lexer, LhatProto **out);
 
 #endif  // LHAT_COMPILE_H

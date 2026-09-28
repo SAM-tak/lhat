@@ -699,7 +699,7 @@ static void test_yieldable_call(void)
         Run r;
         run_text(&r,
                  "var^ echo = p^ {\n"
-                 "    var^ got = yield^ 1\n"
+                 "    var^ got:number^ = yield^ 1\n"
                  "    yield^ got * 10\n"
                  "}\n"
                  "return^ echo\n");
@@ -715,7 +715,7 @@ static void test_yieldable_call(void)
         LhatRunResult two = lhat_machine_resume(r.machine, co, &four, 1);
         LHAT_CHECK_EQ_INT(two.status, LHAT_RUN_OK);
         LHAT_CHECK_EQ_INT(lhat_as_integer(two.value), 40);
-        LhatRunResult over = lhat_machine_resume(r.machine, co, NULL, 0);
+        LhatRunResult over = lhat_machine_resume(r.machine, co, &four, 1);
         LHAT_CHECK_EQ_INT(over.status, LHAT_RUN_OK);
         LHAT_CHECK(lhat_is_nil(over.value), "the body ended with no value");
         LHAT_CHECK(lhat_machine_coroutine_done(co), "done");

@@ -32,7 +32,8 @@ struct LhatProgram;
 
 typedef enum {
     LHAT_REPORT_ERROR,
-    LHAT_REPORT_NOTE
+    LHAT_REPORT_NOTE,
+    LHAT_REPORT_WARNING
 } LhatReportKind;
 
 // One thing to say about one place. `message` is borrowed -- every stage's

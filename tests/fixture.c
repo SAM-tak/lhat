@@ -2,6 +2,7 @@
 // is for.
 
 #include "fixture.h"
+#include <stdlib.h>
 
 // ---------------------------------------------------------------------------
 // Parse
@@ -107,29 +108,48 @@ static void run_source(Run *r, const char *text, bool interactive)
 void compile_text(Run *r, const char *text)
 {
     run_source(r, text, false);
-    r->compile_result = lhat_compile(r->parsed.root, &r->lexer, &r->proto);
+    lhat_check(r->parsed.root, &r->lexer, false, &r->checked);
+    r->compile_result = lhat_compile(&r->checked, &r->lexer, &r->proto);
     r->compiled = r->compile_result.status;
 }
 
-void compile_next_text(Run *r, LhatCompileSession *s, const char *text)
+TestSession *test_session_new(void)
+{
+    TestSession *s = malloc(sizeof *s);
+    s->checks = lhat_check_session_new();
+    s->compiles = lhat_compile_session_new();
+    return s;
+}
+
+void test_session_dispose(TestSession *s)
+{
+    lhat_compile_session_dispose(s->compiles);
+    lhat_check_session_dispose(s->checks);
+    free(s);
+}
+
+void compile_next_text(Run *r, TestSession *s, const char *text)
 {
     run_source(r, text, false);
+    lhat_check_next(s->checks, r->parsed.root, &r->lexer, false, &r->checked);
     r->compile_result =
-        lhat_compile_next(s, r->parsed.root, &r->lexer, &r->proto);
+        lhat_compile_next(s->compiles, &r->checked, &r->lexer, &r->proto);
     r->compiled = r->compile_result.status;
 }
 
-void compile_asked_text(Run *r, LhatCompileSession *s, const char *text)
+void compile_asked_text(Run *r, TestSession *s, const char *text)
 {
     run_source(r, text, true);
+    lhat_check_next(s->checks, r->parsed.root, &r->lexer, false, &r->checked);
     r->compile_result =
-        lhat_compile_next(s, r->parsed.root, &r->lexer, &r->proto);
+        lhat_compile_next(s->compiles, &r->checked, &r->lexer, &r->proto);
     r->compiled = r->compile_result.status;
 }
 
 void compiled_dispose(Run *r)
 {
     lhat_proto_free(r->proto);
+    lhat_check_result_dispose(&r->checked);
     lhat_parse_result_dispose(&r->parsed);
     lhat_lexer_dispose(&r->lexer);
     lhat_source_dispose(&r->source);
@@ -160,11 +180,9 @@ void run_checked_text(Run *r, const char *text)
 {
     run_source(r, text, false);
 
-    LhatCheckResult checked;
-    lhat_check(r->parsed.root, &r->lexer, true, &checked);
-    r->compile_result = lhat_compile(r->parsed.root, &r->lexer, &r->proto);
+    lhat_check(r->parsed.root, &r->lexer, true, &r->checked);
+    r->compile_result = lhat_compile(&r->checked, &r->lexer, &r->proto);
     r->compiled = r->compile_result.status;
-    lhat_check_result_dispose(&checked);
 
     if (r->compiled != LHAT_COMPILE_OK) {
         return;

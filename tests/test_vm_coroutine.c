@@ -76,7 +76,7 @@ static void test_coroutines(void)
     LHAT_TEST("yield^ answers what the resume sent");
     run_text(&r,
              "var^ gen = p^ {\n"
-             "  var^ got = yield^ 0\n"
+             "  var^ got:number^ = yield^ 0\n"
              "  yield^ got + 1\n"
              "}\n"
              "var^ c = gen()\n"
@@ -938,7 +938,7 @@ static void test_coroutines(void)
     LHAT_TEST("what the resume sends reaches the inner coroutine");
     run_text(&r,
              "var^ a = p^ {\n"
-             "  var^ got = yield^ 0\n"
+             "  var^ got:number^ = yield^ 0\n"
              "  return^ got + 1\n"
              "}\n"
              "var^ b = p^ { var^ r = await^ a() yield^ r }\n"

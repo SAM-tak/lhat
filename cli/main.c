@@ -760,7 +760,8 @@ static void say_check_error(const LhatProgram *program,
     }
 
     LhatReport report;
-    report.kind = LHAT_REPORT_ERROR;
+    report.kind = !program->strict && d->relaxed_ok
+                      ? LHAT_REPORT_WARNING : LHAT_REPORT_ERROR;
     report.message = text;
     report.offset = d->offset;
     report.line = d->line;
@@ -1698,27 +1699,27 @@ static int repl(bool strict)
             refused = true;
         }
 
-        LhatCheckResult checked;
+        LhatCheckResult checked = {0};
         if (!refused) {
             lhat_check_next(checks, in->parsed.root, &in->lexer, strict,
                             &checked);
             for (size_t i = 0; i < checked.diagnostic_count; i++) {
                 const LhatCheckDiagnostic *d = &checked.diagnostics[i];
                 say_check_error(&program, &in->source, "stdin", d);
-                refused = true;
+                if (strict || !d->relaxed_ok) refused = true;
             }
-            lhat_check_result_dispose(&checked);
         }
 
         if (!refused) {
             LhatCompileResult compiled = lhat_compile_next(
-                compiles, in->parsed.root, &in->lexer, &in->proto);
+                compiles, &checked, &in->lexer, &in->proto);
             if (compiled.status != LHAT_COMPILE_OK) {
                 say_compile_error(&program, &in->source, "stdin", &compiled);
                 refused = true;
             }
         }
 
+        lhat_check_result_dispose(&checked);
         if (refused) {
             // 4.3: a refused input added nothing to either session, so
             // dropping its pieces here leaves the session as it was.

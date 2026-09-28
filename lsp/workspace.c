@@ -402,17 +402,14 @@ static void recheck_one_root(LspWorkspace *ws, LspProject *project,
     if (root->checked) {
         lhat_program_dispose(&root->program);
     }
-    lhat_program_init(&root->program, true, lsp_program_load, ws);
+    bool strict = lsp_settings_strict(
+        project->settings, lsp_host_config_strict(project->host_config, true));
+    lhat_program_init(&root->program, strict, lsp_program_load, ws);
     speak(ws, &root->program);
     bind_host_names(project, &root->program);
     lhat_program_check(&root->program, root->path);
 
-    bool clean = true;
-    for (const LhatUnit *unit = root->program.units; clean && unit != NULL;
-         unit = unit->next) {
-        clean = lhat_unit_diagnostic_count(unit) == 0;
-    }
-    if (clean) {
+    if (!lhat_program_has_errors(&root->program)) {
         (void)lhat_program_compile(&root->program);
     }
     root->checked = true;

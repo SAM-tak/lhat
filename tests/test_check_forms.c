@@ -577,7 +577,7 @@ static void test_tonumber(void)
     unit_dispose(&u);
 
     check_text(&u, "var^ a : number^|nil^ = nil^.tonumber()\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ACCESS_ON_MAYBE_NIL);
     unit_dispose(&u);
 
     LHAT_TEST("and on a table it is a name like any other");
@@ -952,12 +952,12 @@ static void test_patterns(void)
 
     // 03 の 3.1: what cannot be decided statically is relaxed's to leave to
     // the run, where the arm nothing fits is a panic (compile.c's tail).
-    LHAT_TEST("relaxed leaves the missing arm to the run");
+    LHAT_TEST("relaxed also reports a missing match arm");
     check_relaxed_text(&u,
                        "var^ even = f^ n:number^ -> bool^ {\n"
                        "    for^ n % 2: when^ 0: true^ when^ 1: false^ ;\n"
                        "}\n");
-    CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
     unit_dispose(&u);
 
     // 16.2 applies to every form of for^, not only to a match.

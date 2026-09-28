@@ -64,15 +64,16 @@ void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
         return;
     }
 
-    // 03 の 3.1・3.5: strict reports a lingering gap in inference here;
-    // relaxed waves unknown^ through on purpose. 3.5 withdrew the inserted
-    // runtime check that was once meant to stand behind the waving -- what a
-    // waved-through mismatch meets now is the machine's own instruction
-    // check, which panics where it lands (04 の 11.6).
-    bool ok = c->strict ? lhat_type_conforms_strict(value, target)
-                        : lhat_type_conforms(value, target);
+    // Always report the same conformance result. A failure caused only by
+    // incomplete information is advisory under relaxed diagnostic policy.
+    bool ok = lhat_type_conforms_strict(value, target);
     if (!ok) {
+        size_t before = c->result->diagnostic_count;
         chk_report(c, at, code);
+        if (c->result->diagnostic_count > before &&
+            lhat_type_conforms(value, target)) {
+            c->result->diagnostics[before].relaxed_ok = true;
+        }
     }
     // Another view may write entries the literal did not originally contain.
     if (value != NULL && target != NULL && value != target &&
@@ -119,6 +120,22 @@ static bool nil_arm_apart(Checker *c, LhatType *type, LhatType **bare)
     }
     *bare = without;
     return true;
+}
+
+// Analyze the successful access identically in both modes, retaining a
+// diagnostic for the runtime failure path. Policy only sets its severity.
+static LhatType *access_target(Checker *c, const LhatNode *node, LhatType *type)
+{
+    LhatType *bare = NULL;
+    if (type != NULL && type->kind == LHAT_TYPE_NIL) {
+        bare = chk_simple(c, LHAT_TYPE_UNKNOWN);
+    } else if (!nil_arm_apart(c, type, &bare)) {
+        return type;
+    }
+    if (!node->v.access.nil_safe) {
+        chk_report(c, node, LHAT_CHECK_ERR_ACCESS_ON_MAYBE_NIL);
+    }
+    return bare;
 }
 
 // Return the success arms only when a union actually contains both success
@@ -1755,12 +1772,8 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 
     LhatType *callee = chk_infer(c, node->v.access.target);
     c->expected_func = NULL;
-    // 04 の 11.4: '?(' reaches through a callee that may be absent --
-    // 'f?(x)' where f is (f^…)|nil^. Relaxed steps past a nil^ arm anywhere;
-    // this is the written form that does it under strict too.
-    if (!c->strict || node->v.access.nil_safe) {
-        callee = chk_without_nil_arm(c, callee);
-    }
+    // Optional calls guard absence; ordinary calls retain a nil diagnostic.
+    callee = access_target(c, node, callee);
 
     // 03 の 3.4改4: the other place a call site is read. 3.4改 reads the one
     // immediate call; this reads a call of a let^-bound literal elsewhere in
@@ -1999,7 +2012,14 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                 // compiler may bake the arm in and let the run skip 5.11's
                 // search. Relaxed writes nothing and keeps the search, which
                 // is the only thing left there to decide the call.
-                if (c->strict && position + 1 <= UINT16_MAX) {
+                bool settled = true;
+                for (size_t i = 0; i < tracked; i++) {
+                    if (args[i] == NULL || args[i]->kind == LHAT_TYPE_UNKNOWN ||
+                        args[i]->kind == LHAT_TYPE_ANY || lhat_type_has_gap(args[i])) {
+                        settled = false;
+                    }
+                }
+                if (settled && position + 1 <= UINT16_MAX) {
                     ((LhatNode *)node)->checked_arm = (uint16_t)(position + 1);
                 }
                 // 15.1, 15.5: f^ may call only f^, whichever arm 14.12
@@ -2610,7 +2630,7 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
     // by the same rule the lookup further down applies, so that what a tool
     // offers and what an access would accept are the one answer.
     chk_record_member_site(c, node,
-                           (!c->strict || node->v.access.nil_safe)
+                           node->v.access.nil_safe
                                ? chk_without_nil_arm(c, target)
                                : target,
                            false);
@@ -2621,11 +2641,11 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
-    // 04 section 11.4: relaxed and optional access step past nil^. Do this
+    // 04 section 11.4: analyze the non-nil receiver. Do this
     // before testing for an undecided receiver: ?|nil^ becomes ?.
     // Optional access restores its nil^ arm through nil_propagated.
-    if (!c->strict || node->v.access.nil_safe) {
-        target = chk_without_nil_arm(c, target);
+    if (!builtin_named(name, length, "tostring", false)) {
+        target = access_target(c, node, target);
     }
 
     if (target == NULL || target->kind == LHAT_TYPE_UNKNOWN ||
@@ -3502,9 +3522,7 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
     }
     // 04 の 11.4: as in infer_member -- relaxed steps past a nil^
     // arm, and '?[' steps past it under strict as well.
-    if (!c->strict || node->v.access.nil_safe) {
-        over = chk_without_nil_arm(c, over);
-    }
+    over = access_target(c, node, over);
     LhatType *dictionary = dictionary_index_type(c, node, over, asked);
     if (dictionary != NULL && over->kind != LHAT_TYPE_TABLE) {
         return dictionary;
@@ -4249,7 +4267,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         //
         // A result 3.4改's expectation gave is written rather than inferred,
         // so this branch is not where it lands at all.
-        if (c->strict && lhat_type_has_gap(func->v.func.result)) {
+        if (lhat_type_has_gap(func->v.func.result)) {
             chk_report(c, node, LHAT_CHECK_ERR_RESULT_UNDECIDED);
         }
     }
@@ -6607,7 +6625,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 chain != NULL && chain->kind == LHAT_NODE_IF_EXPR
                     ? chain->v.list.items
                     : NULL;
-            if (c->strict && node->v.loop.kind == LHAT_FOR_WHEN &&
+            if (node->v.loop.kind == LHAT_FOR_WHEN &&
                 clause != NULL) {
                 bool defaulted = false;
                 bool provable = true;

@@ -67,7 +67,7 @@ bool has_error(const Unit *u, LhatCheckErrorCode code);
 #define CHECK_CLEAN(u)                                                        \
     do {                                                                      \
         LHAT_CHECK_EQ_INT(syntax_errors(u), 0);                               \
-        LHAT_CHECK_EQ_INT((u)->checked.diagnostic_count, 0);                  \
+        LHAT_CHECK_EQ_INT(lhat_check_error_count(&(u)->checked), 0);         \
     } while (0)
 
 #define CHECK_REPORTS(u, code)                                                \
@@ -93,6 +93,7 @@ typedef struct {
     LhatLexer lexer;
     LhatParseResult parsed;
     LhatProto *proto;
+    LhatCheckResult checked;
     // The status on its own, which is what most cases assert, and the whole
     // of what the compile answered beside it -- where it stopped, for the
     // cases that pin that.
@@ -107,18 +108,22 @@ typedef struct {
 // Everything up to the run, for a test driving a machine of its own.
 void compile_text(Run *r, const char *text);
 // The same, as the next input of a session (03 の 4.3).
-void compile_next_text(Run *r, LhatCompileSession *s, const char *text);
+typedef struct {
+    LhatCheckSession *checks;
+    LhatCompileSession *compiles;
+} TestSession;
+TestSession *test_session_new(void);
+void test_session_dispose(TestSession *session);
+void compile_next_text(Run *r, TestSession *s, const char *text);
 // The same again, read the way a prompt reads it (02 の 8.2), so a bare
 // expression is a statement and the last one is the answer (03 の 4.3).
-void compile_asked_text(Run *r, LhatCompileSession *s, const char *text);
+void compile_asked_text(Run *r, TestSession *s, const char *text);
 void compiled_dispose(Run *r);
 
 void run_text(Run *r, const char *text);
 void run_dispose(Run *r);
-// The same, with the checker run first. 03 の 5.11a and 5.11b read what it
-// settled off the tree, so the two paths they choose between are only both
-// reachable here -- run_text above compiles without checking on purpose,
-// which is what pins that compiling alone still works.
+// The same analysis and compilation with strict diagnostic policy. These
+// low-level VM fixtures retain diagnostics but allow runtime-failure tests.
 void run_checked_text(Run *r, const char *text);
 
 // The value a unit's return^ produced, asserted as an exact integer.

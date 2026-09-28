@@ -7,8 +7,7 @@
 //
 // It never rewrites the tree. 03 の 4.2 requires the shape of the tree and
 // the meaning at run time to be the same whatever the strictness, so the
-// setting only decides which failures are reported here rather than deferred
-// to a runtime check.
+// setting only decides diagnostic severity and whether execution may proceed.
 
 #ifndef LHAT_CHECK_H
 #define LHAT_CHECK_H
@@ -46,6 +45,7 @@ typedef enum {
                                          // provably cover the subject (only
                                          // bool^ met both ways can)
     LHAT_CHECK_ERR_NOT_CALLABLE,
+    LHAT_CHECK_ERR_ACCESS_ON_MAYBE_NIL,
     LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE, // 15.1: f^ may call only f^;
                                               // this callee is a p^
     LHAT_CHECK_ERR_ARITY,               // too few or too many arguments
@@ -361,6 +361,7 @@ typedef enum {
 
 typedef struct {
     LhatCheckErrorCode code;
+    bool relaxed_ok;  // This diagnostic is advisory under relaxed policy.
     uint32_t offset;
     uint32_t line;
     uint32_t column;
@@ -512,6 +513,8 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
 typedef struct {
     LhatTypeArena *types;
     LhatTypeArena owned;
+    const LhatNode *unit;  // Set only after the semantic pass completes.
+    bool strict;  // Diagnostic policy only; never changes inference.
 
     LhatCheckDiagnostic *diagnostics;
     size_t diagnostic_count;
@@ -557,6 +560,8 @@ typedef struct {
     // its text here until the result goes.
     struct LhatFixText *fix_texts;
 } LhatCheckResult;
+
+size_t lhat_check_error_count(const LhatCheckResult *result);
 
 #if LHAT_WITH_RESOLUTIONS
 // The resolution covering `offset`, or NULL when no name was written there.
@@ -705,6 +710,9 @@ void lhat_check_result_dispose(LhatCheckResult *result);
 typedef struct LhatCheckSession LhatCheckSession;
 
 LhatCheckSession *lhat_check_session_new(void);
+// A debugger binding whose static type is unavailable.
+void lhat_check_session_seed(LhatCheckSession *session, const char *name,
+                             size_t length);
 
 // Frees the session, the names it copied and every type in its arena. Nothing
 // read out of a result checked in it stays valid.

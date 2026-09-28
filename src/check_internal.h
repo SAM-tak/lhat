@@ -236,7 +236,6 @@ typedef struct {
     // string storage, so the lexer is what has to outlive the result.
     const LhatLexer *lexer;
     LhatCheckResult *result;
-    bool strict;
 
     // 05 の 8.3: resolving a registered host signature (lhat_type_of_text).
     // Such a type only describes what the host hands over, so the written

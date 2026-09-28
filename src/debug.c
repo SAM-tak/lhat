@@ -439,6 +439,12 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
         return false;
     }
     bool overfull = false;
+    LhatCheckSession *checks = lhat_check_session_new();
+    if (checks == NULL) {
+        lhat_compile_session_dispose(session);
+        say(error, error_capacity, "out of memory", 0);
+        return false;
+    }
     size_t captures = lhat_frame_upvalue_count(machine, level);
     size_t locals = lhat_frame_local_count(machine, level);
     for (size_t i = 0; i < captures + locals; i++) {
@@ -457,9 +463,11 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
             overfull = true;
             break;
         }
+        lhat_check_session_seed(checks, binding.name, strlen(binding.name));
         seeds[seeded++] = binding.value;
     }
     if (overfull) {
+        lhat_check_session_dispose(checks);
         lhat_compile_session_dispose(session);
         say(error, error_capacity, "too many names in scope", 0);
         return false;
@@ -469,6 +477,7 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
     LhatLexer lexer;
     LhatParseResult parsed;
     if (!lhat_source_init_from_string(&source, "<debugger>", text, length)) {
+        lhat_check_session_dispose(checks);
         lhat_compile_session_dispose(session);
         say(error, error_capacity, "out of memory", 0);
         return false;
@@ -482,10 +491,23 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
     compiled.line = parsed.diagnostic_count > 0 ? parsed.diagnostics[0].line
                                                 : 0;
     bool ok = false;
+    LhatCheckResult checked = {0};
     if (parsed.root == NULL || parsed.diagnostic_count > 0) {
         say(error, error_capacity, "the input did not parse", compiled.line);
     } else {
-        compiled = lhat_compile_next(session, parsed.root, &lexer, &proto);
+        lhat_check_next(checks, parsed.root, &lexer, false, &checked);
+        if (lhat_check_error_count(&checked) > 0) {
+            for (size_t i = 0; i < checked.diagnostic_count; i++) {
+                if (!checked.diagnostics[i].relaxed_ok) {
+                    char message[512];
+                    lhat_check_message_write(NULL, &checked.diagnostics[i], message, sizeof message);
+                    say(error, error_capacity, message, checked.diagnostics[i].line);
+                    break;
+                }
+            }
+            goto done;
+        }
+        compiled = lhat_compile_next(session, &checked, &lexer, &proto);
         if (compiled.status != LHAT_COMPILE_OK) {
             say(error, error_capacity,
                 lhat_compile_status_message(compiled.status), compiled.line);
@@ -521,6 +543,9 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
     }
 
     lhat_compile_session_dispose(session);
+done:
+    lhat_check_result_dispose(&checked);
+    lhat_check_session_dispose(checks);
     lhat_parse_result_dispose(&parsed);
     lhat_lexer_dispose(&lexer);
     lhat_source_dispose(&source);

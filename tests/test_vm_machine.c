@@ -82,7 +82,7 @@ static void test_machine(void)
     LHAT_TEST("a session carries top-level names between inputs");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run one, two, three;
         compile_next_text(&one, s, "var^ x = 40\nreturn^ x\n");
         compile_next_text(&two, s, "var^ y = 2\nreturn^ x + y\n");
@@ -91,7 +91,7 @@ static void test_machine(void)
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, two.proto).value), 42);
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 42);
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
         compiled_dispose(&one);
         compiled_dispose(&two);
         compiled_dispose(&three);
@@ -100,7 +100,7 @@ static void test_machine(void)
     LHAT_TEST("and a subroutine one input made is callable in the next");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run one, two;
         compile_next_text(
             &one, s,
@@ -112,7 +112,7 @@ static void test_machine(void)
         LHAT_CHECK(lhat_is_object_kind(r.value, LHAT_OBJECT_STRING),
                    "the subroutine survived");
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
         compiled_dispose(&one);
         compiled_dispose(&two);
     }
@@ -122,7 +122,7 @@ static void test_machine(void)
     LHAT_TEST("a name written again keeps its slot");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run turns[300];
         size_t taken = 0;
         bool all_compiled = true;
@@ -147,7 +147,7 @@ static void test_machine(void)
             compiled_dispose(&turns[i]);
         }
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
     }
 
     // 8.7 keeps a name visible before its var^ runs, and the slot still holds
@@ -155,14 +155,14 @@ static void test_machine(void)
     LHAT_TEST("and a redefinition reads what is already in it");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run one, two;
         compile_next_text(&one, s, "var^ x = 1\n");
         compile_next_text(&two, s, "var^ x = x + 10\nreturn^ x\n");
         lhat_run(m, one.proto);
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, two.proto).value), 11);
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
         compiled_dispose(&one);
         compiled_dispose(&two);
     }
@@ -173,7 +173,7 @@ static void test_machine(void)
     LHAT_TEST("an input answers with its last expression");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run one, two, three, four;
         compile_asked_text(&one, s, "2 + 3\n");
         compile_asked_text(
@@ -188,7 +188,7 @@ static void test_machine(void)
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 42);
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, four.proto).value), 8);
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
         compiled_dispose(&one);
         compiled_dispose(&two);
         compiled_dispose(&three);
@@ -200,7 +200,7 @@ static void test_machine(void)
     LHAT_TEST("and a call answering nothing does not stop the input");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run one;
         compile_asked_text(&one, s,
                            "var^ n = 0\n"
@@ -210,7 +210,7 @@ static void test_machine(void)
                            "n\n");
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, one.proto).value), 2);
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
         compiled_dispose(&one);
     }
 
@@ -220,7 +220,7 @@ static void test_machine(void)
     LHAT_TEST("a def^ from an earlier input can be composed onto");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run one, two, three;
         compile_next_text(&one, s, "var^ A = def^{ self^{ x = 1 } }\n");
         compile_next_text(&two, s,
@@ -239,7 +239,7 @@ static void test_machine(void)
         // different field and answer nil^.
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 12);
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
         compiled_dispose(&one);
         compiled_dispose(&two);
         compiled_dispose(&three);
@@ -248,7 +248,7 @@ static void test_machine(void)
     LHAT_TEST("and an errordef^ from an earlier input is still declared");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run one, two;
         compile_next_text(&one, s, "errordef^ E { Bad, Worse }\n");
         compile_next_text(&two, s,
@@ -262,7 +262,7 @@ static void test_machine(void)
         // input's lexer would not find it by name at all.
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, two.proto).value), 1);
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
         compiled_dispose(&one);
         compiled_dispose(&two);
     }
@@ -270,7 +270,7 @@ static void test_machine(void)
     LHAT_TEST("and an overload^ added in a later input is callable");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run one, two, three;
         compile_next_text(&one, s,
                           "var^ Foo = def^{ self^{}, "
@@ -286,7 +286,7 @@ static void test_machine(void)
         lhat_run(m, two.proto);
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 12);
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
         compiled_dispose(&one);
         compiled_dispose(&two);
         compiled_dispose(&three);
@@ -299,7 +299,7 @@ static void test_machine(void)
     LHAT_TEST("a ':=' inside a closure reaches a later input");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run one, two, three, four;
         compile_next_text(&one, s, "var^ a = 1\n");
         compile_next_text(&two, s,
@@ -311,7 +311,7 @@ static void test_machine(void)
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 1);
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, four.proto).value), 2);
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
         compiled_dispose(&one);
         compiled_dispose(&two);
         compiled_dispose(&three);
@@ -325,7 +325,7 @@ static void test_machine(void)
     LHAT_TEST("and writing another name over does not sever it");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run one, two, three, four;
         compile_next_text(&one, s, "var^ a = 1\nvar^ b = 2\n");
         compile_next_text(&two, s,
@@ -337,7 +337,7 @@ static void test_machine(void)
         lhat_run(m, three.proto);
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, four.proto).value), 9);
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
         compiled_dispose(&one);
         compiled_dispose(&two);
         compiled_dispose(&three);
@@ -351,7 +351,7 @@ static void test_machine(void)
     LHAT_TEST("a closure keeps what it captured when its input ended");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run one, two, three, four;
         compile_next_text(&one, s, "var^ x = 1\n");
         compile_next_text(&two, s,
@@ -363,7 +363,7 @@ static void test_machine(void)
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, three.proto).value), 2);
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(m, four.proto).value), 1);
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
         compiled_dispose(&one);
         compiled_dispose(&two);
         compiled_dispose(&three);
@@ -375,7 +375,7 @@ static void test_machine(void)
     LHAT_TEST("so redefining to another type does not reach it");
     {
         LhatMachine *m = lhat_machine_new();
-        LhatCompileSession *s = lhat_compile_session_new();
+        TestSession *s = test_session_new();
         Run one, two, three, four;
         compile_next_text(&one, s, "var^ x = 1\n");
         compile_next_text(&two, s,
@@ -389,7 +389,7 @@ static void test_machine(void)
         LHAT_CHECK_EQ_INT(r.status, LHAT_RUN_OK);
         LHAT_CHECK_EQ_INT(lhat_as_integer(r.value), 2);
         lhat_machine_dispose(m);
-        lhat_compile_session_dispose(s);
+        test_session_dispose(s);
         compiled_dispose(&one);
         compiled_dispose(&two);
         compiled_dispose(&three);

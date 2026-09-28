@@ -412,6 +412,7 @@ struct LhatType {
             const char *name;
             size_t name_length;
             LhatType *set;           // ERROR_KIND / ENUM_MEMBER only
+            const struct LhatErrorKind *runtime_kind; // Linked declaration identity.
             LhatTypeMember *fields;  // ERROR_KIND only; NULL when it declares none
             LhatTypeList *kinds;     // ERROR_SET / ENUM only
             // 02 の 19 章: the checked type of the member's declared value

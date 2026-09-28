@@ -205,11 +205,12 @@ static void put_flattened(Writer *w, const char *line, size_t length)
 }
 
 // 10 §5.1: what a report is, said ahead of its message.
-enum { REPORT_ERROR, REPORT_NOTE };
+enum { REPORT_ERROR, REPORT_NOTE, REPORT_WARNING };
 
 static const LhatMessageEntry REPORT_PARTS[] = {
     [REPORT_ERROR] = {"report.error", "error: {message}"},
     [REPORT_NOTE] = {"report.note", "note: {message}"},
+    [REPORT_WARNING] = {"report.warning", "warning: {message}"},
 };
 
 LHAT_MESSAGE_TABLES(lhat_report_message_tables,
@@ -236,6 +237,7 @@ size_t lhat_report_write(const struct LhatProgram *program,
                         : (source != NULL ? source->name : NULL);
     const LhatMessageEntry *label =
         &REPORT_PARTS[report->kind == LHAT_REPORT_NOTE ? REPORT_NOTE
+                     : report->kind == LHAT_REPORT_WARNING ? REPORT_WARNING
                                                          : REPORT_ERROR];
 
     size_t begin = 0;
