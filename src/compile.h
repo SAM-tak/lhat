@@ -44,18 +44,6 @@ typedef struct {
     // table to whoever called it and enters no registry.
     bool registers;
 
-    // 05 の 8.2: the names the host bound before anything ran, each to a
-    // member of L^ (8.6). A name no scope holds is one of these, and compiles
-    // to reading that member -- so nothing new exists at run time. 8.1 stays
-    // as it was: the language hands out no names, the host does, and a host
-    // that binds none leaves the program seeing nothing.
-    //
-    // Two arrays rather than one of pairs, so that neither this header nor
-    // check.h has to know a type the other declares.
-    const char *const *initial_names;
-    const char *const *initial_members;
-    size_t initial_count;
-
     // Host registration metadata retained with the session configuration.
     // Error construction uses the checked type's linked identity, not a
     // second lookup through this table. NULL/0 when none were registered.
@@ -98,14 +86,6 @@ typedef struct LhatCompileSession LhatCompileSession;
 
 LhatCompileSession *lhat_compile_session_new(void);
 void lhat_compile_session_dispose(LhatCompileSession *session);
-
-// 05 の 8.2: the names the host bound to members of L^, which a bare name
-// falls back on. The same two arrays LhatUnits carries for a file; a prompt
-// has no program to hold them, so the session does. They belong to the caller
-// and have to outlive it.
-void lhat_compile_session_bind(LhatCompileSession *session,
-                               const char *const *names,
-                               const char *const *members, size_t count);
 
 // 04 の 12.4 and 05 の 8.8: the other half of what LhatUnits carries for a
 // file -- the error kinds and hostdata types a host registered, so that fits^

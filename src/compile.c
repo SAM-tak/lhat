@@ -1707,29 +1707,6 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 // 02 の 14 章: the object model
 // ---------------------------------------------------------------------------
 
-// Reads a name into a register, wherever it is held. Returns false when there
-// is no such name anywhere.
-// 05 の 8.2: the member of L^ a host-bound name reaches, or NULL when the host
-// bound no such name. Read after the scopes, so a let^ of the same spelling
-// shadows it -- and nothing is placed in a scope for one, which is what keeps
-// 8.1's "the let^ in this place tell you what is here" true of the source.
-static const char *initial_binding_member(Compiler *c, const char *name,
-                                          size_t length)
-{
-    const LhatUnits *units = root_of(c)->units;
-    if (units == NULL) {
-        return NULL;
-    }
-    for (size_t i = 0; i < units->initial_count; i++) {
-        const char *bound = units->initial_names[i];
-        if (bound != NULL && strlen(bound) == length &&
-            memcmp(bound, name, length) == 0) {
-            return units->initial_members[i];
-        }
-    }
-    return NULL;
-}
-
 // Whether this name is a root an import^ bound in a body around this one.
 // Its own body's is an ordinary local and is read as one; only the step out
 // is what a capture would otherwise be.
@@ -1868,25 +1845,12 @@ static bool resolve_name(Compiler *c, const char *name, size_t length,
         return true;
     }
     // 05 の 5.3: this body was written in another unit and flattened here
-    // (14.2), so what is free in it is that unit's. Asked before the host's
-    // initial names, since those are the last resort for a name written
-    // here and this one was not.
+    // (14.2), so what is free in it is that unit's. Host initial names have
+    // already been resolved on their use nodes and never reach this path.
     if (resolve_foreign_name(c, name, length, into)) {
         return true;
     }
-    // 05 の 8.2: nothing new exists at run time for one of these -- the name
-    // compiles to reading the member of L^ the host bound it to.
-    const char *member = initial_binding_member(c, name, length);
-    if (member == NULL) {
-        return false;
-    }
-    uint8_t mark = c->next_register;
-    uint8_t key = reserve(c);
-    emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
-    load_string_bytes(c, key, member, strlen(member));
-    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
-    c->next_register = mark;
-    return true;
+    return false;
 }
 
 // A lexical use carries its declaration, independent of scope depth or name.
@@ -3194,6 +3158,7 @@ static bool binary_opcode(LhatOpKind op, LhatOpcode *out)
 // off its head wherever it sits.
 static const Local *forwardable_local(Compiler *c, const LhatNode *node)
 {
+    if (node != NULL && node->checked_host_member != NULL) return NULL;
     if (node != NULL && node->checked_binding != NULL) {
         return local_for_binding(c, node->checked_binding);
     }
@@ -3467,6 +3432,16 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
     if (node->descriptor_type != NULL) {
         load_type_constant(c, (const LhatType *)node->descriptor_type, into);
+        return;
+    }
+    if (node->checked_host_member != NULL) {
+        const LhatTypeMember *member = node->checked_host_member;
+        uint8_t mark = c->next_register;
+        uint8_t key = reserve(c);
+        emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
+        load_string_bytes(c, key, member->name, member->name_length);
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+        c->next_register = mark;
         return;
     }
     switch (node->kind) {
@@ -3935,9 +3910,8 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     return;
                 }
             }
-            // 05 の 8.2: resolve_name asks the scopes first and the host's
-            // initial bindings last, which is what lets a let^ of the same
-            // spelling shadow one.
+            // Lexical declarations use their checked identity. Special and
+            // implicit bindings still use the legacy lookup below.
             if (!(node->checked_binding != NULL
                       ? emit_binding_read(c, node, name, length, into)
                       : resolve_name(c, name, length, into))) {
@@ -6345,12 +6319,6 @@ struct LhatCompileSession {
     size_t error_count;
     size_t error_capacity;
 
-    // 05 の 8.2: the names the host bound to members of L^. A file gets these
-    // through LhatUnits; a prompt has no program to carry them.
-    const char *const *initial_names;
-    const char *const *initial_members;
-    size_t initial_count;
-
     // 04 の 12.4 and 05 の 8.8: what a host's lhat_register_error_kind and
     // lhat_register_hostdata_type registered, so that fits^ against either
     // compiles at a prompt as it does in a file. The other half of LhatUnits
@@ -6360,18 +6328,6 @@ struct LhatCompileSession {
     const LhatHostTypeEntry *host_types;
     size_t host_type_count;
 };
-
-void lhat_compile_session_bind(LhatCompileSession *session,
-                               const char *const *names,
-                               const char *const *members, size_t count)
-{
-    if (session == NULL) {
-        return;
-    }
-    session->initial_names = names;
-    session->initial_members = members;
-    session->initial_count = count;
-}
 
 void lhat_compile_session_hosted(LhatCompileSession *session,
                                  const LhatHostErrorKind *errors,
@@ -6827,16 +6783,12 @@ LhatCompileResult lhat_compile_next(LhatCompileSession *session,
                                     const LhatCheckResult *checked,
                                     const LhatLexer *lexer, LhatProto **out)
 {
-    // 05 の 8.2: the session carries the host's bindings where a file has a
-    // program to, and 8.8/04 の 12.4's registries alongside them. What is left
-    // of LhatUnits does not apply -- 5.3 gives a require^ at a prompt nowhere
+    // The session retains the remaining host registration metadata. Initial
+    // names are resolved entirely by checking. 5.3 gives require^ nowhere
     // to go, which a NULL resolver already says, and import^ needs nothing
     // here at all (compile_import_path reads L^.modules at run time).
     LhatUnits units;
     memset(&units, 0, sizeof units);
-    units.initial_names = session->initial_names;
-    units.initial_members = session->initial_members;
-    units.initial_count = session->initial_count;
     units.host_errors = session->host_errors;
     units.host_error_count = session->host_error_count;
     units.host_types = session->host_types;

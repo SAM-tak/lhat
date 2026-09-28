@@ -782,7 +782,7 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
 // host bound no such name. Nothing is added to any scope for these -- they
 // are asked for only where a scope answered nothing, which is what lets a
 // let^ of the same spelling shadow one without anything being removed.
-static LhatType *initial_binding_type(Checker *c, const char *name,
+static const LhatTypeMember *initial_binding_member(Checker *c, const char *name,
                                       size_t length)
 {
     for (size_t i = 0; i < c->require.initial_count; i++) {
@@ -797,7 +797,7 @@ static LhatType *initial_binding_type(Checker *c, const char *name,
             return NULL;
         }
         const LhatTypeMember *m = chk_find_member(env, member, strlen(member));
-        return m != NULL ? m->type : NULL;
+        return m;
     }
     return NULL;
 }
@@ -818,7 +818,7 @@ void chk_nearest_in_scope(Checker *c, ChkNearest *near)
     for (size_t i = 0; i < c->require.initial_count; i++) {
         const char *bound = c->require.initial_names[i];
         if (bound != NULL &&
-            initial_binding_type(c, bound, strlen(bound)) != NULL) {
+            initial_binding_member(c, bound, strlen(bound)) != NULL) {
             chk_nearest_offer(near, bound, strlen(bound));
         }
     }
@@ -908,6 +908,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
                          LhatType **named_type)
 {
     ((LhatNode *)node)->checked_binding = NULL;
+    ((LhatNode *)node)->checked_host_member = NULL;
     const char *name = NULL;
     size_t length = 0;
     if (!chk_node_name(c, node, &name, &length)) {
@@ -1032,15 +1033,16 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
         // every scope, so a let^ of the same spelling shadows it -- and what
         // it reaches stays readable as L^.<member>, since 8.1 keeps the hat
         // identifier out of the spellings a let^ can make.
-        LhatType *bound = initial_binding_type(c, name, length);
+        const LhatTypeMember *bound = initial_binding_member(c, name, length);
         if (bound != NULL) {
+            ((LhatNode *)node)->checked_host_member = bound;
 #if LHAT_WITH_RESOLUTIONS
             // 07 の 4 章: nothing here declared it -- the host did, in C --
             // so there is no place to point at, only the type it registered.
             // Which is the whole of what a reader meeting `print` wants.
-            chk_record_typed_resolution(c, node, bound);
+            chk_record_typed_resolution(c, node, bound->type);
 #endif
-            return bound;
+            return bound->type;
         }
         ChkNearest near;
         if (chk_nearest_start(c, &near, name, length)) {
@@ -6219,6 +6221,8 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                                  chk_node_name(c, node, &name, &length)
                              ? read_binding_from(from, name, length, &found) : NULL;
             ((LhatNode *)node)->checked_binding = NULL;
+            ((LhatNode *)node)->checked_host_member =
+                b == NULL && name != NULL ? initial_binding_member(c, name, length) : NULL;
             if (b != NULL) {
                 ((LhatNode *)node)->checked_binding = b->declaration;
                 ((LhatNode *)node)->checked_definition = b->definition;

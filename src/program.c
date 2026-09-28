@@ -3039,9 +3039,6 @@ static bool compile_one(LhatProgram *program, LhatUnit *u, bool registers)
     units.context = &resolution;
     units.module_name = u->checked.module_name;
     units.registers = registers;
-        units.initial_names = (const char *const *)program->initial_names;
-        units.initial_members = (const char *const *)program->initial_members;
-        units.initial_count = program->initial_count;  // 05 の 8.2
         units.host_errors = program->host_error_entries;  // 05 の 8.7 の誤り版
         units.host_error_count = program->host_error_entry_count;
         units.host_types = program->host_type_entries;  // 05 の 8.8 の fits^ 版
@@ -3743,10 +3740,6 @@ void lhat_program_install_compiles(const LhatProgram *program,
                                 program->host_error_entry_count,
                                 program->host_type_entries,
                                 program->host_type_entry_count);
-    lhat_compile_session_bind(session,
-                              (const char *const *)program->initial_names,
-                              (const char *const *)program->initial_members,
-                              program->initial_count);
 }
 #else
 void lhat_program_install_checks(const LhatProgram *program,

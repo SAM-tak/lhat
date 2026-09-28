@@ -12,6 +12,7 @@
 
 #include "lhat/port.h"
 #include "program_internal.h"
+#include "compile.h"
 #include "testutil.h"
 #include "lhat/value.h"
 #include "lhat/vm.h"
@@ -1491,6 +1492,36 @@ static void test_hosting(void)
         }
     }
     lhat_program_dispose(&program);
+
+    LHAT_TEST("the standalone emitter uses the resolved host member without a binding table");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "let^ apply = f^ n:number^ -> number^ {return^ twice(n)}\n"
+             "do^{let^ twice = f^ n:number^ -> number^ {return^ 1}\n"
+             "return^ apply(21) + twice(0)}\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        lhat_register_global(&program, "doubleValue", "f^number^ -> number^;", host_twice, NULL);
+        lhat_bind_initial(&program, "twice", "L^.doubleValue");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program), "the program checked");
+        LhatProto *proto = NULL;
+        if (root != NULL) {
+            LHAT_CHECK_EQ_INT(lhat_compile(&root->checked, &root->lexer, &proto).status,
+                              LHAT_COMPILE_OK);
+        }
+        if (proto != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            lhat_program_install(&program, machine);
+            LhatRunResult ran = lhat_run(machine, proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 43);
+            lhat_machine_dispose(machine);
+            lhat_proto_free(proto);
+        }
+        lhat_program_dispose(&program);
+    }
 
     // What it reaches stays readable as L^.<member>, since 8.1 keeps the hat
     // identifier out of the spellings a var^ can make.

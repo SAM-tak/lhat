@@ -314,6 +314,7 @@ static void test_execution_pipeline_parity(void)
         "let^ Base = def^{self^{x := 40}}\n"
         "let^ Derived = Base .. def^{self^{y := 2}}\n"
         "let^ d = Derived.new()\nreturn^ d.x + d.y\n",
+        "return^ twice(21)\n",
     };
     char base[512], config[512], path[512];
     LHAT_REQUIRE(make_temporary_directory(base, sizeof base), "temporary directory");
@@ -321,7 +322,13 @@ static void test_execution_pipeline_parity(void)
     join(path, sizeof path, base, "main.lh");
     for (size_t mode = 0; mode < 2; mode++) {
         bool strict = mode == 0;
-        LHAT_REQUIRE(write_file(config, strict ? "{\"strict\":true}" : "{\"strict\":false}"),
+        char configuration[512];
+        snprintf(configuration, sizeof configuration,
+            "{\"strict\":%s,\"functions\":[{\"kind\":\"global\","
+            "\"name\":\"doubleValue\",\"signature\":\"f^number^ -> number^;\"}],"
+            "\"bindings\":[{\"name\":\"twice\",\"member\":\"L^.doubleValue\"}]}",
+            strict ? "true" : "false");
+        LHAT_REQUIRE(write_file(config, configuration),
                      "write configuration");
         for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
             LHAT_TEST("workspace and execution pipeline agree on diagnostics and bindings");
@@ -337,6 +344,7 @@ static void test_execution_pipeline_parity(void)
 
             LhatProgram execution;
             lhat_program_init(&execution, strict, parity_load, (void *)sources[i]);
+            lsp_host_config_apply(project->host_config, &execution);
             const LhatUnit *a = lhat_program_check(&execution, path);
             const LhatUnit *b = editor->units;
             LHAT_REQUIRE(a != NULL && b != NULL, "both entry points checked the source");
@@ -358,6 +366,15 @@ static void test_execution_pipeline_parity(void)
                 const LhatNode *y = right.nodes[j]->checked_binding;
                 LHAT_CHECK_EQ_BOOL(left.nodes[j]->checked_definition != NULL,
                                    right.nodes[j]->checked_definition != NULL);
+                const LhatTypeMember *host_left = left.nodes[j]->checked_host_member;
+                const LhatTypeMember *host_right = right.nodes[j]->checked_host_member;
+                LHAT_CHECK_EQ_BOOL(host_left != NULL, host_right != NULL);
+                if (host_left != NULL && host_right != NULL) {
+                    LHAT_CHECK_EQ_INT(host_left->name_length, host_right->name_length);
+                    LHAT_CHECK(host_left->name_length == host_right->name_length &&
+                               memcmp(host_left->name, host_right->name, host_left->name_length) == 0,
+                               "both pipelines resolve the same host member");
+                }
                 LHAT_CHECK_EQ_BOOL(x != NULL, y != NULL);
                 if (x != NULL && y != NULL) LHAT_CHECK_EQ_INT(x->offset, y->offset);
             }

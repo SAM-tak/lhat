@@ -232,6 +232,7 @@ struct LhatNode {
     // Borrowed from the parsed trees, which outlive checking and compilation.
     const struct LhatNode *checked_binding;
     const struct LhatDefinition *checked_definition;
+    const struct LhatTypeMember *checked_host_member; // Resolved member of L^.
     // A named type used where a type^ value is expected. Keep the original
     // name/member tree for tooling; compile this occurrence as a descriptor.
     void *descriptor_type;
