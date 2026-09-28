@@ -6,6 +6,7 @@
 // to be replaced by specialised ones later.
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>  // malloc: the rendered traceback
 #include <string.h>
 
@@ -995,8 +996,57 @@ static void test_cleanups(void)
     run_dispose(&r);
 }
 
+static void test_growing_catch_jumps(void)
+{
+    for (int nested = 0; nested < 2; nested++) {
+        LHAT_TEST("hundreds of error escapes reach the attached catch clauses");
+        char source[65536];
+        size_t used = (size_t)sprintf(source,
+            "errordef^ E { Bad, Other }\n"
+            "let^ fail = f^ { return^ error^E.Bad{} }\n"
+            "var^ count = 0\nfor^ n from^ 1 to^ 300 { do^{\n");
+        for (int i = 1; i <= 300; i++) {
+            used += (size_t)sprintf(source + used,
+                nested ? "if^ n = %d { do^{ try^ fail() catch^ E.Other: count := -10000 } }\n"
+                       : "if^ n = %d { try^ fail() }\n", i);
+        }
+        (void)sprintf(source + used,
+            "count := -10000\ncatch^ E.Bad: count := count + 1\n}\n}\nreturn^ count\n");
+        Run r;
+        run_text(&r, source);
+        CHECK_INTEGER(&r, 300);
+        run_dispose(&r);
+    }
+
+    // A matched arm must skip all subsequent arms, even after the former
+    // 64-entry boundary. The catch-all makes accidental fallthrough visible.
+    for (int chosen = 0; chosen < 3; chosen++) {
+        LHAT_TEST("typed catch exits grow without falling into later clauses");
+        char source[32768];
+        size_t used = (size_t)sprintf(source, "errordef^ E {\n");
+        for (int i = 0; i < 130; i++) {
+            used += (size_t)sprintf(source + used, "K%d,\n", i);
+        }
+        int kind = chosen == 0 ? 0 : chosen == 1 ? 64 : 129;
+        used += (size_t)sprintf(source + used,
+            "}\nlet^ fail = f^ { return^ error^E.K%d{} }\n"
+            "var^ count = 0\ndo^{ try^ fail()\n", kind);
+        for (int i = 0; i < 130; i++) {
+            used += (size_t)sprintf(source + used,
+                "catch^ E.K%d: count := count + 1\n", i);
+        }
+        (void)sprintf(source + used,
+            "catch^: count := -10000\n}\nreturn^ count\n");
+        Run r;
+        run_text(&r, source);
+        CHECK_INTEGER(&r, 1);
+        run_dispose(&r);
+    }
+}
+
 int main(void)
 {
+    test_growing_catch_jumps();
     test_errors();
     test_traceback();
     test_catch_and_try();

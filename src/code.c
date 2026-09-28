@@ -28,6 +28,7 @@ static const LhatMessageEntry COMPILE_MESSAGES[] = {
     [LHAT_COMPILE_TOO_COMPLEX] = {"compile.too-complex",
         "too many registers or constants"},
     [LHAT_COMPILE_UNDEFINED] = {"compile.undefined", "no such name"},
+    [LHAT_COMPILE_OUT_OF_MEMORY] = {"compile.out-of-memory", "out of memory"},
     [LHAT_COMPILE_BREAK_TOO_FAR] = {"compile.break-too-far",
         "this break^ or next^ names more loops than there are "
         "around it"},

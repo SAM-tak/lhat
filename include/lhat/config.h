@@ -47,8 +47,6 @@
 #define LHAT_MAX_REGISTERS 250
 #define LHAT_MAX_LOCALS 200
 #define LHAT_MAX_UPVALUES 256
-// How many break^ targets a nesting of loops may leave open at once.
-#define LHAT_MAX_BREAKS 64
 // 02 の 11.7改2: how many '?' one postfix run may carry. Each is a jump that
 // stays open until the run ends, and a run is written in one line of source
 // -- 'a?.b?[i]?(x)' is three, and nothing readable goes far past that.

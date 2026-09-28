@@ -166,6 +166,58 @@ static void test_dependencies(void)
     lhat_program_dispose(&program);
 }
 
+static void test_require_inference_rewalk(void)
+{
+    static const char *const paths[] = {"sprite", "vp.sprite", "game.vp.sprite"};
+    for (size_t i = 0; i < sizeof paths / sizeof *paths; i++) {
+        for (int duplicate = 0; duplicate < 2; duplicate++) {
+            for (int forward = 0; forward < 2; forward++) {
+                LHAT_TEST("require identities survive method inference rewalks without hiding duplicates");
+                char module[256], source[2048], airborne[256];
+                snprintf(module, sizeof module,
+                         "module^ %s\npublic^ let^ value = 42\n", paths[i]);
+                snprintf(airborne, sizeof airborne,
+                         "airborne = f^self^ { return^ %s.value },\n", paths[i]);
+                snprintf(source, sizeof source,
+                         "require^\"sprite.lh\"\n%s"
+                         "let^ D = def^{\n%s"
+                         "play = f^self^ { return^ self^.airborne() },\n%s}\n"
+                         "return^ D.new().play()\n",
+                         duplicate ? "require^\"sprite.lh\"\n" : "",
+                         forward ? "" : airborne, forward ? airborne : "");
+                File files[] = {{"sprite.lh", module}, {"main.lh", source}};
+                LhatProgram program;
+                Disk disk;
+                program_with(&program, &disk, files, 2);
+                const LhatUnit *root = lhat_program_check(&program, "main.lh");
+                LHAT_CHECK(root != NULL, "the root loaded");
+                LHAT_CHECK_EQ_BOOL(lhat_program_has_errors(&program), duplicate != 0);
+                if (duplicate && root != NULL) {
+                    bool redefined = false;
+                    for (size_t d = 0; d < root->checked.diagnostic_count; d++) {
+                        if (root->checked.diagnostics[d].code == LHAT_CHECK_ERR_REDEFINED) {
+                            redefined = true;
+                        }
+                    }
+                    LHAT_CHECK(redefined, "a distinct require still reports a duplicate");
+                } else if (root != NULL && !lhat_program_has_errors(&program)) {
+                    bool compiled = lhat_program_compile(&program);
+                    LHAT_CHECK(compiled, "the forward method compiles");
+                    if (compiled) {
+                        LhatMachine *machine = lhat_machine_new();
+                        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+                        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+                        LHAT_CHECK(lhat_is_integer(ran.value) && lhat_as_integer(ran.value) == 42,
+                                   "the method reaches the required module");
+                        lhat_machine_dispose(machine);
+                    }
+                }
+                lhat_program_dispose(&program);
+            }
+        }
+    }
+}
+
 static void test_loading(void)
 {
     LhatProgram program;
@@ -5639,6 +5691,7 @@ int main(void)
     // rather than about this test running second.
     test_port();
     test_dependencies();
+    test_require_inference_rewalk();
     test_loading();
     test_cycles();
     test_diagnostics();

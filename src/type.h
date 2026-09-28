@@ -184,6 +184,10 @@ typedef struct LhatTypeMember {
     // relations do not read this.
     bool provisional;
 
+    // The require statement that installed this namespace member. Retained
+    // independently of editor resolutions so inference rewalks are idempotent.
+    const struct LhatNode *require_declaration;
+
 #if LHAT_WITH_RESOLUTIONS
     // 07 の 4 章: where this member was written, and in which unit -- 14.10
     // looks a member up in a type rather than in a scope, so nothing else

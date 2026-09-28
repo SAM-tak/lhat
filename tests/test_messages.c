@@ -94,7 +94,7 @@ static const Table TABLES[] = {
     {"run", LHAT_RUN_SUSPENDED + 1, run_id, run_message, "unknown"},
     {"program", LHAT_PROGRAM_ERR_NO_FRONTEND + 1, program_id, program_message,
      "unknown error"},
-    {"compile", LHAT_COMPILE_NOT_PUBLISHED + 1, compile_id, compile_message,
+    {"compile", LHAT_COMPILE_OUT_OF_MEMORY + 1, compile_id, compile_message,
      "unknown"},
 };
 
@@ -300,7 +300,7 @@ static void test_named(void)
     // The compiler's name has no status that is only ever said with one, so
     // every status about a name keeps a plain text and has a second.
     LHAT_TEST("a compile result's name goes into a hole");
-    for (int status = 0; status <= LHAT_COMPILE_NOT_PUBLISHED; status++) {
+    for (int status = 0; status <= LHAT_COMPILE_OUT_OF_MEMORY; status++) {
         LhatCompileResult r;
         memset(&r, 0, sizeof r);
         r.status = (LhatCompileStatus)status;

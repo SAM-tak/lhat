@@ -958,8 +958,15 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
     // One segment binds the unit to that name directly; there is no table on
     // the way to make, and 8.7 refuses a name this scope already holds.
     if (segment[length] == '\0') {
-        if (chk_scope_find_local(c->scope, segment, length) != NULL) {
-            chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, segment, length);
+        Binding *standing = chk_scope_find_local(c->scope, segment, length);
+        if (standing != NULL) {
+            if (standing->declaration == node) {
+                standing->type = exports;
+                standing->reached = true;
+                record_required_root(c, node, standing, module_name);
+            } else {
+                chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, segment, length);
+            }
             return;
         }
         Binding *only =
@@ -991,6 +998,7 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
     // is in no registry to read back, so the root is captured like any other
     // name from here on -- even if an import^ also landed on it.
     root->import_root = false;
+    root->reached = true;
     record_required_root(c, node, root, module_name);
 
     LhatType *owner = holds_members(c, node, root->type);
@@ -1002,11 +1010,16 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
         if (segment[length] == '\0') {
             // 8.7 on the last segment: two units may not claim one path.
             if (found != NULL) {
-                chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, segment, length);
+                if (found->require_declaration == node) {
+                    ((LhatTypeMember *)found)->type = exports;
+                } else {
+                    chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, segment, length);
+                }
                 return;
             }
-            lhat_type_add_member(c->result->types, owner, segment, length,
-                                 exports);
+            LhatTypeMember *member = lhat_type_add_member(
+                c->result->types, owner, segment, length, exports);
+            if (member != NULL) member->require_declaration = node;
             return;
         }
         if (found != NULL) {

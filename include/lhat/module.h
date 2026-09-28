@@ -69,7 +69,8 @@ typedef enum {
     // reachable from anywhere -- what that unit published, or an import^
     // root, both of which live under L^.modules. A name of that unit's own
     // top level is a register in a frame this body does not have.
-    LHAT_COMPILE_NOT_PUBLISHED
+    LHAT_COMPILE_NOT_PUBLISHED,
+    LHAT_COMPILE_OUT_OF_MEMORY  // allocation of compiler working storage failed
 } LhatCompileStatus;
 
 const char *lhat_compile_status_message(LhatCompileStatus status);

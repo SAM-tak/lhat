@@ -9,6 +9,7 @@
 
 #include "lhat/config.h"
 #include "lhat/port.h"
+#include "grow.h"
 // 04 の 2.7: where localerror^.CastFailure's one object lives.
 #include "registry.h"
 #include "rttype.h"
@@ -19,26 +20,30 @@
 // inside a nested block still finds.
 typedef struct LoopContext {
     struct LoopContext *enclosing;
-    size_t jumps[LHAT_MAX_BREAKS];
+    size_t *jumps;
     size_t count;
+    size_t capacity;
     // 9.11: and where a next^ lands -- the loop's own advance, which is what
     // the end of the body falls into. Kept apart from the jumps above
     // because the two are patched at different places: one past the loop,
     // one just short of the step that ends the turn.
-    size_t nexts[LHAT_MAX_BREAKS];
+    size_t *nexts;
     size_t next_count;
+    size_t next_capacity;
     size_t cleanup_depth;  // what a break^ has to drain back down to
 } LoopContext;
 
-// 04 の 4.5: the statements whose catch^ arms are being compiled. A try^ in
-// them leaves for the arms rather than for the caller, which is the same
+// 04 の 4.5: statements or a block with attached catch^ clauses (not a
+// try^ block). Error propagation in the guarded statements leaves for these
+// clauses rather than for the caller, which is the same
 // shape as break^ above -- a jump to be patched, and the cleanups opened
 // since to drain on the way. `caught` is where the error waits while the
 // arms are chosen; it^ names that register inside each of them.
 typedef struct TryContext {
     struct TryContext *enclosing;
-    size_t jumps[LHAT_MAX_BREAKS];
+    size_t *jumps;
     size_t count;
+    size_t capacity;
     size_t cleanup_depth;
     uint8_t caught;
 } TryContext;
@@ -1109,10 +1114,12 @@ static void emit_error_escape(Compiler *c, uint8_t from)
         emit(c, lhat_encode_abc(LHAT_BC_RETURN, from, 0, 0));
         return;
     }
-    if (target->count >= LHAT_MAX_BREAKS) {
-        fail(c, LHAT_COMPILE_TOO_COMPLEX);
+    if (target->count >= SIZE_MAX / sizeof *target->jumps / 2) {
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
+    LHAT_GROW(target->jumps, target->count, target->capacity, 16,
+              { fail(c, LHAT_COMPILE_OUT_OF_MEMORY); return; });
     if (target->caught != from) {
         emit(c, lhat_encode_abc(LHAT_BC_MOVE, target->caught, from, 0));
     }
@@ -4694,7 +4701,9 @@ static void compile_numeric_advance(Compiler *c, const LhatNode *node,
 static void catch_begin(Compiler *c, TryContext *context)
 {
     context->enclosing = c->trying;
+    context->jumps = NULL;
     context->count = 0;
+    context->capacity = 0;
     context->cleanup_depth = c->cleanup_depth;
     context->caught = reserve(c);
 }
@@ -4715,11 +4724,14 @@ static void compile_arms(Compiler *c, TryContext *context,
     for (size_t i = 0; i < context->count; i++) {
         lhat_chunk_patch_here(&c->proto->chunk, context->jumps[i]);
     }
+    lhat_free(context->jumps);
+    context->jumps = NULL;
 
     // 13.11's judgement, arm by arm. The bare one asks nothing, and 4.5 puts
     // it last, so what follows it is only the end.
-    size_t leaving[LHAT_MAX_BREAKS];
+    size_t *leaving = NULL;
     size_t leaving_count = 0;
+    size_t leaving_capacity = 0;
     bool bare = false;
     for (const LhatNode *arm = arms; arm != NULL; arm = arm->next) {
         size_t next = SIZE_MAX;
@@ -4734,7 +4746,10 @@ static void compile_arms(Compiler *c, TryContext *context,
         // 4.2: it^ is the error, and the register it is already in.
         size_t local_mark = c->local_count;
         Local *binding = declare_local(c, "it^", 3, caught, 1);
-        if (binding == NULL) return;
+        if (binding == NULL) {
+            lhat_free(leaving);
+            return;
+        }
         binding->declaration = arm;
         compile_statement(c, arm->v.clause.body);
         release_locals(c, local_mark);
@@ -4743,9 +4758,14 @@ static void compile_arms(Compiler *c, TryContext *context,
             bare = true;  // it takes everything left; the end is next
             break;
         }
-        if (leaving_count < LHAT_MAX_BREAKS) {
-            leaving[leaving_count++] = emit_jump(c, LHAT_BC_JUMP, 0);
+        if (leaving_count >= SIZE_MAX / sizeof *leaving / 2) {
+            fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
+            lhat_free(leaving);
+            return;
         }
+        LHAT_GROW(leaving, leaving_count, leaving_capacity, 16,
+                  { fail(c, LHAT_COMPILE_OUT_OF_MEMORY); lhat_free(leaving); return; });
+        leaving[leaving_count++] = emit_jump(c, LHAT_BC_JUMP, 0);
         lhat_chunk_patch_here(&c->proto->chunk, next);
     }
 
@@ -4758,6 +4778,7 @@ static void compile_arms(Compiler *c, TryContext *context,
     for (size_t i = 0; i < leaving_count; i++) {
         lhat_chunk_patch_here(&c->proto->chunk, leaving[i]);
     }
+    lhat_free(leaving);
     lhat_chunk_patch_here(&c->proto->chunk, no_error);
 }
 
@@ -5166,7 +5187,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         }
     }
 
-    LoopContext context;
+    LoopContext context = {0};
     context.enclosing = c->loop;
     context.count = 0;
     context.next_count = 0;
@@ -5332,6 +5353,8 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         lhat_chunk_patch_here(&c->proto->chunk, context.jumps[i]);
     }
     c->loop = context.enclosing;
+    lhat_free(context.jumps);
+    lhat_free(context.nexts);
 
     if (last != NULL) {
         size_t skip = emit_jump(c, LHAT_BC_JUMP_FALSE, entered);
@@ -5660,10 +5683,12 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 fail(c, LHAT_COMPILE_BREAK_TOO_FAR);
                 return;
             }
-            if (target->count >= LHAT_MAX_BREAKS) {
-                fail(c, LHAT_COMPILE_TOO_COMPLEX);  // 5.2's limits, not 9.8's
+            if (target->count >= SIZE_MAX / sizeof *target->jumps / 2) {
+                fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
                 return;
             }
+            LHAT_GROW(target->jumps, target->count, target->capacity, 16,
+                      { fail(c, LHAT_COMPILE_OUT_OF_MEMORY); return; });
             // 9.8: break^ is a normal end for the loop it names, so the jump
             // lands where that loop's own last^ and epilog^ run. The loops
             // it passes through are left rather than ended -- their clauses
@@ -5694,10 +5719,12 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 fail(c, LHAT_COMPILE_BREAK_TOO_FAR);
                 return;
             }
-            if (target->next_count >= LHAT_MAX_BREAKS) {
-                fail(c, LHAT_COMPILE_TOO_COMPLEX);
+            if (target->next_count >= SIZE_MAX / sizeof *target->nexts / 2) {
+                fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
                 return;
             }
+            LHAT_GROW(target->nexts, target->next_count, target->next_capacity, 16,
+                      { fail(c, LHAT_COMPILE_OUT_OF_MEMORY); return; });
             emit_cleanup_drain(c, target->cleanup_depth);
             target->nexts[target->next_count++] = emit_jump(c, LHAT_BC_JUMP, 0);
             return;

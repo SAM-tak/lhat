@@ -6,6 +6,7 @@
 // to be replaced by specialised ones later.
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "code.h"
@@ -1328,11 +1329,50 @@ static void test_patterns(void)
     run_dispose(&r);
 }
 
+static void test_growing_loop_jumps(void)
+{
+    // Execute every recorded jump, including those beyond each growth boundary.
+    // Nested forms record into either the inner loop or its enclosing loop.
+    for (int mode = 0; mode < 4; mode++) {
+        LHAT_TEST("hundreds of loop jumps grow and retain their destinations");
+        char source[32768];
+        size_t used = 0;
+        if (mode == 1) {
+            used += (size_t)sprintf(source + used, "var^ gen = p^ {\n");
+        }
+        used += (size_t)sprintf(source + used,
+            "var^ count = 0\nfor^ n from^ 1 to^ 300 {\n");
+        if (mode >= 2) {
+            used += (size_t)sprintf(source + used, "repeat^ 1 {\n");
+        }
+        const char *jump = mode == 2 ? "break^" : mode == 3 ? "next^^" : "next^";
+        for (int i = 1; i <= 300; i++) {
+            used += (size_t)sprintf(source + used,
+                "if^ n = %d { count := count + 1 %s }\n", i, jump);
+        }
+        used += (size_t)sprintf(source + used, "count := -10000\n}\n");
+        if (mode >= 2) {
+            used += (size_t)sprintf(source + used, "}\n");
+        }
+        if (mode == 1) {
+            (void)sprintf(source + used,
+                "yield^ count\n}\nvar^ c = gen()\nreturn^ c.start()\n");
+        } else {
+            (void)sprintf(source + used, "return^ count\n");
+        }
+        Run r;
+        run_text(&r, source);
+        CHECK_INTEGER(&r, 300);
+        run_dispose(&r);
+    }
+}
+
 int main(void)
 {
     test_repeat();
     test_for();
     test_loop_clauses();
     test_patterns();
+    test_growing_loop_jumps();
     return lhat_test_report("test_vm_loop");
 }
