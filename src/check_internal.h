@@ -383,6 +383,7 @@ typedef struct {
     struct ThisLink {
         LhatType *type;
         struct ThisLink *outer;
+        const LhatNode *body;
     } *this_link;
 
     // 13.13: the written type literals enclosing this point, innermost

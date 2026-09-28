@@ -315,6 +315,9 @@ static void test_execution_pipeline_parity(void)
         "let^ Derived = Base .. def^{self^{y := 2}}\n"
         "let^ d = Derived.new()\nreturn^ d.x + d.y\n",
         "return^ twice(21)\n",
+        "let^ count = f^ n:number^ -> number^ {"
+        "let^ inner = f^ -> number^ {if^ n = 0 {return^ 0}\n"
+        "return^ this^^(n - 1) + 1}\nreturn^ inner()}\nreturn^ count(42)\n",
         "for^ 40 to^ 40 {for^ 2 to^ 2 {"
         "let^ read = f^ {return^ it^^ + it^}\nreturn^ read()}}\n",
         "errordef^ E {A {n:number^}, B}\n"
@@ -372,6 +375,12 @@ static void test_execution_pipeline_parity(void)
             for (size_t j = 0; j < left.count && j < right.count; j++) {
                 const LhatNode *x = left.nodes[j]->checked_binding;
                 const LhatNode *y = right.nodes[j]->checked_binding;
+                const LhatNode *body_left = left.nodes[j]->checked_this_body;
+                const LhatNode *body_right = right.nodes[j]->checked_this_body;
+                LHAT_CHECK_EQ_BOOL(body_left != NULL, body_right != NULL);
+                if (body_left != NULL && body_right != NULL) {
+                    LHAT_CHECK_EQ_INT(body_left->offset, body_right->offset);
+                }
                 LHAT_CHECK_EQ_BOOL(left.nodes[j]->checked_definition != NULL,
                                    right.nodes[j]->checked_definition != NULL);
                 LHAT_CHECK_EQ_BOOL(left.nodes[j]->checked_import_global,

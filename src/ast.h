@@ -231,6 +231,7 @@ struct LhatNode {
     // analysis even without tool resolutions; codegen maps it to storage.
     // Borrowed from the parsed trees, which outlive checking and compilation.
     const struct LhatNode *checked_binding;
+    const struct LhatNode *checked_this_body; // Function literal named by this^/this^^.
     const struct LhatDefinition *checked_definition;
     const struct LhatTypeMember *checked_host_member; // Resolved member of L^.
     const struct LhatModuleRoot *checked_module_root;

@@ -908,6 +908,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
                          LhatType **named_type)
 {
     ((LhatNode *)node)->checked_binding = NULL;
+    ((LhatNode *)node)->checked_this_body = NULL;
     ((LhatNode *)node)->checked_host_member = NULL;
     ((LhatNode *)node)->checked_module_root = NULL;
     ((LhatNode *)node)->checked_import_global = false;
@@ -919,8 +920,8 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
 
     // 01 の 2.3: the stacked reach. this^^ walks the chain of
     // enclosing bodies; it^^/self^^/def^^ walk past inner bindings of the
-    // same name -- the same search vm.c makes, so the two agree on which
-    // binding a count lands on. The parser admits no other word here.
+    // same name. Retain the chosen identity so emission does not count the
+    // bindings or bodies again. The parser admits no other word here.
     if (node->kind == LHAT_NODE_HAT_IDENT && node->v.name.hats > 1) {
         size_t levels = node->v.name.hats - 1;
         if (chk_name_is(name, length, "this^")) {
@@ -932,6 +933,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
                 chk_report(c, node, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
+            ((LhatNode *)node)->checked_this_body = link->body;
             return link->type;
         }
         Binding *outer = chk_scope_find_skipping(c->scope, name, length, levels);
@@ -979,6 +981,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
             }
             // 03 の 3.4 counts it the same way a call by name is counted.
             c->saw_self_call = true;
+            ((LhatNode *)node)->checked_this_body = c->this_link->body;
 #if LHAT_WITH_RESOLUTIONS
             chk_record_typed_resolution(c, node, c->this_type);
 #endif
@@ -4198,7 +4201,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     c->this_type = func;
     // 15.10: the chain this^^ walks. Lives here on the C stack, exactly
     // as long as the body is being checked.
-    struct ThisLink this_link = { func, c->this_link };
+    struct ThisLink this_link = { func, c->this_link, node };
     c->this_link = &this_link;
     c->in_function = node->v.func.is_function;
     c->body_scope = &body;

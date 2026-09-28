@@ -212,6 +212,98 @@ static void test_focus_and_catch_identity(void)
     }
 }
 
+static void test_this_body_identity(void)
+{
+    static const char *const sources[] = {
+        "let^ count = f^ n:number^ -> number^ {"
+        "if^ n = 0 {return^ 0}\nreturn^ this^(n - 1) + 1}\nreturn^ count(42)\n",
+        "let^ count = f^ n:number^ -> number^ {"
+        "let^ middle = f^ -> number^ {let^ inner = f^ -> number^ {"
+        "if^ n = 0 {return^ 0}\nreturn^ this^^^(n - 1) + 1}\n"
+        "return^ inner()}\nreturn^ middle()}\nreturn^ count(42)\n",
+        // Cache two different enclosing closures and reuse the outer one.
+        "let^ outer = p^ -> (f^ -> number^;) {let^ a = this^\n"
+        "let^ middle = p^ -> (f^ -> number^;) {let^ b = this^\n"
+        "return^ f^ -> number^ {"
+        "if^ this^^ is^ b and^ this^^^ is^ a and^ this^^^ is^ a {return^ 42}\n"
+        "return^ 0}}\nreturn^ middle()}\nlet^ leaf = outer()\nreturn^ leaf()\n",
+    };
+    for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
+        LHAT_TEST(sources[i]);
+        Unit u;
+        check_text(&u, sources[i]);
+        CHECK_CLEAN(&u);
+        Nodes nodes = {0};
+        collect(&nodes, NULL, false, u.parsed.root);
+        size_t uses = 0;
+        LhatNode *use = NULL;
+        for (size_t j = 0; j < nodes.count; j++) {
+            LhatNode *node = (LhatNode *)nodes.nodes[j];
+            const char *name = NULL;
+            size_t length = 0;
+            if (node->kind != LHAT_NODE_HAT_IDENT ||
+                !lhat_node_name(node, u.lexer.source->text, u.lexer.strings,
+                                &name, &length) ||
+                length != 5 || memcmp(name, "this^", 5) != 0) continue;
+            LHAT_CHECK(node->checked_this_body != NULL &&
+                       node->checked_this_body->kind == LHAT_NODE_FUNC,
+                       "this^ identifies a checked function literal");
+            node->v.name.hats = 9;
+            use = node;
+            uses++;
+        }
+        LHAT_CHECK(uses > 0, "the case exercises body references");
+        LhatProto *proto = NULL;
+        LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                          LHAT_COMPILE_OK);
+        if (proto != NULL) {
+            LhatMachine *machine = lhat_machine_new();
+            LhatRunResult ran = lhat_run(machine, proto);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK(lhat_is_integer(ran.value), "integer result");
+            if (lhat_is_integer(ran.value)) LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+            lhat_machine_dispose(machine);
+            lhat_proto_free(proto);
+        }
+        if (use != NULL) {
+            // A target absent from the frame chain cannot fall back to the spelling.
+            use->checked_this_body = u.parsed.root;
+            use->v.name.hats = 1;
+            proto = NULL;
+            LHAT_CHECK_EQ_INT(lhat_compile(&u.checked, &u.lexer, &proto).status,
+                              LHAT_COMPILE_UNDEFINED);
+            lhat_proto_free(proto);
+        }
+        unit_dispose(&u);
+    }
+}
+
+static void test_this_body_repl_composition(void)
+{
+    LHAT_TEST("REPL composition preserves this^'s source body identity");
+    TestSession *session = test_session_new();
+    Run one, two;
+    compile_next_text(&one, session,
+        "let^ Base = def^{self^{}, count = f^self^, n:number^ -> number^ {"
+        "if^ n = 0 {return^ 0}\nreturn^ this^(self^, n - 1) + 1}}\n");
+    compile_next_text(&two, session,
+        "let^ Derived = Base .. def^{self^{}}\nreturn^ Derived.new().count(42)\n");
+    LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(two.compiled, LHAT_COMPILE_OK);
+    if (one.compiled == LHAT_COMPILE_OK && two.compiled == LHAT_COMPILE_OK) {
+        LhatMachine *machine = lhat_machine_new();
+        lhat_run(machine, one.proto);
+        LhatRunResult result = lhat_run(machine, two.proto);
+        LHAT_CHECK_EQ_INT(result.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_integer(result.value), "integer result");
+        if (lhat_is_integer(result.value)) LHAT_CHECK_EQ_INT(lhat_as_integer(result.value), 42);
+        lhat_machine_dispose(machine);
+    }
+    test_session_dispose(session);
+    compiled_dispose(&two);
+    compiled_dispose(&one);
+}
+
 static void test_error_declaration_identity(void)
 {
     Run r;
@@ -298,6 +390,8 @@ int main(void)
     test_nominal_type_lowering();
     test_binding_identity();
     test_focus_and_catch_identity();
+    test_this_body_identity();
+    test_this_body_repl_composition();
     test_error_declaration_identity();
     test_definition_origins();
     return lhat_test_report("test_pipeline");

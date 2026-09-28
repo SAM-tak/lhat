@@ -93,6 +93,7 @@ typedef struct Compiler {
     struct Compiler *parent;
     const LhatLexer *lexer;
     LhatProto *proto;
+    const LhatNode *body; // Source function whose running closure this frame holds.
     // Shared, so the first failure sticks -- and carries where it was, which
     // is what a hole in the checker has to be found by (03 の 4.2).
     LhatCompileResult *result;
@@ -104,6 +105,7 @@ typedef struct Compiler {
         const char *name;
         size_t length;
         const LhatNode *declaration;
+        const LhatNode *this_body;
         // 01 の 2.3: how many inner bindings of the name this capture
         // was resolved past -- it^^ and it^ are two different targets under
         // one spelling, so the cache tells them apart by the count. SIZE_MAX
@@ -758,28 +760,27 @@ static size_t find_upvalue(Compiler *c, const char *name, size_t length)
     return find_upvalue_skipping(c, name, length, 0);
 }
 
-// 15.10: this^^ is the subroutine enclosing the one running --
-// `levels` bodies out. No register ever holds an enclosing body's closure
+// 15.10: capture the closure of the body selected by semantic analysis.
+// No register ever holds an enclosing body's closure
 // (BC_THIS reads the running frame), so the capture is the third upvalue
 // source: at CLOSURE time the maker boxes its own closure, and the chain
-// through any intermediate bodies is the ordinary one. Cached under the
-// this^ spelling with the level for a count, beside the other captures.
-static size_t resolve_this(Compiler *c, size_t levels)
+// through any intermediate bodies is the ordinary one. Cache by body identity,
+// independently of the written hat count and intermediate generated frames.
+static size_t capture_this_body(Compiler *c, const LhatNode *body)
 {
+    if (c->parent == NULL || body == NULL) return SIZE_MAX;
     for (size_t i = 0; i < c->proto->upvalue_count; i++) {
-        if (c->upvalue_names[i].length == 5 &&
-            c->upvalue_names[i].skip == levels &&
-            memcmp(c->upvalue_names[i].name, "this^", 5) == 0) {
+        if (c->upvalue_names[i].this_body == body) {
             return i;
         }
     }
 
     size_t added;
-    if (levels == 1) {
+    if (c->parent->body == body) {
         added = lhat_proto_add_upvalue(c->proto, LHAT_UPVALUE_THIS, 0, "this^",
                                        5);
     } else {
-        size_t outer = resolve_this(c->parent, levels - 1);
+        size_t outer = capture_this_body(c->parent, body);
         if (outer == SIZE_MAX) {
             return SIZE_MAX;
         }
@@ -792,7 +793,8 @@ static size_t resolve_this(Compiler *c, size_t levels)
     }
     c->upvalue_names[added].name = "this^";
     c->upvalue_names[added].length = 5;
-    c->upvalue_names[added].skip = levels;
+    c->upvalue_names[added].skip = SIZE_MAX;
+    c->upvalue_names[added].this_body = body;
     return added;
 }
 
@@ -2796,6 +2798,8 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
     inner.proto = proto;
     inner.result = c->result;
 
+    inner.body = node;
+
     // 14.12改: a hook takes the instance under construction as its receiver,
     // the way any method does (14.4) -- the parameter is the machine's, not
     // one the body wrote, so it is laid down ahead of the written ones.
@@ -3089,6 +3093,7 @@ static bool binary_opcode(LhatOpKind op, LhatOpcode *out)
 // off its head wherever it sits.
 static const Local *forwardable_local(Compiler *c, const LhatNode *node)
 {
+    if (node != NULL && node->checked_this_body != NULL) return NULL;
     if (node != NULL && node->checked_import_global) return NULL;
     if (node != NULL && node->checked_host_member != NULL) return NULL;
     if (node != NULL && node->checked_binding != NULL) {
@@ -3364,6 +3369,19 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
     if (node->descriptor_type != NULL) {
         load_type_constant(c, (const LhatType *)node->descriptor_type, into);
+        return;
+    }
+    if (node->checked_this_body != NULL) {
+        if (node->checked_this_body == c->body) {
+            emit(c, lhat_encode_abc(LHAT_BC_THIS, into, 0, 0));
+        } else {
+            size_t upvalue = capture_this_body(c, node->checked_this_body);
+            if (upvalue == SIZE_MAX) {
+                fail(c, LHAT_COMPILE_UNDEFINED);
+                return;
+            }
+            emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into, (uint8_t)upvalue, 0));
+        }
         return;
     }
     if (node->checked_host_member != NULL) {
@@ -3769,12 +3787,8 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
-            // 01 の 2.3: a stacked reach -- it^^ the enclosing focus,
-            // self^^/def^^ the enclosing def^'s, this^^ the enclosing
-            // subroutine. The parser only lets those four through. The first
-            // three are ordinary bindings resolved past their inner shadows;
-            // this^ is an instruction rather than a binding, so its stacked
-            // form is a capture of its own (resolve_this).
+            // 01 の 2.3: checked identities handle stacked references above
+            // or below. Only self^^/def^^ still need the legacy name search.
             if (node->kind == LHAT_NODE_HAT_IDENT && node->v.name.hats > 1) {
                 if (node->checked_binding != NULL) {
                     if (!emit_binding_read(c, node, name, length, into)) {
@@ -3782,31 +3796,11 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     }
                     return;
                 }
-                if (name_is(name, length, "it^")) {
+                if (name_is(name, length, "it^") || name_is(name, length, "this^")) {
                     fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
                     return;
                 }
                 size_t levels = node->v.name.hats - 1;
-                if (name_is(name, length, "this^")) {
-                    // The body `levels` out has to exist, and be a body --
-                    // the unit's top level is not this^-able (15.10).
-                    Compiler *target = c;
-                    for (size_t i = 0; i <= levels && target != NULL; i++) {
-                        target = target->parent;
-                    }
-                    if (target == NULL) {
-                        fail(c, LHAT_COMPILE_SCOPE_TOO_FAR);
-                        return;
-                    }
-                    size_t up = resolve_this(c, levels);
-                    if (up == SIZE_MAX) {
-                        fail(c, LHAT_COMPILE_TOO_COMPLEX);
-                        return;
-                    }
-                    emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, into,
-                                            (uint8_t)up, 0));
-                    return;
-                }
                 size_t skip = levels;
                 const Local *outer = find_local_skipping(c, name, length,
                                                          &skip);
@@ -3840,15 +3834,9 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                     emit(c, lhat_encode_abc(LHAT_BC_LOADNIL, into, 0, 0));
                     return;
                 }
-                // 15.10: the subroutine running, which is how a body with no
-                // name recurses. Only the hatted spelling means it, so an
-                // ordinary name `this` stays an ordinary name.
+                // A valid this^ was emitted from checked_this_body above.
                 if (name_is(name, length, "this^")) {
-                    if (c->parent == NULL) {
-                        fail(c, LHAT_COMPILE_UNDEFINED);
-                        return;
-                    }
-                    emit(c, lhat_encode_abc(LHAT_BC_THIS, into, 0, 0));
+                    fail(c, LHAT_COMPILE_UNDEFINED);
                     return;
                 }
                 // 05 の 8.6: the machine's own table, reachable from anywhere
