@@ -1030,6 +1030,49 @@ void lsp_workspace_with_unit(LspWorkspace *ws, const char *path,
     lhat_mutex_unlock(&ws->lock);
 }
 
+// Whether `unit` was checked from what its path holds now: the loader is
+// asked again and what it answers is read the way a check reads it -- line
+// endings and a BOM normalised, a .lton wrapped -- so only a real edit makes
+// the two differ.
+static bool checked_from_now(LspWorkspace *ws, const LhatUnit *unit)
+{
+    size_t length = 0;
+    char *now = lsp_program_load(ws, unit->path, &length);
+    if (now == NULL) {
+        return false;
+    }
+    LhatSource read;
+    bool same = false;
+    if (lhat_source_init_from_string(&read, unit->path, now, length)) {
+        same = read.length == unit->source.length &&
+               memcmp(read.text, unit->source.text, read.length) == 0;
+        lhat_source_dispose(&read);
+    }
+    lhat_free(now);
+    return same;
+}
+
+typedef struct {
+    LspWorkspace *ws;
+    LspUnitSink sink;
+    void *context;
+} CurrentOnly;
+
+static void only_current(void *context, const LhatUnit *unit)
+{
+    CurrentOnly *only = (CurrentOnly *)context;
+    if (checked_from_now(only->ws, unit)) {
+        only->sink(only->context, unit);
+    }
+}
+
+void lsp_workspace_with_current_unit(LspWorkspace *ws, const char *path,
+                                     LspUnitSink sink, void *context)
+{
+    CurrentOnly only = {ws, sink, context};
+    lsp_workspace_with_unit(ws, path, only_current, &only);
+}
+
 void lsp_workspace_with_fresh_unit(LspWorkspace *ws, const char *path,
                                    LspUnitSink sink, void *context)
 {

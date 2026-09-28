@@ -153,6 +153,16 @@ typedef void (*LspUnitSink)(void *context, const LhatUnit *unit);
 void lsp_workspace_with_unit(LspWorkspace *ws, const char *path,
                              LspUnitSink sink, void *context);
 
+// The same, but only when that unit was checked from what `path` holds now.
+// The worker checks after the edits settle, so between an edit and its check
+// the unit above is the text before the edit: an answer that only reads it
+// is a little behind, but an edit made against it lands in the wrong place.
+// A request that rewrites the source (07 §6's fixes) asks through this, and
+// is handed nothing until the check has caught up -- the client asks again
+// once it has.
+void lsp_workspace_with_current_unit(LspWorkspace *ws, const char *path,
+                                     LspUnitSink sink, void *context);
+
 // The same, but checked here and now from the editor's current text rather
 // than found among the roots -- the one question that cannot wait for the
 // worker. A completion is asked on the keystroke that made the text, and the

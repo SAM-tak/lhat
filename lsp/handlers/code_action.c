@@ -1,7 +1,9 @@
 // L^ (lhat) -- LSP server: textDocument/codeAction.
 //
 // Answered from the checked unit, since a fix is the checker's or the
-// parser's to work out (07 §6) and the unit is what carries it. The client's
+// parser's to work out (07 §6) and the unit is what carries it -- and only
+// from one checked from the text the editor holds now, since a fix is an
+// edit against that text (lsp_workspace_with_current_unit). The client's
 // `context.diagnostics` is not read: what this offers comes from the same
 // check the diagnostics came from, so reading them back would only be a
 // second way to say the same thing -- and a stale one, if the file moved on.
@@ -97,7 +99,9 @@ cJSON *lsp_handle_code_action(LspServer *server, const cJSON *params)
     request.quick = lsp_code_action_wanted(only, "quickfix");
     request.all = only != NULL && lsp_code_action_wanted(only, "source.fixAll");
 
-    lsp_workspace_with_unit(&server->workspace, path, offer, &request);
+    // 07 §6: an edit made against a text the check has not caught up with
+    // lands in the wrong place, so nothing is offered until it has.
+    lsp_workspace_with_current_unit(&server->workspace, path, offer, &request);
     free(path);
     return request.actions != NULL ? request.actions : cJSON_CreateArray();
 }

@@ -193,8 +193,92 @@ static void test_nearest_project_wins_inside_each_workspace_folder(void)
     remove_directory(base);
 }
 
+static void count_unit(void *context, const LhatUnit *unit)
+{
+    (void)unit;
+    (*(int *)context)++;
+}
+
+// How many units each of the two ways hands over for `path`: the last one
+// checked, and the last one checked from what the path holds now.
+static void handed(LspWorkspace *workspace, const char *path, int *last,
+                   int *current)
+{
+    *last = 0;
+    *current = 0;
+    lsp_workspace_with_unit(workspace, path, count_unit, last);
+    lsp_workspace_with_current_unit(workspace, path, count_unit, current);
+}
+
+static void open_text(LspWorkspace *workspace, const char *path,
+                      const char *text, int version)
+{
+    size_t length = strlen(text);
+    char *copy = (char *)malloc(length + 1);
+    if (copy == NULL) {
+        return;
+    }
+    memcpy(copy, text, length + 1);
+    lsp_document_store_put(&workspace->documents, path, copy, length, version);
+}
+
+// 07 §6: a fix is an edit against the text that was checked. Between an
+// edit and the check that follows it, the unit is the text before the edit,
+// and a request that rewrites the source is handed nothing.
+static void test_current_unit(void)
+{
+    char base[512];
+    LHAT_REQUIRE(make_temporary_directory(base, sizeof base),
+                 "could not create a temporary directory");
+    char config[512];
+    char path[512];
+    join(config, sizeof config, base, "lhat-host.json");
+    LHAT_REQUIRE(write_file(config, "{}"), "could not write %s", config);
+    join(path, sizeof path, base, "main.lh");
+    LHAT_REQUIRE(write_file(path, "var^ a : t^ = { }\n"),
+                 "could not write %s", path);
+
+    const char *folders[] = {base};
+    LspWorkspace workspace;
+    lsp_workspace_init(&workspace, folders, 1);
+    lsp_workspace_discover_projects(&workspace);
+
+    int last = 0;
+    int current = 0;
+    LHAT_TEST("a unit checked from the open text is current");
+    open_text(&workspace, path, "var^ a : t^ = { }\n", 1);
+    lsp_workspace_recheck_affected(&workspace, path);
+    handed(&workspace, path, &last, &current);
+    LHAT_CHECK_EQ_INT(last, 1);
+    LHAT_CHECK_EQ_INT(current, 1);
+
+    LHAT_TEST("an edit the check has not caught up with is not");
+    open_text(&workspace, path, "\nvar^ a : t^ = { }\n", 2);
+    handed(&workspace, path, &last, &current);
+    LHAT_CHECK_EQ_INT(last, 1);
+    LHAT_CHECK_EQ_INT(current, 0);
+
+    LHAT_TEST("and is once it has");
+    lsp_workspace_recheck_affected(&workspace, path);
+    handed(&workspace, path, &last, &current);
+    LHAT_CHECK_EQ_INT(current, 1);
+
+    // The check reads CRLF as LF, so the same text with other line endings
+    // is the same text -- only an edit is a difference.
+    LHAT_TEST("line endings the check normalises are no edit");
+    open_text(&workspace, path, "\r\nvar^ a : t^ = { }\r\n", 3);
+    handed(&workspace, path, &last, &current);
+    LHAT_CHECK_EQ_INT(current, 1);
+
+    lsp_workspace_dispose(&workspace);
+    remove(path);
+    remove(config);
+    remove_directory(base);
+}
+
 int main(void)
 {
     test_nearest_project_wins_inside_each_workspace_folder();
+    test_current_unit();
     return lhat_test_report("test_workspace_projects");
 }
