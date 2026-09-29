@@ -2204,6 +2204,12 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     uint8_t callee = reserve(c);
     size_t fuse_cache = SIZE_MAX;  // 5.1改4, see below
     uint8_t fuse_receiver = 0;
+    uint16_t selected_arm = node->checked_instance != NULL
+        ? node->checked_instance->arm : node->checked_arm;
+    if (node->checked_instance != NULL && selected_arm == 0) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
 
     // 14.4: 'x.m()' hands x to a method as its self^, and 'm(x)' on the same
     // member does the same by hand. So the receiver is put in place here and
@@ -2240,7 +2246,7 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
         // is read before the arguments. '?(' needs the callee before the
         // arguments too, and PICKARM has to stand between the two, so both
         // keep the spelled-out pair.
-        bool arms_pure = node->checked_arm == 0 && !node->v.access.nil_safe;
+        bool arms_pure = selected_arm == 0 && !node->v.access.nil_safe;
         for (const LhatNode *fuse_arg = node->v.access.argument;
              arms_pure && fuse_arg != NULL; fuse_arg = fuse_arg->next) {
             if (fuse_arg->kind == LHAT_NODE_SPREAD ||
@@ -2353,9 +2359,9 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     // one. Emitted here rather than beside the callee so the one place that
     // knows the call is complete is the one place that decides -- the
     // arguments are above the callee and PICKARM touches nothing but it.
-    if (node->checked_arm != 0) {
+    if (selected_arm != 0) {
         emit(c, lhat_encode_abx(LHAT_BC_PICKARM, callee,
-                                (uint16_t)(node->checked_arm - 1)));
+                                (uint16_t)(selected_arm - 1)));
     }
     // 05 の 8.9: a call that answers a host value has the machine write the
     // whole width at the callee slot, so the frame has to be at least that
@@ -2724,6 +2730,37 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
 
 static void compile_subroutine(Compiler *c, const LhatNode *node, uint8_t into)
 {
+    if (node->v.func.is_template && node->checked_instances == NULL) {
+        load_constant(c, into, lhat_nil());
+        return;
+    }
+    if (node->checked_instances != NULL) {
+        uint8_t saved = c->next_register;
+        uint8_t table = reserve(c);
+        uint8_t key = reserve(c);
+        uint8_t value = reserve(c);
+        emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, table, 0, 0));
+        load_constant(c, key, lhat_integer(0));
+        uint16_t emitted = 0;
+        const char *name = c->pending_name;
+        size_t name_length = c->pending_name_length;
+        for (const LhatFunctionInstance *i = node->checked_instances;
+             i != NULL; i = i->next) {
+            if (i->signature == NULL || i->arm == 0) {
+                fail(c, LHAT_COMPILE_UNSUPPORTED);
+                break;
+            }
+            if (i->arm <= emitted) continue;
+            emitted = i->arm;
+            c->pending_name = name;
+            c->pending_name_length = name_length;
+            compile_subroutine_as(c, i->body, value, LHAT_BODY_ORDINARY);
+            emit(c, lhat_encode_abc(LHAT_BC_ADDOVERLOAD, table, key, value));
+        }
+        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, table, key));
+        c->next_register = saved;
+        return;
+    }
     compile_subroutine_as(c, node, into, LHAT_BODY_ORDINARY);
 }
 

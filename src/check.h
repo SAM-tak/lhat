@@ -34,6 +34,7 @@ typedef enum {
                                         // errordef^, and to nothing else
 
     LHAT_CHECK_ERR_MISMATCH,            // 13.11: the value does not fit
+    LHAT_CHECK_ERR_TEMPLATE_CONTEXT,
     LHAT_CHECK_ERR_SHAPE_REFUSED,       // 03 の 3.4改3: the body cannot
                                         // take this call's argument types
     LHAT_CHECK_ERR_NOT_NUMBER,          // unary '-' on something else. The
@@ -359,8 +360,12 @@ typedef enum {
                                         // the body
 } LhatCheckErrorCode;
 
-typedef struct {
+typedef struct LhatCheckDiagnostic {
     LhatCheckErrorCode code;
+    // A concrete-body failure is reported at its call, with the original
+    // diagnostic retained in the semantic arena for all frontends.
+    const struct LhatCheckDiagnostic *cause;
+    const char *cause_path;
     bool relaxed_ok;  // This diagnostic is advisory under relaxed policy.
     uint32_t offset;
     uint32_t line;

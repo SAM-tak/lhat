@@ -17,6 +17,88 @@ static void test_shapes_decide(void)
 {
     Unit u;
 
+    LHAT_TEST("template^ requires a function or procedure body");
+    const char *invalid[] = {
+        "let^ x = template^number^\n",
+        "let^ x = template^f^number^ -> number^;\n",
+    };
+    for (size_t k = 0; k < sizeof invalid / sizeof invalid[0]; k++) {
+        Parse p;
+        parse_text(&p, invalid[k]);
+        bool reported = false;
+        for (size_t n = 0; n < p.result.diagnostic_count; n++) {
+            if (p.result.diagnostics[n].code == LHAT_PARSE_ERR_TEMPLATE_NEEDS_BODY) reported = true;
+        }
+        LHAT_CHECK(reported, "a template modifier cannot decorate a type");
+        parse_dispose(&p);
+    }
+
+    LHAT_TEST("correlated higher-order call shapes remain independent");
+    check_text(&u,
+               "let^ apply = f^fn, x { return^ fn(x) }\n"
+               "let^ n:number^ = apply(f^x:number^ {return^x+1}, 41)\n"
+               "let^ s:string^ = apply(f^x:string^ {return^x .. \"!\"}, \"a\")\n");
+    CHECK_CLEAN(&u);
+    const LhatNode *apply = u.parsed.root->v.list.items->v.binding.values;
+    const LhatType *contract = apply->checked_type;
+    LHAT_CHECK(contract != NULL && contract->kind == LHAT_TYPE_INTERSECT,
+               "concrete signatures form an intersection");
+    LHAT_CHECK(apply->checked_instances != NULL &&
+               apply->checked_instances->next != NULL &&
+               apply->checked_instances->body != apply->checked_instances->next->body,
+               "concrete bodies have independent semantic stamps");
+    unit_dispose(&u);
+
+    LHAT_TEST("an unused template defers dependent body checks");
+    check_text(&u, "public^let^ read = template^f^x {return^x.missing()}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a refused template shape retains the body diagnostic");
+    check_text(&u,
+               "let^ read = template^f^x {return^x.missing()}\n"
+               "let^ bad = read(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SHAPE_REFUSED);
+    bool has_cause = false;
+    for (size_t k = 0; k < u.checked.diagnostic_count; k++) {
+        const LhatCheckDiagnostic *d = &u.checked.diagnostics[k];
+        if (d->code == LHAT_CHECK_ERR_SHAPE_REFUSED && d->cause != NULL) {
+            has_cause = d->cause->line == 1 && d->cause_path != NULL;
+            char message[512];
+            size_t length = lhat_check_message_write(NULL, d, message, sizeof message);
+            LHAT_CHECK(length == strlen(message) && strstr(message, "missing") != NULL,
+                       "the shared frontend message includes the failing member");
+        }
+    }
+    LHAT_CHECK(has_cause, "call-site error refers back to its body");
+    unit_dispose(&u);
+
+    LHAT_TEST("template parameter annotations remain constraints");
+    check_text(&u,
+               "let^ id = template^f^x:number^ {return^x}\n"
+               "let^ bad = id(\"s\")\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a generative definition cannot be erased to an ordinary callable");
+    check_text(&u,
+               "let^ id:f^number^ -> number^; = template^f^x {return^x}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("concrete-body nil diagnostics retain relaxed severity");
+    const char *optional =
+        "let^ read = template^f^x:t^{v:number^}|nil^ {return^x.v}\n"
+        "let^ n:number^ = read({v=1})\n";
+    check_relaxed_text(&u, optional);
+    CHECK_CLEAN(&u);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SHAPE_REFUSED);
+    unit_dispose(&u);
+    check_text(&u, optional);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_SHAPE_REFUSED);
+    LHAT_CHECK(lhat_check_error_count(&u.checked) != 0, "strict rejects the same diagnostic");
+    unit_dispose(&u);
+
     // The 24.lh specimen: an INDEX-only body demands nothing, so before
     // 3.4改4 this was two LHAT_CHECK_ERR_PARAM_UNDECIDED under strict.
     LHAT_TEST("one call shape checks the body and strict passes unannotated");

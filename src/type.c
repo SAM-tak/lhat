@@ -1,6 +1,7 @@
 // L^ (lhat) -- types: arena, construction, conformance and disjointness.
 
 #include "type.h"
+#include "ast.h"
 #include <stdio.h>
 #include "instantiation_internal.h"
 
@@ -68,6 +69,131 @@ static void *arena_alloc(LhatTypeArena *arena, size_t size)
     arena->blocks->used += aligned;
     memset(p, 0, aligned);
     return p;
+}
+
+LhatFunctionInstance *lhat_type_function_instance(LhatTypeArena *arena)
+{
+    return arena_alloc(arena, sizeof(LhatFunctionInstance));
+}
+
+void *lhat_type_semantic_alloc(LhatTypeArena *arena, size_t size)
+{
+    return arena_alloc(arena, size);
+}
+
+LhatType *lhat_type_instance_contract(LhatTypeArena *arena, LhatFunctionInstance *instances)
+{
+    LhatType *contract = NULL;
+    uint16_t count = 0;
+    for (LhatFunctionInstance *i = instances; i != NULL; i = i->next) {
+        i->arm = 0;
+        if (i->signature == NULL) continue;
+        for (const LhatFunctionInstance *prior = instances; prior != i; prior = prior->next) {
+            if (prior->signature != NULL && lhat_type_equal(prior->signature, i->signature)) {
+                i->arm = prior->arm;
+                break;
+            }
+        }
+        if (i->arm == 0) i->arm = ++count;
+        contract = contract == NULL ? i->signature
+                    : lhat_type_intersect(arena, contract, i->signature);
+    }
+    return contract;
+}
+
+static LhatNode *clone_nodes(LhatTypeArena *arena, const LhatNode *source)
+{
+    LhatNode *head = NULL;
+    LhatNode **tail = &head;
+    for (; source != NULL; source = source->next) {
+        *tail = lhat_type_clone_body(arena, source);
+        if (*tail == NULL) return NULL;
+        tail = &(*tail)->next;
+    }
+    return head;
+}
+
+LhatNode *lhat_type_clone_body(LhatTypeArena *arena, const LhatNode *source)
+{
+    if (source == NULL) return NULL;
+    LhatNode *node = arena_alloc(arena, sizeof *node);
+    if (node == NULL) return NULL;
+    node->kind = source->kind;
+    node->offset = source->offset;
+    node->end = source->end;
+    node->line = source->line;
+    node->column = source->column;
+    node->v = source->v;
+#if LHAT_WITH_COMMENTS
+    node->comments = source->comments;
+#endif
+#define COPY(field) do { \
+    node->v.field = clone_nodes(arena, source->v.field); \
+    if (source->v.field != NULL && node->v.field == NULL) return NULL; \
+} while (0)
+    switch (node->kind) {
+        case LHAT_NODE_SCOPE: COPY(scope.name); break;
+        case LHAT_NODE_INTERP_HOLE:
+            COPY(hole.value); COPY(hole.format); break;
+        case LHAT_NODE_INTERP: case LHAT_NODE_TABLE: case LHAT_NODE_DEF:
+        case LHAT_NODE_SELF_TABLE: case LHAT_NODE_IF_EXPR:
+        case LHAT_NODE_TYPE_TABLE: case LHAT_NODE_TYPE_TUPLE:
+        case LHAT_NODE_TUPLE: case LHAT_NODE_IF_STMT:
+        case LHAT_NODE_BLOCK: case LHAT_NODE_WITH:
+            COPY(list.items); COPY(list.arms); COPY(list.extra);
+            COPY(list.annotations); break;
+        case LHAT_NODE_TABLE_ENTRY: case LHAT_NODE_MEMBER_DECL:
+            COPY(entry.key); COPY(entry.type); COPY(entry.value);
+            COPY(entry.annotations); break;
+        case LHAT_NODE_ERROR_NEW: case LHAT_NODE_ERRORDEF:
+        case LHAT_NODE_ERROR_KIND: case LHAT_NODE_ENUMDEF:
+        case LHAT_NODE_ENUM_MEMBER: case LHAT_NODE_ANNOTATION:
+        case LHAT_NODE_MODULE:
+            COPY(named.name); COPY(named.members); break;
+        case LHAT_NODE_ERROR: case LHAT_NODE_TRY: case LHAT_NODE_TYPEOF:
+        case LHAT_NODE_TYPE_VALUE: case LHAT_NODE_SPREAD:
+        case LHAT_NODE_REQUIRE: case LHAT_NODE_REQUIRE_STMT:
+        case LHAT_NODE_IMPORT: case LHAT_NODE_IMPORT_STMT:
+        case LHAT_NODE_PACK: case LHAT_NODE_BOX: case LHAT_NODE_CALL_STMT:
+        case LHAT_NODE_BREAK: case LHAT_NODE_NEXT: case LHAT_NODE_PANIC:
+        case LHAT_NODE_AWAIT: case LHAT_NODE_RETURN: case LHAT_NODE_YIELD:
+            COPY(jump.value); break;
+        case LHAT_NODE_UNARY: COPY(unary.operand); break;
+        case LHAT_NODE_BINARY: case LHAT_NODE_TYPE_UNION:
+        case LHAT_NODE_TYPE_INTERSECT:
+            COPY(binary.left); COPY(binary.right); break;
+        case LHAT_NODE_COMPARE_CHAIN:
+            COPY(chain.operands); COPY(chain.operators); break;
+        case LHAT_NODE_MEMBER: case LHAT_NODE_INDEX: case LHAT_NODE_CALL:
+        case LHAT_NODE_TYPE_APPLY:
+            COPY(access.target); COPY(access.argument); break;
+        case LHAT_NODE_AS:
+            COPY(ascription.value); COPY(ascription.type); break;
+        case LHAT_NODE_FUNC: case LHAT_NODE_TYPE_FUNC:
+            COPY(func.params); COPY(func.return_type); COPY(func.body); break;
+        case LHAT_NODE_TYPE_CORO:
+            COPY(coroutine.receive); COPY(coroutine.produce);
+            COPY(coroutine.result); break;
+        case LHAT_NODE_DEFINE: case LHAT_NODE_REASSIGN:
+            COPY(binding.targets); COPY(binding.values);
+            COPY(binding.annotations); break;
+        case LHAT_NODE_FOR:
+            COPY(loop.focus); COPY(loop.bound); COPY(loop.step);
+            COPY(loop.advance); COPY(loop.body); break;
+        case LHAT_NODE_REPEAT:
+            COPY(repeat.bound); COPY(repeat.body); break;
+        case LHAT_NODE_LOOP_CLAUSE: COPY(loop_clause.body); break;
+        case LHAT_NODE_IF_CLAUSE:
+            COPY(clause.condition); COPY(clause.body); break;
+        case LHAT_NODE_PARAM:
+            COPY(param.name); COPY(param.type); COPY(param.fallback); break;
+        case LHAT_NODE_INT: case LHAT_NODE_FLOAT: case LHAT_NODE_STRING:
+        case LHAT_NODE_NAME: case LHAT_NODE_IDENT: case LHAT_NODE_HAT_IDENT:
+        case LHAT_NODE_FOCUS: case LHAT_NODE_INTERP_TEXT:
+        case LHAT_NODE_TYPE_NAME: case LHAT_NODE_KIND_COUNT: break;
+    }
+#undef COPY
+    return node;
 }
 
 LhatDefinition *lhat_definition_new(LhatTypeArena *arena, const char *module)
@@ -1450,6 +1576,13 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
     if (value->kind == LHAT_TYPE_UNKNOWN || target->kind == LHAT_TYPE_UNKNOWN ||
         value->kind == LHAT_TYPE_PENDING || target->kind == LHAT_TYPE_PENDING) {
         return true;
+    }
+
+    // A generative definition cannot be erased into an ordinary callable
+    // (or any^): that would lose the information needed to instantiate it.
+    if (value->template_definition != NULL || target->template_definition != NULL) {
+        return value->template_definition != NULL &&
+               value->template_definition == target->template_definition;
     }
 
     // 13.2: nothing inhabits "no value", so it fits nowhere a value is wanted

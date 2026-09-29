@@ -66,6 +66,7 @@ duplicate-delegate = def^ が委譲する先はひとつである。delegate^ �
 # delegate-target = delegate^ names what this def^ declares: self^.field for one of the template's, or a bare name for one of its own
 delegate-target = delegate^ はこの def^ が宣言した物を名指す。雛形のフィールドなら self^.field、自分の物なら名前をそのまま書く
 # closed-needs-body = closed^ marks a body: write closed^f^ ... or closed^p^ ...
+template-needs-body = template^ は本体に付ける印である。template^f^ ... か template^p^ ... と書く
 closed-needs-body = closed^ は本体に付ける印である。closed^f^ ... か closed^p^ ... と書く
 # catch-after-bare = a bare catch^: takes whatever is left, so nothing follows it -- write the narrower arms first
 catch-after-bare = 見出しの無い catch^: は残りすべてを受けるので、後には何も続かない。狭い選択肢を先に書く

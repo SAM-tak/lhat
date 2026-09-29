@@ -544,6 +544,7 @@ void chk_check_define(Checker *c, const LhatNode *node)
                 // callers in other units, and the calls of this one must
                 // not be what narrows it.
                 b->value_node = node->v.binding.immutable &&
+                                         annotated == NULL &&
                                         !node->v.binding.exported &&
                                         tuple == NULL && value != NULL &&
                                         value->kind == LHAT_NODE_FUNC

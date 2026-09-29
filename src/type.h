@@ -111,6 +111,13 @@ typedef enum {
 } LhatTypeKind;
 
 typedef struct LhatType LhatType;
+
+typedef struct LhatFunctionInstance {
+    struct LhatNode *body;
+    LhatType *signature;
+    uint16_t arm;
+    struct LhatFunctionInstance *next;
+} LhatFunctionInstance;
 // Compile-time definition provenance, independent of structural type equality.
 // A leaf names source syntax; a join preserves composition order. All nodes
 // live in the semantic arena; source trees and lexers are borrowed.
@@ -221,6 +228,8 @@ struct LhatType {
     // Compile-time nominal specialization. Runtime representation is unchanged.
     LhatType *specialization_base;
     LhatTypeList *specialization_arguments;
+    // A generative source definition, distinct from its concrete signatures.
+    struct LhatTemplate *template_definition;
 
     union {
         struct {
@@ -481,6 +490,14 @@ typedef struct {
     LhatTypeArenaBlock *blocks;
     size_t type_count;
 } LhatTypeArena;
+
+// Syntax copies used by concrete function bodies share source storage, but
+// never semantic stamps or declaration identities within the copied subtree.
+struct LhatNode *lhat_type_clone_body(LhatTypeArena *arena,
+                                     const struct LhatNode *node);
+LhatFunctionInstance *lhat_type_function_instance(LhatTypeArena *arena);
+LhatType *lhat_type_instance_contract(LhatTypeArena *arena, LhatFunctionInstance *instances);
+void *lhat_type_semantic_alloc(LhatTypeArena *arena, size_t size);
 
 LhatDefinition *lhat_definition_new(LhatTypeArena *arena, const char *module);
 LhatModuleRoot *lhat_module_root_new(LhatTypeArena *arena,

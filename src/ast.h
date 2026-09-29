@@ -227,6 +227,9 @@ struct LhatNode {
     // stage's; compile_subroutine (vm.c) is the reader, and casts it back.
     // NULL until checking runs, and unset entirely when it never does.
     void *checked_type;
+    // Independently checked bodies, owned by the semantic type arena.
+    struct LhatFunctionInstance *checked_instances;
+    const struct LhatFunctionInstance *checked_instance; // Selected concrete callee.
     // Stable declaration identity for lexical bindings. Written by semantic
     // analysis even without tool resolutions; codegen maps it to storage.
     // Borrowed from the parsed trees, which outlive checking and compilation.
@@ -355,6 +358,7 @@ struct LhatNode {
             // outside it. Part of the type, and written rather than read off
             // the body -- what a caller may rely on is what was promised.
             bool closed;
+            bool is_template;
             // 15.1改3: written '-> fresh^T', so what a call answers is new
             // -- nothing could reach it before the call. A promise like
             // closed^, written on the result's seat.

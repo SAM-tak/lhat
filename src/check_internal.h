@@ -191,8 +191,8 @@ typedef struct ParamVar {
 // no demands are collected and nothing is reported undecided), keeps what
 // the body settled to under this shape in `signature`, and marks `failed`
 // where the walk refused it; the call site reads both back on the next
-// round. The walk that stays -- the stamp, the binding -- is over the join
-// of the shapes, so one body serves every caller the way it always did.
+// round. Each record owns a separate concrete body; the binding retains the
+// intersection of its signatures rather than joining parameter positions.
 typedef struct Instantiation {
     const LhatNode *func;  // the literal these types were handed to
     LhatType *args[LHAT_CHECK_MAX_TRACKED_ARGS];
@@ -202,6 +202,12 @@ typedef struct Instantiation {
     // another round rather than inventing an answer.
     LhatType *signature;
     bool failed;  // the body refused these types
+    bool advisory;
+    bool checking;
+    const LhatCheckDiagnostic *failure;
+    const char *failure_path;
+    LhatFunctionInstance *concrete;
+    uint16_t arm;
     struct Instantiation *next;
 } Instantiation;
 
@@ -308,6 +314,8 @@ typedef struct {
     // are being walked right now, so the walk under one shape does not open
     // the shape loop again.
     Instantiation *instantiations;
+    struct LhatTemplate *templates;
+    size_t template_depth;
     const LhatNode *instantiating;
 
     // 02 の 13.14: inside the spelling of a type-as-value right now -- what
@@ -552,6 +560,17 @@ typedef struct {
     LhatType *yield_bound_type;  // YIELD_CTX_BOUND only; NULL means "no annotation"
 } Checker;
 
+typedef struct LhatTemplate {
+    const LhatNode *node;
+    const char *module_name;
+    Checker environment;
+    LhatType *signature;
+    Instantiation *instances;
+    struct LhatTemplate *next;
+} LhatTemplate;
+
+void chk_freeze_templates(Checker *c, const Scope *scope);
+
 
 void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code);
 
@@ -764,7 +783,7 @@ void chk_settle_param_vars(Checker *c, ParamVar *mark);
 Instantiation *chk_instantiation_add(Checker *c, const LhatNode *func,
                                      LhatType *const *args, size_t count);
 bool chk_instantiations_exist(const Checker *c, const LhatNode *func);
-void chk_dispose_instantiations(Checker *c);
+void chk_detach_instantiations(Checker *c);
 void chk_rounds_begin(Checker *c, Rounds *r, size_t count);
 bool chk_rounds_next(Checker *c, Rounds *r);
 void chk_rounds_end(Checker *c, Rounds *r);

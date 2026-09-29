@@ -1626,6 +1626,175 @@ static void check_mutable_receiver(Checker *c, const LhatNode *node,
 // with no receiver seat and no variadic tail (those two are the shapes 3.4改
 // already refuses to line up positionally). NULL for every other callee,
 // which keeps today's reading.
+static void retain_instance_failure(Checker *c, Instantiation *instance, size_t start)
+{
+    instance->failure = NULL;
+    instance->failure_path = NULL;
+    instance->advisory = true;
+    for (size_t k = start; k < c->result->diagnostic_count; k++) {
+        if (!c->result->diagnostics[k].relaxed_ok) instance->advisory = false;
+    }
+    if (c->result->diagnostic_count <= start) return;
+    LhatCheckDiagnostic *kept = lhat_type_semantic_alloc(c->result->types, sizeof *kept);
+    if (kept != NULL) {
+        *kept = c->result->diagnostics[start];
+        memset(kept->fixes, 0, sizeof kept->fixes);
+        instance->failure = kept;
+        instance->failure_path = c->lexer->source->name;
+    }
+}
+
+typedef struct {
+    Scope scope;
+    const Scope *source;
+} TemplateScope;
+
+static Scope *template_scope(Checker *c, const Scope *source)
+{
+    if (source == NULL) return NULL;
+    TemplateScope *kept_scope = lhat_type_semantic_alloc(c->result->types, sizeof *kept_scope);
+    if (kept_scope == NULL) return NULL;
+    kept_scope->source = source;
+    Scope *copy = &kept_scope->scope;
+    *copy = *source;
+    copy->parent = template_scope(c, source->parent);
+    copy->bindings = copy->tail = NULL;
+    for (const Binding *b = source->bindings; b != NULL; b = b->next) {
+        Binding *kept = lhat_type_semantic_alloc(c->result->types, sizeof *kept);
+        if (kept == NULL) return NULL;
+        *kept = *b;
+        kept->next = NULL;
+        if (copy->tail != NULL) copy->tail->next = kept;
+        else copy->bindings = kept;
+        copy->tail = kept;
+    }
+    return copy;
+}
+
+void chk_freeze_templates(Checker *c, const Scope *scope)
+{
+    for (LhatTemplate *t = c->templates; t != NULL; t = t->next) {
+        for (Scope *kept = t->environment.scope; kept != NULL; kept = kept->parent) {
+            TemplateScope *snapshot = (TemplateScope *)kept;
+            if (snapshot->source != scope) continue;
+            Scope *final = template_scope(c, scope);
+            if (final == NULL) continue;
+            // The initializer's own binding stays hidden, including when
+            // its deferred body is instantiated after the scope has closed.
+            for (const Binding *old = kept->bindings; old != NULL; old = old->next) {
+                if (!old->being_defined) continue;
+                for (Binding *b = final->bindings; b != NULL; b = b->next) {
+                    if (b->declaration == old->declaration) b->being_defined = true;
+                }
+            }
+            kept->bindings = final->bindings;
+            kept->tail = final->tail;
+            snapshot->source = NULL;
+        }
+    }
+}
+
+static LhatType *infer_template(Checker *c, const LhatNode *node)
+{
+    if (c->session) chk_report(c, node, LHAT_CHECK_ERR_TEMPLATE_CONTEXT);
+    LhatTemplate *definition = c->templates;
+    while (definition != NULL && definition->node != node) definition = definition->next;
+    if (definition == NULL) {
+        definition = lhat_type_semantic_alloc(c->result->types, sizeof *definition);
+        if (definition == NULL) return chk_simple(c, LHAT_TYPE_UNKNOWN);
+        definition->node = node;
+        definition->next = c->templates;
+        c->templates = definition;
+        ((LhatNode *)node)->checked_instances = NULL;
+    }
+    Checker *saved = &definition->environment;
+    LhatTemplate *nested = saved->templates;
+    memset(saved, 0, sizeof *saved);
+    saved->templates = nested;
+    saved->lexer = c->lexer;
+    saved->unit = c->unit;
+    definition->module_name = c->result->module_name;
+    saved->require = c->require;
+    saved->scope = template_scope(c, c->scope);
+    saved->environment = c->environment;
+    saved->typeinfo_type = c->typeinfo_type;
+    saved->cast_failure_type = c->cast_failure_type;
+    saved->deferred = c->deferred;
+    struct ThisLink **this_tail = &saved->this_link;
+    for (const struct ThisLink *link = c->this_link; link != NULL; link = link->outer) {
+        *this_tail = lhat_type_semantic_alloc(c->result->types, sizeof **this_tail);
+        if (*this_tail == NULL) break;
+        **this_tail = *link;
+        this_tail = &(*this_tail)->outer;
+        *this_tail = NULL;
+    }
+    struct SelfLink **self_tail = &saved->self_link;
+    for (const struct SelfLink *link = c->self_link; link != NULL; link = link->outer) {
+        *self_tail = lhat_type_semantic_alloc(c->result->types, sizeof **self_tail);
+        if (*self_tail == NULL) break;
+        **self_tail = *link;
+        self_tail = &(*self_tail)->outer;
+        *self_tail = NULL;
+    }
+    LhatType *signature = lhat_type_func(c->result->types, node->v.func.is_function);
+    for (const LhatNode *p = node->v.func.params; p != NULL; p = p->next) {
+        if (p->v.param.variadic || chk_self_marker_at(c, node->v.func.params, p) != 0) {
+            chk_report(c, p, LHAT_CHECK_ERR_TEMPLATE_CONTEXT);
+        }
+        LhatType *type = p->v.param.type != NULL
+                            ? chk_resolve_type(c, p->v.param.type)
+                            : chk_simple(c, LHAT_TYPE_PENDING);
+        lhat_type_add_param(c->result->types, signature, type);
+    }
+    if (node->v.func.return_type != NULL) {
+        c->tuple_allowed = true;
+        signature->v.func.result = chk_resolve_type(c, node->v.func.return_type);
+    } else {
+        signature->v.func.result = chk_simple(c, LHAT_TYPE_PENDING);
+    }
+    signature->template_definition = definition;
+    definition->signature = signature;
+    ((LhatNode *)node)->checked_type = signature;
+    return signature;
+}
+
+static Instantiation *instantiate_template(Checker *c, LhatTemplate *definition,
+                                          LhatType *const *args, size_t count)
+{
+    // Expanding recursive type shapes must not exhaust the native stack.
+    if (c->template_depth >= LHAT_MAX_PROTOTYPE_DEPTH) return NULL;
+    Checker concrete = definition->environment;
+    concrete.template_depth = c->template_depth + 1;
+    LhatCheckResult result;
+    memset(&result, 0, sizeof result);
+    result.types = c->result->types;
+    result.strict = c->result->strict;
+    result.module_name = (char *)definition->module_name;
+    concrete.result = &result;
+    concrete.instantiations = definition->instances;
+    Instantiation *instance = chk_instantiation_add(&concrete, definition->node, args, count);
+    definition->instances = concrete.instantiations;
+    if (instance != NULL && !instance->checking) {
+        instance->checking = true;
+        LhatType *shape = lhat_type_func(result.types, definition->node->v.func.is_function);
+        for (size_t k = 0; k < count; k++) lhat_type_add_param(result.types, shape, args[k]);
+        concrete.expected_func = shape;
+        instance->concrete->body->v.func.is_template = false;
+        instance->signature = chk_infer_func(&concrete, instance->concrete->body);
+        instance->concrete->signature = instance->signature;
+        lhat_type_instance_contract(result.types, definition->node->checked_instances);
+        instance->failed = result.diagnostic_count != 0;
+        c->read_provisional = c->read_provisional || concrete.read_provisional;
+        retain_instance_failure(&concrete, instance, 0);
+        instance->checking = false;
+        definition->instances = concrete.instantiations;
+        definition->environment.templates = concrete.templates;
+    }
+    result.module_name = NULL; // Borrowed from the defining unit.
+    lhat_check_result_dispose(&result);
+    return instance;
+}
+
 static const LhatNode *instantiable_callee(Checker *c, const LhatNode *node,
                                            const LhatType *callee)
 {
@@ -1633,7 +1802,8 @@ static const LhatNode *instantiable_callee(Checker *c, const LhatNode *node,
     const char *name = NULL;
     size_t length = 0;
     if (target == NULL || target->kind != LHAT_NODE_IDENT ||
-        callee->v.func.takes_self || callee->v.func.variadic != NULL ||
+        (callee->kind == LHAT_TYPE_FUNC &&
+         (callee->v.func.takes_self || callee->v.func.variadic != NULL)) ||
         !chk_node_name(c, target, &name, &length)) {
         return NULL;
     }
@@ -1783,6 +1953,8 @@ static LhatType *host_call_answer(Checker *c, const LhatNode *node,
 
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
+    ((LhatNode *)node)->checked_instance = NULL;
+    ((LhatNode *)node)->checked_arm = 0;
     ((LhatNode *)node)->checked_receiver = NULL;
     ((LhatNode *)node)->checked_super_call = chk_is_super_name(c, node->v.access.target);
     if (node->checked_super_call) {
@@ -1828,8 +2000,11 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     // exported name's callers live in units checked after this one, so no
     // shape ever reaches them and a published signature still does not
     // depend on who uses it.
-    if (!seeded && callee != NULL && callee->kind == LHAT_TYPE_FUNC) {
-        const LhatNode *literal = instantiable_callee(c, node, callee);
+    if (!seeded && callee != NULL &&
+        (callee->kind == LHAT_TYPE_FUNC || callee->kind == LHAT_TYPE_INTERSECT)) {
+        LhatTemplate *definition = callee->template_definition;
+        const LhatNode *literal = definition != NULL ? definition->node
+                                  : instantiable_callee(c, node, callee);
         if (literal != NULL) {
             size_t count = 0;
             for (const LhatNode *arg = node->v.access.argument; arg != NULL;
@@ -1863,7 +2038,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             // in one is a reading of something not yet decided, and 3.4改2's
             // rounds bring this walk back once it is.
             size_t declared_here = 0;
-            for (const LhatTypeList *p = callee->v.func.params; p != NULL;
+            for (const LhatNode *p = literal->v.func.params; p != NULL;
                  p = p->next) {
                 declared_here++;
             }
@@ -1874,16 +2049,28 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                            lhat_type_tuple_width(given_types[i]) == 0;
             }
             Instantiation *inst =
-                takeable ? chk_instantiation_add(c, literal, given_types,
-                                                 count)
+                takeable ? (definition != NULL
+                                ? instantiate_template(c, definition, given_types, count)
+                                : chk_instantiation_add(c, literal, given_types, count))
                          : NULL;
+            if (definition != NULL && inst == NULL) {
+                chk_report(c, node, LHAT_CHECK_ERR_SHAPE_REFUSED);
+            }
             if (inst != NULL && inst->signature != NULL) {
                 // The body has been walked under this very shape, so what it
                 // settled to there is this call's signature -- which is what
                 // keeps an answer tied to what was handed in.
                 callee = inst->signature;
+                ((LhatNode *)node)->checked_arm = inst->arm;
+                ((LhatNode *)node)->checked_instance = inst->concrete;
                 if (inst->failed) {
+                    size_t before = c->result->diagnostic_count;
                     chk_report(c, node, LHAT_CHECK_ERR_SHAPE_REFUSED);
+                    if (c->result->diagnostic_count > before) {
+                        c->result->diagnostics[before].cause = inst->failure;
+                        c->result->diagnostics[before].cause_path = inst->failure_path;
+                        c->result->diagnostics[before].relaxed_ok = inst->advisory;
+                    }
                 }
             } else if (inst != NULL) {
                 // Recorded and not yet walked: ask for the round that walks
@@ -3915,10 +4102,42 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
 // position. The walk that stays -- the stamp the compiler reads, the type
 // the binding holds -- is over the join of the shapes the body took, so the
 // one body still serves every caller.
+#if LHAT_WITH_RESOLUTIONS
+static void merge_instance_resolutions(LhatCheckResult *result, size_t base, size_t first)
+{
+    size_t write = first;
+    for (size_t read = first; read < result->resolution_count; read++) {
+        LhatResolution incoming = result->resolutions[read];
+        size_t at = base;
+        for (; at < write; at++) {
+            if (result->resolutions[at].use == incoming.use) break;
+        }
+        if (at == write) {
+            result->resolutions[write++] = incoming;
+            continue;
+        }
+        LhatResolution *kept = &result->resolutions[at];
+        kept->type = lhat_type_union(result->types, kept->type, incoming.type);
+        if (kept->call_signature != NULL && incoming.call_signature != NULL) {
+            kept->call_signature = lhat_type_intersect(result->types,
+                (LhatType *)kept->call_signature, (LhatType *)incoming.call_signature);
+        }
+        if (kept->definition != incoming.definition ||
+            kept->definition_path != incoming.definition_path) {
+            kept->has_definition = false;
+        }
+    }
+    result->resolution_count = write;
+}
+#endif
+
 static LhatType *infer_func_instantiated(Checker *c, const LhatNode *node)
 {
     const LhatNode *outer = c->instantiating;
     c->instantiating = node;
+#if LHAT_WITH_RESOLUTIONS
+    size_t resolution_base = c->result->resolution_count;
+#endif
 
     for (Instantiation *i = c->instantiations; i != NULL; i = i->next) {
         if (i->func != node) {
@@ -3934,55 +4153,30 @@ static LhatType *infer_func_instantiated(Checker *c, const LhatNode *node)
             lhat_type_add_param(c->result->types, shape, i->args[k]);
         }
         c->expected_func = shape;
-        i->signature = chk_infer_func(c, node);
+        i->signature = chk_infer_func(c, i->concrete->body);
+        i->concrete->signature = i->signature;
         i->failed = c->result->diagnostic_count > diagnostics;
+        retain_instance_failure(c, i, diagnostics);
         c->result->diagnostic_count = diagnostics;
 #if LHAT_WITH_RESOLUTIONS
-        c->result->resolution_count = resolutions;
+        merge_instance_resolutions(c->result, resolution_base, resolutions);
 #endif
     }
 
-    // The join, per position. A shape the body refused is left out, so the
-    // walk that stamps is over what actually holds -- unless it refused them
-    // all, and then they all stay in: the body reports under the join, which
-    // is the nearest thing there is to the truth of it.
-    bool any_taken = false;
-    for (const Instantiation *i = c->instantiations; i != NULL; i = i->next) {
-        if (i->func == node && !i->failed) {
-            any_taken = true;
-        }
-    }
-    LhatType *join =
-        lhat_type_func(c->result->types, node->v.func.is_function);
-    size_t position = 0;
-    for (const LhatNode *param = node->v.func.params; param != NULL;
-         param = param->next, position++) {
-        LhatType *arm = NULL;
-        for (const Instantiation *i = c->instantiations; i != NULL;
-             i = i->next) {
-            if (i->func != node || (any_taken && i->failed) ||
-                position >= i->count) {
-                continue;
-            }
-            arm = arm == NULL ? i->args[position]
-                              : lhat_type_union(c->result->types, arm,
-                                                i->args[position]);
-        }
-        if (arm == NULL) {
-            // Unreachable while the arity gate holds; any^ keeps the walk
-            // sound if it ever stops holding.
-            arm = chk_simple(c, LHAT_TYPE_ANY);
-        }
-        lhat_type_add_param(c->result->types, join, arm);
-    }
-    c->expected_func = join;
-    LhatType *settled = chk_infer_func(c, node);
+    // The external contract preserves argument/result correlations. Every
+    // arm's body already carries its own complete semantic result.
+    LhatType *settled = lhat_type_instance_contract(c->result->types, node->checked_instances);
+    ((LhatNode *)node)->checked_type = settled;
     c->instantiating = outer;
     return settled;
 }
 
 LhatType *chk_infer_func(Checker *c, const LhatNode *node)
 {
+    if (node->v.func.is_template) return infer_template(c, node);
+    if (!chk_instantiations_exist(c, node)) {
+        ((LhatNode *)node)->checked_instances = NULL;
+    }
     // 03 の 3.4改: what expects this literal, taken here and cleared at once
     // -- a body written inside this one is expected by nothing, and reading
     // an outer expectation there would put a type on a parameter no one was

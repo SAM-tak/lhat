@@ -166,6 +166,63 @@ static void test_dependencies(void)
     lhat_program_dispose(&program);
 }
 
+static void test_concrete_function_bodies(void)
+{
+    LHAT_TEST("local concrete bodies preserve correlations, captures and execution");
+    Run r;
+    run_checked_text(&r,
+        "let^ bias = 7\n"
+        "let^ apply = f^fn, x { return^ fn(x) }\n"
+        "let^ n:number^ = apply(f^x:number^ {return^x+bias}, 35)\n"
+        "let^ s:string^ = apply(f^x:string^ {return^x .. \"!\"}, \"a\")\n"
+        "return^ if^ s = \"a!\": n el^: 0;\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    LHAT_TEST("equivalent signatures keep physical arms aligned through aliases");
+    run_checked_text(&r,
+        "let^ inspect = f^unused:any^, x {return^ typeof^(x) = number^}\n"
+        "let^ a = inspect(1, 1)\nlet^ b = inspect(\"s\", 2)\n"
+        "let^ c = inspect(1, \"s\")\nlet^ alias = inspect\n"
+        "return^ if^ a and^ b and^ !c and^ !alias(1, \"s\"): 42 el^: 0;\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    LHAT_TEST("public templates instantiate across callers in the defining environment");
+    static const File files[] = {
+        {"lib.lh",
+         "module^ generic\n"
+         "public^let^apply = template^f^fn, x {return^fn(x)}\n"
+         "public^let^offset = template^f^x {return^addHidden(x)}\n"
+         "let^addHidden = template^f^x {return^x+hidden}\n"
+         "let^ hidden = 7\n"},
+        {"numbers.lh",
+         "module^ numbers\nrequire^\"lib.lh\"\n"
+         "public^let^n:number^ = generic.apply(f^x:number^ {return^x+1}, 41)\n"},
+        {"main.lh",
+         "require^\"numbers.lh\"\nrequire^\"lib.lh\"\n"
+         "let^ hidden = 100\nlet^ apply = generic.apply\n"
+         "let^ s:string^ = apply(f^x:string^ {return^x .. \"!\"}, \"a\")\n"
+         "return^ if^ s = \"a!\": generic.offset(numbers.n) el^: 0;\n"},
+    };
+    LhatProgram program;
+    Disk disk;
+    program_with(&program, &disk, files, 3);
+    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program), "checked");
+    bool compiled = lhat_program_compile(&program);
+    LHAT_CHECK(compiled, "compiled");
+    if (compiled && root != NULL) {
+        LhatMachine *machine = lhat_machine_new();
+        LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_integer(ran.value) && lhat_as_integer(ran.value) == 49,
+                   "each arm executes with the defining unit's capture");
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+}
+
 static void test_definition_alias_fits_optional_fields(void)
 {
     LHAT_TEST("definition aliases and qualified names accept nil fields consistently");
@@ -2135,17 +2192,20 @@ static void test_host_data(void)
     }
     lhat_program_dispose(&program);
 
-    LHAT_TEST("host value arguments cross the boundary whole");
+    LHAT_TEST("host value and scalar template instances use their own register widths");
     {
         static const File files[] = {
+            {"wide-template.lh",
+             "module^ genericwide\npublic^let^id = template^f^x {return^x}\n"},
             {"main.lh",
-             "import^ wide\n"
+             "import^ wide\nrequire^\"wide-template.lh\"\n"
              "public^let^ f = f^a:wide.V, b:wide.V, k:number^ -> number^{\n"
-             "    return^ wide.probe(a) * 100000 + wide.probe(b) * 100 + k\n"
+             "    return^ wide.probe(genericwide.id(a)) * 100000"
+             " + wide.probe(genericwide.id(b)) * 100 + genericwide.id(k)\n"
              "}\n"
              "return^ f\n"},
         };
-        program_with(&program, &disk, files, 1);
+        program_with(&program, &disk, files, 2);
         const LhatHostValueTag *tag = lhat_register_hostvalue_type(
             &program, "wide", "V", sizeof(double));
         LHAT_CHECK(tag != NULL, "the type registered");
@@ -5757,6 +5817,7 @@ int main(void)
     test_port();
     test_dependencies();
     test_definition_alias_fits_optional_fields();
+    test_concrete_function_bodies();
     test_require_inference_rewalk();
     test_loading();
     test_cycles();

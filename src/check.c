@@ -35,6 +35,8 @@ void chk_report_fix(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
               return);
 
     LhatCheckDiagnostic *d = &r->diagnostics[r->diagnostic_count++];
+    d->cause = NULL;
+    d->cause_path = NULL;
     d->code = code;
     d->relaxed_ok = code == LHAT_CHECK_ERR_ACCESS_ON_MAYBE_NIL ||
                    code == LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL ||
@@ -733,6 +735,7 @@ static void record_bindings(Checker *c, const Scope *scope)
 
 void chk_scope_close(Checker *c, Scope *scope)
 {
+    chk_freeze_templates(c, scope);
 #if LHAT_WITH_RESOLUTIONS
     record_bindings(c, scope);
 #else
@@ -3400,7 +3403,9 @@ void chk_constrain_member(Checker *c, LhatType *target, const char *name,
 Instantiation *chk_instantiation_add(Checker *c, const LhatNode *func,
                                      LhatType *const *args, size_t count)
 {
+    bool seen = false;
     for (Instantiation *i = c->instantiations; i != NULL; i = i->next) {
+        if (i->func == func) seen = true;
         if (i->func != func || i->count != count) {
             continue;
         }
@@ -3412,10 +3417,27 @@ Instantiation *chk_instantiation_add(Checker *c, const LhatNode *func,
             return i;
         }
     }
-    Instantiation *made = (Instantiation *)lhat_calloc(1, sizeof *made);
+    Instantiation *made = lhat_type_semantic_alloc(c->result->types, sizeof *made);
     if (made == NULL) {
         return NULL;
     }
+    made->concrete = lhat_type_function_instance(c->result->types);
+    if (made->concrete == NULL ||
+        (made->concrete->body = lhat_type_clone_body(c->result->types, func)) == NULL) {
+        return NULL;
+    }
+    if (!seen) ((LhatNode *)func)->checked_instances = NULL;
+    LhatFunctionInstance **tail = &((LhatNode *)func)->checked_instances;
+    size_t arm = 1;
+    while (*tail != NULL) {
+        tail = &(*tail)->next;
+        arm++;
+    }
+    if (arm > UINT16_MAX) {
+        return NULL;
+    }
+    *tail = made->concrete;
+    made->arm = (uint16_t)arm;
     made->func = func;
     made->count = count;
     for (size_t k = 0; k < count; k++) {
@@ -3436,13 +3458,10 @@ bool chk_instantiations_exist(const Checker *c, const LhatNode *func)
     return false;
 }
 
-void chk_dispose_instantiations(Checker *c)
+void chk_detach_instantiations(Checker *c)
 {
-    while (c->instantiations != NULL) {
-        Instantiation *i = c->instantiations;
-        c->instantiations = i->next;
-        lhat_free(i);
-    }
+    // Records and concrete trees live as long as their semantic arena.
+    c->instantiations = NULL;
 }
 
 ParamVar *chk_push_param_var(Checker *c, LhatType *slot, const LhatNode *node)
@@ -3874,7 +3893,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
 #endif
 
     chk_dispose_operator_carriers(&checker);
-    chk_dispose_instantiations(&checker);
+    chk_detach_instantiations(&checker);
     lhat_free(checker.annotation_seen);
     chk_scope_close(&checker, &scope);
     result->unit = unit;
@@ -4152,7 +4171,7 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
     session->typeinfo_type = checker.typeinfo_type;
 
     chk_dispose_operator_carriers(&checker);
-    chk_dispose_instantiations(&checker);
+    chk_detach_instantiations(&checker);
     chk_scope_close(&checker, &scope);
     result->unit = unit;
 }
@@ -4785,6 +4804,8 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "several types here carry this operator and nothing says "
         "which is meant; write one of the types the signature "
         "names, or narrow to it with fits^"},
+    [LHAT_CHECK_ERR_TEMPLATE_CONTEXT] = {"check.template-context",
+        "template^ requires a source unit and fixed positional parameters"},
     [LHAT_CHECK_ERR_SHAPE_REFUSED] = {"check.shape-refused",
         "this call hands over argument types the body cannot "
         "take; writing the parameter types is what would surface "
@@ -4944,5 +4965,21 @@ size_t lhat_check_message_write(const struct LhatProgram *program,
     const char *text =
         entry != NULL ? lhat_program_text(program, entry->id, entry->text)
                       : "unknown error";
-    return lhat_message_render(text, args, count, out, capacity);
+    size_t used = lhat_message_render(text, args, count, out, capacity);
+    if (diagnostic != NULL && diagnostic->cause != NULL) {
+        const LhatCheckDiagnostic *cause = diagnostic->cause;
+        int added = snprintf(out != NULL && used < capacity ? out + used : NULL,
+                             out != NULL && used < capacity ? capacity - used : 0,
+                             " (%s:%u:%u: ",
+                             diagnostic->cause_path != NULL ? diagnostic->cause_path : "",
+                             (unsigned)cause->line, (unsigned)cause->column);
+        if (added > 0) used += (size_t)added;
+        used += lhat_check_message_write(program, cause,
+                    out != NULL && used < capacity ? out + used : NULL,
+                    out != NULL && used < capacity ? capacity - used : 0);
+        if (out != NULL && used + 1 < capacity) out[used] = ')';
+        used++;
+        if (out != NULL && capacity != 0) out[used < capacity ? used : capacity - 1] = '\0';
+    }
+    return used;
 }

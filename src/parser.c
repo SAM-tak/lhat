@@ -2039,6 +2039,20 @@ static LhatNode *parse_primary(Parser *p)
             return parse_interpolation(p);
 
         case LHAT_TOKEN_HAT_IDENT:
+            if (check_hat(p, "template")) {
+                advance(p);
+                if (!check_hat(p, "f") && !check_hat(p, "p")) {
+                    report(p, &p->current, LHAT_PARSE_ERR_TEMPLATE_NEEDS_BODY);
+                    return NULL;
+                }
+                LhatNode *made = parse_subroutine_or_type(p, check_hat(p, "f"));
+                if (made != NULL && made->kind != LHAT_NODE_FUNC) {
+                    report(p, &p->current, LHAT_PARSE_ERR_TEMPLATE_NEEDS_BODY);
+                    return NULL;
+                }
+                if (made != NULL) made->v.func.is_template = true;
+                return made;
+            }
             if (check_hat(p, "f") || check_hat(p, "p")) {
                 // 02 の 13.14: a literal or a written signature -- the one
                 // head both share is read once, and the '{' or the ';' says
@@ -5545,6 +5559,8 @@ static const LhatMessageEntry PARSE_MESSAGES[] = {
     [LHAT_PARSE_ERR_DELEGATE_TARGET] = {"parse.delegate-target",
         "delegate^ names what this def^ declares: self^.field for "
         "one of the template's, or a bare name for one of its own"},
+    [LHAT_PARSE_ERR_TEMPLATE_NEEDS_BODY] = {"parse.template-needs-body",
+        "template^ marks a body: write template^f^ ... or template^p^ ..."},
     [LHAT_PARSE_ERR_CLOSED_NEEDS_BODY] = {"parse.closed-needs-body",
         "closed^ marks a body: write closed^f^ ... or closed^p^ ..."},
     [LHAT_PARSE_ERR_CATCH_AFTER_BARE] = {"parse.catch-after-bare",
