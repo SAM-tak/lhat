@@ -1,0 +1,18 @@
+import^std.task
+
+try^std.task.start(2)
+
+# 半分の問題を1つのタスクにする。要るものはすべて引数で受け取る
+let^half = p^n, src, dst, aux {
+    _yield^0
+    let^solve = f^n, src, dst, aux -> number^ {
+        if^n <= 0 { return^ 0 }
+        return^ this^(n - 1, src, aux, dst) + 1 + this^(n - 1, aux, dst, src)
+    }
+    return^solve(n, src, dst, aux)
+}
+let^n = 30
+let^left = try^std.task.async(half(n - 1, 1, 2, 3))
+let^right = try^std.task.async(half(n - 1, 2, 3, 1))
+print(try^std.task.await(left) + 1 + try^std.task.await(right))
+std.task.stop()

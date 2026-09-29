@@ -28,4 +28,11 @@
     "lhat.serverAutoRestart": false,
     "lhat.serverPath": "C:\\Users\\Owner\\source\\repos\\lhat\\build\\release\\lhatls.exe",
     "lhat.messagesPath": "C:\\Users\\Owner\\source\\repos\\lhat\\messages",
+    "code-runner.executorMap": {
+        "lhat": "C:\\Users\\Owner\\source\\repos\\lhat\\build\\release\\lhat.exe --run"
+    },
+    "code-runner.runInTerminal": true,
+    "code-runner.ignoreSelection": true,
+    "code-runner.saveFileBeforeRun": true,
+    "code-runner.fileDirectoryAsCwd": true,
 }
