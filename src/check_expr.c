@@ -6645,36 +6645,30 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
 
         case LHAT_NODE_MEMBER: {
             LhatType *narrowed = chk_narrowed_type(c, node);
-            LhatType *answer = narrowed;
-            if (narrowed == NULL || named_type != NULL) {
-                LhatType *held = chk_infer_member(c, node, named_type);
-                if (narrowed == NULL) {
-                    answer = nil_propagated(c, node, held);
-                }
-            }
+            // Narrowing changes the value type, not the identity of the read.
+            // Walk the member and its target even when flow already knows the
+            // answer, so codegen receives bindings and member provenance.
+            LhatType *held = chk_infer_member(c, node, named_type);
+            LhatType *answer = narrowed != NULL ? narrowed : nil_propagated(c, node, held);
 #if LHAT_WITH_RESOLUTIONS
             // 07 の 4 章: recorded here rather than inside chk_infer_member,
             // which answers from a dozen places -- the built-in members of a
             // coroutine (15.6改), an error's own two (04 の 2.3), a
             // definition's, a table's. What every one of them has in common
             // is that it came back through here.
-            // Only use a lookup record when it supplied the value type.
-            // A narrowed path may have skipped the lookup entirely.
-            const LhatTypeMember *found =
-                narrowed != NULL ? NULL : c->resolved_member;
+            const LhatTypeMember *found = c->resolved_member;
             // 02 の 19 章: an enum's member read in value position answers
             // the wide type, and what the name reached is left the same way
             // a member is -- the place a reader is sent to is the member's.
-            const LhatType *kind = narrowed != NULL ? NULL : c->resolved_kind;
+            const LhatType *kind = c->resolved_kind;
             // 14.19, 14.17改, 15.6改: an answer with no member record behind
             // it is the language's own -- a host registration leaves a real
             // member (with nothing written for declared_in), and a def^ or a
             // t^{ … } leaves one that says where it stands. A miss answers
             // unknown^ and is nobody's.
-            bool builtin = narrowed == NULL && found == NULL && kind == NULL &&
-                           answer != NULL &&
-                           answer->kind != LHAT_TYPE_UNKNOWN &&
-                           answer->kind != LHAT_TYPE_PENDING;
+            bool builtin = found == NULL && kind == NULL && held != NULL &&
+                           held->kind != LHAT_TYPE_UNKNOWN &&
+                           held->kind != LHAT_TYPE_PENDING;
             if (kind != NULL) {
                 chk_record_kind_resolution(c, node->v.access.argument, answer,
                                            kind);

@@ -267,6 +267,41 @@ static void test_binding_identity(void)
     unit_dispose(&u);
 }
 
+static void test_narrowed_member_target_identity(void)
+{
+    LHAT_TEST("a narrowed member still resolves its parameter target in nested else arms");
+    const char *source =
+        "let^route = p^req:Request {\n"
+        " if^req.user = nil^ {return^0\n"
+        " el^req.body.total <= 0: return^-1\n"
+        " el^: return^charge(req.user, req.body.total)}\n}\n"
+        "let^Body = def^{self^{total = 40}}\n"
+        "let^Request = def^{self^{user:string^|nil^ = \"ok\", body:Body = {total=40}}}\n"
+        "let^charge = f^name:string^, amount:number^ {return^name.length + amount}\n"
+        "return^route(Request.new())\n";
+    for (int strict = 0; strict < 2; strict++) {
+        Run r;
+        if (strict) run_checked_text(&r, source);
+        else run_text(&r, source);
+        LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
+        CHECK_INTEGER(&r, 42);
+        Nodes nodes = {0};
+        collect(&nodes, NULL, false, r.parsed.root);
+        for (size_t j = 0; j < nodes.count; j++) {
+            const LhatNode *node = nodes.nodes[j];
+            const char *name = NULL;
+            size_t length = 0;
+            if (node->kind == LHAT_NODE_IDENT &&
+                lhat_node_name(node, r.lexer.source->text, r.lexer.strings, &name, &length) &&
+                length == 3 && memcmp(name, "req", 3) == 0) {
+                LHAT_CHECK(node->checked_binding != NULL,
+                           "every req occurrence has a declaration identity");
+            }
+        }
+        run_dispose(&r);
+    }
+}
+
 static void test_focus_and_catch_identity(void)
 {
     static const char *const sources[] = {
@@ -1072,6 +1107,7 @@ int main(void)
     test_nominal_type_lowering();
     test_binding_identity();
     test_focus_and_catch_identity();
+    test_narrowed_member_target_identity();
     test_this_body_identity();
     test_this_body_repl_composition();
     test_variadic_binding_identity();
