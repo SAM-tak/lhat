@@ -4812,9 +4812,7 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_TEMPLATE_CONTEXT] = {"check.template-context",
         "template^ requires a source unit and fixed positional parameters"},
     [LHAT_CHECK_ERR_SHAPE_REFUSED] = {"check.shape-refused",
-        "this call hands over argument types the body cannot "
-        "take; writing the parameter types is what would surface "
-        "the body's own report"},
+        "instantiation failed for this call"},
     [LHAT_CHECK_ERR_PARAM_UNDECIDED] = {"check.param-undecided",
         "nothing in this body says what this parameter is, so its "
         "type has to be written; any^ is how to say it really does "
