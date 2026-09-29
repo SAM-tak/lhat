@@ -115,7 +115,8 @@ public^let^Scheduler: t^{
         var^awake = 0
         var^waiting = 0
         for^i from^0 to^self^.live - 1 {
-            if^self^.tasks[i] is^nil^{ next^}
+            # if^self^.tasks[i] is^nil^{ next^}
+            if^!self^.tasks[i]? { next^} # is^nil^ のほうが見た目にわかりやすいかもね
             if^self^.waits[i] = 0 {
                 awake += 1
                 let^_^= self^.step(i)
