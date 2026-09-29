@@ -2,17 +2,15 @@ import^std.task
 
 let^workers = 6
 let^depth = 5  # 2^5 = 32 タスク。細かくするほど6つのワーカーが遊ばない
-let^n = 30
+let^n = 24
 
 try^std.task.start(workers)
 
 # 部分問題1つを1タスクにする。要るものはすべて引数で受け取る
 let^piece = p^n, src, dst, aux {
     _yield^0
-    let^solve = f^n, src, dst, aux -> number^{
-        if^n <= 0 { return^0 }
-        ppp()
-        return^this^(n - 1, src, aux, dst) + 1 + this^(n - 1, aux, dst, src)
+    let^solve = f^n, src, dst, aux {
+        if^n <= 0: 0 el^: this^(n - 1, src, aux, dst) + 1 + this^(n - 1, aux, dst, src);
     }
     return^solve(n, src, dst, aux)
 }
@@ -31,8 +29,6 @@ let^split = p^n, src, dst, aux, depth {
     this^(n - 1, aux, dst, src, depth - 1)
 }
 split(n, 1, 3, 2, depth)
-
-let^ppp = f^{print("aaa")}
 
 for^task in^tasks {
     moves += try^std.task.await(task)
