@@ -1105,6 +1105,19 @@ static void test_isa(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
+    LHAT_TEST("an any-valued named field still requires the member to exist");
+    run_text(&r,
+             "let^ node = {id = 1, visible = true^, height = 15, width = 96, data = {0,0}}\n"
+             "return^ !(node fits^ t^{chunks:any^})"
+             " and^ ({chunks = {}} fits^ t^{chunks:any^})"
+             " and^ ({chunks = false^} fits^ t^{chunks:any^})"
+             " and^ ({chunks = 0} fits^ t^{chunks:any^})"
+             " and^ !({chunks = nil^} fits^ t^{chunks:any^})"
+             " and^ (node fits^ t^{chunks:t^{}|nil^})"
+             " and^ !({chunks = 42} fits^ t^{chunks:t^{}|nil^})\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
     LHAT_TEST("a structure asks for the members it names");
     run_text(&r, "return^ { a := 1, b := 2 } fits^ t^{ a : number^ }\n");
     CHECK_BOOL(&r, true);

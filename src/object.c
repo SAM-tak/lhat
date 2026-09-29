@@ -473,6 +473,27 @@ LhatRuntimeType *lhat_runtime_type_clone(LhatHeap *heap, const LhatRuntimeType *
     return clone_runtime_type(heap, type, NULL, 0);
 }
 
+// A named requirement may be absent only when it explicitly admits nil.
+// any^ accepts a nil value, but does not make a required member optional.
+static bool member_allows_absence(const LhatRuntimeType *type)
+{
+    if (type == NULL) return false;
+    if (type->kind == LHAT_TYPE_RT_NIL) return true;
+    if (type->kind == LHAT_TYPE_RT_UNION) {
+        for (size_t i = 0; i < type->part_count; i++) {
+            if (member_allows_absence(type->parts[i])) return true;
+        }
+    } else if (type->kind == LHAT_TYPE_RT_INTERSECT) {
+        bool explicit_nil = false;
+        for (size_t i = 0; i < type->part_count; i++) {
+            if (!lhat_value_satisfies(lhat_nil(), type->parts[i])) return false;
+            explicit_nil = explicit_nil || member_allows_absence(type->parts[i]);
+        }
+        return explicit_nil;
+    }
+    return false;
+}
+
 bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
 {
     if (type == NULL) {
@@ -549,9 +570,9 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                     table, lhat_object((LhatObject *)(void *)
                                            type->members[i]
                                                .name));
-                // A nil-valued (or absent) member satisfies an optional
-                // field. The member's type decides, not its presence alone.
-                if (!lhat_value_satisfies(held, type->members[i].type)) {
+                if ((lhat_is_nil(held) &&
+                     !member_allows_absence(type->members[i].type)) ||
+                    !lhat_value_satisfies(held, type->members[i].type)) {
                     return false;
                 }
             }
