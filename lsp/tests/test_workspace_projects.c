@@ -286,6 +286,86 @@ static char *parity_load(void *context, const char *path, size_t *length)
     return copy;
 }
 
+static void check_syntax_only_unit(void *context, const LhatUnit *unit)
+{
+    size_t *calls = context;
+    (*calls)++;
+    LHAT_CHECK(unit->loaded && unit->parsed.root != NULL, "syntax tree retained");
+    LHAT_CHECK(unit->checked.types == NULL && unit->checked.diagnostic_count == 0,
+               "no semantic checking for LTON");
+    LHAT_CHECK(unit->proto == NULL, "no LTON bytecode in editor");
+    LHAT_CHECK_EQ_INT(unit->program->types.type_count, 0);
+}
+
+static void test_lton_syntax_only_workspace(void)
+{
+    LHAT_TEST("large LTON roots and fresh requests allocate no semantic types");
+    char base[512], path[512];
+    LHAT_REQUIRE(make_temporary_directory(base, sizeof base), "temporary directory");
+    join(path, sizeof path, base, "large.lton");
+    FILE *file = fopen(path, "wb");
+    LHAT_REQUIRE(file != NULL, "data file created");
+    for (size_t i = 0; i < 2000; i++) {
+        fprintf(file, "{ index = %zu, nested = { x = 1, y = 2 }, name = 'data' },\n", i);
+    }
+    fclose(file);
+    const char *folders[] = {base};
+    LspWorkspace workspace;
+    lsp_workspace_init(&workspace, folders, 1);
+    lsp_workspace_discover_projects(&workspace);
+    lsp_workspace_recheck_all(&workspace);
+    size_t calls = 0;
+    lsp_workspace_with_unit(&workspace, path, check_syntax_only_unit, &calls);
+    lsp_workspace_with_fresh_unit(&workspace, path, check_syntax_only_unit, &calls);
+    LHAT_CHECK_EQ_INT(calls, 0);
+    LHAT_CHECK_EQ_INT(root_count(project_at(&workspace, base)), 0);
+
+    file = fopen(path, "rb");
+    LHAT_REQUIRE(file != NULL, "open data text");
+    fseek(file, 0, SEEK_END);
+    size_t length = (size_t)ftell(file);
+    rewind(file);
+    char *text = malloc(length + 1);
+    LHAT_REQUIRE(text != NULL, "open text buffer");
+    LHAT_CHECK(fread(text, 1, length, file) == length, "read data");
+    fclose(file);
+    text[length] = '\0';
+    lsp_document_store_put(&workspace.documents, path, text, length, 1);
+    lsp_workspace_recheck_affected(&workspace, path);
+    lsp_workspace_with_unit(&workspace, path, check_syntax_only_unit, &calls);
+    lsp_workspace_with_fresh_unit(&workspace, path, check_syntax_only_unit, &calls);
+    LHAT_CHECK_EQ_INT(calls, 2);
+    LspProject *project = project_at(&workspace, base);
+    LHAT_REQUIRE(project != NULL && project->roots != NULL, "LTON discovered");
+    LHAT_CHECK(!lhat_program_compile(&project->roots->program), "parse-only results cannot compile");
+
+    size_t bad_length = 0;
+    char *bad = parity_load("value = { nested = },\n", path, &bad_length);
+    lsp_document_store_put(&workspace.documents, path, bad, bad_length, 2);
+    lsp_workspace_recheck_affected(&workspace, path);
+    const LhatUnit *unit = project->roots->program.units;
+    LHAT_REQUIRE(unit != NULL, "rechecked unit");
+    LHAT_CHECK(unit->parsed.diagnostic_count > 0, "syntax errors retained after editing");
+    LHAT_CHECK(lhat_program_has_errors(&project->roots->program), "syntax errors published");
+
+    lsp_workspace_discover_projects(&workspace);
+    lsp_workspace_recheck_all(&workspace);
+    project = project_at(&workspace, base);
+    LHAT_REQUIRE(project != NULL && project->roots != NULL, "open LTON survives config rediscovery");
+    LHAT_CHECK(lhat_program_has_errors(&project->roots->program), "unsaved text rechecked");
+    lsp_document_store_remove(&workspace.documents, path);
+    lsp_workspace_recheck_affected(&workspace, path);
+    LHAT_CHECK_EQ_INT(root_count(project), 0);
+    calls = 0;
+    lsp_workspace_with_unit(&workspace, path, check_syntax_only_unit, &calls);
+    LHAT_CHECK_EQ_INT(calls, 0);
+    lsp_workspace_recheck_affected(&workspace, path);
+    LHAT_CHECK_EQ_INT(root_count(project), 0);
+    lsp_workspace_dispose(&workspace);
+    remove(path);
+    remove_directory(base);
+}
+
 typedef struct {
     const LhatNode *nodes[256];
     size_t count;
@@ -452,6 +532,7 @@ static void test_execution_pipeline_parity(void)
 
 int main(void)
 {
+    test_lton_syntax_only_workspace();
     test_nearest_project_wins_inside_each_workspace_folder();
     test_current_unit();
     test_execution_pipeline_parity();

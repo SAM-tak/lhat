@@ -319,6 +319,9 @@ struct LhatProgram {
 
     LhatUnit *units;
     bool strict;
+    // Tooling-only parse mode, selected before loading any units. Keeps lexical
+    // and syntax diagnostics/ASTs but builds no semantic results or bytecode.
+    bool syntax_only;
 
     // 05 の 5.7: bodies lhat_program_invalidate took off their units and did
     // not free. A closure made before the invalidation still points into one,

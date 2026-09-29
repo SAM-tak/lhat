@@ -388,6 +388,11 @@ static void check_parsed(LhatProgram *program, LhatUnit *unit,
     unit->loaded = true;
     unit->state = LHAT_UNIT_CHECKING;
 
+    if (program->syntax_only) {
+        unit->state = LHAT_UNIT_DONE;
+        return;
+    }
+
     Resolution resolution;
     resolution.program = program;
     resolution.requiring = unit;
@@ -3277,6 +3282,7 @@ static bool compile_all(LhatProgram *program)
 
 bool lhat_program_compile(LhatProgram *program)
 {
+    if (program->syntax_only) return false;
     lhat_program_hold(program);
     bool ok = compile_all(program);
     lhat_program_release(program);

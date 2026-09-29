@@ -92,7 +92,7 @@ static void check_lton(Checked *c, const char *path, const char *body)
     lhat_source_init_from_string(&c->source, path, c->wrapped, whole);
     lhat_lexer_init(&c->lexer, &c->source);
     lhat_parse(&c->lexer, &c->parsed);
-    lhat_check(c->parsed.root, &c->lexer, true, &c->checked);
+    memset(&c->checked, 0, sizeof c->checked);
 
     memset(&c->unit, 0, sizeof c->unit);
     c->unit.path = (char *)path;
@@ -163,9 +163,7 @@ static void test_positions_are_the_files(void)
     check_dispose(&c);
 }
 
-// 08 の 4: the body is read as an f^'s, and 15.1 says an f^ may call only an
-// f^ -- so what has an effect cannot be written in one. Nothing here checks
-// for that: the rule the language already had is the boundary.
+// Editor validation is syntax-only. Runtime loading still checks semantics.
 static void test_what_may_be_written(void)
 {
     Checked c;
@@ -179,10 +177,16 @@ static void test_what_may_be_written(void)
     LHAT_CHECK_EQ_INT(c.checked.diagnostic_count, 0);
     check_dispose(&c);
 
-    LHAT_TEST("08 の 5: and no name from outside is in scope");
+    LHAT_TEST("LTON editor validation does not resolve names or generate types");
     check_lton(&c, "conf.lton", "here = elsewhere,\n");
-    LHAT_CHECK(c.checked.diagnostic_count > 0,
-               "expected the name to be refused");
+    LHAT_CHECK_EQ_INT(c.parsed.diagnostic_count, 0);
+    LHAT_CHECK_EQ_INT(c.checked.diagnostic_count, 0);
+    LHAT_CHECK(c.checked.types == NULL, "no semantic arena");
+    check_dispose(&c);
+
+    LHAT_TEST("LTON editor validation still diagnoses malformed table syntax");
+    check_lton(&c, "conf.lton", "here = { nested = },\n");
+    LHAT_CHECK(c.parsed.diagnostic_count > 0, "syntax error retained");
     check_dispose(&c);
 }
 

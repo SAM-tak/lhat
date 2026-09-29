@@ -405,11 +405,12 @@ static void recheck_one_root(LspWorkspace *ws, LspProject *project,
     bool strict = lsp_settings_strict(
         project->settings, lsp_host_config_strict(project->host_config, true));
     lhat_program_init(&root->program, strict, lsp_program_load, ws);
+    root->program.syntax_only = lsp_lton_is_path(root->path);
     speak(ws, &root->program);
-    bind_host_names(project, &root->program);
+    if (!root->program.syntax_only) bind_host_names(project, &root->program);
     lhat_program_check(&root->program, root->path);
 
-    if (!lhat_program_has_errors(&root->program)) {
+    if (!root->program.syntax_only && !lhat_program_has_errors(&root->program)) {
         (void)lhat_program_compile(&root->program);
     }
     root->checked = true;
@@ -497,7 +498,7 @@ static void scan_project_dir(LspWorkspace *ws, LspProject *project,
                 !path_excluded(project, child)) {
                 scan_project_dir(ws, project, child);
             }
-        } else if (!path_excluded(project, child) && is_checkable(child)) {
+        } else if (!path_excluded(project, child) && has_lh_extension(child)) {
             root_find_or_add(project, child);
         }
     } while (FindNextFileA(handle, &data));
@@ -575,7 +576,7 @@ static void scan_project_dir(LspWorkspace *ws, LspProject *project,
                 !path_excluded(project, child)) {
                 scan_project_dir(ws, project, child);
             }
-        } else if (!path_excluded(project, child) && is_checkable(child)) {
+        } else if (!path_excluded(project, child) && has_lh_extension(child)) {
             root_find_or_add(project, child);
         }
     }
@@ -671,7 +672,7 @@ static void discover_project_roots(LspWorkspace *ws, LspProject *project)
         char *named = path_under_root(project->root_path,
                                       lsp_settings_force_at(project->settings, i));
         if (named != NULL && project_for_path(ws, named) == project &&
-            lsp_workspace_is_unit_path(named)) {
+            has_lh_extension(named)) {
             root_find_or_add(project, named);
         }
         free(named);
@@ -870,6 +871,26 @@ void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path)
         return;
     }
     lhat_mutex_lock(&ws->lock);
+    if (lsp_lton_is_path(path) && !lsp_document_store_has(&ws->documents, path)) {
+        // didClose releases the data tree instead of rereading it from disk.
+        for (LspProject *project = ws->projects; project != NULL; project = project->next) {
+            LspRoot **link = &project->roots;
+            while (*link != NULL) {
+                LspRoot *root = *link;
+                if (strcmp(root->path, path) != 0) {
+                    link = &root->next;
+                    continue;
+                }
+                reverse_remove_root_everywhere(project, path);
+                *link = root->next;
+                if (root->checked) lhat_program_dispose(&root->program);
+                free(root->path);
+                free(root);
+            }
+        }
+        lhat_mutex_unlock(&ws->lock);
+        return;
+    }
     LspProject *owner = ensure_project_for_path(ws, path);
     if (owner == NULL && workspace_root_for_path(ws, path) == NULL) {
         owner = add_unscoped_project_for_path(ws, path);
@@ -916,10 +937,33 @@ void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path)
 
 void lsp_workspace_recheck_all(LspWorkspace *ws)
 {
+    // Configuration rediscovery replaces projects. Restore open data roots
+    // from a path snapshot without holding the document-store lock while
+    // project configuration/loading consults the same store.
+    char **paths = NULL;
+    size_t count = 0;
+    lhat_mutex_lock(&ws->documents.lock);
+    for (LspDocument *doc = ws->documents.open; doc != NULL; doc = doc->next) {
+        if (lsp_lton_is_path(doc->path)) count++;
+    }
+    paths = count != 0 ? calloc(count, sizeof *paths) : NULL;
+    size_t copied = 0;
+    if (paths != NULL) {
+        for (LspDocument *doc = ws->documents.open; doc != NULL; doc = doc->next) {
+            if (lsp_lton_is_path(doc->path)) paths[copied++] = lsp_strdup(doc->path);
+        }
+    }
+    lhat_mutex_unlock(&ws->documents.lock);
+    for (size_t i = 0; i < copied; i++) {
+        if (paths[i] != NULL) lsp_workspace_recheck_affected(ws, paths[i]);
+        free(paths[i]);
+    }
+    free(paths);
     lhat_mutex_lock(&ws->lock);
     for (LspProject *project = ws->projects; project != NULL;
          project = project->next) {
         for (LspRoot *root = project->roots; root != NULL; root = root->next) {
+            if (lsp_lton_is_path(root->path)) continue; // checked from open text above
             recheck_one_root(ws, project, root);
         }
     }
@@ -1076,12 +1120,14 @@ void lsp_workspace_with_fresh_unit(LspWorkspace *ws, const char *path,
     if (path == NULL) {
         return;
     }
+    if (lsp_lton_is_path(path) && !lsp_document_store_has(&ws->documents, path)) return;
     lhat_mutex_lock(&ws->lock);
     LspProject *project = ensure_project_for_path(ws, path);
     LhatProgram program;
     lhat_program_init(&program, true, lsp_program_load, ws);
+    program.syntax_only = lsp_lton_is_path(path);
     speak(ws, &program);
-    bind_host_names(project, &program);
+    if (!program.syntax_only) bind_host_names(project, &program);
     const LhatUnit *unit = lhat_program_check(&program, path);
     if (unit != NULL && unit->loaded) {
         sink(context, unit);
