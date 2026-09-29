@@ -214,6 +214,32 @@ static void math_hadamard(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
+// Clamp each component using the same comparison order as number^.clamp.
+// Scalar bounds apply to every component; vector bounds are component-wise.
+static void math_clamp(LhatMachine *machine, void *context,
+                       const LhatValue *args, size_t count,
+                       LhatValue *answers, int *answer_count)
+{
+    const MathModule *module = (const MathModule *)context;
+    MathValue value, low, high;
+    if (count < 3 || !math_arg(module, args[0], &value)) {
+        return;
+    }
+    bool scalar = lhat_is_number(args[1]) && lhat_is_number(args[2]);
+    if (!scalar && (!math_arg(module, args[1], &low) ||
+                    !math_arg(module, args[2], &high))) {
+        return;
+    }
+    for (size_t i = 0; i < MATH_DIM; i++) {
+        double lo = scalar ? math_real(args[1]) : low.component[i];
+        double hi = scalar ? math_real(args[2]) : high.component[i];
+        double component = value.component[i];
+        value.component[i] = (float)(component < lo ? lo : component > hi ? hi : component);
+    }
+    answers[0] = math_value(machine, module, value);
+    *answer_count = 1;
+}
+
 // Unclamped linear interpolation. Compute in number^ precision before
 // rounding each component back to the host value's f32 representation.
 static void math_lerp(LhatMachine *machine, void *context,
@@ -565,6 +591,12 @@ static bool math_register(LhatProgram *program, MathModule *module,
            lhat_register_hostvalue_member(program, MATH_MODULE, MATH_TYPE, "lerp",
                                           "f^self^, " MATH_FULL ", number^ -> " MATH_FULL ";",
                                           math_lerp, module) &&
+           lhat_register_hostvalue_member(program, MATH_MODULE, MATH_TYPE, "clamp",
+                                          "f^self^, number^, number^ -> " MATH_FULL ";",
+                                          math_clamp, module) &&
+           lhat_register_hostvalue_member(program, MATH_MODULE, MATH_TYPE, "clamp",
+                                          "f^self^, " MATH_FULL ", " MATH_FULL " -> " MATH_FULL ";",
+                                          math_clamp, module) &&
 #endif
 #if defined(MATH_VECTOR2)
            lhat_register_hostvalue_member(program, MATH_MODULE, MATH_TYPE, "angle",

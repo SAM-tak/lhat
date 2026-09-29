@@ -83,6 +83,44 @@ static void test_vector_abs(void)
     lhat_test_ran_dispose(&ran);
 }
 
+static void test_vector_clamp(void)
+{
+    LHAT_TEST("vector clamp accepts scalar and component-wise bounds without mutation");
+    LhatTestRan ran = run_source(
+        "import^ std.math\n"
+        "let^ a = std.math.vector2.new(-2, 3)\n"
+        "let^ b = std.math.vector3.new(-2, 0.5, 3)\n"
+        "let^ c = std.math.vector4.new(-2, 0, 1, 3)\n"
+        "let^ aa:std.math.vector2.Vector2 = a.clamp(0, 1)\n"
+        "let^ bb:std.math.vector3.Vector3 = b.clamp(0, 1)\n"
+        "let^ cc:std.math.vector4.Vector4 = c.clamp(0, 1)\n"
+        "let^ av = a.clamp(std.math.vector2.new(-1, 1), std.math.vector2.new(2, 2))\n"
+        "let^ bv = b.clamp(std.math.vector3.new(-3, 1, -2), std.math.vector3.new(-1, 2, 2))\n"
+        "let^ cv = c.clamp(std.math.vector4.new(-1, -2, 2, -4), std.math.vector4.new(0, -1, 2, 2))\n"
+        "if^ aa.x = 0 and^ aa.y = 1\n"
+        " and^ bb.x = 0 and^ bb.y = 0.5 and^ bb.z = 1\n"
+        " and^ cc.x = 0 and^ cc.y = 0 and^ cc.z = 1 and^ cc.w = 1\n"
+        " and^ av.x = -1 and^ av.y = 2\n"
+        " and^ bv.x = -2 and^ bv.y = 1 and^ bv.z = 2\n"
+        " and^ cv.x = -1 and^ cv.y = -1 and^ cv.z = 2 and^ cv.w = 2\n"
+        " and^ a.x = -2 and^ a.y = 3\n"
+        " and^ b.x = -2 and^ b.y = 0.5 and^ b.z = 3\n"
+        " and^ c.x = -2 and^ c.y = 0 and^ c.z = 1 and^ c.w = 3 { return^ 1 }\n"
+        "return^ 0\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("vector clamp rejects mixed scalar/vector bounds and different dimensions");
+    LHAT_CHECK(!lhat_test_check_text(regs, sizeof regs / sizeof regs[0],
+        "import^ std.math\n"
+        "let^ v = std.math.vector2.zero().clamp(0, std.math.vector2.one())\n"),
+        "both bounds must use the same overload");
+    LHAT_CHECK(!lhat_test_check_text(regs, sizeof regs / sizeof regs[0],
+        "import^ std.math\n"
+        "let^ v = std.math.vector3.zero().clamp(std.math.vector4.zero(), std.math.vector4.one())\n"),
+        "vector bounds must match the receiver's dimension");
+}
+
 static void test_vector4(void)
 {
     LHAT_TEST("Vector4 zero and one functions return values");
@@ -446,6 +484,7 @@ int main(void)
 {
     test_inferred_scalar_field_writes();
     test_vector_abs();
+    test_vector_clamp();
     test_operator_syntax();
     test_vector4();
     test_complex();

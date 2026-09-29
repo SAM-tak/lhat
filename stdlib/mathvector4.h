@@ -7,6 +7,8 @@
 // normalized; there is no 4D cross product. The language supplies Box^.
 // Module functions zero() and one() return fresh Vector4 values.
 // abs() returns a Vector4 of component-wise absolute values, without mutation.
+// clamp(low, high) returns a component-wise clamped copy. Bounds are either
+// two numbers (shared by all components) or two Vector4 values.
 #ifndef LHATSTDLIB_MATHVECTOR4_H
 #define LHATSTDLIB_MATHVECTOR4_H
 

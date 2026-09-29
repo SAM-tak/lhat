@@ -20,6 +20,8 @@
 //   Module functions zero(), one(), right(), left(), up(), down(), forward()
 //   and back() return fresh values. +Z is forward, -Z is back.
 //   abs() returns a Vector3 of component-wise absolute values, without mutation.
+//   clamp(low, high) returns a component-wise clamped copy. Bounds are either
+//   two numbers (shared by all components) or two Vector3 values.
 
 #ifndef LHATSTDLIB_MATHVECTOR3_H
 #define LHATSTDLIB_MATHVECTOR3_H
