@@ -835,6 +835,38 @@ static void test_an_abstract_field_declares_a_type(void)
     check_dispose(&c);
 }
 
+static void test_applied_types(void)
+{
+    LHAT_TEST("type applications colour their base and all nested type arguments");
+    static const char *source =
+        "import^ std.task\n"
+        "var^ tasks:t^{std.task.Task<number^>[]} = {}\n"
+        "let^ Task = std.task.Task\n"
+        "var^ nested:t^{Task<Task<string^>>[]} = {}\n"
+        "var^ pairs:t^{Task<number^, string^>[]} = {}\n";
+    LhatProgram program;
+    lhat_program_init(&program, true, one_unit_load, (void *)source);
+    LHAT_CHECK(lhat_register_hostdata_type(&program, "std.task", "Task") != NULL,
+               "registered a nominal type");
+    const LhatUnit *root = lhat_program_check(&program, "main.lh");
+    LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program), "checked");
+    if (root != NULL) {
+        cJSON *data = lsp_semantic_tokens_for_unit(root);
+        Tokens tokens = decode(data);
+        expect_token(&tokens, source, "Task<number^>[]", "type", false);
+        expect_token(&tokens, source, "number^>[]", "type", false);
+        expect_token(&tokens, source, "Task<Task<string^>>", "type", false);
+        expect_token(&tokens, source, "Task<string^>>", "type", false);
+        expect_token(&tokens, source, "string^>>", "type", false);
+        expect_token(&tokens, source, "Task<number^,", "type", false);
+        expect_token(&tokens, source, "number^, string^", "type", false);
+        expect_token(&tokens, source, "string^>[]", "type", false);
+        free(tokens.items);
+        cJSON_Delete(data);
+    }
+    lhat_program_dispose(&program);
+}
+
 // 13.11: a use inside a branch that narrowed the name reads like every other
 // use of it. It did not: a narrowed name answers before chk_infer_name, which
 // is what records one, so the name went unresolved exactly where the branch
@@ -1043,6 +1075,7 @@ int main(void)
     test_let_is_readonly_and_var_is_not();
     test_a_narrowed_use_reads_like_any_other();
     test_an_abstract_field_declares_a_type();
+    test_applied_types();
     test_a_host_type_reads_as_a_type();
     test_a_builtin_member_says_it_is_one();
     test_a_delegate_target_is_a_member();

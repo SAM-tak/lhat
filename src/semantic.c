@@ -428,6 +428,13 @@ static void walk_type(SemCollector *out, const LhatNode *node)
             walk_params(out, node->v.func.params);
             walk_type(out, node->v.func.return_type);
             break;
+        case LHAT_NODE_TYPE_APPLY:
+            walk_type(out, node->v.access.target);
+            for (const LhatNode *argument = node->v.access.argument;
+                 argument != NULL; argument = argument->next) {
+                walk_type(out, argument);
+            }
+            break;
         case LHAT_NODE_TYPE_TABLE:
             walk_table_entries(out, node->v.list.items);
             break;
