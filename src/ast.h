@@ -230,6 +230,8 @@ struct LhatNode {
     // Independently checked bodies, owned by the semantic type arena.
     struct LhatFunctionInstance *checked_instances;
     const struct LhatFunctionInstance *checked_instance; // Selected concrete callee.
+    uint64_t checked_transfer_arguments; // Host calls that snapshot argument captures.
+    const struct LhatType *checked_callable_type; // Callable/coroutine provenance, also without tooling.
     // Stable declaration identity for lexical bindings. Written by semantic
     // analysis even without tool resolutions; codegen maps it to storage.
     // Borrowed from the parsed trees, which outlive checking and compilation.

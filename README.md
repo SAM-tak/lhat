@@ -131,19 +131,20 @@ and a construct that has not finished reads on:
 5
 ```
 
-With a file, `--run` checks the whole program — the unit and everything it
+With a file, the default checks the whole program — the unit and everything it
 requires — and runs it:
 
 ```powershell
-.\build\debug\lhat.exe --run path\to\file.lhat
+.\build\debug\lhat.exe path\to\file.lhat
 ```
 
 | Option      | What it does                                         |
 | ----------- | ---------------------------------------------------- |
 | *(no file)* | Read from a prompt                                   |
-| `--run`     | Check the program and run it                         |
+| *(default)* | Check the program and run it                         |
+| `--run`     | Explicitly select program execution                  |
 | `--check`   | Type check and report, without running               |
-| *(default)* | Print the syntax tree                                |
+| `--ast`     | Print the syntax tree                                |
 | `--tokens`  | Print the token stream instead                       |
 | `--command` | Read the input as the command form (`foo 1 2` calls) |
 

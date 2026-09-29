@@ -30,6 +30,9 @@ typedef LhatInstantiationStatus (*LhatInstantiationCheckHandler)(
     const LhatCheckType **resolved_signature);
 
 bool lhat_check_type_pending(const LhatCheckType *type);
+// Declare that this call snapshots an argument's captured values into another
+// execution environment. Index excludes the receiver; supports positions 0..63.
+void lhat_check_transfer_argument(LhatInstantiationContext *context, size_t index);
 // Look up a registered, fully qualified type name (not a signature parser).
 const LhatCheckType *lhat_check_type_named(LhatInstantiationContext *context,
                                          const char *name);

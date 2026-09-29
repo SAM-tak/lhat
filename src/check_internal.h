@@ -573,6 +573,7 @@ typedef struct LhatTemplate {
 } LhatTemplate;
 
 void chk_freeze_templates(Checker *c, const Scope *scope);
+void chk_check_task_initialization(Checker *c);
 
 
 void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code);

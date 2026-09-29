@@ -459,10 +459,11 @@ static const LhatMessageEntry CLI_MESSAGES[] = {
     [CLI_USAGE] = {"cli.usage",
         "usage: lhat [option] <file> [argument...]\n"
         "  no file        read from a prompt\n"
+        "  default        check the whole program and run it\n"
         "  --run          check the whole program and run it; what follows "
         "the file is its '...'\n"
         "  --check        type check and report, without running\n"
-        "  default        print the syntax tree\n"
+        "  --ast          print the syntax tree\n"
         "  --tokens       print the token stream instead\n"
         "  --dump-bytecode  print what the unit compiles to\n"
         "  --command      read the input as the command form\n"
@@ -1778,6 +1779,7 @@ int main(int argc, char **argv)
     char **arguments = NULL;
     size_t argument_count = 0;
     bool tokens_only = false;
+    bool ast_only = false;
     bool bytecode_only = false;
     bool check_only = false;
     bool run_program = false;
@@ -1802,6 +1804,8 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--tokens") == 0) {
             tokens_only = true;
+        } else if (strcmp(argv[i], "--ast") == 0) {
+            ast_only = true;
         } else if (strcmp(argv[i], "--dump-bytecode") == 0) {
             bytecode_only = true;
         } else if (strcmp(argv[i], "--check") == 0) {
@@ -1977,7 +1981,7 @@ int main(int argc, char **argv)
     }
 
     // 03 の 4 章: with nothing to read, read from the prompt.
-    if (path == NULL && !tokens_only && !bytecode_only && !check_only &&
+    if (path == NULL && !ast_only && !tokens_only && !bytecode_only && !check_only &&
         !run_program && !command_form) {
 #if LHAT_WITH_FRONTEND
         return repl(strictness == STRICTNESS_STRICT);
@@ -2003,6 +2007,9 @@ int main(int argc, char **argv)
         }
         return compile_program(path, out_dir,
                                strictness != STRICTNESS_RELAXED, !strip_debug);
+    }
+    if (!ast_only && !tokens_only && !bytecode_only && !check_only && !command_form) {
+        run_program = true;
     }
     if (check_only || run_program) {
         return check_program(path, run_program,

@@ -59,7 +59,7 @@ static void test_specializations(void)
 {
     Types t;
     types_init(&t);
-    LhatInstantiationContext context = { &t.arena, NULL };
+    LhatInstantiationContext context = { &t.arena, NULL, 0 };
     LhatType *base = table0(&t);
     base->v.table.nominal = true;
     const LhatCheckType *number = simple(&t, LHAT_TYPE_NUMBER);

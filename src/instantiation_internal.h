@@ -4,5 +4,6 @@
 struct LhatInstantiationContext {
     LhatTypeArena *arena;
     const LhatType *hosted;
+    uint64_t transfer_arguments;
 };
 #endif

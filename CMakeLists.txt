@@ -191,6 +191,7 @@ set(LHAT_FRONTEND_SOURCES
     src/check.c
     src/check_expr.c
     src/check_stmt.c
+    src/check_initialization.c
     src/semantic.c
     src/completion.c
     src/fix.c

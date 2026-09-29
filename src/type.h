@@ -230,6 +230,8 @@ struct LhatType {
     LhatTypeList *specialization_arguments;
     // A generative source definition, distinct from its concrete signatures.
     struct LhatTemplate *template_definition;
+    // Source provenance for callable values and the coroutines they create.
+    const struct LhatNode *source_body;
 
     union {
         struct {

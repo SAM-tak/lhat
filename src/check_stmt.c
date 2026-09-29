@@ -109,7 +109,7 @@ LhatType *chk_typeinfo_type(Checker *c)
 LhatType *chk_typeinfo_of(Checker *c, LhatType *represented)
 {
     if (represented == NULL) return chk_typeinfo_type(c);
-    LhatInstantiationContext context = {c->result->types, c->require.hosted};
+    LhatInstantiationContext context = {c->result->types, c->require.hosted, 0};
     const LhatCheckType *args[] = {represented};
     return (LhatType *)lhat_check_type_specialize(&context, chk_typeinfo_type(c), args, 1);
 }

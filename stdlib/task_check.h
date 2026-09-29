@@ -24,6 +24,7 @@ static LhatInstantiationStatus task_check_async(
 {
     (void)user;
     (void)receiver;
+    lhat_check_transfer_argument(context, 0);
     if (count == 0) return LHAT_INSTANTIATION_DEFAULT;
     if (lhat_check_type_pending(arguments[0])) return LHAT_INSTANTIATION_PENDING;
     for (size_t i = 0; i < lhat_check_type_union_count(arguments[0]); i++) {

@@ -15,6 +15,58 @@
 // test can say every word in it is answered by something.
 #include "check_internal.h"
 
+static void test_operator_diagnostic_operands(void)
+{
+    LHAT_TEST("operator diagnostics retain the operator and both operand types, including nested causes");
+    static const char *const sources[] = {
+        "let^ bad = true^ + 1\n",
+        "let^ bad = 1 * 'text'\n",
+        "let^ piece = p^n {_yield^0 return^if^n <= 0: 0 el^: this^(n-1) + 1;}\n"
+        "let^ co = piece(2)\n",
+        "let^ piece = p^n, src, dst, aux {_yield^0\n"
+        " let^solve = f^n, src, dst, aux {if^n <= 0: 0 el^: this^(n-1,src,aux,dst) + 1;}\n"
+        " return^if^n <= 0: 0 el^: this^(n-1,src,aux,dst) + 1; }\n"
+        "let^split = p^n {let^co = piece(n,1,2,3)}\n"
+        "split(2)\n",
+        "let^ piece = p^n, src, dst, aux {_yield^0\n"
+        " let^solve = f^n, src, dst, aux:any^ {if^n <= 0: 0 el^: this^(n-1,src,aux,dst) + 1;}\n"
+        " return^if^n <= 0: 0 el^: this^(n-1,src,aux,dst) + 1; }\n"
+        "let^split = p^n {let^co = piece(n,1,2,3)}\n"
+        "split(2)\n"
+    };
+    static const char *const operators[] = {"+", "*", "+", "+", "+"};
+    static const char *const left_types[] = {"bool^", "number^", "c^{", "c^{", "c^{"};
+    static const char *const right_types[] = {"number^", "string^", "number^", "number^", "number^"};
+    for (size_t i = 0; i < sizeof sources / sizeof sources[0]; i++) {
+        Unit u;
+        check_text(&u, sources[i]);
+        bool found = false;
+        for (size_t k = 0; k < u.checked.diagnostic_count; k++) {
+            const LhatCheckDiagnostic *root = &u.checked.diagnostics[k];
+            const LhatCheckDiagnostic *d = root;
+            while (d->cause != NULL) d = d->cause;
+            if (d->code != LHAT_CHECK_ERR_NO_OPERATOR) continue;
+            found = true;
+            LHAT_CHECK(d->name_length == 1 && d->name[0] == operators[i][0], "operator retained");
+            LHAT_CHECK(d->operator_left != NULL && strstr(d->operator_left, left_types[i]) != NULL,
+                       "left type retained");
+            LHAT_CHECK(d->operator_right != NULL && strstr(d->operator_right, right_types[i]) != NULL,
+                       "right type retained");
+            size_t length = lhat_check_message_write(NULL, root, NULL, 0);
+            char *message = malloc(length + 1);
+            LHAT_REQUIRE(message != NULL, "message allocated");
+            LHAT_CHECK(lhat_check_message_write(NULL, root, message, length + 1) == length,
+                       "measurement and rendering agree");
+            LHAT_CHECK(strstr(message, "cannot apply operator '") != NULL &&
+                       strstr(message, left_types[i]) != NULL && strstr(message, right_types[i]) != NULL,
+                       "rendered diagnostic includes operator and types");
+            free(message);
+        }
+        LHAT_CHECK(found, "operator failure found");
+        unit_dispose(&u);
+    }
+}
+
 static void test_error_handling_inference_gaps(void)
 {
     Unit u;
@@ -3448,6 +3500,7 @@ static void test_dropped_errors(void)
 
 int main(void)
 {
+    test_operator_diagnostic_operands();
     test_error_handling_inference_gaps();
     test_any_operators();
     test_error_operand_diagnostics();

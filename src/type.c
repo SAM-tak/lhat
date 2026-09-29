@@ -76,6 +76,11 @@ LhatFunctionInstance *lhat_type_function_instance(LhatTypeArena *arena)
     return arena_alloc(arena, sizeof(LhatFunctionInstance));
 }
 
+void lhat_check_transfer_argument(LhatInstantiationContext *context, size_t index)
+{
+    if (context != NULL && index < 64) context->transfer_arguments |= UINT64_C(1) << index;
+}
+
 void *lhat_type_semantic_alloc(LhatTypeArena *arena, size_t size)
 {
     return arena_alloc(arena, size);

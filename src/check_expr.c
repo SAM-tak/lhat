@@ -586,7 +586,7 @@ static bool demand_ordering(Checker *c, const LhatNode *at, LhatType *left,
     return true;
 }
 
-static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
+static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKind op,
                                 LhatType *left, LhatType *right)
 {
     size_t length = 0;
@@ -776,6 +776,31 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
                           : LHAT_CHECK_ERR_NO_OPERATOR);
     }
     return lhat_type_call_answer(carrier);
+}
+
+static const char *operator_type_text(Checker *c, const LhatType *type)
+{
+    size_t length = lhat_type_write(type, NULL, 0);
+    char *text = lhat_type_semantic_alloc(c->result->types, length + 1);
+    if (text != NULL) lhat_type_write(type, text, length + 1);
+    return text;
+}
+
+static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
+                                LhatType *left, LhatType *right)
+{
+    size_t before = c->result->diagnostic_count;
+    LhatType *answer = infer_operator_inner(c, node, op, left, right);
+    for (size_t i = before; i < c->result->diagnostic_count; i++) {
+        LhatCheckDiagnostic *d = &c->result->diagnostics[i];
+        if (d->code != LHAT_CHECK_ERR_NO_OPERATOR) continue;
+        size_t length = 0;
+        d->name = chk_operator_name(op, &length);
+        d->name_length = (uint32_t)length;
+        d->operator_left = operator_type_text(c, left);
+        d->operator_right = operator_type_text(c, right);
+    }
+    return answer;
 }
 
 // 05 の 8.2: the member of L^ a host-bound name reaches, or NULL when the
@@ -1556,12 +1581,14 @@ static LhatType *coroutine_made_by(Checker *c, const LhatType *func)
     // Nothing unions R with anything, so there is nothing for a nil^ to be an
     // arm of -- filling one in would be inventing a parameter. Y is not the
     // same: a yield^ with no value really does hand nil^ to the resumer.
-    return lhat_type_coro(c->result->types, func->v.func.yield_receive,
+    LhatType *coroutine = lhat_type_coro(c->result->types, func->v.func.yield_receive,
                           func->v.func.yield_produce != NULL
                               ? func->v.func.yield_produce
                               : chk_simple(c, LHAT_TYPE_NIL),
                           func->v.func.result, endless,
-                          func->v.func.is_function);
+                           func->v.func.is_function);
+    if (coroutine != NULL) coroutine->source_body = func->source_body;
+    return coroutine;
 }
 
 // 13.9: what one turn of a coroutine answers -- Y|T, which done() is what
@@ -1631,13 +1658,18 @@ static void retain_instance_failure(Checker *c, Instantiation *instance, size_t 
     instance->failure = NULL;
     instance->failure_path = NULL;
     instance->advisory = true;
+    size_t selected = start;
     for (size_t k = start; k < c->result->diagnostic_count; k++) {
-        if (!c->result->diagnostics[k].relaxed_ok) instance->advisory = false;
+        if (!c->result->diagnostics[k].relaxed_ok) {
+            // An earlier inference gap must not hide a definite body error.
+            if (instance->advisory) selected = k;
+            instance->advisory = false;
+        }
     }
     if (c->result->diagnostic_count <= start) return;
     LhatCheckDiagnostic *kept = lhat_type_semantic_alloc(c->result->types, sizeof *kept);
     if (kept != NULL) {
-        *kept = c->result->diagnostics[start];
+        *kept = c->result->diagnostics[selected];
         memset(kept->fixes, 0, sizeof kept->fixes);
         instance->failure = kept;
         instance->failure_path = c->lexer->source->name;
@@ -1892,7 +1924,7 @@ static LhatType *host_call_answer(Checker *c, const LhatNode *node,
         arguments++;
         count--;
     }
-    LhatInstantiationContext context = { c->result->types, c->require.hosted };
+    LhatInstantiationContext context = { c->result->types, c->require.hosted, 0 };
     if (dependent) {
         LhatType *answer = lhat_type_instantiate_result(c->result->types,
             signature->v.func.result, arguments, count);
@@ -1912,6 +1944,7 @@ static LhatType *host_call_answer(Checker *c, const LhatNode *node,
             &context, signature->v.func.instantiation_context, signature, receiver,
             arguments, count, &resolved);
     }
+    ((LhatNode *)node)->checked_transfer_arguments = context.transfer_arguments;
     if (status == LHAT_INSTANTIATION_DEFAULT) {
         if (!dependent) return chk_call_answer(c, signature);
         resolved = signature;
@@ -1953,6 +1986,7 @@ static LhatType *host_call_answer(Checker *c, const LhatNode *node,
 
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
+    ((LhatNode *)node)->checked_transfer_arguments = 0;
     ((LhatNode *)node)->checked_instance = NULL;
     ((LhatNode *)node)->checked_arm = 0;
     ((LhatNode *)node)->checked_receiver = NULL;
@@ -4217,6 +4251,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
 
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
     // 15.2: whether the body suspends is read off the body, not written.
+    if (func != NULL) func->source_body = node;
     func->v.func.yields = node->v.func.yields;
     // 15.13: and whether it promises to capture nothing is written, not read
     // -- what a caller may rely on is what the writer said.
@@ -6313,6 +6348,12 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
     LhatType *outer_expected = c->expected_func;
     if (expects_descriptor) c->expected_func = NULL;
     LhatType *type = infer_node(c, node, capture);
+    if (node != NULL) {
+        ((LhatNode *)node)->checked_callable_type = type != NULL &&
+            (type->kind == LHAT_TYPE_FUNC || type->kind == LHAT_TYPE_CORO ||
+             type->kind == LHAT_TYPE_UNION || type->kind == LHAT_TYPE_INTERSECT)
+            ? type : NULL;
+    }
     c->expected_func = outer_expected;
     if (expects_descriptor && capture != NULL && *capture == NULL &&
         node != NULL && run_of_names(node, true) &&

@@ -580,6 +580,74 @@ static void test_task_unit_boundary(void)
     }
 }
 
+static void test_task_capture_initialization(void)
+{
+    LHAT_TEST("task transfer rejects uninitialized captures through nested and recursive calls");
+    static const char *const sources[] = {
+        "import^ std.task\n"
+        "let^piece = p^n:number^ {_yield^0 let^solve = f^ {return^ppp()} return^solve()}\n"
+        "let^split = p^n:number^ {if^n = 0 {let^t = std.task.async(piece(n)) catch^panic^it^ return^} this^(n-1)}\n"
+        "split(1)\n"
+        "let^ppp = f^{42}\n",
+        // Defining piece before ppp is legal; the use must follow initialization.
+        "import^ std.task\n"
+        "let^piece = p^n:number^ {_yield^0 let^solve = f^ {return^ppp()} return^solve()}\n"
+        "let^split = p^n:number^ {let^t = std.task.async(piece(n)) catch^panic^it^}\n"
+        "let^ppp = f^{42}\n"
+        "split(1)\n",
+        // Coroutine construction holds cells; transfer snapshots their values.
+        "import^ std.task\n"
+        "let^piece = p^ {_yield^0 return^ppp()}\n"
+        "let^co = piece()\n"
+        "let^ppp = f^{42}\n"
+        "let^t = std.task.async(co) catch^panic^it^\n",
+        // An initialized captured closure can itself capture an uninitialized value.
+        "import^ std.task\n"
+        "let^piece = p^ {_yield^0 return^ppp()}\n"
+        "let^ppp = f^{answer}\n"
+        "let^t = std.task.async(piece()) catch^panic^it^\n"
+        "let^answer = 42\n",
+        // An uncalled body is not a transfer at its definition site.
+        "import^ std.task\n"
+        "let^piece = p^ {_yield^0 return^ppp()}\n"
+        "let^unused = p^ {let^t = std.task.async(piece()) catch^panic^it^}\n"
+        "let^ppp = f^{42}\n",
+        // A wrapper's parameter retains the transferred coroutine's origin.
+        "import^ std.task\n"
+        "let^piece = p^ {_yield^0 return^ppp()}\n"
+        "let^submit = p^co {let^t = std.task.async(co) catch^panic^it^}\n"
+        "submit(piece())\n"
+        "let^ppp = f^{42}\n",
+    };
+    for (size_t i = 0; i < sizeof sources / sizeof sources[0]; i++) {
+        for (int strict = 0; strict < 2; strict++) {
+            LhatProgram *program = lhat_program_new(strict != 0, typed_task_load, (void *)sources[i]);
+            LHAT_REQUIRE(program != NULL, "program created");
+            LHAT_CHECK(lhatstdlib_task_register(program), "task registered");
+            const LhatUnit *unit = lhat_program_check(program, "main.lh");
+            LHAT_CHECK(unit != NULL, "checked");
+            size_t reports = 0;
+            if (unit != NULL) {
+                for (size_t k = 0; k < unit->checked.diagnostic_count; k++) {
+                    const LhatCheckDiagnostic *d = &unit->checked.diagnostics[k];
+                    if (d->code != LHAT_CHECK_ERR_UNINITIALIZED_TASK_CAPTURE) continue;
+                    reports++;
+                    LHAT_CHECK_EQ_INT(d->line, 4);
+                    LHAT_CHECK(!d->relaxed_ok && d->cause != NULL && d->cause->line == 5,
+                               "hard error at use, with initialization location");
+                    const char *name = i == 3 ? "answer" : "ppp";
+                    LHAT_CHECK(d->name_length == strlen(name) &&
+                               memcmp(d->name, name, d->name_length) == 0, "captured name");
+                }
+            }
+            bool bad = i == 0 || i == 3 || i == 5;
+            LHAT_CHECK_EQ_INT(reports, bad ? 1 : 0);
+            LHAT_CHECK(lhat_program_has_errors(program) == bad, "only unsafe transfers fail");
+            lhat_program_free(program);
+        }
+    }
+}
+
 static void test_await_union_projection(void)
 {
     LHAT_TEST("await flattens a projected union together with all task errors");
@@ -850,6 +918,7 @@ int main(void)
     test_await_inferred_type();
     test_await_union_projection();
     test_task_unit_boundary();
+    test_task_capture_initialization();
     test_static_results();
     test_the_sketch();
     test_side_by_side();

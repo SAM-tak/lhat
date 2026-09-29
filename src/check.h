@@ -35,6 +35,8 @@ typedef enum {
 
     LHAT_CHECK_ERR_MISMATCH,            // 13.11: the value does not fit
     LHAT_CHECK_ERR_TEMPLATE_CONTEXT,
+    LHAT_CHECK_ERR_UNINITIALIZED_TASK_CAPTURE,
+    LHAT_CHECK_ERR_CAPTURE_INITIALIZER,
     LHAT_CHECK_ERR_SHAPE_REFUSED,       // 03 の 3.4改3: the body cannot
                                         // take this call's argument types
     LHAT_CHECK_ERR_NOT_NUMBER,          // unary '-' on something else. The
@@ -377,6 +379,10 @@ typedef struct LhatCheckDiagnostic {
     // for the codes that name nothing.
     const char *name;
     uint32_t name_length;
+
+    // Frozen operand descriptions, owned by the semantic arena.
+    const char *operator_left;
+    const char *operator_right;
 
     // 07 §6: the fixes this diagnostic knows how to make, read through
     // lhat_fix_slot_read. The stage that refused is the one that knows what

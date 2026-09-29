@@ -37,6 +37,8 @@ void chk_report_fix(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
     LhatCheckDiagnostic *d = &r->diagnostics[r->diagnostic_count++];
     d->cause = NULL;
     d->cause_path = NULL;
+    d->operator_left = NULL;
+    d->operator_right = NULL;
     d->code = code;
     d->relaxed_ok = code == LHAT_CHECK_ERR_ACCESS_ON_MAYBE_NIL ||
                    code == LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL ||
@@ -1805,7 +1807,7 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
                     return chk_simple(c, LHAT_TYPE_UNKNOWN);
                 }
             }
-            LhatInstantiationContext context = { c->result->types, c->require.hosted };
+            LhatInstantiationContext context = { c->result->types, c->require.hosted, 0 };
             if (base != NULL && base->kind == LHAT_TYPE_TABLE && base->v.table.is_typeinfo && count != 1) {
                 chk_report(c, node, LHAT_CHECK_ERR_TYPE_SPECIALIZATION);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
@@ -3511,7 +3513,12 @@ void chk_settle_param_vars(Checker *c, ParamVar *mark)
             // signature this parameter is part of has a hole in it that every
             // caller would be handed. 13.7's any^ is how a writer says a
             // position really does take anything.
-            chk_report(c, pv->node, LHAT_CHECK_ERR_PARAM_UNDECIDED);
+            const LhatNode *name_node = pv->node->kind == LHAT_NODE_PARAM
+                ? pv->node->v.param.name : pv->node;
+            const char *name = NULL;
+            size_t length = 0;
+            chk_node_name(c, name_node, &name, &length);
+            chk_report_named(c, pv->node, LHAT_CHECK_ERR_PARAM_UNDECIDED, name, length);
         }
         lhat_free(pv);
     }
@@ -3888,6 +3895,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer, bool strict,
     // name written late is not missed. 8.7 already makes every name visible
     // throughout the scope, so this only reads what is there.
     result->exports = chk_collect_exports(&checker, unit->v.list.items);
+    chk_check_task_initialization(&checker);
 
 #if LHAT_WITH_RESOLUTIONS
     // 07 の 4 章: last, so that everything the walk recorded is in hand --
@@ -4811,12 +4819,14 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "names, or narrow to it with fits^"},
     [LHAT_CHECK_ERR_TEMPLATE_CONTEXT] = {"check.template-context",
         "template^ requires a source unit and fixed positional parameters"},
+    [LHAT_CHECK_ERR_UNINITIALIZED_TASK_CAPTURE] = {"check.uninitialized-task-capture",
+        "when this call transfers the task, captured binding '{name}' has not been initialized yet"},
+    [LHAT_CHECK_ERR_CAPTURE_INITIALIZER] = {"check.capture-initializer",
+        "this declaration initializes the captured binding"},
     [LHAT_CHECK_ERR_SHAPE_REFUSED] = {"check.shape-refused",
         "instantiation failed for this call"},
     [LHAT_CHECK_ERR_PARAM_UNDECIDED] = {"check.param-undecided",
-        "nothing in this body says what this parameter is, so its "
-        "type has to be written; any^ is how to say it really does "
-        "take anything"},
+        "cannot infer this parameter's type"},
     [LHAT_CHECK_ERR_TYPE_UNDECIDED] = {"check.type-undecided",
         "inference did not decide what this name holds, so its "
         "type has to be written"},
@@ -4898,6 +4908,10 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
 // name in a hole. A code only ever reported with a name holds the hole in its
 // one text instead, so it has no row here.
 static const LhatMessageEntry CHECK_NAMED_MESSAGES[] = {
+    [LHAT_CHECK_ERR_PARAM_UNDECIDED] = {"check.param-undecided.named",
+        "cannot infer the type of parameter '{name}'"},
+    [LHAT_CHECK_ERR_NO_OPERATOR] = {"check.no-operator.named",
+        "cannot apply operator '{name}' to left operand of type '{left}' and right operand of type '{right}'"},
     [LHAT_CHECK_ERR_MISMATCH] = {"check.mismatch.named",
         "this value does not fit where it is written: {member}"},
     [LHAT_CHECK_ERR_NO_MEMBER] =
@@ -4956,7 +4970,7 @@ size_t lhat_check_message_write(const struct LhatProgram *program,
 {
     const LhatMessageEntry *entry =
         diagnostic != NULL ? check_entry(diagnostic) : NULL;
-    LhatMessageArg args[NAME_HOLE_COUNT];
+    LhatMessageArg args[NAME_HOLE_COUNT + 2];
     size_t count = 0;
     if (entry != NULL && diagnostic->name != NULL) {
         for (; count < NAME_HOLE_COUNT; count++) {
@@ -4964,6 +4978,14 @@ size_t lhat_check_message_write(const struct LhatProgram *program,
             args[count].value = diagnostic->name;
             args[count].length = diagnostic->name_length;
         }
+    }
+    if (diagnostic != NULL && diagnostic->operator_left != NULL) {
+        args[count++] = (LhatMessageArg){"left", diagnostic->operator_left,
+                                       strlen(diagnostic->operator_left)};
+    }
+    if (diagnostic != NULL && diagnostic->operator_right != NULL) {
+        args[count++] = (LhatMessageArg){"right", diagnostic->operator_right,
+                                       strlen(diagnostic->operator_right)};
     }
     const char *text =
         entry != NULL ? lhat_program_text(program, entry->id, entry->text)
