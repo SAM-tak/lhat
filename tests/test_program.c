@@ -168,6 +168,26 @@ static void test_dependencies(void)
 
 static void test_concrete_function_bodies(void)
 {
+    LHAT_TEST("late call shapes are checked even when inferred signatures stay unchanged");
+    static const char *const chains[] = {
+        "let^f3 = f^x{x * 10}\n"
+        "let^f2 = f^x, y, z{(x * 2 + 1, f3(y) + 2, z + 3)}\n"
+        "let^a, b, c = f2(3, 4, 5)\nreturn^ a * 10000 + b * 100 + c\n",
+        "let^f2 = f^x, y, z{(x * 2 + 1, f3(y) + 2, z + 3)}\n"
+        "let^f3 = f^x{x * 10}\n"
+        "let^a, b, c = f2(3, 4, 5)\nreturn^ a * 10000 + b * 100 + c\n",
+    };
+    for (size_t k = 0; k < sizeof chains / sizeof chains[0]; k++) {
+        for (int strict = 0; strict < 2; strict++) {
+            Run chain;
+            if (strict) run_checked_text(&chain, chains[k]);
+            else run_text(&chain, chains[k]);
+            LHAT_CHECK_EQ_INT(lhat_check_error_count(&chain.checked), 0);
+            CHECK_INTEGER(&chain, 74208);
+            run_dispose(&chain);
+        }
+    }
+
     LHAT_TEST("local concrete bodies preserve correlations, captures and execution");
     Run r;
     run_checked_text(&r,

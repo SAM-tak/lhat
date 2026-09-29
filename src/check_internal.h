@@ -229,6 +229,9 @@ typedef struct {
     size_t binding_sites;
 #endif
     size_t round;
+    // New call shapes require another walk even if inferred signatures have
+    // not changed. The list only prepends records during checking.
+    const Instantiation *instantiations;
     // One walk per element plus one: an element settles no later than the one
     // it reads ahead of itself, so a chain of them is done in as many walks
     // as there are elements, and one more finds nothing left to change.

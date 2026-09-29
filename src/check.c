@@ -3532,6 +3532,7 @@ void chk_rounds_begin(Checker *c, Rounds *r, size_t count)
     r->binding_sites = c->result->binding_site_count;
 #endif
     r->round = 0;
+    r->instantiations = c->instantiations;
     r->cap = count + 1;
     r->changed = false;
     r->read_provisional_outside = c->read_provisional;
@@ -3545,11 +3546,15 @@ bool chk_rounds_next(Checker *c, Rounds *r)
 {
     // Nothing was read ahead, so another walk reads the same things and says
     // the same things -- or this walk answered exactly what the last one did,
-    // which is the fixpoint. Either way what it has just said stands.
-    if (!c->read_provisional || !r->changed || r->round + 1 >= r->cap) {
+    // which is the fixpoint. New call shapes are additional semantic work:
+    // their concrete bodies still need checking even when types stay equal.
+    bool new_shapes = c->instantiations != r->instantiations;
+    if (!c->read_provisional || (!r->changed && !new_shapes) ||
+        r->round + 1 >= r->cap) {
         return false;
     }
     r->round++;
+    r->instantiations = c->instantiations;
     r->changed = false;
     c->read_provisional = false;
     c->result->diagnostic_count = r->diagnostics;
