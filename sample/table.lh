@@ -15,4 +15,4 @@ anyt.push^(0)
 anyt.push^(1)
 anyt.push^(2)
 anyt.push^(3)
-for^v in^anyt { print("anyt array", v) }
+for^v:number^ in^anyt { print($"anyt array {index^}:{v}") }
