@@ -156,7 +156,8 @@ endif()
 
 # ---- The language ---------------------------------------------------------
 # Everything but the driver, so a host embeds this and nothing else. It calls
-# out to lhatport for memory and for reading a unit -- see src/port.h.
+# out to lhatport for memory and for reading a unit -- see
+# include/lhat/port.h.
 # 05 の 10.8: the core is what runs a compiled unit; the front end is what
 # makes one out of text. type.c stays with the core -- registration builds
 # types, and it reads nothing of the front end.

@@ -5,7 +5,7 @@
 // **Replace this file.** Copy it, write the four functions however you like,
 // and leave lhatport out of your link. Nothing is registered, nothing can be
 // forgotten, and there is no indirection at all. This is the way for a static
-// build, and it is why src/port.h declares plain functions.
+// build, and it is why include/lhat/port.h declares plain functions.
 //
 // **Call lhat_set_allocator.** A shared build is linked before the host sees
 // it and carries this file inside, so the linker seam is out of reach there.

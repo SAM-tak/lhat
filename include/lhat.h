@@ -19,16 +19,22 @@
 //
 // The order a host works in is 05 の 8.7 and 5.3:
 //
-//     LhatProgram program;
-//     lhat_program_init(&program, true, lhat_load_file, NULL);
-//     lhat_register_func(&program, "system.io", "print", "p^string^;", fn, ctx);
+//     LhatProgram *program = lhat_program_new(true, lhat_load_file, NULL);
+//     lhat_register_func(program, "system.io", "print", "p^string^;", fn, ctx);
 //
-//     const LhatUnit *root = lhat_program_check(&program, "main.lh");
-//     lhat_program_compile(&program);
+//     const LhatUnit *root = lhat_program_check(program, "main.lh");
+//     LhatMachine *machine =
+//         lhat_program_compile(program) ? lhat_machine_new() : NULL;
+//     lhat_program_install(program, machine);   // only with registrations
+//     LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
 //
-//     LhatMachine *machine = lhat_machine_new();
-//     lhat_program_install(&program, machine);   // only with registrations
-//     lhat_run(machine, lhat_unit_proto(root));
+//     lhat_machine_dispose(machine);
+//     lhat_program_free(program);
+//
+// LhatProgram is opaque and lhat_program_new is the only way to have one, so
+// it is a pointer the host owns. The body of a unit is reached through
+// lhat_unit_proto(root), not through anything on the program: a machine is
+// given nothing (05 の 5.3), and what it runs is the one unit check named.
 //
 // Registering comes before checking, because the checker has to know what a
 // signature says. Installing comes before running, because that is when what
@@ -41,7 +47,7 @@
 // When a unit's text changes under machines already running -- an editor's
 // save -- the whole of 05 の 5.7 is one call:
 //
-//     lhat_reload(&program, "lib.lh", machines, machine_count);
+//     lhat_reload(program, "lib.lh", machines, machine_count);
 //
 // It invalidates, forgets the unit on each machine, rechecks, recompiles,
 // and frees the retired bodies only once it has seen that no machine still

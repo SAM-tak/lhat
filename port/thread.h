@@ -1,12 +1,12 @@
 // L^ (lhat) -- an OS thread, a lock and a condition, on whichever system.
 //
-// The core asks for none of this: src/port.h is what the *language* needs from
-// its surroundings, and the language runs on one thread by itself (src/gc.c's
-// "one set of roots rather than a thread apiece"). This is what things built
-// *beside* the core ask for -- stdlib/thread.c, which starts a machine of its
-// own on a thread of its own, and lsp/, which keeps one worker off the read
-// loop. So it lives in port/ and is a target of its own that `lhat` does not
-// link: leave lhatthread out and the language is unaffected.
+// The core asks for none of this: include/lhat/port.h is what the *language*
+// needs from its surroundings, and the language runs on one thread by itself
+// (src/gc.c's "one set of roots rather than a thread apiece"). This is what
+// things built *beside* the core ask for -- stdlib/thread.c, which starts a
+// machine of its own on a thread of its own, and lsp/, which keeps one worker
+// off the read loop. So it lives in port/ and is a target of its own that
+// `lhat` does not link: leave lhatthread out and the language is unaffected.
 //
 // **Why not C11 <threads.h>.** It is optional (__STDC_NO_THREADS__), and the
 // systems that skip it are not obscure ones:
