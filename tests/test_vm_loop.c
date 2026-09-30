@@ -13,6 +13,37 @@
 #include "fixture.h"
 
 // 16.5: repeat^ is the one that carries no focus.
+static void test_array_index(void)
+{
+    Run r;
+    LHAT_TEST("array index is zero based and ignores the mapping half");
+    run_text(&r, "var^sum = 0\nlet^t = {10,20,30, label = 99}\n"
+                 "for^v in^t {sum += index^ * v}\nreturn^sum\n");
+    CHECK_INTEGER(&r, 80);
+    run_dispose(&r);
+
+    LHAT_TEST("nested array indices use the usual repeated-hat lookup");
+    run_text(&r, "var^sum = 0\nfor^v in^{1,2} {for^w in^{3,4,5} {"
+                 "sum += index^^ * 10 + index^}}\nreturn^sum\n");
+    CHECK_INTEGER(&r, 36);
+    run_dispose(&r);
+
+    LHAT_TEST("next and break preserve each captured array index");
+    run_text(&r, "let^fs:t^{(f^ -> number^;)[]} = {}\n"
+                 "for^v in^{10,20,30,40} {"
+                 "fs.push^(f^ -> number^ {return^index^})\n"
+                 "if^index^ = 0 {next^}\nif^index^ = 2 {break^}}\n"
+                 "return^fs[0]() * 100 + fs[1]() * 10 + fs[2]()\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    LHAT_TEST("empty array walks do not enter and holes end the indexed sequence");
+    run_text(&r, "var^sum = 0\nfor^v in^{} {sum += index^ + 100}\n"
+                 "for^v in^{[0]=10,[2]=30} {sum += index^ + v}\nreturn^sum\n");
+    CHECK_INTEGER(&r, 10);
+    run_dispose(&r);
+}
+
 static void test_repeat(void)
 {
     Run r;
@@ -1369,6 +1400,7 @@ static void test_growing_loop_jumps(void)
 
 int main(void)
 {
+    test_array_index();
     test_repeat();
     test_for();
     test_loop_clauses();

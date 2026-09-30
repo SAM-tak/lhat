@@ -227,6 +227,7 @@ struct LhatNode {
     // stage's; compile_subroutine (vm.c) is the reader, and casts it back.
     // NULL until checking runs, and unset entirely when it never does.
     void *checked_type;
+    bool checked_array_index; // Single-focus built-in table walk provides index^.
     // Independently checked bodies, owned by the semantic type arena.
     struct LhatFunctionInstance *checked_instances;
     const struct LhatFunctionInstance *checked_instance; // Selected concrete callee.

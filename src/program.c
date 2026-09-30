@@ -4392,10 +4392,15 @@ LhatUnitState lhat_unit_state(const LhatUnit *unit)
 
 bool lhat_unit_ok(const LhatUnit *unit)
 {
-    return unit != NULL && unit->loaded && unit->state == LHAT_UNIT_DONE &&
-           unit->lexer.diagnostic_count == 0 &&
-           unit->parsed.diagnostic_count == 0 &&
-           lhat_check_error_count(&unit->checked) == 0;
+    if (unit == NULL || !unit->loaded || unit->state != LHAT_UNIT_DONE ||
+        unit->lexer.diagnostic_count != 0 || unit->parsed.diagnostic_count != 0) {
+        return false;
+    }
+#if LHAT_WITH_FRONTEND
+    return lhat_check_error_count(&unit->checked) == 0;
+#else
+    return true;
+#endif
 }
 
 LhatCompileStatus lhat_program_compile_status(const LhatProgram *program)
@@ -4979,10 +4984,14 @@ bool lhat_program_has_errors(const LhatProgram *program)
         if (!u->loaded) {
             return true;
         }
-        if (u->lexer.diagnostic_count > 0 || u->parsed.diagnostic_count > 0 ||
-            lhat_check_error_count(&u->checked) > 0) {
+        if (u->lexer.diagnostic_count > 0 || u->parsed.diagnostic_count > 0) {
             return true;
         }
+#if LHAT_WITH_FRONTEND
+        if (lhat_check_error_count(&u->checked) > 0) {
+            return true;
+        }
+#endif
     }
     return false;
 }

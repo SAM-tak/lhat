@@ -5229,6 +5229,16 @@ static void compile_loop(Compiler *c, const LhatNode *node)
 
     declare_names(c, prolog);
     declare_names(c, first);
+    // Keep the index above loop-persistent locals, so closing its capture
+    // cell before the next element does not detach prolog^/first^ bindings.
+    uint8_t array_index = 0;
+    if (node->checked_array_index) {
+        array_index = reserve(c);
+        Local *index = declare_local(c, "index^", 6, array_index, 1);
+        if (index == NULL) return;
+        index->declaration = node;
+        load_constant(c, array_index, lhat_integer(-1));
+    }
     compile_in_scope(c, prolog);
 
     // 9.7: one bool answers both "has first^ run" and "did the loop ever run",
@@ -5311,6 +5321,17 @@ static void compile_loop(Compiler *c, const LhatNode *node)
                                     (uint8_t)focus_locals, 0));
         }
         bind_targets(c, focus, local_mark, focus_locals, taken);
+        if (node->checked_array_index) {
+            // The built-in sequence walk visits 0, 1, ... without skipping
+            // slots. Close the old cell before updating: an escaped closure
+            // keeps this iteration's index, including across next^/break^.
+            emit(c, lhat_encode_abc(LHAT_BC_CLOSE, array_index, 0, 0));
+            uint8_t index_mark = c->next_register;
+            uint8_t one = reserve(c);
+            load_constant(c, one, lhat_integer(1));
+            emit(c, lhat_encode_abc(LHAT_BC_ADD, array_index, array_index, one));
+            c->next_register = index_mark;
+        }
     } else if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
         if (fused_count) {
             leaving = emit_jump(c, LHAT_BC_FORPREP, counter);

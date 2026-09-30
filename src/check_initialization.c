@@ -192,7 +192,8 @@ static void invoke(Initialization *s, const LhatNode *body, const LhatNode *argu
 static void execute(Initialization *s, const LhatNode *node)
 {
     if (node == NULL || node->kind == LHAT_NODE_FUNC) return;
-    if (node->checked_binding == node) {
+    if (node->checked_binding == node ||
+        (node->kind == LHAT_NODE_FOR && node->checked_array_index)) {
         size_t at = lookup(s, node);
         if (at != SIZE_MAX) s->ready[at] = true;
     }

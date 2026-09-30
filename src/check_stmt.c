@@ -1571,8 +1571,9 @@ static const LhatTypeMember *member_named(const LhatType *type,
 // sequence half in order, several take the (K, V) pairs apart -- so what the
 // walk produces depends on which was written.
 static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
-                              size_t count)
+                              size_t count, bool *array_index)
 {
+    *array_index = false;
     if (over != NULL && over->kind == LHAT_TYPE_PENDING) {
         // 03 の 3.1・3.5、P6: walking a still-pending^ expression makes the
         // element type pending^ too, not merely unknown^.
@@ -1632,6 +1633,7 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
     // keyed half at all -- 'for^ i from^ 0 to^ the length - 1 { t[i] }' written
     // as a walk.
     if (over->kind == LHAT_TYPE_TABLE || over->kind == LHAT_TYPE_ERROR_KIND) {
+        *array_index = over->kind == LHAT_TYPE_TABLE && count == 1;
         return count > 1 ? chk_table_walk_tuple(c, over)
                          : chk_table_element_type(c, over);
     }
@@ -1700,8 +1702,19 @@ static void check_focus(Checker *c, const LhatNode *node)
     // quiet when the walk itself was already refused -- one report per
     // mistake.
     size_t already = c->result->diagnostic_count;
+    bool array_index = false;
     LhatType *produced = walk_produce(c, node->v.loop.bound,
-                                      chk_infer(c, node->v.loop.bound), count);
+                                      chk_infer(c, node->v.loop.bound), count, &array_index);
+    ((LhatNode *)node)->checked_array_index = array_index;
+    if (array_index) {
+        Binding *index = chk_scope_add(c->scope, "index^", 6,
+                                       chk_simple(c, LHAT_TYPE_NUMBER), node->offset);
+        if (index != NULL) {
+            index->declaration = node;
+            index->reached = true;
+            index->immutable = true;
+        }
+    }
 
     // 13.8改: a tuple has exactly its positions, and each one is a slot the
     // loop reserved -- said once here rather than once per name below.

@@ -15,6 +15,79 @@
 // 02 の 16.3. The focus of an in^ loop is bound from what the walk yields,
 // which is the one place a for^ header defines names rather than reading
 // them. Until this, they were read -- and found nothing.
+static void test_unconstrained_table_walks(void)
+{
+    static const char *const declarations[] = {
+        "let^t = {}\n",
+        "let^t:t^{} = {}\n",
+        "let^t:t^{number^[]} = {}\n"
+    };
+    for (size_t i = 0; i < sizeof declarations / sizeof declarations[0]; i++) {
+        for (int strict = 0; strict < 2; strict++) {
+            LHAT_TEST("unconstrained table walks yield any, while typed arrays retain number");
+            char source[1024];
+            snprintf(source, sizeof source,
+                "%s"
+                "t.push^(0)\nt.push^(1)\nt.push^(2)\nt.push^(3)\n"
+                "for^v in^t {}\n"
+                "for^k,v in^t {}\n"
+                "for^k,v in^t.iterate^() {}\n"
+                "for^k in^t.keys^() {}\n"
+                "for^v in^t.values^() {}\n", declarations[i]);
+            Unit u;
+            if (strict) check_text(&u, source);
+            else check_relaxed_text(&u, source);
+            CHECK_CLEAN(&u);
+            LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 0);
+            size_t focuses = 0;
+            for (const LhatNode *s = u.parsed.root->v.list.items; s != NULL; s = s->next) {
+                if (s->kind != LHAT_NODE_FOR) continue;
+                for (const LhatNode *focus = s->v.loop.focus; focus != NULL; focus = focus->next) {
+                    focuses++;
+                    const LhatNode *name = focus;
+                    if (name->kind == LHAT_NODE_DEFINE) {
+                        name = name->v.binding.targets->kind == LHAT_NODE_FOCUS
+                            ? name->v.binding.values : name->v.binding.targets;
+                    }
+                    const LhatType *type = name->checked_type;
+                    LHAT_CHECK(type != NULL &&
+                               type->kind == (i == 2 ? LHAT_TYPE_NUMBER : LHAT_TYPE_ANY),
+                               "focus has a settled element/key type");
+                }
+            }
+            LHAT_CHECK_EQ_INT(focuses, 7);
+            unit_dispose(&u);
+        }
+    }
+}
+
+static void test_array_index_scope(void)
+{
+    Unit u;
+    LHAT_TEST("array index is a read-only number");
+    check_text(&u, "for^v in^{1,2} {let^n:number^ = index^}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+    check_text(&u, "for^v in^{1,2} {index^ := 9}\n");
+    LHAT_CHECK(lhat_check_error_count(&u.checked) > 0, "index cannot be assigned");
+    unit_dispose(&u);
+
+    static const char *const invalid[] = {
+        "let^n = index^\n",
+        "for^k,v in^{1,2} {let^n = index^}\n",
+        "for^v in^{1,2}.values^() {let^n = index^}\n",
+        "let^gen = p^{yield^1}\nfor^v in^gen() {let^n = index^}\n",
+        "let^t = {iterate^ = f^self^{yield^1}}\nfor^v in^t {let^n = index^}\n"
+    };
+    for (size_t i = 0; i < sizeof invalid / sizeof invalid[0]; i++) {
+        LHAT_TEST("only a direct array walk introduces index");
+        check_text(&u, invalid[i]);
+        LHAT_CHECK_EQ_INT(syntax_errors(&u), 0);
+        LHAT_CHECK(lhat_check_error_count(&u.checked) > 0, "index out of scope");
+        unit_dispose(&u);
+    }
+}
+
 static void test_walking(void)
 {
     Unit u;
@@ -848,6 +921,8 @@ static void test_builtin_operations(void)
 
 int main(void)
 {
+    test_unconstrained_table_walks();
+    test_array_index_scope();
     test_walking();
     test_positions();
     test_dynamic_key();
