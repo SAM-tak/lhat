@@ -9,6 +9,14 @@
 //   window = { title = "a window", width = 480, height = 320 },
 //
 //   let^ conf = try^ std.lton.load("conf.lton")   # => t^{}
+//   let^ text = try^ std.lton.stringify(conf)     # => string^
+//   try^ std.lton.save("conf.lton", conf)        # p^, nil^ on success
+//
+// Output uses four-space indentation, LF and deterministic key order. Only
+// plain data tables, finite numbers, strings and booleans are representable;
+// active cycles and nesting beyond 96 tables are errors. Shared children are
+// expanded, not preserved as shared identities. save writes the filesystem
+// directly (not the read-only program loader), after serialization completes.
 //
 // The elements are 02 の 14.14's three forms as they stand -- positional,
 // `name = value`, `[value] = value` -- separated by `,`, and a trailing one

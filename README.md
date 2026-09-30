@@ -436,6 +436,8 @@ name = "lhat" .. "ove",
 ```lhat
 import^std.lton
 let^conf = std.lton.load("conf.lton") catch^ panic^it^
+let^text = try^std.lton.stringify(conf)
+try^std.lton.save("conf-copy.lton", conf)
 ```
 
 No check was written for LTON. The language already had the rule that makes it

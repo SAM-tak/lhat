@@ -31,6 +31,83 @@ static LhatTestRan run_source(const char *text)
     return lhat_test_run(regs, 1, text);
 }
 
+static void test_text_output(void)
+{
+    LHAT_TEST("LTON stringify is deterministic, indented, and omits root braces");
+    LhatTestRan ran = run_source("import^std.lton\nreturn^try^std.lton.stringify({2, z = 3, a = {x = 1}})\n");
+    LHAT_CHECK_RAN_TEXT(ran, "2,\na = {\n    x = 1,\n},\nz = 3,\n");
+    lhat_test_ran_dispose(&ran);
+    ran = run_source("import^std.lton\nreturn^try^std.lton.stringify({})\n");
+    LHAT_CHECK_RAN_TEXT(ran, "");
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("LTON output round trips sparse keys, booleans, unicode, escapes and precise reals");
+    ran = run_source("import^std.lton\n"
+        "let^s = \"ゆい\\n\\t\\0\\x01\\xFF\\\"\\\\\"\n"
+        "let^text = try^std.lton.stringify({[2] = 7, [true^] = 9, ['a b'] = s, n = 1.2345678901234567})\n"
+        "let^t = try^std.lton.parse(text)\n"
+        "return^if^t[2] = 7 and^t[true^] = 9 and^t['a b'] = s and^t['n'] is^ 1.2345678901234567: 1 el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("shared tables are expanded, and cycles and functions are refused");
+    ran = run_source("import^std.lton\nlet^child = {x = 4}\n"
+        "let^t = try^std.lton.parse(try^std.lton.stringify({a = child, b = child}))\n"
+        "return^t['a']['x'] + t['b']['x']\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 8);
+    lhat_test_ran_dispose(&ran);
+    ran = run_source("import^std.lton\nlet^t = {}\nt['self'] := t\n"
+        "return^if^std.lton.stringify(t) fits^std.lton.LtonError.Cycle: 1 el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+    ran = run_source("import^std.lton\n"
+        "return^if^std.lton.stringify({f = f^{1}}) fits^std.lton.LtonError.Unsupported: 1 el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("integer extremes and deeply nested data have explicit outcomes");
+    ran = run_source("import^std.lton\nlet^n = -9223372036854775807 - 1\n"
+        "let^t = try^std.lton.parse(try^std.lton.stringify({n = n, max = 9223372036854775807}))\n"
+        "return^if^t['n'] is^n and^t['max'] is^9223372036854775807: 1 el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+    ran = run_source("import^std.lton\nvar^t:t^{} = {}\nrepeat^100 {let^old = t\nt := {child = old}}\n"
+        "return^if^std.lton.stringify(t) fits^std.lton.LtonError.TooDeep: 1 el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+    ran = run_source("import^std.lton\nlet^key = {}\n"
+        "return^if^std.lton.stringify({[key] = 1}) fits^std.lton.LtonError.Unsupported: 1 el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("save overwrites only after successful serialization");
+    char path[L_tmpnam];
+    LHAT_REQUIRE(tmpnam(path) != NULL, "temporary path");
+    for (char *p = path; *p; p++) if (*p == '\\') *p = '/';
+    FILE *original = fopen(path, "wb");
+    LHAT_REQUIRE(original != NULL, "existing file created");
+    fputs("previous contents longer than the new serialized table", original);
+    fclose(original);
+    char source[2048];
+    snprintf(source, sizeof source, "import^std.lton\n"
+        "try^std.lton.save('%s', {answer = 42})\n"
+        "return^if^std.lton.save('%s', {f = f^{1}}) fits^std.lton.LtonError.Unsupported: 1 el^: 0;\n", path, path);
+    ran = run_source(source);
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+    FILE *file = fopen(path, "rb");
+    LHAT_REQUIRE(file != NULL, "output exists");
+    char content[64] = {0};
+    size_t length = fread(content, 1, sizeof content - 1, file);
+    fclose(file);
+    LHAT_CHECK(length == strlen("answer = 42,\n") && strcmp(content, "answer = 42,\n") == 0,
+               "serialization failure preserved the existing file");
+    remove(path);
+    ran = run_source("import^std.lton\nreturn^if^std.lton.save('', {}) fits^std.lton.LtonError.CannotWrite: 1 el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+}
+
 // Most cases parse a text and read one value out of it, so the preamble is
 // written once.
 #define PARSING(lton, answer)                     \
@@ -586,6 +663,7 @@ static void test_compiled(void)
 
 int main(void)
 {
+    test_text_output();
     test_what_may_be_written();
     test_what_may_not();
     test_load();

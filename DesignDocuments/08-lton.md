@@ -118,7 +118,7 @@ std.lton.load("conf.lton", { imports = {"std.math"} })   # 案
 ```lhat
 std.lton.parse : f^string^ -> t^{}|std.lton.LtonError|std.error.OutOfMemory;
 std.lton.load  : f^string^ -> t^{}|std.lton.LtonError|std.error.OutOfMemory;
-errordef^ LtonError { CannotRead, Rejected }
+errordef^ LtonError { CannotRead, Rejected, Unsupported, Cycle, TooDeep, CannotWrite }
 ```
 
 - `parse` が原型。ファイル系に一切触れない
@@ -221,18 +221,38 @@ vm.h の「WHAT A HOST IS HOLDING IS NOT A ROOT」がここでも効く。ただ
 
 またぐなら機械の届く所へ置く（`lhat_machine_set_global`）。
 
-## 9. ［未決 T3］書き出し
+## 9. テキストへの書き出し
 
-LTON を直列化形式にするには書き出す側が要る。std.json で判ったことがそのまま
-効く: **テーブルの走査順はハッシュの順であって書き手の順ではない**ので、
-02 の 14.16 と同じく**並べ直す**ことになる。そうして初めて「等しいテーブルは
-同じテキストになる」「読んで書けば元のテキストが返る」が言える。
+```lhat
+std.lton.stringify : f^t^{} -> string^|std.lton.LtonError|std.error.OutOfMemory;
+std.lton.save : p^string^, t^{} -> nil^|std.lton.LtonError|std.error.OutOfMemory;
 
-決めることは、位置要素と名前つきをどう並べるか、入れ子の字下げ、そして
-書けない値（閉包・コルーチン・ホスト値）をどうするか。
+let^text = try^std.lton.stringify(table)
+try^std.lton.save("path/to.some.lton", table)
+```
+
+`stringify` はテーブルを LTON テキストにする。`save` は同じテキストを UTF-8 で
+ファイルへ上書き保存し、成功時は `nil^` を返す。書き込みは副作用なので `p^`。
+保存先の親ディレクトリは自動作成しない。読み込み用の program loader ではなく
+ファイルシステムに直接書く。VM-only ビルドでも両方の出力機能を使用できる。
+
+- 最上位の波括弧は省略し、入れ子は4スペース、改行は LF、各要素に末尾カンマを付ける。
+- 0から連続する配列部分を位置要素として先に出す。残りのキーは数値・真偽値・文字列の
+  順に並べ、数値順、`false^`→`true^`、文字列のバイト順で安定した出力にする。
+- ASCII の通常の識別子キーは `name = value`、それ以外は `[key] = value` とする。
+- 文字列はエスケープして復元可能にする。有限の実数は往復に必要な17桁で出す。
+- 通常のテーブル、文字列、真偽値、有限の数値を扱う。キーは文字列・真偽値・有限の数値。
+  定義・インスタンス、閉包、コルーチン、ホスト値などは `Unsupported`。
+- 循環参照は `Cycle`、入れ子が96テーブルを超えると `TooDeep`。
+  循環していない共有テーブルは各位置に展開する。共有関係、コメント、元の整形は復元しない。
+- 保存先を開く前に変換を完了するため、変換失敗では既存ファイルを変更しない。
+  オープン・書き込み・クローズの失敗は `CannotWrite`。書き込み中の失敗に対する
+  原子的な置換は行わない。
+
+C API の `lhatstdlib_lton_write` は従来どおりソースのバイトコード化であり、
+このテキストへの直列化とは別の機能である。
 
 ## 未決事項
 
 - **T1 — 呼び出し側が名前を渡せる形**（5 節）
 - **T2 — `initial_bindings` を他の入口にも及ぼすか**（5 節）
-- **T3 — 書き出し**（9 節）

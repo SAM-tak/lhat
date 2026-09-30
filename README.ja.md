@@ -336,6 +336,8 @@ name = "lhat" .. "ove",
 ```lhat
 import^std.lton
 let^conf = std.lton.load("conf.lton") catch^ panic^it^
+let^text = try^std.lton.stringify(conf)
+try^std.lton.save("conf-copy.lton", conf)
 ```
 
 LTON のために書かれた検査は 1 つもありません。言語がもともと持っていた規則がそのまま境界になっただけです。
