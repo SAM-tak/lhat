@@ -420,7 +420,12 @@ static void test_for_focus(void)
     // 16.3改2: the counted form advances its own focus, so it takes no
     // introducer word -- the range is spelled 'i from^ A to^ B'.
     static const char *source =
-        "for^ index:number^ from^ 0 to^ 4 { }\n";
+        "for^ index:number^ from^ 0 to^ 4 { }\n"
+        "let^ values = {1, 2}\n"
+        "for^ v:number^ in^values { }\n"
+        "for^ plain in^values { }\n"
+        "let^ entries = {key = 1}\n"
+        "for^ k:string^, item:number^ in^entries { }\n";
 
     Checked c;
     check_text(&c, source);
@@ -431,6 +436,12 @@ static void test_for_focus(void)
     // and the type it was written with are owed a token.
     expect_token(&tokens, source, "index:number^", "variable", true);
     expect_token(&tokens, source, "number^ from^", "type", false);
+    expect_token(&tokens, source, "v:number^", "variable", true);
+    expect_token(&tokens, source, "number^ in^", "type", false);
+    expect_token(&tokens, source, "plain in^", "variable", true);
+    expect_token(&tokens, source, "k:string^", "variable", true);
+    expect_token(&tokens, source, "string^, item", "type", false);
+    expect_token(&tokens, source, "item:number^", "variable", true);
 
     free(tokens.items);
     cJSON_Delete(data);
@@ -843,7 +854,8 @@ static void test_applied_types(void)
         "var^ tasks:t^{std.task.Task<number^>[]} = {}\n"
         "let^ Task = std.task.Task\n"
         "var^ nested:t^{Task<Task<string^>>[]} = {}\n"
-        "var^ pairs:t^{Task<number^, string^>[]} = {}\n";
+        "var^ pairs:t^{Task<number^, string^>[]} = {}\n"
+        "for^ task:std.task.Task<number^> in^tasks { }\n";
     LhatProgram program;
     lhat_program_init(&program, true, one_unit_load, (void *)source);
     LHAT_CHECK(lhat_register_hostdata_type(&program, "std.task", "Task") != NULL,
@@ -861,6 +873,9 @@ static void test_applied_types(void)
         expect_token(&tokens, source, "Task<number^,", "type", false);
         expect_token(&tokens, source, "number^, string^", "type", false);
         expect_token(&tokens, source, "string^>[]", "type", false);
+        expect_token(&tokens, source, "task:std.task", "variable", true);
+        expect_token(&tokens, source, "Task<number^> in^", "type", false);
+        expect_token(&tokens, source, "number^> in^", "type", false);
         free(tokens.items);
         cJSON_Delete(data);
     }

@@ -751,7 +751,19 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             // there is nothing to pair here; and where the focus is itself a
             // DEFINE (the let^/var^ forms), that node says whether 8.9 made
             // it readonly when the walk reaches it.
-            walk_targets(out, node->v.loop.focus, NULL, SEM_MOD_DECLARATION);
+            if (node->v.loop.kind == LHAT_FOR_IN &&
+                node->v.loop.focus != NULL &&
+                node->v.loop.focus->kind == LHAT_NODE_DEFINE &&
+                node->v.loop.focus->v.binding.targets != NULL &&
+                node->v.loop.focus->v.binding.targets->kind == LHAT_NODE_FOCUS) {
+                // A single walk target is wrapped as an implicit it^ binding
+                // by parse_for_focus. Its value still declares the written
+                // loop variable, just like each target in the k, v form.
+                walk_targets(out, node->v.loop.focus->v.binding.values, NULL,
+                             SEM_MOD_DECLARATION);
+            } else {
+                walk_targets(out, node->v.loop.focus, NULL, SEM_MOD_DECLARATION);
+            }
             walk_value(out, node->v.loop.bound);
             walk_value(out, node->v.loop.step);
             walk_list(out, node->v.loop.advance);
