@@ -22,7 +22,7 @@ It is meant to be embedded. The language is a library reached through one
 header, it allocates only through a handful of functions a host can replace,
 and it does not touch a file system unless a host hands it a way to.
 
-- **Version** 0.3.8 — pre-1.0, and no backward compatibility is promised
+- **Version** 0.3.10 — pre-1.0, and no backward compatibility is promised
 - **License** Apache 2.0
 
 ## What it is for
