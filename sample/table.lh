@@ -5,7 +5,14 @@ let^t2d = {
     kkk = "aaa"
 }
 print(t2d)
-for^k, v in^ t2d { print("t2d", k, v) }
-for^v in^ t2d { print("t2d array", v) }
-for^k in^ t2d.keys^() { print("t2d.keys", k) }
-for^v in^ t2d.values^() { print("t2d.values", v) }
+for^k, v in^t2d { print("t2d", k, v) }
+for^v in^t2d { print("t2d array", v) }
+for^k in^t2d.keys^() { print("t2d.keys", k) }
+for^v in^t2d.values^() { print("t2d.values", v) }
+
+let^anyt = {}
+anyt.push^(0)
+anyt.push^(1)
+anyt.push^(2)
+anyt.push^(3)
+for^v in^anyt { print("anyt array", v) }
