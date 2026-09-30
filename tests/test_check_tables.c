@@ -24,7 +24,7 @@ static void test_unconstrained_table_walks(void)
     };
     for (size_t i = 0; i < sizeof declarations / sizeof declarations[0]; i++) {
         for (int strict = 0; strict < 2; strict++) {
-            LHAT_TEST("unconstrained table walks yield any, while typed arrays retain number");
+            LHAT_TEST("unconstrained table walks remain unknown, while typed arrays retain number");
             char source[1024];
             snprintf(source, sizeof source,
                 "%s"
@@ -37,8 +37,14 @@ static void test_unconstrained_table_walks(void)
             Unit u;
             if (strict) check_text(&u, source);
             else check_relaxed_text(&u, source);
-            CHECK_CLEAN(&u);
-            LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 0);
+            if (i == 2) {
+                CHECK_CLEAN(&u);
+                LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 0);
+            } else {
+                CHECK_REPORTS(&u, LHAT_CHECK_ERR_TYPE_UNDECIDED);
+                LHAT_CHECK((lhat_check_error_count(&u.checked) > 0) == (strict != 0),
+                           "unannotated unknown focus follows strictness policy");
+            }
             size_t focuses = 0;
             for (const LhatNode *s = u.parsed.root->v.list.items; s != NULL; s = s->next) {
                 if (s->kind != LHAT_NODE_FOR) continue;
@@ -51,8 +57,8 @@ static void test_unconstrained_table_walks(void)
                     }
                     const LhatType *type = name->checked_type;
                     LHAT_CHECK(type != NULL &&
-                               type->kind == (i == 2 ? LHAT_TYPE_NUMBER : LHAT_TYPE_ANY),
-                               "focus has a settled element/key type");
+                               type->kind == (i == 2 ? LHAT_TYPE_NUMBER : LHAT_TYPE_UNKNOWN),
+                               "unknown element/key type is not promoted to any");
                 }
             }
             LHAT_CHECK_EQ_INT(focuses, 7);
@@ -86,6 +92,38 @@ static void test_array_index_scope(void)
         LHAT_CHECK(lhat_check_error_count(&u.checked) > 0, "index out of scope");
         unit_dispose(&u);
     }
+}
+
+static void test_contextual_table_focus(void)
+{
+    Unit u;
+    static const char *const sources[] = {
+        "let^t:t^{} = {}\nfor^k:string^,v:number^ in^t {}\n",
+        "let^t = {}\nfor^v:number^ in^t {}\n",
+        "let^t:t^{} = {}\nfor^k:string^,v:number^ in^t.iterate^() {}\n",
+        "let^t = {}\nfor^k:string^ in^t.keys^() {}\nfor^v:number^ in^t.values^() {}\n",
+        "let^A = def^{self^{t = {}}, iterate = f^self^{\n"
+        "for^k:string^,v:number^ in^self^.t {yield^k,v}}}\n"
+        "for^k,v in^A.new() {}\n"
+    };
+    for (size_t i = 0; i < sizeof sources / sizeof sources[0]; i++) {
+        for (int strict = 0; strict < 2; strict++) {
+            LHAT_TEST("focus annotations supply unconstrained table key and value types");
+            if (strict) check_text(&u, sources[i]);
+            else check_relaxed_text(&u, sources[i]);
+            CHECK_CLEAN(&u);
+            LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 0);
+            unit_dispose(&u);
+        }
+    }
+    LHAT_TEST("known array element types still reject contradictory focus annotations");
+    check_text(&u, "let^t:t^{number^[]} = {}\nfor^v:string^ in^t {}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+    LHAT_TEST("explicit any is not treated as an absent element constraint");
+    check_text(&u, "let^t:t^{any^[]} = {}\nfor^v:number^ in^t {}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
 }
 
 static void test_walking(void)
@@ -923,6 +961,7 @@ int main(void)
 {
     test_unconstrained_table_walks();
     test_array_index_scope();
+    test_contextual_table_focus();
     test_walking();
     test_positions();
     test_dynamic_key();

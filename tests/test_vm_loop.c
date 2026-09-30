@@ -38,7 +38,7 @@ static void test_array_index(void)
     run_dispose(&r);
 
     LHAT_TEST("empty array walks do not enter and holes end the indexed sequence");
-    run_text(&r, "var^sum = 0\nfor^v in^{} {sum += index^ + 100}\n"
+    run_text(&r, "var^sum = 0\nfor^v:number^ in^{} {sum += index^ + 100}\n"
                  "for^v in^{[0]=10,[2]=30} {sum += index^ + v}\nreturn^sum\n");
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);

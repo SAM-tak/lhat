@@ -580,6 +580,21 @@ static void test_task_unit_boundary(void)
     }
 }
 
+static void test_annotated_task_walk(void)
+{
+    LHAT_TEST("single-focus walks accept applied task type annotations on unconstrained tables");
+    const char *source = "import^std.task\nlet^tasks = {}\n"
+        "for^task:std.task.Task<number^> in^tasks {\n"
+        " let^answer:number^ = std.task.await(task) catch^panic^it^\n}\n";
+    LhatProgram *program = lhat_program_new(true, typed_task_load, (void *)source);
+    LHAT_REQUIRE(program != NULL, "program created");
+    LHAT_CHECK(lhatstdlib_task_register(program), "task registered");
+    LHAT_CHECK(lhat_program_check(program, "main.lh") != NULL, "source checked");
+    LHAT_CHECK(!lhat_program_has_errors(program), "applied annotation resolves the focus");
+    LHAT_CHECK(lhat_program_compile(program), "annotated walk compiles");
+    lhat_program_free(program);
+}
+
 static void test_task_capture_initialization(void)
 {
     LHAT_TEST("task transfer rejects uninitialized captures through nested and recursive calls");
@@ -918,6 +933,7 @@ int main(void)
     test_await_inferred_type();
     test_await_union_projection();
     test_task_unit_boundary();
+    test_annotated_task_walk();
     test_task_capture_initialization();
     test_static_results();
     test_the_sketch();

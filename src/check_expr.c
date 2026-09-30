@@ -2519,11 +2519,8 @@ static void table_walk_halves(Checker *c, const LhatType *over,
     }
     // An unconstrained table may carry more than its listed members.
     // An explicit index constraint supplies the bound on the entire walk.
-    // A known table with no constraint is dynamic, not an inference gap.
-    LhatTypeKind fallback = over != NULL && over->kind == LHAT_TYPE_TABLE
-        ? LHAT_TYPE_ANY : LHAT_TYPE_UNKNOWN;
-    *out_keys = keys != NULL ? keys : chk_simple(c, fallback);
-    *out_values = values != NULL ? values : chk_simple(c, fallback);
+    *out_keys = keys != NULL ? keys : chk_simple(c, LHAT_TYPE_UNKNOWN);
+    *out_values = values != NULL ? values : chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
 
 LhatType *chk_table_walk_tuple(Checker *c, const LhatType *over)
@@ -2565,7 +2562,7 @@ LhatType *chk_table_element_type(Checker *c, const LhatType *over)
         values = lhat_type_union(c->result->types, values,
                                  over->v.table.index_value);
     }
-    return values != NULL ? values : chk_simple(c, LHAT_TYPE_ANY);
+    return values != NULL ? values : chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
 
 // 02 の 14.17: every value carries this, the way 05 の 8.5 gives a coroutine
