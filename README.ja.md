@@ -2,675 +2,354 @@
 
 ![L^ Logo](media/lhat-logo.svg)
 
-**英語版はこちら: [README.md](README.md)**
+**Modern & Better Lua with Visual Programming.**
 
-`L^`（elhat）は、静的型検査が効いたバイトコードインタプリ型のグルー言語です。C11 で書かれ、CMake でビルドします。
+[English](README.md) | **日本語**
 
-Lua の実行時モデル——タグ付きの値、ひとつのデータ構造、コルーチン——に、パーサとコード生成器のあいだに型検査器を置いたものです。ファイルは strict（厳格）が既定で、間違いは実行時の異常ではなく診断になります。日本語で使うには `--language ja` を付けてください（[多言語化](#多言語化)を参照）:
+L^（elhat）は、ゲームやアプリケーションに組み込んで使うスクリプト言語です。
+組み込みやすさ、柔軟なテーブル、コルーチンといった Lua の長所を受け継ぎながら、
+型安全性と表現力を高め、ビジュアルプログラミングとの相互運用を前提に設計しています。
 
-```text
-$ lhat --messages messages/ja --language ja --check todo.lh
-todo.lh:2:1: エラー: この名前は let^ で束縛されていて、代入し直さない。名前を変える必要があるなら var^ と書く: done
-todo.lh:2:9: エラー: この値は、書かれた場所に合わない
-```
+**テキストとビジュアルで、同じソースを扱えます。**
+L^ のソースコードは、そのままビジュアルプログラムの保存形式でもあります。
+開発の途中でテキストとビジュアルを行き来できるように、言語そのものから設計しています。
 
-組込みを前提としています。言語は 1 つのヘッダで到達するライブラリであり、メモリ確保はホストが差し替えられるわずかな関数を介するだけで、ホストが手段を与えなければ、ファイルシステムには触れません。
+- **言語設計の中心にあるビジュアルプログラミング。** コードとグラフが共通のソースを使います。
+  VS Code でのグラフ表示は利用可能で、ビジュアル編集機能は開発中です。
+- **型注釈を抑えながら、型安全に。** 静的型検査と双方向型推論により、簡潔なコードでも間違いを早期に検出できます。
+- **すでに使える開発環境とエンジン連携。** VS Code の言語サポート、Godot バインディング、LÖVE ベースのゲームフレームワークを用意しています。
+- **アプリケーションのロジックを素直に書ける機能。** 関数型と手続き型の併用、構造的型付けによるオブジェクト指向、型付きエラー、パターンマッチ、並行タスクに対応しています。
+- **自分のプロジェクトにも組み込みやすい処理系。** C11 でコンパイルでき、コアの依存は C 標準ライブラリと数学ライブラリ（`libc`・`libm`）だけです。C API からの組み込みや独自のホスト型の登録にも対応しています。
 
-- **バージョン** 0.3.10 —— 1.0 未満で、後方互換性は約束しません
-- **ライセンス** Apache 2.0
+**バージョン:** 0.3.10 · **開発状況:** pre-1.0、開発中 · **ライセンス:** Apache 2.0
 
-## 何のための言語か
+[ビジュアルプログラミング](#テキストとビジュアルプログラミング) ·
+[開発環境と連携](#開発環境と連携) ·
+[言語の特徴](#言語の特徴) ·
+[使い始める](#使い始める) ·
+[アプリケーションへの組み込み](#アプリケーションへの組み込み)
 
-自分で書いたのではないホストにスクリプトを書かせるためのものです。ゲームエンジン、ビルドツール、データパイプライン、エディタなど。ホストがプログラムに見えるものを決め、プログラムは動く前に検査され、全体は 1 つのヘッダでライブラリとしてリンクされます。
+## テキストとビジュアルプログラミング
 
-## 設計が従う原則
+ビジュアルプログラミングは、L^ の中心的な設計目標です。
+`.lh` ファイルをテキストエディタとビジュアルエディタで共有することで、
+ビジュアルプログラムにも通常のソースコードと同じバージョン管理、差分表示、
+コードレビュー、コンパイル、型検査を利用できます。
 
-仕様におけるどの決定も 1 文に帰着します: **間違いは書かれた場所で報告し、同じ言語規則を二重に実装しない。**
+言語とツールは、コードをグラフとして表現するための構造やコメントを保持します。
+VS Code 拡張では、すでにソースのグラフ表示を利用できます。
+ビジュアル編集機能は、[拡張のリポジトリ](https://github.com/SAM-tak/lhat-vscode-extension)で開発を進めています。
 
-`=` は比較なので、*方程式に似た*ものはどれも方程式ではありません。呼び出しの `(` は呼び出し先と同じ行に置くので、誤読は「起こりにくい」ではなく「起こりません」。再代入は前置なので、文が `-` で始まることはありません。置換可能でない `override^` は、約束をした `..` の場所で報告されます。言語サーバはスコープを導き直さず検査器に尋ねます。二つの実装は、規則が難しい場所でこそ食い違うからです。
+たとえば、[次のプログラム](sample/factorial.lh)は、無名関数で 10 の階乗を求めます。
+**`this^` は、その関数自身を指します。** `factorial` のような名前を付けなくても、
+無名のまま自分自身を再帰的に呼び出せます。
 
-帰結として、見慣れた機構がそもそも存在しません。以下がそれで得られるものです。
+![L^ で書いた階乗のプログラム](media/readme-factorial.svg)
 
-### 予約語が存在しない
+同じプログラムを、グラフとして表示することもできます。
 
-キーワードは常に `word^` の形をとります。`^` はその以外の用途に使いません。`if` は普通の識別子です:
+![階乗のプログラムのグラフ表示](media/factorial-graph.svg)
 
-```lhat
-var^ if = 1
-print(if)          # 1
-```
+## 開発環境と連携
 
-そのため字句解析器にはキーワード表そのものがありません——ハット付きの識別子はすべて同じトークン種別で返し、それがキーワードなのか型名なのかは構文解析器に委ねます。キーワードを増やしても既存の識別子は壊れません。これが `^` 記法を採用する理由そのものです。
+### VS Code
 
-### `=` は比較、`:=` は再代入、`==` は無い
+[L^ Language Support](https://marketplace.visualstudio.com/items?itemName=SAMtak.lhat)
+をインストールすると、編集中の診断、コード補完、ホバー表示、定義への移動、
+シグネチャヘルプ、意味に基づくハイライトを利用できます。
+グラフ表示に加え、ブレークポイント、ステップ実行、変数の確認、式の評価などのデバッグ機能も備えています。
 
-```lhat
-var^ n = 0
-n := n + 1
-print(n = 1)       # true
-```
+Marketplace のプラットフォーム別パッケージには、言語サーバ `lhatls` が同梱されています。
+プログラムの実行やデバッグには、[Releases](https://github.com/SAM-tak/lhat/releases)から
+`lhat` を入手するか、後述の手順でビルドしてください。
+設定方法は[拡張のドキュメント](https://github.com/SAM-tak/lhat-vscode-extension)を参照してください。
 
-`i = i + 1` は方程式に見えて別の意味を持つので、その綴りでは書きません。名前を変える方法は 2 つで、`:=`（このほう）と `let^`/`var^`（新しい名前を作る）です。どちらが必要かは検査器が指摘します:
+### ゲームエンジン・フレームワーク
 
-```text
-error: this name was bound by a let^ and is not reassigned; write var^ where the name has to change: n
-```
-
-上の診断は既定（英語）です。`--language ja` を付けると `--dump-messages` が見節の言語で出ます。
-
-### 改行に意味が無い
-
-自動的セミコロン挿入すらありません。字句解析器は改行トークンを出さず、すべてのトークンが「直前に改行があったか」を持ち、それを参照する規則は 10.9 の呼び出し括弧の規則**ただ 1 つ**です: 呼び出しと添字の `(` は、呼び出し先と同じ行になければなりません。
-
-これが次を「呼び出し」として読まないようにします:
-
-```lhat
-let^ f = twice
-(21)               # エラー: 式だけでは文にならない。return^ のつもりか
-```
-
-Lua ではこれは `f(21)` として読まれ、やがて生じる失敗はまったく別の場所を指します。ここでは誤読そのものが起こりえません。実用的な帰結も 1 つ: プロンプトへの貼的行为は、ファイルとまったく同じように振る舞います。
-
-### 誤りが型である
-
-例外機構はありません。失敗しうる操作は、値と失敗しうる方々の合併を返し、その合併が*そのまま*型です:
-
-```lhat
-errordef^ ParseError {
-    Syntax { line : number^, column : number^ },
-    Eof,
-}
-
-let^parse : f^string^ -> number^|ParseError; = f^text:string^ {
-    if^ text = "" { return^error^ParseError.Eof{} }
-    return^error^ParseError.Syntax{ line := 1, column := 1 }
-}
-```
-
-扱う方法は 3 つ——置き換える、呼び出し元へ返す、ブロックごと捕まえる——と 4 つ目で、合併を受け取って絞り込みます:
-
-```lhat
-let^r = parse("hi")
-if^ r fits^ ParseError.Syntax {
-    print($"syntax error at {r.line}:{r.column}")   # ここでは r.line は number^
-el^:
-    if^ r fits^ ParseError.Eof {
-        print("end of input")
-    }
-}
-```
-
-すべての種別を尽くしたときに残るのは成功時の型です。それが網羅性であり、専用の機構は要りません: `when^` は同じ `if^` の連鎖に落ち、残りは同じ絞り込みが担います。
-
-誤りの*種別*は型として宣言されます。Zig 風の error set が自前の構文を持たなくてよい理由がこれです——`|` はもともとありました。L^ が公称的な同一性に手を伸ばすのはここだけです。「標準ライブラリの `NotFound`」と「利用者が宣言した `NotFound`」は同じ種別ではあってはならず、どれほど形が似ていても区別できないからです。
-
-失敗は落とせません。診断は代わりに何を書けばいいかを告げます:
-
-```text
-$ lhat --check risky.lh
-risky.lh:3:1: error: this can fail, and dropping the answer drops the failure with it; write try^ to hand it back, catch^ to answer instead, or a name to bind it and narrow
-```
-
-### `f^` は純粋、`p^` は手続き
-
-2 つは別の種別で、その違いは検査されます:
-
-| | 呼べる相手 | 代入できる先 | `yield^` |
-| --- | --- | --- | --- |
-| `f^` 関数 | 関数のみ | 自分の局所変数と、本体が作ったテーブル | 可 |
-| `p^` 手続き | 両方 | 何でも | 可 |
-
-```lhat
-let^pure = f^t:t^{ x:number^ } -> number^ {
-    let^u = { x := 0 }
-    u.x := 1        # よい: この本体が u を作った
-    return^u.x
-}
-```
-
-同じ本体での `t.x := 3` は誤りで、`f^` から `p^` を呼ぶのも誤りです——利用者定義の演算子も含めてなので、演算子は副作用をもちません。
-
-もう半分は `let^` です。導入子は必ず値を伴うので、「ここで宣言して後で 1 度だけ代入する」形が存在しません。Swift や Java が要する確実な初期化（definite initialization）の解析はここに要りません: `let^` の検査は、その名前への `:=` があるかを見るだけです。
-
-### 型は構造的で、モジュールをまたいでも同じ
-
-名前は診断のためのラベルです。同一性は形で決まります:
-
-```lhat
-let^needs_writer = t^{ write : p^self^, string^; }
-let^use = p^s:needs_writer { s.write("ok") }
-```
-
-公称型付けではこう書けません。別の単位にある同じ形の 2 つの `Point` は*同じ型である*——モジュール境界は公称の境界ではありません。公称の島はちょうど 3 つです: 誤りの種別、`enum^`、そしてホスト登録型です。最後の 1 つは、不透明なホスト型には比べるべき構造がないからです。
-
-### `def^` は式であり、`..` は 2 つの役割を持つ
-
-`..` は一般的な連結演算子で、左に何があるかで適用されます:
-
-```lhat
-"abc" .. "def"      # 文字列
-{1, 2} .. {3, 4}    # テーブル
-Base .. def^{ ... } # 定義
-```
-
-そのため合成が文字列と同じように読め、`class^` は存在しません: `def^` が唯一の利用者定義型の仕組みで、実体型・抽象型・プロトコル・オブジェクトテンプレート・アスペクトをすべて 1 つで兼ねます。
-
-```lhat
-let^Shape = def^{ self^{ label = "shape" }, area = f^self^ -> number^ { return^ 0 } }
-let^Square = Shape .. def^{
-    self^{ side = 2 },
-    override^area = f^self^ { return^self^.side * self^.side }
-}
-let^s = Square.new()
-print($"{s.label} area = {s.area()}")   # shape area = 4
-```
-
-`abstract^` メンバがインタフェースの役割です。合成結果が置換可能でなくなるなら、その `..` で拒否されます——誤りは使われた場所ではなく、約束された場所に出ます。
-
-`delegate^` はメンバを 1 つずつ転送するのではなく**借りる**ため、数百クラスのエンジン束縛が扱いられます: 委譲されたメンバは型に加わり、包装する手続きは生成されません。
-
-### 演算子はメンバであり、すべて純粋
-
-`..` や `+` をそのまま名とするメンバで、引数リストのどの位置に `self^` があるかが受け手を決めます。だから `__radd__` は無いのです:
-
-```lhat
-let^Vec = def^{
-    self^{ x = 0, y = 0 },
-    override^new = f^x:number^, y:number^ { self^{ x = x, y = y } },
-    op^* = f^self^, k:number^ -> Self^ { def^.new(self^.x * k, self^.y * k) },
-    overload^op^* = f^k:number^, self^ -> Self^ { def^.new(k * self^.x, k * self^.y) },
-    op^+ = f^self^, o:Self^ -> Self^ { def^.new(self^.x + o.x, self^.y + o.y) },
-    tostring = f^self^ -> string^ { $"({self^.x}, {self^.y})" },
-}
-let^sum = Vec.new(1, 2) + Vec.new(10, 20) * 3
-print($"sum = {sum}")   # sum = (31, 62)
-print(3 * Vec.new(1, 2))
-```
-
-型が書く比較は 1 つ、`op^<=>` で、`<` `>` `≦` `≧` `=` `≠` はすべてそこから読み出されます。集合、複素数、色、ハンドルは代わりに `op^=` を答えます。何が同じかしか言えず、何が先かを言えないものだからです。
-
-オーバーロードは順位付けではなく*探索*で解決されます: 構造的型付けでは「より特殊」が定義された関係ではないため、1 つの呼び出しに適合する候補は高々 1 つで、重なる署名は書かれた場所で拒否されます。
-
-### コルーチンは注釈ではなく推論で分かる
-
-`yield^` を書けば、その手続きは中断できます。伝播させる `async` の印はなく、`Task`/`Future` 型のこともない——コルーチンが保存するのはスタックではなく 1 フレームで、呼んでも呼び出し側は中断しません。`await^` は委譲なので、必要な深さまで届きます。
-
-`yield^` は式です: 値を外に出し、再開時に外から値を受け取ります。
-
-```lhat
-let^count_to = f^n:number^{
-    var^i = 0
-    repeat^until^i >= n {
-        var^step:number^|nil^ = yield^i
-        i += step ?? 1
-    }
-}
-
-let^co = count_to(10)
-var^got = co.start()
-repeat^until^co.done() {
-    print(got)
-    got := co.resume(2) ?? 0
-}
-```
-
-そして結果がコルーチンである呼び出しを**文**として書くと**コンパイルエラー**です。型がすでに、その文が何もしないことを示しているからです。
-
-スケジューラは言語の外です。`std.task` は OS スレッドの上に N 台のワーカー機械を立ち続け、それぞれに仕事を手渡して分割して完走させ、`std.channel` はその上の MPMC 待ち行列です。協調的な予算があることで、`yield^` を一度も書かなかった機械も中断できます——[sample/async.lh](sample/async.lh) は、ホストからタイマーと待ちを借りるだけの、スケジューラ全体の L^ による書き下しです。
-
-### `nil^` には一族があり、絞り込みは範囲も知る
-
-`?.` は後置連鎖全体を守り、`?` は値があるか尋ね、`??` は置き換え、`?op=` は存在するときだけ演算子を適用します:
-
-```lhat
-var^ t : t^{ string^,string^,string^ }|nil^ = nil^
-let^a = t?[0] ?? "100"        # "100"
-```
-
-```lhat
-var^ count : t^{ number^[] } = { 0, 0, 0 }
-var^ i = 0
-count[i] += 1     # エラー: これは nil^ でありうるが、nil^ はどの演算子にも答えない
-count[i] ?+= 1    # よい
-```
-
-絞り込みが効くのは `fits^`、`nil^` との比較、`?`、ループの限界、順序関係、そして抜けるガードです。位置数が決まったテーブル型が、限界の比較相手を与えます:
-
-```lhat
-let^bump = p^t:t^{ number^[9] }, d:number^ {
-    if^ 1 <= d <= 9 { t[d - 1] += 1 }   # d は 1..9、d - 1 は 0..8
-}
-```
-
-片側だけでは足りず、分岐が知っていたことはその外へ持ち越えません——次の 2 つはどちらも誤りです:
-
-```lhat
-if^ 0 <= d { var^ n : number^ = t[d] }          # 上の側がまだ開いている
-if^ 0 <= d <= 8 { } var^ n : number^ = t[d]     # そして分岐は終わっている
-```
-
-### 絞り込みが推論の全部ではない
-
-型は値の位置に書かれ、注釈はその本体が検査されるときの要求になります。`strict` と `relaxed` が変わのは*決まらなかった型をいつ報告するか*だけで、ソースの書き方は両方で同一です。したがって 2 つの方言に分かれることがなく、`strict` を通ったコードは `relaxed` でも同じように動きます。片道しか保証しないことが、使う意味のある向きです: `relaxed` は `strict` への踏み台であって、そこから逃げる手段ではありません。ファイルは既定で `strict`、プロンプトは `relaxed` なので、書きかけの行を完成前に送れます。
-
-### 何も暗黙に存在しない
-
-グローバルスコープは存在しません。名前が見えるのは、単位が `require^` で取り込んだか、ホストが `import^` で登録したかのどちらかです——`print` にも例外はありません: 修飾なしの `print("...")` が成り立つのは、`print` が言語に属しているからではなく、ホストが初期束縛として与えたからです。`L^` は機械自身のテーブルで、プログラムは読めて書けません。
-
-`require^` は取り込む側が選んだ 1 つの名前だけを束縛します。モジュールは公開するものを、ファイル末尾の `return` ではなく宣言ごとの `public^` で示すので、**公開される名前は構文解析だけで決まります**。何も実行する必要がありません:
-
-```lhat
-module^ lib.greet
-
-public^ let^hello = p^who:string^ { return^ $"hello, {who}" }
-let^secret = 1                     # 取り込む側からは見えない
-```
-
-### ホストは自作型を言語自身の文法で書く
-
-登録は L^ の構文で書かれた型で、何かが動くより前に検査器がそれを読みます:
-
-```c
-lhat_register_func(program, "std.io", "print", "p^string^;", print_fn, NULL);
-lhat_register_global(program, "twice", "f^number^ -> number^;", host_twice, NULL);
-lhat_bind_initial(program, "twice", "L^.twice");
-```
-
-宣言と実装は 1 つですから、乖離しません。引数は検査時に個数と型が確定した配列として届き、誤りは値として返るので、巻き戻しの仕掛けを用意する必要がありません。
-
-## 意図的に採らないもの
-
-以下はいずれも見落としではなく決定であり、仕様が理由を書いています。
-
-| 採らないもの | 理由 |
+| 連携先 | できること |
 | --- | --- |
-| 例外 | 誤りが値なので「後始末の最中に投げられたらどうなる」という問題が発生しない |
-| truthiness | 条件の位置に書けるのは `bool^` だけで、代わりに働くのは絞り込み |
-| メタテーブル | 静的に検査する言語は、実行時に型システムを書き換えさせない |
-| `==`、`++`、`!=` | `=` が比較、`:=` が再代入で、1 つの考えに 1 つの綴り |
-| 自動セミコロン挿入 | 例外の集まりではなく、呼び出し括弧についての規則が 1 つだけ |
-| 公称的な同一性 | 例外は 3 つ挙げられ、どれにも理由がある |
-| 順位付きのオーバーロード | 構造的型付けに「より特殊」が定義されないため、順位付けの基準がない |
-| 分解構文 | 照合は型の仕事、中身を取り出すのは名前の仕事 |
-| 型システム上のジェネリクス | パラメトリックな場合は `template^` が受け持ち、可変長ジェネリクスは重い |
-| プロセス全体のロケール | プログラムが読めるものは、ホストの言語設定によらず同じバイト列 |
+| [Godot](https://github.com/SAM-tak/lhat-gdextension) | GDExtension で L^ を Godot のスクリプト言語として登録し、ノードのスクリプトやエディタツールを記述できます。 |
+| [LÖVE / LÔVE](https://github.com/SAM-tak/lhat-love) | LÖVE ベースのフレームワーク LÔVE で、L^ を使った 2D ゲームを開発できます。 |
+| [Unreal Engine](https://github.com/SAM-tak/lhat-UE) | 初期段階の実験的な連携です。 |
 
-## サンプル
+導入方法と開発状況は、それぞれのリポジトリで案内しています。
 
-[sample/](sample/) には 17 本のプログラムがあります。まず読む価値があるのは以下です。
+## 言語の特徴
 
-### 階乗
+コード例の画像をクリックすると、元のソースファイルを開けます。
 
-`f^` が `this^` 経由で自分自身を呼ぶ——`this^` は囲んでいるサブルーチン自身の署名なので、再帰呼び出しも他と同じように検査されます。1 行です:
+### 日常的な処理を書きやすい構文
 
-![sample/factorial.lh — print(f^n:number^{if^n < 2: 1 el^: n * this^(n - 1);}(10))](media/readme-factorial.svg)
+Lua の便利なテーブルと手軽なスクリプティングを受け継ぎつつ、
+**0 ベースの添字**、**波括弧によるブロック**、`+=` や `*=` などの**複合代入**を採用しています。
+添字はホスト側の API や一般的な配列の慣習と合わせやすく、
+制御構文は C 系の言語に慣れた人にも読みやすい形です。
+Luau と同じく、複合代入によって日常的な更新処理を簡潔に書けます。
 
-### 合成
+[![L^ の 0 ベースの添字、型推論、複合代入の例](media/readme-basics.svg)](sample/readme/basics.lh)
 
-[sample/composition.lh](sample/composition.lh) は、ストレージの上にログ層、その上にキャッシュを積むもので、`delegate^` が各ラッパが扱わないメンバを素通しします。そしてそこ全体を——キャッシュヒットが*ロガーに届かない*ことまで含めて——`Store` を構造的に満たすテストダブルで検証します。具体的な型からも継承していません。両方のラッパはテーブル型に対して書かれているので、具体的なストレージの存在を知りません。
+### 型安全性を前提に設計し、型注釈はできるだけ省略
 
-### タスク
+L^ は、**完全な型安全性を設計の前提**にしています。
+テーブルへのアクセス、オブジェクトの合成、関数の副作用、エラー、ホスト API の呼び出しまで、
+型の規則を言語の意味と一体で定めています。
+既定の strict モードでは、型が決まらない箇所や安全でない操作を実行前に報告します。
 
-[sample/hanoi3.lh](sample/hanoi3.lh) は葉っぱの問題ごとにジョブを持つハノイの塔です: `std.task` が 6 ワーカーを起動し、すべての葉がコルーチンで、`Task<number^>` の値はテーブル経由で戻ります。最初の `depth` 段の再帰は呼び出し元の機械に残ります——分割そのものはタスクを動かさないので、その手数をハーネス側で数えています。
+**双方向型推論**により、式から得られる型だけでなく、その式を使う場所で期待される型も推論に利用します。
+局所変数、戻り値、多くの引数の型は推論できるため、型注釈の大部分を省略できます。
+API の意図や満たしてほしい条件を明示したいところには、型を書くこともできます。
 
-### 言語で書いたスケジューラ
+条件分岐による型の絞り込み、省略可能な値の扱い、添字の範囲を考慮したテーブルアクセスの検査にも対応しています。
+推論結果はエディタの補完や診断にも使われるので、短く書いたコードでも開発支援を受けられます。
 
-[sample/async.lh](sample/async.lh) は完成した協調スケジューラです——タスク表、待ち表、ホストのフレームループ用の `poll()`、ループを自前で持つ側の `run()`——を `def^`、`yield^`、`await^` で書いています。ホストから借りているのはタイマーと待ちだけで、それだけです。
+### 関数型と手続き型を自然に組み合わせる
 
-### 24 ゲーム
+L^ は、**関数**（`f^`）と**手続き**（`p^`）を区別します。
+関数は値の計算や自分の局所的な状態の更新を行えますが、外部の状態を書き換えたり、
+手続きを呼び出したりすることは型検査で禁止されます。
+手続きは状態変更や入出力などを担当し、関数と手続きの両方を呼び出せます。
 
-[sample/24.lh](sample/24.lh): [Rosetta Code の 24 ゲーム](http://rosettacode.org/wiki/24_game)——4 つの数字を配り、プレイヤーがそれらを 1 度ずつ使って 24 になる式を書きます。読み手は `def^` として書いた再帰下降パーサです。
+計算部分をテストしやすい関数として書き、ゲームやアプリケーションとの接続部分を手続きで書く、
+という構成を自然に取れます。
 
-### データをテキストで — LTON
+[![関数で割引価格を計算し、手続きで表示する例](media/readme-functions.svg)](sample/readme/functions.lh)
 
-`.lton` ファイルはテキストで書いたテーブルで、ソースと同じ字句解析器が読み、純粋関数しか呼べない文脈で評価されるので、書式が効果をもつことはありません。式が動くのがこの形式の目的です:
+関数の内部では、効率のために局所変数を更新することもできます。
+呼び出し側にとって重要な、副作用の境界を検査する仕組みです。
 
-```lton
-# conf.lton
-identity = "lhatove-suite",
-window = { title = "test suite", width = 480 },
-width = 480 * 2,               # 960 と書く必要はない
-name = "lhat" .. "ove",
+### 値ごとの GC アロケーションが不要なユーザー定義の値型
+
+ホストアプリケーションから、**8 バイトを超えるインラインの値型**を登録できます。
+独自のフィールド、メソッド、演算子を持たせることも可能です。
+値や演算途中の一時値は VM のスタックスロットに直接格納されるため、
+値を一つ作るたびに GC 管理のオブジェクトを確保する必要がありません。
+
+特定の組み込みベクトル表現に限定せず、ベクトル、クォータニオン、行列、
+アプリケーション固有のレコードなど、さまざまなサイズの数値型を定義できます。
+標準ライブラリにも、複素数、クォータニオン、2・3・4 次元ベクトルを用意しています。
+
+[![L^ のインライン値型によるベクトル演算の例](media/readme-value-types.svg)](sample/readme/value-types.lh)
+
+テーブルなどのヒープ上のコンテナに保存したい場合は、明示的にボックス化できます。
+[値型のサンプル](sample/vector.lh)と[ホスト API の仕様](DesignDocuments/05-modules.md)で詳しく説明しています。
+
+### 失敗を明示的に扱えるエラー処理
+
+L^ は Zig 風のエラーハンドリングを備えています。
+失敗する可能性のある操作は、成功時の値または型付きのエラーを返します。
+`try^` で呼び出し元へ伝え、`catch^` で回復し、エラーの型によって対処を分けられます。
+失敗する可能性のある戻り値を、そのまま捨ててしまうコードは型検査で指摘されます。
+
+[![型付きのゼロ除算エラーを catch^ で処理する例](media/readme-errors.svg)](sample/readme/errors.lh)
+
+エラーにはデータを持たせられるので、失敗の原因や対処に必要な情報を一緒に返せます。
+メッセージの文字列を解析して、エラーの種類を判別する必要はありません。
+
+### 列挙体とパターンマッチ
+
+列挙体で状態や選択肢に名前を付けられます。
+パターンマッチでは値や型で分岐でき、各分岐内では型が絞り込まれます。
+選択肢が分かる場合には、網羅性も検査されます。
+
+[![L^ の列挙体を網羅的にパターンマッチする例](media/readme-enums.svg)](sample/readme/enums.lh)
+
+これらの機能は、エラー処理や、複数の型を受け取る処理の整理にも役立ちます。
+
+### 構造と合成によるオブジェクト指向
+
+メソッド、オブジェクトの定義、合成、委譲、演算子オーバーロードを言語組み込みで提供します。
+**構造的型付け**により、必要なメンバを備えたオブジェクトはそのままインタフェースを満たします。
+別々に開発した部品や、テスト用の代替オブジェクトを組み合わせやすい設計です。
+
+`def^` でオブジェクトを定義し、`..` で定義を合成できます。
+`delegate^` を使えば、転送用のメソッドを繰り返し書かずに、別のオブジェクトへ処理を委譲できます。
+メンバの型やオーバーライドの整合性は、合成時に検査されます。
+クラス階層を前提とせず、オブジェクト指向の設計を組み立てられます。
+
+[合成のサンプル](sample/composition.lh)では、ストレージ、ログ、キャッシュを組み合わせ、
+構造的に適合するテスト用オブジェクトで動作を検証しています。
+
+### タスクとメッセージによる並行処理
+
+`std.task` は、BEAM の軽量プロセスを思わせる、タスク単位の並行処理を提供します。
+コルーチンをジョブとしてワーカー VM のプールへ渡し、タスクハンドルを通じて型付きの結果を受け取れます。
+`std.channel` でワーカー間の値の受け渡しもできます。
+OS スレッドを再利用するので、ジョブごとにスレッドを作る必要がありません。
+
+実装はワーカープール方式で、各ワーカーは担当するジョブを完了まで実行します。
+実行予算によって中断の機会を設けています。
+コルーチン、`yield^`、`await^` は、協調的なスケジューリングやアプリケーションのイベントループとの連携にも使えます。
+
+`std.task` の使用例は[ハノイの塔の並列実行](sample/hanoi3.lh)、
+フレームループとの連携例は[L^ で書いたスケジューラ](sample/async.lh)を参照してください。
+
+### 使う人の言語で読める診断メッセージ
+
+コンパイラの診断、実行時のメッセージ、開発ツールは多言語対応しています。
+英語と日本語のメッセージを用意しており、メッセージカタログで翻訳を追加できます。
+
+```sh
+lhat --messages messages/ja --language ja --check app.lh
 ```
 
-```lhat
-import^std.lton
-let^conf = std.lton.load("conf.lton") catch^ panic^it^
-let^text = try^std.lton.stringify(conf)
-try^std.lton.save("conf-copy.lton", conf)
-```
+表示言語はプログラムごとに選べます。
+データ形式や数値表現は言語設定によらず一定なので、診断の表示言語を変えても、
+アプリケーションのデータ保存や交換の方法は変わりません。
 
-LTON のために書かれた検査は 1 つもありません。言語がもともと持っていた規則がそのまま境界になっただけです。
+## 使い始める
 
-## 言語バインディング
+[VS Code 拡張](https://marketplace.visualstudio.com/items?itemName=SAMtak.lhat)と
+[Releases](https://github.com/SAM-tak/lhat/releases)のランタイムから始められます。
+ソースからビルドする場合は、以下の手順を使ってください。
 
-- [Godot](https://github.com/SAM-tak/lhat-gdextension)
-- [LOVE 2D](https://github.com/SAM-tak/lhat-love)
-- [Unreal Engine](https://github.com/SAM-tak/lhat-UE)（初期段階の実験）
+### ビルドに必要なもの
 
-## ツール
-
-同じリビジョンから 2 つのバイナリが出荷されます。`lhat` はドライバ、`lhatls` は言語サーバです。
-
-### `lhatls` — 言語サーバ
-
-ホバー、補完、定義へ移動、参照検索、シグネチャヘルプ、ドキュメント記号、セマンティクストークン、機械的に適用できるものと要確認のものを区別するクイックフィックス、構文木表示。
-
-この決定を貫いているのは、**サーバは型を導ぎ直さない**ことです。検査器が各名前が何に解決したかを記録し、サーバはその表を読みます。スコープの 2 つ目の実装は、検査器とまさに難しい場所で食い違い、そして永久に足並みを揃える必要があります。帰結は「ほぼ正しい」より強い約束です: サーバが出す候補は、検査器が受け入れる候補そのものです。
-
-`LHAT_WITH_RESOLUTIONS` を切ると記録もサーバも一緒に外れます。言語だけを組み込みツールを使わないホストは、どちらも支払いません。
-
-### デバッガ
-
-`lhat --dap=PORT` は、ループバックソケット上の Debug Adapter Protocol セッションでプログラムを走らせます——ブレークポイント、ステップ実行、フレームと束縛の内観、フレームのスコープでの式評価、トレースバック、機械のウォッチポイント。VM にコンパイルされた行フック（`LHAT_WITH_DEBUGGER`）の上にあり、フックを有効にした状態でもループ 1 反復あたりおよそ 50 ns で、その「スレッド」は OS スレッドではなく L^ の機械です。
-
-デバッガが意図的に C 側の製品なのは、スクリプトから呼べる `debug` ライブラリが `f^` の純精神と静的な型に穴を開けることになるためで、その代わりがこの公開 C API です。
-
-### エディタ
-
-- [VS Code 拡張](https://marketplace.visualstudio.com/items?itemName=SAMtak.lhat)
-- [VS Code 拡張](https://marketplace.visualstudio.com/items?itemName=SAMtak.lhat)
-  —— 言語クライアント、グラフ表示、デバッグクライアント。すべて `lhatls` と `lhat --dap` の上です。
-
-**グラフによる編集。** ビジュアルエディタは同じ言語サーバの別フロントエンドであり、別個の言語ではありません: 検査器と同じ構文木を読み、グラフはテキストであるプログラムの 1 つのビューです。設計文書の 06 章は拡張のリポジトリへ移動しました。処理系を利用するツールは、処理系そのものの仕様ではないからです。[media/factorial-graph.svg](media/factorial-graph.svg) は [sample/factorial.lh](sample/factorial.lh) をグラフにしたものです。
-
-コメントを構文木に付けて保持するのはこのためで、ノードがコメントを持てないグラフは、元のテキストよりずっと乏しくなります。言語だけを組み込みツールを使わないホストは `LHAT_WITH_COMMENTS=OFF` で切れます。
-
-## 必要なもの
-
+- C11 コンパイラ：MSVC、GCC、Clang など
 - CMake 3.25 以降
-- C11 コンパイラ
-  - Windows: Ninja プリセットなら Visual Studio 2022 以降、`vs` プリセットは Visual Studio 2026
-  - Linux / macOS: GCC か Clang
-- [Ninja](https://ninja-build.org/) —— 推奨。Windows では Visual Studio ジェネレータも使えます
+- Ninja プリセットを使う場合は [Ninja](https://ninja-build.org/)。Windows では Visual Studio ジェネレータも利用できます。
 
-## ビルド
+### Windows：Ninja と MSVC
 
-### Windows — Ninja + MSVC（推奨）
-
-Ninja は `cl.exe` を直接呼ぶだけでツールチェーンの場所を探さないので、先にシェルへ MSVC の環境をロードする必要があります。`scripts/devshell.ps1` が `vcvars64.bat` 経由で行います:
+PowerShell で以下を実行します。最初のコマンドは、現在のシェルに MSVC のビルド環境を設定します。
 
 ```powershell
-. .\scripts\devshell.ps1      # 先頭のドットに注意: dot-source である必要がある
+. .\scripts\devshell.ps1
 cmake --preset debug
 cmake --build --preset debug
-.\build\debug\lhat.exe
+.\build\debug\lhat.exe sample\factorial.lh
 ```
 
-`debug` を `release` に置き換えると最適化ビルドになります。
-
-VS Code から CMake Tools 拡張でビルドする場合、環境は選択したキットが設定するので `devshell.ps1` は要りません。
-
-### Windows — Visual Studio ジェネレータ
-
-Visual Studio ジェネレータはツールチェーンを自分で見つけるので `devshell.ps1` は要りません。Visual Studio IDE の中でデバッグしたいときに使ってください。
+Ninja プリセットは Visual Studio 2022 以降に対応しています。
+Visual Studio 2026 のジェネレータを使う場合は、次のようにビルドできます。
 
 ```powershell
 cmake --preset vs
 cmake --build --preset vs-debug
-.\build\vs\Debug\lhat.exe
+.\build\vs\Debug\lhat.exe sample\factorial.lh
 ```
 
-### Linux / macOS
+### Linux と macOS
 
 ```sh
 cmake --preset debug
 cmake --build --preset debug
-./build/debug/lhat
+./build/debug/lhat sample/factorial.lh
 ```
 
-## テスト
+Ninja で最適化ビルドを作るには、`debug` を `release` に置き換えてください。
 
-スイートは既定でビルドされ、CTest で走ります——85 本を 7 グループに分けています:
+### 実行・型検査・対話環境
 
-```powershell
-ctest --test-dir build/debug --output-on-failure
-ctest --test-dir build/debug -L check      # core, check, vm, stdlib, lsp, dap, e2e
+`lhat` に `PATH` を通すと、次のように使えます。
+
+```sh
+lhat                    # Start the interactive prompt
+lhat app.lh             # Type-check and run a program
+lhat --check app.lh      # Type-check without running
+lhat --help             # Show all command-line options
 ```
 
-`core` が言語本体、`check` と `vm` が検査器と機械、`stdlib` がサンプル標準ライブラリ、`lsp` と `dap` がツール、`e2e` がプログラム全体です。`e2e` には `install_smoke` も含まれ、木をインストールして `find_package(lhat CONFIG)` でインストール済みのヘッダに対してホストをビルドし、42 と答えないなら失敗します。この 1 本は Debug の木では無効です（インストールに時間をかける価値がないため）。Debug では 85 本のうち 84 本が走ります。
+引数なしで対話環境を起動し、ファイルを指定すると型検査の後に実行します。
+`--check` は実行せずに型検査だけを行い、`--help` はすべてのコマンドラインオプションを表示します。
 
-configure 時に `-DLHAT_BUILD_TESTS=OFF` を渡すとスキップします。
+ファイルの検査は既定で strict モードです。対話環境では relaxed モードを使い、
+型を決めきれない箇所は実行時に検査することで、試行錯誤をしやすくしています。
+どちらのモードでもソースの書き方は同じです。
 
-CI（`.github/workflows/`）は MSVC、GCC、Clang でビルドしてそれぞれスイートを回し、加えて Clang で ASan と UBSan を有効にしたビルドもあります。
+### サンプルを読む
 
-## 実行
-
-ファイルを渡さない場合はプロンプトになります。式だけを書けば答えが返り、構文が続いていれば読み続けます（`--language ja` を付けるとこの案内も日本語になります）:
-
-```text
-L^ (lhat) 0.3.8
-式だけを書けば答えが返る。構文が続いていれば読み続ける
-ctrl-d か空行で終わる
-an expression on its own is answered; an unfinished construct reads on
-ctrl-d or an empty line ends
-> 2 + 3
-5
-> let^greet = f^n:string^ { $"hi {n}" }
-> greet("there")
-"hi there"
-> let^add = f^a:number^, b:number^ {
-.     return^a + b
-. }
-> add(2, 3)
-5
-```
-
-ファイルを渡すと、既定ではプログラム全体——その単位と、それが要求するものすべて——を検査してから実行します:
-
-```powershell
-.\build\debug\lhat.exe path\to\file.lh
-```
-
-| オプション | なにをするか |
+| サンプル | 内容 |
 | --- | --- |
-| *(ファイルなし)* | プロンプトから読む |
-| *(既定)* | プログラムを検査して実行する |
-| `--run` | プログラム実行を明示する。ファイルの後に続くものはスクリプトの `...` になる |
-| `--check` | 型検査して報告する。実行はしない |
-| `--ast` | 構文木を表示する |
-| `--tokens` | 代わりにトークン列を表示する |
-| `--dump-bytecode` | 単位がコンパイルされる先を表示する |
-| `--command` | 入力をコマンド形式（`foo 1 2` は呼び出し）として読む |
-| `--strict` | 型の誤りをコンパイル時に報告する（ファイルでは既定） |
-| `--relaxed` | 決まらなかった型を実行時検査に任せる（プロンプトでは既定） |
-| `--compile -o DIR` | プログラム全体を検査してコンパイルし、すべての単位を `DIR` にバイト列として書く。`.lton` は単独でコンパイルできる |
-| `--strip-debug` | `--compile` の出力から局所名前と捕捉名を除く |
-| `--dump-signatures FILE` | このドライバの登録がつくる署名表を書く |
-| `--signatures FILE` | 登録の前に署名表を読む。フロントエンドなしのビルドが登録に使うもの |
-| `--dump-host-api [file]` | このドライバが登録するものを JSON で書く（`lhatls` 用）。[sample/lhat-host.json](sample/lhat-host.json) を参照 |
-| `--dump-messages DIR` | 英語のメッセージを `DIR` 配下にソースごとに 1 ファイルで書く。翻訳の土台になるカタログ |
-| `--messages DIR` | カタログを実行ファイルの横ではなく `DIR` から読む |
-| `--language TAG` | システムが読んでいる言語ではなく、その言語で話す |
-| `--dap=PORT` | そのループバックポートの DAP でデバッガの下で走らせる（`--run` を含む） |
-| `-h`、`--help` | 使い方を表示して何もせず終わる |
-| `-v`、`--version` | バージョンを表示して何もせず終わる |
+| [factorial.lh](sample/factorial.lh) | `this^` による無名関数の自己再帰。冒頭のグラフ表示と見比べられます。 |
+| [composition.lh](sample/composition.lh) | 構造的なインタフェース、委譲、部品の再利用。 |
+| [vector.lh](sample/vector.lh) | インライン値型、演算、明示的なボックス化。 |
+| [hanoi3.lh](sample/hanoi3.lh) | `std.task` による並列処理と、型付きのタスク結果。 |
+| [async.lh](sample/async.lh) | イベントループと連携するコルーチンスケジューラ。 |
+| [24.lh](sample/24.lh) | 式のパーサを備えた、対話型の 24 ゲーム。 |
 
-`--ast`、`--tokens`、`--dump-bytecode`、`--command` はいずれもファイルを読みます。ファイルがなければ使い方を表示します。
+設定やデータの保存には、L^ のテーブル構文を使う [LTON](DesignDocuments/08-lton.md) も利用できます。
+純粋関数だけを呼び出せる文脈で、式を評価するデータ形式です。
 
-### 多言語化
+## アプリケーションへの組み込み
 
-`messages/ja/` に日本語カタログがあります。メッセージは固定の文字列 ID と穴を持ち、英語が正で、他の言語はその翻訳です——`--dump-messages` が翻訳者のために英語を書き出します。選択は単位ごとに可能で、プロセス全体を設定する方式ではありません。
+L^ は、移植しやすく組み込みやすいという Lua の重要な長所を受け継いでいます。
+**コアは C11 でコンパイルでき、依存は `libc` と `libm` だけです。**
+大きなランタイム基盤や外部のパッケージ群を導入する必要はありません。
+オプションのスレッド・デバッグ機能は OS のスレッド API やソケット API を利用し、
+ツールが使う JSON のコードはリポジトリに同梱しています。
 
-述べる価値のある不変条件は、**プログラムが読めるものは、ホストがどの言語に設定されていても同じバイト列である**、ということです。対象は `tostring` の答え、数の書き出し、`typeof^` の綴り、LTON の読み書きです。それらを比較・保存・送信する 2 つのプログラムが、実行した人の設定で違う挙動を示すことはありません。
+組み込み API は [`lhat.h`](include/lhat.h) から利用できます。ホスト側では、次のことができます。
 
-## 組み込み
+- 関数、オブジェクト型、インライン値型、列挙体、エラーを登録し、その型情報を型検査やエディタ支援に利用する。
+- 独自のアロケータとモジュールローダで、メモリ管理やソースへのアクセスを制御する。
+- コルーチンの実行・再開や実行予算の設定を行い、アプリケーションのイベントループと連携する。
+- 開発中にコードをリロードし、C API や DAP を通じてデバッグ機能を提供する。
+- コンパイル済みバイトコードを配布し、パーサ・型検査器・コンパイラを省いた VM 専用構成で実行する。
 
-言語は `lhat.lib` で、`lhatport.lib` はメモリがどこから来るかと単位のテキストをどう読むかだけです。ホストは `include/` をパスに置いてヘッダを 1 つ名指します:
+組み込みの一例は [`tests/install_smoke/host.c`](tests/install_smoke/host.c) を参照してください。
+API の登録、読み込み、ホットリロード、配布については、[ホスト API の仕様](DesignDocuments/05-modules.md)にまとめています。
 
-```c
-#include "lhat.h"
+## ビルドとテスト
+
+既定では、ランタイム、標準ライブラリ、CLI、言語サーバ、デバッグアダプタ、テストをビルドします。
+
+```sh
+ctest --preset debug
+ctest --test-dir build/debug -L check --output-on-failure
 ```
 
-`src/` には `parser.h` や `type.h` のような名前があります——誰かの include パスに置くにはありふすぎるので、`src/` の**何も**インストールされません。エディタで L^ に色を付けるホストは `lhat/lexer.h` も名指しますが、これが唯一の別の公開ヘッダで、バイトコードだけを走らせるホストは決して見ません。
+テストのラベルは `core`、`check`、`vm`、`stdlib`、`lsp`、`dap`、`e2e` です。
+CI では MSVC・GCC・Clang によるビルドと、サニタイザを有効にした検証を行っています。
 
-ホストは 1 つの単位を検査し、コンパイルし、インストールし、走らせます。これは [tests/install_smoke/host.c](tests/install_smoke/host.c) の全体からエラー処理を省いたものです:
+### ビルド構成
 
-```c
-LhatProgram *program = lhat_program_new(/*strict=*/true, load_main, NULL);
-lhat_register_global(program, "twice", "f^number^ -> number^;", host_twice, NULL);
-lhat_bind_initial(program, "twice", "L^.twice");
-
-const LhatUnit *root = lhat_program_check(program, "main.lh");
-
-LhatMachine *machine = lhat_program_compile(program) ? lhat_machine_new() : NULL;
-lhat_program_install(program, machine);
-LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
-
-lhat_machine_dispose(machine);
-lhat_program_free(program);
-```
-
-登録は検査より前に置きます。検査器が署名の意味を知る必要があるからです。インストールは実行より前で、それが「登録したものが `L^` に届く」瞬間だからです。
-
-この形のほかに、API はホストが実際に必要とするものを覆っています: 24 個の登録呼び出し（型、メンバ、ホストデータ、ホスト値、`enum^`、誤りの種別、アノテーション、定数、インスタンス化検査）、コルーチンとスケジュール（`lhat_machine_resume`、`lhat_machine_set_budget`、`lhat_machine_call`）、デバッガ、単位と公開分の内観、バイナリ単位と署名表、そしてアロケータ。
-
-### ホットリロード
-
-エディタの保存は 1 つの呼び出しです:
-
-```c
-lhat_reload(program, "lib.lh", machines, machine_count);
-```
-
-無効化し、各機械でその単位を忘れ、再検査し、再コンパイルし、退避させた本体はどの機械もクロージャを保持しなくなったと確認してからしか解放しません。タイミングを自分で握りたいホストのために、それぞれの段は公開されています。
-
-### ポートの差し替え
-
-`lhatport` はメモリがどこから来るかと、単位のテキストをどう読むかだけです。
-
-静的なホストが自分の `port/alloc.c` と `port/loader.c` をコピーして 4 つの関数を書き換え、ライブラリをリンクから外します——コアは `lhat_alloc` とその仲間を、あるところにあるものに対して解決するので、間接層もなく、登録するものもありません。
-
-共有ビルドはその継ぎ目を使えません。DLL はホストに見えるより先にリンクされるからです。そのため既定は `lhat_set_allocator` を通してアロケータを受け取ります。何かが確保される前に呼ばなければならず、そうでなければ false を返すことでそれを知らせます。
-
-ローダは既定では決して用意されません: `lhat_program_new` がそれを取り、`NULL` はどの単位も読めないことを意味します——したがって、組み込まれたものが指示されない限りファイルシステムには届きません。[include/lhat/port.h](include/lhat/port.h) と 05 §8.9 を参照。
-
-## プリセット
-
-| configure プリセット | ジェネレータ | build プリセット | バイナリ置き場 |
-| --- | --- | --- | --- |
-| `debug` | Ninja、`Debug` | `debug` | `build/debug` |
-| `release` | Ninja、`Release` | `release` | `build/release` |
-| `asan` | Ninja、`Debug` + サニタイザ | `asan` | `build/asan` |
-| `pgo` | Ninja、`Release` + PGO 計測 | `pgo` | `build/pgo` |
-| `vs` | Visual Studio 2026（マルチコンフィグ） | `vs-debug`、`vs-release` | `build/vs` |
-| `vmonly` | Ninja、`Release`、VM のみ | `vmonly` | `build/vmonly` |
-
-`ctest` プリセットは `debug`、`release`、`asan` にあり、`outputOnFailure` は設定済みです。
-
-Ninja のプリセットはシングルコンフィグで、ビルド種別は configure 時に決まります。Visual Studio のプリセットはマルチコンフィグなので、build プリセットが選びます。
-
-すべてのプリセットが `CMAKE_EXPORT_COMPILE_COMMANDS` を設定しますが、`compile_commands.json` を実際に出すのは Ninja のプリセットだけです——Visual Studio ジェネレータは対応していません。clangd には `build/debug/compile_commands.json` を指定してください。
-
-`vmonly` はフロントエンドをまったく持たないコアをビルドします: 字句解析器も構文解析器も検査器もコンパイラも入れません。`--compile` が書いたバイナリ単位を読み、署名の表でホストを登録するので、配るランタイムはソース言語の機構もテキストも運びません。この木を MSVC Release でビルドすると `lhat.exe` は 685 KB から 422 KB に、`lhat.lib` は 2.1 MB から 969 KB になります。
-
-`scripts/pgo.ps1` が PGO の 2 つの相を動かします——`GENERATE` が計測を入れ、`bench/train/` の訓練がプロファイルを書きます。`USE` がそれを使って再リンクします。
-
-## ビルドオプション
-
-| オプション | 既定 | 何を制御するか |
+| configure プリセット | 用途 | build プリセット |
 | --- | --- | --- |
-| `LHAT_WITH_FRONTEND` | `ON` | 字句解析器・構文解析器・検査器・コンパイラ。`OFF` が `vmonly` で、LSP とスイートには `ON` が必要 |
-| `LHAT_WITH_DEBUGGER` | `ON` | VM の行フック、フレームの内観、機械の監視。`LHAT_BUILD_DAP=ON` には `ON` が必要 |
-| `LHAT_WITH_COMMENTS` | `ON` | コメントを保持して構文木に付けること |
-| `LHAT_WITH_RESOLUTIONS` | `ON` | 各名前が何に解決したかの記録。`LHAT_BUILD_LSP=ON` には `ON` が必要 |
-| `LHAT_BUILD_STDLIB` | `ON` | `stdlib/` のサンプル標準ライブラリ |
-| `LHAT_BUILD_LSP` | `ON` | 言語サーバ |
-| `LHAT_BUILD_DAP` | `ON` | ドライバに畳み込まれたデバッグアダプタ |
-| `LHAT_BUILD_CLI` | `ON` | コマンドラインドライバ |
-| `LHAT_BUILD_TESTS` | `ON` | テストスイート |
-| `LHAT_BUILD_BENCH` | `OFF` | メンバ読みと検査コストのベンチマーク |
-| `LHAT_SANITIZE` | `OFF` | AddressSanitizer。コンパイラが持つところには UBSan も |
-| `LHAT_PGO` | `OFF` | `OFF`、`GENERATE`、`USE` のいずれか |
+| `debug` | Ninja による開発用ビルド | `debug` |
+| `release` | Ninja による最適化ビルド | `release` |
+| `asan` | サニタイザ付きデバッグビルド | `asan` |
+| `pgo` | プロファイルに基づく最適化のための計測 | `pgo` |
+| `vs` | Visual Studio 2026 のプロジェクト | `vs-debug`、`vs-release` |
+| `vmonly` | コンパイル済みプログラム用のランタイム | `vmonly` |
 
-## ディレクトリ構成
+各構成は [`CMakePresets.json`](CMakePresets.json) で定義しています。
+PGO ビルドは [`scripts/pgo.ps1`](scripts/pgo.ps1) で自動化できます。
 
-```text
-CMakeLists.txt        ビルドの定義
-CMakePresets.json     configure / build / test のプリセット
+### オプション機能
 
-include/lhat.h        ホストが名指す唯一のヘッダ
-include/lhat/         残りの公開面と、生成される version.h
+CMake の設定時にオプションを指定できます。たとえば、テストをビルド対象から外すには次のようにします。
 
-src/                  言語本体                                -> lhat.lib
-  source.c              単位の読み込み。改行と BOM の正規化
-  error.c               各段階が何を報告するかの一つの形
-  message.[ch]          メッセージの ID・穴・描画された文
-  number.[ch]           整数と実数。型は 1 つ、表現は 2 つ
-  token.c               トークンの定義
-  lexer.c               字句解析
-  ast.[ch]              構文木の節点とそのアリーナ
-  parser.[ch]           構文解析
-  type.[ch]             型：構築と適合
-  check*.[ch]           型検査：式・文・初期化
-  semantic.c            単位の名前・型・メンバ
-  completion.c          カーソルの後ろに何が続きうるか
-  fix.c                 クイックフィックスと、それが何に効くか
-  program.c             単位のグラフと、ホストが登録するもの
-  registry.[ch]         ホストの登録
-  rttype.[ch]           実行時の型の記述
-  code.[ch]             バイトコード、チャンク、コンパイル済み単位
-  compile.[ch]          構文木からバイトコードへ
-  serialize.[ch]        バイナリ単位と署名表
-  vm*.c                 コード生成と機械
-  machine.h             機械の中身：スタック、フレーム、ヒープ
-  gc.[ch]               コレクタ：mark and sweep、一歩ずつ
-  value.c               実行時の値
-  object.c              ヒープの値
-  debug.c               行フックとフレームの内観
-  port.h                言語が周囲に求めるもの
-
-port/                 メモリ・ファイル・スレッド・ソケットの既定
-  alloc.c               malloc と、DLL が必要とする登録
-  loader.c              単位をファイルから読む
-  thread.[ch]           OS スレッド。コアの隣で使うもの
-  socket.[ch]           ループバックソケット。デバッグアダプタ用
-  -> lhatport.lib, lhatthread.lib, lhatsocket.lib
-
-stdlib/               サンプル標準ライブラリ（C 実装）                   -> lhatstdlib.lib
-  io, json, thread, random, regex, math (+ complex, quaternion, vector2/3/4),
-  debug, async, channel, task, lton, load, error, carry
-
-cli/main.c            コマンドラインドライバとプロンプト                   -> lhat.exe
-lsp/                  言語サーバ                               -> lhatls.exe
-dap/                  デバッグアダプタ。ソケット上の DAP                 -> lhatdap.lib
-transport/            ストリーム上の Content-Length フレーミング
-vendor/cjson/         JSON。上の 2 つのため
-messages/ja/          メッセージカタログ
-bench/                メンバ読みと検査コストのベンチマーク、PGO 訓練用
-tests/                テストスイート（CTest）。install_smoke を含む
-sample/               サンプル 17 本
-DesignDocuments/      言語の設計仕様（日本語）
-media/                ロゴとサンプルの描画
-scripts/              devshell.ps1、pgo.ps1、install_smoke.cmake
-cmake/                CMake パッケージ設定のテンプレート
-Memo.md               言語の設計ノート（発散。仕様ではない）
+```sh
+cmake --preset release -DLHAT_BUILD_TESTS=OFF
 ```
 
-`source.[ch]`、`error.[ch]`、`token.[ch]`、`lexer.[ch]`、`value.[ch]`、`object.[ch]` と `port.h` は `.c` で代表させています。これらのヘッダは公開で `include/lhat/` にあります。L^ に色を付けるホストには字句解析器が、単位を読むホストにはソースの規則が必要だからです。
+| オプション | 既定値 | 用途 |
+| --- | --- | --- |
+| `LHAT_BUILD_CLI` | `ON` | コマンドラインインタプリタ |
+| `LHAT_BUILD_STDLIB` | `ON` | 標準ライブラリ |
+| `LHAT_BUILD_LSP` | `ON` | 言語サーバ |
+| `LHAT_BUILD_DAP` | `ON` | CLI のデバッグアダプタ |
+| `LHAT_BUILD_TESTS` | `ON` | テストスイート |
+| `LHAT_BUILD_BENCH` | `OFF` | ベンチマーク |
+| `LHAT_WITH_FRONTEND` | `ON` | パーサ・型検査器・コンパイラ。省く場合は `vmonly` を利用 |
+| `LHAT_WITH_DEBUGGER` | `ON` | 実行時のデバッグ支援 |
+| `LHAT_WITH_COMMENTS` | `ON` | ソース・グラフ表示用のコメント保持 |
+| `LHAT_WITH_RESOLUTIONS` | `ON` | ツール用の名前解決情報 |
+| `LHAT_SANITIZE` | `OFF` | AddressSanitizer と、対応環境での UBSan |
+| `LHAT_PGO` | `OFF` | PGO モード：`OFF`、`GENERATE`、`USE` |
 
-パイプラインは左から右へ `source` → `lexer` → `parser` → `check` → `compile` → `vm` と流れ、`program` が単位のグラフを辿るので、単位はそれが要求するものすべての検査のあとで検査されます。構文木は必須です: 型推論はソースの後方にある情報を必要とするので、読みながらバイトコードを出す 1 パスでは成立しません。
+言語サーバにはフロントエンドと名前解決情報が、デバッグアダプタには実行時のデバッグ支援が必要です。
 
-`vm_internal.h` は `LhatMachine` を不透明に保つので、機械であるファイル——走らせる `vm*.c` と、根を見る必要がある `gc.c`——は `machine.h` を共有します。
+## ドキュメントとソース
 
-## 設計文書
+- [言語仕様](DesignDocuments/02-syntax.md)：構文、型、オブジェクト、関数、コルーチン、パターンマッチ。
+- [エラー処理](DesignDocuments/04-errors.md)：型付きエラーと、その扱い方。
+- [モジュールと組み込み](DesignDocuments/05-modules.md)：モジュールの読み込みとホスト API。
+- [設計文書の索引](DesignDocuments/README.md)：コンパイル、開発ツール、多言語対応を含む仕様書の一覧。設計文書は日本語で記述しています。
 
-仕様が言語の権威ある記述で、ソースは至る所で章番号を引いてこれを引用します。文書は日本語で、[その索引](DesignDocuments/README.md)にはまだ決まっていないことが並びます。
-
-| 文書 | 内容 |
-| --- | --- |
-| [01-lexical-structure.md](DesignDocuments/01-lexical-structure.md) | 文字、トークン、リテラル、コメント、スコープ指定子 |
-| [02-syntax.md](DesignDocuments/02-syntax.md) | 文、演算子、型、オブジェクトモデル、サブルーチン、コルーチン、パターンマッチ |
-| [03-compilation-pipeline.md](DesignDocuments/03-compilation-pipeline.md) | 4 段階、厳格度、推論、値の表現、バイトコード、コレクタ |
-| [04-errors.md](DesignDocuments/04-errors.md) | `errordef^`、`try^`、`catch^`、網羅性、取りこぼし |
-| [05-modules.md](DesignDocuments/05-modules.md) | 単位、`require^`、`import^`、`L^`、ホストが提供するもの |
-| [07-language-server.md](DesignDocuments/07-language-server.md) | `lhatls`：何に答え、何から答えるか |
-| [08-lton.md](DesignDocuments/08-lton.md) | LTON、テーブルをテキストで書く形式と、なぜ安全に読めるのか |
-| [09-debugger.md](DesignDocuments/09-debugger.md) | 行フック、フレームと束縛の内観、DAP アダプタ |
-| [10-localization.md](DesignDocuments/10-localization.md) | 観測可能な文字列の不変条件、メッセージの ID、カタログ、言語の選択 |
-
-06 は欠番です。ビジュアルエディタの設計は、それを実装するツールの隣、拡張のリポジトリへ移動しました。
+処理系の本体は [`src/`](src/)、公開 API は [`include/`](include/)、標準ライブラリは [`stdlib/`](stdlib/) にあります。
+[`lsp/`](lsp/) と [`dap/`](dap/) はエディタ・デバッガ連携、[`sample/`](sample/) はサンプルプログラムです。
 
 ## ライセンス
 
-Apache License 2.0. [LICENSE](LICENSE) を参照。
+Apache License 2.0。[LICENSE](LICENSE) を参照してください。

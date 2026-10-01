@@ -1,0 +1,9 @@
+let^double = f^x { x * 2 }
+let^values = { 10, 20, 30 }
+var^total = 0
+
+for^value in^values {
+    total += double(value)
+}
+
+print(values[0], total)  # 10 120

@@ -1,0 +1,10 @@
+enum^Mode { Idle, Walk, Run }
+let^mode = Mode.Walk
+
+let^label = for^mode:
+    when^Mode.Idle: "idle"
+    when^Mode.Walk: "walking"
+    when^Mode.Run:  "running"
+;
+
+print(label)

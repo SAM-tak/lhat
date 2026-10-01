@@ -1,0 +1,7 @@
+let^discounted = f^price, rate { price * (1 - rate) }
+
+let^checkout = p^price, rate {
+    print(discounted(price, rate))
+}
+
+checkout(100, 0.2)

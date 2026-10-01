@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="296" height="246" viewBox="0 0 296 246" font-family="ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;DejaVu Sans Mono&quot;, monospace" font-size="14">
+  <title>Enums and pattern matching in L^</title>
+  <rect x=".5" y=".5" width="295" height="245" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <text x="22" y="34" xml:space="preserve"><tspan fill="#ff7b72">enum</tspan><tspan fill="#888888" fill-opacity=".6">^</tspan><tspan fill="#d4d4d4">Mode { Idle, Walk, Run }</tspan></text>
+  <text x="22" y="55" xml:space="preserve"><tspan fill="#ff7b72">let</tspan><tspan fill="#888888" fill-opacity=".6">^</tspan><tspan fill="#9cdcfe">mode</tspan><tspan fill="#d4d4d4"> = </tspan><tspan fill="#4ec9b0">Mode</tspan><tspan fill="#d4d4d4">.</tspan><tspan fill="#4ec9b0">Walk</tspan></text>
+  <text x="22" y="97" xml:space="preserve"><tspan fill="#ff7b72">let</tspan><tspan fill="#888888" fill-opacity=".6">^</tspan><tspan fill="#9cdcfe">label</tspan><tspan fill="#d4d4d4"> = </tspan><tspan fill="#c586c0">for</tspan><tspan fill="#888888" fill-opacity=".6">^</tspan><tspan fill="#4ec9b0">mode</tspan><tspan fill="#d4d4d4">:</tspan></text>
+  <text x="22" y="118" xml:space="preserve"><tspan fill="#d4d4d4">    </tspan><tspan fill="#c586c0">when</tspan><tspan fill="#888888" fill-opacity=".6">^</tspan><tspan fill="#4ec9b0">Mode</tspan><tspan fill="#d4d4d4">.</tspan><tspan fill="#4ec9b0">Idle</tspan><tspan fill="#d4d4d4">: </tspan><tspan fill="#ce9178">"idle"</tspan></text>
+  <text x="22" y="139" xml:space="preserve"><tspan fill="#d4d4d4">    </tspan><tspan fill="#c586c0">when</tspan><tspan fill="#888888" fill-opacity=".6">^</tspan><tspan fill="#4ec9b0">Mode</tspan><tspan fill="#d4d4d4">.</tspan><tspan fill="#4ec9b0">Walk</tspan><tspan fill="#d4d4d4">: </tspan><tspan fill="#ce9178">"walking"</tspan></text>
+  <text x="22" y="160" xml:space="preserve"><tspan fill="#d4d4d4">    </tspan><tspan fill="#c586c0">when</tspan><tspan fill="#888888" fill-opacity=".6">^</tspan><tspan fill="#4ec9b0">Mode</tspan><tspan fill="#d4d4d4">.</tspan><tspan fill="#4ec9b0">Run</tspan><tspan fill="#d4d4d4">:  </tspan><tspan fill="#ce9178">"running"</tspan></text>
+  <text x="22" y="181" xml:space="preserve"><tspan fill="#d4d4d4">;</tspan></text>
+  <text x="22" y="223" xml:space="preserve"><tspan fill="#dcdcaa">print</tspan><tspan fill="#d4d4d4">(</tspan><tspan fill="#9cdcfe">label</tspan><tspan fill="#d4d4d4">)</tspan></text>
+</svg>

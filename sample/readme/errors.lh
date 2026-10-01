@@ -1,0 +1,11 @@
+errordef^MathError { DivisionByZero }
+
+let^divide = f^a, b {
+    if^b = 0 {
+        return^error^MathError.DivisionByZero{}
+    }
+    return^a / b
+}
+
+let^result = divide(10, 0) catch^0
+print(result)
