@@ -2556,16 +2556,37 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 11.6改: is^ is a comparison like '=', so the same disjointness check
-    // applies and it answers bool^ either way.
+    // Identity belongs to objects, not to value types or storage slots.
     LHAT_TEST("is^ answers bool^");
-    check_text(&u, "var^ x : bool^ = 1 is^ 2\n");
+    check_text(&u, "let^ a = {}\nvar^ x : bool^ = a is^ a\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("is^ on types that can never meet is reported");
-    check_text(&u, "return^ 1 is^ \"text\"\n");
+    check_text(&u, "return^ {} is^ \"text\"\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_INCOMPARABLE);
+    unit_dispose(&u);
+
+    LHAT_TEST("value types have no identity, even in chains and unions");
+    const char *no_identity[] = {
+        "return^ 1 is^ 1\n",
+        "return^ 1.0 is^ 1.0\n",
+        "return^ true^ is^ true^\n",
+        "let^ a = 1\nreturn^ a is^ a\n",
+        "return^ 1 is^ 1 = 1\n",
+        "let^ f = f^ a:number^|string^, b:number^|string^ { a is^ b }\n",
+        "let^ a = {0, 0}\nreturn^ a[0] is^ a[0]\n",
+        "let^ a:any^ = {}\nreturn^ a is^ 1\n",
+    };
+    for (size_t i = 0; i < sizeof(no_identity) / sizeof(no_identity[0]); i++) {
+        check_text(&u, no_identity[i]);
+        CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_IDENTITY);
+        unit_dispose(&u);
+    }
+
+    LHAT_TEST("optional numbers still support absence checks on either side");
+    check_text(&u, "let^ f = f^ n:number^|nil^ { (n is^ nil^) = (nil^ is^ n) }\n");
+    CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 13.11: fits^ reads a type, so an unknown one is reported there too.

@@ -367,8 +367,8 @@ static inline double lhat_number_as_real(LhatValue v)
 // object compares by identity until the collector and the string table give
 // a better answer.
 //
-// **Exact.** This is what a table key, a constant pool slot and 'is^' are
-// matched by, none of which may admit an error term -- see lhat_value_close
+// **Exact.** This is what a table key and a constant pool slot are
+// matched by, neither of which may admit an error term -- see lhat_value_close
 // for the one '=' itself uses.
 bool lhat_value_equal(LhatValue a, LhatValue b);
 
@@ -381,8 +381,7 @@ bool lhat_value_equal(LhatValue a, LhatValue b);
 // and otherwise this is lhat_value_equal. The floor of 1.0 is what makes a
 // difference that should have cancelled compare equal to zero; its cost is
 // that everything well under 1.0 compares equal to everything else that is.
-// A writer wanting the exact question has 'is^'; one wanting a different
-// error term has number^'s own eq.
+// A writer chooses an error term with number^'s own eq; zero makes it exact.
 //
 // Integers are left alone: two of them name themselves exactly, and a key or
 // an index would not survive a band around it.
@@ -394,11 +393,10 @@ bool lhat_value_close(LhatValue a, LhatValue b, double tolerance);
 // to itself, on purpose, so this stays the same once '=' moves to a real
 // value comparison for tables and strings.
 //
-// 02 の 14.8 with 13.11: a number answers for its representation here and
-// nowhere else. '=' reads 1 and 1.0 as one number and admits an error term
-// besides; this reads them as what the machine is holding, so it is the one
-// question with no error in it at all.
-bool lhat_value_same(LhatValue a, LhatValue b);
+// Returns false for operands without identity (numbers, booleans and inline
+// host values), leaving out untouched. Otherwise writes the comparison to out
+// and returns true. Either operand being nil^ is an allowed absence check.
+bool lhat_value_same(LhatValue a, LhatValue b, bool *out);
 
 // 03 の 4 章: a prompt answers with a value, so something has to write one
 // down. Writes `value` into `out` and answers how long the whole text is --

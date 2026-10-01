@@ -125,6 +125,8 @@ overload-overlaps = overload^ が既存の署名と重なっている
 operator-unsettled = ここではいくつもの型がこの演算子を持ち、どれのことかを何も言っていない。署名が名指す型のひとつを書くか、fits^ でそれに絞り込む
 # incomparable = these can never be equal, so the comparison is fixed already
 incomparable = これらは決して等しくならないので、比較の答えは既に決まっている
+# no-identity = is^ requires object identity; numbers, booleans and host values have none; use '=' for value equality or number.eq(other, 0) for exact numeric equality
+no-identity = is^ はオブジェクトの同一性を問う。数値・真偽値・ホスト値には同一性がない。値の比較には =、数値の厳密比較には number.eq(other, 0) を使う
 # as-impossible = nothing is both of these, so this as^ could never succeed
 as-impossible = この両方である物は無いので、この as^ は決して成功しない
 # bad-key = nil^ is how a table spells 'not there', so it cannot be a key

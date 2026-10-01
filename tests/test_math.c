@@ -100,7 +100,7 @@ static void test_functions(void)
             "import^ std.math\n"
             "let^ m = std.math.max(3, 9, 4)\n"
             "let^ n = std.math.min(3)\n"
-            "if^ m is^ 9 and^ n is^ 3 and^ std.math.min(2.5, 1) = 1 { return^ 1 }\n"
+            "if^ m.eq(9, 0) and^ n.eq(3, 0) and^ std.math.min(2.5, 1) = 1 { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
@@ -118,9 +118,9 @@ static void test_number_members(void)
     LHAT_TEST("abs, sign and clamp are members of number^");
     {
         LhatTestRan ran = run_source(
-            "let^ ok = (-5).abs() is^ 5 and^ (-2.5).abs() = 2.5\n"
-            "    and^ (-7).sign() is^ -1 and^ (0).sign() is^ 0 and^ (0.5).sign() is^ 1\n"
-            "    and^ (15).clamp(0, 10) is^ 10 and^ (-3).clamp(0, 10) is^ 0\n"
+            "let^ ok = (-5).abs().eq(5, 0) and^ (-2.5).abs() = 2.5\n"
+            "    and^ (-7).sign().eq(-1, 0) and^ (0).sign().eq(0, 0) and^ (0.5).sign().eq(1, 0)\n"
+            "    and^ (15).clamp(0, 10).eq(10, 0) and^ (-3).clamp(0, 10).eq(0, 0)\n"
             "    and^ (2.5).clamp(0, 10) = 2.5\n"
             "if^ ok { return^ 1 }\n"
             "return^ 0\n");

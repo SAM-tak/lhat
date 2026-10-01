@@ -304,6 +304,12 @@ static void test_coroutine_locals(void)
 // `T.Box^`, made with box^, read with get(), written with set().
 static void test_boxing(void)
 {
+    LHAT_TEST("inline host values have no identity");
+    LHAT_CHECK(!checks(
+        "import^ std.math.vector3\n"
+        "let^ v = std.math.vector3.new(1, 2, 3)\n"
+        "return^ v is^ v\n"), "is^ must reject even the same host value binding");
+
     LHAT_TEST("box^ boxes and get/set unbox and write");
     {
         LhatTestRan ran = run_source(

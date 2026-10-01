@@ -106,15 +106,42 @@ static void test_strings(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // 13.11: and is^ is where that error does not reach.
-    LHAT_TEST("is^ says what the machine is holding instead");
-    run_checked_text(&r, "return^ 8.0 / (3.0 - 8.0 / 3.0) is^ 24\n");
+    LHAT_TEST("eq with zero tolerance compares exact numeric values");
+    run_checked_text(&r, "return^ (8.0 / (3.0 - 8.0 / 3.0)).eq(24, 0)\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
-    LHAT_TEST("so an integer is not the real that names it");
-    run_checked_text(&r, "return^ 1 is^ 1.0\n");
-    CHECK_BOOL(&r, false);
+    LHAT_TEST("exact numeric equality ignores integer versus real representation");
+    run_checked_text(&r, "return^ (1).eq(1.0, 0)\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("unchecked identity rejects numbers and booleans at runtime");
+    const char *invalid_identity[] = {
+        "return^ 1 is^ 1\n",
+        "return^ 1.0 is^ 1.0\n",
+        "return^ true^ is^ true^\n",
+        "return^ {} is^ 1\n",
+    };
+    for (size_t i = 0; i < sizeof(invalid_identity) / sizeof(invalid_identity[0]); i++) {
+        run_text(&r, invalid_identity[i]);
+        LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("any^ cannot hide operands without identity from the VM");
+    run_checked_text(&r,
+                     "let^ same = f^ a:any^, b:any^ { a is^ b }\n"
+                     "return^ same(1, 1)\n");
+    LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    LHAT_TEST("dynamic nil identity remains an absence check");
+    run_checked_text(&r,
+                     "let^ absent = f^ a:any^ { a is^ nil^ }\n"
+                     "return^ absent(nil^) and^ !absent(1) and^ !absent(false^)\n");
+    CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     LHAT_TEST("though '=' still reads them as one number");
@@ -204,14 +231,10 @@ static void test_strings(void)
     CHECK_STRING(&r, "00222244");  // 0.5→0 1.5→2 2.5→2 3.5→4, each written twice
     run_dispose(&r);
 
-    // 14.8改: an integer while it can be one, which 13.11's is^ is what
-    // reads back. A whole real answers as the integer it names.
+    // Inspect the runtime tag directly; is^ does not expose numeric storage.
     LHAT_TEST("the answer is an integer where one will hold it");
-    run_checked_text(&r,
-                     "if^ !((2.7).floor() is^ 2) { return^ 1 }\n"
-                     "if^ (2.7).floor() is^ 2.0 { return^ 2 }\n"
-                     "return^ 0\n");
-    CHECK_INTEGER(&r, 0);
+    run_checked_text(&r, "return^ (2.7).floor()\n");
+    CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
     // Past what an int64 names, the real is already whole -- every double
@@ -219,9 +242,9 @@ static void test_strings(void)
     LHAT_TEST("and stays a real where one will not");
     run_checked_text(&r,
                      "var^ big = 1.0e300\n"
-                     "if^ !(big.floor() is^ big) { return^ 1 }\n"
-                     "if^ !(big.ceil() is^ big) { return^ 2 }\n"
-                     "if^ !(big.round() is^ big) { return^ 3 }\n"
+                     "if^ !big.floor().eq(big, 0) { return^ 1 }\n"
+                     "if^ !big.ceil().eq(big, 0) { return^ 2 }\n"
+                     "if^ !big.round().eq(big, 0) { return^ 3 }\n"
                      "return^ 0\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -230,7 +253,7 @@ static void test_strings(void)
     run_checked_text(&r,
                      "var^ zero = 0.0\n"
                      "var^ endless = 1.0 / zero\n"
-                     "return^ endless.floor() is^ endless\n");
+                     "return^ endless.floor().eq(endless, 0)\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 

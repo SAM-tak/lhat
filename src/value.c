@@ -150,37 +150,18 @@ bool lhat_value_equal(LhatValue a, LhatValue b)
     }
 }
 
-bool lhat_value_same(LhatValue a, LhatValue b)
+bool lhat_value_same(LhatValue a, LhatValue b, bool *out)
 {
-    // 13.11: the same value or not, with nothing read into it. Every other
-    // question about a number goes through 14.8's one type -- '=' reads 1
-    // and 1.0 as one number and admits an error term besides, a key folds
-    // the real form into the integer one, tostring writes what the number
-    // is. This one asks what the machine is holding, which is why the tags
-    // are compared rather than the numbers: it is the only place a writer
-    // can put a comparison that no rounding reaches.
-    if (a.tag != b.tag) {
-        return false;
+    // Absence is meaningful even when the other operand is a value type.
+    if (a.tag == LHAT_VALUE_NIL || b.tag == LHAT_VALUE_NIL) {
+        *out = a.tag == b.tag;
+        return true;
     }
-
-    switch (a.tag) {
-        case LHAT_VALUE_NIL:
-            return true;
-        case LHAT_VALUE_BOOL:
-            return a.as.boolean == b.as.boolean;
-        case LHAT_VALUE_INTEGER:
-            return a.as.integer == b.as.integer;
-        // Whatever C's '==' answers, which is what "no rounding reaches it"
-        // means: -0.0 is 0.0 and a NaN is nothing, this one included.
-        case LHAT_VALUE_REAL:
-            return a.as.real == b.as.real;
-        case LHAT_VALUE_OBJECT:
-            // 'is^' asks whether the two are the same object and nothing
-            // else -- no exception for a string's bytes or a type's shape.
-            return a.as.object == b.as.object;
-        default:
-            return false;
+    if (a.tag == LHAT_VALUE_OBJECT && b.tag == LHAT_VALUE_OBJECT) {
+        *out = a.as.object == b.as.object;
+        return true;
     }
+    return false;
 }
 
 const char *lhat_object_kind_name(LhatObjectKind kind)

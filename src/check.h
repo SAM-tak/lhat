@@ -157,6 +157,7 @@ typedef enum {
     LHAT_CHECK_ERR_OPERATOR_UNSETTLED,  // 03 の 3.4改: several types here
                                         // carry it and nothing says which
     LHAT_CHECK_ERR_INCOMPARABLE,        // no value inhabits both sides
+    LHAT_CHECK_ERR_NO_IDENTITY,         // value types have no object identity
     LHAT_CHECK_ERR_AS_IMPOSSIBLE,       // 11.6: as^ between two types
                                         // no value inhabits both of
     LHAT_CHECK_ERR_BAD_KEY,             // 04 の 11.3: nil^ spells absence, so

@@ -262,12 +262,45 @@ static bool related_pair(Checker *c, LhatOpKind op, LhatType *left,
 static bool demand_ordering(Checker *c, const LhatNode *at, LhatType *left,
                             LhatType *right);
 
+// A known value-type arm cannot participate in object identity. Unknown and
+// any^ operands are checked by the VM; unions must be narrowed first.
+static bool lacks_identity(const LhatType *type)
+{
+    if (type == NULL) return false;
+    switch (type->kind) {
+        case LHAT_TYPE_NUMBER:
+        case LHAT_TYPE_BOOL:
+        case LHAT_TYPE_HOSTVALUE:
+            return true;
+        case LHAT_TYPE_ARGUMENT:
+            return lacks_identity(lhat_type_argument_bound(type));
+        case LHAT_TYPE_UNION:
+        case LHAT_TYPE_INTERSECT:
+            for (const LhatTypeList *arm = type->v.composite.arms;
+                 arm != NULL; arm = arm->next) {
+                if (lacks_identity(arm->type)) return true;
+            }
+            return false;
+        default:
+            return false;
+    }
+}
+
 // 11.5 の (5) with 11.9: one link of a comparison, asked the same way whether
 // it stands alone or in a chain. Always answers bool^ -- what may be wrong is
 // the pair, never the shape of the answer.
 static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
                                   LhatType *left, LhatType *right)
 {
+    // A nil^ operand asks about absence, even for an optional value type.
+    if (op == LHAT_OP_IS &&
+        !(left != NULL && left->kind == LHAT_TYPE_NIL) &&
+        !(right != NULL && right->kind == LHAT_TYPE_NIL) &&
+        (lacks_identity(left) || lacks_identity(right))) {
+        chk_report(c, at, LHAT_CHECK_ERR_NO_IDENTITY);
+        return chk_simple(c, LHAT_TYPE_BOOL);
+    }
+
     // 03 の 3.4改3: an ordering asks the pair to be related by a '<=>', so a
     // parameter standing in one is demanded what could carry it. 11.9 leaves
     // '=' and '≠' out: equality answers without a '<=>' at all (14.2 gives

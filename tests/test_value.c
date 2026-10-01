@@ -118,8 +118,8 @@ static void test_equality(void)
     }
 
     // 14.8: what '=' and 11.9's orderings ask, which admits the error a real
-    // carries. lhat_value_equal above stays exact -- a key, a constant and
-    // is^ are matched by it, and none of those may sit in a band.
+    // carries. lhat_value_equal above stays exact -- a key and a constant
+    // are matched by it, and neither may sit in a band.
     LHAT_TEST("two reals a division apart are one number");
     {
         double landed = 8.0 / (3.0 - 8.0 / 3.0);  // 1.07e-14 short of 24
@@ -182,18 +182,26 @@ static void test_equality(void)
                    "a NaN is under no bound, this one included");
     }
 
-    // 13.11: the one question with no error in it, and the one place a
-    // number^ answers for its representation.
-    LHAT_TEST("is^ reads what the machine is holding");
+    LHAT_TEST("identity rejects value types but permits absence checks");
     {
-        LHAT_CHECK(!lhat_value_same(lhat_integer(1), lhat_real(1.0)),
-                   "1 is not 1.0");
-        LHAT_CHECK(lhat_value_same(lhat_integer(1), lhat_integer(1)), "1 is 1");
-        LHAT_CHECK(lhat_value_same(lhat_real(1.0), lhat_real(1.0)),
-                   "1.0 is 1.0");
-        double landed = 8.0 / (3.0 - 8.0 / 3.0);
-        LHAT_CHECK(!lhat_value_same(lhat_real(landed), lhat_real(24.0)),
-                   "and no error term reaches it");
+        bool same = true;
+        LHAT_CHECK(!lhat_value_same(lhat_integer(1), lhat_integer(1), &same),
+                   "integers have no identity");
+        LHAT_CHECK(!lhat_value_same(lhat_real(1.0), lhat_real(1.0), &same),
+                   "reals have no identity");
+        LHAT_CHECK(!lhat_value_same(lhat_bool(true), lhat_bool(true), &same),
+                   "booleans have no identity");
+        LhatValue host = lhat_nil();
+        host.tag = LHAT_VALUE_HOSTVALUE;
+        host.as.hostvalue = NULL;
+        LHAT_CHECK(!lhat_value_same(host, host, &same),
+                   "inline host values have no identity");
+        LHAT_CHECK(lhat_value_same(lhat_nil(), lhat_nil(), &same) && same,
+                   "nil is nil");
+        LHAT_CHECK(lhat_value_same(lhat_integer(1), lhat_nil(), &same) && !same,
+                   "a number is present");
+        LHAT_CHECK(lhat_value_same(lhat_nil(), lhat_bool(false), &same) && !same,
+                   "false is present");
     }
 
     LHAT_TEST("an object compares by identity");

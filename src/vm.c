@@ -829,7 +829,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     goto call_operator;
                 }
                 // 14.8: two numbers within the error a real carries are one
-                // number here. A key, a constant and 'is^' go on asking the
+                // number here. A key and a constant go on asking the
                 // exact question -- lhat_value_close is only what '=' and
                 // 11.9's orderings read.
                 {
@@ -853,18 +853,14 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                 }
                 VM_NEXT();
-            VM_CASE(LHAT_BC_SAME)
-                // 05 の 8.9: a value type has no identity apart from its
-                // bytes, so "the same" is the equality above.
-                if (lhat_is_hostvalue(R(b)) || lhat_is_hostvalue(R(cc))) {
-                    SET_R(a, lhat_bool(lhat_is_hostvalue(R(b)) &&
-                                       vm_hostvalue_equal(m->slots, rbase + b,
-                                                       rbase + cc)));
-                    VM_NEXT();
+            VM_CASE(LHAT_BC_SAME) {
+                bool same;
+                if (!lhat_value_same(R(b), R(cc), &same)) {
+                    return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                SET_R(a, lhat_bool(
-                    lhat_value_same(R(b), R(cc))));
+                SET_R(a, lhat_bool(same));
                 VM_NEXT();
+            }
 
             VM_CASE(LHAT_BC_LT)
             VM_CASE(LHAT_BC_LE)

@@ -4666,6 +4666,10 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "this field has no default, so it has to be written"},
     [LHAT_CHECK_ERR_INCOMPARABLE] = {"check.incomparable",
         "these can never be equal, so the comparison is fixed already"},
+    [LHAT_CHECK_ERR_NO_IDENTITY] = {"check.no-identity",
+        "is^ requires object identity; numbers, booleans and host values "
+        "have none; use '=' for value equality or number.eq(other, 0) "
+        "for exact numeric equality"},
     [LHAT_CHECK_ERR_AS_IMPOSSIBLE] = {"check.as-impossible",
         "nothing is both of these, so this as^ could never succeed"},
     [LHAT_CHECK_ERR_BAD_KEY] = {"check.bad-key",

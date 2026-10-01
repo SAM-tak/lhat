@@ -46,7 +46,8 @@ static void test_text_output(void)
         "let^s = \"ゆい\\n\\t\\0\\x01\\xFF\\\"\\\\\"\n"
         "let^text = try^std.lton.stringify({[2] = 7, [true^] = 9, ['a b'] = s, n = 1.2345678901234567})\n"
         "let^t = try^std.lton.parse(text)\n"
-        "return^if^t[2] = 7 and^t[true^] = 9 and^t['a b'] = s and^t['n'] is^ 1.2345678901234567: 1 el^: 0;\n");
+        "let^value = t['n']\n"
+        "return^if^t[2] = 7 and^t[true^] = 9 and^t['a b'] = s and^value fits^number^ and^value.eq(1.2345678901234567, 0): 1 el^: 0;\n");
     LHAT_CHECK_RAN_INTEGER(ran, 1);
     lhat_test_ran_dispose(&ran);
 
@@ -68,7 +69,8 @@ static void test_text_output(void)
     LHAT_TEST("integer extremes and deeply nested data have explicit outcomes");
     ran = run_source("import^std.lton\nlet^n = -9223372036854775807 - 1\n"
         "let^t = try^std.lton.parse(try^std.lton.stringify({n = n, max = 9223372036854775807}))\n"
-        "return^if^t['n'] is^n and^t['max'] is^9223372036854775807: 1 el^: 0;\n");
+        "let^low = t['n']\nlet^high = t['max']\n"
+        "return^if^low fits^number^ and^high fits^number^ and^low.eq(n, 0) and^high.eq(9223372036854775807, 0): 1 el^: 0;\n");
     LHAT_CHECK_RAN_INTEGER(ran, 1);
     lhat_test_ran_dispose(&ran);
     ran = run_source("import^std.lton\nvar^t:t^{} = {}\nrepeat^100 {let^old = t\nt := {child = old}}\n"
