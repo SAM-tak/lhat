@@ -209,6 +209,7 @@ typedef struct LhatHostEntry {
     // type prints structurally, an error kind loses its module prefix), so
     // the text itself is what survives.
     char *signature_text;
+    const LhatRuntimeType *runtime_signature;
     LhatHostFn call;  // NULL for a type, which carries no value of its own
     void *context;
     uint8_t parameters;
@@ -239,6 +240,7 @@ typedef struct LhatHostEntry {
 typedef struct LhatGlobalEntry {
     char *name;  // owned
     char *signature_text;  // owned, as on LhatHostEntry
+    const LhatRuntimeType *runtime_signature;
     LhatHostFn call;
     void *context;
     uint8_t parameters;

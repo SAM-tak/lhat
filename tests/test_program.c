@@ -1632,7 +1632,14 @@ static void test_hosting(void)
     LHAT_TEST("a host-bound name is written without any qualification");
     {
         static const File files[] = {
-            {"main.lh", "return^ twice(21)\n"},
+            {"main.lh",
+             "let^ inspect=p^v:any^->bool^{\n"
+             "return^(v fits^f^number^->number^;) and^\n"
+             "!(v fits^p^number^->number^;) and^\n"
+             "!(v fits^f^string^->number^;) and^\n"
+             "!(v fits^f^number^->bool^;)}\n"
+             "if^ !inspect(twice) {return^ -1}\n"
+             "return^ twice(21)\n"},
         };
         program_with(&program, &disk, files, 1);
         LHAT_CHECK(lhat_register_global(&program, "twice",

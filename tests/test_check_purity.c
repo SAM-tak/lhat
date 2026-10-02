@@ -818,9 +818,66 @@ static void test_immutable_bindings(void)
     }
 }
 
+static void test_effect_union_calls(void)
+{
+    Unit u;
+    LHAT_TEST("a procedure can call a function/procedure union with one signature");
+    check_text(&u,
+        "let^ run = p^condition:f^->bool^;|p^->bool^; -> bool^ { return^condition() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a function must narrow the procedure possibility away");
+    check_text(&u,
+        "let^ run = f^condition:f^->bool^;|p^->bool^; -> bool^ { condition() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_UNION);
+    for (size_t i = 0; i < u.checked.diagnostic_count; i++) {
+        const LhatCheckDiagnostic *d = &u.checked.diagnostics[i];
+        if (d->code != LHAT_CHECK_ERR_FUNCTION_CALLS_UNION) continue;
+        char message[512];
+        lhat_check_message_write(NULL, d, message, sizeof message);
+        LHAT_CHECK(strstr(message, "fits^ f^") != NULL, "shows the narrowing syntax");
+        LHAT_CHECK(strstr(message, "bool^") != NULL, "shows the concrete result type");
+    }
+    unit_dispose(&u);
+
+    LHAT_TEST("narrowing permits the pure call");
+    check_text(&u,
+        "let^ run = f^condition:f^->bool^;|p^->bool^; -> bool^ {\n"
+        "  if^condition fits^f^->bool^; { return^condition() }\n"
+        "  return^false^ }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("different argument signatures still require narrowing");
+    check_text(&u,
+        "let^ run = p^c:f^number^->bool^;|p^string^->bool^; { c(1) }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_CALL_UNION_NARROW);
+    unit_dispose(&u);
+
+    LHAT_TEST("different return types still require narrowing");
+    check_text(&u,
+        "let^ run = p^c:f^->bool^;|p^->number^; { c() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_CALL_UNION_NARROW);
+    unit_dispose(&u);
+
+    LHAT_TEST("a receiver convention difference still requires narrowing");
+    check_text(&u,
+        "let^ run = p^c:f^self^->bool^;|p^->bool^; { c() }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_CALL_UNION_NARROW);
+    unit_dispose(&u);
+
+    LHAT_TEST("common arguments are still checked");
+    check_text(&u,
+        "let^ run = p^c:f^number^->bool^;|p^number^->bool^; { c(\"bad\") }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_purity();
     test_immutable_bindings();
+    test_effect_union_calls();
     return lhat_test_report("test_check_purity");
 }

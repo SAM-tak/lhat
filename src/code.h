@@ -539,6 +539,7 @@ struct LhatProto {
     // from. NULL when nothing was written -- 13.2 makes an f^ declare one, so
     // its absence here belongs to a p^.
     struct LhatRuntimeType *result_type;
+    struct LhatRuntimeType *signature; // shared by all closures of this body
 
     // 15.2, 13.9. What a yielding body's yield^ sites agreed on --
     // there is no written form for either, so these come only from 03 の

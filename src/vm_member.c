@@ -150,6 +150,8 @@ LhatRuntimeType *vm_tag_type(LhatHeap *heap, LhatValue value)
     if (lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE)) {
         const LhatClosure *closure = (const LhatClosure *)lhat_as_object(value);
         const LhatProto *proto = closure->proto;
+        if (proto->signature != NULL)
+            return lhat_runtime_type_clone(heap, proto->signature);
         LhatRuntimeType *type =
             lhat_type_rt_new(heap, LHAT_TYPE_RT_SUBROUTINE);
         if (type == NULL) {
@@ -213,6 +215,11 @@ LhatRuntimeType *vm_tag_type(LhatHeap *heap, LhatValue value)
         }
         type->result = proto->result_type;
         return type;
+    }
+    if (lhat_is_object_kind(value, LHAT_OBJECT_HOST)) {
+        const LhatHost *host = (const LhatHost *)lhat_as_object(value);
+        if (host->signature != NULL)
+            return lhat_runtime_type_clone(heap, host->signature);
     }
     // 14.16: a table answers 13.7's unstructured top of tables, whatever
     // it holds -- deep shape is the checker's answer, given at compile time,

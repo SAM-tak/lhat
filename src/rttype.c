@@ -273,6 +273,8 @@ static LhatRuntimeType *build_rt(RtBuild *build,
             rt->takes_self = type->v.func.takes_self;
             rt->self_last = type->v.func.self_last;
             rt->closed = type->v.func.closed;  // 15.13
+            rt->mutable_self = type->v.func.mutable_self;
+            rt->answers_fresh = type->v.func.answers_fresh;
             for (LhatTypeList *p = type->v.func.params; p != NULL; p = p->next) {
                 if (!lhat_type_rt_add_part(rt, rt_from_checked(build, p->type, seen))) {
                     return NULL;

@@ -153,6 +153,7 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
         // into it. What is reachable from here is the receiver alone.
         case LHAT_OBJECT_HOST: {
             const LhatHost *host = (const LhatHost *)object;
+            reach(gray, (LhatObject *)host->signature);
             lhat_gc_reach(gray, host->bound);
             // 02 の 14.12: the parameter types a registration built. Nothing
             // else holds them -- a proto's live in its chunk, but a host has

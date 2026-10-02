@@ -2017,6 +2017,33 @@ static LhatType *host_call_answer(Checker *c, const LhatNode *node,
     return chk_call_answer(c, resolved);
 }
 
+// Only effect differs: keep the value's union type, but check a call against
+// its procedure arm. Do not generalize this to overload selection or yields.
+static LhatType *effect_union_signature(LhatType *type, LhatType **pure)
+{
+    if (type == NULL || type->kind != LHAT_TYPE_UNION) return NULL;
+    LhatType *procedure = NULL;
+    *pure = NULL;
+    for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+         arm = arm->next) {
+        LhatType *signature = arm->type;
+        if (signature == NULL || signature->kind != LHAT_TYPE_FUNC ||
+            signature->v.func.yields || signature->template_definition != NULL ||
+            signature->v.func.instantiation_handler != NULL) return NULL;
+        if (signature->v.func.is_function) {
+            if (*pure != NULL) return NULL;
+            *pure = signature;
+        } else {
+            if (procedure != NULL) return NULL;
+            procedure = signature;
+        }
+    }
+    if (*pure == NULL || procedure == NULL) return NULL;
+    LhatType comparable = **pure;
+    comparable.v.func.is_function = false;
+    return lhat_type_equal(&comparable, procedure) ? procedure : NULL;
+}
+
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
     ((LhatNode *)node)->checked_transfer_arguments = 0;
@@ -2347,6 +2374,24 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
+    bool effect_union = false;
+    if (callee->kind == LHAT_TYPE_UNION) {
+        LhatType *pure = NULL;
+        LhatType *common = effect_union_signature(callee, &pure);
+        if (common != NULL) {
+            effect_union = true;
+            if (c->in_function) {
+                const char *signature = operator_type_text(c, pure);
+                chk_report_named_span(c, node->v.access.target,
+                    LHAT_CHECK_ERR_FUNCTION_CALLS_UNION, signature,
+                    signature != NULL ? strlen(signature) : 0);
+            }
+            callee = common;
+        } else {
+            chk_report(c, node, LHAT_CHECK_ERR_CALL_UNION_NARROW);
+            return chk_simple(c, LHAT_TYPE_UNKNOWN);
+        }
+    }
     if (callee->kind != LHAT_TYPE_FUNC) {
         chk_report(c, node, LHAT_CHECK_ERR_NOT_CALLABLE);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
@@ -2360,7 +2405,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     // is not what this rule exists to catch. Reported here rather than
     // refused earlier so arguments still get checked, the same as an
     // ordinary mismatch.
-    if (c->in_function && !callee->v.func.is_function &&
+    if (c->in_function && !effect_union && !callee->v.func.is_function &&
         !callee->v.func.yields) {
         chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     }

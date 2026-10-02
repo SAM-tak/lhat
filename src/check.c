@@ -4599,6 +4599,10 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "hold; write 'other^: ...' before the ';'"},
     [LHAT_CHECK_ERR_NOT_CALLABLE] =
         {"check.not-callable", "this is not a function or a procedure"},
+    [LHAT_CHECK_ERR_CALL_UNION_NARROW] =
+        {"check.call-union-narrow", "this union has no common callable signature; narrow it with fits^ to a function or procedure signature before calling"},
+    [LHAT_CHECK_ERR_FUNCTION_CALLS_UNION] =
+        {"check.function-calls-union", "this value may be a procedure; inside f^, narrow it with fits^ {member} before calling"},
     [LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE] =
         {"check.function-calls-procedure",
          "f^ may call only f^, and this callee is a p^"},

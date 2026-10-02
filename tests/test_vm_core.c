@@ -1825,6 +1825,80 @@ static void test_measured_machine(void)
     }
 }
 
+static void test_effect_union_calls(void)
+{
+    Run r;
+    LHAT_TEST("a callback union calls either effect kind through a table field");
+    run_text(&r,
+        "let^ run = p^t:t^{condition:f^number^->number^;|p^number^->number^;} -> number^{\n"
+        "  return^t.condition(4) }\n"
+        "let^ a = run({condition = f^n:number^{ n + 1 }})\n"
+        "let^ b = run({condition = p^n:number^{ return^n + 2 }})\n"
+        "return^ a * 10 + b\n");
+    CHECK_INTEGER(&r, 56);
+    run_dispose(&r);
+}
+
+static void test_dynamic_callable_fits(void)
+{
+    struct { const char *value, *type; bool fits; } cases[] = {
+        {"f^->bool^{true^}", "f^->bool^;", true},
+        {"closed^f^->bool^{true^}", "closed^f^->bool^;", true},
+        {"closed^f^->bool^{true^}", "f^->bool^;", true},
+        {"f^->bool^{true^}", "closed^f^->bool^;", false},
+        {"f^->fresh^t^{}{{}}", "f^->fresh^t^{};", true},
+        {"f^->t^{}{{}}", "f^->fresh^t^{};", false},
+        {"f^v:t^{[string^]:number^}->bool^{true^}", "f^t^{[string^]:number^}->bool^;", true},
+        {"f^v:t^{[string^]:number^}->bool^{true^}", "f^t^{[string^]:string^}->bool^;", false},
+        {"p^->bool^{return^true^}", "f^->bool^;", false},
+        {"f^n:number^->number^{n}", "f^->bool^;", false},
+        {"f^->number^{1}", "f^->bool^;", false},
+        {"f^->bool^{true^}", "p^->bool^;", false},
+        {"p^{}", "p^;", true},
+        {"p^{}", "p^->any^;", false},
+        {"p^->any^{return^1}", "p^;", false},
+        {"f^n:number^|string^->number^{1}", "f^number^->number^|string^;", true},
+        {"f^n:number^->number^|string^{1}", "f^number^|string^->number^;", false},
+        {"f^...:number^->number^{1}", "f^...:number^->number^;", true},
+        {"f^...:number^->number^{1}", "f^number^->number^;", false},
+        {"f^...:number^->number^{1}", "f^...:string^->number^;", false},
+        {"f^n:t^{x:number^}->number^{1}", "f^t^{x:number^,y:string^}->number^;", true},
+        {"f^n:t^{x:number^,y:string^}->number^{1}", "f^t^{x:number^}->number^;", false},
+        {"f^n:f^number^->number^;->bool^{true^}", "f^f^number^->number^;->bool^;", true},
+        {"f^n:f^number^->number^;->bool^{true^}", "f^p^number^->number^;->bool^;", false},
+        {"{callback=p^->bool^{return^true^}}", "t^{callback:f^->bool^;}", false},
+        {"{callback=f^->bool^{true^}}", "t^{callback:f^->bool^;}", true},
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        LHAT_TEST("dynamic fits checks the complete callable contract");
+        char source[1024];
+        snprintf(source, sizeof source,
+            "let^ test = p^v:any^->bool^{return^v fits^%s}\nreturn^test(%s)\n",
+            cases[i].type, cases[i].value);
+        Run r;
+        run_checked_text(&r, source);
+        CHECK_BOOL(&r, cases[i].fits);
+        run_dispose(&r);
+    }
+    LHAT_TEST("a failed dynamic function guard never executes its body");
+    Run r;
+    run_checked_text(&r,
+        "let^ guarded = p^v:any^->bool^{\n"
+        " if^v fits^f^->bool^; { return^v() }\n"
+        " return^false^ }\n"
+        "return^guarded(p^->bool^{panic^\"must not run\"})\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+    LHAT_TEST("as^ uses the same callable contract as fits^");
+    run_checked_text(&r,
+        "let^ test=p^v:any^->bool^{\n"
+        "let^r=v as^f^->bool^;\n"
+        "return^r fits^localerror^.CastFailure}\n"
+        "return^test(p^->bool^{return^true^})\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_encoding();
@@ -1833,6 +1907,8 @@ int main(void)
     test_names();
     test_control();
     test_calls();
+    test_effect_union_calls();
+    test_dynamic_callable_fits();
     test_tail_calls();
     test_closures();
     test_stacked_hats_compile();

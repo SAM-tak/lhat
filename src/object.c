@@ -494,6 +494,180 @@ static bool member_allows_absence(const LhatRuntimeType *type)
     return false;
 }
 
+// Signature compatibility is checked only by dynamic type tests (and overload
+// selection), never on the ordinary call path. Borrowed descriptors require no
+// heap allocation. Keep the direction of inputs opposite that of results.
+typedef struct RtScope {
+    const LhatRuntimeType *type;
+    const struct RtScope *outer;
+} RtScope;
+typedef struct RtPair {
+    const LhatRuntimeType *value, *target;
+    const struct RtPair *outer;
+} RtPair;
+
+static const LhatRuntimeType *rt_resolve(const LhatRuntimeType *type,
+                                        const RtScope *scope)
+{
+    if (type != NULL && type->kind == LHAT_TYPE_RT_SELF) {
+        unsigned levels = type->levels;
+        while (scope != NULL && levels > 1) { scope = scope->outer; levels--; }
+        return scope != NULL ? scope->type : type;
+    }
+    return type;
+}
+
+static bool rt_fits(const LhatRuntimeType *a, const LhatRuntimeType *b,
+                    const RtPair *seen, const RtScope *as, const RtScope *bs)
+{
+    a = rt_resolve(a, as);
+    b = rt_resolve(b, bs);
+    if (b == NULL || b->kind == LHAT_TYPE_RT_ANY)
+        return a == NULL || a->kind != LHAT_TYPE_RT_HOSTVALUE;
+    // An unresolved descriptor is not evidence that a signature fits.
+    if (b->kind == LHAT_TYPE_RT_UNKNOWN ||
+        (a != NULL && a->kind == LHAT_TYPE_RT_UNKNOWN)) return false;
+    if (a == b) return true;
+    if (a == NULL || a->kind == LHAT_TYPE_RT_ANY) return false;
+    for (const RtPair *p = seen; p != NULL; p = p->outer) {
+        if (p->value == a && p->target == b) return true;
+    }
+    RtPair here = {a, b, seen};
+    seen = &here;
+    if (a->kind == LHAT_TYPE_RT_UNION) {
+        for (size_t i = 0; i < a->part_count; i++)
+            if (!rt_fits(a->parts[i], b, seen, as, bs)) return false;
+        return true;
+    }
+    if (b->kind == LHAT_TYPE_RT_INTERSECT) {
+        for (size_t i = 0; i < b->part_count; i++)
+            if (!rt_fits(a, b->parts[i], seen, as, bs)) return false;
+        return true;
+    }
+    if (b->kind == LHAT_TYPE_RT_UNION) {
+        for (size_t i = 0; i < b->part_count; i++)
+            if (rt_fits(a, b->parts[i], seen, as, bs)) return true;
+        return false;
+    }
+    if (a->kind == LHAT_TYPE_RT_INTERSECT) {
+        for (size_t i = 0; i < a->part_count; i++)
+            if (rt_fits(a->parts[i], b, seen, as, bs)) return true;
+        return false;
+    }
+    if (a->kind == LHAT_TYPE_RT_APPLIED && b->kind != LHAT_TYPE_RT_APPLIED)
+        return rt_fits(a->result, b, seen, as, bs);
+    if (a->kind == LHAT_TYPE_RT_ENUM_MEMBER && b->kind == LHAT_TYPE_RT_ENUM)
+        return a->enum_decl == b->enum_decl;
+    if (a->kind == LHAT_TYPE_RT_ERROR_KIND && b->kind == LHAT_TYPE_RT_ERROR)
+        return a->error_kind != NULL && a->error_kind->local == b->error_local;
+    if (a->kind != b->kind) return false;
+    switch (a->kind) {
+        case LHAT_TYPE_RT_SUBROUTINE:
+            if (a->is_function != b->is_function ||
+                a->takes_self != b->takes_self || a->self_last != b->self_last ||
+                (b->closed && !a->closed) ||
+                (a->mutable_self && !b->mutable_self) ||
+                (b->answers_fresh && !a->answers_fresh) ||
+                a->part_count != b->part_count ||
+                (a->variadic == NULL) != (b->variadic == NULL) ||
+                (a->result == NULL) != (b->result == NULL)) return false;
+            for (size_t i = 0; i < a->part_count; i++)
+                if (!rt_fits(b->parts[i], a->parts[i], seen, bs, as)) return false;
+            return (a->variadic == NULL || rt_fits(b->variadic, a->variadic, seen, bs, as)) &&
+                   (a->result == NULL || rt_fits(a->result, b->result, seen, as, bs));
+        case LHAT_TYPE_RT_TUPLE:
+        case LHAT_TYPE_RT_APPLIED:
+            if (a->part_count != b->part_count) return false;
+            if (a->kind == LHAT_TYPE_RT_APPLIED &&
+                (!rt_fits(a->result, b->result, seen, as, bs) ||
+                 !rt_fits(b->result, a->result, seen, bs, as))) return false;
+            for (size_t i = 0; i < a->part_count; i++) {
+                if (!rt_fits(a->parts[i], b->parts[i], seen, as, bs)) return false;
+                if (a->kind == LHAT_TYPE_RT_APPLIED &&
+                    !rt_fits(b->parts[i], a->parts[i], seen, bs, as)) return false;
+            }
+            return true;
+        case LHAT_TYPE_RT_TABLE: {
+            RtScope ac = {a, as}, bc = {b, bs};
+            as = &ac; bs = &bc;
+            if (a->part_count < b->part_count) return false;
+            for (size_t i = 0; i < b->part_count; i++)
+                if (!rt_fits(a->parts[i], b->parts[i], seen, as, bs)) return false;
+            for (size_t i = 0; i < b->member_count; i++) {
+                const LhatRuntimeTypeMember *want = &b->members[i];
+                const LhatRuntimeType *have = NULL;
+                bool found = false;
+                for (size_t j = 0; j < a->member_count; j++) {
+                    const LhatString *name = a->members[j].name;
+                    if (name->length == want->name->length &&
+                        memcmp(name->text, want->name->text, name->length) == 0) {
+                        have = a->members[j].type; found = true; break;
+                    }
+                }
+                if (!found) {
+                    if (!member_allows_absence(want->type)) return false;
+                } else if (!rt_fits(have, want->type, seen, as, bs)) return false;
+            }
+            if (b->variadic != NULL) {
+                // A numeric dictionary may contribute sequence entries too.
+                LhatRuntimeType number = {0};
+                number.kind = LHAT_TYPE_RT_NUMBER;
+                if (a->index_key != NULL &&
+                    rt_fits(&number, a->index_key, seen, as, as) &&
+                    !rt_fits(a->index_value, b->variadic, seen, as, bs)) return false;
+                if (a->variadic != NULL && !rt_fits(a->variadic, b->variadic, seen, as, bs)) return false;
+                for (size_t i = b->part_count; i < a->part_count; i++)
+                    if (!rt_fits(a->parts[i], b->variadic, seen, as, bs)) return false;
+            }
+            if (b->index_key != NULL) {
+                if (a->index_key == NULL ||
+                    !rt_fits(a->index_key, b->index_key, seen, as, bs) ||
+                    !rt_fits(a->index_value, b->index_value, seen, as, bs)) return false;
+            }
+            return b->instance == NULL || (a->instance != NULL &&
+                   rt_fits(a->instance, b->instance, seen, as, bs));
+        }
+        case LHAT_TYPE_RT_COROUTINE:
+            if (b->coroutine_top) return true;
+            if (a->coroutine_top ||
+                (!b->kind_any && (a->kind_any || a->is_function != b->is_function)) ||
+                (!b->receive_any && (a->receive_any || (a->receive == NULL) != (b->receive == NULL))) ||
+                (!b->produce_any && a->produce_any) ||
+                (!b->result_any && (a->result_any || a->endless != b->endless ||
+                                   (a->result == NULL) != (b->result == NULL)))) return false;
+            return (b->receive_any || rt_fits(b->receive, a->receive, seen, bs, as)) &&
+                   (b->produce_any || rt_fits(a->produce, b->produce, seen, as, bs)) &&
+                   (b->result_any || rt_fits(a->result, b->result, seen, as, bs));
+        case LHAT_TYPE_RT_ERROR_KIND:
+            return a->error_kind == b->error_kind ||
+                   (a->error_kind != NULL && b->error_kind != NULL &&
+                    b->error_kind->group == NULL && a->error_kind->group == b->error_kind);
+        case LHAT_TYPE_RT_HOSTDATA:
+            for (const LhatHostDataTag *tag = a->hostdata_tag; tag != NULL; tag = tag->base)
+                if (tag == b->hostdata_tag) return true;
+            return false;
+        default:
+            return lhat_runtime_type_equal(a, b);
+    }
+}
+
+static bool callable_satisfies(LhatValue value, const LhatRuntimeType *wanted)
+{
+    const LhatRuntimeType *signature = NULL;
+    if (lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE)) {
+        const LhatProto *proto = ((const LhatClosure *)lhat_as_object(value))->proto;
+        if (proto != NULL) signature = proto->signature;
+    } else if (lhat_is_object_kind(value, LHAT_OBJECT_HOST)) {
+        signature = ((const LhatHost *)lhat_as_object(value))->signature;
+    } else if (lhat_is_object_kind(value, LHAT_OBJECT_OVERLOAD)) {
+        const LhatOverload *group = (const LhatOverload *)lhat_as_object(value);
+        for (size_t i = 0; i < group->count; i++)
+            if (callable_satisfies(group->candidates[i], wanted)) return true;
+        return false;
+    }
+    return signature != NULL && rt_fits(signature, wanted, NULL, NULL, NULL);
+}
+
 bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
 {
     if (type == NULL) {
@@ -659,9 +833,7 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                    e->index == type->enum_member_index;
         }
         case LHAT_TYPE_RT_SUBROUTINE:
-            return lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE) ||
-                   lhat_is_object_kind(value, LHAT_OBJECT_HOST) ||
-                   lhat_is_object_kind(value, LHAT_OBJECT_OVERLOAD);
+            return callable_satisfies(value, type);
         case LHAT_TYPE_RT_COROUTINE:
             return lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE);
         // 04 の 2.7: a family, not every error. The two tops are disjoint, so
@@ -1084,7 +1256,7 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             // where it is the right operand.
             bool others = type->part_count > 0 || type->variadic != NULL;
             if (type->takes_self && !type->self_last) {
-                type_put_text(w, "self^");
+                type_put_text(w, type->mutable_self ? "mutable^self^" : "self^");
                 if (others) {
                     type_put_text(w, ", ");
                 }
@@ -1107,10 +1279,11 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 if (others) {
                     type_put_text(w, ", ");
                 }
-                type_put_text(w, "self^");
+                type_put_text(w, type->mutable_self ? "mutable^self^" : "self^");
             }
             if (type->result != NULL) {
                 type_put_text(w, " -> ");
+                if (type->answers_fresh) type_put_text(w, "fresh^");
                 write_runtime_result(w, type->result);
             }
             type_put_text(w, ";");
@@ -1276,6 +1449,8 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
                 // (type.c's conforms_func), and the two are written apart.
                 a->self_last != b->self_last ||
                 a->closed != b->closed ||  // 15.13, and for the same reason
+                a->mutable_self != b->mutable_self ||
+                a->answers_fresh != b->answers_fresh ||
                 a->part_count != b->part_count) {
                 return false;
             }

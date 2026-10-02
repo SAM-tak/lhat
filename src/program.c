@@ -1651,6 +1651,8 @@ static bool keep_entry(LhatProgram *program, const char *module,
         entry->has_variadic = signature->v.func.variadic != NULL;
         entry->takes_self = signature->v.func.takes_self;
         entry->self_last = signature->v.func.self_last;
+        entry->runtime_signature = lhat_rt_from_checked(&program->host_heap, signature);
+        if (entry->runtime_signature == NULL) return false;
         entry->parameter_types =
             lower_host_params(program, signature, entry->parameters);
     }
@@ -2241,6 +2243,7 @@ static bool keep_entry_rt(LhatProgram *program, const char *module,
     entry->has_variadic = rt->variadic != NULL;
     entry->takes_self = rt->takes_self;
     entry->self_last = rt->self_last;
+    entry->runtime_signature = rt;
     if (entry->parameters > 0) {
         entry->parameter_types = borrowed_params(
             (const LhatRuntimeType *const *)rt->parts, entry->parameters);
@@ -2917,6 +2920,8 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         entry->has_variadic = written->v.func.variadic != NULL;
         entry->takes_self = written->v.func.takes_self;
         entry->self_last = written->v.func.self_last;
+        entry->runtime_signature = lhat_rt_from_checked(&program->host_heap, written);
+        if (entry->runtime_signature == NULL) return false;
         entry->parameter_types =
             lower_host_params(program, written, entry->parameters);
     }
@@ -2925,6 +2930,7 @@ bool lhat_register_global(LhatProgram *program, const char *name,
     entry->has_variadic = held->variadic != NULL;
     entry->takes_self = held->takes_self;
     entry->self_last = held->self_last;
+    entry->runtime_signature = held;
     if (entry->parameters > 0) {
         entry->parameter_types = borrowed_params(
             (const LhatRuntimeType *const *)held->parts, entry->parameters);
@@ -3443,6 +3449,7 @@ static bool shared_entry(LhatProgram *program, LhatTable *root,
             return false;
         }
         host->self_last = e->self_last;
+        host->signature = e->runtime_signature;
         host->parameter_types = borrowed_params(
             (const LhatRuntimeType *const *)e->parameter_types,
             e->parameters);
@@ -3686,6 +3693,7 @@ static bool install_all(const LhatProgram *program, LhatMachine *machine)
             !lhat_machine_set_global(machine, e->name, value)) {
             return false;
         }
+        ((LhatHost *)lhat_as_object(value))->signature = e->runtime_signature;
     }
     // 05 の 8.9: a host value has no heap half to carry its members table,
     // so the machine keeps one per registered type, found by the tag's

@@ -2660,6 +2660,7 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
     proto->result_type = kind != LHAT_BODY_NEW_HOOK && signature != NULL
         ? runtime_type(c, signature->v.func.result)
         : NULL;
+    proto->signature = signature != NULL ? runtime_type(c, signature) : NULL;
 
     // 15.2, 13.9: Y and R have no written form at all -- 03 の 5.11a's
     // checked_type is the only place either can come from, written or not.

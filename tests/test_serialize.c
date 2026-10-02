@@ -102,6 +102,10 @@ static int64_t run_root(LhatProgram *program, const char *root_path,
 // a member read through a cache, an errordef^ kind as a constant, an enum^
 // with its descriptor, a type value, reals, strings, a loop.
 static const char *const SPECIMEN =
+    "let^ checkFn = p^v:any^->bool^{return^v fits^f^number^->number^;}\n"
+    "if^ !checkFn(f^n:number^{n}) {return^ -30}\n"
+    "if^ checkFn(p^n:number^{return^n}) {return^ -31}\n"
+    "if^ checkFn(f^n:string^{n}) {return^ -32}\n"
     "errordef^ Bad { Oops }\n"
     "enum^ Color { Red, Green = 5, Blue }\n"
     "let^ Vec = t^{number^[2]}\n"

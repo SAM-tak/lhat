@@ -450,15 +450,14 @@ typedef struct LhatRuntimeType {
     struct LhatRuntimeType **parts;
     size_t part_count;
 
-    // SUBROUTINE only. 02 の 14.16's typeof^ is what needs a signature
-    // reconstructed in full; narrowing asks no more than "is this a
-    // subroutine" (LHAT_TYPE_RT_SUBROUTINE above), so these are NULL/false
-    // wherever nothing built them.
+    // SUBROUTINE: reflection and dynamic fits^ use the same signature.
     struct LhatRuntimeType *result;   // NULL when nothing is returned (13.2)
     bool is_function;                 // f^ rather than p^ (15 章)
     bool takes_self;                  // 14.4: a parameter is self^
     bool self_last;                   // 11.3改: and it is the right operand
     bool closed;                      // 15.13: written closed^
+    bool mutable_self;
+    bool answers_fresh;
 
     // COROUTINE only (13.9). `result` above doubles as the third slot (T);
     // these are the other two. A NULL slot is an empty one -- nothing is sent
@@ -600,6 +599,7 @@ typedef struct LhatHost {
     LhatObject header;
     LhatHostFn call;
     void *context;   // what the registration handed over; the host owns it
+    const struct LhatRuntimeType *signature; // shared registration descriptor
     LhatValue bound;  // 14.4: the receiver, when reached as a member
     // 13.7: `parameters` is what a call owes at least, not exactly, once
     // has_variadic is set -- the same ">=" a variadic LhatProto asks for.

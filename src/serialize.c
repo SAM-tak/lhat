@@ -32,7 +32,7 @@
 static const uint8_t MAGIC[4] = { 0x89, 'L', 'H', '^' };
 // 10.7: the signature table's, told apart from a unit's by the last byte.
 static const uint8_t TABLE_MAGIC[4] = { 0x89, 'L', 'H', 'S' };
-#define FORMAT_VERSION 6u
+#define FORMAT_VERSION 7u
 #define FLAG_DEBUG_NAMES 1u
 #define FLAG_STRICT 2u
 #define HEADER_BYTES 24u  // magic, format, flags, fingerprint, hash
@@ -692,6 +692,7 @@ static void intern_proto(Writer *w, const LhatProto *proto)
         intern_rt(w, proto->parameter_types[i]);
     }
     intern_rt(w, proto->result_type);
+    intern_rt(w, proto->signature);
     intern_rt(w, proto->yield_produce_type);
     intern_rt(w, proto->yield_receive_type);
     for (size_t i = 0; i < proto->proto_count; i++) {
@@ -772,7 +773,9 @@ static void emit_rt(Writer *w, Out *o, const LhatRuntimeType *rt)
     put_u8(o, (uint8_t)((rt->is_function ? 1 : 0) | (rt->takes_self ? 2 : 0) |
                         (rt->self_last ? 4 : 0) | (rt->closed ? 8 : 0) |
                         (rt->endless ? 16 : 0) |
-                        (rt->coroutine_top ? 32 : 0)));
+                        (rt->coroutine_top ? 32 : 0) |
+                        (rt->mutable_self ? 64 : 0) |
+                        (rt->answers_fresh ? 128 : 0)));
     put_u8(o, (uint8_t)((rt->receive_any ? 1 : 0) | (rt->produce_any ? 2 : 0) |
                         (rt->result_any ? 4 : 0) | (rt->kind_any ? 8 : 0)));
     put_u32(o, obj_ref(w, rt->receive));
@@ -856,6 +859,7 @@ static void emit_proto(Writer *w, Out *o, const LhatProto *proto)
         }
     }
     put_u32(o, obj_ref(w, proto->result_type));
+    put_u32(o, obj_ref(w, proto->signature));
     put_u32(o, obj_ref(w, proto->yield_produce_type));
     put_u32(o, obj_ref(w, proto->yield_receive_type));
 
@@ -1726,6 +1730,8 @@ static void read_rt(Reader *r)
     rt->closed = (flags & 8) != 0;
     rt->endless = (flags & 16) != 0;
     rt->coroutine_top = (flags & 32) != 0;
+    rt->mutable_self = (flags & 64) != 0;
+    rt->answers_fresh = (flags & 128) != 0;
     uint8_t wildcards = get_u8(in);
     rt->receive_any = (wildcards & 1) != 0;
     rt->produce_any = (wildcards & 2) != 0;
@@ -1856,6 +1862,7 @@ static bool read_proto(Reader *r, LhatProto *proto)
         }
     }
     proto->result_type = rt_at(r, get_u32(in));
+    proto->signature = rt_at(r, get_u32(in));
     proto->yield_produce_type = rt_at(r, get_u32(in));
     proto->yield_receive_type = rt_at(r, get_u32(in));
 
