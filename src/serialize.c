@@ -32,7 +32,7 @@
 static const uint8_t MAGIC[4] = { 0x89, 'L', 'H', '^' };
 // 10.7: the signature table's, told apart from a unit's by the last byte.
 static const uint8_t TABLE_MAGIC[4] = { 0x89, 'L', 'H', 'S' };
-#define FORMAT_VERSION 7u
+#define FORMAT_VERSION 8u
 #define FLAG_DEBUG_NAMES 1u
 #define FLAG_STRICT 2u
 #define HEADER_BYTES 24u  // magic, format, flags, fingerprint, hash
@@ -261,8 +261,8 @@ typedef struct {
     size_t ext_count;
     size_t ext_capacity;
 
-    // The descriptors and kinds the tree holds, in an order every reference
-    // points backwards in -- a reader builds them front to back.
+    // Descriptors form a graph, including cycles through callable results.
+    // The reader allocates every object before connecting their references.
     const LhatObject **objs;
     size_t obj_count;
     size_t obj_capacity;
@@ -620,6 +620,10 @@ static uint32_t intern_rt(Writer *w, const LhatRuntimeType *rt)
     if (found != 0) {
         return found;
     }
+    // Register before descending: a signature can return a table whose
+    // members lead straight back to the same signature.
+    uint32_t ref = add_obj(w, (const LhatObject *)rt);
+    if (ref == 0) return 0;
     for (size_t i = 0; i < rt->part_count; i++) {
         intern_rt(w, rt->parts[i]);
     }
@@ -654,7 +658,7 @@ static uint32_t intern_rt(Writer *w, const LhatRuntimeType *rt)
     if (rt->enum_decl != NULL) {
         ext_of_enum(w, rt->enum_decl);
     }
-    return add_obj(w, (const LhatObject *)rt);
+    return ref;
 }
 
 #if LHAT_WITH_FRONTEND
@@ -731,7 +735,6 @@ static uint32_t lstr_ref(const Writer *w, const LhatString *s)
 
 static void emit_kind(Writer *w, Out *o, const LhatErrorKind *kind)
 {
-    put_u8(o, 0);  // an error kind
     put_u32(o, obj_ref(w, kind->group));
     put_u32(o, lstr_ref(w, kind->name));
     put_u8(o, kind->local ? 1 : 0);
@@ -739,7 +742,6 @@ static void emit_kind(Writer *w, Out *o, const LhatErrorKind *kind)
 
 static void emit_rt(Writer *w, Out *o, const LhatRuntimeType *rt)
 {
-    put_u8(o, 1);  // a descriptor
     put_u8(o, (uint8_t)rt->kind);
     // error_kind: 0 none, 1 an object of this unit's, 2 a registered one.
     if (rt->error_kind == NULL) {
@@ -920,6 +922,9 @@ static void emit_tables(Writer *w, Out *o)
     }
 
     put_u32(o, (uint32_t)w->obj_count);
+    for (size_t i = 0; i < w->obj_count; i++) {
+        put_u8(o, w->objs[i]->kind == LHAT_OBJECT_ERROR_KIND ? 0 : 1);
+    }
     for (size_t i = 0; i < w->obj_count; i++) {
         const LhatObject *object = w->objs[i];
         if (object->kind == LHAT_OBJECT_ERROR_KIND) {
@@ -1641,7 +1646,7 @@ static const void *resolve_ext(Reader *r, ExtKind kind, uint32_t module_ref,
 
 // ---- building the objects ----
 
-static void read_kind(Reader *r)
+static void read_kind(Reader *r, size_t index)
 {
     uint32_t group_ref = get_u32(&r->in);
     uint32_t name_ref = get_u32(&r->in);
@@ -1649,19 +1654,18 @@ static void read_kind(Reader *r)
     const LhatErrorKind *group =
         (const LhatErrorKind *)obj_at(r, group_ref, LHAT_OBJECT_ERROR_KIND);
     LhatString *name = lstring_at(r, name_ref);
-    if (r->in.failed || name == NULL) {
+    // Error groups still precede their variants and cannot be cyclic.
+    if (r->in.failed || name == NULL || group_ref > index) {
         fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
         return;
     }
-    LhatErrorKind *made = lhat_error_kind_new(r->heap, group, local, name);
-    if (made == NULL) {
-        fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
-        return;
-    }
-    r->objs[r->obj_count++] = (LhatObject *)made;
+    LhatErrorKind *made = (LhatErrorKind *)r->objs[index];
+    made->group = group;
+    made->name = name;
+    made->local = group != NULL ? group->local : local;
 }
 
-static void read_rt(Reader *r)
+static void read_rt(Reader *r, size_t index)
 {
     In *in = &r->in;
     uint8_t kind = get_u8(in);
@@ -1669,11 +1673,8 @@ static void read_rt(Reader *r)
         fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
         return;
     }
-    LhatRuntimeType *rt = lhat_type_rt_new(r->heap, (LhatRuntimeTypeKind)kind);
-    if (rt == NULL) {
-        fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
-        return;
-    }
+    LhatRuntimeType *rt = (LhatRuntimeType *)r->objs[index];
+    rt->kind = (LhatRuntimeTypeKind)kind;
     uint8_t kind_how = get_u8(in);
     if (kind_how == 1) {
         rt->error_kind = (const LhatErrorKind *)obj_at(
@@ -1752,7 +1753,6 @@ static void read_rt(Reader *r)
     }
     rt->instance = rt_at(r, get_u32(in));
     rt->levels = get_u32(in);
-    r->objs[r->obj_count++] = (LhatObject *)rt;
 }
 
 // ---- building the tree ----
@@ -1979,11 +1979,20 @@ static void read_tables(Reader *r)
     for (size_t i = 0; i < objects && !in->failed; i++) {
         uint8_t what = get_u8(in);
         if (what == 0) {
-            read_kind(r);
+            r->objs[i] = (LhatObject *)lhat_error_kind_new(r->heap, NULL, false, NULL);
         } else if (what == 1) {
-            read_rt(r);
+            r->objs[i] = (LhatObject *)lhat_type_rt_new(r->heap, LHAT_TYPE_RT_ANY);
         } else {
             fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+        }
+        if (r->objs[i] == NULL) fail(r, LHAT_PROGRAM_ERR_BAD_BINARY);
+    }
+    r->obj_count = objects;
+    for (size_t i = 0; i < objects && !in->failed; i++) {
+        if (r->objs[i]->kind == LHAT_OBJECT_ERROR_KIND) {
+            read_kind(r, i);
+        } else {
+            read_rt(r, i);
         }
     }
 }

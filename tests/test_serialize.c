@@ -161,6 +161,35 @@ static bool write_text(const char *text, bool with_debug, uint8_t **bytes,
     return ok;
 }
 
+static void test_recursive_signature_roundtrip(void)
+{
+    // A method's signature returns its owner, whose members include that
+    // same signature. Serializing this graph used to recurse indefinitely.
+    static const char source[] =
+        "let^Node=def^{self^{n=42}, identity=f^self^->Self^{self^}}\n"
+        "let^node=Node.new()\n"
+        "let^check=p^v:any^->bool^{return^v fits^t^{identity:f^self^->Node;}}\n"
+        "if^!check(node){return^-1}\nreturn^node.identity().n\n";
+    for (int debug = 0; debug <= 1; debug++) {
+        LHAT_TEST("recursive method signatures survive binary serialization");
+        uint8_t *bytes = NULL;
+        size_t length = 0;
+        int64_t answer = -1;
+        bool wrote = write_text(source, debug != 0, &bytes, &length, &answer);
+        LHAT_CHECK(wrote, "the recursive signature was written");
+        LHAT_CHECK_EQ_INT(answer, 42);
+        if (wrote) {
+            Disk disk = {0};
+            disk_bytes(&disk, "main.lh", bytes, length);
+            LhatProgram program;
+            lhat_program_init(&program, true, disk_load, &disk);
+            LHAT_CHECK_EQ_INT(run_root(&program, "main.lh", NULL), 42);
+            lhat_program_dispose(&program);
+        }
+        lhat_free(bytes);
+    }
+}
+
 static void test_roundtrip(void)
 {
     uint8_t *bytes = NULL;
@@ -1112,6 +1141,7 @@ static void test_scripts(void)
 int main(void)
 {
     test_roundtrip();
+    test_recursive_signature_roundtrip();
     test_delegate_chain_roundtrip();
     test_refusals();
     test_write_status();
