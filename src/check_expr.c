@@ -2200,7 +2200,10 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                     code = hole->abstract ? LHAT_CHECK_ERR_LENT_DOES_NOT_PROVIDE
                                           : LHAT_CHECK_ERR_LENT_IS_NOT_REPLACED;
                 }
-                chk_report_named(c, node, code, hole->name, hole->name_length);
+                // The missing member is not written at this call. Mark new,
+                // independently of the member name included in the message.
+                chk_report_named_span(c, node->v.access.target->v.access.argument,
+                                      code, hole->name, hole->name_length);
             }
         }
     }

@@ -1356,22 +1356,22 @@ static const LhatType *enum_decl_of(const LhatType *type)
     return type->kind == LHAT_TYPE_ENUM_MEMBER ? type->v.error.set : type;
 }
 
-// 05 の 8.8改: is `value` a host type declared under `target`? Both sides
+// 05 の 8.8改: is `value` the same host type as `target`, or declared under it? Both sides
 // have to be registered ones -- 8.8's relation is between declarations, and
 // a written shape is not one. The chain is finite: the registry refuses a
 // base that would close a cycle.
 //
 // Read off the tags rather than off the types, because the tag is what the
 // host declared the relation on and what the machine compares at run time
-// (lhat_value_satisfies). Two readings of one fact would be two facts.
-static bool nominal_derives(const LhatType *value, const LhatType *target)
+// (lhat_value_satisfies). Inference copies a settled type into a parameter
+// slot, so type-node addresses cannot decide even the same-registration case.
+static bool nominal_is_a(const LhatType *value, const LhatType *target)
 {
     const struct LhatHostDataTag *wanted = target->v.table.hostdata_tag;
-    const struct LhatHostDataTag *have = value->v.table.hostdata_tag;
-    if (wanted == NULL || have == NULL) {
+    if (wanted == NULL) {
         return false;
     }
-    for (have = have->base; have != NULL; have = have->base) {
+    for (const struct LhatHostDataTag *have = value->v.table.hostdata_tag; have != NULL; have = have->base) {
         if (have == wanted) {
             return true;
         }
@@ -1774,7 +1774,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             // this refusal was protecting.
             if (target->v.table.nominal) {
                 if (target->v.table.is_typeinfo && value->v.table.is_typeinfo) return true;
-                return value == target || nominal_derives(value, target);
+                return value == target || nominal_is_a(value, target);
             }
             // 14.7改: what a definition's instances carry is part of what the
             // definition is, so a written self^{ … } is asked of them the way
@@ -2259,8 +2259,7 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
                 // this, so two registrations taking a base and a derived
                 // type are overlapping and may not be overloaded -- there is
                 // no specificity rule here to pick between them.
-                return a != b && !nominal_derives(a, b) &&
-                       !nominal_derives(b, a);
+                return a != b && !nominal_is_a(a, b) && !nominal_is_a(b, a);
             }
             // One nominal and one written shape: a value of the registered
             // type carries members like any other, so the shape below is

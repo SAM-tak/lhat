@@ -50,6 +50,7 @@ void chk_report_fix(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
     d->column = at->column;
     d->name = name;
     d->name_length = name != NULL ? (uint32_t)name_length : 0;
+    d->highlight_length = 0;
     for (size_t i = 0; i < LHAT_FIX_SLOTS; i++) {
         d->fixes[i].title = NULL;
     }
@@ -502,6 +503,17 @@ void chk_report_named(Checker *c, const LhatNode *at,
                       size_t length)
 {
     chk_report_fix(c, at, code, name, length, NULL, 0);
+}
+
+void chk_report_named_span(Checker *c, const LhatNode *at,
+                           LhatCheckErrorCode code, const char *name,
+                           size_t length)
+{
+    size_t before = c->result->diagnostic_count;
+    chk_report_named(c, at, code, name, length);
+    if (c->result->diagnostic_count > before && at->end > at->offset) {
+        c->result->diagnostics[before].highlight_length = at->end - at->offset;
+    }
 }
 
 // ---------------------------------------------------------------------------

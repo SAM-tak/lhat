@@ -672,6 +672,10 @@ void chk_kind_declared_at(Checker *c, LhatType *kind, const LhatNode *at);
 void chk_report_named(Checker *c, const LhatNode *at,
                       LhatCheckErrorCode code, const char *name,
                       size_t length);
+// Mention name in the message, but underline the supplied node's source span.
+void chk_report_named_span(Checker *c, const LhatNode *at,
+                           LhatCheckErrorCode code, const char *name,
+                           size_t length);
 bool chk_node_name(const Checker *c, const LhatNode *node,
                    const char **text, size_t *length);
 bool chk_name_is(const char *text, size_t length, const char *literal);

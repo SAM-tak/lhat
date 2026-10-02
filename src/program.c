@@ -4830,13 +4830,13 @@ LhatUnitDiagnostic lhat_unit_diagnostic(const LhatUnit *unit, size_t index)
             break;
         }
         case LHAT_STAGE_CHECKER: {
-            // 07 の 4 章: what the checker underlines is the name it is
-            // talking about, which is why its span is spelled name_length.
+            // A diagnostic may mention a missing member while pointing at
+            // the construction, so its source span can differ from the name.
             const LhatCheckDiagnostic *d = &unit->checked.diagnostics[within];
             out.offset = d->offset;
             out.line = d->line;
             out.column = d->column;
-            out.length = d->name_length;
+            out.length = d->highlight_length != 0 ? d->highlight_length : d->name_length;
             break;
         }
     }

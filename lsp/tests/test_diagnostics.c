@@ -16,6 +16,9 @@ typedef struct {
     int line;
     int character;
     int severity;
+    int end_line;
+    int end_character;
+    char message[512];
 } Pos;
 
 // Checks `text` as a standalone unit (no program.h graph needed -- lhat_check
@@ -47,11 +50,19 @@ static bool first_diagnostic_start(const char *text, bool relaxed, Pos *out)
         cJSON *first = cJSON_GetArrayItem(diags, 0);
         cJSON *range = cJSON_GetObjectItemCaseSensitive(first, "range");
         cJSON *start = cJSON_GetObjectItemCaseSensitive(range, "start");
+        cJSON *end = cJSON_GetObjectItemCaseSensitive(range, "end");
         out->line = cJSON_GetObjectItemCaseSensitive(start, "line")->valueint;
         out->character =
             cJSON_GetObjectItemCaseSensitive(start, "character")->valueint;
         out->severity =
             cJSON_GetObjectItemCaseSensitive(first, "severity")->valueint;
+        out->end_line = cJSON_GetObjectItemCaseSensitive(end, "line")->valueint;
+        out->end_character = cJSON_GetObjectItemCaseSensitive(end, "character")->valueint;
+        const char *message = cJSON_GetObjectItemCaseSensitive(first, "message")->valuestring;
+        size_t size = strlen(message);
+        if (size >= sizeof out->message) size = sizeof out->message - 1;
+        memcpy(out->message, message, size);
+        out->message[size] = '\0';
         found = true;
     }
     cJSON_Delete(diags);
@@ -194,11 +205,45 @@ static void test_relaxed_severity(void)
     }
 }
 
+static void test_unprovided_marks_new(void)
+{
+    LHAT_TEST("an unprovided field marks new rather than its arguments");
+    Pos pos;
+    bool found = first_diagnostic_start(
+        "let^ A = def^{ self^{ abstract^swordSound : number^ },\n"
+        "  override^new = p^world:number^, target:number^ { self^{} } }\n"
+        "let^ a = A.new(1, 2)\n", false, &pos);
+    LHAT_CHECK(found, "expected a diagnostic");
+    if (found) {
+        LHAT_CHECK_EQ_INT(pos.line, 2);
+        LHAT_CHECK_EQ_INT(pos.character, 11);
+        LHAT_CHECK_EQ_INT(pos.end_line, 2);
+        LHAT_CHECK_EQ_INT(pos.end_character, 14);
+        LHAT_CHECK(strstr(pos.message, "swordSound") != NULL,
+                   "the full missing name remains in the message");
+    }
+
+    LHAT_TEST("an abstract method also marks new after non-ASCII text");
+    found = first_diagnostic_start(
+        "let^ A = def^{ self^{}, abstract^veryLongMethodName : p^self^; }\n"
+        "let^ a = { \"\xF0\x9F\x98\x80\", A.new() }\n", false, &pos);
+    LHAT_CHECK(found, "expected a diagnostic");
+    if (found) {
+        LHAT_CHECK_EQ_INT(pos.line, 1);
+        LHAT_CHECK_EQ_INT(pos.character, 19);
+        LHAT_CHECK_EQ_INT(pos.end_line, 1);
+        LHAT_CHECK_EQ_INT(pos.end_character, 22);
+        LHAT_CHECK(strstr(pos.message, "veryLongMethodName") != NULL,
+                   "the message name does not set the underline width");
+    }
+}
+
 int main(void)
 {
     test_ascii_position();
     test_surrogate_pair_position();
     test_compile_failure();
     test_relaxed_severity();
+    test_unprovided_marks_new();
     return lhat_test_report("test_lsp_diagnostics");
 }

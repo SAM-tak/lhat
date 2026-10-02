@@ -382,6 +382,10 @@ typedef struct LhatCheckDiagnostic {
     const char *name;
     uint32_t name_length;
 
+    // Explicit source span when the mentioned name is not written here.
+    // Zero retains the usual name_length span (or a single character).
+    uint32_t highlight_length;
+
     // Frozen operand descriptions, owned by the semantic arena.
     const char *operator_left;
     const char *operator_right;

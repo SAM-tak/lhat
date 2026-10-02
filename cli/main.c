@@ -820,7 +820,7 @@ static void say_check_error(const LhatProgram *program,
     report.offset = d->offset;
     report.line = d->line;
     report.column = d->column;
-    report.length = d->name_length;
+    report.length = d->highlight_length != 0 ? d->highlight_length : d->name_length;
     say(program, &report, source, name);
     free(bigger);
 }

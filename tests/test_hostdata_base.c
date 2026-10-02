@@ -1400,9 +1400,42 @@ static void test_registrations_are_shared(void)
     }
 }
 
+static void test_inferred_hostdata_identity(void)
+{
+    LhatProgram program;
+    Disk disk;
+    const File files[] = {{"main.lh",
+        "import^ scene\n"
+        "let^ Holder = def^{ self^{ abstract^held : scene.Sprite2D },\n"
+        "  override^new = p^held { self^{ held = held } } }\n"
+        "let^ source = scene.makeSprite()\n"
+        "return^ Holder.new(source).held.id()\n"}};
+    LHAT_TEST("a constructor infers a host type from its declared field");
+    program_with(&program, &disk, files, 1);
+    LHAT_REQUIRE(register_scene(&program, false), "registered");
+    the_node.id = 42;
+    LhatRunResult ran = run_program(&program);
+    LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+    LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
+
+    LHAT_TEST("copies of a host type keep its nominal identity");
+    LhatType original = {0};
+    original.kind = LHAT_TYPE_TABLE;
+    original.v.table.nominal = true;
+    original.v.table.hostdata_tag = node_tag;
+    LhatType inferred = original;
+    LHAT_CHECK(lhat_type_equal(&original, &inferred), "same registration");
+    LHAT_CHECK(!lhat_type_disjoint(&original, &inferred), "same values inhabit both");
+    inferred.v.table.hostdata_tag = other_tag;
+    LHAT_CHECK(!lhat_type_conforms(&original, &inferred), "different registrations stay separate");
+    LHAT_CHECK(lhat_type_disjoint(&original, &inferred), "unrelated registrations do not overlap");
+    lhat_program_dispose(&program);
+}
+
 int main(void)
 {
     test_the_relation();
+    test_inferred_hostdata_identity();
     test_inherited_members();
     test_fits();
     test_inherited_dispose();

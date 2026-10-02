@@ -270,7 +270,7 @@ struct LhatType {
             // Followed all the way down, since a base has a base.
             // Nothing in the relations reads it -- a nominal type is
             // compared by identity (conforms_in), and what is under
-            // what is the tag chain's to answer (nominal_derives).
+            // what is the tag chain's to answer (nominal_is_a).
             struct LhatType *base;
             // The instance's delegation link. Lookup follows further links
             // without copying members and stops when a type repeats.
