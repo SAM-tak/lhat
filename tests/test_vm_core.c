@@ -1839,6 +1839,59 @@ static void test_effect_union_calls(void)
     run_dispose(&r);
 }
 
+static size_t count_fits(const LhatProto *proto)
+{
+    if (proto == NULL) return 0;
+    size_t count = 0;
+    for (size_t i = 0; i < proto->chunk.count; i++) {
+        if (lhat_op(proto->chunk.code[i]) == LHAT_BC_FITS) count++;
+    }
+    for (size_t i = 0; i < proto->proto_count; i++) count += count_fits(proto->protos[i]);
+    return count;
+}
+
+static void test_static_fits(void)
+{
+    const struct { const char *source; bool answer; size_t tests; } cases[] = {
+        {"return^ 1 fits^ number^", true, 0},
+        {"return^ 1 fits^ string^", false, 0},
+        {"return^ {x=1,y=2} fits^ t^{x:number^}", true, 0},
+        {"let^v=f^->bool^{true^}\nreturn^v fits^f^->bool^;", true, 0},
+        {"let^v=p^->bool^{return^true^}\nreturn^v fits^f^->bool^;", false, 0},
+        {"let^v=f^n:number^->number^{n}\nreturn^v fits^f^->bool^;", false, 0},
+        {"return^ 1 < 2 fits^ number^", true, 0},
+        {"return^ 1 < 2 fits^ string^", false, 0},
+        {"return^ {x=nil^} fits^ t^{x:any^}", false, 1},
+        {"let^test=p^v:any^->bool^{return^v fits^number^}\nreturn^test(1)", true, 1},
+        {"let^test=p^v:number^|string^->bool^{return^v fits^number^}\nreturn^test(1)", true, 1},
+        {"let^test=p^v:number^|string^->bool^{return^v fits^number^}\nreturn^test(\"s\")", false, 1},
+        {"let^test=p^v:f^->bool^;|p^->bool^;->bool^{return^v fits^f^->bool^;}\n"
+         "return^test(p^->bool^{return^true^})", false, 1},
+        // A structural type is a lower bound, not an exact runtime shape.
+        {"let^test=p^v:t^{x:number^}->bool^{return^v fits^t^{x:number^,y:number^}}\n"
+         "return^test({x=1,y=2})", true, 1},
+        {"let^test=p^v:t^{x:any^}->bool^{return^v fits^t^{x:number^}}\n"
+         "return^test({x=\"s\"})", false, 1},
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        LHAT_TEST("fits omits runtime checks only when the static answer is settled");
+        Run r;
+        run_checked_text(&r, cases[i].source);
+        CHECK_BOOL(&r, cases[i].answer);
+        LHAT_CHECK_EQ_INT(count_fits(r.proto), cases[i].tests);
+        run_dispose(&r);
+    }
+    LHAT_TEST("folded fits preserves operand side effects and chain short circuiting");
+    Run r;
+    run_checked_text(&r,
+        "var^n=0\nlet^next=p^->number^{n:=n+1 return^n}\n"
+        "let^yes=next() fits^number^\nlet^no=next() fits^string^\n"
+        "let^chain=0 > 1 < next() fits^number^\nreturn^n\n");
+    CHECK_INTEGER(&r, 2);
+    LHAT_CHECK_EQ_INT(count_fits(r.proto), 0);
+    run_dispose(&r);
+}
+
 static void test_dynamic_callable_fits(void)
 {
     struct { const char *value, *type; bool fits; } cases[] = {
@@ -1909,6 +1962,7 @@ int main(void)
     test_calls();
     test_effect_union_calls();
     test_dynamic_callable_fits();
+    test_static_fits();
     test_tail_calls();
     test_closures();
     test_stacked_hats_compile();

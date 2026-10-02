@@ -1410,6 +1410,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
     // asks identity and reads an ordinary value on both sides (below, with
     // the rest of the comparisons).
     if (op == LHAT_OP_FITS) {
+        ((LhatNode *)node)->checked_fits_type = left;
         LhatType *asked = chk_resolve_type(c, node->v.binary.right);
         if (runtime_has_unresolved_arguments(asked, 0)) {
             chk_report(c, node->v.binary.right, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
@@ -6741,6 +6742,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                     break;
                 }
                 if (op == LHAT_OP_FITS) {
+                    ((LhatNode *)marker)->checked_fits_type = left;
                     LhatType *asked = chk_resolve_type(c, operand);
                     if (runtime_has_unresolved_arguments(asked, 0)) {
                         chk_report(c, operand, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);

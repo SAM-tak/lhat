@@ -1375,7 +1375,101 @@ static void compile_enumdef(Compiler *c, const LhatNode *node)
 // The test itself, against a left operand already in a register. 11.5 の (5)
 // shares an operand between two links of a chain and evaluates it once, so
 // there the left is compiled by the caller.
-static void compile_fits_test(Compiler *c, const LhatNode *asked, uint8_t value,
+// Lenient conformance forgives inference gaps. Those are not evidence for
+// constant folding, including gaps nested in members or callable signatures.
+// Keep any^ dynamic too: a named any^ field requires runtime presence, whereas
+// ordinary static conformance also accepts nil^ as an any^ value.
+typedef struct FitsTypeSeen {
+    const LhatType *type;
+    const struct FitsTypeSeen *outer;
+} FitsTypeSeen;
+
+static bool fits_type_settled(const LhatType *type, const FitsTypeSeen *seen)
+{
+    if (type == NULL) return true; // An absent optional signature component.
+    if (type->kind == LHAT_TYPE_UNKNOWN || type->kind == LHAT_TYPE_PENDING ||
+        type->kind == LHAT_TYPE_ANY)
+        return false;
+    for (const FitsTypeSeen *s = seen; s != NULL; s = s->outer) {
+        if (s->type == type) return true;
+    }
+    FitsTypeSeen here = {type, seen};
+    seen = &here;
+    if (type->specialization_base != NULL || type->template_definition != NULL)
+        return false; // Runtime descriptors erase specialization arguments.
+    switch (type->kind) {
+        case LHAT_TYPE_ARGUMENT:
+            return type->v.argument.bound != NULL &&
+                   fits_type_settled(type->v.argument.bound, seen);
+        case LHAT_TYPE_UNION:
+        case LHAT_TYPE_INTERSECT:
+        case LHAT_TYPE_TUPLE:
+            for (const LhatTypeList *a = type->v.composite.arms; a; a = a->next) {
+                if (a->type == NULL || !fits_type_settled(a->type, seen)) return false;
+            }
+            return true;
+        case LHAT_TYPE_TABLE:
+        case LHAT_TYPE_HOSTVALUE:
+        case LHAT_TYPE_HOSTVALUE_BOX:
+            for (const LhatTypeMember *m = type->v.table.members; m; m = m->next) {
+                if (m->type == NULL || !fits_type_settled(m->type, seen)) return false;
+            }
+            return fits_type_settled(type->v.table.base, seen) &&
+                   fits_type_settled(type->v.table.delegate, seen) &&
+                   fits_type_settled(type->v.table.instance, seen) &&
+                   fits_type_settled(type->v.table.variadic, seen) &&
+                   fits_type_settled(type->v.table.index_key, seen) &&
+                   fits_type_settled(type->v.table.index_value, seen);
+        case LHAT_TYPE_FUNC:
+            for (const LhatTypeList *p = type->v.func.params; p; p = p->next) {
+                if (p->type == NULL || !fits_type_settled(p->type, seen)) return false;
+            }
+            return fits_type_settled(type->v.func.variadic, seen) &&
+                   fits_type_settled(lhat_type_call_answer(type), seen);
+        case LHAT_TYPE_CORO:
+            return fits_type_settled(type->v.coroutine.receive, seen) &&
+                   fits_type_settled(type->v.coroutine.produce, seen) &&
+                   fits_type_settled(type->v.coroutine.result, seen);
+        default:
+            return true;
+    }
+}
+
+static bool fits_types_disjoint(const LhatType *actual, const LhatType *target)
+{
+    actual = lhat_type_argument_bound(actual);
+    target = lhat_type_argument_bound(target);
+    if (actual == NULL || target == NULL) return false;
+    if (lhat_type_disjoint(actual, target)) return true;
+    if (actual->kind == LHAT_TYPE_UNION || target->kind == LHAT_TYPE_UNION) {
+        const LhatType *set = actual->kind == LHAT_TYPE_UNION ? actual : target;
+        const LhatType *other = set == actual ? target : actual;
+        for (const LhatTypeList *a = set->v.composite.arms; a; a = a->next) {
+            if (!fits_types_disjoint(a->type, other)) return false;
+        }
+        return true;
+    }
+    // Static disjointness is deliberately conservative for overloads. A
+    // callable's effect and calling convention nevertheless cannot change.
+    if (actual->kind == LHAT_TYPE_FUNC && target->kind == LHAT_TYPE_FUNC) {
+        if (actual->v.func.is_function != target->v.func.is_function ||
+            actual->v.func.takes_self != target->v.func.takes_self ||
+            actual->v.func.self_last != target->v.func.self_last ||
+            (actual->v.func.variadic == NULL) != (target->v.func.variadic == NULL))
+            return true;
+        const LhatTypeList *a = actual->v.func.params, *b = target->v.func.params;
+        while (a != NULL && b != NULL) { a = a->next; b = b->next; }
+        if (a != NULL || b != NULL) return true;
+        const LhatType *from = lhat_type_call_answer(actual);
+        const LhatType *into = lhat_type_call_answer(target);
+        if ((from == NULL) != (into == NULL)) return true;
+        return from != NULL && lhat_type_disjoint(from, into);
+    }
+    return false;
+}
+
+static void compile_fits_test(Compiler *c, const LhatNode *asked,
+                             const LhatType *actual, uint8_t value,
                              uint8_t into)
 {
     const char *name = NULL;
@@ -1383,6 +1477,16 @@ static void compile_fits_test(Compiler *c, const LhatNode *asked, uint8_t value,
     if (node_name(c, asked, &name, &length) && name_is(name, length, "any^")) {
         emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, into, 1, 0));
         return;
+    }
+
+    const LhatType *target = asked->checked_type;
+    if (actual != NULL && target != NULL &&
+        fits_type_settled(actual, NULL) && fits_type_settled(target, NULL)) {
+        bool fits = lhat_type_conforms(actual, target);
+        if (fits || fits_types_disjoint(actual, target)) {
+            emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, into, fits, 0));
+            return;
+        }
     }
 
     LhatRuntimeType *wanted = lower_type(c, asked);
@@ -1409,7 +1513,8 @@ static void compile_fits(Compiler *c, const LhatNode *node, uint8_t into)
     // 05 の 8.9: a host value operand keeps its width here as anywhere.
     uint8_t value = reserve_for(c, node->v.binary.left);
     compile_expression(c, node->v.binary.left, value);
-    compile_fits_test(c, node->v.binary.right, value, into);
+    compile_fits_test(c, node->v.binary.right,
+                      node->checked_fits_type, value, into);
     c->next_register = mark;
 }
 
@@ -3004,7 +3109,7 @@ static void compile_compare_chain(Compiler *c, const LhatNode *node,
         // link could compare against -- so what it tests is the value still
         // standing to its left, and that value stays where it is.
         if (op == LHAT_OP_FITS) {
-            compile_fits_test(c, operand, left, into);
+            compile_fits_test(c, operand, marker->checked_fits_type, left, into);
             continue;
         }
 
@@ -4803,7 +4908,7 @@ static void compile_arms(Compiler *c, TryContext *context,
         if (arm->v.clause.condition != NULL) {
             uint8_t inner = c->next_register;
             uint8_t test = reserve(c);
-            compile_fits_test(c, arm->v.clause.condition, caught, test);
+            compile_fits_test(c, arm->v.clause.condition, NULL, caught, test);
             next = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
             c->next_register = inner;
         }
