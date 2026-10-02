@@ -191,6 +191,11 @@ typedef struct LhatTypeMember {
     // relations do not read this.
     bool provisional;
 
+    // Written in def^'s self^{...}, including functions taking self^.
+    // A receiver describes calling convention, not where a member is stored.
+    // Composition reads this origin; structural type relations do not.
+    bool instance_field;
+
     // The require statement that installed this namespace member. Retained
     // independently of editor resolutions so inference rewalks are idempotent.
     const struct LhatNode *require_declaration;

@@ -4719,6 +4719,8 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "any^ holds of every value, so this asks nothing"},
     [LHAT_CHECK_ERR_MEMBER_EXISTS] = {"check.member-exists",
         "this name is already a member; write override^ or overload^"},
+    [LHAT_CHECK_ERR_FIELD_METHOD_COLLISION] = {"check.field-method-collision",
+        "this name belongs to an instance field and cannot also name a shared method: {member}"},
     [LHAT_CHECK_ERR_ALREADY_PROVIDED] = {"check.already-provided",
         "something in the chain already provides this member, so "
         "there is nothing for an abstract^ to ask for"},

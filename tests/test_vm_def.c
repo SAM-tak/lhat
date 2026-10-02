@@ -16,6 +16,18 @@ static void test_definitions(void)
 {
     Run r;
 
+    LHAT_TEST("instance methods and callbacks remain callable after composition");
+    run_text(&r,
+             "let^ A = def^{ self^{ callback = f^ { 7 },\n"
+             "  height = f^self^ { 2 } } }\n"
+             "let^ B = A .. def^{ self^{} }\n"
+             "let^ a = B.new()\n"
+             "let^ b = B.new()\n"
+             "a.height := f^self^ { 5 }\n"
+             "return^ a.height() * 100 + b.height() * 10 + b.callback()\n");
+    CHECK_INTEGER(&r, 527);
+    run_dispose(&r);
+
     // 14.11: without a new of its own, a definition gets one taking no
     // arguments that answers what the template says.
     LHAT_TEST("the default new builds an instance from the template");

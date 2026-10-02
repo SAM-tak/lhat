@@ -109,6 +109,7 @@ typedef enum {
                                         // failure and nothing was done with it
 
     LHAT_CHECK_ERR_MEMBER_EXISTS,       // 14.12: same name, no marker
+    LHAT_CHECK_ERR_FIELD_METHOD_COLLISION, // field and shared method share a name
     LHAT_CHECK_ERR_COMPOSE_COLLIDES,    // 14.5: and no marker can be written
     LHAT_CHECK_ERR_CONCAT_COLLIDES,     // 11.2改: both tables carry the key,
                                         // so the concatenation holds no one

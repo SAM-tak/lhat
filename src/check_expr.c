@@ -5069,6 +5069,7 @@ static LhatTypeMember *copy_member(Checker *c, LhatType *into,
     if (copy != NULL) {
         copy->ambiguous = from->ambiguous;
         copy->demanded = from->demanded;
+        copy->instance_field = from->instance_field;
     }
     return copy;
 }
@@ -5572,6 +5573,11 @@ static void compose_member(Checker *c, const LhatNode *node, LhatType *into,
         copy_member(c, into, right);
         return;
     }
+    if (left->instance_field != right->instance_field) {
+        chk_report_named(c, node, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION,
+                         right->name, right->name_length);
+        return;
+    }
     if (left->ambiguous || right->ambiguous) {
         // Neither an abstract requirement nor a pending override can choose
         // a provider from an ambiguous name. Keep any unmet requirement open.
@@ -5698,8 +5704,9 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
             // holds that is not a method is a field, declared or given, and
             // only the instance holds a field: the definition's side never
             // met it, so nothing has asked whether a method may stand there.
-            if (shared != NULL && member_takes_receiver(m->type) &&
-                (held == NULL || member_takes_receiver(held->type))) {
+            if (shared != NULL && !m->instance_field &&
+                member_takes_receiver(m->type) &&
+                (held == NULL || !held->instance_field)) {
                 copy_member(c, instance, shared);
             } else {
                 compose_member(c, node, instance, m, true);
@@ -5955,6 +5962,11 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             }
             const LhatTypeMember *required =
                 lhat_type_own_member(instance, name, length);
+            if (required != NULL && !required->instance_field) {
+                chk_report_named(c, field, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION,
+                                 name, length);
+                continue;
+            }
             // 14.15: a field the composition has to provide carries its type
             // and no value -- and so no key on the prototype.
             if (field->v.entry.declared) {
@@ -5964,10 +5976,10 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                     declared = lhat_type_intersect(c->result->types,
                                                   required->type, declared);
                 }
-                chk_member_declared_at(
-                    c,
-                    set_member_as(c, instance, name, length, declared, true),
-                    field->v.entry.key);
+                LhatTypeMember *added =
+                    set_member_as(c, instance, name, length, declared, true);
+                if (added != NULL) { added->instance_field = true; }
+                chk_member_declared_at(c, added, field->v.entry.key);
                 continue;
             }
             // 14.6: a type written alongside the value is what the field
@@ -5999,11 +6011,10 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 chk_report_named(c, field->v.entry.value,
                                  LHAT_CHECK_ERR_MUTABLE_DEFAULT, name, length);
             }
-            chk_member_declared_at(
-                c,
-                set_member(c, instance, name, length,
-                           written != NULL ? written : actual),
-                field->v.entry.key);
+            LhatTypeMember *added = set_member(
+                c, instance, name, length, written != NULL ? written : actual);
+            if (added != NULL) { added->instance_field = true; }
+            chk_member_declared_at(c, added, field->v.entry.key);
         }
     }
 
@@ -6074,6 +6085,14 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                     seeded != NULL && seeded->provisional
                         ? seeded->type
                         : chk_resolve_type(c, entry->v.entry.value);
+                const LhatTypeMember *held =
+                    lhat_type_own_member(instance, name, length);
+                if (chk_takes_receiver(declared) && held != NULL &&
+                    held->instance_field) {
+                    chk_report_named(c, entry, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION,
+                                     name, length);
+                    continue;
+                }
                 // 11.1: an op^ is a member with an operator for a name, and
                 // declaring one asks the same shape of it that giving one does.
                 if (chk_is_operator_name(name, length)) {
@@ -6186,6 +6205,13 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             }
             c->super_type = outer_super;
             c->super_binding = outer_super_binding;
+            const LhatTypeMember *held =
+                lhat_type_own_member(instance, name, length);
+            if (chk_takes_receiver(type) && held != NULL && held->instance_field) {
+                chk_report_named(c, entry, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION,
+                                 name, length);
+                continue;
+            }
             // 14.12: two members of one name in a single def^ need a marker
             // too, so what is already there has to include this def^'s
             // earlier entries and not only what the base brought.
@@ -6217,38 +6243,12 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             // 14.7改: only what is handed a receiver is reachable through an
             // instance. new and a static member stay the definition's.
             if (chk_takes_receiver(type)) {
-                // A name the instance holds and the definition does not is a
-                // field -- only a field lives on the instance alone -- and
-                // `hidden` above asked the definition. So the question 14.12
-                // and 14.15 ask of a member is asked of the field here: a
-                // declared one takes a method only if the method fits what it
-                // declared, and a given one does not take one at all. Left
-                // as it was when refused, so every round meets it again.
-                const LhatTypeMember *held =
-                    lhat_type_own_member(instance, name, length);
-                bool refused = false;
-                if (hidden == NULL && held != NULL && !held->provisional &&
-                    !chk_takes_receiver(held->type)) {
-                    if (!held->abstract) {
-                        LhatFixSlot markers[LHAT_FIX_SLOTS];
-                        chk_report_fix(c, entry,
-                                       LHAT_CHECK_ERR_MEMBER_EXISTS, NULL, 0,
-                                       markers,
-                                       marker_choices(entry, markers));
-                        refused = true;
-                    } else if (!lhat_type_conforms(type, held->type)) {
-                        chk_report(c, entry, LHAT_CHECK_ERR_MISMATCH);
-                        refused = true;
-                    }
+                LhatTypeMember *mirrored = set_member_marked(
+                    c, instance, name, length, type, false, pending);
+                if (mirrored != NULL) {
+                    mirrored->demanded = mirrored->demanded || demanded;
                 }
-                if (!refused) {
-                    LhatTypeMember *mirrored = set_member_marked(
-                        c, instance, name, length, type, false, pending);
-                    if (mirrored != NULL) {
-                        mirrored->demanded = mirrored->demanded || demanded;
-                    }
-                    chk_member_declared_at(c, mirrored, entry->v.entry.key);
-                }
+                chk_member_declared_at(c, mirrored, entry->v.entry.key);
             }
             if (seen != NULL) {
                 if (round == 0 || !lhat_type_equal(seen[index].inferred, type)) {

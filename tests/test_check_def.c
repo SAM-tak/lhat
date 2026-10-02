@@ -2249,13 +2249,13 @@ static void test_method_over_a_field(void)
 {
     Unit u;
 
-    LHAT_TEST("a method does not fill a declared field it does not fit (literal)");
+    LHAT_TEST("a method cannot fill an instance field (literal)");
     check_text(&u,
                "let^ Greet = def^{ self^{ abstract^ n : number^ },\n"
                "  hello = f^self^ -> number^ { return^ self^.n + 1 } }\n"
                "let^ Thing = Greet .. def^{ self^{},\n"
                "  n = f^self^ -> number^ { return^ 41 } }\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION);
     unit_dispose(&u);
 
     LHAT_TEST("nor in the name form");
@@ -2264,7 +2264,7 @@ static void test_method_over_a_field(void)
                "  hello = f^self^ -> number^ { return^ self^.n + 1 } }\n"
                "let^ Meth = def^{ self^{}, n = f^self^ -> number^ { return^ 41 } }\n"
                "let^ Thing = Greet .. Meth\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION);
     unit_dispose(&u);
 
     LHAT_TEST("a method under a given field's name is a same name (literal)");
@@ -2273,7 +2273,7 @@ static void test_method_over_a_field(void)
                "  twice = f^self^ -> number^ { return^ self^.n * 2 } }\n"
                "let^ Thing = Base .. def^{ self^{},\n"
                "  n = f^self^ -> number^ { return^ 41 } }\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION);
     unit_dispose(&u);
 
     LHAT_TEST("and a collision in the name form");
@@ -2282,7 +2282,7 @@ static void test_method_over_a_field(void)
                "  twice = f^self^ -> number^ { return^ self^.n * 2 } }\n"
                "let^ Meth = def^{ self^{}, n = f^self^ -> number^ { return^ 41 } }\n"
                "let^ Thing = Base .. Meth\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION);
     unit_dispose(&u);
 
     // What the shortcut exists for must still go through: a method over the
@@ -2298,6 +2298,94 @@ static void test_method_over_a_field(void)
     unit_dispose(&u);
 }
 
+
+// Storage origin is independent of a function's receiver convention.
+static void test_field_method_origins(void)
+{
+    Unit u;
+    char source[2048];
+    const char *markers[] = { "", "override^", "overload^" };
+    const char *fields[] = {
+        "height = f^self^ -> number^ { 0 }",
+        "abstract^height : f^self^ -> number^;",
+        "height = f^ -> number^ { 0 }",
+    };
+    for (size_t f = 0; f < sizeof fields / sizeof *fields; f++) {
+        for (size_t m = 0; m < sizeof markers / sizeof *markers; m++) {
+            LHAT_TEST("a receiver does not turn a field into a shared method");
+            snprintf(source, sizeof source,
+                     "let^ Character = def^{ self^{ %s } }\n"
+                     "let^ Player = Character .. def^{ self^{},\n"
+                     "  %sheight = f^self^ -> number^ { 123 } }\n",
+                     fields[f], markers[m]);
+            check_text(&u, source);
+            CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION);
+            unit_dispose(&u);
+
+            const char *joins[] = { "Character .. Part", "Part .. Character",
+                "(Character .. Empty) .. Part", "Empty .. (Part .. Character)" };
+            for (size_t j = 0; j < sizeof joins / sizeof *joins; j++) {
+                LHAT_TEST("named and nested composition keeps storage origin");
+                snprintf(source, sizeof source,
+                         "let^ Character = def^{ self^{ %s } }\n"
+                         "let^ Part = def^{ self^{},\n"
+                         "  %sheight = f^self^ -> number^ { 123 } }\n"
+                         "let^ Empty = def^{ self^{} }\n"
+                         "let^ Player = %s\n", fields[f], markers[m], joins[j]);
+                check_text(&u, source);
+                CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION);
+                unit_dispose(&u);
+            }
+        }
+    }
+
+    LHAT_TEST("a field cannot hide an inherited shared method");
+    check_text(&u,
+               "let^ A = def^{ self^{}, height = f^self^ { 123 } }\n"
+               "let^ B = A .. def^{ self^{ height = f^self^ { 0 } } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION);
+    unit_dispose(&u);
+
+    LHAT_TEST("the two storage locations also collide within one definition");
+    check_text(&u,
+               "let^ A = def^{ self^{ height = f^self^ { 0 } },\n"
+               "  height = f^self^ { 123 } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION);
+    unit_dispose(&u);
+
+    LHAT_TEST("a shared declaration cannot require an instance method");
+    check_text(&u,
+               "let^ A = def^{ self^{ height = f^self^ { 0 } } }\n"
+               "let^ B = A .. def^{ self^{}, abstract^height : f^self^ -> number^; }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION);
+    unit_dispose(&u);
+
+    LHAT_TEST("callbacks and instance methods still need no marker");
+    check_text(&u,
+               "let^ A = def^{ self^{ callback = f^ { 7 },\n"
+               "  height = f^self^ { 0 } } }\n"
+               "let^ B = A .. def^{ self^{} }\n"
+               "let^ b = B.new()\n"
+               "let^ n : number^ = b.callback() + b.height()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an abstract instance method is filled by an instance method");
+    check_text(&u,
+               "let^ A = def^{ self^{ abstract^height : f^self^ -> number^; } }\n"
+               "let^ B = def^{ self^{ height = f^self^ { 2 } } }\n"
+               "let^ C = A .. B\n"
+               "let^ n : number^ = C.new().height()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("instance procedures also collide with shared procedures");
+    check_text(&u,
+               "let^ A = def^{ self^{ draw = p^self^, x:number^{} } }\n"
+               "let^ B = A .. def^{ self^{}, override^draw = p^self^, x:number^{} }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_METHOD_COLLISION);
+    unit_dispose(&u);
+}
 
 // 02 の 14.15 and 14.15改 with 14.7改2: a delegate^ lends a name and does not
 // give it, so what it lends neither answers an abstract^ nor stands under a
@@ -2404,6 +2492,7 @@ int main(void)
     test_two_spellings_are_one_member();
     test_requirement_survives_ambiguity();
     test_method_over_a_field();
+    test_field_method_origins();
     test_lent_names();
     test_composition_keeps_delegation();
     return lhat_test_report("test_check_def");
