@@ -563,7 +563,7 @@ static bool rt_fits(const LhatRuntimeType *a, const LhatRuntimeType *b,
     if (a->kind != b->kind) return false;
     switch (a->kind) {
         case LHAT_TYPE_RT_SUBROUTINE:
-            if (a->is_function != b->is_function ||
+            if ((b->is_function && !a->is_function) ||
                 a->takes_self != b->takes_self || a->self_last != b->self_last ||
                 (b->closed && !a->closed) ||
                 (a->mutable_self && !b->mutable_self) ||

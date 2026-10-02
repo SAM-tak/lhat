@@ -821,6 +821,34 @@ static void test_immutable_bindings(void)
 static void test_effect_union_calls(void)
 {
     Unit u;
+    LHAT_TEST("procedure annotations accept function values and contextual parameters");
+    check_text(&u,
+        "let^D=def^{self^{condition:p^->bool^; = f^{false^}}}\n"
+        "var^condition:p^->bool^;=f^{false^}\n"
+        "condition:=f^{true^}\n"
+        "let^accept=p^cb:p^number^->number^;->number^{return^cb(2)}\n"
+        "let^result=accept(f^n{n+1})\n"
+        "let^make=f^->p^->bool^;{f^{false^}}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a procedure value still cannot satisfy a function annotation");
+    check_text(&u, "let^condition:f^->bool^;=p^->bool^{return^false^}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("a procedure-typed parameter needs narrowing before a pure call");
+    check_text(&u, "let^run=f^condition:p^->bool^;->bool^{condition()}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+    unit_dispose(&u);
+
+    LHAT_TEST("a procedure-typed parameter can narrow to a function");
+    check_text(&u,
+        "let^run=f^condition:p^->bool^;->bool^{\n"
+        "if^condition fits^f^->bool^;{return^condition()}\nreturn^false^}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("a procedure can call a function/procedure union with one signature");
     check_text(&u,
         "let^ run = p^condition:f^->bool^;|p^->bool^; -> bool^ { return^condition() }\n");

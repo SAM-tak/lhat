@@ -1450,10 +1450,10 @@ static bool fits_types_disjoint(const LhatType *actual, const LhatType *target)
         return true;
     }
     // Static disjointness is deliberately conservative for overloads. A
-    // callable's effect and calling convention nevertheless cannot change.
+    // callable's calling convention nevertheless cannot change. A p^ type
+    // can contain an f^ value, so different effect bounds are not disjoint.
     if (actual->kind == LHAT_TYPE_FUNC && target->kind == LHAT_TYPE_FUNC) {
-        if (actual->v.func.is_function != target->v.func.is_function ||
-            actual->v.func.takes_self != target->v.func.takes_self ||
+        if (actual->v.func.takes_self != target->v.func.takes_self ||
             actual->v.func.self_last != target->v.func.self_last ||
             (actual->v.func.variadic == NULL) != (target->v.func.variadic == NULL))
             return true;

@@ -113,7 +113,7 @@ let^aB = B.new()
 print("aB", aB)
 
 let^ATest = f^x:A, y { x * y }
-print(ATest(aA, 3))
+print("ATest", ATest(aA, 3))
 # let^ATest2 = f^x, y { x * y } # 期待通りエラー
 # several types here carry this operator and nothing says which is meant;
 # write one of the types the signature names, or narrow to it with fits^
@@ -126,8 +126,11 @@ print(ATest(aA, 3))
 let^ATest2 = f^x:A|number^, y { # これは行ける。まぁ許容範囲かな。
     if^x fits^A: x * y el^: x * y;
 }
-print(ATest2(aA, 3))
-print(ATest2(4, 3))
+print("ATest2", ATest2(aA, 3))
+print("ATest2", ATest2(4, 3))
+let^ATest3 = template^f^x, y { x * y } # 最終的にこれで通る様になった
+print("ATest3", ATest3(aA, 3))
+print("ATest3", ATest3(4, 3))
 
 let^_a = f^n{ if^n <= 0 { return^true^} return^_b(n - 1) }
 let^_b = f^n{ if^n <= 0 { return^false^} return^_a(n - 1) }
@@ -230,3 +233,11 @@ let^bar = f^{ print("bar!") return^4 }
 # let^blah = foo; (bar()) print(foo, bar, blah)
 let^blah = foo do^{(bar())} print(foo, bar, blah) # やっぱ現行のルールで別にいいのでは
 print(0 < u < 3 < v = 0 and^ blah = blah)
+
+print("any^fits^nil^", any^fits^nil^)
+let^anynil = p^anyOrNil:any^|nil^{
+    print("anyOrNil fits^nil^", anyOrNil, anyOrNil fits^nil^)
+}
+anynil({})
+anynil(0)
+anynil(nil^)

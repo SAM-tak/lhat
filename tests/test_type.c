@@ -462,11 +462,13 @@ static void test_functions(void)
     }
 
     // 15 章: f^ and p^ are different kinds of subroutine, not two spellings.
-    LHAT_TEST("f^ and p^ do not substitute for each other");
+    LHAT_TEST("f^ substitutes for p^, but not the reverse");
     {
         LhatType *fn = lhat_type_func(&t.arena, true);
         LhatType *proc = lhat_type_func(&t.arena, false);
-        LHAT_CHECK(!lhat_type_conforms(fn, proc), "f^ is not p^");
+        LHAT_CHECK(lhat_type_conforms(fn, proc), "f^ satisfies an effectful contract");
+        LHAT_CHECK(!lhat_type_conforms(proc, fn), "p^ does not promise purity");
+        LHAT_CHECK(!lhat_type_equal(fn, proc), "the two types remain distinct");
     }
 
     // 13.2: returning nothing is not the same as returning something.

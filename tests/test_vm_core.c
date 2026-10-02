@@ -1828,6 +1828,27 @@ static void test_measured_machine(void)
 static void test_effect_union_calls(void)
 {
     Run r;
+    LHAT_TEST("a procedure callback field accepts and calls a function without a guard");
+    run_checked_text(&r,
+        "let^D=def^{self^{condition:p^->bool^;=f^{false^}}}\n"
+        "let^t=D.new()\n"
+        "let^run=p^v:t^{condition:p^->bool^;}->bool^{return^v.condition()}\n"
+        "let^first=run(t)\nt.condition:=f^{true^}\n"
+        "return^!first and^run(t)\n");
+    LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("a function survives a procedure result and a runtime cast");
+    run_checked_text(&r,
+        "let^make=f^->p^->bool^;{f^{false^}}\n"
+        "let^cast=p^v:any^->bool^{\n"
+        "let^cb=v as^p^->bool^; catch^panic^it^\nreturn^cb()}\n"
+        "return^cast(make())\n");
+    LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
     LHAT_TEST("a callback union calls either effect kind through a table field");
     run_text(&r,
         "let^ run = p^t:t^{condition:f^number^->number^;|p^number^->number^;} -> number^{\n"
@@ -1857,7 +1878,10 @@ static void test_static_fits(void)
         {"return^ 1 fits^ string^", false, 0},
         {"return^ {x=1,y=2} fits^ t^{x:number^}", true, 0},
         {"let^v=f^->bool^{true^}\nreturn^v fits^f^->bool^;", true, 0},
-        {"let^v=p^->bool^{return^true^}\nreturn^v fits^f^->bool^;", false, 0},
+        {"let^v=p^->bool^{return^true^}\nreturn^v fits^f^->bool^;", false, 1},
+        {"let^v=f^->bool^{true^}\nreturn^v fits^p^->bool^;", true, 0},
+        {"let^test=p^v:p^->bool^;->bool^{return^v fits^f^->bool^;}\n"
+         "return^test(f^{true^})", true, 1},
         {"let^v=f^n:number^->number^{n}\nreturn^v fits^f^->bool^;", false, 0},
         {"return^ 1 < 2 fits^ number^", true, 0},
         {"return^ 1 < 2 fits^ string^", false, 0},
@@ -1906,7 +1930,7 @@ static void test_dynamic_callable_fits(void)
         {"p^->bool^{return^true^}", "f^->bool^;", false},
         {"f^n:number^->number^{n}", "f^->bool^;", false},
         {"f^->number^{1}", "f^->bool^;", false},
-        {"f^->bool^{true^}", "p^->bool^;", false},
+        {"f^->bool^{true^}", "p^->bool^;", true},
         {"p^{}", "p^;", true},
         {"p^{}", "p^->any^;", false},
         {"p^->any^{return^1}", "p^;", false},

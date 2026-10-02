@@ -4317,8 +4317,8 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         expected_func = only_func;
     }
     if (expected_func != NULL && (expected_func->kind != LHAT_TYPE_FUNC ||
-                                  expected_func->v.func.is_function !=
-                                      node->v.func.is_function)) {
+                                  (expected_func->v.func.is_function &&
+                                   !node->v.func.is_function))) {
         expected_func = NULL;  // not a signature for this; nothing to take
     }
     const LhatTypeList *expected_param =

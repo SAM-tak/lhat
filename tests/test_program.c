@@ -1635,7 +1635,7 @@ static void test_hosting(void)
             {"main.lh",
              "let^ inspect=p^v:any^->bool^{\n"
              "return^(v fits^f^number^->number^;) and^\n"
-             "!(v fits^p^number^->number^;) and^\n"
+             "(v fits^p^number^->number^;) and^\n"
              "!(v fits^f^string^->number^;) and^\n"
              "!(v fits^f^number^->bool^;)}\n"
              "if^ !inspect(twice) {return^ -1}\n"

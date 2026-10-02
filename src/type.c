@@ -1454,7 +1454,8 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
 {
     // 14.12 already states the rule for override^, and it is the ordinary one
     // for functions: arguments may be wider, results may be narrower.
-    if (value->v.func.is_function != target->v.func.is_function) {
+    // A procedure contract permits effects; a function needs none of them.
+    if (target->v.func.is_function && !value->v.func.is_function) {
         return false;
     }
     // 14.4: an instance method and a plain subroutine are called differently,
