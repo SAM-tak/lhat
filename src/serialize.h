@@ -19,10 +19,10 @@
 bool lhat_serialize_is_binary(const char *bytes, size_t length);
 
 // Writes a checked and compiled unit. `out` is lhat_alloc'd and the
-// caller's to free. False when the unit has no compiled body, or holds
-// something the format cannot carry (a pointer no name finds again).
-bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
-                          uint8_t **out, size_t *length);
+// caller's to free.
+LhatWriteStatus lhat_serialize_write(const LhatUnit *unit,
+                                     bool with_debug_names, uint8_t **out,
+                                     size_t *length);
 
 // What a read answers: the root body, the module name (owned, or NULL),
 // and the export descriptors a host asks for (8.7's lhat_unit_export_*),

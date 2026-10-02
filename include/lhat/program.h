@@ -640,14 +640,23 @@ bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
 // changes. What runs is what the compiler left; nothing is checked again.
 // `with_debug_names` keeps the local and captured names a debugger reads
 // (09 の 4 章); the lines a traceback needs stay either way. The bytes are
-// lhat_alloc'd and the caller's to lhat_free. False when the unit has no
-// compiled body.
+// lhat_alloc'd and the caller's to lhat_free.
 //
 // A program is text or binary throughout (LHAT_PROGRAM_ERR_MIXED), and a
 // binary reads back only into a build with the same fingerprint and a
 // program with the same registrations.
-bool lhat_unit_write_binary(const LhatUnit *unit, bool with_debug_names,
-                            uint8_t **bytes, size_t *length);
+typedef enum {
+    LHAT_WRITE_OK,
+    LHAT_WRITE_INVALID_ARGUMENT,   // a required pointer was NULL
+    LHAT_WRITE_NO_COMPILED_BODY,   // the unit was not compiled
+    LHAT_WRITE_UNREPRESENTABLE,    // a compiled value has no binary identity
+    LHAT_WRITE_OUT_OF_MEMORY,
+    LHAT_WRITE_NO_FRONTEND         // no source-derived data remains
+} LhatWriteStatus;
+
+LhatWriteStatus lhat_unit_write_binary(const LhatUnit *unit,
+                                        bool with_debug_names,
+                                        uint8_t **bytes, size_t *length);
 
 // 10.7: the signature table. A registration's signature is text
 // ("f^number^ -> number^;"), and reading it takes the front end -- the

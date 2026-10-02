@@ -403,6 +403,11 @@ enum {
     CLI_WRITTEN_AS,
     CLI_WRITTEN_UNDER,
     CLI_NOT_WRITTEN,
+    CLI_WRITE_INVALID_ARGUMENT,
+    CLI_WRITE_NO_COMPILED_BODY,
+    CLI_WRITE_UNREPRESENTABLE,
+    CLI_WRITE_OUT_OF_MEMORY,
+    CLI_WRITE_NO_FRONTEND,
     CLI_OUTSIDE_ROOT,
     CLI_NO_LTON,
     CLI_NOT_A_SIGNATURE_TABLE,
@@ -437,7 +442,17 @@ static const LhatMessageEntry CLI_MESSAGES[] = {
     [CLI_WRITTEN_UNDER] = {"cli.written-under",
         "{path}: written under {dir} (units: {count})"},
     [CLI_NOT_WRITTEN] = {"cli.not-written",
-        "{path}: error: could not be written out"},
+        "{path}: error: could not be written out ({status}): {reason}"},
+    [CLI_WRITE_INVALID_ARGUMENT] = {"cli.write-invalid-argument",
+        "a required pointer was NULL"},
+    [CLI_WRITE_NO_COMPILED_BODY] = {"cli.write-no-compiled-body",
+        "the unit has no compiled body"},
+    [CLI_WRITE_UNREPRESENTABLE] = {"cli.write-unrepresentable",
+        "a value or reference cannot be represented in the binary format"},
+    [CLI_WRITE_OUT_OF_MEMORY] = {"cli.write-out-of-memory",
+        "out of memory"},
+    [CLI_WRITE_NO_FRONTEND] = {"cli.write-no-frontend",
+        "this build has no front end to write a binary unit"},
     [CLI_OUTSIDE_ROOT] = {"cli.outside-root",
         "{path}: error: outside the root's directory, so it has no place "
         "under {dir}"},
@@ -526,6 +541,44 @@ static void say_path(FILE *stream, size_t id, const char *path)
 {
     const LhatMessageArg arg = CLI_ARG("path", path);
     cli_say(stream, id, &arg, 1);
+}
+
+static void say_write_failure(const char *path, LhatWriteStatus status)
+{
+    size_t reason_id;
+    const char *name;
+    switch (status) {
+        case LHAT_WRITE_INVALID_ARGUMENT:
+            reason_id = CLI_WRITE_INVALID_ARGUMENT;
+            name = "LHAT_WRITE_INVALID_ARGUMENT";
+            break;
+        case LHAT_WRITE_NO_COMPILED_BODY:
+            reason_id = CLI_WRITE_NO_COMPILED_BODY;
+            name = "LHAT_WRITE_NO_COMPILED_BODY";
+            break;
+        case LHAT_WRITE_UNREPRESENTABLE:
+            reason_id = CLI_WRITE_UNREPRESENTABLE;
+            name = "LHAT_WRITE_UNREPRESENTABLE";
+            break;
+        case LHAT_WRITE_OUT_OF_MEMORY:
+            reason_id = CLI_WRITE_OUT_OF_MEMORY;
+            name = "LHAT_WRITE_OUT_OF_MEMORY";
+            break;
+        case LHAT_WRITE_NO_FRONTEND:
+            reason_id = CLI_WRITE_NO_FRONTEND;
+            name = "LHAT_WRITE_NO_FRONTEND";
+            break;
+        case LHAT_WRITE_OK:
+            return;
+        default:
+            return;
+    }
+    const LhatMessageEntry *entry = &CLI_MESSAGES[reason_id];
+    const char *reason = lhat_program_text(said_in, entry->id, entry->text);
+    const LhatMessageArg args[] = {CLI_ARG("path", path),
+                                   CLI_ARG("status", name),
+                                   CLI_ARG("reason", reason)};
+    cli_say(stderr, CLI_NOT_WRITTEN, args, 3);
 }
 
 static void say_version(void)
@@ -1283,8 +1336,10 @@ static int compile_program(const char *path, const char *out_dir,
         }
         uint8_t *bytes = NULL;
         size_t length = 0;
-        if (!lhat_unit_write_binary(u, with_debug, &bytes, &length)) {
-            say_path(stderr, CLI_NOT_WRITTEN, unit_path);
+        LhatWriteStatus status =
+            lhat_unit_write_binary(u, with_debug, &bytes, &length);
+        if (status != LHAT_WRITE_OK) {
+            say_write_failure(unit_path, status);
             failed = true;
             break;
         }

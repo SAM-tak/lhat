@@ -251,7 +251,7 @@ typedef struct {
     const LhatUnit *unit;
     const LhatProgram *program;
     bool with_debug;
-    bool failed;
+    LhatWriteStatus status;
 
     Str *strings;
     size_t string_count;
@@ -272,6 +272,13 @@ typedef struct {
     struct OwnedText *owned;
 } Writer;
 
+static void writer_fail(Writer *w, LhatWriteStatus status)
+{
+    if (w->status == LHAT_WRITE_OK) {
+        w->status = status;
+    }
+}
+
 static uint32_t intern_string(Writer *w, const char *text, size_t length)
 {
     for (size_t i = 0; i < w->string_count; i++) {
@@ -281,7 +288,7 @@ static uint32_t intern_string(Writer *w, const char *text, size_t length)
         }
     }
     LHAT_GROW(w->strings, w->string_count, w->string_capacity, 32,
-              w->failed = true; return 0);
+              writer_fail(w, LHAT_WRITE_OUT_OF_MEMORY); return 0);
     w->strings[w->string_count].text = text;
     w->strings[w->string_count].length = length;
     return (uint32_t)++w->string_count;
@@ -305,7 +312,7 @@ static uint32_t find_ext(const Writer *w, ExtKind kind, const void *pointer)
 static uint32_t add_ext(Writer *w, const Ext *ext)
 {
     LHAT_GROW(w->exts, w->ext_count, w->ext_capacity, 8,
-              w->failed = true; return 0);
+              writer_fail(w, LHAT_WRITE_OUT_OF_MEMORY); return 0);
     w->exts[w->ext_count] = *ext;
     return (uint32_t)++w->ext_count;
 }
@@ -323,7 +330,7 @@ static uint32_t find_obj(const Writer *w, const LhatObject *pointer)
 static uint32_t add_obj(Writer *w, const LhatObject *pointer)
 {
     LHAT_GROW(w->objs, w->obj_count, w->obj_capacity, 16,
-              w->failed = true; return 0);
+              writer_fail(w, LHAT_WRITE_OUT_OF_MEMORY); return 0);
     w->objs[w->obj_count] = pointer;
     return (uint32_t)++w->obj_count;
 }
@@ -384,13 +391,13 @@ typedef struct OwnedText {
 static const char *keep_text(Writer *w, char *text)
 {
     if (text == NULL) {
-        w->failed = true;
+        writer_fail(w, LHAT_WRITE_OUT_OF_MEMORY);
         return "";
     }
     OwnedText *o = (OwnedText *)lhat_alloc(sizeof *o);
     if (o == NULL) {
         lhat_free(text);
-        w->failed = true;
+        writer_fail(w, LHAT_WRITE_OUT_OF_MEMORY);
         return "";
     }
     o->text = text;
@@ -551,7 +558,33 @@ static uint32_t ext_of_enum(Writer *w, const void *decl)
             return add_ext(w, &ext);
         }
     }
-    w->failed = true;  // a declaration no name reaches
+    // A public descriptor can mention a private enum from another unit. It
+    // has no exported member to name it through, but its declaration still
+    // gives the reader the path-and-name identity it needs.
+#if LHAT_WITH_FRONTEND
+    for (const LhatUnit *other = lhat_program_units(w->program);
+         unit != NULL && other != NULL;
+         other = lhat_unit_next(other)) {
+        if (other == unit || other->parsed.root == NULL) {
+            continue;
+        }
+        EnumSearch search = { decl, NULL };
+        find_enumdef(&search, NULL, false, other->parsed.root);
+        const char *text = NULL;
+        size_t length = 0;
+        if (search.name != NULL &&
+            lhat_node_name(search.name, other->lexer.source->text,
+                           other->lexer.strings, &text, &length)) {
+            const char *path =
+                keep_text(w, relative_path(unit->path, other->path));
+            Ext ext = { EXT_ENUMDECL, decl, 0,
+                        intern_string(w, text, length), 0,
+                        intern_cstring(w, path), 0 };
+            return add_ext(w, &ext);
+        }
+    }
+#endif
+    writer_fail(w, LHAT_WRITE_UNREPRESENTABLE);  // no name reaches it
     return 0;
 }
 
@@ -636,7 +669,7 @@ static void intern_constant(Writer *w, LhatValue v)
         intern_rt(w, (const LhatRuntimeType *)lhat_as_object(v));
     } else if (!lhat_is_nil(v) && !lhat_is_bool(v) && !lhat_is_integer(v) &&
                !lhat_is_real(v)) {
-        w->failed = true;  // nothing else is ever a constant
+        writer_fail(w, LHAT_WRITE_UNREPRESENTABLE);
     }
 }
 
@@ -790,7 +823,7 @@ static void emit_constant(Writer *w, Out *o, LhatValue v)
         put_u8(o, 5);
         put_u32(o, obj_ref(w, lhat_as_object(v)));
     } else {
-        w->failed = true;
+        writer_fail(w, LHAT_WRITE_UNREPRESENTABLE);
     }
 }
 
@@ -942,7 +975,7 @@ static bool keep_reflected(Writer *w, const char *text, size_t length,
     }
     out->text = (char *)lhat_alloc(length + 1);
     if (out->text == NULL) {
-        w->failed = true;
+        writer_fail(w, LHAT_WRITE_OUT_OF_MEMORY);
         return false;
     }
     memcpy(out->text, text, length);
@@ -959,7 +992,7 @@ static void *reflected_array(Writer *w, size_t count, size_t size)
     }
     void *made = lhat_calloc(count, size);
     if (made == NULL) {
-        w->failed = true;
+        writer_fail(w, LHAT_WRITE_OUT_OF_MEMORY);
     }
     return made;
 }
@@ -991,7 +1024,7 @@ static void collect_about(Writer *w, const char *definition, const char *name,
     if (n > 0) {
         char *text = (char *)lhat_alloc(n + 1);
         if (text == NULL) {
-            w->failed = true;
+            writer_fail(w, LHAT_WRITE_OUT_OF_MEMORY);
             return;
         }
         lhat_unit_documentation(unit, definition, name, text, n + 1);
@@ -1048,7 +1081,7 @@ static LhatReflection *collect_reflection(Writer *w)
     const LhatUnit *unit = w->unit;
     LhatReflection *out = (LhatReflection *)lhat_calloc(1, sizeof *out);
     if (out == NULL) {
-        w->failed = true;
+        writer_fail(w, LHAT_WRITE_OUT_OF_MEMORY);
         return NULL;
     }
     collect_about(w, NULL, NULL, &out->about);
@@ -1138,11 +1171,17 @@ static void emit_reflection(const Writer *w, Out *o, const LhatReflection *r)
     }
 }
 
-bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
-                          uint8_t **out, size_t *length)
+LhatWriteStatus lhat_serialize_write(const LhatUnit *unit,
+                                     bool with_debug_names, uint8_t **out,
+                                     size_t *length)
 {
-    if (unit == NULL || unit->proto == NULL || out == NULL || length == NULL) {
-        return false;
+    if (unit == NULL || out == NULL || length == NULL) {
+        return LHAT_WRITE_INVALID_ARGUMENT;
+    }
+    *out = NULL;
+    *length = 0;
+    if (unit->proto == NULL) {
+        return LHAT_WRITE_NO_COMPILED_BODY;
     }
     Writer w;
     memset(&w, 0, sizeof w);
@@ -1167,7 +1206,7 @@ bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
         LhatUnitText name = lhat_unit_export_name(unit, i);
         char *named = (char *)lhat_alloc(name.length + 1);
         if (named == NULL) {
-            w.failed = true;
+            writer_fail(&w, LHAT_WRITE_OUT_OF_MEMORY);
             break;
         }
         memcpy(named, name.text, name.length);
@@ -1192,7 +1231,7 @@ bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
         LhatUnitText name = lhat_unit_export_name(unit, i);
         char *named = (char *)lhat_alloc(name.length + 1);
         if (named == NULL) {
-            w.failed = true;
+            writer_fail(&w, LHAT_WRITE_OUT_OF_MEMORY);
             break;
         }
         memcpy(named, name.text, name.length);
@@ -1205,8 +1244,9 @@ bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
         emit_reflection(&w, &o, reflection);
     }
 
-    bool ok = !w.failed && !o.failed;
-    if (ok) {
+    LhatWriteStatus status =
+        o.failed ? LHAT_WRITE_OUT_OF_MEMORY : w.status;
+    if (status == LHAT_WRITE_OK) {
         seal_header(&o);
         *out = o.data;
         *length = o.length;
@@ -1215,17 +1255,18 @@ bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
     }
     lhat_reflection_free(reflection);
     writer_dispose(&w);
-    return ok;
+    return status;
 }
 #else
-bool lhat_serialize_write(const LhatUnit *unit, bool with_debug_names,
-                          uint8_t **out, size_t *length)
+LhatWriteStatus lhat_serialize_write(const LhatUnit *unit,
+                                     bool with_debug_names, uint8_t **out,
+                                     size_t *length)
 {
     (void)unit;
     (void)with_debug_names;
     (void)out;
     (void)length;
-    return false;
+    return LHAT_WRITE_NO_FRONTEND;
 }
 #endif  // LHAT_WITH_FRONTEND
 
@@ -1279,7 +1320,7 @@ static bool emit_record(const LhatProgram *program, Out *o, const char *text,
     emit_tables(&w, &body);
     put_u32(&body, obj_ref(&w, rt));
 
-    bool ok = !w.failed && !body.failed;
+    bool ok = w.status == LHAT_WRITE_OK && !body.failed;
     if (ok) {
         put_text(o, text, strlen(text));
         put_u8(o, 0);

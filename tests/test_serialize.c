@@ -150,8 +150,9 @@ static bool write_text(const char *text, bool with_debug, uint8_t **bytes,
     lhat_program_init(&program, true, disk_load, &disk);
     const LhatUnit *root = NULL;
     *answer = run_root(&program, "main.lh", &root);
-    bool ok = root != NULL &&
-              lhat_unit_write_binary(root, with_debug, bytes, length);
+    bool ok = root != NULL && lhat_unit_write_binary(
+                                  root, with_debug, bytes, length) ==
+                                  LHAT_WRITE_OK;
     lhat_program_dispose(&program);
     return ok;
 }
@@ -279,6 +280,29 @@ static void test_refusals(void)
     lhat_free(bytes);
 }
 
+static void test_write_status(void)
+{
+    uint8_t *bytes = NULL;
+    size_t length = 0;
+    LHAT_TEST("writing a binary says why it cannot start");
+    LHAT_CHECK_EQ_INT(
+        lhat_unit_write_binary(NULL, false, &bytes, &length),
+        LHAT_WRITE_INVALID_ARGUMENT);
+
+    Disk disk;
+    memset(&disk, 0, sizeof disk);
+    disk_text(&disk, "main.lh", "return^ 1\n");
+    LhatProgram program;
+    lhat_program_init(&program, true, disk_load, &disk);
+    const LhatUnit *unit = lhat_program_check(&program, "main.lh");
+    LHAT_REQUIRE(unit != NULL, "the unit checked");
+    LHAT_CHECK_EQ_INT(
+        lhat_unit_write_binary(unit, false, &bytes, &length),
+        LHAT_WRITE_NO_COMPILED_BODY);
+    LHAT_CHECK(bytes == NULL && length == 0, "it wrote nothing");
+    lhat_program_dispose(&program);
+}
+
 static const char *const LIB =
     "module^ lib\n"
     "public^ enum^ E { A, B }\n"
@@ -317,9 +341,10 @@ static void test_units(void)
         }
         LHAT_CHECK(root != NULL && lib != NULL, "two units");
         LHAT_CHECK(lhat_unit_write_binary(root, true, &main_bytes,
-                                          &main_length),
+                                          &main_length) == LHAT_WRITE_OK,
                    "main wrote");
-        LHAT_CHECK(lhat_unit_write_binary(lib, true, &lib_bytes, &lib_length),
+        LHAT_CHECK(lhat_unit_write_binary(lib, true, &lib_bytes,
+                                          &lib_length) == LHAT_WRITE_OK,
                    "lib wrote");
         lhat_program_dispose(&program);
     }
@@ -362,6 +387,69 @@ static void test_units(void)
         (void)lhat_program_check(&program, "main.lh");
         LHAT_CHECK(has_program_error(&program, LHAT_PROGRAM_ERR_MIXED),
                    "text main over binary lib says why");
+        lhat_program_dispose(&program);
+    }
+    lhat_free(main_bytes);
+    lhat_free(lib_bytes);
+}
+
+static void test_private_enum_across_units(void)
+{
+    static const char *const lib_text =
+        "enum^ Hidden { A, B }\n"
+        "public^ let^ value = f^ -> number^ {\n"
+        "  let^ hidden = Hidden.B\n"
+        "  return^ 1\n"
+        "}\n";
+    static const char *const main_text =
+        "let^ lib = require^ \"lib.lh\"\n"
+        "return^ lib.value()\n";
+    uint8_t *lib_bytes = NULL;
+    size_t lib_length = 0;
+    uint8_t *main_bytes = NULL;
+    size_t main_length = 0;
+
+    LHAT_TEST("a private enum in another unit keeps its binary identity");
+    {
+        Disk disk;
+        memset(&disk, 0, sizeof disk);
+        disk_text(&disk, "main.lh", main_text);
+        disk_text(&disk, "lib.lh", lib_text);
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &disk);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+                       lhat_program_compile(&program),
+                   "the text units built");
+        const LhatUnit *lib = NULL;
+        for (const LhatUnit *u = lhat_program_units(&program); u != NULL;
+             u = lhat_unit_next(u)) {
+            if (u != root) {
+                lib = u;
+            }
+        }
+        LHAT_CHECK(root != NULL && lib != NULL, "two units built");
+        LHAT_CHECK(root != NULL &&
+                       lhat_unit_write_binary(root, false, &main_bytes,
+                                              &main_length) == LHAT_WRITE_OK,
+                   "main wrote with the private enum reference");
+        LHAT_CHECK(lib != NULL &&
+                       lhat_unit_write_binary(lib, false, &lib_bytes,
+                                              &lib_length) == LHAT_WRITE_OK,
+                   "the declaring unit wrote");
+        lhat_program_dispose(&program);
+    }
+    {
+        Disk disk;
+        memset(&disk, 0, sizeof disk);
+        disk_bytes(&disk, "main.lh", main_bytes, main_length);
+        disk_bytes(&disk, "lib.lh", lib_bytes, lib_length);
+        LhatProgram program;
+        lhat_program_init(&program, true, disk_load, &disk);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+                       lhat_program_compile(&program),
+                   "the binary units loaded and compiled");
         lhat_program_dispose(&program);
     }
     lhat_free(main_bytes);
@@ -459,7 +547,8 @@ static void test_host_references(void)
         const LhatUnit *root = NULL;
         LHAT_CHECK_EQ_INT(run_root(&program, "main.lh", &root), HOSTED_ANSWER);
         LHAT_CHECK(root != NULL &&
-                       lhat_unit_write_binary(root, true, &bytes, &length),
+                       lhat_unit_write_binary(root, true, &bytes, &length) ==
+                           LHAT_WRITE_OK,
                    "the hosted unit wrote");
         lhat_program_dispose(&program);
     }
@@ -510,8 +599,9 @@ static void test_exports(void)
         lhat_program_init(&program, true, disk_load, &disk);
         const LhatUnit *lib = lhat_program_check(&program, "lib.lh");
         LHAT_CHECK(lib != NULL && lhat_program_compile(&program), "lib built");
-        LHAT_CHECK(lib != NULL && lhat_unit_write_binary(lib, true, &lib_bytes,
-                                                         &lib_length),
+        LHAT_CHECK(lib != NULL &&
+                       lhat_unit_write_binary(lib, true, &lib_bytes,
+                                              &lib_length) == LHAT_WRITE_OK,
                    "lib wrote");
         lhat_program_dispose(&program);
     }
@@ -854,7 +944,8 @@ static void test_reflection(void)
                    lhat_program_compile(&from_text),
                "the text built");
     LHAT_CHECK(text != NULL &&
-                   lhat_unit_write_binary(text, false, &bytes, &length),
+                   lhat_unit_write_binary(text, false, &bytes, &length) ==
+                       LHAT_WRITE_OK,
                "and wrote");
     // The specimen has to say something at every address for the
     // comparison below to mean anything.
@@ -939,7 +1030,8 @@ static void test_host_wrapper_size(void)
         uint8_t *bytes = NULL;
         size_t length = 0;
         LHAT_CHECK(root != NULL &&
-                       lhat_unit_write_binary(root, false, &bytes, &length),
+                       lhat_unit_write_binary(root, false, &bytes, &length) ==
+                           LHAT_WRITE_OK,
                    "wrote");
         LHAT_CHECK(length < 2048,
                    "%zu bytes for a wrapper over 64 methods", length);
@@ -1018,7 +1110,9 @@ int main(void)
     test_roundtrip();
     test_delegate_chain_roundtrip();
     test_refusals();
+    test_write_status();
     test_units();
+    test_private_enum_across_units();
     test_traceback();
     test_host_references();
     test_exports();

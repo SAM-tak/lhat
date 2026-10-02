@@ -4102,11 +4102,17 @@ LhatLoadStatus lhat_program_write_text(LhatProgram *program, const char *name,
     }
     lhat_source_init_from_string(&unit->source, unit->path, text, length);
     LhatLoadStatus status = build_placed(program, unit);
-    if (status == LHAT_LOAD_OK &&
-        !lhat_serialize_write(unit, with_debug_names, out, out_length)) {
-        lhat_free(program->load_failure);
-        program->load_failure = duplicate("the unit could not be written out");
-        status = LHAT_LOAD_REJECTED;
+    if (status == LHAT_LOAD_OK) {
+        LhatWriteStatus written =
+            lhat_serialize_write(unit, with_debug_names, out, out_length);
+        if (written != LHAT_WRITE_OK) {
+            lhat_free(program->load_failure);
+            program->load_failure =
+                duplicate("the unit could not be written out");
+            status = written == LHAT_WRITE_OUT_OF_MEMORY
+                         ? LHAT_LOAD_OUT_OF_MEMORY
+                         : LHAT_LOAD_REJECTED;
+        }
     }
     forget(unit);
     lhat_program_release(program);
@@ -5098,8 +5104,9 @@ const LhatType *lhat_program_enum_identity(LhatProgram *program,
     return e->decl;
 }
 
-bool lhat_unit_write_binary(const LhatUnit *unit, bool with_debug_names,
-                            uint8_t **bytes, size_t *length)
+LhatWriteStatus lhat_unit_write_binary(const LhatUnit *unit,
+                                        bool with_debug_names,
+                                        uint8_t **bytes, size_t *length)
 {
 #if LHAT_WITH_FRONTEND
     return lhat_serialize_write(unit, with_debug_names, bytes, length);
@@ -5108,7 +5115,7 @@ bool lhat_unit_write_binary(const LhatUnit *unit, bool with_debug_names,
     (void)with_debug_names;
     (void)bytes;
     (void)length;
-    return false;  // 10.8: what a binary unit was written from is gone
+    return LHAT_WRITE_NO_FRONTEND;  // 10.8: what it was written from is gone
 #endif
 }
 
