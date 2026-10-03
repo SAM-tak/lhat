@@ -1397,6 +1397,10 @@ static bool fits_type_settled(const LhatType *type, const FitsTypeSeen *seen)
     seen = &here;
     if (type->specialization_base != NULL || type->template_definition != NULL)
         return false; // Runtime descriptors erase specialization arguments.
+    // 05 の 8.8: a registered type is its tag; its members are never asked
+    // of a value, so their gaps are not this question's either.
+    if (type->kind == LHAT_TYPE_TABLE && type->v.table.hostdata_tag != NULL)
+        return true;
     switch (type->kind) {
         case LHAT_TYPE_ARGUMENT:
             return type->v.argument.bound != NULL &&
@@ -1468,6 +1472,26 @@ static bool fits_types_disjoint(const LhatType *actual, const LhatType *target)
     return false;
 }
 
+// A union whose arms each settle on one side of the target, with nil^ alone on
+// the other: the test is x? (or its negation). Answers whether nil^ fits, or
+// -1 when the arms do not split that way.
+static int fits_split_by_nil(const LhatType *actual, const LhatType *target)
+{
+    actual = lhat_type_argument_bound(actual);
+    target = lhat_type_argument_bound(target);
+    if (actual->kind != LHAT_TYPE_UNION) return -1;
+    int nil_fits = -1, rest_fits = -1;
+    for (const LhatTypeList *a = actual->v.composite.arms; a; a = a->next) {
+        const LhatType *arm = lhat_type_argument_bound(a->type);
+        int side = lhat_type_conforms(arm, target) ? 1
+                 : fits_types_disjoint(arm, target) ? 0 : -1;
+        int *seen = arm->kind == LHAT_TYPE_NIL ? &nil_fits : &rest_fits;
+        if (side < 0 || (*seen >= 0 && *seen != side)) return -1;
+        *seen = side;
+    }
+    return nil_fits >= 0 && rest_fits >= 0 && nil_fits != rest_fits ? nil_fits : -1;
+}
+
 static void compile_fits_test(Compiler *c, const LhatNode *asked,
                              const LhatType *actual, uint8_t value,
                              uint8_t into)
@@ -1485,6 +1509,12 @@ static void compile_fits_test(Compiler *c, const LhatNode *asked,
         bool fits = lhat_type_conforms(actual, target);
         if (fits || fits_types_disjoint(actual, target)) {
             emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, into, fits, 0));
+            return;
+        }
+        int nil_fits = fits_split_by_nil(actual, target);
+        if (nil_fits >= 0) {
+            emit(c, lhat_encode_abc(LHAT_BC_ISNIL, into, value, 0));
+            if (!nil_fits) emit(c, lhat_encode_abc(LHAT_BC_NOT, into, into, 0));
             return;
         }
     }

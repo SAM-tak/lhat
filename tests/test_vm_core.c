@@ -1896,6 +1896,15 @@ static void test_static_fits(void)
          "return^test({x=1,y=2})", true, 1},
         {"let^test=p^v:t^{x:any^}->bool^{return^v fits^t^{x:number^}}\n"
          "return^test({x=\"s\"})", false, 1},
+        // Arms settled on either side and split by nil^ alone ask only x?.
+        {"let^test=p^v:t^{x:number^}|nil^->bool^{return^v fits^t^{x:number^}}\n"
+         "return^test({x=1})", true, 0},
+        {"let^test=p^v:t^{x:number^}|nil^->bool^{return^v fits^t^{x:number^}}\n"
+         "return^test(nil^)", false, 0},
+        {"let^test=p^v:number^|nil^->bool^{return^v fits^nil^}\n"
+         "return^test(nil^)", true, 0},
+        {"let^test=p^v:number^|string^|nil^->bool^{return^v fits^number^}\n"
+         "return^test(\"s\")", false, 1},
     };
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
         LHAT_TEST("fits omits runtime checks only when the static answer is settled");
