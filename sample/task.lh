@@ -19,9 +19,8 @@ let^c = try^std.channel.new(std.task.Task<number^>)
 let^c = try^std.channel.new(typeof^t1)
 n := 0
 let^first = try^std.task.async(p^{
-    _yield^0
     return^20
-}())
+})
 try^c.push(first)
 let^second = try^std.task.async(p^mine {
     _yield^0
