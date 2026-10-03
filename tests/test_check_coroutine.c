@@ -48,7 +48,13 @@ static void test_coroutine_wildcards(void)
     LHAT_CHECK(!lhat_type_conforms(types[2], types[3]), "wildcard output cannot become specific");
     LHAT_CHECK(!lhat_type_conforms(types[3], types[10]), "empty yield is not wildcard yield");
     LHAT_CHECK(lhat_type_conforms(types[9], types[10]), "empty yield accepts nil yield");
-    LHAT_CHECK(!lhat_type_conforms(types[4], types[11]), "explicit p keeps its body-kind constraint");
+    LHAT_CHECK(lhat_type_conforms(types[4], types[11]), "an f body satisfies an explicit p");
+    {
+        static const char f_text[] = "c^{f^ -> * -> *}";
+        LhatType *f_top = lhat_type_of_text(f_text, strlen(f_text), &arena, NULL, NULL);
+        LHAT_CHECK(f_top != NULL && !lhat_type_conforms(types[3], f_top),
+                   "a p body does not satisfy an explicit f");
+    }
     lhat_type_arena_dispose(&arena);
 }
 

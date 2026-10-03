@@ -188,14 +188,34 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
     unit_dispose(&u);
 
-    LHAT_TEST("and the two kinds are different types");
+    // The subroutines' rule: a p^ coroutine type permits effects, so an f^
+    // coroutine satisfies it. Advancing through that type is a p^ call.
+    LHAT_TEST("an f^ coroutine satisfies a p^ coroutine type");
     check_text(&u,
                "var^ gen = f^ { yield^ 1 }\n"
                "var^ f = f^ -> number^ {\n"
-               "    var^ c : c^{ p^nil^ -> number^ -> nil^ } = gen()\n"
+               "    var^ c : c^{ p^ -> number^ -> nil^ } = gen()\n"
                "    return^ 0\n"
                "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but a p^ coroutine does not satisfy an f^ coroutine type");
+    check_text(&u,
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c : c^{ f^ -> number^ -> nil^ } = gen()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("and advancing one through the p^ type is a p^ call");
+    check_text(&u,
+               "var^ gen = f^ { yield^ 1 }\n"
+               "var^ f = f^ -> number^ {\n"
+               "    var^ c : c^{ p^ -> number^ -> nil^ } = gen()\n"
+               "    var^ a = c.start()\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
     // 15.8 with 15.3改: delegating runs the inner body, which is what makes

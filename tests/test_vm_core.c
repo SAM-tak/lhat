@@ -1957,6 +1957,11 @@ static void test_dynamic_callable_fits(void)
         {"{x=1,cb=f^v:t^{x:number^}->bool^{true^}}", "t^{x:number^,cb:f^Self^->bool^;}", true},
         {"{x=1,cb=f^v:t^{x:number^,y:string^}->bool^{true^}}", "t^{x:number^,cb:f^Self^->bool^;}", false},
         {"{x=1,cbs={f^v:t^{x:number^}->bool^{true^}}}", "t^{x:number^,cbs:t^{(f^Self^^->bool^;)[]}}", true},
+        {"(f^{yield^ 1})()", "c^{f^nil^->number^->nil^}", true},
+        {"(f^{yield^ 1})()", "c^{p^nil^->number^->nil^}", true},
+        {"(p^{yield^ 1})()", "c^{f^nil^->number^->nil^}", false},
+        {"(p^{yield^ 1})()", "c^{p^nil^->number^->nil^}", true},
+        {"{1}.iterate^()", "c^{f^nil^->number^->nil^}", true},
     };
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
         LHAT_TEST("dynamic fits checks the complete callable contract");

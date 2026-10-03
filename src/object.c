@@ -630,7 +630,7 @@ static bool rt_fits(const LhatRuntimeType *a, const LhatRuntimeType *b,
         case LHAT_TYPE_RT_COROUTINE:
             if (b->coroutine_top) return true;
             if (a->coroutine_top ||
-                (!b->kind_any && (a->kind_any || a->is_function != b->is_function)) ||
+                (!b->kind_any && (a->kind_any || (b->is_function && !a->is_function))) ||
                 (!b->receive_any && (a->receive_any || (a->receive == NULL) != (b->receive == NULL))) ||
                 (!b->produce_any && a->produce_any) ||
                 (!b->result_any && (a->result_any || a->endless != b->endless ||
@@ -840,8 +840,17 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
         }
         case LHAT_TYPE_RT_SUBROUTINE:
             return callable_satisfies(value, type, scope);
-        case LHAT_TYPE_RT_COROUTINE:
-            return lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE);
+        // 15.3改: an f^ coroutine type admits only a body an f^ wrote or a
+        // built-in walk, which changes nothing. A host's walk carries no
+        // kind, so it is not taken for an f^ one.
+        case LHAT_TYPE_RT_COROUTINE: {
+            if (!lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE)) return false;
+            if (type->coroutine_top || type->kind_any || !type->is_function) return true;
+            const LhatCoroutine *co = (const LhatCoroutine *)lhat_as_object(value);
+            if (co->source == LHAT_COROUTINE_TABLE) return true;
+            return co->source == LHAT_COROUTINE_BODY && co->closure != NULL &&
+                   co->closure->proto != NULL && co->closure->proto->is_function;
+        }
         // 04 の 2.7: a family, not every error. The two tops are disjoint, so
         // asking error^ of a localerror^ answers false.
         case LHAT_TYPE_RT_ERROR: {

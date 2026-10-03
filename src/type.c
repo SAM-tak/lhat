@@ -1914,11 +1914,12 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             if (target->coroutine_top) return true;
             if (value->coroutine_top) return false;
             // 15.3改: advancing one runs its body, so start()/resume() carry
-            // the body's kind (15.6改). One kind cannot stand where the other
-            // is written -- an f^ holding a p^ coroutine could not advance it,
-            // and a p^ one is not subject to 15.3改's containment either.
+            // the body's kind (15.6改). A p^ coroutine cannot stand where an
+            // f^ one is written -- an f^ holding it could not advance it. The
+            // other way is the subroutines' rule: advancing through a p^ type
+            // is a p^ call, which an f^ body permits.
             if (!target->kind_any && (value->kind_any ||
-                value->v.coroutine.is_function != target->v.coroutine.is_function)) {
+                (target->v.coroutine.is_function && !value->v.coroutine.is_function))) {
                 return false;
             }
             // 13.9: an empty slot is a statement, not a gap, so it stands
