@@ -22,11 +22,11 @@ let^first = try^std.task.async(p^{
     return^20
 })
 try^c.push(first)
-let^second = try^std.task.async(p^mine {
-    _yield^0
-    let^handed = mine.demand(2)
-    return^ if^handed?: std.task.await(handed) catch^ 0 + 1 el^: 0;
-}(c))
+let^addnumber = 1
+let^second = try^std.task.async(p^{
+    let^handed = c.demand(2)
+    return^ if^handed?: std.task.await(handed) catch^ 0 + addnumber el^: 0;
+})
 n := try^std.task.await(second)
 print(n) # may print '21'
 
