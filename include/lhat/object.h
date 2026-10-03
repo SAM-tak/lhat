@@ -912,7 +912,9 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a,
                              const LhatRuntimeType *b);
 
 // 13.11: whether the value may stand where the type is written. A NULL type
-// asks nothing, which is what an unannotated parameter means.
+// asks nothing, which is what an unannotated parameter means. `type` must be
+// the root of a descriptor lhat built: a Self^ inside a part cut out of one
+// cannot see the structure it names, and asks only that the value be a table.
 bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type);
 
 LhatOverload *lhat_overload_new(LhatHeap *heap);

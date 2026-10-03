@@ -1945,6 +1945,9 @@ static void test_dynamic_callable_fits(void)
         {"f^n:f^number^->number^;->bool^{true^}", "f^p^number^->number^;->bool^;", false},
         {"{callback=p^->bool^{return^true^}}", "t^{callback:f^->bool^;}", false},
         {"{callback=f^->bool^{true^}}", "t^{callback:f^->bool^;}", true},
+        {"{x=1,cb=f^v:t^{x:number^}->bool^{true^}}", "t^{x:number^,cb:f^Self^->bool^;}", true},
+        {"{x=1,cb=f^v:t^{x:number^,y:string^}->bool^{true^}}", "t^{x:number^,cb:f^Self^->bool^;}", false},
+        {"{x=1,cbs={f^v:t^{x:number^}->bool^{true^}}}", "t^{x:number^,cbs:t^{(f^Self^^->bool^;)[]}}", true},
     };
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
         LHAT_TEST("dynamic fits checks the complete callable contract");
@@ -1972,6 +1975,15 @@ static void test_dynamic_callable_fits(void)
         "let^r=v as^f^->bool^;\n"
         "return^r fits^localerror^.CastFailure}\n"
         "return^test(p^->bool^{return^true^})\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+    LHAT_TEST("an instance still fits its definition after a Self^^ callable is stored");
+    run_checked_text(&r,
+        "let^A=def^{self^{skills:t^{[number^]:(p^Self^^,number^->nil^;)|nil^}={}}}\n"
+        "let^a=A.new()\n"
+        "a.skills[1]:=p^me:A,at:number^{}\n"
+        "let^x:any^=a\n"
+        "return^x fits^A\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 }

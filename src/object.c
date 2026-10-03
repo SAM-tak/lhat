@@ -651,7 +651,8 @@ static bool rt_fits(const LhatRuntimeType *a, const LhatRuntimeType *b,
     }
 }
 
-static bool callable_satisfies(LhatValue value, const LhatRuntimeType *wanted)
+static bool callable_satisfies(LhatValue value, const LhatRuntimeType *wanted,
+                               const RtScope *scope)
 {
     const LhatRuntimeType *signature = NULL;
     if (lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE)) {
@@ -662,13 +663,16 @@ static bool callable_satisfies(LhatValue value, const LhatRuntimeType *wanted)
     } else if (lhat_is_object_kind(value, LHAT_OBJECT_OVERLOAD)) {
         const LhatOverload *group = (const LhatOverload *)lhat_as_object(value);
         for (size_t i = 0; i < group->count; i++)
-            if (callable_satisfies(group->candidates[i], wanted)) return true;
+            if (callable_satisfies(group->candidates[i], wanted, scope)) return true;
         return false;
     }
-    return signature != NULL && rt_fits(signature, wanted, NULL, NULL, NULL);
+    return signature != NULL && rt_fits(signature, wanted, NULL, NULL, scope);
 }
 
-bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
+// scope is the chain of structures the walk is inside, so a Self^ in a
+// wanted signature names the structure it was written in (13.13).
+static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
+                            const RtScope *scope)
 {
     if (type == NULL) {
         return true;  // nothing was written, so nothing is asked
@@ -676,7 +680,7 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
     switch (type->kind) {
         case LHAT_TYPE_RT_APPLIED: {
             const LhatRuntimeType *base = type->result;
-            if (base == NULL || !lhat_value_satisfies(value, base)) return false;
+            if (base == NULL || !value_satisfies(value, base, scope)) return false;
             if (base->kind == LHAT_TYPE_RT_TYPEINFO) {
                 return type->part_count == 1 &&
                     lhat_runtime_type_equal((const LhatRuntimeType *)lhat_as_object(value), type->parts[0]);
@@ -722,9 +726,11 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
             if (table == NULL) {
                 return false;
             }
+            RtScope inner = {type, scope};
+            scope = &inner;
             for (size_t i = 0; i < type->part_count; i++) {
                 LhatValue held = lhat_table_get(table, lhat_integer((int64_t)i));
-                if (lhat_is_nil(held) || !lhat_value_satisfies(held, type->parts[i])) {
+                if (lhat_is_nil(held) || !value_satisfies(held, type->parts[i], scope)) {
                     return false;
                 }
             }
@@ -734,7 +740,7 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                     if (lhat_is_nil(held)) {
                         break;
                     }
-                    if (!lhat_value_satisfies(held, type->variadic)) {
+                    if (!value_satisfies(held, type->variadic, scope)) {
                         return false;
                     }
                 }
@@ -746,7 +752,7 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                                                .name));
                 if ((lhat_is_nil(held) &&
                      !member_allows_absence(type->members[i].type)) ||
-                    !lhat_value_satisfies(held, type->members[i].type)) {
+                    !value_satisfies(held, type->members[i].type, scope)) {
                     return false;
                 }
             }
@@ -760,17 +766,17 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                 for (size_t i = 0; i < table->array_count; i++) {
                     LhatValue held = lhat_slots_get(table->array, i);
                     if (!lhat_is_nil(held) &&
-                        (!lhat_value_satisfies(lhat_integer((int64_t)i),
-                                               type->index_key) ||
-                         !lhat_value_satisfies(held, type->index_value))) {
+                        (!value_satisfies(lhat_integer((int64_t)i),
+                                          type->index_key, scope) ||
+                         !value_satisfies(held, type->index_value, scope))) {
                         return false;
                     }
                 }
                 for (size_t i = 0; i < table->entry_capacity; i++) {
                     const LhatTableEntry *entry = &table->entries[i];
                     if (!lhat_is_nil(entry->key) &&
-                        (!lhat_value_satisfies(entry->key, type->index_key) ||
-                         !lhat_value_satisfies(entry->value, type->index_value))) {
+                        (!value_satisfies(entry->key, type->index_key, scope) ||
+                         !value_satisfies(entry->value, type->index_value, scope))) {
                         return false;
                     }
                 }
@@ -833,7 +839,7 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
                    e->index == type->enum_member_index;
         }
         case LHAT_TYPE_RT_SUBROUTINE:
-            return callable_satisfies(value, type);
+            return callable_satisfies(value, type, scope);
         case LHAT_TYPE_RT_COROUTINE:
             return lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE);
         // 04 の 2.7: a family, not every error. The two tops are disjoint, so
@@ -871,7 +877,7 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
             return false;
         case LHAT_TYPE_RT_UNION:
             for (size_t i = 0; i < type->part_count; i++) {
-                if (lhat_value_satisfies(value, type->parts[i])) {
+                if (value_satisfies(value, type->parts[i], scope)) {
                     return true;
                 }
             }
@@ -880,7 +886,7 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
         // it is one value callable every way the intersection lists.
         case LHAT_TYPE_RT_INTERSECT:
             for (size_t i = 0; i < type->part_count; i++) {
-                if (!lhat_value_satisfies(value, type->parts[i])) {
+                if (!value_satisfies(value, type->parts[i], scope)) {
                     return false;
                 }
             }
@@ -896,6 +902,11 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
         }
     }
     return false;
+}
+
+bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
+{
+    return value_satisfies(value, type, NULL);
 }
 
 static int compare_members(const void *a, const void *b)
