@@ -354,7 +354,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
 LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
 {
     size_t outer = m->run_base;
-    // 02 の 15.15: the slice belongs to the outermost run. A nested one --
+    // 02 § 15.15: the slice belongs to the outermost run. A nested one --
     // a host calling back, sort^'s comparator, clone^'s policy -- has its
     // caller's C stack under it and roots on it (machine.h's native_hold),
     // so it cannot be left standing; it runs with no budget and gives the
@@ -373,16 +373,18 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
     return result;
 }
 
-// 02 の 15.15: the slice, counted where a run turns back on itself. Reads
-// the loop's own `frame`, `pc`, `chunk`, `at` and `base_depth`, so it can
-// only stand inside run_frames_loop.
-#define LHAT_TURN_BACK()                                                    \
+// 02 § 15.15: the slice, counted where a run turns back on itself and where
+// a body is entered -- a run that neither loops nor calls ends by its own
+// length. At an entry the new frame is the one left standing, at its top.
+// Reads the loop's own `frame`, `pc`, `chunk`, `at` and `base_depth`, so it
+// can only stand inside run_frames_loop.
+#define LHAT_SLICE_POLL()                                                   \
     do {                                                                    \
         if (m->steps_left != 0 && --m->steps_left == 0) {                   \
             frame->pc = pc;                                                 \
             m->suspended = true;                                            \
             m->suspended_base = base_depth;                                 \
-            return vm_finish(m, chunk, LHAT_RUN_SUSPENDED, lhat_nil(), at);    \
+            return vm_finish(m, chunk, LHAT_RUN_SUSPENDED, lhat_nil(), at); \
         }                                                                   \
     } while (0)
 
@@ -847,7 +849,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             int32_t offset = lhat_jump_offset(paired);
                             pc = (size_t)((int64_t)pc + offset);
                             if (offset < 0) {
-                                LHAT_TURN_BACK();
+                                LHAT_SLICE_POLL();
                             }
                         }
                     }
@@ -882,7 +884,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             int32_t offset = lhat_jump_offset(paired);
                             pc = (size_t)((int64_t)pc + offset);
                             if (offset < 0) {
-                                LHAT_TURN_BACK();
+                                LHAT_SLICE_POLL();
                             }
                         }
                     }
@@ -915,7 +917,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 int32_t offset = lhat_jump_offset(instruction);
                 pc = (size_t)((int64_t)pc + offset);
                 if (offset < 0) {
-                    LHAT_TURN_BACK();
+                    LHAT_SLICE_POLL();
                 }
                 VM_NEXT();
             }
@@ -928,7 +930,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     int32_t offset = lhat_jump_offset(instruction);
                     pc = (size_t)((int64_t)pc + offset);
                     if (offset < 0) {
-                        LHAT_TURN_BACK();
+                        LHAT_SLICE_POLL();
                     }
                 }
                 VM_NEXT();
@@ -2434,6 +2436,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                     chunk = &callee->proto->chunk;
                     pc = 0;
+                    LHAT_SLICE_POLL();
                     VM_NEXT();
                 }
 
@@ -2445,6 +2448,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 rbase = frame->base;
                 chunk = &callee->proto->chunk;
                 pc = 0;
+                LHAT_SLICE_POLL();
                 VM_NEXT();
             }
 
@@ -3058,7 +3062,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                          &more, &status);
                 if (more) {
                     pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction));
-                    LHAT_TURN_BACK();
+                    LHAT_SLICE_POLL();
                 }
                 VM_NEXT();
             }
@@ -3310,6 +3314,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         rbase = frame->base;
         chunk = &carried->proto->chunk;
         pc = 0;
+        LHAT_SLICE_POLL();
         VM_NEXT();
     }
 

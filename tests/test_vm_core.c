@@ -1631,6 +1631,49 @@ static void test_budget(void)
         run_dispose(&r);
     }
 
+    // A body is entered as well as turned back to: recursion that never
+    // loops is put down too, and still answers what it would have whole.
+    LHAT_TEST("recursion without a loop is taken in slices");
+    {
+        compile_text(&r,
+                     "let^ fib = f^ n:number^ -> number^ {\n"
+                     "    if^ n < 2 { return^ n }\n"
+                     "    return^ this^(n - 1) + this^(n - 2)\n"
+                     "}\n"
+                     "return^ fib(15)\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new();
+        lhat_machine_set_budget(r.machine, 100);
+        r.ran = lhat_run(r.machine, r.proto);
+        int slices = 1;
+        while (r.ran.status == LHAT_RUN_SUSPENDED && slices < 1000) {
+            r.ran = lhat_machine_continue(r.machine);
+            slices++;
+        }
+        CHECK_INTEGER(&r, 610);
+        LHAT_CHECK(slices >= 10, "it took the slices it should: %d", slices);
+        run_dispose(&r);
+    }
+
+    // A tail call takes its frame over rather than pushing one, so this
+    // runs for ever in one frame -- and is put down all the same.
+    LHAT_TEST("a tail call that never ends is put down");
+    {
+        compile_text(&r,
+                     "let^ go = p^ n:number^ -> number^ { return^ this^(n + 1) }\n"
+                     "return^ go(0)\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new();
+        lhat_machine_set_budget(r.machine, 50);
+        r.ran = lhat_run(r.machine, r.proto);
+        for (int i = 0; i < 10; i++) {
+            LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SUSPENDED);
+            r.ran = lhat_machine_continue(r.machine);
+        }
+        LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SUSPENDED);
+        run_dispose(&r);
+    }
+
     // A machine is born without one, and nothing about a run changes.
     LHAT_TEST("no budget is what a machine is born with");
     {
