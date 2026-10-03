@@ -13,7 +13,7 @@
 // Two arms of async, registered in this order: a coroutine not yet started,
 // and a subroutine called with nothing, with or without a result.
 #define LHAT_TASK_ASYNC_SIGNATURE \
-    "p^c^{->*->*} -> std.task.Task<ARG0.resultType>" LHAT_TASK_ERRORS
+    "p^c^{->*->*} -> std.task.Task<ARG0.ResultType>" LHAT_TASK_ERRORS
 #define LHAT_TASK_ASYNC_CALL_SIGNATURE \
     "p^(p^;)|(p^->any^;) -> std.task.Task<ARG0.ReturnType>" LHAT_TASK_ERRORS
 #define LHAT_TASK_AWAIT_SIGNATURE \

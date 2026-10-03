@@ -2762,7 +2762,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
     if (type->kind == LHAT_TYPE_ARGUMENT) {
         char text[48];
         snprintf(text, sizeof text, "ARG%zu%s", type->v.argument.index,
-                 type->v.argument.attribute == LHAT_TYPE_ATTRIBUTE_RESULT ? ".resultType"
+                 type->v.argument.attribute == LHAT_TYPE_ATTRIBUTE_RESULT ? ".ResultType"
                  : type->v.argument.attribute == LHAT_TYPE_ATTRIBUTE_RETURN ? ".ReturnType" : "");
         if (type->v.argument.index == SIZE_MAX) snprintf(text, sizeof text, "self^");
         put_text(sink, text);

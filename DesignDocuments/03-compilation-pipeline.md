@@ -1441,10 +1441,10 @@ Channel は所有する要素型を公開する。型検査は結果の到着を
 
 ```lhat
 f^any^ -> ARG0;
-p^c^{->*->*} -> std.task.Task<ARG0.resultType>|std.task.TaskError|std.error.OutOfMemory;
+p^c^{->*->*} -> std.task.Task<ARG0.ResultType>|std.task.TaskError|std.error.OutOfMemory;
 ```
 
-`c^` は全コルーチンの上位型。コルーチン型の型属性は `resultType`
+`c^` は全コルーチンの上位型。コルーチン型の型属性は `ResultType`
 であり、`number^` などにその属性を求めた署名は登録時に拒否する。
 具体的なコルーチン型の最終結果型を返し、戻り値なしは `nil^`、
 情報を消去した単なる `c^` の結果は `any^` となる。コルーチン型の合併では
@@ -1453,7 +1453,7 @@ p^c^{->*->*} -> std.task.Task<ARG0.resultType>|std.task.TaskError|std.error.OutO
 サブルーチン型の型属性は `ReturnType` で、呼び出しが答える型を返す
 （02 の 13.14改 と同じ語）。yieldable ならコルーチン型、返り値なし（`p^;`）は
 `nil^`。13.14改 の名前に付ける `.ReturnType` は返り値なしを誤りとするが、
-`ARGn` の側は `resultType` に揃えて `nil^` とする。`ARGn.ReturnType` に
+`ARGn` の側は `ResultType` に揃えて `nil^` とする。`ARGn.ReturnType` に
 さらに属性を続けることはできない。サブルーチン型の合併では各腕の答えを合併する。
 
 ```lhat

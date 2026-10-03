@@ -453,7 +453,7 @@ static void test_task_checks(void)
         "{\"kind\":\"hostdata\",\"module\":\"std.task\",\"name\":\"Task\"}],"
         "\"functions\":["
         "{\"kind\":\"func\",\"module\":\"std.task\",\"name\":\"async\","
-        "\"signature\":\"p^c^{->*->*} -> std.task.Task<ARG0.resultType>|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;\"},"
+        "\"signature\":\"p^c^{->*->*} -> std.task.Task<ARG0.ResultType>|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;\"},"
         "{\"kind\":\"func\",\"module\":\"std.task\",\"name\":\"await\","
         "\"signature\":\"p^std.task.Task -> ARG0.T0|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;\"}]}";
     static const char *const sources[] = {
@@ -563,7 +563,7 @@ int main(void)
         static const char text[] =
             "{\"types\":[{\"kind\":\"hostdata\",\"module\":\"custom\",\"name\":\"Box\"}],"
             "\"functions\":[{\"kind\":\"func\",\"module\":\"custom\",\"name\":\"wrap\","
-            "\"signature\":\"p^c^ -> custom.Box<ARG0.resultType>;\"},"
+            "\"signature\":\"p^c^ -> custom.Box<ARG0.ResultType>;\"},"
             "{\"kind\":\"func\",\"module\":\"custom\",\"name\":\"unwrap\","
             "\"signature\":\"p^custom.Box -> ARG0.T0;\"}]}";
         static const File files[] = {{"main.lh",

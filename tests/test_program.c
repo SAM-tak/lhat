@@ -5667,7 +5667,7 @@ static void test_declarative_result_types(void)
         "let^ job:c^ = gen()\n"
         "let^ text:string^ = test.generic.result(gen())\n"
         "let^ typed:test.generic.Box<string^>=test.generic.pack(gen())\n"
-        "let^ attribute:c^{p^ -> number^ -> string^}.resultType = 'ok'\n"
+        "let^ attribute:c^{p^ -> number^ -> string^}.ResultType = 'ok'\n"
         "let^ pair:test.generic.Box<number^,string^> = test.generic.pair(1, 's')\n"
         "let^ member:string^ = nested.echo('ok')\n"
         "let^ first:number^ = test.generic.first(pair)\n"
@@ -5684,9 +5684,9 @@ static void test_declarative_result_types(void)
     LHAT_CHECK(lhat_register_func(&program, "test.generic", "wrap",
         "f^any^ -> test.generic.Box<ARG0>;", host_one, NULL), "type argument registration");
     LHAT_CHECK(lhat_register_func(&program, "test.generic", "result",
-        "p^c^ -> ARG0.resultType;", host_one, NULL), "type attribute registration");
+        "p^c^ -> ARG0.ResultType;", host_one, NULL), "type attribute registration");
     LHAT_CHECK(lhat_register_func(&program, "test.generic", "pack",
-        "p^c^ -> test.generic.Box<ARG0.resultType>;", host_one, NULL), "nested type expression");
+        "p^c^ -> test.generic.Box<ARG0.ResultType>;", host_one, NULL), "nested type expression");
     LHAT_CHECK(lhat_register_func(&program, "test.generic", "returned",
         "p^(p^;)|(p^->any^;) -> test.generic.Box<ARG0.ReturnType>;", host_one, NULL),
         "return type attribute registration");
@@ -5711,18 +5711,18 @@ static void test_declarative_result_types(void)
 
     LHAT_TEST("invalid references and type attributes are refused at registration");
     static const char *const invalid[] = {
-        "p^number^ -> ARG0.resultType;", "p^c^ -> ARG1.resultType;",
+        "p^number^ -> ARG0.ResultType;", "p^c^ -> ARG1.ResultType;",
         "p^c^ -> ARG0.missing;", "p^ARG0 -> number^;",
         "p^...:any^ -> ARG0;", "p^ -> number^<string^>;",
-        "p^c^ -> ARG99999999999999999999999999999.resultType;",
-        "p^c^ -> t^{ value:ARG0.resultType };",
+        "p^c^ -> ARG99999999999999999999999999999.ResultType;",
+        "p^c^ -> t^{ value:ARG0.ResultType };",
         "p^number^ -> ARG0.T0;", "p^c^ -> ARG0.T0;",
         "p^number^ -> self^.T0;", "p^type^<number^,string^> -> number^;",
         "p^type^ -> ARG0.T1;",
         "p^number^ -> ARG0.T99999999999999999999999999999;",
         "p^c^ -> (f^number^ -> ARG1;);",
         "p^number^ -> ARG0.ReturnType;", "p^c^ -> ARG0.ReturnType;",
-        "p^(p^->any^;) -> ARG0.ReturnType.resultType;"
+        "p^(p^->any^;) -> ARG0.ReturnType.ResultType;"
     };
     for (size_t i = 0; i < sizeof invalid / sizeof *invalid; i++) {
         program_with(&program, &disk, NULL, 0);

@@ -1412,7 +1412,7 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     }
     LhatTypeAttribute attribute =
         return_type ? LHAT_TYPE_ATTRIBUTE_RETURN
-        : chk_name_is(name, length, "resultType") ? LHAT_TYPE_ATTRIBUTE_RESULT
+        : chk_name_is(name, length, "ResultType") ? LHAT_TYPE_ATTRIBUTE_RESULT
         : LHAT_TYPE_ATTRIBUTE_NONE;
     if (outer->kind == LHAT_TYPE_ARGUMENT || outer->kind == LHAT_TYPE_CORO || type_argument ||
         attribute != LHAT_TYPE_ATTRIBUTE_NONE) {
@@ -4723,7 +4723,7 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_TYPE_ARGUMENT_REFERENCE] = {"check.type-argument-reference",
         "ARGn must name a fixed parameter of the enclosing signature, in its result type"},
     [LHAT_CHECK_ERR_TYPE_ATTRIBUTE] = {"check.type-attribute",
-        "this type has no such type attribute; resultType requires a coroutine type, ReturnType a subroutine type, and Tn a nominal type argument"},
+        "this type has no such type attribute; ResultType requires a coroutine type, ReturnType a subroutine type, and Tn a nominal type argument"},
     [LHAT_CHECK_ERR_TYPE_SPECIALIZATION] = {"check.type-specialization",
         "type arguments require an unspecialized nominal host type"},
     [LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME] = {"check.type-argument-runtime",

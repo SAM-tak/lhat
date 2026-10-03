@@ -228,7 +228,7 @@ typedef struct LhatTypeList {
 // 03 の 3.4改6: what an ARGn expression reads off its argument's type.
 typedef enum LhatTypeAttribute {
     LHAT_TYPE_ATTRIBUTE_NONE,
-    LHAT_TYPE_ATTRIBUTE_RESULT,  // .resultType: a coroutine's last resume
+    LHAT_TYPE_ATTRIBUTE_RESULT,  // .ResultType: a coroutine's last resume
     LHAT_TYPE_ATTRIBUTE_RETURN   // .ReturnType: what a subroutine's call answers
 } LhatTypeAttribute;
 
