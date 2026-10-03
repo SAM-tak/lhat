@@ -91,16 +91,14 @@ static void test_definition(void)
     free(text);
     check_dispose(&c);
 
-    // The body of a definition may run for pages; the first line is what
-    // says what it is.
-    LHAT_TEST("only the first line of a definition is shown");
+    LHAT_TEST("a callable shows a signature without its body");
     check_text(&c,
                "let^ twice = f^n:number^ -> number^ {\n"
                "    return^ n * 2\n"
                "}\n"
                "print(twice(1))\n");
     text = hover_text(&c, last_offset(&c, "twice"));
-    expect_contains(text, "let^ twice = f^n:number^ -> number^ {");
+    expect_contains(text, "let^ twice = f^n:number^ -> number^;");
     LHAT_CHECK(text != NULL && strstr(text, "return^") == NULL,
                "the body leaked into the hover: %s", text ? text : "");
     free(text);
@@ -146,7 +144,7 @@ static void test_definition(void)
                "}\n"
                "print(twice(1))\n");
     text = hover_text(&c, last_offset(&c, "twice"));
-    expect_contains(text, "f^number^ -> number^;");
+    expect_contains(text, "f^n:number^ -> number^;");
     free(text);
     check_dispose(&c);
 
@@ -516,12 +514,15 @@ static void test_across_units(void)
          "public^let^ Held = def^{\n"
          "    self^{ count = 0 },\n"
          "}\n"
-         "public^ enum^ Mode { Idle, Walk = 5 }\n"},
+         "public^ enum^ Mode { Idle, Walk = 5 }\n"
+         "# double the input\n"
+         "public^let^ twice = f^n:number^{ return^n * 2 }\n"},
         {"main.lh",
          "module^ app\n"
          "require^ \"lib.lh\"\n"
          "let^ made = store.Held.new()\n"
-         "let^ mode = store.Mode.Walk\n"},
+         "let^ mode = store.Mode.Walk\n"
+         "let^ doubled = store.twice(2)\n"},
     };
     Disk disk = {files, 2};
     LhatProgram program;
@@ -539,6 +540,16 @@ static void test_across_units(void)
 #endif
         LHAT_CHECK(text != NULL && strstr(text, "let^ made") == NULL,
                    "a line of main.lh leaked in: %s", text ? text : "");
+        free(text);
+
+        LHAT_TEST("an imported callable combines source names and checked types");
+        text = hover_across(&program, main_unit, offset_in(main_unit, "twice(2)"));
+        expect_contains(text, "public^let^ twice = f^n:number^ -> number^;");
+        LHAT_CHECK(text != NULL && strstr(text, "return^") == NULL &&
+                   strstr(text, "\n: ") == NULL, "body or duplicate type leaked: %s", text ? text : "");
+#if LHAT_WITH_COMMENTS
+        expect_contains(text, "double the input");
+#endif
         free(text);
 
         LHAT_TEST("05 の 5 章: a require^'s path shows the unit it names");
@@ -575,6 +586,86 @@ static void test_across_units(void)
     lhat_program_dispose(&program);
 }
 
+static void test_callable_summaries(void)
+{
+    static const struct { const char *source; const char *needle; const char *summary; } cases[] = {
+        {"let^ twice = f^n:number^{ return^n * 2 }\nlet^result = twice(2)\n",
+         "twice(2)", "let^ twice = f^n:number^ -> number^;"},
+        {"let^ twice = f^\n n:number^\n{\n return^n * 2\n}\nlet^result = twice(2)\n",
+         "twice(2)", "let^ twice = f^n:number^ -> number^;"},
+        {"let^ identity = f^value{ return^value }\nlet^result = identity(2)\n",
+         "identity(2)", "let^ identity = f^value:number^ -> number^;"},
+        {"let^ quiet = p^sku:string^{}\nquiet(\"x\")\n",
+         "quiet(\"x\")", "let^ quiet = p^sku:string^;"},
+        {"let^ unused = f^n:number^ -> number^{ return^n }\n",
+         "unused", "let^ unused = f^n:number^ -> number^;"},
+        {"let^ pair = f^n:number^{ return^n, n }\nlet^a, b = pair(2)\n",
+         "pair(2)", "let^ pair = f^n:number^ -> number^, number^;"},
+        {"let^ defaults = f^n:number^ = 2{ return^n }\nlet^result = defaults(3)\n",
+         "defaults(3)", "let^ defaults = f^n:number^ = … -> number^;"},
+        {"let^ rest = p^head:string^, ...:number^{}\nrest(\"x\", 1, 2)\n",
+         "rest(\"x\"", "let^ rest = p^head:string^, ...:number^;"},
+        {"let^ first, second = f^x:number^{ return^x }, f^s:string^{ return^s }\n"
+         "let^result = second(\"x\")\n",
+         "second(\"x\")", "let^ second = f^s:string^ -> string^;"},
+        {"let^ Obj = def^{ self^{ count = 0 }, take = p^self^, n:number^{ self^.count -= n } }\n"
+         "let^ obj = Obj.new()\nobj.take(2)\n",
+         "take(2)", "take = p^self^, n:number^;"},
+        {"let^ original = f^n:number^{ return^n }\nlet^alias = original\nlet^result = alias(2)\n",
+         "alias(2)", "let^alias: f^number^ -> number^;"},
+        {"let^ stable = closed^f^n:number^ -> number^{ return^n }\nlet^result = stable(2)\n",
+         "stable(2)", "let^ stable = closed^f^n:number^ -> number^;"},
+        {"let^Item = def^{ self^{ name = \"\", count = 0 } }\n"
+         "let^report = p^items:t^{Item[]}{}\nreport({Item.new()})\n",
+         "report({", "let^report = p^items:t^{Item[]};"},
+        {"let^ Text = def^{ method = f^number:number^{ return^number },\n"
+         "overload^method := f^text:string^{ return^text } }\nlet^result = Text.method(\"a\")\n",
+         "method(\"a\")", "string^ -> string^;"},
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof *cases; i++) {
+        LHAT_TEST(cases[i].summary);
+        Checked c;
+        check_text(&c, cases[i].source);
+        LHAT_CHECK_EQ_INT(c.parsed.diagnostic_count, 0);
+        LHAT_CHECK_EQ_INT(c.checked.diagnostic_count, 0);
+        char *text = hover_text(&c, last_offset(&c, cases[i].needle));
+        expect_contains(text, cases[i].summary);
+        LHAT_CHECK(text != NULL && strstr(text, "return^") == NULL &&
+                   strstr(text, "\n: ") == NULL, "body or duplicate type leaked: %s", text ? text : "");
+        free(text);
+        check_dispose(&c);
+    }
+
+    LHAT_TEST("an inferred overload set does not leak its one-line body");
+    Checked generic;
+    check_text(&generic, "let^id = f^value{ return^value }\nlet^a = id(1)\nlet^b = id(\"a\")\n");
+    LHAT_CHECK_EQ_INT(generic.checked.diagnostic_count, 0);
+    char *overloads = hover_text(&generic, first_offset(&generic, "id ="));
+    expect_contains(overloads, "let^id:");
+    LHAT_CHECK(overloads != NULL && strstr(overloads, "return^") == NULL,
+               "an overload set leaked its body: %s", overloads ? overloads : "");
+    free(overloads);
+    check_dispose(&generic);
+
+    LHAT_TEST("a long parameter does not truncate the return type");
+    Checked c;
+    check_text(&c,
+        "let^wide = f^arg:t^{\n"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:number^,\n"
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:number^,\n"
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc:number^,\n"
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:number^,\n"
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:number^\n"
+        "} -> string^{ return^\"ok\" }\n");
+    LHAT_CHECK_EQ_INT(c.parsed.diagnostic_count, 0);
+    LHAT_CHECK_EQ_INT(c.checked.diagnostic_count, 0);
+    char *text = hover_text(&c, first_offset(&c, "wide"));
+    expect_contains(text, " -> string^;\n```");
+    LHAT_CHECK(text != NULL && strlen(text) > 512, "expected the complete structurally limited signature");
+    free(text);
+    check_dispose(&c);
+}
+
 int main(void)
 {
     {
@@ -593,6 +684,7 @@ int main(void)
         check_dispose(&c);
     }
     test_definition();
+    test_callable_summaries();
     test_member();
     test_declaration();
     test_a_declaration_shows_its_type();

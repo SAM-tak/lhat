@@ -6,11 +6,9 @@
 // would be one more thing to keep in step, and would disagree exactly where
 // the rules are hard.
 //
-// What is shown is the source that introduced the name, cut to its first
-// line, then the type the checker settled on, then the comments written
-// against it. The line and the type say different things -- one is what the
-// writer put down, the other what was made of it -- and a definition with no
-// annotation has only the second.
+// Callable declarations show one signature: written parameter names with
+// checked types, without the body. Other declarations retain their source
+// preview and inferred type. Documentation follows either form.
 //
 // The line and the comments are cut from the unit that holds the definition,
 // which 05 の 6.1 lets be another unit than the one the cursor is in. So the
@@ -29,9 +27,185 @@
 #include "type.h"
 #include "util.h"
 
-// A type written out for one hover. Past this a reader is not helped by more,
-// and lhat_type_write cuts with an ellipsis rather than refusing.
-#define LHAT_HOVER_TYPE_BUFFER 512
+static bool append(char **buffer, size_t *used, size_t *capacity,
+                   const char *text, size_t length);
+static bool append_text(char **buffer, size_t *used, size_t *capacity,
+                        const char *text);
+
+typedef struct {
+    char *type;
+    bool named;
+    bool annotation_matches;
+} HoverParameter;
+
+typedef struct LspHoverCallable {
+    // A parameter-free signature supplies the modifiers and return spelling,
+    // including coroutine and tuple results, from the shared type writer.
+    char *empty;
+    size_t prefix_length;
+    HoverParameter *parameters;
+    size_t count;
+    bool has_source;
+    uint32_t source_offset;
+} LspHoverCallable;
+
+static char *type_text(const LhatType *type)
+{
+    size_t size = lhat_type_write(type, NULL, 0) + 1;
+    char *text = malloc(size);
+    if (text != NULL) lhat_type_write(type, text, size);
+    return text;
+}
+
+static void callable_dispose(LspHoverCallable *callable)
+{
+    if (callable == NULL) return;
+    for (size_t i = 0; i < callable->count; i++)
+        free(callable->parameters[i].type);
+    free(callable->parameters);
+    free(callable->empty);
+    free(callable);
+}
+
+static LspHoverCallable *callable_parts(const LhatType *type)
+{
+    if (type == NULL || type->kind != LHAT_TYPE_FUNC ||
+        type->specialization_base != NULL) return NULL;
+    LspHoverCallable *parts = calloc(1, sizeof *parts);
+    if (parts == NULL) return NULL;
+    size_t count = type->v.func.takes_self + (type->v.func.variadic != NULL);
+    for (const LhatTypeList *p = type->v.func.params; p != NULL; p = p->next) count++;
+    parts->parameters = calloc(count + 1, sizeof *parts->parameters);
+    if (parts->parameters == NULL) { free(parts); return NULL; }
+    const char *self = type->v.func.mutable_self ? "mutable^self^" : "self^";
+    if (type->v.func.takes_self && !type->v.func.self_last)
+        parts->parameters[parts->count++].type = lsp_strdup(self);
+    for (const LhatTypeList *p = type->v.func.params; p != NULL; p = p->next) {
+        parts->parameters[parts->count++] = (HoverParameter){type_text(p->type), true, false};
+    }
+    if (type->v.func.variadic != NULL) {
+        parts->parameters[parts->count++] = (HoverParameter){type_text(type->v.func.variadic), true, false};
+    }
+    if (type->v.func.takes_self && type->v.func.self_last)
+        parts->parameters[parts->count++].type = lsp_strdup(self);
+    LhatType empty = *type;
+    empty.v.func.params = NULL;
+    empty.v.func.variadic = NULL;
+    empty.v.func.takes_self = false;
+    parts->empty = type_text(&empty);
+    parts->prefix_length = (type->v.func.closed ? strlen("closed^") : 0) + 2;
+    parts->has_source = type->source_body != NULL;
+    if (parts->has_source) parts->source_offset = type->source_body->offset;
+    // Preserve a short written type name only when it denotes the checked
+    // slot. Store the comparison, never an arena pointer across unit locks.
+    const LhatNode *param = parts->has_source ? type->source_body->v.func.params : NULL;
+    const LhatTypeList *slot = type->v.func.params;
+    for (size_t i = 0; param != NULL && i < parts->count; i++, param = param->next) {
+        if (!parts->parameters[i].named) continue;
+        const LhatType *inferred = param->v.param.variadic ? type->v.func.variadic
+                                      : slot != NULL ? slot->type : NULL;
+        const LhatNode *annotation = param->v.param.type;
+        parts->parameters[i].annotation_matches = annotation != NULL &&
+            lhat_type_equal(inferred, annotation->checked_type);
+        if (!param->v.param.variadic && slot != NULL) slot = slot->next;
+    }
+    bool ok = parts->empty != NULL;
+    for (size_t i = 0; i < parts->count; i++) ok = ok && parts->parameters[i].type != NULL;
+    if (!ok) { callable_dispose(parts); return NULL; }
+    return parts;
+}
+
+// Keep source offsets within their owning unit, including malformed edits.
+static bool append_source(char **text, size_t *used, size_t *capacity,
+                          const LhatUnit *unit, uint32_t start, uint32_t end)
+{
+    return start <= end && end <= unit->source.length &&
+           append(text, used, capacity, unit->source.text + start, end - start);
+}
+
+// The declaration's selected target and value, not its first sibling.
+static const LhatNode *declaration_value(const LhatNode *node, uint32_t offset,
+                                         const LhatNode **name)
+{
+    if (node == NULL) return NULL;
+    if (node->kind == LHAT_NODE_DEFINE || node->kind == LHAT_NODE_REASSIGN) {
+        const LhatNode *value = node->v.binding.values;
+        for (const LhatNode *target = node->v.binding.targets; target != NULL;
+             target = target->next) {
+            const LhatNode *n = target->kind == LHAT_NODE_PARAM ? target->v.param.name : target;
+            if (n != NULL && offset >= lhat_node_span_start(n) && offset < n->end) {
+                *name = n;
+                return value;
+            }
+            if (value != NULL) value = value->next;
+        }
+    } else if (node->kind == LHAT_NODE_TABLE_ENTRY && !node->v.entry.declared) {
+        *name = node->v.entry.key;
+        return node->v.entry.value;
+    }
+    return NULL;
+}
+
+static char *callable_summary(const LhatUnit *unit, const LhatNode *node,
+                              const LspHoverPart *part)
+{
+    const LhatNode *name = NULL;
+    const LhatNode *func = declaration_value(node, part->definition, &name);
+    const LspHoverCallable *parts = part->callable;
+    if (name == NULL || (parts == NULL &&
+        (func == NULL || func->kind != LHAT_NODE_FUNC || part->type == NULL))) return NULL;
+    // An overload selected at a call may belong to a different declaration.
+    // Do not borrow parameter names from an unrelated arm.
+    bool names = parts != NULL && func != NULL && func->kind == LHAT_NODE_FUNC &&
+                 (!parts->has_source || parts->source_offset == func->offset);
+    size_t count = 0;
+    if (names) {
+        for (const LhatNode *p = func->v.func.params; p != NULL; p = p->next) count++;
+        names = count == parts->count;
+    }
+
+    char *text = NULL;
+    size_t used = 0, capacity = 0;
+    uint32_t prefix_end = lhat_node_span_start(name);
+    if (node->kind == LHAT_NODE_DEFINE || node->kind == LHAT_NODE_REASSIGN)
+        prefix_end = lhat_node_span_start(node->v.binding.targets);
+    bool ok = append_source(&text, &used, &capacity, unit, lhat_node_span_start(node), prefix_end) &&
+              append_source(&text, &used, &capacity, unit, lhat_node_span_start(name), name->end);
+    if (!names) {
+        ok = ok && append_text(&text, &used, &capacity, ": ") &&
+             part->type != NULL && append_text(&text, &used, &capacity, part->type);
+        if (!ok) { free(text); return NULL; }
+        return text;
+    }
+    ok = ok && append_text(&text, &used, &capacity, " = ") &&
+         append(&text, &used, &capacity, parts->empty, parts->prefix_length);
+    const LhatNode *param = func->v.func.params;
+    for (size_t i = 0; ok && i < parts->count; i++, param = param->next) {
+        if (i != 0) ok = append_text(&text, &used, &capacity, ", ");
+        if (parts->parameters[i].named) {
+            const LhatNode *n = param->v.param.name;
+            ok = ok && (param->v.param.variadic
+                ? append_text(&text, &used, &capacity, "...")
+                : n != NULL && append_source(&text, &used, &capacity, unit,
+                                             lhat_node_span_start(n), n->end));
+            ok = ok && append_text(&text, &used, &capacity, ":");
+        }
+        const LhatNode *annotation = param->v.param.type;
+        uint32_t start = annotation != NULL ? lhat_node_span_start(annotation) : 0;
+        bool written = parts->parameters[i].annotation_matches && annotation != NULL &&
+            annotation->end >= start && annotation->end <= unit->source.length &&
+            annotation->end - start < strlen(parts->parameters[i].type) &&
+            annotation->end - start <= 120 &&
+            memchr(unit->source.text + start, '\n', annotation->end - start) == NULL;
+        ok = ok && (written ? append_source(&text, &used, &capacity, unit, start, annotation->end)
+                            : append_text(&text, &used, &capacity, parts->parameters[i].type));
+        if (param->v.param.fallback != NULL)
+            ok = ok && append_text(&text, &used, &capacity, " = …");
+    }
+    ok = ok && append_text(&text, &used, &capacity, parts->empty + parts->prefix_length);
+    if (!ok) { free(text); return NULL; }
+    return text;
+}
 
 // The statement that introduced the name at `offset` -- the innermost node
 // whose span covers it and which is a form that binds. Found by walking, since
@@ -196,8 +370,8 @@ static void first_line(const LhatUnit *unit, const LhatNode *node,
     *length = span;
 }
 
-// What the defining unit shows of a definition: the first line of the form
-// that declared it, and -- 01 の 6.4 -- the comment block written above it,
+// What the defining unit shows: a callable summary or a source preview,
+// and the comment block written above it,
 // which is what it says about itself. There is one reading of that block
 // (ast.c), so what a hover shows and what a host reads through
 // lhat_unit_documentation cannot drift apart. Both copied out, since the
@@ -205,11 +379,26 @@ static void first_line(const LhatUnit *unit, const LhatNode *node,
 static void describe_node(const LhatUnit *unit, const LhatNode *node,
                           LspHoverPart *part)
 {
+    // An unused declaration has no use resolution, but its literal was checked.
+    if (part->type == NULL && part->callable == NULL) {
+        const LhatNode *name = NULL;
+        const LhatNode *value = declaration_value(node, part->definition, &name);
+        if (value != NULL && value->kind == LHAT_NODE_FUNC) {
+            part->callable = callable_parts(value->checked_type);
+            if (part->callable != NULL) part->type = type_text(value->checked_type);
+        }
+    }
     const char *line = NULL;
     size_t line_length = 0;
     first_line(unit, node, &line, &line_length);
     free(part->line);
-    part->line = lsp_strndup(line, line_length);
+    part->line = callable_summary(unit, node, part);
+    if (part->line != NULL) {
+        free(part->type);
+        part->type = NULL;
+    } else {
+        part->line = lsp_strndup(line, line_length);
+    }
 
     free(part->documentation);
     part->documentation = NULL;
@@ -299,19 +488,12 @@ bool lsp_hover_locate(const LhatUnit *unit, uint32_t offset, LspHoverPart *out)
     }
 
     if (typed != NULL && typed->type != NULL) {
-        // What it answers is how much the whole type wanted, which is more
-        // than this buffer holds for a big one -- and what is *in* the
-        // buffer then is the cut form ending in an ellipsis. A hover shows
-        // the cut form (07 の 4 章: a shorter answer says more here), so
-        // what is read back out is what fits.
-        char inferred[LHAT_HOVER_TYPE_BUFFER];
+        // Keep structural elision, but allocate the measured size so a long
+        // parameter cannot cut off the return type or closing punctuation.
         const LhatType *shown = resolved != NULL && resolved->call_signature != NULL
                                    ? resolved->call_signature : typed->type;
-        size_t length = lhat_type_write(shown, inferred, sizeof inferred);
-        if (length > sizeof inferred - 1) {
-            length = strlen(inferred);
-        }
-        out->type = lsp_strndup(inferred, length);
+        out->type = type_text(shown);
+        out->callable = callable_parts(shown);
         // 14.15 with 14.11: a definition still holding a member nothing has
         // provided is one to compose onto, not one to make anything of --
         // and 14.11 refuses its new. The written form does not say so
@@ -348,7 +530,8 @@ bool lsp_hover_locate(const LhatUnit *unit, uint32_t offset, LspHoverPart *out)
         out->definition_path = lsp_strdup(resolved->definition_path);
     } else if (definition != NULL) {
         out->has_definition = true;
-        out->definition = lhat_node_span_start(definition);
+        out->definition = resolved != NULL ? resolved->definition
+                              : lhat_node_span_start(declared_name);
         describe_node(unit, definition, out);
     }
     return true;
@@ -465,6 +648,7 @@ cJSON *lsp_hover_render(const LspHoverPart *part)
 void lsp_hover_part_dispose(LspHoverPart *part)
 {
     free(part->type);
+    callable_dispose(part->callable);
     free(part->abstract_note);
     free(part->definition_path);
     free(part->line);

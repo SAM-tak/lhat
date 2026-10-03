@@ -6,8 +6,8 @@
 //
 // In two halves, because the two may be in two units. What the checker
 // settled the name to -- its type, and where its definition is -- is read
-// off the unit the cursor is in; the definition's own line and the comments
-// above it are cut from the unit that holds it, which 05 の 6.1 lets be
+// off the unit the cursor is in; declaration syntax and comments come from
+// the unit that holds the definition, which 05 の 6.1 lets be
 // another file. A unit pointer must not outlive the workspace lock
 // (lsp/workspace.h), so nothing pointer-shaped crosses between the halves:
 // the first leaves strings and offsets, the second reads them.
@@ -32,6 +32,9 @@ typedef struct {
     // What the checker settled on, written out (type.h's spelling); NULL
     // when nothing there has a type.
     char *type;
+    // Owned callable slots, serialized before leaving the checked unit.
+    // Parameter names are added when the declaring unit is described.
+    struct LspHoverCallable *callable;
     // 14.15: the member still left abstract, as the note shown above the
     // block; NULL when none.
     char *abstract_note;
@@ -41,9 +44,9 @@ typedef struct {
     bool has_definition;
     char *definition_path;
     uint32_t definition;
-    // What lsp_hover_describe fills from the defining unit: the definition's
-    // first line and the comment written above it. NULL until then, and NULL
-    // still when that unit could not be reached -- the type is shown alone.
+    // What lsp_hover_describe fills: a callable summary (consuming `type`)
+    // or the declaration's first line, and its documentation. NULL when the
+    // declaring unit could not be reached -- the type is shown alone.
     char *line;
     char *documentation;
 } LspHoverPart;
@@ -56,8 +59,8 @@ typedef struct {
 bool lsp_hover_locate(const LhatUnit *unit, uint32_t offset,
                       LspHoverPart *out);
 
-// The half read off the unit the definition is in: the first line of the
-// form that declared it, and what was written above. Leaves the part as it
+// The half read off the defining unit: its declaration summary and comments.
+// Leaves the part as it
 // was when the unit holds no tree (a binary unit, 05 の 10 章).
 void lsp_hover_describe(const LhatUnit *defining, LspHoverPart *part);
 
