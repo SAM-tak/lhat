@@ -547,16 +547,19 @@ static void test_named_diagnostics(void)
     }
     unit_dispose(&u);
 
-    // A code that knows nothing besides itself answers what it always did.
-    LHAT_TEST("but one that names nothing keeps its own message");
+    // One that names nothing but compared two types says both of them.
+    LHAT_TEST("a mismatch names the type expected and the type given");
     check_text(&u, "var^ x : string^ = 1\n");
     if (u.checked.diagnostic_count > 0) {
         const LhatCheckDiagnostic *d = &u.checked.diagnostics[0];
         LHAT_CHECK(d->name == NULL, "nothing to name");
         char message[128];
         lhat_check_message_write(NULL, d, message, sizeof message);
-        LHAT_CHECK(strcmp(message, lhat_check_error_message(d->code)) == 0,
-                   "the code's own message");
+        LHAT_CHECK(strcmp(message, "this value does not fit where it is written: "
+                                   "expected 'string^', got 'number^'") == 0,
+                   "both types: %s", message);
+        LHAT_CHECK(strcmp(lhat_check_message_id(d), "check.mismatch.typed") == 0,
+                   "under its own id");
     }
     unit_dispose(&u);
 }

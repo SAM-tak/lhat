@@ -48,9 +48,9 @@ static void test_operator_diagnostic_operands(void)
             if (d->code != LHAT_CHECK_ERR_NO_OPERATOR) continue;
             found = true;
             LHAT_CHECK(d->name_length == 1 && d->name[0] == operators[i][0], "operator retained");
-            LHAT_CHECK(d->operator_left != NULL && strstr(d->operator_left, left_types[i]) != NULL,
+            LHAT_CHECK(d->left_type != NULL && strstr(d->left_type, left_types[i]) != NULL,
                        "left type retained");
-            LHAT_CHECK(d->operator_right != NULL && strstr(d->operator_right, right_types[i]) != NULL,
+            LHAT_CHECK(d->right_type != NULL && strstr(d->right_type, right_types[i]) != NULL,
                        "right type retained");
             size_t length = lhat_check_message_write(NULL, root, NULL, 0);
             char *message = malloc(length + 1);
@@ -65,6 +65,34 @@ static void test_operator_diagnostic_operands(void)
         LHAT_CHECK(found, "operator failure found");
         unit_dispose(&u);
     }
+}
+
+static void test_mismatch_diagnostic_types(void)
+{
+    // A call no arm takes says what was given and what each arm asks for.
+    LHAT_TEST("a call fitting no arm names the arguments and every arm's parameters");
+    Unit u;
+    check_text(&u,
+               "let^ D = def^ {\n"
+               "    run = f^ self^, n:number^ -> bool^ { true^ },\n"
+               "    overload^run := f^ self^, s:string^ -> bool^ { true^ },\n"
+               "}\n"
+               "let^ d = D.new()\n"
+               "let^ r = d.run(true^)\n");
+    bool found = false;
+    for (size_t k = 0; k < u.checked.diagnostic_count; k++) {
+        const LhatCheckDiagnostic *d = &u.checked.diagnostics[k];
+        if (d->code != LHAT_CHECK_ERR_MISMATCH) continue;
+        found = true;
+        char message[256];
+        lhat_check_message_write(NULL, d, message, sizeof message);
+        LHAT_CHECK(strstr(message, "got '(bool^)'") != NULL &&
+                   strstr(message, "number^") != NULL &&
+                   strstr(message, "string^") != NULL &&
+                   strstr(message, " or ") != NULL, "both arms and the argument: %s", message);
+    }
+    LHAT_CHECK(found, "mismatch reported");
+    unit_dispose(&u);
 }
 
 static void test_error_handling_inference_gaps(void)
@@ -3522,6 +3550,7 @@ static void test_dropped_errors(void)
 int main(void)
 {
     test_operator_diagnostic_operands();
+    test_mismatch_diagnostic_types();
     test_error_handling_inference_gaps();
     test_any_operators();
     test_error_operand_diagnostics();

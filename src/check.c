@@ -37,8 +37,8 @@ void chk_report_fix(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
     LhatCheckDiagnostic *d = &r->diagnostics[r->diagnostic_count++];
     d->cause = NULL;
     d->cause_path = NULL;
-    d->operator_left = NULL;
-    d->operator_right = NULL;
+    d->left_type = NULL;
+    d->right_type = NULL;
     d->code = code;
     d->relaxed_ok = code == LHAT_CHECK_ERR_ACCESS_ON_MAYBE_NIL ||
                    code == LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL ||
@@ -4968,6 +4968,13 @@ static const LhatMessageEntry CHECK_NAMED_MESSAGES[] = {
         "override^ has to be usable where the original was: {member}"},
 };
 
+// The codes reported with the two types they compare as well: the value's,
+// and the one where it is written.
+static const LhatMessageEntry CHECK_TYPED_MESSAGES[] = {
+    [LHAT_CHECK_ERR_MISMATCH] = {"check.mismatch.typed",
+        "this value does not fit where it is written: expected '{expected}', got '{actual}'"},
+};
+
 const char *lhat_check_error_message(LhatCheckErrorCode code)
 {
     const LhatMessageEntry *entry = LHAT_MESSAGE_AT(CHECK_MESSAGES, code);
@@ -4987,13 +4994,20 @@ static const LhatMessageEntry *check_entry(
         diagnostic->name != NULL
             ? LHAT_MESSAGE_AT(CHECK_NAMED_MESSAGES, diagnostic->code)
             : NULL;
+    const LhatMessageEntry *typed =
+        named == NULL && diagnostic->left_type != NULL &&
+                diagnostic->right_type != NULL
+            ? LHAT_MESSAGE_AT(CHECK_TYPED_MESSAGES, diagnostic->code)
+            : NULL;
     return named != NULL ? named
+         : typed != NULL ? typed
                          : LHAT_MESSAGE_AT(CHECK_MESSAGES, diagnostic->code);
 }
 
 LHAT_MESSAGE_TABLES(lhat_check_message_tables,
     {CHECK_MESSAGES, LHAT_MESSAGE_COUNT(CHECK_MESSAGES)},
-    {CHECK_NAMED_MESSAGES, LHAT_MESSAGE_COUNT(CHECK_NAMED_MESSAGES)})
+    {CHECK_NAMED_MESSAGES, LHAT_MESSAGE_COUNT(CHECK_NAMED_MESSAGES)},
+    {CHECK_TYPED_MESSAGES, LHAT_MESSAGE_COUNT(CHECK_TYPED_MESSAGES)})
 
 const char *lhat_check_message_id(const LhatCheckDiagnostic *diagnostic)
 {
@@ -5015,7 +5029,7 @@ size_t lhat_check_message_write(const struct LhatProgram *program,
 {
     const LhatMessageEntry *entry =
         diagnostic != NULL ? check_entry(diagnostic) : NULL;
-    LhatMessageArg args[NAME_HOLE_COUNT + 2];
+    LhatMessageArg args[NAME_HOLE_COUNT + 4];
     size_t count = 0;
     if (entry != NULL && diagnostic->name != NULL) {
         for (; count < NAME_HOLE_COUNT; count++) {
@@ -5024,13 +5038,16 @@ size_t lhat_check_message_write(const struct LhatProgram *program,
             args[count].length = diagnostic->name_length;
         }
     }
-    if (diagnostic != NULL && diagnostic->operator_left != NULL) {
-        args[count++] = (LhatMessageArg){"left", diagnostic->operator_left,
-                                       strlen(diagnostic->operator_left)};
+    // Each type under both of the names a text may call it by.
+    if (diagnostic != NULL && diagnostic->left_type != NULL) {
+        size_t length = strlen(diagnostic->left_type);
+        args[count++] = (LhatMessageArg){"left", diagnostic->left_type, length};
+        args[count++] = (LhatMessageArg){"actual", diagnostic->left_type, length};
     }
-    if (diagnostic != NULL && diagnostic->operator_right != NULL) {
-        args[count++] = (LhatMessageArg){"right", diagnostic->operator_right,
-                                       strlen(diagnostic->operator_right)};
+    if (diagnostic != NULL && diagnostic->right_type != NULL) {
+        size_t length = strlen(diagnostic->right_type);
+        args[count++] = (LhatMessageArg){"right", diagnostic->right_type, length};
+        args[count++] = (LhatMessageArg){"expected", diagnostic->right_type, length};
     }
     const char *text =
         entry != NULL ? lhat_program_text(program, entry->id, entry->text)

@@ -388,9 +388,11 @@ typedef struct LhatCheckDiagnostic {
     // Zero retains the usual name_length span (or a single character).
     uint32_t highlight_length;
 
-    // Frozen operand descriptions, owned by the semantic arena.
-    const char *operator_left;
-    const char *operator_right;
+    // Frozen descriptions of the two types the message compares -- an
+    // operator's operands, or a value and the type where it is written --
+    // owned by the semantic arena.
+    const char *left_type;
+    const char *right_type;
 
     // 07 §6: the fixes this diagnostic knows how to make, read through
     // lhat_fix_slot_read. The stage that refused is the one that knows what

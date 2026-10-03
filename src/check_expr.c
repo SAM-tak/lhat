@@ -53,6 +53,39 @@ static bool runtime_has_unresolved_arguments(const LhatType *type, const Runtime
     return false;
 }
 
+// A type written out for a message's hole, frozen in the semantic arena.
+static const char *type_text(Checker *c, const LhatType *type)
+{
+    size_t length = lhat_type_write(type, NULL, 0);
+    char *text = lhat_type_semantic_alloc(c->result->types, length + 1);
+    if (text != NULL) lhat_type_write(type, text, length + 1);
+    return text;
+}
+
+// Texts joined into one, each followed by `between` but the last, in parentheses
+// when `wrap` -- an argument list, or the parameters an arm asks for.
+static const char *joined_text(Checker *c, const char *const *parts, size_t count,
+                               const char *between, bool wrap)
+{
+    size_t gap = strlen(between), length = wrap ? 2 : 0;
+    for (size_t i = 0; i < count; i++) {
+        length += (parts[i] != NULL ? strlen(parts[i]) : 0) + gap;
+    }
+    char *text = lhat_type_semantic_alloc(c->result->types, length + 1);
+    if (text == NULL) return NULL;
+    size_t at = 0;
+    if (wrap) text[at++] = '(';
+    for (size_t i = 0; i < count; i++) {
+        if (i > 0) { memcpy(text + at, between, gap); at += gap; }
+        size_t part = parts[i] != NULL ? strlen(parts[i]) : 0;
+        memcpy(text + at, parts[i], part);
+        at += part;
+    }
+    if (wrap) text[at++] = ')';
+    text[at] = '\0';
+    return text;
+}
+
 void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
                 LhatType *target, LhatCheckErrorCode code)
 {
@@ -70,9 +103,15 @@ void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
     if (!ok) {
         size_t before = c->result->diagnostic_count;
         chk_report(c, at, code);
-        if (c->result->diagnostic_count > before &&
-            lhat_type_conforms(value, target)) {
-            c->result->diagnostics[before].relaxed_ok = true;
+        if (c->result->diagnostic_count > before) {
+            LhatCheckDiagnostic *d = &c->result->diagnostics[before];
+            d->relaxed_ok = d->relaxed_ok || lhat_type_conforms(value, target);
+            // An undecided value was reported where it went wrong; writing
+            // it as '?' here says nothing more.
+            if (value != NULL && target != NULL && !lhat_type_has_gap(value)) {
+                d->left_type = type_text(c, value);
+                d->right_type = type_text(c, target);
+            }
         }
     }
     // Another view may write entries the literal did not originally contain.
@@ -811,14 +850,6 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
     return lhat_type_call_answer(carrier);
 }
 
-static const char *operator_type_text(Checker *c, const LhatType *type)
-{
-    size_t length = lhat_type_write(type, NULL, 0);
-    char *text = lhat_type_semantic_alloc(c->result->types, length + 1);
-    if (text != NULL) lhat_type_write(type, text, length + 1);
-    return text;
-}
-
 static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
                                 LhatType *left, LhatType *right)
 {
@@ -830,8 +861,8 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
         size_t length = 0;
         d->name = chk_operator_name(op, &length);
         d->name_length = (uint32_t)length;
-        d->operator_left = operator_type_text(c, left);
-        d->operator_right = operator_type_text(c, right);
+        d->left_type = type_text(c, left);
+        d->right_type = type_text(c, right);
     }
     return answer;
 }
@@ -2371,7 +2402,30 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                                          (const LhatCheckType *const *)args, tracked);
             }
         }
+        // No arm takes these: the arguments, against every arm at once.
+        size_t before = c->result->diagnostic_count;
         chk_report(c, node, LHAT_CHECK_ERR_MISMATCH);
+        if (c->result->diagnostic_count > before) {
+            const char *parts[LHAT_CHECK_MAX_TRACKED_ARGS];
+            for (size_t i = 0; i < tracked; i++) parts[i] = type_text(c, args[i]);
+            const char *given_text = joined_text(c, parts, tracked, ", ", true);
+            // Each arm by the parameters it asks for; the rest of its
+            // signature is not what refused the call.
+            const char *arms[LHAT_CHECK_MAX_TRACKED_ARGS];
+            size_t arm_count = 0;
+            for (const LhatTypeList *arm = callee->v.composite.arms;
+                 arm != NULL && arm_count < LHAT_CHECK_MAX_TRACKED_ARGS; arm = arm->next) {
+                size_t n = 0;
+                for (const LhatTypeList *p = arm->type->kind == LHAT_TYPE_FUNC ? arm->type->v.func.params : NULL;
+                     p != NULL && n < LHAT_CHECK_MAX_TRACKED_ARGS; p = p->next) {
+                    parts[n++] = type_text(c, p->type);
+                }
+                arms[arm_count++] = joined_text(c, parts, n, ", ", true);
+            }
+            LhatCheckDiagnostic *d = &c->result->diagnostics[before];
+            d->left_type = given_text;
+            d->right_type = joined_text(c, arms, arm_count, " or ", false);
+        }
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
@@ -2382,7 +2436,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         if (common != NULL) {
             effect_union = true;
             if (c->in_function) {
-                const char *signature = operator_type_text(c, pure);
+                const char *signature = type_text(c, pure);
                 chk_report_named_span(c, node->v.access.target,
                     LHAT_CHECK_ERR_FUNCTION_CALLS_UNION, signature,
                     signature != NULL ? strlen(signature) : 0);

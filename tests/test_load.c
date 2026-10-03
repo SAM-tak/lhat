@@ -89,7 +89,7 @@ static void test_text(void)
             "return^ \"accepted\"\n");
         LHAT_CHECK_RAN_TEXT(ran,
                             "bad.lh:1:20: error: this value does not fit where "
-                            "it is written\n"
+                            "it is written: expected 'number^', got 'string^'\n"
                             "bad.lh:2:10: error: no such name in scope: nothere");
         lhat_test_ran_dispose(&ran);
     }
