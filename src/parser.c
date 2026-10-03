@@ -785,20 +785,6 @@ static LhatNode *parse_type_atom(Parser *p)
     if (check_hat(p, "p")) {
         return parse_type_function(p, false);
     }
-    // 15.13: the same mark a body is written with, in the type that asks for
-    // one. What follows has to be a signature.
-    if (check_hat(p, "closed")) {
-        advance(p);
-        if (!check_hat(p, "f") && !check_hat(p, "p")) {
-            report(p, &p->current, LHAT_PARSE_ERR_CLOSED_NEEDS_BODY);
-            return NULL;
-        }
-        LhatNode *marked = parse_type_function(p, check_hat(p, "f"));
-        if (marked != NULL) {
-            marked->v.func.closed = true;
-        }
-        return marked;
-    }
     if (check_hat(p, "c") && p->ahead.kind == LHAT_TOKEN_OP &&
         p->ahead.v.op == LHAT_OP_LBRACE) {
         return parse_type_coroutine(p);
@@ -2064,27 +2050,6 @@ static LhatNode *parse_primary(Parser *p)
                     return type_value_from(p, &head, made);
                 }
                 return made;
-            }
-            // 15.13: the mark stands before the kind, and marks a body --
-            // so what follows has to be one.
-            if (check_hat(p, "closed")) {
-                LhatToken head = p->current;
-                advance(p);
-                if (!check_hat(p, "f") && !check_hat(p, "p")) {
-                    report(p, &p->current, LHAT_PARSE_ERR_CLOSED_NEEDS_BODY);
-                    return NULL;
-                }
-                LhatNode *marked =
-                    parse_subroutine_or_type(p, check_hat(p, "f"));
-                if (marked != NULL) {
-                    marked->v.func.closed = true;
-                    // 02 の 13.14: the mark rides whichever reading the
-                    // decider chose, as it does in a type position.
-                    if (marked->kind == LHAT_NODE_TYPE_FUNC) {
-                        return type_value_from(p, &head, marked);
-                    }
-                }
-                return marked;
             }
             if (check_hat(p, "if")) {
                 advance(p);
@@ -5561,8 +5526,6 @@ static const LhatMessageEntry PARSE_MESSAGES[] = {
         "one of the template's, or a bare name for one of its own"},
     [LHAT_PARSE_ERR_TEMPLATE_NEEDS_BODY] = {"parse.template-needs-body",
         "template^ marks a body: write template^f^ ... or template^p^ ..."},
-    [LHAT_PARSE_ERR_CLOSED_NEEDS_BODY] = {"parse.closed-needs-body",
-        "closed^ marks a body: write closed^f^ ... or closed^p^ ..."},
     [LHAT_PARSE_ERR_CATCH_AFTER_BARE] = {"parse.catch-after-bare",
         "a bare catch^: takes whatever is left, so nothing follows "
         "it -- write the narrower arms first"},

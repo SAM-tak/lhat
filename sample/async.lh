@@ -5,7 +5,7 @@
 言語の外であり、これがその外側である。**L^ で書けている**ことがこの単位の主張で、
 ホストから借りているのは期限（`std.async.timer`）と待ち（`std.async.wait`）の2つだけ。
 
-    let^ a = spawn(closed^p^ ... { … await^ delay(0.1) … })
+    let^ a = spawn(p^ ... { … await^ delay(0.1) … })
 
 走らせ方は `run()`。全部のタスクが済むまで回る。
 ]#

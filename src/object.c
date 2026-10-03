@@ -565,7 +565,6 @@ static bool rt_fits(const LhatRuntimeType *a, const LhatRuntimeType *b,
         case LHAT_TYPE_RT_SUBROUTINE:
             if ((b->is_function && !a->is_function) ||
                 a->takes_self != b->takes_self || a->self_last != b->self_last ||
-                (b->closed && !a->closed) ||
                 (a->mutable_self && !b->mutable_self) ||
                 (b->answers_fresh && !a->answers_fresh) ||
                 a->part_count != b->part_count ||
@@ -1267,9 +1266,6 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             }
             return;
         case LHAT_TYPE_RT_SUBROUTINE: {
-            if (type->closed) {  // 15.13, before the kind as it is written
-                type_put_text(w, "closed^");
-            }
             type_put_text(w, type->is_function ? "f^" : "p^");
             // 14.4: in a type the receiver is a parameter, written as the
             // word itself -- and 11.3改 has it trail on a binary operator,
@@ -1468,7 +1464,6 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
                 // -- the checker refuses one where the other is written
                 // (type.c's conforms_func), and the two are written apart.
                 a->self_last != b->self_last ||
-                a->closed != b->closed ||  // 15.13, and for the same reason
                 a->mutable_self != b->mutable_self ||
                 a->answers_fresh != b->answers_fresh ||
                 a->part_count != b->part_count) {

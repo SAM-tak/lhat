@@ -19,7 +19,7 @@ let^sched = async.Scheduler.new()
 
 let^work = p^{
     std.io.print("worker started")
-    let^h = std.thread.spawn(closed^p^ ... {
+    let^h = std.thread.spawn(p^... {
         std.thread.sleep(0.12)
         return^42
     })

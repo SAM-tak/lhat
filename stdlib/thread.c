@@ -825,8 +825,7 @@ bool lhatstdlib_thread_register(LhatProgram *program)
     // 13.7: fn's own '...' takes any^ underneath, so a 'p^ ... { }' is the
     // closure this signature asks for (conformance on a variadic element is
     // contravariant, the same as an ordinary parameter's). What it closes
-    // over crosses with it as a snapshot (carry.h), so 15.13's closed^ is
-    // no longer asked for -- a closed^ one still fits, promising more.
+    // over crosses with it as a snapshot (carry.h).
     //
     // spawn's own '...' is any^ for the same reason read the other way round.
     // Naming the four carryable kinds here would read better, and would also

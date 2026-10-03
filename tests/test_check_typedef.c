@@ -137,13 +137,6 @@ static void test_alias_rebinding(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
     unit_dispose(&u);
 
-    LHAT_TEST("rebinding a descriptor still captures its runtime value");
-    check_text(&u,
-        "let^T = string^|nil^\n"
-        "let^f = closed^f^ { let^U = T\nreturn^ U.signature }\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_CLOSED_CAPTURES);
-    unit_dispose(&u);
-
     static const char *const ordinary[] = {
         "var^T = string^|nil^\nlet^U = T\n",
         "let^T = string^|nil^\nvar^U = T\n",

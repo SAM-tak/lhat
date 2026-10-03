@@ -613,8 +613,6 @@ static void test_callable_summaries(void)
          "take(2)", "take = p^self^, n:number^;"},
         {"let^ original = f^n:number^{ return^n }\nlet^alias = original\nlet^result = alias(2)\n",
          "alias(2)", "let^alias: f^number^ -> number^;"},
-        {"let^ stable = closed^f^n:number^ -> number^{ return^n }\nlet^result = stable(2)\n",
-         "stable(2)", "let^ stable = closed^f^n:number^ -> number^;"},
         {"let^Item = def^{ self^{ name = \"\", count = 0 } }\n"
          "let^report = p^items:t^{Item[]}{}\nreport({Item.new()})\n",
          "report({", "let^report = p^items:t^{Item[]};"},

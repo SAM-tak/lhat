@@ -2,13 +2,13 @@ import^std.thread
 
 let^a = "aaaaaa"
 
-# a は外の名前なので closed^ の本体では書けない。引数として渡す
-let^h = std.thread.spawn(closed^p^ ... {
-    std.thread.sleep(1)
-    # print(a) # this cause error when uncomment out
+let^h = std.thread.spawn(p^... {
     for^ i, x in^ ... { print(x) }
+    print("sleeping...")
+    std.thread.sleep(1)
+    print(a)
     return^ 1
-}, a)
+}, "arg0", 1)
 
 if^h fits^std.thread.ThreadHandle {
     let^first = h.join()

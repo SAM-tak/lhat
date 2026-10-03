@@ -1972,9 +1972,6 @@ static void test_dynamic_callable_fits(void)
 {
     struct { const char *value, *type; bool fits; } cases[] = {
         {"f^->bool^{true^}", "f^->bool^;", true},
-        {"closed^f^->bool^{true^}", "closed^f^->bool^;", true},
-        {"closed^f^->bool^{true^}", "f^->bool^;", true},
-        {"f^->bool^{true^}", "closed^f^->bool^;", false},
         {"f^->fresh^t^{}{{}}", "f^->fresh^t^{};", true},
         {"f^->t^{}{{}}", "f^->fresh^t^{};", false},
         {"f^v:t^{[string^]:number^}->bool^{true^}", "f^t^{[string^]:number^}->bool^;", true},

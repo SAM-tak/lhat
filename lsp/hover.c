@@ -93,7 +93,7 @@ static LspHoverCallable *callable_parts(const LhatType *type)
     empty.v.func.variadic = NULL;
     empty.v.func.takes_self = false;
     parts->empty = type_text(&empty);
-    parts->prefix_length = (type->v.func.closed ? strlen("closed^") : 0) + 2;
+    parts->prefix_length = 2;
     parts->has_source = type->source_body != NULL;
     if (parts->has_source) parts->source_offset = type->source_body->offset;
     // Preserve a short written type name only when it denotes the checked

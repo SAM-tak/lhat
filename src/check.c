@@ -1128,7 +1128,6 @@ LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node)
     }
     c->argument_signature = NULL;
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
-    func->v.func.closed = node->v.func.closed;  // 15.13
     func->v.func.answers_fresh = node->v.func.answers_fresh;  // 15.1改3
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
@@ -4920,11 +4919,6 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_CATCHES_NOTHING] = {"check.catches-nothing",
         "nothing before these catch^ arms can fail: an error reaches "
         "them by being written try^, and none is"},
-    [LHAT_CHECK_ERR_CLOSED_CAPTURES] = {"check.closed-captures",
-        "a closed^ body names nothing standing outside it: pass "
-        "this as an argument instead. An import^ed module, a name "
-        "the host bound, and L^ are reached without capturing and "
-        "may be written here: {name}"},
     [LHAT_CHECK_ERR_HOSTVALUE_ESCAPES] = {"check.hostvalue-escapes",
         "a host value lives on the stack and nowhere else; box it "
         "into the container type its library provides to keep it"},

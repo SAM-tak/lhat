@@ -600,7 +600,7 @@ static void test_purity(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // The promise flows closed^'s way round: written where none was
+    // The promise flows one way: written where none was
     // promised is fine, missing where one was is not.
     LHAT_TEST("a fresh^ method does not owe a plain seat anything");
     check_text(&u,

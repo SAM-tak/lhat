@@ -253,7 +253,7 @@ static void test_typed_channels(void)
             "let^ task = try^std.task.async((p^ { _yield^ 0 return^ 41 })())\n"
             "let^ typ:type^<std.task.Task<number^>> = %s\n"
             "let^ ch = try^std.channel.new(typ)\ntry^ch.push(task)\n"
-            "let^ worker = try^std.task.async(closed^p^ mine { _yield^ 0\n"
+            "let^ worker = try^std.task.async(p^ mine { _yield^ 0\n"
             "import^ std.task\nlet^ t = mine.demand(2)\n"
             "if^ t? { return^ (try^std.task.await(t)) + 1 }\nreturn^ 0\n}(ch))\n"
             "let^ n:number^ = try^std.task.await(worker)\nstd.task.stop()\nreturn^ n\n", descriptors[i]);

@@ -68,7 +68,6 @@ typedef enum {
     LHAT_PARSE_ERR_DUPLICATE_DELEGATE,        // 14.7改2: one delegate^ per def^
     LHAT_PARSE_ERR_DELEGATE_TARGET,           // 14.7改2: self^.name, or a name
     LHAT_PARSE_ERR_TEMPLATE_NEEDS_BODY,
-    LHAT_PARSE_ERR_CLOSED_NEEDS_BODY,         // 15.13: closed^ marks an f^/p^
     LHAT_PARSE_ERR_CATCH_AFTER_BARE,          // 04 の 4.5: the bare arm takes
                                               // what is left, so it is last
     LHAT_PARSE_ERR_CATCH_ARM_NEEDS_TYPE,      // 04 の 4.5: an arm names a

@@ -1482,12 +1482,6 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
     if (value->v.func.self_last != target->v.func.self_last) {
         return false;
     }
-    // 15.13: a promise, so it goes only one way. A body that names nothing
-    // outside itself stands wherever an ordinary one is written; an ordinary
-    // one where a closed^ is asked for would be a promise nobody made.
-    if (target->v.func.closed && !value->v.func.closed) {
-        return false;
-    }
     // 15.1改2: a permission, so it goes the other way round. A body that
     // never writes its receiver stands where writing was allowed for; one
     // that writes, standing where none was, would mutate through a seat
@@ -1495,7 +1489,7 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
     if (value->v.func.mutable_self && !target->v.func.mutable_self) {
         return false;
     }
-    // 15.1改3: a promise, closed^'s way round. One that answers something
+    // 15.1改3: a promise, so it goes only one way. One that answers something
     // new stands wherever; where newness was promised, one that promised
     // nothing may not stand.
     if (target->v.func.answers_fresh && !value->v.func.answers_fresh) {
@@ -2941,10 +2935,6 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             return;
 
         case LHAT_TYPE_FUNC: {
-            // 15.13: the mark stands before the kind, the way it is written.
-            if (type->v.func.closed) {
-                put_text(sink, "closed^");
-            }
             // 13.1's form. 13.2 writes '->' only when something is returned.
             put_text(sink, type->v.func.is_function ? "f^" : "p^");
             // 14.4: in a type the receiver is a parameter, written as the

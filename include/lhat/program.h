@@ -747,9 +747,8 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
 //
 // THIS IS A PROMISE ABOUT POINTERS. Declaring the relation says a pointer of
 // this type may be read as one of the base's -- true for C++ single
-// inheritance with no virtual bases, and unverifiable from here. 02 の 15.13's
-// closed^ is the same kind of thing: written by whoever knows, taken at its
-// word by everything downstream.
+// inheritance with no virtual bases, and unverifiable from here: written by
+// whoever knows, taken at its word by everything downstream.
 //
 // The base has to be registered already; NULL when it is not, when the name
 // is taken, or when there is no memory. Nothing else about the order

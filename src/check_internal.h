@@ -70,8 +70,7 @@ typedef struct Binding {
     // import^ root, a construct's own focus (8.9 with 12.1 and 16.3改2).
     LhatSpan keyword;
     // 05 の 8.7: the root an import^ bound. A name under it is read off
-    // L^.modules wherever it is written, so naming one captures nothing --
-    // which is what 15.13 has to know to let a closed^ body write it. A
+    // L^.modules wherever it is written, so naming one captures nothing. A
     // require^ landing on the same root clears this, the same way
     // compile.c's Local does.
     bool import_root;
@@ -443,12 +442,6 @@ typedef struct {
     // written inside another measures against its own.
     Scope *body_scope;
 
-    // 15.13: the same boundary for the innermost closed^ body, which a name
-    // found past may not be. NULL where no such body stands around this one
-    // -- and it is not restored the way `body_scope` is at every literal:
-    // a body written inside a closed^ one is inside it too, so the mark
-    // reaches through.
-    Scope *closed_scope;
 
     // 04 の 4.5: the statements with catch^ arms being checked, if any. A
     // try^ written in them hands its errors here rather than to the
