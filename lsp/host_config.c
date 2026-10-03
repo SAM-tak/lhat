@@ -428,14 +428,16 @@ static void apply_function(const cJSON *entry, LhatProgram *program)
         // Match the full declaration so a custom API with a similar name is
         // not assigned unrelated semantics. This also handles existing dumps.
         if (registered && strcmp(module, "std.task") == 0) {
-            LhatInstantiationCheckHandler handler = NULL;
-            if (strcmp(name, "async") == 0 &&
-                strcmp(signature, LHAT_TASK_ASYNC_SIGNATURE) == 0) {
-                handler = task_check_async;
+            // The arms are registered in the order task_check.h lists them.
+            size_t arm = SIZE_MAX;
+            if (strcmp(name, "async") == 0) {
+                arm = strcmp(signature, LHAT_TASK_ASYNC_SIGNATURE) == 0 ? 0
+                    : strcmp(signature, LHAT_TASK_ASYNC_CALL_SIGNATURE) == 0 ? 1
+                    : SIZE_MAX;
             }
-            if (handler != NULL) {
+            if (arm != SIZE_MAX) {
                 lhat_register_instantiation_check_handler(program, module, NULL,
-                    name, 0, handler, NULL);
+                    name, arm, task_check_async, NULL);
             }
         }
         return;

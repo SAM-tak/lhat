@@ -225,6 +225,13 @@ typedef struct LhatTypeList {
     struct LhatTypeList *next;
 } LhatTypeList;
 
+// 03 の 3.4改6: what an ARGn expression reads off its argument's type.
+typedef enum LhatTypeAttribute {
+    LHAT_TYPE_ATTRIBUTE_NONE,
+    LHAT_TYPE_ATTRIBUTE_RESULT,  // .resultType: a coroutine's last resume
+    LHAT_TYPE_ATTRIBUTE_RETURN   // .ReturnType: what a subroutine's call answers
+} LhatTypeAttribute;
+
 struct LhatType {
     LhatTypeKind kind;
     bool coroutine_top;
@@ -242,7 +249,7 @@ struct LhatType {
         struct {
             size_t index;
             LhatType *bound;
-            bool result_type;
+            LhatTypeAttribute attribute;
             size_t type_argument; // One-based projection index; zero means none.
         } argument;
         struct {
@@ -511,7 +518,8 @@ LhatModuleRoot *lhat_module_root_new(LhatTypeArena *arena,
                                     const struct LhatNode *declaration,
                                     const char *name, size_t length, const char *path);
 
-LhatType *lhat_type_result_attribute(LhatTypeArena *arena, LhatType *type);
+LhatType *lhat_type_result_attribute(LhatTypeArena *arena, LhatType *type,
+                                     LhatTypeAttribute attribute);
 LhatType *lhat_type_argument_attribute(LhatTypeArena *arena, LhatType *type, size_t index);
 LhatType *lhat_type_instantiate_receiver(LhatTypeArena *arena, LhatType *type, LhatType *receiver);
 LhatType *lhat_type_instantiate_result(LhatTypeArena *arena, LhatType *type,

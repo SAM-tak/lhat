@@ -2165,15 +2165,21 @@ L^.modules            機械のもの
 #### タスクごとの機械 — `std.task`
 
 > **タスク1つに機械1台。N 本の OS スレッドがそれらを順に回す。ジョブは
-> carry した「まだ始まっていないコルーチン」か `p^...` の閉包。**
+> carry した「まだ始まっていないコルーチン」か、引数を取らない閉包。**
 
 ```lhat
 std.task.start(6)                  # 6本。何も言わなければコア数
 let^ t1 = std.task.async(gen1())   # gen1 が yieldable なら gen1() は
 let^ t2 = std.task.async(gen2())   # 未開始コルーチン（8.8改3）
 std.task.await(t1)                 # 2つは別スレッドで並行
+let^ t3 = std.task.async(p^ -> number^ { return^ heavy() })   # 閉包は呼ばれる
 std.task.stop()
 ```
+
+閉包はタスクの機械で引数なしに呼ばれ、その返り値がタスクの答えになる
+（型は 03 の 3.4改6 の `ARG0.ReturnType`）。yield しない本体でもスライスで
+横取りされる（02 の 15.15）ので、止まる必要のないジョブを `_yield^` で
+コルーチンに仕立てる必要はない。yieldable な閉包は呼んだもの（`gen()`）を渡す。
 
 std.thread は呼ぶたびに機械と OS スレッドを1つ作る（実測 1.55ms/本）。
 std.task が払うのはタスクごとの機械（実測 3µs）と登録の写し（実測 35〜40µs）だけで、

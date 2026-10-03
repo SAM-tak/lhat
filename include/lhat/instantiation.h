@@ -40,6 +40,10 @@ const LhatCheckType *lhat_check_type_result(const LhatCheckType *type);
 // NULL means not a coroutine; a coroutine ending without a value answers nil.
 const LhatCheckType *lhat_check_coroutine_result(LhatInstantiationContext *context,
                                                const LhatCheckType *type);
+// NULL means not a subroutine; what a call answers (the coroutine, for a
+// yielding body), and nil for a signature answering nothing.
+const LhatCheckType *lhat_check_function_result(LhatInstantiationContext *context,
+                                              const LhatCheckType *type);
 const LhatCheckType *lhat_check_type_any(LhatInstantiationContext *context);
 const LhatCheckType *lhat_check_type_nil(LhatInstantiationContext *context);
 bool lhat_check_type_single_slot(const LhatCheckType *type);

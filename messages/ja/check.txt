@@ -145,8 +145,8 @@ operator-on-maybe-error = このオペランドはエラー値である可能性
 
 # type-argument-reference = ARGn must name a fixed parameter of the enclosing signature, in its result type
 type-argument-reference = ARGn は署名の返り値型の中で、その署名の固定引数の位置を指定する必要がある
-# type-attribute = this type has no such type attribute; resultType requires a coroutine type and Tn requires a nominal type argument
-type-attribute = この型にその型属性はない。resultType はコルーチン型、Tn は公称型の型引数に対して指定する必要がある
+# type-attribute = this type has no such type attribute; resultType requires a coroutine type, ReturnType a subroutine type, and Tn a nominal type argument
+type-attribute = この型にその型属性はない。resultType はコルーチン型、ReturnType はサブルーチン型、Tn は公称型の型引数に対して指定する必要がある
 # type-specialization = type arguments require an unspecialized nominal host type
 type-specialization = 型引数はまだ具体化していないホストの公称型に対して指定する必要がある
 # type-argument-runtime = type arguments are erased at runtime; runtime type descriptors, fits^ and as^ must use the unspecialized type

@@ -397,6 +397,12 @@ static StepResult task_begin(TaskModule *module, Task *task)
         return STEP_DONE;
     }
 
+    // A subroutine is called with nothing; a coroutine carried in (05 の
+    // 8.8改3) is already the thing to drive.
+    if (lhat_is_object_kind(job, LHAT_OBJECT_SUBROUTINE)) {
+        task->ran = lhat_machine_call(task->machine, job, NULL, 0);
+        return after_turn(module, task);
+    }
     task->driving = job;
     task->driving_set = true;
     task->ran = lhat_machine_resume(task->machine, job, NULL, 0);
@@ -745,9 +751,16 @@ static void task_async(LhatMachine *machine, void *context,
                                "std.task.start has not been called");
         return;
     }
-    if (count != 1 || !lhat_is_object_kind(arguments[0], LHAT_OBJECT_COROUTINE)) {
+    // A coroutine not yet started, or a closure called with nothing. A
+    // yieldable closure is handed over as the call of it.
+    const LhatProto *proto = lhat_closure_proto(arguments[0]);
+    if (count != 1 ||
+        (!lhat_is_object_kind(arguments[0], LHAT_OBJECT_COROUTINE) &&
+         (proto == NULL || lhat_proto_yields(proto) ||
+          lhat_proto_parameters(proto) != 0))) {
         answers[0] = fail_with(machine, module->refused,
-                               "async takes exactly one coroutine");
+                               "async takes a coroutine or a closure taking nothing; "
+                               "a yieldable one is handed over as the call of it");
         return;
     }
 
@@ -761,7 +774,7 @@ static void task_async(LhatMachine *machine, void *context,
     lhat_condition_init(&task->done);
     task->module = module;
     task->holds = 1;  // the wrapper answered below
-    const LhatRuntimeType *result_type = lhat_coroutine_result_type(arguments[0]);
+    const LhatRuntimeType *result_type = lhat_body_result_type(arguments[0]);
     task->result_type = result_type != NULL
                            ? lhat_runtime_type_clone(&task->type_heap, result_type)
                            : lhat_type_rt_new(&task->type_heap, LHAT_TYPE_RT_NIL);
@@ -1022,12 +1035,17 @@ bool lhatstdlib_task_register(LhatProgram *program)
            lhat_register_func(program, "std.task", "async",
                                LHAT_TASK_ASYNC_SIGNATURE,
                               task_async, module) &&
+           lhat_register_func(program, "std.task", "async",
+                               LHAT_TASK_ASYNC_CALL_SIGNATURE,
+                              task_async, module) &&
             lhat_register_func(program, "std.task", "await",
                                LHAT_TASK_AWAIT_SIGNATURE,
                                task_await, module) &&
 #if LHAT_WITH_FRONTEND
             lhat_register_instantiation_check_handler(program, "std.task", NULL,
                 "async", 0, task_check_async, NULL) &&
+            lhat_register_instantiation_check_handler(program, "std.task", NULL,
+                "async", 1, task_check_async, NULL) &&
 #endif
            lhat_register_member(program, "std.task", "Task", "done",
                                 "f^self^ -> bool^;", task_done, module) &&

@@ -1366,14 +1366,32 @@ static LhatType *resolve_return_type(Checker *c, const LhatNode *node)
     return answer;
 }
 
+// 03 の 3.4改6: whether a type name is ARGn, which names a parameter of the
+// signature being read rather than a value.
+static bool names_signature_argument(Checker *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    if ((node->kind != LHAT_NODE_IDENT && node->kind != LHAT_NODE_TYPE_NAME) ||
+        !chk_node_name(c, node, &name, &length) || length <= 3 ||
+        memcmp(name, "ARG", 3) != 0) {
+        return false;
+    }
+    for (size_t i = 3; i < length; i++) {
+        if (name[i] < '0' || name[i] > '9') return false;
+    }
+    return true;
+}
+
 static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
 {
     const char *name = NULL;
     size_t length = 0;
     // 13.14改: read before the left side is, since that side names a value
-    // rather than a type.
-    if (chk_node_name(c, node->v.access.argument, &name, &length) &&
-        chk_name_is(name, length, "ReturnType")) {
+    // rather than a type -- except ARGn, whose .ReturnType is 3.4改6's.
+    bool return_type = chk_node_name(c, node->v.access.argument, &name, &length) &&
+                       chk_name_is(name, length, "ReturnType");
+    if (return_type && !names_signature_argument(c, node->v.access.target)) {
         return resolve_return_type(c, node);
     }
     LhatType *outer = chk_resolve_type(c, node->v.access.target);
@@ -1392,17 +1410,22 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
             projection = projection * 10 + (size_t)(name[i] - '0');
         }
     }
+    LhatTypeAttribute attribute =
+        return_type ? LHAT_TYPE_ATTRIBUTE_RETURN
+        : chk_name_is(name, length, "resultType") ? LHAT_TYPE_ATTRIBUTE_RESULT
+        : LHAT_TYPE_ATTRIBUTE_NONE;
     if (outer->kind == LHAT_TYPE_ARGUMENT || outer->kind == LHAT_TYPE_CORO || type_argument ||
-        chk_name_is(name, length, "resultType")) {
+        attribute != LHAT_TYPE_ATTRIBUTE_NONE) {
         LhatType *bound = lhat_type_argument_bound(outer);
         LhatType *result = type_argument && outer->kind == LHAT_TYPE_ARGUMENT &&
                           outer->v.argument.index == SIZE_MAX
                               ? chk_simple(c, LHAT_TYPE_ANY)
-                              : chk_name_is(name, length, "resultType")
-                              ? lhat_type_result_attribute(c->result->types, bound)
+                              : attribute != LHAT_TYPE_ATTRIBUTE_NONE
+                              ? lhat_type_result_attribute(c->result->types, bound, attribute)
                               : type_argument ? lhat_type_argument_attribute(c->result->types, bound, projection) : NULL;
         if (result == NULL || (outer->kind == LHAT_TYPE_ARGUMENT &&
-            (outer->v.argument.result_type || outer->v.argument.type_argument != 0))) {
+            (outer->v.argument.attribute != LHAT_TYPE_ATTRIBUTE_NONE ||
+             outer->v.argument.type_argument != 0))) {
             chk_report(c, node->v.access.argument, LHAT_CHECK_ERR_TYPE_ATTRIBUTE);
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
@@ -1410,7 +1433,7 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
             LhatType *expression = chk_simple(c, LHAT_TYPE_ARGUMENT);
             expression->v.argument = outer->v.argument;
             expression->v.argument.bound = result;
-            expression->v.argument.result_type = !type_argument;
+            expression->v.argument.attribute = attribute;
             expression->v.argument.type_argument = type_argument ? projection + 1 : 0;
             result = expression;
         }
@@ -4700,7 +4723,7 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_TYPE_ARGUMENT_REFERENCE] = {"check.type-argument-reference",
         "ARGn must name a fixed parameter of the enclosing signature, in its result type"},
     [LHAT_CHECK_ERR_TYPE_ATTRIBUTE] = {"check.type-attribute",
-        "this type has no such type attribute; resultType requires a coroutine type and Tn requires a nominal type argument"},
+        "this type has no such type attribute; resultType requires a coroutine type, ReturnType a subroutine type, and Tn a nominal type argument"},
     [LHAT_CHECK_ERR_TYPE_SPECIALIZATION] = {"check.type-specialization",
         "type arguments require an unspecialized nominal host type"},
     [LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME] = {"check.type-argument-runtime",

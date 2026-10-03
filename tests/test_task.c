@@ -192,6 +192,29 @@ static void test_side_by_side(void)
         lhat_test_ran_dispose(&ran);
     }
 
+    // The same for a closure job: the slice is the machine's, so a job that
+    // is a plain call is taken off as surely as a coroutine is.
+    LHAT_TEST("a spinning closure job does not hold the only worker");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.task\n"
+            "import^ std.async\n"
+            "std.task.start(1) catch^ panic^ it^\n"
+            "let^ spin = p^ { var^ i = 0 repeat^ { i += 1 } }\n"
+            "let^ waits = p^ { yield^ std.async.timer(0.05) return^ 7 }\n"
+            "std.task.async(spin) catch^ panic^ it^\n"
+            "let^ t = std.task.async(waits())\n"
+            "var^ n = 0\n"
+            "if^ t fits^ std.task.Task {\n"
+            "    let^ got = std.task.await(t)\n"
+            "    if^ got fits^ number^ { n := got }\n"
+            "}\n"
+            "std.task.stop()\n"
+            "return^ n\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 7);
+        lhat_test_ran_dispose(&ran);
+    }
+
     // await^ inside a job: the worker drives the coroutine and waits for
     // the very wait it yielded (05 の 8.7改's take by id), so a delay is a
     // delay rather than a resume that came back early.
@@ -633,6 +656,12 @@ static void test_task_capture_initialization(void)
         "let^submit = p^co {let^t = std.task.async(co) catch^panic^it^}\n"
         "submit(piece())\n"
         "let^ppp = f^{42}\n",
+        // A closure job transfers its captures the same way.
+        "import^ std.task\n"
+        "let^job = p^ {return^ppp()}\n"
+        "let^unused = 0\n"
+        "let^t = std.task.async(job) catch^panic^it^\n"
+        "let^ppp = f^{42}\n",
     };
     for (size_t i = 0; i < sizeof sources / sizeof sources[0]; i++) {
         for (int strict = 0; strict < 2; strict++) {
@@ -655,7 +684,7 @@ static void test_task_capture_initialization(void)
                                memcmp(d->name, name, d->name_length) == 0, "captured name");
                 }
             }
-            bool bad = i == 0 || i == 3 || i == 5;
+            bool bad = i == 0 || i == 3 || i == 5 || i == 6;
             LHAT_CHECK_EQ_INT(reports, bad ? 1 : 0);
             LHAT_CHECK(lhat_program_has_errors(program) == bad, "only unsafe transfers fail");
             lhat_program_free(program);
@@ -794,7 +823,7 @@ static void test_static_results(void)
         LHAT_CHECK_RAN_INTEGER(ran, 42);
         lhat_test_ran_dispose(&ran);
     }
-    LHAT_TEST("async takes exactly one coroutine, not a closure or its arguments");
+    LHAT_TEST("async takes one coroutine or one closure taking nothing");
     LHAT_CHECK(!lhat_test_check_text(regs, 2,
         "import^ std.task\nlet^ job = p^ { let^ n:number^ = yield^ 0 return^ n }\n"
         "let^ t = std.task.async(job())\n"), "resume argument rejected statically");
@@ -807,7 +836,28 @@ static void test_static_results(void)
         "erased receive shape cannot prove zero resume arguments");
     LHAT_CHECK(!lhat_test_check_text(regs, 2,
         "import^ std.task\nlet^ t = std.task.async(p^ ... { return^ 1 })\n"),
-        "ordinary closure rejected");
+        "variadic closure rejected");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ t = std.task.async(p^ n:number^ -> number^ { return^ n })\n"),
+        "closure with a parameter rejected");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ job = p^ -> number^ { _yield^ 0 return^ 1 }\n"
+        "let^ t = std.task.async(job)\n"), "yieldable closure rejected; its call is the job");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ t = std.task.async(p^ -> number^, number^ { return^ 1, 2 })\n"),
+        "multi-value closure rejected");
+    LHAT_CHECK(lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ t = try^std.task.async(p^ -> number^ { return^ 42 })\n"
+        "let^ n:number^ = try^std.task.await(t)\n"
+        "let^ u = try^std.task.async(f^ -> string^ { \"s\" })\n"
+        "let^ s:string^ = try^std.task.await(u)\n"
+        "let^ v = try^std.task.async(p^ { })\n"
+        "let^ z:nil^ = try^std.task.await(v)\n"),
+        "a closure's return type becomes the task's");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^ std.task\nlet^ t = try^std.task.async(p^ -> number^ { return^ 42 })\n"
+        "let^ s:string^ = try^std.task.await(t)\n"),
+        "a closure task's result is not widened");
     LHAT_CHECK(!lhat_test_check_text(regs, 2,
         "import^ std.task\nlet^ t = std.task.async(42)\n"), "number rejected");
     LHAT_CHECK(!lhat_test_check_text(regs, 2,

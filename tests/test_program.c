@@ -5687,6 +5687,9 @@ static void test_declarative_result_types(void)
         "p^c^ -> ARG0.resultType;", host_one, NULL), "type attribute registration");
     LHAT_CHECK(lhat_register_func(&program, "test.generic", "pack",
         "p^c^ -> test.generic.Box<ARG0.resultType>;", host_one, NULL), "nested type expression");
+    LHAT_CHECK(lhat_register_func(&program, "test.generic", "returned",
+        "p^(p^;)|(p^->any^;) -> test.generic.Box<ARG0.ReturnType>;", host_one, NULL),
+        "return type attribute registration");
     LHAT_CHECK(lhat_register_func(&program, "test.generic", "pair",
         "f^any^, any^ -> test.generic.Box<ARG0, ARG1>;", host_one, NULL), "multiple arguments");
     LHAT_CHECK(lhat_register_member(&program, "test.generic", "Box", "echo",
@@ -5717,7 +5720,9 @@ static void test_declarative_result_types(void)
         "p^number^ -> self^.T0;", "p^type^<number^,string^> -> number^;",
         "p^type^ -> ARG0.T1;",
         "p^number^ -> ARG0.T99999999999999999999999999999;",
-        "p^c^ -> (f^number^ -> ARG1;);"
+        "p^c^ -> (f^number^ -> ARG1;);",
+        "p^number^ -> ARG0.ReturnType;", "p^c^ -> ARG0.ReturnType;",
+        "p^(p^->any^;) -> ARG0.ReturnType.resultType;"
     };
     for (size_t i = 0; i < sizeof invalid / sizeof *invalid; i++) {
         program_with(&program, &disk, NULL, 0);

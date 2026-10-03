@@ -280,17 +280,24 @@ bool lhat_type_has_arguments(const LhatType *type)
     return false;
 }
 
-LhatType *lhat_type_result_attribute(LhatTypeArena *arena, LhatType *type)
+LhatType *lhat_type_result_attribute(LhatTypeArena *arena, LhatType *type,
+                                     LhatTypeAttribute attribute)
 {
     if (type == NULL) return NULL;
     if (type->kind == LHAT_TYPE_UNION) {
         LhatType *result = NULL;
         for (const LhatTypeList *arm = type->v.composite.arms; arm; arm = arm->next) {
-            LhatType *part = lhat_type_result_attribute(arena, arm->type);
+            LhatType *part = lhat_type_result_attribute(arena, arm->type, attribute);
             if (part == NULL) return NULL;
             result = lhat_type_union(arena, result, part);
         }
         return result;
+    }
+    if (attribute == LHAT_TYPE_ATTRIBUTE_RETURN) {
+        if (type->kind != LHAT_TYPE_FUNC) return NULL;
+        LhatType *answer = lhat_type_call_answer(type);
+        return answer != NULL && answer->kind != LHAT_TYPE_NONE
+                   ? answer : lhat_type_simple(arena, LHAT_TYPE_NIL);
     }
     if (type->kind != LHAT_TYPE_CORO) return NULL;
     if (type->coroutine_top || type->result_any) return lhat_type_simple(arena, LHAT_TYPE_ANY);
@@ -332,8 +339,8 @@ static LhatType *instantiate_result(LhatTypeArena *arena, LhatType *type,
             LhatType *part = lhat_type_argument_attribute(arena, actual, type->v.argument.type_argument - 1);
             return part != NULL ? part : type->v.argument.bound;
         }
-        if (!type->v.argument.result_type) return actual;
-        LhatType *result = lhat_type_result_attribute(arena, actual);
+        if (type->v.argument.attribute == LHAT_TYPE_ATTRIBUTE_NONE) return actual;
+        LhatType *result = lhat_type_result_attribute(arena, actual, type->v.argument.attribute);
         return result != NULL ? result : type->v.argument.bound;
     }
     if (type->specialization_base != NULL) {
@@ -516,6 +523,13 @@ const LhatCheckType *lhat_check_coroutine_result(LhatInstantiationContext *conte
                    type->v.coroutine.result->kind != LHAT_TYPE_NONE
                ? type->v.coroutine.result
                                              : lhat_check_type_nil(context);
+}
+
+const LhatCheckType *lhat_check_function_result(LhatInstantiationContext *context,
+                                              const LhatCheckType *type)
+{
+    return lhat_type_result_attribute(context->arena, (LhatType *)type,
+                                      LHAT_TYPE_ATTRIBUTE_RETURN);
 }
 
 bool lhat_check_type_single_slot(const LhatCheckType *type)
@@ -1566,7 +1580,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
 
     if (value->kind == LHAT_TYPE_ARGUMENT && target->kind == LHAT_TYPE_ARGUMENT) {
         return value->v.argument.index == target->v.argument.index &&
-               value->v.argument.result_type == target->v.argument.result_type &&
+               value->v.argument.attribute == target->v.argument.attribute &&
                value->v.argument.type_argument == target->v.argument.type_argument &&
                conforms_in(value->v.argument.bound, target->v.argument.bound, seen);
     }
@@ -2748,7 +2762,8 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
     if (type->kind == LHAT_TYPE_ARGUMENT) {
         char text[48];
         snprintf(text, sizeof text, "ARG%zu%s", type->v.argument.index,
-                 type->v.argument.result_type ? ".resultType" : "");
+                 type->v.argument.attribute == LHAT_TYPE_ATTRIBUTE_RESULT ? ".resultType"
+                 : type->v.argument.attribute == LHAT_TYPE_ATTRIBUTE_RETURN ? ".ReturnType" : "");
         if (type->v.argument.index == SIZE_MAX) snprintf(text, sizeof text, "self^");
         put_text(sink, text);
         if (type->v.argument.type_argument != 0) {
