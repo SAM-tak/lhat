@@ -426,7 +426,9 @@ static void text_table(LtonWriter *w, const LhatTable *table, size_t depth)
         write_fail(w, w->module->unsupported, "only plain data tables can be written as LTON"); return;
     }
     w->ancestors[depth] = table;
-    size_t total = lhat_table_count(table);
+    // 02 の 14.10: the sequence is written whole, nil^ positions included,
+    // so it reads back the same length; the keyed half follows, sorted.
+    size_t total = table->entry_count;
     if (total > SIZE_MAX / sizeof(LhatTableEntry)) {
         write_fail(w, w->module->out_of_memory, "table is too large"); return;
     }
@@ -435,10 +437,6 @@ static void text_table(LtonWriter *w, const LhatTable *table, size_t depth)
         write_fail(w, w->module->out_of_memory, "out of memory"); return;
     }
     size_t count = 0;
-    for (size_t i = 0; i < table->array_count; i++) {
-        LhatValue value = lhat_slots_get(table->array, i);
-        if (!lhat_is_nil(value)) entries[count++] = (LhatTableEntry){lhat_integer((int64_t)i), value};
-    }
     for (size_t i = 0; i < table->entry_capacity; i++) {
         if (!lhat_is_nil(table->entries[i].key)) entries[count++] = table->entries[i];
     }
@@ -449,19 +447,13 @@ static void text_table(LtonWriter *w, const LhatTable *table, size_t depth)
         }
     }
     if (w->error == NULL && count > 1) qsort(entries, count, sizeof *entries, compare_entries);
-    // Emit the contiguous 0-based sequence first, then sorted explicit keys.
-    size_t prefix = 0;
-    while (prefix < total &&
-           !lhat_is_nil(lhat_table_get(table, lhat_integer((int64_t)prefix)))) prefix++;
-    for (size_t i = 0; i < prefix && w->error == NULL; i++) {
+    for (size_t i = 0; i < table->array_count && w->error == NULL; i++) {
         text_indent(w, depth);
-        text_value(w, lhat_table_get(table, lhat_integer((int64_t)i)), depth + 1);
+        text_value(w, lhat_slots_get(table->array, i), depth + 1);
         text_word(w, ",\n");
     }
     for (size_t i = 0; i < count && w->error == NULL; i++) {
         LhatValue key = entries[i].key;
-        if (key.tag == LHAT_VALUE_INTEGER && key.as.integer >= 0 &&
-            (uint64_t)key.as.integer < prefix) continue;
         text_indent(w, depth);
         const LhatString *name = arg_string(key);
         if (name_key(name)) text_put(w, name->text, name->length);

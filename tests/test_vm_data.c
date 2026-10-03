@@ -575,6 +575,35 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_KEY);
     run_dispose(&r);
 
+    // 14.10: the sequence holds nil^ as a position. Writing one inside it, or
+    // at its end, keeps the length; an unused position does not break a run.
+    LHAT_TEST("nil^ is a position of the sequence, not the end of it");
+    run_checked_text(&r,
+                     "var^ t:t^{(number^|nil^)[]} = {10, nil^, 30}\n"
+                     "var^ literal = t.length^ * 10 + t.count^\n"
+                     "t[2] := nil^\n"
+                     "var^ inside = t.length^\n"
+                     "t[3] := nil^\n"
+                     "t[4] := 50\n"
+                     "return^ literal * 1000 + inside * 100 + t.length^ * 10 + t.count^\n");
+    CHECK_INTEGER(&r, 33 * 1000 + 3 * 100 + 5 * 10 + 5);
+    run_dispose(&r);
+
+    // Only the explicit operations shorten it; resize^ also lengthens, with
+    // nil^ or the value given, and takes back a position the keyed half held.
+    LHAT_TEST("resize^ makes the sequence a given length");
+    run_checked_text(&r,
+                     "var^ t:t^{(number^|nil^)[]} = {1, 2, 3}\n"
+                     "t.resize^(1)\n"
+                     "var^ shrunk = t.length^\n"
+                     "t[4] := 9\n"
+                     "t.resize^(3, 7)\n"
+                     "var^ grown = (t[1] ?? 0) * 10 + t.length^\n"
+                     "t.resize^(5)\n"
+                     "return^ shrunk * 10000 + grown * 100 + t.length^ * 10 + (t[4] ?? 0)\n");
+    CHECK_INTEGER(&r, 1 * 10000 + 73 * 100 + 5 * 10 + 9);
+    run_dispose(&r);
+
     LHAT_TEST("pop of an empty table answers nil^, not a fault");
     run_checked_text(&r,
                      "var^ t:t^{number^[]} = {}\n"

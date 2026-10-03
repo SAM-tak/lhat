@@ -342,6 +342,7 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         { "stablesort", 10, LHAT_NATIVE_STABLESORT, true },
         { "move", 4, LHAT_NATIVE_MOVE, true },
         { "reverse", 7, LHAT_NATIVE_REVERSE, true },
+        { "resize", 6, LHAT_NATIVE_RESIZE, true },
         { "clear", 5, LHAT_NATIVE_CLEAR, true },
     };
     *hatted = name->length > 0 && name->text[name->length - 1] == '^';

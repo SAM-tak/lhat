@@ -2968,7 +2968,7 @@ const char *const chk_builtin_words[] = {
     "insert", "iterate", "join", "keys",
     "len", "length", "message", "move",
     "pop", "push", "remove", "replace",
-    "resume", "reverse", "round", "self",
+    "resize", "resume", "reverse", "round", "self",
     "set", "sign", "size", "slice",
     "sort", "split", "stablesort", "start",
     "started", "sub", "substr", "substring",
@@ -3693,6 +3693,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         if (builtin_named(name, length, "push", true) ||
             builtin_named(name, length, "insert", true) ||
             builtin_named(name, length, "extend", true) ||
+            builtin_named(name, length, "resize", true) ||
             builtin_named(name, length, "move", true)) {
             target->v.table.entries_known = false;
             if (target->v.table.index_key != NULL && !target->v.table.inferred_index) {
@@ -3731,6 +3732,21 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             LhatType *signature = mutable_method(c);
             signature->v.func.result = elem_or_nil;
             return signature;
+        }
+        // 14.22: resize^(n, fill) for any element. resize^(n) fills with
+        // nil^, so it is there only where the element admits nil^.
+        if (builtin_named(name, length, "resize", true)) {
+            LhatType *filled = mutable_method(c);
+            lhat_type_add_param(c->result->types, filled, number);
+            lhat_type_add_param(c->result->types, filled, element);
+            filled->v.func.result = self_type;
+            if (!lhat_type_conforms(chk_simple(c, LHAT_TYPE_NIL), element)) {
+                return filled;
+            }
+            LhatType *bare = mutable_method(c);
+            lhat_type_add_param(c->result->types, bare, number);
+            bare->v.func.result = self_type;
+            return lhat_type_intersect(c->result->types, bare, filled);
         }
         // 11.9's three-way answer is the comparison's shape here too.
         if (builtin_named(name, length, "sort", true) ||

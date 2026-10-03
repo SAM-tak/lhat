@@ -870,6 +870,17 @@ static void test_builtin_operations(void)
     LHAT_CHECK(syntax_errors(&u) > 0, "the old spelling is refused");
     unit_dispose(&u);
 
+    // 14.22: resize^(n) fills with nil^, so only an element admitting it has
+    // the one-argument form; resize^(n, fill) is there for every element.
+    LHAT_TEST("resize^ without a fill needs an element that admits nil^");
+    check_text(&u, "var^ t:t^{number^[]} = {1, 2}\nt.resize^(4)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+    check_text(&u, "var^ t:t^{number^[]} = {1, 2}\nt.resize^(4, 0)\n"
+                   "var^ u:t^{(number^|nil^)[]} = {1, 2}\nu.resize^(4)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 04 の 11.3's line: an empty table's pop is not an error, so the
     // answer carries the nil^ arm and a narrowing is owed.
     LHAT_TEST("pop^ answers the element type beside nil^");

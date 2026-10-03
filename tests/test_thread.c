@@ -237,11 +237,11 @@ static void test_arguments(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // A collector is a table, and a table holds no nil^ -- so a nil^ written
-    // among the arguments leaves no position behind. That is 13.7's own
-    // behaviour and not spawn's: an ordinary L^ call written the same way
-    // counts the same one position, which is what this pins.
-    LHAT_TEST("a nil^ argument collapses the same way an ordinary call's does");
+    // A collector is a table, and 14.10's sequence holds nil^ as a position
+    // of its own -- so a nil^ written among the arguments is counted. That is
+    // 13.7's own behaviour and not spawn's: an ordinary L^ call written the
+    // same way counts the same two positions, which is what this pins.
+    LHAT_TEST("a nil^ argument keeps its position the same way an ordinary call's does");
     {
         LhatTestRan spawned = run_source(
             WITH_SPAWN("std.thread.spawn(p^ ... {\n"
@@ -257,7 +257,7 @@ static void test_arguments(void)
                                 "return^ count(\"here\", nil^)\n");
         LHAT_CHECK(spawned.ok && called.ok, "both programs ran");
         LHAT_CHECK_EQ_INT(spawned.integer, called.integer);
-        LHAT_CHECK_EQ_INT(spawned.integer, 1);
+        LHAT_CHECK_EQ_INT(spawned.integer, 2);
         lhat_test_ran_dispose(&spawned);
         lhat_test_ran_dispose(&called);
     }

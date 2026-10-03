@@ -51,6 +51,16 @@ static void test_text_output(void)
     LHAT_CHECK_RAN_INTEGER(ran, 1);
     lhat_test_ran_dispose(&ran);
 
+    // 02 の 14.10: the sequence is written whole, nil^ positions included,
+    // so it reads back the same length.
+    LHAT_TEST("LTON writes nil^ positions and reads the same length back");
+    ran = run_source("import^std.lton\n"
+        "let^text = try^std.lton.stringify({1, nil^, 3, nil^})\n"
+        "let^t = try^std.lton.parse(text)\n"
+        "return^text .. t.length^.tostring^()\n");
+    LHAT_CHECK_RAN_TEXT(ran, "1,\nnil^,\n3,\nnil^,\n4");
+    lhat_test_ran_dispose(&ran);
+
     LHAT_TEST("shared tables are expanded, and cycles and functions are refused");
     ran = run_source("import^std.lton\nlet^child = {x = 4}\n"
         "let^t = try^std.lton.parse(try^std.lton.stringify({a = child, b = child}))\n"

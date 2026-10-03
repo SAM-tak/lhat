@@ -42,6 +42,17 @@ static void test_array_index(void)
                  "for^v in^{[0]=10,[2]=30} {sum += index^ + v}\nreturn^sum\n");
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);
+
+    // 14.10: a nil^ position is part of the sequence, so the walk visits it
+    // as nil^ and goes on; index^ counts it like any other.
+    LHAT_TEST("a nil^ position is visited, and the walk goes on past it");
+    run_text(&r, "var^sum = 0\nvar^nils = 0\n"
+                 "for^v:number^|nil^ in^{10, nil^, nil^, 30} {"
+                 "if^v fits^number^ {sum += index^ * v}\n"
+                 "if^v is^ nil^ {nils += 1}}\n"
+                 "return^sum * 10 + nils\n");
+    CHECK_INTEGER(&r, 90 * 10 + 2);
+    run_dispose(&r);
 }
 
 static void test_repeat(void)

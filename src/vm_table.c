@@ -565,6 +565,7 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
                    native->kind == LHAT_NATIVE_STABLESORT ||
                    native->kind == LHAT_NATIVE_MOVE ||
                    native->kind == LHAT_NATIVE_REVERSE ||
+                   native->kind == LHAT_NATIVE_RESIZE ||
                    native->kind == LHAT_NATIVE_CLEAR;
     if (mutates && t->sealed) {
         return LHAT_RUN_SEALED;
@@ -724,10 +725,9 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
                 lhat_slots_set(t->array, (size_t)k,
                                lhat_slots_get(t->array, (size_t)k + 1));
             }
-            if (!vm_set_key(m, t, lhat_integer((int64_t)n - 1), lhat_nil(),
-                         &refused)) {
-                return LHAT_RUN_OUT_OF_MEMORY;
-            }
+            // 14.10: writing nil^ no longer shortens the sequence, so the
+            // last position is dropped explicitly.
+            lhat_table_resize(t, n - 1, lhat_nil());
             return LHAT_RUN_OK;
         }
 
@@ -807,6 +807,27 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
                                lhat_slots_get(t->array, n - 1 - i));
                 lhat_slots_set(t->array, n - 1 - i, held);
             }
+            return LHAT_RUN_OK;
+        }
+
+        // 14.22: the sequence made `length` long. Lengthening fills with the
+        // second argument, nil^ when it is left out.
+        case LHAT_NATIVE_RESIZE: {
+            if (count < 1 || count > 2) {
+                return LHAT_RUN_ARITY;
+            }
+            int64_t length = 0;
+            if (!vm_ordinal_of(args[0], &length)) {
+                return LHAT_RUN_TYPE_ERROR;
+            }
+            if (length < 0) {
+                return LHAT_RUN_BAD_KEY;
+            }
+            LhatValue fill = count == 2 ? args[1] : lhat_nil();
+            if (!lhat_table_resize(t, (size_t)length, fill)) {
+                return LHAT_RUN_OUT_OF_MEMORY;
+            }
+            lhat_gc_barrier_back(m, (LhatObject *)t, fill);
             return LHAT_RUN_OK;
         }
 

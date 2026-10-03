@@ -299,15 +299,15 @@ WalkStep vm_step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
 
     if (mode == WALK_AS_VALUE) {
         // Only the dense half, by index -- lhat_table_walk would go on into
-        // the keyed half, which this form does not visit.
-        LhatValue value = lhat_table_get(
-            co->walking, lhat_integer((int64_t)co->at_array));
-        if (lhat_is_nil(value)) {
+        // the keyed half, which this form does not visit. 14.10: it ends at
+        // the sequence's length, and a nil^ position is visited as nil^.
+        const LhatTable *table = co->walking;
+        if (table == NULL || co->at_array >= table->array_count) {
             co->state = LHAT_COROUTINE_DONE;
             lhat_slots_set(m->slots, at, lhat_nil());
             return WALK_ENDED;
         }
-        co->at_array++;
+        LhatValue value = lhat_slots_get(table->array, co->at_array++);
         co->state = LHAT_COROUTINE_SUSPENDED;
         lhat_slots_set(m->slots, at, value);
         return WALK_TOOK;

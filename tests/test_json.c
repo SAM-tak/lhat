@@ -69,12 +69,10 @@ static void test_writing(void)
         LHAT_CHECK_RAN_TEXT(ran, "[true,false,7]");
         lhat_test_ran_dispose(&ran);
 
-        // 04 の 11.3: storing nil^ is how a key goes, so a table never holds
-        // one -- an encode has no null to write. The third slot here is not
-        // a null but nothing at all, which breaks the dense half and makes
-        // the whole an object.
+        // 02 の 14.10: the sequence holds nil^ as a position of its own, so
+        // the third slot stays in the dense half and is written as null.
         ran = run_source(ENCODING("{true^, false^, nil^, 7}"));
-        LHAT_CHECK_RAN_TEXT(ran, "{\"0\":true,\"1\":false,\"3\":7}");
+        LHAT_CHECK_RAN_TEXT(ran, "[true,false,null,7]");
         lhat_test_ran_dispose(&ran);
 
         // 14.8's two representations: an integer keeps its shape, and a real

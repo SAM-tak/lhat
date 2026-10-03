@@ -1988,28 +1988,64 @@ static bool grow_array(LhatTable *table)
     return true;
 }
 
+// Integer key `index` in the hash part, or NULL. What the array is about to
+// cover is moved out of there rather than shadowed (take_entry).
+static LhatTableEntry *find_entry(LhatTable *table, size_t index)
+{
+    if (table->entry_count == 0) {
+        return NULL;
+    }
+    LhatValue key = lhat_integer((int64_t)index);
+    LhatTableEntry *entry =
+        probe(table->entries, table->entry_capacity, key, hash_key(key));
+    return lhat_is_nil(entry->key) ? NULL : entry;
+}
+
+static LhatValue take_entry(LhatTable *table, LhatTableEntry *entry)
+{
+    LhatValue value = entry->value;
+    entry->key = lhat_nil();
+    entry->value = lhat_bool(true);  // a tombstone
+    table->entry_count--;
+    table->entry_tombs++;
+    table->version++;  // 03 の 5.1改: an entry left its place
+    return value;
+}
+
 // Once key n has been appended, n+1 may be waiting in the hash part from
 // before the array reached it. Without this a table filled in from the end
 // would keep everything in the hash part for ever.
 static void drain_into_array(LhatTable *table)
 {
-    while (table->entry_capacity > 0) {
-        LhatValue key = lhat_integer((int64_t)table->array_count);
-        LhatTableEntry *entry =
-            probe(table->entries, table->entry_capacity, key, hash_key(key));
-        if (lhat_is_nil(entry->key)) {
-            return;
-        }
+    LhatTableEntry *entry;
+    while ((entry = find_entry(table, table->array_count)) != NULL) {
         if (table->array_count == table->array_capacity && !grow_array(table)) {
             return;
         }
-        lhat_slots_set(table->array, table->array_count++, entry->value);
-        entry->key = lhat_nil();
-        entry->value = lhat_bool(true);  // a tombstone
-        table->entry_count--;
-        table->entry_tombs++;
-        table->version++;  // 03 の 5.1改: an entry left its place
+        lhat_slots_set(table->array, table->array_count++,
+                       take_entry(table, entry));
     }
+}
+
+bool lhat_table_resize(LhatTable *table, size_t length, LhatValue fill)
+{
+    // 14.22: shortening drops the tail. The slots are cleared so nothing
+    // past the end is kept alive.
+    while (table->array_count > length) {
+        lhat_slots_set(table->array, --table->array_count, lhat_nil());
+    }
+    // Lengthening fills with `fill`, except where the hash part already held
+    // that position -- the value written there is the element.
+    while (table->array_count < length) {
+        if (table->array_count == table->array_capacity && !grow_array(table)) {
+            return false;
+        }
+        LhatTableEntry *entry = find_entry(table, table->array_count);
+        lhat_slots_set(table->array, table->array_count++,
+                       entry != NULL ? take_entry(table, entry) : fill);
+    }
+    drain_into_array(table);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -2303,19 +2339,19 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
     }
     key = normalise_key(key);
 
+    // 14.10: the sequence holds nil^ like any element. Writing one inside it
+    // leaves a hole rather than shortening it; only pop^, remove^, clear^
+    // and resize^ do that.
     size_t index;
     if (array_index(table, key, &index)) {
-        if (lhat_is_nil(value) && index + 1 == table->array_count) {
-            table->array_count--;  // removing the last one shortens the run
-            return true;
-        }
         lhat_slots_set(table->array, index, value);
         return true;
     }
 
     // The next key along extends the dense part rather than starting a hash
-    // entry, which is what makes a table built up in order stay an array.
-    if (lhat_is_integer(key) && !lhat_is_nil(value) &&
+    // entry, which is what makes a table built up in order stay an array --
+    // nil^ included, so a run with unused positions stays one run.
+    if (lhat_is_integer(key) &&
         (uint64_t)lhat_as_integer(key) == (uint64_t)table->array_count) {
         if (table->array_count == table->array_capacity && !grow_array(table)) {
             return false;

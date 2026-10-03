@@ -583,6 +583,7 @@ typedef enum {
     LHAT_NATIVE_STABLESORT, // order it keeping equal elements as written
     LHAT_NATIVE_MOVE,       // relocate one element, or copy a block
     LHAT_NATIVE_REVERSE,    // the sequence half, back to front
+    LHAT_NATIVE_RESIZE,     // make the sequence a given length
     LHAT_NATIVE_CLEAR       // empty the table, both halves
 } LhatNativeKind;
 
@@ -1071,8 +1072,16 @@ void lhat_table_vacate(LhatTable *table, LhatValue key);
 bool lhat_table_reserved(const LhatTable *table, LhatValue key);
 void lhat_table_prune_seats(LhatTable *proto, const LhatTable *definition);
 
-// How many keys 0, 1, 2 ... the table holds without a gap.
+// 02 の 14.10: the sequence's length -- positions 0 .. n-1, nil^ ones
+// included. A nil^ written inside it is held there; only an explicit
+// shortening (pop^, remove^, clear^, resize^) makes it shorter.
 size_t lhat_table_length(const LhatTable *table);
+
+// 02 の 14.22's resize^: makes the sequence `length` long, dropping the tail
+// or filling new positions with `fill` (an integer key already in the keyed
+// half keeps its value and moves into the sequence). False only when memory
+// ran out; the caller owns the write barrier for `fill`.
+bool lhat_table_resize(LhatTable *table, size_t length, LhatValue fill);
 
 // 02 の 14.18: everything the table itself holds -- the run above and the
 // keyed half besides. What an instance reads through its definition is not
