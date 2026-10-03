@@ -13,14 +13,9 @@ n += try^std.task.await(t1)
 n += try^std.task.await(t2)
 print(n) # may print '42'
 
-#[~
 let^c = try^std.channel.new(std.task.Task<number^>)
-]#
-let^c = try^std.channel.new(typeof^t1)
 n := 0
-let^first = try^std.task.async(p^{
-    return^20
-})
+let^first = try^std.task.async(f^{ 20 })
 try^c.push(first)
 let^addnumber = 1
 let^second = try^std.task.async(p^{
