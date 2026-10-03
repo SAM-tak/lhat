@@ -1769,7 +1769,18 @@ static void check_focus(Checker *c, const LhatNode *node)
 
         LhatType *type = taken;
         if (annotated != NULL) {
-            chk_expect(c, element, taken, annotated, LHAT_CHECK_ERR_MISMATCH);
+            // 16.3: an annotated focus is a filter -- the turns whose element
+            // its type does not take are skipped (the compiler reads the
+            // stamp to test only what the walk's type leaves open). One that
+            // could take nothing the walk yields is a mistake; a parameter
+            // still being inferred is constrained by it as before.
+            if (chk_param_var_for(c, taken) != NULL) {
+                chk_expect(c, element, taken, annotated, LHAT_CHECK_ERR_MISMATCH);
+            } else if (taken != NULL && !lhat_type_has_gap(taken) &&
+                       lhat_type_disjoint(taken, annotated)) {
+                chk_expect(c, element, taken, annotated, LHAT_CHECK_ERR_MISMATCH);
+            }
+            ((LhatNode *)element)->checked_fits_type = taken;
             type = annotated;
         } else if (
                    (type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||

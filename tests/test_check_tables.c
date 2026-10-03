@@ -120,9 +120,11 @@ static void test_contextual_table_focus(void)
     check_text(&u, "let^t:t^{number^[]} = {}\nfor^v:string^ in^t {}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
-    LHAT_TEST("explicit any is not treated as an absent element constraint");
+    // 16.3: the annotation filters, so naming a narrower type than any^ is
+    // asking for the elements that fit it.
+    LHAT_TEST("an annotation narrower than any^ elements filters them");
     check_text(&u, "let^t:t^{any^[]} = {}\nfor^v:number^ in^t {}\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    CHECK_CLEAN(&u);
     unit_dispose(&u);
 }
 

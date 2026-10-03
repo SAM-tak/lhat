@@ -1492,25 +1492,38 @@ static int fits_split_by_nil(const LhatType *actual, const LhatType *target)
     return nil_fits >= 0 && rest_fits >= 0 && nil_fits != rest_fits ? nil_fits : -1;
 }
 
-static void compile_fits_test(Compiler *c, const LhatNode *asked,
-                             const LhatType *actual, uint8_t value,
-                             uint8_t into)
+// The answer when it is settled before the run: 1 or 0, and -1 when only
+// the value can say.
+static int fits_settled_answer(Compiler *c, const LhatNode *asked,
+                               const LhatType *actual)
 {
     const char *name = NULL;
     size_t length = 0;
     if (node_name(c, asked, &name, &length) && name_is(name, length, "any^")) {
-        emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, into, 1, 0));
+        return 1;
+    }
+    const LhatType *target = asked->checked_type;
+    if (actual != NULL && target != NULL &&
+        fits_type_settled(actual, NULL) && fits_type_settled(target, NULL)) {
+        if (lhat_type_conforms(actual, target)) return 1;
+        if (fits_types_disjoint(actual, target)) return 0;
+    }
+    return -1;
+}
+
+static void compile_fits_test(Compiler *c, const LhatNode *asked,
+                             const LhatType *actual, uint8_t value,
+                             uint8_t into)
+{
+    int settled = fits_settled_answer(c, asked, actual);
+    if (settled >= 0) {
+        emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, into, (uint8_t)settled, 0));
         return;
     }
 
     const LhatType *target = asked->checked_type;
     if (actual != NULL && target != NULL &&
         fits_type_settled(actual, NULL) && fits_type_settled(target, NULL)) {
-        bool fits = lhat_type_conforms(actual, target);
-        if (fits || fits_types_disjoint(actual, target)) {
-            emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, into, fits, 0));
-            return;
-        }
         int nil_fits = fits_split_by_nil(actual, target);
         if (nil_fits >= 0) {
             emit(c, lhat_encode_abc(LHAT_BC_ISNIL, into, value, 0));
@@ -5198,6 +5211,40 @@ static void bind_targets(Compiler *c, const LhatNode *focus, size_t local_mark,
     (void)focus;
 }
 
+// 16.3: an annotated focus is a filter. An element its type does not take is
+// skipped the way next^ skips the rest of a turn; index^ has already moved,
+// so it still names the real position. Where the walk's own type settles the
+// answer, nothing is emitted.
+static void filter_targets(Compiler *c, const LhatNode *focus,
+                           size_t local_mark, LoopContext *loop)
+{
+    size_t i = 0;
+    for (const LhatNode *element = focus; element != NULL;
+         element = element->next, i++) {
+        const LhatNode *param =
+            element->kind == LHAT_NODE_DEFINE &&
+                    element->v.binding.targets != NULL &&
+                    element->v.binding.targets->kind == LHAT_NODE_FOCUS
+                ? element->v.binding.values
+                : element;
+        if (param == NULL || param->kind != LHAT_NODE_PARAM ||
+            param->v.param.type == NULL ||
+            fits_settled_answer(c, param->v.param.type,
+                                param->checked_fits_type) == 1) {
+            continue;
+        }
+        uint8_t mark = c->next_register;
+        uint8_t test = reserve(c);
+        compile_fits_test(c, param->v.param.type, param->checked_fits_type,
+                          c->locals[local_mark + i].reg, test);
+        LHAT_GROW(loop->nexts, loop->next_count, loop->next_capacity, 16,
+                  { fail(c, LHAT_COMPILE_OUT_OF_MEMORY); return; });
+        loop->nexts[loop->next_count++] =
+            emit_jump(c, LHAT_BC_JUMP_FALSE, test);
+        c->next_register = mark;
+    }
+}
+
 // The two forms of for^ that 16.1 says do not repeat: the if^ clause of 16.3
 // and the pattern match of 17 章. Both introduce the focus, use it once, and
 // let it go -- the do^ block 16.3 writes them out as.
@@ -5468,6 +5515,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
             emit(c, lhat_encode_abc(LHAT_BC_ADD, array_index, array_index, one));
             c->next_register = index_mark;
         }
+        filter_targets(c, focus, local_mark, &context);
     } else if (!is_for && node->v.repeat.kind == LHAT_REPEAT_COUNT) {
         if (fused_count) {
             leaving = emit_jump(c, LHAT_BC_FORPREP, counter);

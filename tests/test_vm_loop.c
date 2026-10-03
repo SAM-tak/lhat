@@ -53,6 +53,23 @@ static void test_array_index(void)
                  "return^sum * 10 + nils\n");
     CHECK_INTEGER(&r, 90 * 10 + 2);
     run_dispose(&r);
+
+    // 16.3: an annotated focus filters. What its type does not take -- nil^
+    // or another shape -- is skipped, and index^ still names the position.
+    LHAT_TEST("an annotated focus skips what it does not take, keeping index^");
+    run_text(&r, "let^t:t^{any^[]} = {{n = 1}, nil^, \"x\", {n = 3}}\n"
+                 "var^sum = 0\n"
+                 "for^e:t^{n:number^} in^t {sum += index^ * 10 + e.n}\n"
+                 "return^sum\n");
+    CHECK_INTEGER(&r, (0 + 1) + (30 + 3));
+    run_dispose(&r);
+
+    LHAT_TEST("and a pair walk filters on either name");
+    run_text(&r, "var^n = 0\n"
+                 "for^k:string^, v:number^ in^{10, a = 1, b = \"s\"} {n += v}\n"
+                 "return^n\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
 }
 
 static void test_repeat(void)

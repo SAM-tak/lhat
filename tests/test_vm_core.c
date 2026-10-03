@@ -1957,6 +1957,22 @@ static void test_static_fits(void)
         LHAT_CHECK_EQ_INT(count_fits(r.proto), cases[i].tests);
         run_dispose(&r);
     }
+    // 16.3: a focus annotation filters, and a walk whose element type
+    // already fits it pays nothing; T|nil^ against T asks only x?.
+    LHAT_TEST("a focus annotation the element type settles emits no test");
+    {
+        Run r;
+        run_checked_text(&r, "let^t:t^{number^[]} = {1, 2}\nvar^n = 0\n"
+                             "for^v:number^ in^t {n += v}\nreturn^n\n");
+        CHECK_INTEGER(&r, 3);
+        LHAT_CHECK_EQ_INT(count_fits(r.proto), 0);
+        run_dispose(&r);
+        run_checked_text(&r, "let^t:t^{(number^|nil^)[]} = {1, nil^, 2}\nvar^n = 0\n"
+                             "for^v:number^ in^t {n += v}\nreturn^n\n");
+        CHECK_INTEGER(&r, 3);
+        LHAT_CHECK_EQ_INT(count_fits(r.proto), 0);
+        run_dispose(&r);
+    }
     LHAT_TEST("folded fits preserves operand side effects and chain short circuiting");
     Run r;
     run_checked_text(&r,
