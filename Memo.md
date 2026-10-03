@@ -275,11 +275,11 @@ c = c.rightshift(8).leftshift(8) # 無難か…？いや、やっぱleft right �
 ホスト型・ホスト値用にジェネリクス風の記法も入った。
 
 ```lhat
-std.task.async:p^c^{->*->*} -> std.task.Task<ARG0.resultType>;
+std.task.async:p^c^{->*->*} -> std.task.Task<ARG0.ResultType>;
 std.task.await:p^std.task.Task -> ARG0.T0;
 ```
 
-`ARG0.T0` `ARG0.resultType` `std.task.Task<>` と言った記法で、渡された引数の型から修飾された
+`ARG0.T0` `ARG0.ResultType` `std.task.Task<>` と言った記法で、渡された引数の型から修飾された
 返り値型を指定可能になった。
 
 さらに、モジュール境界をまたいで適用できるよう、`templete^` 指定も入った。現状不満無し。
