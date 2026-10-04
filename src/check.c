@@ -4615,6 +4615,7 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_NOT_NUMBER] =
         {"check.not-number", "arithmetic needs number^"},
     [LHAT_CHECK_ERR_NOT_BOOL] = {"check.not-bool", "this has to be bool^"},
+    [LHAT_CHECK_ERR_BAD_STEP] = {"check.bad-step", "step^ must be a number greater than zero"},
     [LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE] = {"check.match-not-exhaustive",
         "a match written as an expression answers in every case, "
         "and these arms do not cover every value the subject may "

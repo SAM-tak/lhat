@@ -604,6 +604,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         VM_LABEL(LHAT_BC_FORLOOP),
         VM_LABEL(LHAT_BC_FORPREPD),
         VM_LABEL(LHAT_BC_FORLOOPD),
+        VM_LABEL(LHAT_BC_CHECKSTEP),
     };
 #endif
 
@@ -3026,11 +3027,21 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 03 の 5.1改3: the counted loop fused. The three registers are
-            // asked to be numbers here, once -- 16.4 refuses reassigning the
-            // focus and reads the bound and step^ before the loop, so nothing
-            // can change their kind while it runs (an addition may widen the
-            // focus to real, which both helpers speak).
+            VM_CASE(LHAT_BC_CHECKSTEP) {
+                LhatValue step = R(a);
+                // Reject zero and NaN too, before even an empty loop enters.
+                bool positive = lhat_is_integer(step)
+                                    ? lhat_as_integer(step) > 0
+                                    : lhat_is_real(step) && lhat_as_real(step) > 0;
+                if (!positive) {
+                    return vm_finish(m, chunk, LHAT_RUN_BAD_STEP, lhat_nil(), at);
+                }
+                VM_NEXT();
+            }
+
+            // The fused loop checks its three registers once. The focus
+            // cannot be reassigned and the bound and step are read once;
+            // only advancing the focus may widen it to a real.
             VM_CASE(LHAT_BC_FORPREP)
             VM_CASE(LHAT_BC_FORPREPD) {
                 if (!lhat_is_number(R(a)) || !lhat_is_number(R(a + 1)) ||

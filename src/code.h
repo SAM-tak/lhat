@@ -290,6 +290,7 @@ typedef enum {
     LHAT_BC_FORPREPD,   // A Bx  downto^'s enter test
     LHAT_BC_FORLOOPD,   // A Bx  advance down, jump back while focus >= bound
 
+    LHAT_BC_CHECKSTEP, // A  require a numeric R[A] greater than zero
     LHAT_BC_COUNT
 } LhatOpcode;
 

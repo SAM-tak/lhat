@@ -29,6 +29,7 @@ extern "C" {
 typedef enum {
     LHAT_RUN_OK,
     LHAT_RUN_TYPE_ERROR,      // 5.1: an instruction was given the wrong thing
+    LHAT_RUN_BAD_STEP,        // step^ must be greater than zero
     LHAT_RUN_NOT_CALLABLE,    // called something that is not a subroutine
     LHAT_RUN_ARITY,           // 5.3: the wrong number of arguments
     LHAT_RUN_STACK_OVERFLOW,  // the frames went too deep

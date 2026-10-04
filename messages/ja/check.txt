@@ -1,6 +1,8 @@
 # check -- L^ 0.3.3 の英語から訳した。
 # none = no error
 none = エラーなし
+# bad-step = step^ must be a number greater than zero
+bad-step = step^ は 0 より大きい数値でなければならない
 # undefined = no such name in scope: {name}
 undefined = 現在のスコープにこの名前は無い: {name}
 # used-before-defined = this name is read before its let^ has run

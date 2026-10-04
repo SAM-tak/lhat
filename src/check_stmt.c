@@ -1642,15 +1642,31 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
     return chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
 
-// 13.11改 with 16.4: 'for^ i from^ 1 to^ 9' says which whole numbers reach
-// the body, so the focus carries that the way a branch's condition makes one
-// carry what it tested. Both ends have to have known bounds (chk_bounds_of)
-// -- a limit read off a length names no number here, and 14.10's width
-// subtyping puts no ceiling on one anyway.
-//
-// The step is passed over where it is written: with 'to^' the focus stays
-// between the two ends whatever a positive step skips, and a step that is not
-// positive leaves no such promise to make.
+// Diagnose numeric literals here; computed steps are checked once by the VM.
+static void check_step(Checker *c, const LhatNode *step)
+{
+    const LhatNode *literal = step;
+    bool negative = false;
+    while (literal != NULL && literal->kind == LHAT_NODE_UNARY &&
+           literal->v.unary.op == LHAT_OP_SUB) {
+        negative = !negative;
+        literal = literal->v.unary.operand;
+    }
+    double value;
+    if (literal != NULL && literal->kind == LHAT_NODE_INT) {
+        value = (double)(int64_t)literal->v.integer.value;
+    } else if (literal != NULL && literal->kind == LHAT_NODE_FLOAT) {
+        value = literal->v.real;
+    } else {
+        return;
+    }
+    if (negative) value = -value;
+    if (!(value > 0)) chk_report(c, step, LHAT_CHECK_ERR_BAD_STEP);
+}
+
+// Known bounds on both ends and a positive step keep the focus between them.
+// A limit read off a length has no known upper bound: width subtyping puts
+// no ceiling on the length of a table.
 static void bound_the_focus(Checker *c, const LhatNode *node)
 {
     if (node->v.loop.kind != LHAT_FOR_TO &&
@@ -2860,6 +2876,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                     bound_the_focus(c, node);
                 }
                 chk_infer(c, node->v.loop.step);
+                check_step(c, node->v.loop.step);
                 chk_check_statements(c, node->v.loop.advance);
                 // a loop body may run zero times. 16.3's do^ form has no
                 // clause to drive it, so its body is reached whatever the

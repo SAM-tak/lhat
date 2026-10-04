@@ -947,6 +947,7 @@ bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
 // §2.2).
 static const LhatMessageEntry RUN_MESSAGES[] = {
     [LHAT_RUN_OK] = {"run.ok", "ran"},
+    [LHAT_RUN_BAD_STEP] = {"run.bad-step", "step^ must be a number greater than zero"},
     [LHAT_RUN_TYPE_ERROR] =
         {"run.type-error", "an instruction was given the wrong type"},
     [LHAT_RUN_NOT_CALLABLE] = {"run.not-callable", "this is not a subroutine"},

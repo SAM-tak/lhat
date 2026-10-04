@@ -5364,6 +5364,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         numeric_step = reserve(c);
         if (node->v.loop.step != NULL) {
             compile_expression(c, node->v.loop.step, numeric_step);
+            emit(c, lhat_encode_abc(LHAT_BC_CHECKSTEP, numeric_step, 0, 0));
         } else {
             load_constant(c, numeric_step, lhat_integer(1));
         }

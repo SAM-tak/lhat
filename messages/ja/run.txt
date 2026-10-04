@@ -1,6 +1,8 @@
 # run -- L^ 0.3.3 の英語から訳した。
 # ok = ran
 ok = 走った
+# bad-step = step^ must be a number greater than zero
+bad-step = step^ は 0 より大きい数値でなければならない
 # type-error = an instruction was given the wrong type
 type-error = 命令に渡された型が違う
 # not-callable = this is not a subroutine

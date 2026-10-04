@@ -1426,8 +1426,70 @@ static void test_growing_loop_jumps(void)
     }
 }
 
+static void test_step_validation(void)
+{
+    LHAT_TEST("nonpositive numeric step literals are diagnosed in both directions");
+    const char *bad[] = {"-1", "(-0.5)", "0", "0.0", "-0.0"};
+    for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+        for (int down = 0; down < 2; down++) {
+            char source[256];
+            snprintf(source, sizeof source,
+                     "for^ i from^ 0 %s 0 step^ %s { break^ }\n",
+                     down ? "downto^" : "to^", bad[i]);
+            Unit u;
+            check_text(&u, source);
+            CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_STEP);
+            unit_dispose(&u);
+        }
+    }
+
+    LHAT_TEST("computed invalid steps fail before entry, including empty and pre loops");
+    const char *values[] = {"-1", "-0.5", "0", "-0.0", "0.0 / 0.0"};
+    for (size_t i = 0; i < sizeof values / sizeof values[0]; i++) {
+        for (int down = 0; down < 2; down++) {
+            for (int empty = 0; empty < 2; empty++) {
+                for (int pre = 0; pre < 2; pre++) {
+                    char source[512];
+                    snprintf(source, sizeof source,
+                             "let^ get = f^ -> number^ { return^ %s }\n"
+                             "var^ s = get()\n"
+                             "for^ i from^ %d %s 0 step^ s {\n%s break^ }\n",
+                             values[i], empty ? (down ? -1 : 1) : 0,
+                             down ? "downto^" : "to^",
+                             pre ? "pre^: panic^ 'pre ran'\nmain^:\n" : "");
+                    Run r;
+                    run_checked_text(&r, source);
+                    LHAT_CHECK_EQ_INT(r.parsed.diagnostic_count, 0);
+                    LHAT_CHECK_EQ_INT(r.checked.diagnostic_count, 0);
+                    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+                    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_STEP);
+                    run_dispose(&r);
+                }
+            }
+        }
+    }
+
+    LHAT_TEST("unchecked literals still fail at runtime");
+    Run r;
+    run_text(&r, "for^ i from^ 0 to^ 0 step^ -1 { break^ }\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_STEP);
+    run_dispose(&r);
+
+    LHAT_TEST("positive fractional steps remain valid in both directions");
+    run_checked_text(&r,
+                     "var^ n = 0\n"
+                     "for^ i from^ 0 to^ 1 step^ 0.5 { n += 1 }\n"
+                     "for^ i from^ 1 downto^ 0 step^ 0.5 { n += 1 }\n"
+                     "return^ n\n");
+    LHAT_CHECK_EQ_INT(r.checked.diagnostic_count, 0);
+    CHECK_INTEGER(&r, 6);
+    run_dispose(&r);
+}
+
 int main(void)
 {
+    test_step_validation();
     test_array_index();
     test_repeat();
     test_for();
