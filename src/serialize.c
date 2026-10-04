@@ -876,7 +876,7 @@ static void emit_proto(Writer *w, Out *o, const LhatProto *proto)
     }
     put_u32(o, (uint32_t)chunk->member_cache_count);
     for (size_t i = 0; i < chunk->member_cache_count; i++) {
-        put_u16(o, chunk->member_caches[i].key);
+        put_u16(o, chunk->member_keys[i]);
     }
     put_u32(o, (uint32_t)chunk->constant_count);
     for (size_t i = 0; i < chunk->constant_count; i++) {

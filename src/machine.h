@@ -150,7 +150,21 @@ typedef struct LhatWeakEntry {
     LhatValue value;
 } LhatWeakEntry;
 
+// Bounded, machine-local member lookup hints. Colliding sites validate the
+// receiver, layout version and key before using an entry. These weak table
+// references are cleared before GC can free their targets. Keep the fixed
+// cost small even for machines with only a few frames and stack slots.
+#define LHAT_MEMBER_CACHE_COUNT 64
+typedef struct {
+    const LhatTable *answered;
+    uint32_t version;
+    uint32_t index;
+    bool from_definition;
+} LhatMemberCache;
+
 struct LhatMachine {
+    LhatMemberCache member_caches[LHAT_MEMBER_CACHE_COUNT];
+
     // 10 §7.2: the program whose registrations were installed here, which is
     // whose language this machine's messages come out in. NULL for a machine
     // no program was installed on, which says its own in English.

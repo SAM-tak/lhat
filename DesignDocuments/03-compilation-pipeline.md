@@ -1473,7 +1473,7 @@ p^(p^;)|(p^->any^;) -> std.task.Task<ARG0.ReturnType>|std.task.TaskError|std.err
 第0型引数であり、`await` の署名は次のようになる。
 
 ```lhat
-p^std.task.Task -> ARG0.T0|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;
+p^std.task.Task -> ARG0.T0|std.task.TaskError.Taken|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;
 ```
 
 `Task<string^|number^>` に対しては `string^|number^` と各エラー型の合併に
@@ -2164,12 +2164,13 @@ show() + 1                    # 2。show は number^ を返し続ける
 
 ##### 覚えているのは呼び出し地点［重要］
 
-キャッシュは**チャンクの中**にある。ソースに書かれた `x.m` 1つにつき1件で、
-値にも表にも付かない。メンバ自体は 14.3 が定義側に置いて共有しているので、
-**1つの地点が何度も見るのは同じ場所**である。
+チャンクには各地点のメンバ名を指す定数番号だけを置き、実行時には変更しない。
+可変のキャッシュは**VMごと**に64件持ち、チャンクのアドレスと地点番号から
+使用する枠を選ぶ。同じプログラムを複数ワーカーが実行してもキャッシュは共有しない。
 
-だから「同じ名前を読む2つの地点」は2件になる。互いのキャッシュを
-打ち消し合わないためで、これは節約ではなく正しさの側の要請である。
+枠が衝突しても、受け手・版番号・エントリの鍵を確認するため、誤った値にはならない。
+衝突は命中率にだけ影響する。キャッシュは表の寿命を延ばさず、GCは回収対象の表への
+参照をスイープ前に無効化する。`GETMEMBER` と `CALLMEMBER` は同じ方式を使う。
 
 ##### 当たり判定は表の版番号
 

@@ -17,7 +17,7 @@
 #define LHAT_TASK_ASYNC_CALL_SIGNATURE \
     "p^(p^;)|(p^->any^;) -> std.task.Task<ARG0.ReturnType>" LHAT_TASK_ERRORS
 #define LHAT_TASK_AWAIT_SIGNATURE \
-    "p^std.task.Task -> ARG0.T0" LHAT_TASK_ERRORS
+    "p^std.task.Task -> ARG0.T0|std.task.TaskError.Taken" LHAT_TASK_ERRORS
 
 #if LHAT_WITH_FRONTEND
 static LhatInstantiationStatus task_check_async(

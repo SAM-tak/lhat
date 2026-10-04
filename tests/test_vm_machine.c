@@ -10,6 +10,8 @@
 
 #include "code.h"
 #include "fixture.h"
+#include "machine.h"
+#include "gc.h"
 
 // 03 の 4 章: a REPL is one machine answering many inputs, so the machine has
 // to be an object a caller keeps rather than something a run owns.
@@ -1129,8 +1131,85 @@ static void test_fault_span(void)
     }
 }
 
+static void test_detached_results(void)
+{
+    LHAT_TEST("terminal graphs move without changing object or array addresses");
+    for (int phase = LHAT_GC_PAUSE; phase <= LHAT_GC_SWEEP; phase++) {
+        LhatMachine *source = lhat_machine_new();
+        LhatMachine *target = lhat_machine_new();
+        LhatValue table, child, text;
+        LHAT_REQUIRE(source != NULL && target != NULL, "machines");
+        LHAT_REQUIRE(lhat_machine_make_table(source, &table) &&
+                     lhat_machine_make_table(source, &child) &&
+                     lhat_machine_make_string(source, "owned string", 12, &text), "data");
+        LhatTable *t = (LhatTable *)lhat_as_object(table);
+        bool refused = false;
+        for (int i = 0; i < 10000; i++) {
+            LHAT_REQUIRE(lhat_machine_table_set(source, t, lhat_integer(i),
+                                                child, &refused), "large array");
+        }
+        LHAT_REQUIRE(lhat_machine_table_set(source, (LhatTable *)lhat_as_object(child),
+                                            text, table, &refused), "cycle with string key");
+        LhatSlots array = t->array;
+        // Exercise adoption during each receiver GC phase, including a
+        // partially propagated host root and an in-progress sweep.
+        target->gcstate = (uint8_t)phase;
+        if (phase == LHAT_GC_PROPAGATE) {
+            lhat_gc_reach(&target->gray, lhat_object((LhatObject *)target->environment));
+        } else if (phase == LHAT_GC_SWEEP) {
+            target->sweep = &target->objects.objects;
+        }
+        LhatDetachedValue *packet = NULL;
+        LHAT_REQUIRE(lhat_machine_detach_result(source, table, &packet) == LHAT_DETACH_OK,
+                     "detached");
+        lhat_machine_dispose(source);
+        LhatValue got = lhat_machine_adopt_result(target, packet);
+        LHAT_CHECK(lhat_as_object(got) == (LhatObject *)t, "same root address");
+        LHAT_CHECK(memcmp(&array, &t->array, sizeof array) == 0, "same backing array");
+        LHAT_REQUIRE(lhat_machine_set_global(target, "result", got), "rooted");
+        lhat_machine_collectgarbage(target);
+        lhat_machine_collectgarbage(target);
+        LHAT_CHECK(lhat_as_object(lhat_slots_get(t->array, 9999)) == lhat_as_object(child),
+                   "shared child survived collection");
+        LhatValue back = lhat_table_get((LhatTable *)lhat_as_object(child), text);
+        LHAT_CHECK(lhat_is_object(back) && lhat_as_object(back) == (LhatObject *)t,
+                   "cycle and owned string survived");
+        lhat_machine_dispose(target);
+    }
+}
+
+static void test_member_cache_lifetime(void)
+{
+    LHAT_TEST("colliding member sites still validate their keys");
+    char source[4096] = "let^t = {a = 1, b = 2}\nvar^sum = 0\nrepeat^3 {\n";
+    for (size_t i = 0; i < LHAT_MEMBER_CACHE_COUNT; i++) {
+        strcat(source, "sum += t.a\n");
+    }
+    strcat(source, "sum += t.b\n}\nreturn^sum\n");
+    Run r;
+    run_checked_text(&r, source);
+    CHECK_INTEGER(&r, 3 * (LHAT_MEMBER_CACHE_COUNT + 2));
+    run_dispose(&r);
+
+    LHAT_TEST("member cache targets are weak and expire before sweep");
+    LhatMachine *m = lhat_machine_new();
+    LhatValue value;
+    LHAT_REQUIRE(lhat_machine_make_table(m, &value), "allocated table");
+    LhatTable *table = (LhatTable *)lhat_as_object(value);
+    LHAT_REQUIRE(lhat_machine_set_global(m, "kept", value), "rooted table");
+    m->member_caches[0].answered = table;
+    lhat_machine_collectgarbage(m);
+    LHAT_CHECK(m->member_caches[0].answered == table, "reachable hint retained");
+    LHAT_REQUIRE(lhat_machine_set_global(m, "kept", lhat_nil()), "dropped root");
+    lhat_machine_collectgarbage(m);
+    LHAT_CHECK(m->member_caches[0].answered == NULL, "dead hint invalidated");
+    lhat_machine_dispose(m);
+}
+
 int main(void)
 {
+    test_member_cache_lifetime();
+    test_detached_results();
     test_machine();
     test_call_member();
     test_collection();

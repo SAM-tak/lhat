@@ -20,6 +20,7 @@
 #include "../stdlib/async.h"
 #include "../stdlib/channel.h"
 #include "../stdlib/task.h"
+#include "../stdlib/lton.h"
 #include "port/thread.h"
 
 static const LhatTestRegister regs[] = {lhatstdlib_task_register,
@@ -710,7 +711,7 @@ static void test_await_union_projection(void)
     if (unit != NULL) {
         const char *names[] = {"= raw", "= handled"};
         const char *expected_text[] = {
-            "string^|number^|std.task.TaskError.NotStarted|std.task.TaskError.Refused"
+            "string^|number^|std.task.TaskError.Taken|std.task.TaskError.NotStarted|std.task.TaskError.Refused"
             "|std.task.TaskError.Failed|std.error.OutOfMemory",
             "string^|number^"
         };
@@ -730,7 +731,7 @@ static void test_await_union_projection(void)
                     arms++;
                 }
             }
-            LHAT_CHECK_EQ_INT(arms, i == 0 ? 6 : 2);
+            LHAT_CHECK_EQ_INT(arms, i == 0 ? 7 : 2);
         }
     }
 #endif
@@ -759,7 +760,7 @@ static void test_await_inferred_type(void)
         const LhatResolution *raw = lhat_check_resolution_at(&unit->checked, raw_offset);
         const LhatResolution *handled = lhat_check_resolution_at(&unit->checked, handled_offset);
         const char expected_text[] =
-            "number^|std.task.TaskError.NotStarted|std.task.TaskError.Refused"
+            "number^|std.task.TaskError.Taken|std.task.TaskError.NotStarted|std.task.TaskError.Refused"
             "|std.task.TaskError.Failed|std.error.OutOfMemory";
         const LhatType *expected = lhat_type_of_text(expected_text,
             strlen(expected_text), &program->types, program->hosted, NULL);
@@ -978,8 +979,139 @@ static void test_static_results(void)
         "neither task arm can disappear during merging");
 }
 
+static void test_await_transfer(void)
+{
+    LHAT_TEST("await preserves its transferred result type");
+    LHAT_CHECK(lhat_test_check_text(regs, 2,
+        "import^std.task\nlet^t = try^std.task.async(f^{42})\n"
+        "let^n:number^ = try^std.task.await(t)\n"), "number result");
+    LHAT_CHECK(!lhat_test_check_text(regs, 2,
+        "import^std.task\nlet^t = try^std.task.async(f^{42})\n"
+        "let^n:string^ = try^std.task.await(t)\n"), "wrong result type rejected");
+
+    LHAT_TEST("await moves a table once, then reports Taken");
+    LhatTestRan ran = run_source(
+        "import^std.task\ntry^std.task.start(1)\n"
+        "let^t = try^std.task.async(f^{{answer = 42}})\n"
+        "let^data = try^std.task.await(t)\n"
+        "var^n = data.answer\n"
+        "if^std.task.await(t) fits^std.task.TaskError.Taken {n += 1}\n"
+        "if^t.done() {n += 10}\n"
+        "t.dispose()\nstd.task.stop()\nL^.collectgarbage()\nreturn^n + data.answer\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 95);
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("nil is a result that can only be taken once");
+    ran = run_source(
+        "import^std.task\ntry^std.task.start(1)\n"
+        "let^t = try^std.task.async(p^{})\n"
+        "let^v = try^std.task.await(t)\n"
+        "let^again = std.task.await(t)\nstd.task.stop()\n"
+        "return^if^v is^nil^ and^ again fits^std.task.TaskError.Taken: 1 el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("closed captures transfer with a program closure");
+    ran = run_source(
+        "import^std.task\ntry^std.task.start(1)\n"
+        "let^t = try^std.task.async(f^{let^x = {answer = 42} return^f^{x.answer}})\n"
+        "let^f = try^std.task.await(t)\nt.dispose()\n"
+        "std.task.stop()\nL^.collectgarbage()\nreturn^f()\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 42);
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("unmovable results are refused without falling back to copying");
+    ran = run_source(
+        "import^std.task\ntry^std.task.start(1)\n"
+        "let^t = try^std.task.async(p^{let^g = p^{yield^1 yield^2}\n"
+        " let^c = g() c.start() return^{c = c}})\n"
+        "let^r = std.task.await(t)\nlet^again = std.task.await(t)\n"
+        "std.task.stop()\nreturn^if^r fits^std.task.TaskError.Refused and^\n"
+        " again fits^std.task.TaskError.Taken: 1 el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("failure is also received exactly once");
+    ran = run_source(
+        "import^std.task\ntry^std.task.start(1)\n"
+        "let^t = try^std.task.async(p^{panic^'failed'})\n"
+        "let^r = std.task.await(t)\nlet^again = std.task.await(t)\n"
+        "std.task.stop()\nreturn^if^r fits^std.task.TaskError.Failed and^\n"
+        " again fits^std.task.TaskError.Taken: 1 el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("two receivers compete for exactly one terminal result");
+    ran = run_source(
+        "import^std.task\ntry^std.task.start(3)\n"
+        "let^t = try^std.task.async(f^{{answer = 42}})\n"
+        "let^claim = p^{let^r = std.task.await(t)\n"
+        " return^if^r fits^t^{answer:number^}: r.answer el^: 0;}\n"
+        "let^a = try^std.task.async(claim)\n"
+        "let^b = try^std.task.async(claim)\n"
+        "let^n = try^std.task.await(a) + try^std.task.await(b)\nstd.task.stop()\nreturn^n\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 42);
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("loaded LTON strings survive worker destruction and receiver GC");
+    const LhatTestRegister lton_regs[] = {lhatstdlib_task_register, lhatstdlib_lton_register};
+    ran = lhat_test_run(lton_regs, 2,
+        "import^std.task\nimport^std.lton\ntry^std.task.start(1)\n"
+        "let^t = try^std.task.async(f^{return^std.lton.parse(\"answer = 42, child = {text = 'hello'}\")})\n"
+        "let^data = try^std.task.await(t)\nt.dispose()\nstd.task.stop()\n"
+        "L^.collectgarbage()\nL^.collectgarbage()\n"
+        "return^if^data fits^t^{answer:number^, child:t^{text:string^}}:\n"
+        " data.answer + (if^data.child.text = 'hello': 5 el^: 0;) el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 47);
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("LTON errors can be taken as values");
+    ran = lhat_test_run(lton_regs, 2,
+        "import^std.task\nimport^std.lton\ntry^std.task.start(1)\n"
+        "let^t = try^std.task.async(f^{return^std.lton.load('missing.lton')})\n"
+        "let^r = std.task.await(t)\nstd.task.stop()\nL^.collectgarbage()\n"
+        "return^if^r fits^std.lton.LtonError.CannotRead: 1 el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+
+    LHAT_TEST("completed data can be abandoned without a receiver");
+    ran = run_source(
+        "import^std.task\ntry^std.task.start(2)\n"
+        "repeat^20 {let^t = try^std.task.async(p^{\n"
+        " var^a = {}\nrepeat^500 {a.push^({1,2,3})}\nreturn^a})\n"
+        " repeat^until^t.done() {}\nt.dispose()}\n"
+        "std.task.stop()\nreturn^1\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+}
+
+static void test_member_race(void)
+{
+    LHAT_TEST("shared closure member reads and calls stay in their worker VM");
+    LhatTestRan ran = run_source(
+        "import^std.task\n"
+        "let^read = p^id:number^ -> number^{\n"
+        " let^own = {tag = id, get = f^ -> number^{id}}\n"
+        " for^i from^0 to^100000 {\n"
+        "  if^own.tag != id {return^0}\n"
+        "  if^own.get() != id {return^0}\n"
+        " }\nreturn^id\n}\n"
+        "try^std.task.start(2)\nvar^total = 0\n"
+        "repeat^8 {\n"
+        " let^a = try^std.task.async(p^{return^read(111)})\n"
+        " let^b = try^std.task.async(p^{return^read(222)})\n"
+        " total += try^std.task.await(a) + try^std.task.await(b)\n"
+        " a.dispose() b.dispose()\n"
+        " L^.collectgarbage()\n}\n"
+        "std.task.stop()\nreturn^total\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 8 * 333);
+    lhat_test_ran_dispose(&ran);
+}
+
 int main(void)
 {
+    test_member_race();
+    test_await_transfer();
     test_await_inferred_type();
     test_await_union_projection();
     test_task_unit_boundary();

@@ -261,25 +261,16 @@ static LhatValue call_arg(LhatSlots regs, size_t rbase, uint8_t a, size_t skip,
     }
     return lhat_slots_get(regs, rbase + a + skip + i);
 }
-// 03 の 5.1改5: what a cached place has to still hold for a hit to be this
-// member.
-//
-// `member_caches` is the one thing on a chunk that is written while the
-// program runs, and a chunk is shared by every machine of a program that
-// runs the same body (05 の 8.8改: a carried closure keeps its proto, and a
-// pool hands one job to N workers). Two of them filling one site write the
-// place in three fields with nothing between them, so a third may read a
-// mix of the two.
-//
-// Reading the key back is what makes a mix harmless. An index past the end
-// is a miss; an index in range whose key is this site's key IS this
-// member, whichever fill it came from -- so the answer is either right or
-// a miss, never another member and never a wild read. The cost is one
-// comparison of a short name, against the hash probe a hit is avoiding.
-//
-// The mutable half is kept on the chunk rather than moved to the machine
-// because a per-machine table would have to be found by the chunk first,
-// and that lookup is the very thing the cache exists to avoid.
+// Cache collisions are harmless only within a machine: validate the current
+// receiver and layout below, then check the key at the remembered position.
+// Chunks are immutable and may be executed by multiple machines concurrently.
+static LhatMemberCache *member_cache(Machine *m, const LhatChunk *chunk,
+                                     size_t site)
+{
+    size_t slot = (((uintptr_t)chunk >> 4) + site) % LHAT_MEMBER_CACHE_COUNT;
+    return &m->member_caches[slot];
+}
+
 static bool cached_here(const LhatTable *table, uint32_t index, LhatValue key)
 {
     return (size_t)index < table->entry_capacity &&
@@ -1161,7 +1152,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // decides what a member read means, and this is only about how
             // long it takes (4.2).
             VM_CASE(LHAT_BC_GETMEMBER) {
-                LhatMemberCache *cache = &chunk->member_caches[cc];
+                LhatMemberCache *cache = member_cache(m, chunk, cc);
                 const LhatTable *start = vm_readable_table(R(b));
                 if (cache->answered != NULL && start != NULL &&
                     (cache->from_definition
@@ -1179,11 +1170,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                          : (start == cache->answered &&
                             start->version == cache->version)) &&
                     cached_here(cache->answered, cache->index,
-                                chunk->constants[cache->key])) {
+                                chunk->constants[chunk->member_keys[cc]])) {
                     SET_R(a, cache->answered->entries[cache->index].value);
                     VM_NEXT();
                 }
-                member_key = chunk->constants[cache->key];
+                member_key = chunk->constants[chunk->member_keys[cc]];
                 filling = cache;
                 goto member_body;
             }
@@ -1193,7 +1184,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // instruction; a miss is GETMEMBER to the letter, and the pair
             // runs as itself on the next turn.
             VM_CASE(LHAT_BC_CALLMEMBER) {
-                LhatMemberCache *cache = &chunk->member_caches[cc];
+                LhatMemberCache *cache = member_cache(m, chunk, cc);
                 const LhatTable *start = vm_readable_table(R(b));
                 if (cache->answered != NULL && start != NULL &&
                     (cache->from_definition
@@ -1203,7 +1194,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                          : (start == cache->answered &&
                             start->version == cache->version)) &&
                     cached_here(cache->answered, cache->index,
-                                chunk->constants[cache->key])) {
+                                chunk->constants[chunk->member_keys[cc]])) {
                     SET_R(a, cache->answered->entries[cache->index].value);
                     at = pc;
                     instruction = chunk->code[pc++];
@@ -1213,7 +1204,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     op = lhat_op(instruction);
                     goto call_entry;
                 }
-                member_key = chunk->constants[cache->key];
+                member_key = chunk->constants[chunk->member_keys[cc]];
                 filling = cache;
                 goto member_body;
             }

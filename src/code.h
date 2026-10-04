@@ -119,8 +119,8 @@ typedef enum {
                         //       no value (02 の 14.15's declaration)
     LHAT_BC_GETINDEX,   // A B C R[A] = R[B][R[C]]
     // 03 の 5.1改: the same read where the key was written rather than
-    // computed -- 'x.m', never 'x[k]'. Bx names a cache (LhatMemberCache),
-    // which carries the key as well, so a hit is two comparisons instead of
+    // computed -- 'x.m', never 'x[k]'. C names a member_keys entry; the
+    // machine caches its lookup, so a hit needs validation instead of
     // a walk of the definition chain and a probe with a full key equality
     // in it. A miss does exactly what GETINDEX does and fills the cache.
     //
@@ -351,37 +351,6 @@ static inline int32_t lhat_jump_offset(LhatInstruction i)
     return (int32_t)lhat_bx(i) - LHAT_BX_BIAS;
 }
 
-// 03 の 5.1改: what one written 'x.m' remembers about the last receiver it
-// met. The cache belongs to the CALL SITE -- one of these per member read in
-// the source -- and not to a value: the member itself is shared (14.3 puts it
-// on the definition), so what a site sees over and over is the same place.
-//
-// `answered` is the table the value was found in, which is the receiver's own
-// for a host type (05 の 8.8 shares one table per type) and the definition's
-// for an instance (14.7 walks there when the instance has no such key of its
-// own). `version` is that table's when it was found: a layout change moves
-// what is where, and the read is refused until it is looked up again.
-//
-// `from_definition` is what makes a site hit across instances of one def^.
-// The instance is a fresh table per value, so comparing it would never
-// match -- what is compared instead is that the receiver has never been
-// structurally written (version 0) and points at the cached definition.
-// 5.10 seals the prototype, so an untouched clone of it carries exactly the
-// prototype's keys and cannot be shadowing the member.
-//
-// The three places below are written with nothing between them, and a chunk
-// is shared by every machine of a program that runs this body -- so a
-// reader may see a mix of two fills. vm.c's cached_here is what makes that
-// harmless: a hit reads the key back, so a mixed read answers this member
-// or misses, and never another member.
-typedef struct {
-    uint16_t key;  // which constant names the member
-    const struct LhatTable *answered;
-    uint32_t version;
-    uint32_t index;  // where in `answered`'s entries it was
-    bool from_definition;
-} LhatMemberCache;
-
 // 09 の 4 章: one name a body declared -- a written binding, a parameter, or
 // one the language binds (self^, it^, def^, super^, ...). `from` is the first
 // instruction it is live at and `to` one past the last; UINT32_MAX while
@@ -422,16 +391,9 @@ typedef struct {
     // so the chunk owns them rather than the machine that runs it.
     LhatHeap heap;
 
-    // 03 の 5.1改: one per LHAT_BC_GETMEMBER, indexed by its C. Written
-    // while running and read while running -- nothing here takes part in what
-    // the body means, so 4.2 is untouched: clearing every one of these
-    // changes only how long the same answers take.
-    //
-    // The tables it points at belong to a machine, and a chunk outlives none
-    // of them -- but it may be shared by several (std.thread), so a hit is
-    // only ever a hit for the machine that filled it. That is what comparing
-    // the pointer takes care of: another machine's table is another pointer.
-    LhatMemberCache *member_caches;
+    // Immutable member-name constant indices, one per GETMEMBER/CALLMEMBER site.
+    // Runtime cache entries belong to each machine.
+    uint16_t *member_keys;
     size_t member_cache_count;
     size_t member_cache_capacity;
 

@@ -884,13 +884,8 @@ static void test_program_lock(void)
 // 03 の 5.1改5: the member cache under several machines at once
 // ---------------------------------------------------------------------------
 
-// A proto belongs to the program, so every worker running this body reads
-// the same chunk -- and the member cache is the one thing on a chunk that
-// is written while it runs. The site below is polymorphic on purpose: two
-// definitions with the same member name, alternating, so the workers keep
-// filling one site with different places. A read that took a mix of two
-// fills would answer another member (or walk off the end); every worker
-// answering the same total is what says it cannot.
+// Workers share a proto but keep independent member caches. Alternate two
+// definitions at one call site to exercise receiver and layout validation.
 static void test_shared_member_cache(void)
 {
     LHAT_TEST("many machines fill one member site without mixing it");

@@ -329,7 +329,7 @@ void lhat_chunk_dispose(LhatChunk *chunk)
     }
     lhat_free(chunk->locals);
     lhat_free(chunk->constants);
-    lhat_free(chunk->member_caches);
+    lhat_free(chunk->member_keys);
     lhat_object_free_all(&chunk->heap);
     memset(chunk, 0, sizeof *chunk);
 }
@@ -402,11 +402,9 @@ size_t lhat_chunk_member_cache(LhatChunk *chunk, uint16_t key)
     if (chunk->member_cache_count > 0xFFFF) {
         return SIZE_MAX;
     }
-    LHAT_GROW(chunk->member_caches, chunk->member_cache_count,
+    LHAT_GROW(chunk->member_keys, chunk->member_cache_count,
               chunk->member_cache_capacity, 8, return SIZE_MAX);
-    LhatMemberCache *made = &chunk->member_caches[chunk->member_cache_count];
-    memset(made, 0, sizeof *made);
-    made->key = key;
+    chunk->member_keys[chunk->member_cache_count] = key;
     return chunk->member_cache_count++;
 }
 

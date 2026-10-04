@@ -135,6 +135,26 @@ let^ conf = try^ std.lton.load("conf.lton")
 print(conf["window"]["width"])       # conf.window は 03 の 3.1 が拒む
 ```
 
+### バックグラウンドで読み込む
+
+```lhat
+import^std.task
+import^std.lton
+
+try^std.task.start(1)
+let^job = try^std.task.async(p^{
+    return^std.lton.load("conf.lton")
+})
+# メイン側で別の処理を進める
+let^conf = try^std.task.await(job)
+std.task.stop()
+```
+
+読み込み・解析・テーブル構築はワーカーで行う。`await` は完了を待ち、結果の
+オブジェクト群をコピーせず呼び出し元の GC 管理へ移譲する（05 の std.task）。
+描画ループなどでは `job.done()` を確認してから取得できる。同じ Task の結果は
+一度限りで、2回目の `await` は `TaskError.Taken`。受信時の GC 登録の走査は残る。
+
 ### 診断の位置
 
 言語サーバーで `.lton` を編集する場合は、同じ包みと字句・構文解析器を使い、

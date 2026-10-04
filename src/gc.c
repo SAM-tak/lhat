@@ -428,6 +428,16 @@ static void atomic(Machine *m)
         m->weak_count--;
     }
 
+    // Member caches are weak hints, never roots. Invalidate dead targets
+    // before sweeping, while every cached pointer still names a live object.
+    for (size_t i = 0; i < LHAT_MEMBER_CACHE_COUNT; i++) {
+        LhatMemberCache *cache = &m->member_caches[i];
+        if (cache->answered != NULL &&
+            lhat_gc_is_white((const LhatObject *)cache->answered)) {
+            cache->answered = NULL;
+        }
+    }
+
     // The swap: from here on a new object is born the other white, so the
     // only things still wearing this one are what the marking did not reach.
     m->objects.white = lhat_gc_other_white(m->objects.white);

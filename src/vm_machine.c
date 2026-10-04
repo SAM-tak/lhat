@@ -6,6 +6,141 @@
 #include "lhat/config.h"
 #include "lhat/port.h"
 
+struct LhatDetachedValue {
+    LhatHeap heap;
+    LhatValue value;
+};
+
+static bool detach_reach(LhatObject **gray, LhatValue value)
+{
+    if (!lhat_is_object(value)) return value.tag <= LHAT_VALUE_REAL;
+    LhatObject *object = lhat_as_object(value);
+    switch (object->kind) {
+        case LHAT_OBJECT_STRING:
+        case LHAT_OBJECT_ERROR:
+        case LHAT_OBJECT_ERROR_KIND:
+            break;
+        case LHAT_OBJECT_SUBROUTINE:
+            // Program bodies outlive both machines. Loaded-script bodies
+            // need a separate lifetime contract and are not moved here.
+            if (((LhatClosure *)object)->proto->owner != NULL) return false;
+            break;
+        case LHAT_OBJECT_UPVALUE: {
+            const LhatUpvalue *cell = (const LhatUpvalue *)object;
+            if (cell->suspended_in != NULL ||
+                cell->location.value != &cell->closed_value ||
+                cell->location.tag != &cell->closed_tag) return false;
+            break;
+        }
+        case LHAT_OBJECT_TABLE: {
+            const LhatTable *table = (const LhatTable *)object;
+            if (table->definition != NULL || table->is_definition ||
+                table->sealed || table->shared) return false;
+            break;
+        }
+        default:
+            return false;
+    }
+    lhat_gc_reach(gray, value);
+    return true;
+}
+
+LhatDetachStatus lhat_machine_detach_result(LhatMachine *source, LhatValue value,
+                                            LhatDetachedValue **out)
+{
+    *out = NULL;
+    LhatDetachedValue *packet = lhat_calloc(1, sizeof *packet);
+    if (packet == NULL) return LHAT_DETACH_OUT_OF_MEMORY;
+    // Loaded LTON constants must not die with their compiled script. Move
+    // them into the source heap before tracing the terminal data graph.
+    for (LhatObject *o = source->objects.objects; o != NULL; o = o->next) {
+        if (o->kind == LHAT_OBJECT_SCRIPT) {
+            lhat_proto_give_objects(((LhatLoadedScript *)o)->root, &source->objects);
+        }
+    }
+    source->gray = NULL;
+    source->sweep = NULL;
+    source->gcstate = LHAT_GC_PAUSE;
+    for (LhatObject *o = source->objects.objects; o != NULL; o = o->next) {
+        o->color = LHAT_GC_WHITE0;
+        o->gclist = NULL;
+    }
+    LhatObject *gray = NULL;
+    bool allowed = detach_reach(&gray, value);
+    while (allowed && gray != NULL) {
+        LhatObject *o = gray;
+        gray = o->gclist;
+        o->gclist = NULL;
+        o->color = LHAT_GC_BLACK;
+        if (!detach_reach(&gray, lhat_object(o))) {
+            allowed = false;
+            break;
+        }
+        if (o->kind == LHAT_OBJECT_TABLE) {
+            const LhatTable *t = (const LhatTable *)o;
+            for (size_t i = 0; allowed && i < t->array_count; i++) {
+                allowed = detach_reach(&gray, lhat_slots_get(t->array, i));
+            }
+            for (size_t i = 0; allowed && i < t->entry_capacity; i++) {
+                // Trace tombstones too: the regular GC visits every slot.
+                allowed = detach_reach(&gray, t->entries[i].key) &&
+                          detach_reach(&gray, t->entries[i].value);
+            }
+            allowed = allowed && detach_reach(&gray, t->delegate_key);
+        } else if (o->kind == LHAT_OBJECT_ERROR) {
+            const LhatError *e = (const LhatError *)o;
+            allowed = detach_reach(&gray, lhat_object((LhatObject *)e->kind)) &&
+                      detach_reach(&gray, lhat_object((LhatObject *)e->fields));
+        } else {
+            lhat_gc_children(&gray, o);
+        }
+    }
+    if (!allowed) {
+        lhat_free(packet);
+        return LHAT_DETACH_REFUSED;
+    }
+    LhatObject **link = &source->objects.objects;
+    while (*link != NULL) {
+        LhatObject *o = *link;
+        if (o->color == LHAT_GC_BLACK) {
+            *link = o->next;
+            o->next = packet->heap.objects;
+            packet->heap.objects = o;
+            packet->heap.count++;
+            source->objects.count--;
+        } else {
+            link = &o->next;
+        }
+    }
+    packet->value = value;
+    *out = packet;
+    return LHAT_DETACH_OK;
+}
+
+LhatValue lhat_machine_adopt_result(LhatMachine *receiver, LhatDetachedValue *value)
+{
+    LhatObject *o = value->heap.objects;
+    while (o != NULL) {
+        LhatObject *next = o->next;
+        o->color = receiver->objects.white;
+        o->gclist = NULL;
+        o->next = receiver->objects.objects;
+        receiver->objects.objects = o;
+        o = next;
+    }
+    receiver->objects.count += value->heap.count;
+    LhatValue result = value->value;
+    lhat_free(value);
+    return result;
+}
+
+void lhat_detached_value_free(LhatDetachedValue *value)
+{
+    if (value == NULL) return;
+    lhat_object_free_all(&value->heap);
+    lhat_free(value);
+}
+
 // 05 の 8.6: L^ is the one name that is there without being imported, so what
 // it answers is made with the machine. A member is added here and its type in
 // check.c's environment_type -- the two lists have to say the same thing.

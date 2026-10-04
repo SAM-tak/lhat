@@ -1,8 +1,8 @@
 // L^ (lhat) -- sample standard library: std.task (see task.h).
 //
 // A MACHINE PER TASK, and N OS threads that take turns running them.
-// Everything that crosses goes through carry.h, so nothing here reaches into
-// another machine's heap.
+// Jobs cross through carry.h. Terminal data results detach from the worker
+// heap, so await can adopt them without copying their contents.
 //
 // A machine is what a task's whole state is. Its frame stack is one stack
 // and a coroutine saves one frame, so a single machine cannot hold two jobs
@@ -16,7 +16,7 @@
 //
 //   still going  -> the back of the run queue, so the next task gets a turn
 //   waiting      -> the parked set, and the worker takes something else
-//   done, failed -> the answer is carried out and the machine is let go
+//   done, failed -> the answer is detached, and the machine goes
 //
 // The middle line is the point. A job that waits on std.async used to hold
 // its worker asleep; now it holds nothing, and N threads keep working
@@ -67,6 +67,7 @@ typedef struct {
     const LhatErrorKind *not_started;
     const LhatErrorKind *refused;
     const LhatErrorKind *failed;
+    const LhatErrorKind *taken;
     const LhatErrorKind *out_of_memory;
     const LhatHostDataTag *tag;
 
@@ -131,7 +132,9 @@ struct Task {
     LhatCondition done;
     bool finished;
     LhatRunStatus status;
-    LhatCarried *result;
+    LhatDetachedValue *detached;
+    bool taken;
+    bool result_refused;
     char *traceback;
     // 04 の 11.6改: what it failed with and where, read on the worker while
     // its machine is still standing (stdlib/thread.c says why).
@@ -160,7 +163,7 @@ static void task_free(Task *task)
         lhat_machine_dispose(task->machine);
     }
     lhat_carried_free(task->job);
-    lhat_carried_free(task->result);
+    lhat_detached_value_free(task->detached);
     lhat_object_free_all(&task->type_heap);
     lhat_free(task->traceback);
     lhat_free(task->fault_text);
@@ -427,13 +430,18 @@ static StepResult task_turn(TaskModule *module, Task *task)
     }
 }
 
-// The end: the answer carried off the machine before the machine goes, since
-// the answer is one of its objects.
+// Detach the terminal graph before disposing its machine. No result payload
+// is serialized or copied, and unsupported graphs are refused as a whole.
 static void task_conclude(Task *task)
 {
-    if (task->status == LHAT_RUN_OK && task->machine != NULL &&
-        !lhat_carry(task->ran.value, &task->result, NULL)) {
-        task->status = LHAT_RUN_TYPE_ERROR;
+    if (task->status == LHAT_RUN_OK && task->machine != NULL) {
+        LhatDetachStatus detached = lhat_machine_detach_result(
+            task->machine, task->ran.value, &task->detached);
+        if (detached == LHAT_DETACH_OUT_OF_MEMORY) {
+            task->status = LHAT_RUN_OUT_OF_MEMORY;
+        } else if (detached == LHAT_DETACH_REFUSED) {
+            task->result_refused = true;
+        }
     }
     if (task->machine != NULL) {
         lhat_machine_dispose(task->machine);
@@ -846,26 +854,29 @@ static void task_await(LhatMachine *machine, void *context,
         }
         lhat_condition_wait_for(&task->done, &task->lock, HOST_PAUSE_MS);
     }
-    LhatRunStatus status = task->status;
-    LhatCarried *result = task->result;
-    lhat_mutex_unlock(&task->lock);
-
     *answer_count = 1;
+    if (task->taken) {
+        lhat_mutex_unlock(&task->lock);
+        answers[0] = fail_with(machine, module->taken, "task result was already taken");
+        return;
+    }
+    // Claim completion, including a failure, exactly once across all VMs.
+    task->taken = true;
+    LhatRunStatus status = task->status;
+    LhatDetachedValue *result = task->detached;
+    task->detached = NULL;
+    lhat_mutex_unlock(&task->lock);
     if (status != LHAT_RUN_OK) {
         char *said = failure_text(task);
-        answers[0] = fail_with(
-            machine, module->failed,
+        answers[0] = fail_with(machine, module->failed,
             said != NULL ? said : lhat_run_status_message(status));
         lhat_free(said);
-        return;
+    } else if (task->result_refused) {
+        answers[0] = fail_with(machine, module->refused,
+                              "task result cannot transfer ownership");
+    } else {
+        answers[0] = lhat_machine_adopt_result(machine, result);
     }
-    LhatValue out = lhat_nil();
-    if (result != NULL && !lhat_uncarry(machine, result, &out)) {
-        answers[0] = fail_with(machine, module->out_of_memory,
-                               "out of memory");
-        return;
-    }
-    answers[0] = out;
 }
 
 static void task_done(LhatMachine *machine, void *context,
@@ -1004,15 +1015,16 @@ bool lhatstdlib_task_register(LhatProgram *program)
     module->program = program;
     module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
 
-    static const char *const variants[] = {"NotStarted", "Refused", "Failed"};
-    const LhatErrorKind *kinds[3];
+    static const char *const variants[] = {"NotStarted", "Refused", "Failed", "Taken"};
+    const LhatErrorKind *kinds[4];
     if (!lhat_register_error_kind(program, "std.task", "TaskError", variants,
-                                  3, NULL, kinds)) {
+                                  4, NULL, kinds)) {
         return false;
     }
     module->not_started = kinds[0];
     module->refused = kinds[1];
     module->failed = kinds[2];
+    module->taken = kinds[3];
 
     module->tag = lhat_register_hostdata_type(program, "std.task", "Task");
     if (module->tag == NULL) {

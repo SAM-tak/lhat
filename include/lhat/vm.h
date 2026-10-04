@@ -149,6 +149,27 @@ LhatMachine *lhat_machine_new_with_size(size_t frames, size_t slots);
 // outlives this call.
 void lhat_machine_dispose(LhatMachine *machine);
 
+// A terminal data result, detached without copying its tables or strings.
+// Scalars, strings, plain tables (cycles allowed), errors, error kinds and
+// program closures with closed captures can cross. Other objects answer
+// REFUSED. Program-owned constants
+// remain borrowed: that program must outlive the packet and its receiver.
+typedef struct LhatDetachedValue LhatDetachedValue;
+typedef enum {
+    LHAT_DETACH_OK,
+    LHAT_DETACH_REFUSED,
+    LHAT_DETACH_OUT_OF_MEMORY
+} LhatDetachStatus;
+// The source must be stopped permanently, with no concurrent users. After
+// this call, successful or not, it may only be inspected or disposed, never
+// run or collected again. Dispose it before publishing the packet elsewhere.
+LhatDetachStatus lhat_machine_detach_result(LhatMachine *source, LhatValue value,
+                                            LhatDetachedValue **out);
+// Consumes the packet. No allocation or payload copy; GC links/colors are
+// updated. Root the returned value before the receiver next runs its GC.
+LhatValue lhat_machine_adopt_result(LhatMachine *receiver, LhatDetachedValue *value);
+void lhat_detached_value_free(LhatDetachedValue *value);
+
 // 05 の 8.6: what L^.collectgarbage() is, for a host that has a machine and
 // no L^ code it wants to run to reach one. A whole cycle, now: what the
 // machine cannot reach when this is called has been freed when it answers.
