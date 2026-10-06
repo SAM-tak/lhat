@@ -14,8 +14,7 @@ typedef enum {
     OPERATOR_PICKED,       // a candidate was found and takes the other operand
     OPERATOR_ABSENT,       // this side carries no such member
     OPERATOR_NO_CANDIDATE, // it carries a group, and none of it takes this
-    OPERATOR_NOT_CALLABLE, // the member is there and is not a subroutine
-    OPERATOR_NO_MEMORY
+    OPERATOR_NOT_CALLABLE  // the member is there and is not a subroutine
 } OperatorLookup;
 
 
@@ -109,9 +108,11 @@ OperatorLookup vm_operator_candidate(Machine *m, LhatValue side,
                                          LhatValue *picked, LhatValue *bound);
 LhatValue vm_lookup_member(const LhatTable *table, LhatValue key,
                            LhatValue *receiver);
+LhatValue vm_lookup_named(const LhatTable *table, const char *name,
+                          size_t length, LhatValue *receiver);
 LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
                             size_t key_slot, LhatValue member_key,
-                            LhatMemberCache *filling);
+                            LhatMemberCache *filling, bool for_call);
 
 // vm_host.c
 LhatTable *vm_hostvalue_members_of(Machine *m, const LhatHostValueTag *tag);

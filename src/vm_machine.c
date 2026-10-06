@@ -383,9 +383,17 @@ static LhatWeakEntry *weak_slot(LhatWeakEntry *entries, size_t capacity,
     return gone;
 }
 
-static bool weak_grow(Machine *m)
+static bool weak_rehash(Machine *m)
 {
-    size_t wanted = m->weak_capacity > 0 ? m->weak_capacity * 2 : 16;
+    // Tombstones lengthen probes but do not need more storage. Keep the
+    // capacity unless the live entries themselves need more room -- and
+    // grow from half full, so a rehash always leaves a quarter of the table
+    // to fill before the next one. Kept at three quarters, churn just below
+    // that line would rehash every few puts.
+    size_t wanted = m->weak_capacity > 0 ? m->weak_capacity : 16;
+    if ((m->weak_count + 1) * 2 >= wanted) {
+        wanted *= 2;
+    }
     LhatWeakEntry *bigger =
         (LhatWeakEntry *)lhat_calloc(wanted, sizeof *bigger);
     if (bigger == NULL) {
@@ -439,7 +447,7 @@ bool lhat_machine_weak_cache_put(LhatMachine *machine, const void *key,
     }
     // Three quarters full counting what removals left, since those are what
     // a probe still has to step over.
-    if ((m->weak_used + 1) * 4 >= m->weak_capacity * 3 && !weak_grow(m)) {
+    if ((m->weak_used + 1) * 4 >= m->weak_capacity * 3 && !weak_rehash(m)) {
         return false;
     }
     LhatWeakEntry *entry = weak_slot(m->weak, m->weak_capacity, key);

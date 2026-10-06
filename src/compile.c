@@ -926,15 +926,9 @@ static void load_string(Compiler *c, uint8_t into, const LhatNode *node)
 // site cannot have one -- an INDEX (the key changes), a name the compiler
 // cannot spell, a chunk that has run out of the 256 a byte can name. The
 // caller then emits the unspecialised read, which answers the same thing.
-static size_t member_cache_for(Compiler *c, const LhatNode *node)
+static size_t member_cache_named(Compiler *c, const char *name, size_t length)
 {
-    if (node->kind != LHAT_NODE_MEMBER ||
-        c->proto->chunk.member_cache_count >= 256) {
-        return SIZE_MAX;
-    }
-    const char *name = NULL;
-    size_t length = 0;
-    if (!node_name(c, node->v.access.argument, &name, &length)) {
+    if (c->proto->chunk.member_cache_count >= 256) {
         return SIZE_MAX;
     }
     size_t k = lhat_chunk_string(&c->proto->chunk, name, length);
@@ -942,6 +936,37 @@ static size_t member_cache_for(Compiler *c, const LhatNode *node)
         return SIZE_MAX;
     }
     return lhat_chunk_member_cache(&c->proto->chunk, (uint16_t)k);
+}
+
+static size_t member_cache_for(Compiler *c, const LhatNode *node)
+{
+    const char *name = NULL;
+    size_t length = 0;
+    if (node->kind != LHAT_NODE_MEMBER ||
+        !node_name(c, node->v.access.argument, &name, &length)) {
+        return SIZE_MAX;
+    }
+    return member_cache_named(c, name, length);
+}
+
+// A member the runtime calls on its own account -- iterate^ for a walk,
+// dispose for a cleanup -- read off R[callee + 1] into R[callee] for the
+// method call emitted right after this. Fused (CALLMEMBER) so a built-in
+// answer needs no receiver bound into it; past 256 sites it is the plain
+// GETINDEX, the same answer made the long way.
+static void emit_method_read(Compiler *c, uint8_t callee, const char *name,
+                             size_t length)
+{
+    uint8_t receiver = (uint8_t)(callee + 1);
+    size_t cache = member_cache_named(c, name, length);
+    if (cache != SIZE_MAX) {
+        emit(c, lhat_encode_abc(LHAT_BC_CALLMEMBER, callee, receiver,
+                                (uint8_t)cache));
+        return;
+    }
+    uint8_t key = reserve(c);
+    load_string_bytes(c, key, name, length);
+    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, callee, receiver, key));
 }
 
 static void compile_key(Compiler *c, const LhatNode *node, uint8_t into)
@@ -2406,7 +2431,7 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
             fuse_cache = cache;
             fuse_receiver = receiver;
         } else if (cache != SIZE_MAX) {
-            emit(c, lhat_encode_abc(LHAT_BC_GETMEMBER, callee, receiver,
+            emit(c, lhat_encode_abc(LHAT_BC_GETMETHOD, callee, receiver,
                                     (uint8_t)cache));
         } else {
             uint8_t key = c->next_register;
@@ -5118,15 +5143,11 @@ static void compile_with(Compiler *c, const LhatNode *node)
         // 5.3 lays a method call out as callee, receiver, then arguments.
         // 14.4 puts the value in self^, so this is a method call and not a
         // plain one -- a dispose() written in a def^ declares the receiver and
-        // would be an argument short otherwise. The key is read out of the
-        // third register before anything would be written over it, the same
-        // way compile_interp_part reads one.
+        // would be an argument short otherwise.
         uint8_t callee = reserve(c);
         uint8_t receiver = reserve(c);
-        uint8_t key = reserve(c);
-        load_string_bytes(c, key, "dispose", 7);
-        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, callee, held[i], key));
         emit(c, lhat_encode_abc(LHAT_BC_MOVE, receiver, held[i], 0));
+        emit_method_read(c, callee, "dispose", 7);
         emit(c, lhat_encode_abc(LHAT_BC_CALLMETHOD, callee, 0, 0));
         c->next_register = mark;
         emit(c, lhat_encode_abc(LHAT_BC_ENDCLEANUP, 0, 0, 0));
@@ -5328,10 +5349,8 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     if (kind == LHAT_FOR_IN) {
         walk = reserve(c);
         uint8_t receiver = reserve(c);
-        uint8_t key = reserve(c);
         compile_expression(c, bound, receiver);
-        load_string_bytes(c, key, "iterate^", 8);
-        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, walk, receiver, key));
+        emit_method_read(c, walk, "iterate^", 8);
         emit(c, lhat_encode_abc(LHAT_BC_CALLMETHOD, walk, 0, 0));
         c->next_register = (uint8_t)(walk + 1);
         // 13.8改: several names take a run -- one head slot plus a position

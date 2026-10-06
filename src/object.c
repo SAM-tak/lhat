@@ -1862,11 +1862,25 @@ static bool entry_is_tombstone(const LhatTableEntry *entry)
     return lhat_is_nil(entry->key) && !lhat_is_nil(entry->value);
 }
 
+static bool spells(LhatValue key, const char *text, size_t length)
+{
+    if (!lhat_is_object_kind(key, LHAT_OBJECT_STRING)) {
+        return false;
+    }
+    const LhatString *held = (const LhatString *)lhat_as_object(key);
+    return held->length == length && memcmp(held->text, text, length) == 0;
+}
+
 // The place `key` belongs in `entries`: the entry holding it, or the first
 // place it could be put. Never returns NULL when capacity is non-zero, since
 // the load factor keeps a free entry available.
-static LhatTableEntry *probe(LhatTableEntry *entries, size_t capacity,
-                             LhatValue key, uint32_t hash)
+//
+// With `text`, the key asked for is the string spelling those bytes and `key`
+// is not read: a string key's equality is its bytes (value.c), so a lookup by
+// name needs no string object made for it.
+static LhatTableEntry *probe_spelt(LhatTableEntry *entries, size_t capacity,
+                                   LhatValue key, const char *text,
+                                   size_t length, uint32_t hash)
 {
     size_t index = (size_t)hash & (capacity - 1);
     LhatTableEntry *tombstone = NULL;
@@ -1879,11 +1893,18 @@ static LhatTableEntry *probe(LhatTableEntry *entries, size_t capacity,
             if (tombstone == NULL) {
                 tombstone = entry;
             }
-        } else if (lhat_value_equal(entry->key, key)) {
+        } else if (text != NULL ? spells(entry->key, text, length)
+                                : lhat_value_equal(entry->key, key)) {
             return entry;
         }
         index = (index + 1) & (capacity - 1);
     }
+}
+
+static LhatTableEntry *probe(LhatTableEntry *entries, size_t capacity,
+                             LhatValue key, uint32_t hash)
+{
+    return probe_spelt(entries, capacity, key, NULL, 0, hash);
 }
 
 static bool grow_entries(LhatTable *table)
@@ -2102,14 +2123,20 @@ static const void *delegate_next(const void *object)
 
 // Both public reads use this lookup. Only direct answers have a cacheable
 // location; a delegated answer instead identifies its actual receiver.
+// With `text`, the key is the string spelling those bytes (probe_spelt).
 static LhatValue table_get_in(const LhatTable *table, LhatValue key,
+                              const char *text, size_t length,
                               const LhatTable **found_in, uint32_t *found_at,
                               bool *inherited_out, LhatValue *through)
 {
-    if (table == NULL || !usable_key(key)) {
+    if (table == NULL || (text == NULL && !usable_key(key))) {
         return lhat_nil();
     }
-    key = normalise_key(key);
+    if (text == NULL) {
+        key = normalise_key(key);
+    }
+    uint32_t hash = text != NULL ? lhat_string_hash(text, length)
+                                 : hash_key(key);
     const LhatTable *root = table;
     LhatChain walk = lhat_chain(table, delegate_next);
     const void *at;
@@ -2123,14 +2150,14 @@ static LhatValue table_get_in(const LhatTable *table, LhatValue key,
             size_t index;
             LhatValue value;
             LhatTableEntry *entry = NULL;
-            if (array_index(table, key, &index)) {
+            if (text == NULL && array_index(table, key, &index)) {
                 value = lhat_slots_get(table->array, index);
             } else {
                 if (table->entry_capacity == 0) {
                     continue;
                 }
-                entry = probe(table->entries, table->entry_capacity, key,
-                              hash_key(key));
+                entry = probe_spelt(table->entries, table->entry_capacity, key,
+                                    text, length, hash);
                 if (lhat_is_nil(entry->key) || lhat_is_nil(entry->value)) {
                     continue; // A reserved declaration has no value yet.
                 }
@@ -2163,35 +2190,37 @@ LhatValue lhat_table_locate(const LhatTable *table, LhatValue key,
 {
     *found_in = NULL;
     *through = lhat_nil();
-    return table_get_in(table, key, found_in, found_at, inherited, through);
+    return table_get_in(table, key, NULL, 0, found_in, found_at, inherited,
+                        through);
+}
+
+LhatValue lhat_table_locate_bytes(const LhatTable *table, const char *name,
+                                  size_t length, const LhatTable **found_in,
+                                  uint32_t *found_at, bool *inherited,
+                                  LhatValue *through)
+{
+    *found_in = NULL;
+    *through = lhat_nil();
+    if (name == NULL) {
+        return lhat_nil();
+    }
+    return table_get_in(table, lhat_nil(), name, length, found_in, found_at,
+                        inherited, through);
 }
 
 LhatValue lhat_table_get(const LhatTable *table, LhatValue key)
 {
-    return table_get_in(table, key, NULL, NULL, NULL, NULL);
+    return table_get_in(table, key, NULL, 0, NULL, NULL, NULL, NULL);
 }
 
 LhatValue lhat_table_get_bytes(const LhatTable *table, const char *name,
                                size_t length)
 {
-    if (table == NULL || name == NULL) {
+    if (name == NULL) {
         return lhat_nil();
     }
-    // The walk lhat_table_get does, with the key compared as bytes -- a
-    // string key's equality is its bytes (value.c), so this asks the same
-    // question without a machine to intern the name on.
-    for (size_t i = 0; i < table->entry_capacity; i++) {
-        const LhatTableEntry *entry = &table->entries[i];
-        if (lhat_is_nil(entry->key) || lhat_is_nil(entry->value) ||
-            !lhat_is_object_kind(entry->key, LHAT_OBJECT_STRING)) {
-            continue;
-        }
-        const LhatString *held = (const LhatString *)lhat_as_object(entry->key);
-        if (held->length == length && memcmp(held->text, name, length) == 0) {
-            return entry->value;
-        }
-    }
-    return lhat_nil();
+    return table_get_in(table, lhat_nil(), name, length, NULL, NULL, NULL,
+                        NULL);
 }
 
 // 05 の 8.9改: a lookup asking with the bare value -- `t[vec]`. Everything

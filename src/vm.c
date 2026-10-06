@@ -596,6 +596,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         VM_LABEL(LHAT_BC_FORPREPD),
         VM_LABEL(LHAT_BC_FORLOOPD),
         VM_LABEL(LHAT_BC_CHECKSTEP),
+        VM_LABEL(LHAT_BC_GETMETHOD),
     };
 #endif
 
@@ -1151,7 +1152,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // and fills it on the way out. That way there is one place that
             // decides what a member read means, and this is only about how
             // long it takes (4.2).
-            VM_CASE(LHAT_BC_GETMEMBER) {
+            VM_CASE(LHAT_BC_GETMEMBER)
+            VM_CASE(LHAT_BC_GETMETHOD) {
                 LhatMemberCache *cache = member_cache(m, chunk, cc);
                 const LhatTable *start = vm_readable_table(R(b));
                 if (cache->answered != NULL && start != NULL &&
@@ -1216,8 +1218,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 goto member_body;
 
             member_body: {
+                // GETMETHOD and CALLMEMBER read only for the call that
+                // follows, so a built-in needs no receiver bound into it.
                 LhatRunStatus status = vm_get_member(
-                    m, rbase + a, rbase + b, rbase + cc, member_key, filling);
+                    m, rbase + a, rbase + b, rbase + cc, member_key, filling,
+                    op == LHAT_BC_GETMETHOD || op == LHAT_BC_CALLMEMBER);
                 if (status != LHAT_RUN_OK) {
                     return vm_finish(m, chunk, status, lhat_nil(), at);
                 }
@@ -1941,6 +1946,20 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (lhat_is_object_kind(R(a), LHAT_OBJECT_NATIVE)) {
                     const LhatNative *native =
                         (const LhatNative *)lhat_as_object(R(a));
+                    // GETMETHOD's shared copy: bound here, for this call
+                    // only, to the receiver laid out right after it. The
+                    // slot keeps that receiver alive for as long as the
+                    // copy is read.
+                    LhatNative bound_here;
+                    if (native->unbound) {
+                        if (!as_method) {
+                            return vm_finish(m, chunk, LHAT_RUN_NOT_CALLABLE,
+                                             lhat_nil(), at);
+                        }
+                        bound_here = *native;
+                        bound_here.bound = R(a + 1);
+                        native = &bound_here;
+                    }
                     size_t first = a + (as_method ? 2 : 1);
                     LhatValue sent = b > 0 ? R(first) : lhat_nil();
                     if (native->kind != LHAT_NATIVE_START &&
@@ -3091,7 +3110,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // never wrote one.
         bool unary = op == LHAT_BC_NEG;
         uint8_t given = unary ? 0 : 1;
-        LHAT_GC_POLL();  // candidate lookups intern the operator's name
+        LHAT_GC_POLL();  // a host operator may allocate, as at a CALL
         // The right operand as a value: K[cc] when the ADDK family fell
         // through to here, R(cc) otherwise. A constant is never a host
         // value, so every branch below that wants a pointer aimed into the
@@ -3125,7 +3144,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 OperatorLookup right = vm_operator_candidate(
                     m, rhs, name, length, rhs, R(b), given, true, &other,
                     &right_receiver);
-                if (right == OPERATOR_PICKED || right == OPERATOR_NO_MEMORY) {
+                if (right == OPERATOR_PICKED) {
                     found = other;
                     actual_receiver = right_receiver;
                     receiver_on_right = true;
@@ -3147,9 +3166,6 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // read -- an op^= answers the bool^ itself, a '<=>' a number^ to put
         // beside zero.
         bool answered_bool = op == LHAT_BC_EQ;
-        if (answer == OPERATOR_NO_MEMORY) {
-            return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
-        }
         // 11.9: equality is answered whether or not either was written --
         // 14.2 says what a table is the same as and 05 の 8.9 what a host
         // value is, and a type that says more only refines that. An ordering

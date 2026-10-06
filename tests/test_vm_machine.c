@@ -774,6 +774,86 @@ static LhatValue member_of(const LhatValue owner, const char *name)
     return found;
 }
 
+// 03 の 5.1改: a built-in member read only to be called is the machine's
+// shared copy, bound at the call to the receiver laid out after it -- so a
+// call allocates nothing for the member. Read as a value it is bound as
+// before, and stays bound to what it was read off.
+static void test_builtin_call_allocates_nothing(void)
+{
+    Run r;
+
+    LHAT_TEST("calling a built-in member allocates nothing");
+    run_text(&r,
+             "return^ f^ n:number^ -> number^ {\n"
+             // fused: the arguments run nothing
+             "  let^ a = n.abs()\n"
+             // not fused: an argument is itself a call
+             "  let^ b = n.clamp(n.floor(), 10)\n"
+             "  return^ a + b\n"
+             "}\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    {
+        LHAT_CHECK(lhat_machine_set_global(r.machine, "Held", r.ran.value),
+                   "the function is rooted");
+        LhatValue n = lhat_integer(-3);
+        LhatRunResult first = lhat_machine_call(r.machine, r.ran.value, &n, 1);
+        LHAT_CHECK_EQ_INT(first.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(first.value), 0);
+        LhatRunResult second =
+            lhat_machine_call(r.machine, r.ran.value, &n, 1);
+        LHAT_CHECK_EQ_INT(second.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT((long long)second.live, (long long)first.live);
+    }
+    run_dispose(&r);
+
+    LHAT_TEST("a built-in member read as a value stays bound to its receiver");
+    run_text(&r,
+             "let^ a = -4\n"
+             "let^ b = 2\n"
+             "let^ g = a.abs\n"
+             "let^ h = b.abs\n"
+             "return^ g() * 10 + h()\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+}
+
+// 02 の 11.1: an operator is found by the name 11.8 gives it, which the
+// machine spells in C -- asked for by its bytes, so the lookup leaves no
+// string behind on each evaluation.
+static void test_operator_allocates_nothing(void)
+{
+    Run r;
+
+    LHAT_TEST("an operator a definition carries is found without allocating");
+    run_text(&r,
+             "return^ def^{\n"
+             "  self^{ n := 2 },\n"
+             "  op^+ := f^self^, o:number^ -> number^ { return^ self^.n + o },\n"
+             "  plus = f^self^, o:number^ -> number^ { return^ self^ + o },\n"
+             "}\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    {
+        LHAT_CHECK(lhat_machine_set_global(r.machine, "Held", r.ran.value),
+                   "the definition is rooted");
+        LhatRunResult made = lhat_machine_call(
+            r.machine, member_of(r.ran.value, "new"), NULL, 0);
+        LHAT_CHECK_EQ_INT(made.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_machine_set_global(r.machine, "It", made.value),
+                   "the instance is rooted");
+
+        LhatValue by = lhat_integer(3);
+        LhatRunResult first = lhat_machine_call_member(r.machine, made.value,
+                                                       "plus", 4, &by, 1);
+        LHAT_CHECK_EQ_INT(first.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(first.value), 5);
+        LhatRunResult second = lhat_machine_call_member(r.machine, made.value,
+                                                        "plus", 4, &by, 1);
+        LHAT_CHECK_EQ_INT(second.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT((long long)second.live, (long long)first.live);
+    }
+    run_dispose(&r);
+}
+
 static void test_call_member(void)
 {
     Run r;
@@ -829,6 +909,14 @@ static void test_call_member(void)
         LHAT_CHECK_EQ_INT(wrote.status, LHAT_RUN_OK);
         got = lhat_machine_call_member(r.machine, instance, "get", 3, NULL, 0);
         LHAT_CHECK_EQ_INT(lhat_as_integer(got.value), 12);
+
+        // A member named from C is looked up by its bytes: calling one that
+        // allocates nothing itself leaves nothing behind on the heap.
+        LHAT_TEST("calling a member by name allocates nothing");
+        LhatRunResult again =
+            lhat_machine_call_member(r.machine, instance, "get", 3, NULL, 0);
+        LHAT_CHECK_EQ_INT(again.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT((long long)again.live, (long long)got.live);
 
         // 14.4: a member that takes no self^ is a static one -- it belongs to
         // the definition, and an instance does not see it. `d.plain()` is a
@@ -1212,6 +1300,8 @@ int main(void)
     test_detached_results();
     test_machine();
     test_call_member();
+    test_operator_allocates_nothing();
+    test_builtin_call_allocates_nothing();
     test_collection();
     test_host_table_write();
     test_fault_span();

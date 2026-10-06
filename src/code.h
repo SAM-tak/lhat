@@ -291,6 +291,14 @@ typedef enum {
     LHAT_BC_FORLOOPD,   // A Bx  advance down, jump back while focus >= bound
 
     LHAT_BC_CHECKSTEP, // A  require a numeric R[A] greater than zero
+
+    // GETMEMBER at a method call that cannot fuse (an argument runs
+    // something). A is the callee slot and B is A + 1, read by the paired
+    // CALLMETHOD/TAILCALLMETHOD and by nothing else -- which is what lets a
+    // built-in member land here as the machine's shared, receiver-less copy
+    // (LhatNative.unbound) instead of a fresh object. CALLMEMBER says the
+    // same of its own A.
+    LHAT_BC_GETMETHOD,  // A B C as GETMEMBER; R[A] feeds only a method call
     LHAT_BC_COUNT
 } LhatOpcode;
 

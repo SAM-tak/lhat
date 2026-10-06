@@ -428,6 +428,15 @@ static void atomic(Machine *m)
         m->weak_count--;
     }
 
+    // The shared receiver-less built-ins likewise: kept while a call site
+    // holds one, made again by the next read once none does.
+    for (size_t i = 0; i <= LHAT_NATIVE_CLEAR; i++) {
+        if (m->unbound_natives[i] != NULL &&
+            lhat_gc_is_white((const LhatObject *)m->unbound_natives[i])) {
+            m->unbound_natives[i] = NULL;
+        }
+    }
+
     // Member caches are weak hints, never roots. Invalidate dead targets
     // before sweeping, while every cached pointer still names a live object.
     for (size_t i = 0; i < LHAT_MEMBER_CACHE_COUNT; i++) {

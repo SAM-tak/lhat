@@ -495,6 +495,23 @@ LhatValue vm_lookup_member(const LhatTable *table, LhatValue key,
     return found;
 }
 
+// vm_lookup_member with the key named by its bytes, so that a name the
+// runtime or a host spells in C is asked for without a string made for it.
+LhatValue vm_lookup_named(const LhatTable *table, const char *name,
+                          size_t length, LhatValue *receiver)
+{
+    const LhatTable *found_in = NULL;
+    uint32_t found_at = 0;
+    bool inherited = false;
+    LhatValue through = lhat_nil();
+    LhatValue found = lhat_table_locate_bytes(table, name, length, &found_in,
+                                              &found_at, &inherited, &through);
+    if (!lhat_is_nil(through)) {
+        *receiver = through;
+    }
+    return found;
+}
+
 // 02 の 14.17 with 01 の 5.4: what was written answers before the built-in
 // does, and an interpolation hole asks for the hat spelling -- the one
 // 14.17改 keeps a plain table from taking off the writer. Everywhere else
@@ -508,7 +525,7 @@ LhatValue vm_lookup_member(const LhatTable *table, LhatValue key,
 // hat-only on every table, 16.3改2 with 14.18) are then looked for under the
 // other one. Answers nil^ where neither is written, which is the path the
 // built-in answers on.
-static LhatValue member_written(Machine *m, LhatValue *on, LhatValue key,
+static LhatValue member_written(LhatValue *on, LhatValue key,
                                 const LhatTable *members)
 {
     LhatValue found = vm_lookup_member(members, key, on);
@@ -524,11 +541,7 @@ static LhatValue member_written(Machine *m, LhatValue *on, LhatValue key,
     const char *other = which == LHAT_NATIVE_ITERATE
                             ? (hatted ? "iterate" : "iterate^")
                             : (hatted ? "tostring" : "tostring^");
-    LhatString *spelt = lhat_string_new(&m->objects, other, strlen(other));
-    if (spelt == NULL) {
-        return found;  // the built-in is still an answer; nothing is lost here
-    }
-    return vm_lookup_member(members, lhat_object((LhatObject *)spelt), on);
+    return vm_lookup_named(members, other, strlen(other), on);
 }
 
 // 02 の 14.12: whether this candidate takes what the call is handing over.
@@ -657,12 +670,7 @@ OperatorLookup vm_operator_candidate(Machine *m, LhatValue side,
     if (name == NULL || carrier == NULL) {
         return OPERATOR_ABSENT;
     }
-    LhatString *key = lhat_string_new(&m->objects, name, length);
-    if (key == NULL) {
-        return OPERATOR_NO_MEMORY;
-    }
-    LhatValue found = vm_lookup_member(carrier, lhat_object((LhatObject *)key),
-                                       bound);
+    LhatValue found = vm_lookup_named(carrier, name, length, bound);
     if (lhat_is_nil(found)) {
         return OPERATOR_ABSENT;
     }
@@ -751,12 +759,24 @@ const LhatRuntimeType *lhat_value_type(LhatMachine *machine,
 }
 
 // Bind a built-in only after user-written members have been considered.
+// `unbound` when the read only feeds a method call with the receiver laid
+// out right after the callee: the machine's shared copy of the kind then
+// stands in, and the call reads the receiver from its own slot (vm.c).
 static LhatRunStatus bind_native(Machine *m, size_t into,
-                                 LhatNativeKind kind, LhatValue receiver)
+                                 LhatNativeKind kind, LhatValue receiver,
+                                 bool unbound)
 {
-    LhatNative *native = lhat_native_new(&m->objects, kind, receiver);
+    LhatNative *native = unbound ? m->unbound_natives[kind] : NULL;
     if (native == NULL) {
-        return LHAT_RUN_OUT_OF_MEMORY;
+        native = lhat_native_new(&m->objects, kind,
+                                 unbound ? lhat_nil() : receiver);
+        if (native == NULL) {
+            return LHAT_RUN_OUT_OF_MEMORY;
+        }
+        if (unbound) {
+            native->unbound = true;
+            m->unbound_natives[kind] = native;
+        }
     }
     lhat_slots_set(m->slots, into, lhat_object((LhatObject *)native));
     return LHAT_RUN_OK;
@@ -764,8 +784,9 @@ static LhatRunStatus bind_native(Machine *m, size_t into,
 
 LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
                         size_t key_slot, LhatValue member_key,
-                        LhatMemberCache *filling)
+                        LhatMemberCache *filling, bool for_call)
 {
+    bool unbound = for_call && receiver == into + 1;
     LhatValue on = lhat_slots_get(m->slots, receiver);
     // 02 の 19 章: a member answers what its declaration wrote
     // -- value and enum -- and the runtime's own tostring^.
@@ -798,7 +819,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
             which != LHAT_NATIVE_TOSTRING) {
             return LHAT_RUN_TYPE_ERROR;
         }
-        return bind_native(m, into, which, on);
+        return bind_native(m, into, which, on, unbound);
     }
     // 02 の 12.6 and 15.6: a coroutine answers the operations the
     // runtime provides, bound to what they came through.
@@ -808,7 +829,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
         if (!native_named(member_key, &which, &hatted)) {
             return LHAT_RUN_TYPE_ERROR;
         }
-        return bind_native(m, into, which, on);
+        return bind_native(m, into, which, on, unbound);
     }
     // 02 の 13.14改: a closure answers its ReturnType -- what a
     // call of it answers, off the reflection typeof^ makes (a
@@ -880,7 +901,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
         if (hv_members == NULL) {
             return LHAT_RUN_TYPE_ERROR;
         }
-        lhat_slots_set(m->slots, into, member_written(m, &on, member_key, hv_members));
+        lhat_slots_set(m->slots, into, member_written(&on, member_key, hv_members));
     on = lhat_slots_get(m->slots, receiver);
         // 02 の 14.17: and where the library registered none, the
         // built-in writes the value down -- a host value has no
@@ -889,7 +910,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
         LhatNativeKind hv_which;
         if (lhat_is_nil(lhat_slots_get(m->slots, into)) &&
             builtin_member(on, member_key, &hv_which)) {
-            return bind_native(m, into, hv_which, on);
+            return bind_native(m, into, hv_which, on, unbound);
         }
         return LHAT_RUN_OK;
     }
@@ -909,7 +930,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
         }
         LhatNativeKind which;
         if (box_member_named(member_key, &which)) {
-            return bind_native(m, into, which, on);
+            return bind_native(m, into, which, on, unbound);
         }
     }
     const LhatTable *table = vm_readable_table(on);
@@ -940,7 +961,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
              bare == LHAT_NATIVE_ABS ||
              bare == LHAT_NATIVE_SIGN ||
              bare == LHAT_NATIVE_CLAMP)) {
-            return bind_native(m, into, bare, on);
+            return bind_native(m, into, bare, on, unbound);
         }
         // 02 の 14.18: and a string^ answers how long it is,
         // without a call being written. Two readings of the same
@@ -1024,7 +1045,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
         }
     }
     {
-        LhatValue got = member_written(m, &on, member_key, table);
+        LhatValue got = member_written(&on, member_key, table);
         lhat_slots_set(m->slots, receiver, on);
         lhat_slots_set(m->slots, into, got);
     }
@@ -1037,7 +1058,7 @@ member_answered:;
     LhatNativeKind which;
     if (lhat_is_nil(lhat_slots_get(m->slots, into)) &&
         builtin_member(on, member_key, &which)) {
-        return bind_native(m, into, which, on);
+        return bind_native(m, into, which, on, unbound);
     }
 
     // 02 の 14.18: how long the run is, and how much the table

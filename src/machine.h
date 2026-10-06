@@ -344,6 +344,10 @@ struct LhatMachine {
     // every level's table has to stay reachable, not just the innermost.
     // The nodes live on the C stack of the built-in that pushed them.
     struct LhatNativeHold *native_hold;
+    // 03 の 5.1改: a built-in member read only to be called carries no
+    // receiver of its own (LhatNative.unbound), so one per kind serves every
+    // such call. Made on first use and held weakly (gc.c's atomic).
+    struct LhatNative *unbound_natives[LHAT_NATIVE_CLEAR + 1];
 };
 
 typedef struct LhatMachine Machine;

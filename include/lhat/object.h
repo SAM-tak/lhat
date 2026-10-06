@@ -591,6 +591,10 @@ typedef struct LhatNative {
     LhatObject header;
     LhatNativeKind kind;
     LhatValue bound;  // what it was reached through
+    // The machine's one shared copy of `kind`, read only as the callee of a
+    // method call: `bound` is unused and the receiver the call laid out
+    // below its arguments stands in for it.
+    bool unbound;
 } LhatNative;
 
 // 05 の 8.7: a subroutine the host wrote in C -- LhatHostFn, declared above
@@ -1005,12 +1009,8 @@ bool lhat_takes_receiver(LhatValue value);
 // among the instance's own fields is looked for there.
 LhatValue lhat_table_get(const LhatTable *table, LhatValue key);
 
-// ONE TABLE'S NAMED HALF, and no more. The read above climbs `definition`,
-// steps past a reserved seat to keep climbing, and follows a delegate
-// (02 の 14.7改2); this does none of that, because it exists for a caller
-// that has no machine to make the key on. Where those legs can matter --
-// anywhere a type's members table may stand on the path -- the caller has
-// to use the read above instead.
+// The read above with the key named by its bytes: a string key's equality is
+// its bytes, so no string object has to be made to ask for one.
 LhatValue lhat_table_get_bytes(const LhatTable *table, const char *name,
                                size_t length);
 
@@ -1030,6 +1030,10 @@ LhatValue lhat_table_get_bytes(const LhatTable *table, const char *name,
 LhatValue lhat_table_locate(const LhatTable *table, LhatValue key,
                             const LhatTable **found_in, uint32_t *found_at,
                             bool *inherited, LhatValue *through);
+LhatValue lhat_table_locate_bytes(const LhatTable *table, const char *name,
+                                  size_t length, const LhatTable **found_in,
+                                  uint32_t *found_at, bool *inherited,
+                                  LhatValue *through);
 
 // 05 の 8.9: a registered field decoded off a host value's data run -- the
 // bytes after the head. What 'v.x' answers, and what the value writer

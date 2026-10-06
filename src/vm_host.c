@@ -294,38 +294,20 @@ static LhatTable *reach_table(Machine *m, LhatTable *owner, const char *path)
 {
     for (const char *segment = path;;) {
         size_t length = strcspn(segment, ".");
-        // Asked by bytes first: a string key's equality is its bytes, so a
-        // hit needs no key object -- and every registration after the first
-        // of a path is a hit. But that read sees ONE table's hash half,
-        // where the real one also climbs `definition`, steps past a
-        // reserved seat and follows a delegate (object.c's table_get_in).
-        //
-        // A miss here is DESTRUCTIVE: what follows makes a table and writes
-        // it over whatever the path named. So a miss is asked again with
-        // the read that decides what a name means, and only a miss on THAT
-        // makes anything.
+        // Asked by bytes: a hit -- every registration after the first of a
+        // path -- needs no key object. Only a miss makes one, to write the
+        // new table under.
         LhatValue found = lhat_table_get_bytes(owner, segment, length);
         LhatTable *next = vm_table_of(found);
         if (next == NULL && lhat_is_nil(found)) {
             LhatString *key = lhat_string_new(&m->objects, segment, length);
-            if (key == NULL) {
+            next = key != NULL ? lhat_table_new(&m->objects) : NULL;
+            bool refused = false;
+            if (next == NULL ||
+                !vm_set_key(m, owner, lhat_object((LhatObject *)key),
+                         lhat_object((LhatObject *)next), &refused) ||
+                refused) {
                 return NULL;
-            }
-            LhatValue held =
-                lhat_table_get(owner, lhat_object((LhatObject *)key));
-            next = vm_table_of(held);
-            if (next == NULL) {
-                if (!lhat_is_nil(held)) {
-                    return NULL;  // something that is not a table is there
-                }
-                next = lhat_table_new(&m->objects);
-                bool refused = false;
-                if (next == NULL ||
-                    !vm_set_key(m, owner, lhat_object((LhatObject *)key),
-                             lhat_object((LhatObject *)next), &refused) ||
-                    refused) {
-                    return NULL;
-                }
             }
         } else if (next == NULL) {
             return NULL;  // something that is not a table is there
@@ -515,14 +497,10 @@ bool lhat_machine_bind_hostvalues(LhatMachine *machine,
 // 05 の 5.7: the read-only half of reach_table -- walk to what is there and
 // answer NULL where nothing is, making nothing on the way. A path that does
 // not reach a table is a path with nothing to forget.
-static LhatTable *table_at(Machine *m, LhatTable *owner, const char *segment,
+static LhatTable *table_at(LhatTable *owner, const char *segment,
                            size_t length)
 {
-    LhatString *key = lhat_string_new(&m->objects, segment, length);
-    if (key == NULL) {
-        return NULL;
-    }
-    return vm_table_of(lhat_table_get(owner, lhat_object((LhatObject *)key)));
+    return vm_table_of(lhat_table_get_bytes(owner, segment, length));
 }
 
 bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
@@ -542,7 +520,7 @@ bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
     const char *segment = module;
     size_t length = strcspn(segment, ".");
     while (segment[length] == '.') {
-        owner = table_at(machine, owner, segment, length);
+        owner = table_at(owner, segment, length);
         if (owner == NULL) {
             return false;
         }
@@ -550,14 +528,14 @@ bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
         length = strcspn(segment, ".");
     }
 
+    if (lhat_is_nil(lhat_table_get_bytes(owner, segment, length))) {
+        return false;  // nothing stood there
+    }
     LhatString *last = lhat_string_new(&machine->objects, segment, length);
     if (last == NULL) {
         return false;
     }
     LhatValue key = lhat_object((LhatObject *)last);
-    if (lhat_is_nil(lhat_table_get(owner, key))) {
-        return false;  // nothing stood there
-    }
     // 04 の 11.3 spells "not there" nil^, which is exactly what 5.3's guard
     // tests -- so storing nil^ is the whole of forgetting.
     bool refused = false;
@@ -568,21 +546,13 @@ bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
 // above creates the tables a registration needs; a read that created one
 // would answer nil^ for a name and leave a table behind saying it had been
 // asked for.
-// The read-only twin of reach_table. It has a machine, so it asks the read
-// that decides what a name means rather than the narrow one -- otherwise a
-// member a type inherits (05 の 8.8改) reads as not registered while a call
-// on the value finds it.
-static const LhatTable *find_table(Machine *m, const LhatTable *owner,
-                                   const char *path)
+// The read-only twin of reach_table.
+static const LhatTable *find_table(const LhatTable *owner, const char *path)
 {
     for (const char *segment = path;;) {
         size_t length = strcspn(segment, ".");
-        LhatString *key = lhat_string_new(&m->objects, segment, length);
-        if (key == NULL) {
-            return NULL;
-        }
         const LhatTable *next =
-            vm_table_of(lhat_table_get(owner, lhat_object((LhatObject *)key)));
+            vm_table_of(lhat_table_get_bytes(owner, segment, length));
         if (next == NULL) {
             return NULL;
         }
@@ -608,17 +578,14 @@ bool lhat_machine_registered(LhatMachine *machine, const char *module,
     if (owner == NULL) {
         return false;
     }
-    owner = find_table(m, owner, module);
+    owner = find_table(owner, module);
     if (owner != NULL && type != NULL) {
-        owner = find_table(m, owner, type);
+        owner = find_table(owner, type);
     }
     if (owner == NULL) {
         return false;
     }
-    LhatString *last = lhat_string_new(&m->objects, name, strlen(name));
-    LhatValue held =
-        last != NULL ? lhat_table_get(owner, lhat_object((LhatObject *)last))
-                     : lhat_nil();
+    LhatValue held = lhat_table_get_bytes(owner, name, strlen(name));
     if (lhat_is_nil(held)) {
         return false;
     }

@@ -1048,6 +1048,54 @@ static LhatMachine *scene_machine(LhatProgram *program, Disk *disk)
 
 static void test_the_weak_cache(void)
 {
+    LHAT_TEST("weak cache capacity follows live entries, not removed keys");
+    {
+        // A host may allocate objects at new addresses forever while keeping
+        // only one wrapper alive. Removed keys must not grow the cache.
+        static unsigned char keys[10000];
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_CHECK(machine != NULL, "machine for weak cache churn");
+        Machine *m = (Machine *)machine;
+        for (size_t i = 0; i < sizeof keys; ++i) {
+            LHAT_CHECK(lhat_machine_weak_cache_put(machine, &keys[i], lhat_integer(42)), "cache put");
+            LHAT_CHECK(!lhat_is_nil(lhat_machine_weak_cache_get(machine, &keys[i])), "cache get");
+            lhat_machine_weak_cache_forget(machine, &keys[i]);
+        }
+        LHAT_CHECK_EQ_INT(m->weak_count, 0);
+        LHAT_CHECK_EQ_INT(m->weak_capacity, 16);
+        for (size_t i = 0; i < 64; ++i) {
+            LHAT_CHECK(lhat_machine_weak_cache_put(machine, &keys[i], lhat_integer(42)), "grow for live entries");
+        }
+        LHAT_CHECK_EQ_INT(m->weak_count, 64);
+        LHAT_CHECK_EQ_INT(m->weak_capacity, 128);
+        for (size_t i = 0; i < 64; ++i) {
+            LHAT_CHECK(!lhat_is_nil(lhat_machine_weak_cache_get(machine, &keys[i])), "growth preserved entries");
+        }
+        lhat_machine_dispose(machine);
+    }
+    LHAT_TEST("churn beside many live entries leaves a quarter free");
+    {
+        // 40 of 64 is under the three-quarter line, so a rehash that kept the
+        // capacity would leave 8 puts until the next one. Past half it grows
+        // once, and the churn after that does not move it.
+        static unsigned char keys[10000];
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_CHECK(machine != NULL, "machine for weak cache churn");
+        Machine *m = (Machine *)machine;
+        for (size_t i = 0; i < 40; ++i) {
+            lhat_machine_weak_cache_put(machine, &keys[i], lhat_integer(1));
+        }
+        for (size_t i = 40; i < sizeof keys; ++i) {
+            LHAT_CHECK(lhat_machine_weak_cache_put(machine, &keys[i], lhat_integer(2)), "churn put");
+            lhat_machine_weak_cache_forget(machine, &keys[i]);
+        }
+        LHAT_CHECK_EQ_INT(m->weak_count, 40);
+        LHAT_CHECK_EQ_INT(m->weak_capacity, 128);
+        for (size_t i = 0; i < 40; ++i) {
+            LHAT_CHECK(!lhat_is_nil(lhat_machine_weak_cache_get(machine, &keys[i])), "live entries survive churn");
+        }
+        lhat_machine_dispose(machine);
+    }
     LhatProgram program;
     Disk disk;
 
