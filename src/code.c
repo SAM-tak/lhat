@@ -489,6 +489,8 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_LEK:         return "lek";
         case LHAT_BC_GTK:         return "gtk";
         case LHAT_BC_GEK:         return "gek";
+        case LHAT_BC_EQK:         return "eqk";
+        case LHAT_BC_NEK:         return "nek";
         case LHAT_BC_SPACESHIP:   return "spaceship";
         case LHAT_BC_CLOSURE:     return "closure";
         case LHAT_BC_CALL:        return "call";
@@ -575,6 +577,8 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
         case LHAT_BC_LEK:
         case LHAT_BC_GTK:
         case LHAT_BC_GEK:
+        case LHAT_BC_EQK:
+        case LHAT_BC_NEK:
             snprintf(out, size, "%-10s r%u r%u k%u", name, lhat_a(i),
                      lhat_b(i), lhat_c(i));
             break;

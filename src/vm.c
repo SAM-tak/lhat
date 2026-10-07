@@ -751,6 +751,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         VM_LABEL(LHAT_BC_LEK),
         VM_LABEL(LHAT_BC_GTK),
         VM_LABEL(LHAT_BC_GEK),
+        VM_LABEL(LHAT_BC_EQK),
+        VM_LABEL(LHAT_BC_NEK),
         VM_LABEL(LHAT_BC_SPACESHIP),
         VM_LABEL(LHAT_BC_JUMP),
         VM_LABEL(LHAT_BC_JUMP_FALSE),
@@ -1055,6 +1057,21 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // exact question -- lhat_value_close is only what '=' and
                 // 11.9's orderings read.
                 ordered = lhat_value_close(R(b), R(cc),
+                                           LHAT_NUMBER_TOLERANCE) ==
+                          (op == LHAT_BC_EQ);
+                goto ordering_held;
+            // The same against a constant. A constant carries no operator, so
+            // only the left side can be asked for one.
+            VM_CASE(LHAT_BC_EQK)
+            VM_CASE(LHAT_BC_NEK)
+                op = op == LHAT_BC_EQK ? LHAT_BC_EQ : LHAT_BC_NE;
+                if (vm_table_of(R(b)) != NULL || lhat_is_hostvalue(R(b))) {
+                    derive_from = op;
+                    op = LHAT_BC_EQ;
+                    k_right = true;
+                    goto call_operator;
+                }
+                ordered = lhat_value_close(R(b), chunk->constants[cc],
                                            LHAT_NUMBER_TOLERANCE) ==
                           (op == LHAT_BC_EQ);
                 goto ordering_held;

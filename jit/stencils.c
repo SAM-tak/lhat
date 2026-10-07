@@ -378,6 +378,50 @@ STENCIL(not)
 EQUALITY(eq, true)
 EQUALITY(ne, false)
 
+// Against an integer constant: equal only to an integer holding it, and
+// unequal to every other value that names itself exactly.
+#define EQUALITY_K(name, same)                                              \
+    __attribute__((always_inline)) static inline bool name##_answer(        \
+        LhatValueUnion *v, uint8_t *t, uintptr_t b, uintptr_t c,            \
+        bool *held)                                                         \
+    {                                                                       \
+        (void)c;                                                            \
+        if (!EXACT_KIND(t[b])) {                                            \
+            return false;                                                   \
+        }                                                                   \
+        bool equal = t[b] == INT && v[b].integer == constant().integer;     \
+        *held = equal == (same);                                            \
+        return true;                                                        \
+    }                                                                       \
+    STENCIL(name)                                                           \
+    {                                                                       \
+        uintptr_t a = HOLE(A);                                              \
+        bool held;                                                          \
+        if (!name##_answer(v, t, HOLE(B), 0, &held)) {                      \
+            LEAVE();                                                        \
+        }                                                                   \
+        v[a].integer = held;                                                \
+        t[a] = BOOL;                                                        \
+        NEXT();                                                             \
+    }                                                                       \
+    STENCIL(name##_fused)                                                   \
+    {                                                                       \
+        uintptr_t a = HOLE(A);                                              \
+        bool held;                                                          \
+        if (!name##_answer(v, t, HOLE(B), 0, &held)) {                      \
+            LEAVE();                                                        \
+        }                                                                   \
+        v[a].integer = held;                                                \
+        t[a] = BOOL;                                                        \
+        if (!held) {                                                        \
+            JUMP();                                                         \
+        }                                                                   \
+        NEXT();                                                             \
+    }
+
+EQUALITY_K(eqk, true)
+EQUALITY_K(nek, false)
+
 // An instruction whose work is C's -- a member read through the site's
 // cache, a table write with its barrier -- done in place, or left whole.
 STENCIL(step)

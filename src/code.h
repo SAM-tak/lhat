@@ -70,6 +70,9 @@ typedef enum {
     LHAT_BC_LEK,
     LHAT_BC_GTK,
     LHAT_BC_GEK,
+    // And '=' and '≠', whose constant may be a string too.
+    LHAT_BC_EQK,        // A B C R[A] = R[B] = K[C]
+    LHAT_BC_NEK,
     // 02 の 11.9: A B C R[A] = R[B] <=> R[C], a number^ saying which of
     // the two comes first. The four above read their answer off this one
     // whenever they cannot answer for themselves.

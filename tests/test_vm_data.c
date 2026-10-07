@@ -408,6 +408,26 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
+    // '=' and '≠' fold a literal too, a string included, and the
+    // constant still reaches an op^= that takes one.
+    LHAT_TEST("equality against a literal");
+    run_text(&r,
+             "var^ V = def^{\n"
+             "  self^{ name := \"idle\" },\n"
+             "  op^= := f^self^, o:string^ -> bool^ { return^ self^.name = o },\n"
+             "}\n"
+             "let^ v = V.new()\n"
+             "let^ s = \"id\" .. \"le\"\n"
+             "var^ n = 3\n"
+             "var^ x = 0.1 + 0.2\n"
+             "if^ s = \"idle\" and^ s ≠ \"run\" and^ n = 3 and^ n ≠ 4 and^\n"
+             "    x = 0.3 and^ v = \"idle\" and^ !(v = \"run\") and^ v ≠ \"run\" {\n"
+             "  return^ 1\n"
+             "}\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
     // and so is equality, for a type that says how it orders: two of them
     // that compare the same are equal, where 14.2 alone would say no.
     LHAT_TEST("and so is equality");

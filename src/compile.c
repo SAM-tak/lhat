@@ -3034,6 +3034,33 @@ static bool runs_nothing(Compiler *c, const LhatNode *node)
             name_is(name, length, "false^") || name_is(name, length, "nil^"));
 }
 
+// The constant a literal right operand is folded into (03 の 5.1), or
+// SIZE_MAX where it is not one: a number always, a string when `strings`.
+static size_t literal_constant(Compiler *c, const LhatNode *node,
+                               bool strings)
+{
+    if (node == NULL) {
+        return SIZE_MAX;
+    }
+    if (node->kind == LHAT_NODE_INT) {
+        return lhat_chunk_constant(
+            &c->proto->chunk, lhat_integer((int64_t)node->v.integer.value));
+    }
+    if (node->kind == LHAT_NODE_FLOAT) {
+        return lhat_chunk_constant(&c->proto->chunk,
+                                   lhat_real(node->v.real));
+    }
+    if (strings && node->kind == LHAT_NODE_STRING) {
+        // As load_string: an empty buffer is no pointer at all.
+        const char *bytes = c->lexer->strings != NULL
+                                ? c->lexer->strings + node->v.string.offset
+                                : "";
+        return lhat_chunk_string(&c->proto->chunk, bytes,
+                                 node->v.string.length);
+    }
+    return SIZE_MAX;
+}
+
 static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
 {
     LhatOpKind op = node->v.binary.op;
@@ -3121,22 +3148,21 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
     // re-run every turn of a loop. The operator fallback still works: the
     // machine's ADDK family carries the constant to call_operator itself.
     // 5.1改7: the four orderings likewise -- `i < 100` was the same LOADK.
-    const LhatNode *right_node = node->v.binary.right;
+    // '=' and '≠' too, and they take a string literal as well: `state =
+    // "idle"` is the comparison a string is most often in.
     LhatOpcode folded =
         opcode == LHAT_BC_ADD || opcode == LHAT_BC_SUB ||
                 opcode == LHAT_BC_MUL || opcode == LHAT_BC_DIV
             ? (LhatOpcode)(opcode - LHAT_BC_ADD + LHAT_BC_ADDK)
         : opcode >= LHAT_BC_LT && opcode <= LHAT_BC_GE
             ? (LhatOpcode)(opcode - LHAT_BC_LT + LHAT_BC_LTK)
-            : LHAT_BC_COUNT;
-    if (folded != LHAT_BC_COUNT && right_node != NULL &&
-        (right_node->kind == LHAT_NODE_INT ||
-         right_node->kind == LHAT_NODE_FLOAT)) {
-        LhatValue constant =
-            right_node->kind == LHAT_NODE_INT
-                ? lhat_integer((int64_t)right_node->v.integer.value)
-                : lhat_real(right_node->v.real);
-        size_t k = lhat_chunk_constant(&c->proto->chunk, constant);
+        : opcode == LHAT_BC_EQ ? LHAT_BC_EQK
+        : opcode == LHAT_BC_NE ? LHAT_BC_NEK
+                               : LHAT_BC_COUNT;
+    if (folded != LHAT_BC_COUNT) {
+        size_t k = literal_constant(c, node->v.binary.right,
+                                    folded == LHAT_BC_EQK ||
+                                        folded == LHAT_BC_NEK);
         if (k != SIZE_MAX && k <= 0xFF) {
             uint8_t kmark = c->next_register;
             const Local *home = forwardable_local(c, node->v.binary.left);

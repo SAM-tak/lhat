@@ -357,6 +357,21 @@ static Choice choose(const LhatChunk *chunk, size_t pc)
                     : (fused ? &lhat_jit_stencil_ne_fused : &lhat_jit_stencil_ne);
             break;
         }
+        case LHAT_BC_EQK:
+        case LHAT_BC_NEK: {
+            choice.k = chunk->constants[lhat_c(instruction)];
+            if (!lhat_is_integer(choice.k)) {
+                break;  // a real or a string compares the interpreter's way
+            }
+            bool fused = take_jump_false(chunk, pc, &choice);
+            choice.stencil =
+                op == LHAT_BC_EQK
+                    ? (fused ? &lhat_jit_stencil_eqk_fused
+                             : &lhat_jit_stencil_eqk)
+                    : (fused ? &lhat_jit_stencil_nek_fused
+                             : &lhat_jit_stencil_nek);
+            break;
+        }
         case LHAT_BC_ENV:
             choice.stencil = &lhat_jit_stencil_env;
             break;
