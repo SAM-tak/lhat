@@ -3642,6 +3642,20 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 return vm_finish(m, chunk, LHAT_RUN_OK, value, at);
             }
 
+            // 02 の 10.7: what the frame held is dead now. Its window lies
+            // inside its caller's, so a slot left holding a dropped coroutine
+            // would be a root of the caller's until something wrote over it,
+            // and the end-of-run sweep would never see the coroutine go. Paid
+            // only while a coroutine is waiting on cleanups -- the one case a
+            // stale slot can keep a promise from being kept. A host value
+            // answer is the exception: its bytes are still in there.
+            if (m->cleanup_carriers != 0 && ran != NULL &&
+                !lhat_is_hostvalue(value)) {
+                for (size_t r = ran->kept; r < ran->chunk.registers; r++) {
+                    lhat_slots_set(m->slots, frame->base + r, lhat_nil());
+                }
+            }
+
             uint8_t into = frame->result;
             // 02 の 13.8改: read off the frame that is going, before `frame`
             // becomes the caller below. The room outlives the pop -- the

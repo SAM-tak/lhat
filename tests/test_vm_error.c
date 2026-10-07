@@ -365,6 +365,24 @@ static void test_catch_and_try(void)
     CHECK_STRING(&r, "okhereother");
     run_dispose(&r);
 
+    // 5.4: it^'s slot goes back to the pool when the arm ends, so a closure
+    // the arm made has to stop sharing it -- the call below stands there.
+    LHAT_TEST("a closure an arm made keeps its own it^");
+    run_text(&r,
+             "errordef^ E { A { n : number^ } }\n"
+             "let^ fail = f^ -> number^|E { return^ error^ E.A{ n := 42 } }\n"
+             "var^ read = f^ -> number^ { return^ 0 }\n"
+             "var^ v = 0\n"
+             "do^{\n"
+             "  v := try^ fail()\n"
+             "catch^ E.A:\n"
+             "  read := f^ -> number^ { return^ it^.n }\n"
+             "}\n"
+             "var^ junk = 1\n"
+             "return^ read()\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
     // The whole point of the arms: a return^ written in one is the
     // enclosing subroutine's, not an escape from the block.
     LHAT_TEST("and a return^ in an arm leaves the subroutine");

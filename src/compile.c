@@ -349,6 +349,18 @@ static void compile_run_source(Compiler *c, const LhatNode *node, uint8_t into,
 // A run of consecutive slots, first one answered. The scratch discipline
 // (mark/restore of next_register) frees a wide reservation the same way it
 // frees a narrow one.
+// Whether a name lives in register `r`.
+static bool holds_local(const Compiler *c, uint8_t r)
+{
+    for (size_t i = 0; i < c->local_count; i++) {
+        const Local *local = &c->locals[i];
+        if (r >= local->reg && r < local->reg + local->width) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static uint8_t reserve_wide(Compiler *c, size_t width)
 {
     uint8_t first = reserve(c);
@@ -1233,6 +1245,9 @@ static void compile_catch_wide(Compiler *c, const LhatNode *node, uint8_t into,
     } else {
         compile_expression(c, node->v.binary.right, into);
     }
+    // it^'s slot goes back to the pool, so a closure the right side made
+    // stops sharing it first -- the next call may stand right there.
+    emit(c, lhat_encode_abc(LHAT_BC_CLOSE, caught, 0, 0));
 
     lhat_chunk_patch_here(&c->proto->chunk, past);
     release_locals(c, local_mark);
@@ -2381,7 +2396,14 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     // is compiled, since the receiver's guard belongs inside it.
     ChainFrame chain;
     chain_open(c, node, into, &chain);
-    uint8_t callee = reserve(c);
+    // 5.3: the answer lands where the callee stood. When `into` is the
+    // newest scratch slot -- nothing reserved above it, no name living in
+    // it -- the call stands there and the MOVE after it goes.
+    uint8_t callee = reserved == 0 && width_of(node) == 1 &&
+                             into + 1 == c->next_register &&
+                             !holds_local(c, into)
+                         ? into
+                         : reserve(c);
     size_t fuse_cache = SIZE_MAX;  // 5.1改4, see below
     uint8_t fuse_receiver = 0;
     uint16_t selected_arm = node->checked_instance != NULL
@@ -3137,13 +3159,15 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
         !runs_nothing(c, node->v.binary.right)) {
         left_home = NULL;
     }
+    // Each side is given its slot just before it is compiled, so either
+    // finds its slot the newest and a call there can answer in place.
     uint8_t left = left_home != NULL ? left_home->reg
                                      : reserve_for(c, node->v.binary.left);
-    uint8_t right = right_home != NULL ? right_home->reg
-                                       : reserve_for(c, node->v.binary.right);
     if (left_home == NULL) {
         compile_expression(c, node->v.binary.left, left);
     }
+    uint8_t right = right_home != NULL ? right_home->reg
+                                       : reserve_for(c, node->v.binary.right);
     if (right_home == NULL) {
         compile_expression(c, node->v.binary.right, right);
     }
@@ -5010,6 +5034,8 @@ static void compile_arms(Compiler *c, TryContext *context,
         }
         binding->declaration = arm;
         compile_statement(c, arm->v.clause.body);
+        // As catch^'s it^: a closure the arm made stops sharing the slot.
+        emit(c, lhat_encode_abc(LHAT_BC_CLOSE, caught, 0, 0));
         release_locals(c, local_mark);
 
         if (next == SIZE_MAX) {
