@@ -3783,9 +3783,17 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
         case LHAT_NODE_UNARY: {
             uint8_t mark = c->next_register;
+            // 03 の 5.1: a name is read where it lies, as a binary operand
+            // is -- each of these reads its operand before it writes.
             // 05 の 8.9: a host value operand keeps its width, as everywhere.
-            uint8_t operand = reserve_for(c, node->v.unary.operand);
-            compile_expression(c, node->v.unary.operand, operand);
+            const Local *home = forwardable_local(c, node->v.unary.operand);
+            uint8_t operand;
+            if (home != NULL && home->width == 1) {
+                operand = home->reg;
+            } else {
+                operand = reserve_for(c, node->v.unary.operand);
+                compile_expression(c, node->v.unary.operand, operand);
+            }
             // 11.7改2: 'x?' is '!(x fits^ nil^)' written short, and the
             // two instructions it needs already exist. NOT reads its operand
             // before it writes, so into == into is safe.
@@ -5855,6 +5863,14 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 emit(c, lhat_encode_abc(LHAT_BC_RETURN, (uint8_t)(head + 1),
                                         (uint8_t)positions, 0));
                 c->next_register = mark;
+                return;
+            }
+            // 03 の 5.1: a name is returned where it lies. RETURN takes its
+            // answer before the frame drains (5.5), so a copy would hold
+            // nothing the name does not.
+            const Local *home = forwardable_local(c, node->v.jump.value);
+            if (home != NULL && home->width == 1) {
+                emit(c, lhat_encode_abc(LHAT_BC_RETURN, home->reg, 0, 0));
                 return;
             }
             // 05 の 8.9: a returned host value needs its whole width here;
