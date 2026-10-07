@@ -392,7 +392,7 @@ typedef struct {
 
 // One compiled body: its instructions, the constants they name, and how many
 // registers a frame needs. 5.2 fixes the frame size at compile time.
-typedef struct {
+typedef struct LhatChunk {
     LhatInstruction *code;
     // 04 の 11 章: the source line each instruction came from, one entry per
     // instruction (parallel to `code`, same count/capacity). A runtime
@@ -425,6 +425,12 @@ typedef struct {
     size_t member_cache_capacity;
 
     uint8_t registers;
+
+    // The compiled code, laid out the first time the chunk is entered there
+    // (jit/jit.c). Written once, by whichever machine gets there first; the
+    // rest of the chunk stays as immutable as it ever was. Present in every
+    // build so the layout does not depend on whether the JIT is in it.
+    void *jit;
 } LhatChunk;
 
 // 5.4: how a closure gets each of the places it shares. A register of the

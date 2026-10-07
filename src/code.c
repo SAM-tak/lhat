@@ -1,6 +1,9 @@
 // L^ (lhat) -- bytecode: instructions and the chunk they live in.
 
 #include "code.h"
+#ifdef LHAT_WITH_JIT
+#include "../jit/jit.h"
+#endif
 
 #include "lhat/object.h"
 
@@ -331,6 +334,9 @@ void lhat_chunk_dispose(LhatChunk *chunk)
     lhat_free(chunk->constants);
     lhat_free(chunk->member_keys);
     lhat_object_free_all(&chunk->heap);
+#ifdef LHAT_WITH_JIT
+    lhat_jit_free(chunk->jit);
+#endif
     memset(chunk, 0, sizeof *chunk);
 }
 

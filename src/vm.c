@@ -7,6 +7,9 @@
 #include "lhat/port.h"
 #include "registry.h"
 #include "type.h"
+#ifdef LHAT_WITH_JIT
+#include "../jit/jit.h"
+#endif
 
 // 02 の 14.8改: the three that can leave the integers. Answers false when the
 // result does not fit, and then the caller redoes it in reals.
@@ -435,6 +438,19 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
         }                                                                   \
     } while (0)
 
+// A loop turning: the slice poll every jump back makes, and then -- in a
+// build with the JIT -- the compiled code of the chunk, entered where the
+// loop starts. It answers where the interpreter goes on from.
+#ifdef LHAT_WITH_JIT
+#define VM_LOOP_POLL()                                                      \
+    do {                                                                    \
+        LHAT_SLICE_POLL();                                                  \
+        pc = lhat_jit_run(m, chunk, rbase, pc);                             \
+    } while (0)
+#else
+#define VM_LOOP_POLL() LHAT_SLICE_POLL()
+#endif
+
 // 03 の 5.2改: how the loop gets from one instruction to the next. GCC and
 // Clang can take the address of a label, which lets every instruction end
 // with its own jump to the next one. The branch predictor then keeps a
@@ -557,7 +573,7 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
             SET_R(a, lhat_integer(focus_));                                 \
             if (focus_ oper lhat_as_integer(R(a + 1))) {                    \
                 pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction)); \
-                LHAT_SLICE_POLL();                                          \
+                VM_LOOP_POLL();                                             \
             }                                                               \
         }                                                                   \
         /* An overflow is past any integer bound: the loop is over. */      \
@@ -1022,7 +1038,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         int32_t offset = lhat_jump_offset(paired);
                         pc = (size_t)((int64_t)pc + offset);
                         if (offset < 0) {
-                            LHAT_SLICE_POLL();
+                            VM_LOOP_POLL();
                         }
                     }
                 }
@@ -1049,7 +1065,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 int32_t offset = lhat_jump_offset(instruction);
                 pc = (size_t)((int64_t)pc + offset);
                 if (offset < 0) {
-                    LHAT_SLICE_POLL();
+                    VM_LOOP_POLL();
                 }
                 VM_NEXT();
             }
@@ -1062,7 +1078,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     int32_t offset = lhat_jump_offset(instruction);
                     pc = (size_t)((int64_t)pc + offset);
                     if (offset < 0) {
-                        LHAT_SLICE_POLL();
+                        VM_LOOP_POLL();
                     }
                 }
                 VM_NEXT();
@@ -3288,7 +3304,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                          &more, &status);
                 if (more) {
                     pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction));
-                    LHAT_SLICE_POLL();
+                    VM_LOOP_POLL();
                 }
                 VM_NEXT();
             }

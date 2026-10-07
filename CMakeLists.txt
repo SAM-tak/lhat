@@ -246,6 +246,20 @@ else()
     add_library(lhat ${LHAT_CORE_SOURCES})
 endif()
 
+# The copy-and-patch JIT prototype (jit/jit.h). Its stencils are laid out for
+# x86-64 Windows only so far, and the runtime calls them in a convention
+# only Clang spells (preserve_none), so it asks for both.
+option(LHAT_JIT "Build the copy-and-patch JIT prototype into the core" OFF)
+if(LHAT_JIT)
+    if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang" OR NOT WIN32 OR
+       NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+        message(FATAL_ERROR "LHAT_JIT is x86-64 Windows under clang-cl for "
+            "now; this is ${CMAKE_C_COMPILER_ID} on ${CMAKE_SYSTEM_NAME}.")
+    endif()
+    target_sources(lhat PRIVATE jit/jit.c)
+    target_compile_definitions(lhat PRIVATE LHAT_WITH_JIT=1)
+endif()
+
 # The version and the build knobs live in a generated header rather than in
 # compile definitions: LHAT_WITH_COMMENTS changes the shape of LhatLexer and
 # LhatNode, and a definition an installed consumer forgets to repeat would
