@@ -14,11 +14,13 @@
 // code model each one is a 64-bit immediate the layout writes (jit.c).
 
 #include "jit.h"
+#include "lhat/object.h"
 
 extern LhatJitOp _JIT_CONTINUE;
 extern LhatJitOp _JIT_TARGET;
 extern LhatJitHelper _JIT_CALL;
 extern LhatJitHelper _JIT_RETURN;
+extern LhatJitStep _JIT_STEP;
 extern char _JIT_A, _JIT_B, _JIT_C, _JIT_K, _JIT_KTAG, _JIT_PC;
 
 #define HOLE(name) ((uintptr_t)&_JIT_##name)
@@ -257,6 +259,52 @@ STENCIL(jump_false_back)
 
 FORLOOP(forloop, __builtin_add_overflow, <=)
 FORLOOP(forloopd, __builtin_sub_overflow, >=)
+
+// 5.4: the place a closure shares with the frame that made it, open or
+// closed alike -- the location aims at whichever holds the value now.
+STENCIL(getupval)
+{
+    uintptr_t a = HOLE(A), b = HOLE(B);
+    const LhatUpvalue *shared =
+        ((const LhatClosure *)p->closure)->upvalues[b];
+    v[a] = *shared->location.value;
+    t[a] = *shared->location.tag;
+    NEXT();
+}
+
+// 03 の 5.8: a table's dense half, read at an integer it holds a value at.
+// Anything else -- a hash key, a hole, a definition or a delegate to ask,
+// a value that is not a table -- is the lookup the interpreter makes.
+STENCIL(getindex)
+{
+    uintptr_t a = HOLE(A), b = HOLE(B), c = HOLE(C);
+    if (t[b] != LHAT_VALUE_OBJECT || t[c] != INT) {
+        LEAVE();
+    }
+    const LhatObject *object = v[b].object;
+    if (object == NULL || object->kind != LHAT_OBJECT_TABLE) {
+        LEAVE();
+    }
+    const LhatTable *table = (const LhatTable *)object;
+    uint64_t at = (uint64_t)v[c].integer;
+    if (at >= table->array_count ||
+        table->array.tags[at] == LHAT_VALUE_NIL) {
+        LEAVE();
+    }
+    v[a] = table->array.values[at];
+    t[a] = table->array.tags[at];
+    NEXT();
+}
+
+// An instruction whose work is C's -- a member read through the site's
+// cache, a table write with its barrier -- done in place, or left whole.
+STENCIL(step)
+{
+    if (!_JIT_STEP(p, HOLE(A), HOLE(B), HOLE(C))) {
+        LEAVE();
+    }
+    NEXT();
+}
 
 // 02 の 15.10: the subroutine running, which the context keeps beside the
 // frame it is running in.

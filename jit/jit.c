@@ -59,6 +59,57 @@ static bool jit_enabled(void)
 }
 
 // ---------------------------------------------------------------------------
+// The steps: one instruction's work done in C, the frame staying where it is.
+
+// The registers of the frame the code is running in.
+static LhatValue step_read(const LhatJitContext *context, uintptr_t r)
+{
+    LhatValue v;
+    v.as = context->values[r];
+    v.tag = (LhatValueTag)context->tags[r];
+    return v;
+}
+
+// 03 の 5.1改: a member the site's cache answers. A miss is the
+// interpreter's, whose lookup fills the cache for the next time.
+static bool jit_get_member(LhatJitContext *context, uintptr_t a, uintptr_t b,
+                           uintptr_t c)
+{
+    Machine *m = context->machine;
+    const Frame *frame = &m->frames[m->frame_count - 1];
+    LhatMemberCache *cache;
+    const LhatValue *hit = vm_cached_member(
+        m, &frame->closure->proto->chunk, c, step_read(context, b), &cache);
+    if (hit == NULL) {
+        return false;
+    }
+    context->values[a] = hit->as;
+    context->tags[a] = (uint8_t)hit->tag;
+    return true;
+}
+
+// The interpreter's SETINDEX on a table, through the same vm_set_key -- its
+// barrier, its growth, its refusal of a key that cannot be one. Refused or
+// out of memory, nothing was written, and the interpreter runs the write
+// again to say why.
+static bool jit_set_index(LhatJitContext *context, uintptr_t a, uintptr_t b,
+                          uintptr_t c)
+{
+    LhatValue owner = step_read(context, a);
+    if (lhat_is_hostvalue(owner)) {
+        return false;
+    }
+    LhatTable *table = vm_table_of(owner);
+    if (table == NULL || table->sealed) {
+        return false;
+    }
+    bool refused = false;
+    return vm_set_key(context->machine, table, step_read(context, b),
+                      step_read(context, c), &refused) &&
+           !refused;
+}
+
+// ---------------------------------------------------------------------------
 // Choosing.
 
 typedef struct {
@@ -66,6 +117,7 @@ typedef struct {
     size_t next;    // the pc CONTINUE goes to
     size_t target;  // the pc TARGET goes to, when there is one
     LhatValue k;    // the constant K and KTAG carry
+    LhatJitStep *step;  // what STEP calls
 } Choice;
 
 static bool is_jump(LhatOpcode op)
@@ -127,7 +179,7 @@ static Choice choose(const LhatChunk *chunk, size_t pc)
 {
     LhatInstruction instruction = chunk->code[pc];
     LhatOpcode op = lhat_op(instruction);
-    Choice choice = {&lhat_jit_stencil_exit, pc + 1, 0, lhat_nil()};
+    Choice choice = {&lhat_jit_stencil_exit, pc + 1, 0, lhat_nil(), NULL};
     switch (op) {
         case LHAT_BC_LOADK:
             choice.stencil = &lhat_jit_stencil_loadk;
@@ -203,6 +255,21 @@ static Choice choose(const LhatChunk *chunk, size_t pc)
         case LHAT_BC_THIS:
             choice.stencil = &lhat_jit_stencil_this;
             break;
+        case LHAT_BC_GETUPVAL:
+            choice.stencil = &lhat_jit_stencil_getupval;
+            break;
+        case LHAT_BC_GETINDEX:
+            choice.stencil = &lhat_jit_stencil_getindex;
+            break;
+        case LHAT_BC_GETMEMBER:
+        case LHAT_BC_GETMETHOD:
+            choice.stencil = &lhat_jit_stencil_step;
+            choice.step = &jit_get_member;
+            break;
+        case LHAT_BC_SETINDEX:
+            choice.stencil = &lhat_jit_stencil_step;
+            choice.step = &jit_set_index;
+            break;
         // 5.3: the plain call and the return of one value; what else either
         // can be -- a method, a tail call, a tuple -- is the interpreter's.
         case LHAT_BC_CALL:
@@ -255,6 +322,7 @@ static uint64_t hole_value(const Choice *choice, const LhatJitHole *hole,
             return (uint64_t)(uintptr_t)(memory + entries[choice->target]);
         case LHAT_JIT_HOLE_CALL: return (uint64_t)(uintptr_t)&jit_call;
         case LHAT_JIT_HOLE_RETURN: return (uint64_t)(uintptr_t)&jit_return;
+        case LHAT_JIT_HOLE_STEP: return (uint64_t)(uintptr_t)choice->step;
         case LHAT_JIT_HOLE_COUNT: break;
     }
     return 0;
@@ -288,10 +356,11 @@ static JitCode *lay_out(const LhatChunk *chunk)
         // the instruction to the interpreter rather than follow it.
         if (choices[pc].next > count || choices[pc].target > count) {
             choices[pc] = (Choice){&lhat_jit_stencil_exit, pc + 1, 0,
-                                   lhat_nil()};
+                                   lhat_nil(), NULL};
         }
     }
-    choices[count] = (Choice){&lhat_jit_stencil_exit, count, 0, lhat_nil()};
+    choices[count] = (Choice){&lhat_jit_stencil_exit, count, 0, lhat_nil(),
+                              NULL};
 
     // An instruction a comparison took in is laid on its own only when a
     // jump lands on it. `after[pc]` is the instruction laid next, and a
