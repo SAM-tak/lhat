@@ -3519,6 +3519,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // The room is a root while the frame lives (mark_roots), so it
         // starts empty rather than as whatever the slot held before.
         entered->answer = lhat_nil();
+        entered->jit_return = NULL;
         // 11.9: an ordering that reached for '<=>' wants the answer
         // read against zero, not handed over as it is.
         entered->derive = derive_from;

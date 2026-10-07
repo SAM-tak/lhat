@@ -52,37 +52,11 @@ typedef struct {
     // and a mismatch is caught rather than papered over.
     uint8_t prepared;
 
-    // 5.5: the cleanups this frame has entered and not yet run, innermost
-    // last. A finally^ and a with^ are both just a stretch of code to run.
-    // An instruction index is a Bx (code.h's lhat_bx), so 16 bits hold every
-    // one a jump could reach -- and a frame array this wide is most of what
-    // a machine weighs.
-    uint16_t cleanups[LHAT_MAX_CLEANUPS];
-    uint8_t cleanup_count;
-
-    // Draining state. `target` is the depth to stop at; `resume` is where to
-    // carry on afterwards, unless the drain is a return^ carrying `answer`.
-    size_t drain_target;
-    size_t resume;
-    LhatValue answer;
-    bool returning;
-
-    // 05 の 8.9: a host value answer, carried whole. `answer` is one slot,
-    // and no register survives the drain -- the callee's window overlaps
-    // the caller's scratch, so there is nowhere on the stack a wide answer
-    // could sit while the cleanups run. The frame carries its own room
-    // instead (a head-shaped run, as everywhere at the host boundary), and
-    // nesting is free: a cleanup's own calls return through their own
-    // frames' rooms.
-    LhatValueUnion answer_run[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
-
-    // 02 の 13.8改: the tags of the run above, when it is carrying a tuple
-    // rather than a host value. A host value's continuation slots are raw
-    // bytes and need none; a tuple's positions are ordinary values, and the
-    // collector has to read them as values while the cleanups run -- so this
-    // array is the whole of what a tuple adds to the room. Meaningful only
-    // when `answer` is LHAT_VALUE_RUN.
-    uint8_t answer_tags[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
+    // What a call and a return touch, kept together at the front: the rest
+    // of the frame is rooms and queues an ordinary call never reaches, and
+    // pushing one should not be writing across half a dozen cache lines.
+    uint8_t cleanup_count;  // of `cleanups` below
+    bool returning;         // of the draining state below
 
     // 5.11: the coroutine this frame belongs to, when it is one. NULL for an
     // ordinary call.
@@ -105,6 +79,44 @@ typedef struct {
     // bool^ it hands back is the judgement itself. `derive` still says which
     // comparison was written -- '≠' negates what comes back.
     bool derive_equal;
+
+    // What a return^ carries through the drain (below).
+    LhatValue answer;
+
+    // jit/jit.h: the code of the caller's next instruction, when compiled
+    // code made the call -- the return goes straight there. NULL for a frame
+    // the interpreter pushed.
+    const void *jit_return;
+
+    // 5.5: the cleanups this frame has entered and not yet run, innermost
+    // last. A finally^ and a with^ are both just a stretch of code to run.
+    // An instruction index is a Bx (code.h's lhat_bx), so 16 bits hold every
+    // one a jump could reach -- and a frame array this wide is most of what
+    // a machine weighs.
+    uint16_t cleanups[LHAT_MAX_CLEANUPS];
+
+    // Draining state. `target` is the depth to stop at; `resume` is where to
+    // carry on afterwards, unless the drain is a return^ (`returning`)
+    // carrying `answer` -- those two sit above, with what a return touches.
+    size_t drain_target;
+    size_t resume;
+
+    // 05 の 8.9: a host value answer, carried whole. `answer` is one slot,
+    // and no register survives the drain -- the callee's window overlaps
+    // the caller's scratch, so there is nowhere on the stack a wide answer
+    // could sit while the cleanups run. The frame carries its own room
+    // instead (a head-shaped run, as everywhere at the host boundary), and
+    // nesting is free: a cleanup's own calls return through their own
+    // frames' rooms.
+    LhatValueUnion answer_run[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
+
+    // 02 の 13.8改: the tags of the run above, when it is carrying a tuple
+    // rather than a host value. A host value's continuation slots are raw
+    // bytes and need none; a tuple's positions are ordinary values, and the
+    // collector has to read them as values while the cleanups run -- so this
+    // array is the whole of what a tuple adds to the room. Meaningful only
+    // when `answer` is LHAT_VALUE_RUN.
+    uint8_t answer_tags[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
 } Frame;
 
 // 5.5: a cleanup is remembered as the Bx of the PUSHCLEANUP that entered it,

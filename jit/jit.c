@@ -2,11 +2,10 @@
 // instruction of a chunk, laying them out, writing their holes, and running
 // the result. See jit.h for the shape and stencils.c for the stencils.
 //
-// A chunk is laid out whole the first time the interpreter turns a loop in
-// it (vm.c's VM_LOOP_POLL). Every instruction gets code: what no stencil was
-// written for gets the one that answers its pc, so the interpreter runs it.
-// Entering is possible at any instruction a jump can land on, which is every
-// instruction the interpreter could be standing at after a jump back.
+// A chunk is laid out whole the first time the interpreter would enter it
+// -- at a loop's turn, a body's entry or a call's return (vm.c's
+// VM_ENTER_JIT). Every instruction gets code: what no stencil was written
+// for gets the one that answers its pc, so the interpreter runs it.
 
 #include "jit.h"
 
@@ -32,12 +31,19 @@
 //
 // `enter[pc]` says the interpreter may come in at pc. First, so that the
 // interpreter reads it through LhatJitCodeHead (jit.h).
+//
+// For a call at pc, `resumes[pc]` is the code its return goes on in (NULL
+// when there is none to enter), and `callees[pc]` the body this site last
+// called the fast way -- one pointer, so machines sharing the chunk on other
+// threads overwrite each other's guess but never tear it.
 #define NO_ENTRY UINT32_MAX
 typedef struct {
     bool *enter;
     uint8_t *memory;
     size_t size;
     uint32_t *entries;
+    LhatJitOp **resumes;
+    const LhatProto **callees;
 } JitCode;
 
 // Process-wide, read once: LHAT_JIT=0 in the environment turns the JIT off
@@ -356,16 +362,32 @@ static JitCode *lay_out(const LhatChunk *chunk)
     }
     free(after);
 
+    // Where each call's return goes on, settled once here rather than looked
+    // up on every return.
+    LhatJitOp **resumes = (LhatJitOp **)calloc(count + 1, sizeof *resumes);
+    const LhatProto **callees =
+        (const LhatProto **)calloc(count + 1, sizeof *callees);
     DWORD old = 0;
-    if (!VirtualProtect(memory, size, PAGE_EXECUTE_READ, &old)) {
+    if (resumes == NULL || callees == NULL ||
+        !VirtualProtect(memory, size, PAGE_EXECUTE_READ, &old)) {
+        free(resumes);
+        free(callees);
         VirtualFree(memory, 0, MEM_RELEASE);
         goto failed;
+    }
+    for (size_t pc = 0; pc < count; pc++) {
+        size_t next = choices[pc].next;
+        if (choices[pc].stencil == &lhat_jit_stencil_call && enter[next]) {
+            resumes[pc] = (LhatJitOp *)(void *)(memory + entries[next]);
+        }
     }
     FlushInstructionCache(GetCurrentProcess(), memory, size);
     code->memory = memory;
     code->size = size;
     code->entries = entries;
     code->enter = enter;
+    code->resumes = resumes;
+    code->callees = callees;
     free(choices);
     return code;
 
@@ -389,6 +411,8 @@ void lhat_jit_free(void *code)
     VirtualFree(laid->memory, 0, MEM_RELEASE);
     free(laid->entries);
     free(laid->enter);
+    free(laid->resumes);
+    free((void *)laid->callees);
     free(laid);
 }
 
@@ -497,9 +521,17 @@ static LhatJitOp *jit_call(LhatJitContext *context, uintptr_t unused_a,
             skip = 2;
         }
     }
+    // What a body is asked here does not change between two calls of it
+    // from this site, so a body this site called the fast way before is
+    // not asked again -- only whether the machine has room.
+    JitCode *code = (JitCode *)chunk->jit;
+    bool known = __atomic_load_n(&code->callees[pc], __ATOMIC_RELAXED) == proto;
     size_t next_base = rbase + a + skip;
-    if ((c & LHAT_CALL_SPREAD) != 0 || proto->has_variadic || proto->yields ||
-        given != proto->parameters || m->frame_count >= m->frame_capacity ||
+    if (!known && ((c & LHAT_CALL_SPREAD) != 0 || proto->has_variadic ||
+                   proto->yields || given != proto->parameters)) {
+        return NULL;
+    }
+    if (m->frame_count >= m->frame_capacity ||
         next_base + proto->chunk.registers >= m->slot_capacity) {
         return NULL;
     }
@@ -507,18 +539,27 @@ static LhatJitOp *jit_call(LhatJitContext *context, uintptr_t unused_a,
     frame->pc = resume;
     Frame *entered = vm_push_frame(m, callee, next_base, (uint8_t)a,
                                    (uint8_t)lhat_call_prepared(c));
+    entered->jit_return = code->resumes[pc];
     moved_to(context, entered);
     // 02 § 15.15 at a body's entry, as the interpreter polls it. A slice
     // about to run out is left for the interpreter to end, at the body's
     // first instruction.
     context->leave_pc = 0;
-    if (m->steps_left == 1) {
+    if (m->steps_left == 1 || m->traps) {
         return NULL;
     }
     if (m->steps_left != 0) {
         m->steps_left--;
     }
-    return enter_at(m, &proto->chunk, 0);
+    if (known) {
+        const JitCode *body = (const JitCode *)proto->chunk.jit;
+        return (LhatJitOp *)(void *)(body->memory + body->entries[0]);
+    }
+    LhatJitOp *entry = enter_at(m, &proto->chunk, 0);
+    if (entry != NULL) {
+        __atomic_store_n(&code->callees[pc], proto, __ATOMIC_RELAXED);
+    }
+    return entry;
 }
 
 // The interpreter's RETURN and the drain after it, for a frame with nothing
@@ -547,11 +588,17 @@ static LhatJitOp *jit_return(LhatJitContext *context, uintptr_t a,
     }
     vm_close_upvalues(m, frame->base + frame->closure->proto->kept);
     uint8_t into = frame->result;
+    LhatJitOp *resume = (LhatJitOp *)frame->jit_return;
     m->frame_count--;
     Frame *caller = &m->frames[m->frame_count - 1];
     lhat_slots_set(m->slots, caller->base + into, value);
     moved_to(context, caller);
     context->leave_pc = caller->pc;
+    // A frame the code pushed knows where its caller's code goes on; one the
+    // interpreter pushed asks.
+    if (resume != NULL) {
+        return m->traps ? NULL : resume;
+    }
     return enter_at(m, &caller->closure->proto->chunk, caller->pc);
 }
 

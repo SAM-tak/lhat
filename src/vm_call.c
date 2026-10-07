@@ -83,6 +83,7 @@ void vm_enter_disposal_frame(Machine *m, LhatCoroutine *co,
     called->returning = true;
     called->drain_target = 0;
     called->answer = lhat_nil();
+    called->jit_return = NULL;
     called->cleanup_count = co->frame.cleanup_count;
     for (size_t i = 0; i < co->frame.cleanup_count; i++) {
         called->cleanups[i] = co->frame.cleanups[i];
@@ -498,6 +499,7 @@ Frame *vm_enter_resume_frame(Machine *m, LhatCoroutine *co,
     // The room is a root while the frame lives (mark_roots), so it starts
     // empty rather than as whatever the slot held before.
     called->answer = lhat_nil();
+    called->jit_return = NULL;
     called->derive = LHAT_FRAME_NO_DERIVE;
     called->derive_equal = false;
     called->returning = false;

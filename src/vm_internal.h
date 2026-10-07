@@ -87,6 +87,7 @@ static inline Frame *vm_push_frame(Machine *m, const LhatClosure *closure,
     frame->derive_equal = false;
     frame->drop_answer = false;
     frame->answer = lhat_nil();
+    frame->jit_return = NULL;
     return frame;
 }
 
