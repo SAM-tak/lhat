@@ -101,58 +101,100 @@ endif()
 # Clang wants the training output merged by llvm-profdata first, handed in
 # as LHAT_PGO_PROFILE (a .profdata path).
 #
+# A host that builds this tree as its own subdirectory sets the same two
+# variables before add_subdirectory() and calls lhat_apply_pgo() on its own
+# targets. The core's flags stop at this directory, and the binary that
+# matters -- the host's library or executable -- is linked out there: it is
+# where MSVC's instrumentation lives at all, and where Clang's and GCC's
+# runtime has to be linked in. An installed package has nothing to offer
+# here; its objects were compiled without the instrumentation.
+set(LHAT_PGO "OFF" CACHE STRING "PGO phase: OFF, GENERATE, USE")
+set(LHAT_PGO_PROFILE "" CACHE FILEPATH
+    "USE: the .profdata (Clang) or .gcda directory (GCC) the training wrote")
+
+# The flags of the phase LHAT_PGO names, compile and link, into the two
+# variables named. The one place the phases are spelled, read by the core
+# below and by a host through lhat_apply_pgo.
+#
 # The compiler is asked for before MSVC is, because CMake sets MSVC for
 # clang-cl too: it targets the MSVC ABI, but the instrumentation is Clang's
 # and /GENPROFILE would leave it with nothing to write.
-set(LHAT_PGO "OFF" CACHE STRING "PGO phase: OFF, GENERATE, USE")
-if(NOT LHAT_PGO STREQUAL "OFF")
-    if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+function(lhat_pgo_flags compile_out link_out)
+    set(compile "")
+    set(link "")
+    if(LHAT_PGO STREQUAL "OFF")
+        # nothing
+    elseif(NOT LHAT_PGO MATCHES "^(GENERATE|USE)$")
+        message(FATAL_ERROR "LHAT_PGO is OFF, GENERATE or USE, not ${LHAT_PGO}")
+    elseif(CMAKE_C_COMPILER_ID MATCHES "Clang")
         if(LHAT_PGO STREQUAL "GENERATE")
-            add_compile_options(-fprofile-generate)
-            add_link_options(-fprofile-generate)
-        elseif(LHAT_PGO STREQUAL "USE")
+            set(compile -fprofile-generate)
+            set(link -fprofile-generate)
+        else()
             # Clang reads one merged file and names no default worth having,
             # so say which rather than let it look for default.profdata and
-            # stop. Forward slashes: a Windows path with backslashes does not
-            # survive being handed in on the command line.
+            # stop. Forward slashes: a Windows path with backslashes does
+            # not survive being handed in on the command line.
             if(NOT LHAT_PGO_PROFILE)
                 message(FATAL_ERROR "LHAT_PGO=USE under Clang needs "
                     "LHAT_PGO_PROFILE -- the .profdata that llvm-profdata "
                     "merge wrote from the training run.")
             endif()
-            add_compile_options(-fprofile-use=${LHAT_PGO_PROFILE})
-            add_link_options(-fprofile-use=${LHAT_PGO_PROFILE})
+            file(TO_CMAKE_PATH "${LHAT_PGO_PROFILE}" profile)
+            # A body the training never reached is the compiler's to lay
+            # out rather than a warning: a host's training exercises what
+            # that host does, and one build's profile may serve another.
+            set(compile -fprofile-use=${profile}
+                        -Wno-profile-instr-unprofiled
+                        -Wno-profile-instr-out-of-date)
+            set(link -fprofile-use=${profile})
         endif()
     elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU")
         if(LHAT_PGO STREQUAL "GENERATE")
-            add_compile_options(-fprofile-generate)
-            add_link_options(-fprofile-generate)
-        elseif(LHAT_PGO STREQUAL "USE")
+            set(compile -fprofile-generate)
+            set(link -fprofile-generate)
+        else()
             # GCC reads the .gcda the training left beside the objects, or a
             # directory named here. -fprofile-correction is for a training
             # run that used threads, which this one does.
             if(LHAT_PGO_PROFILE)
-                add_compile_options(-fprofile-use=${LHAT_PGO_PROFILE})
-                add_link_options(-fprofile-use=${LHAT_PGO_PROFILE})
+                set(compile -fprofile-use=${LHAT_PGO_PROFILE})
+                set(link -fprofile-use=${LHAT_PGO_PROFILE})
             else()
-                add_compile_options(-fprofile-use)
-                add_link_options(-fprofile-use)
+                set(compile -fprofile-use)
+                set(link -fprofile-use)
             endif()
-            add_compile_options(-fprofile-correction)
+            list(APPEND compile -fprofile-correction)
         endif()
     elseif(MSVC)
-        add_compile_options(/GL)
-        add_link_options(/LTCG)
+        set(compile /GL)
         if(LHAT_PGO STREQUAL "GENERATE")
-            add_link_options(/GENPROFILE)
-        elseif(LHAT_PGO STREQUAL "USE")
-            add_link_options(/USEPROFILE)
+            set(link /LTCG /GENPROFILE)
+        else()
+            set(link /LTCG /USEPROFILE)
         endif()
     else()
         message(FATAL_ERROR "LHAT_PGO: no profile-guided build is defined for "
             "${CMAKE_C_COMPILER_ID}")
     endif()
-endif()
+    set(${compile_out} "${compile}" PARENT_SCOPE)
+    set(${link_out} "${link}" PARENT_SCOPE)
+endfunction()
+
+# For a host: the same phase on targets of its own -- above all the library
+# or executable the core is linked into. Compile and link both, which is
+# what every one of the three compilers needs between them.
+function(lhat_apply_pgo)
+    lhat_pgo_flags(compile link)
+    foreach(target IN LISTS ARGN)
+        target_compile_options(${target} PRIVATE ${compile})
+        target_link_options(${target} PRIVATE ${link})
+    endforeach()
+endfunction()
+
+lhat_pgo_flags(lhat_pgo_compile lhat_pgo_link)
+add_compile_options(${lhat_pgo_compile})
+add_link_options(${lhat_pgo_link})
 
 # ---- The language ---------------------------------------------------------
 # Everything but the driver, so a host embeds this and nothing else. It calls
