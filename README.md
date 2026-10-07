@@ -245,6 +245,16 @@ cmake --build --preset debug
 .\build\debug\lhat.exe sample\factorial.lh
 ```
 
+For a faster interpreter, build with the Clang that comes with Visual Studio
+(the "C++ Clang tools for Windows" component, on the `PATH` after
+`devshell.ps1`). Its loop dispatches through a jump table, which MSVC cannot
+express. The Windows release binaries are built this way.
+
+```powershell
+cmake --preset release -DCMAKE_C_COMPILER=clang-cl
+cmake --build --preset release
+```
+
 The Ninja presets support Visual Studio 2022 or later. To use the Visual Studio
 2026 generator instead:
 
@@ -328,7 +338,8 @@ ctest --test-dir build/debug -L check --output-on-failure
 ```
 
 Test labels are `core`, `check`, `vm`, `stdlib`, `lsp`, `dap`, and `e2e`.
-CI builds with MSVC, GCC, and Clang, with additional sanitizer builds.
+CI builds with MSVC, GCC, and Clang, with additional sanitizer builds and a
+Windows build with the JIT enabled.
 
 ### Build profiles
 
@@ -366,9 +377,36 @@ cmake --preset release -DLHAT_BUILD_TESTS=OFF
 | `LHAT_WITH_RESOLUTIONS` | `ON` | Name-resolution information for tooling |
 | `LHAT_SANITIZE` | `OFF` | AddressSanitizer and, where supported, UBSan |
 | `LHAT_PGO` | `OFF` | PGO mode: `OFF`, `GENERATE`, or `USE` |
+| `LHAT_JIT` | `OFF` | Experimental JIT compiler (x86-64 Windows with `clang-cl` only) |
 
 The language server requires the front end and name-resolution information.
 The debug adapter requires runtime debugging support.
+
+A host that builds L^ as a CMake subdirectory can profile-optimize its own
+binary along with the core: set `LHAT_PGO` (and `LHAT_PGO_PROFILE` for `USE`)
+before `add_subdirectory()`, then call `lhat_apply_pgo(<target>)` on the
+library or executable that links L^.
+
+### Experimental JIT
+
+`LHAT_JIT=ON` adds a copy-and-patch JIT compiler. It compiles each
+instruction from a precompiled template and hands anything it does not
+cover back to the interpreter, so programs behave exactly as they do without
+it. Numeric loops typically run two to three times faster, and code with calls
+about 1.3 to 1.8 times faster. It currently supports x86-64 Windows built with
+`clang-cl`.
+
+```powershell
+cmake --preset release -DCMAKE_C_COMPILER=clang-cl -DLHAT_JIT=ON
+cmake --build --preset release
+```
+
+Set the environment variable `LHAT_JIT=0` to run the same binary without the
+JIT. The machine-code templates in `jit/stencils_x86_64-windows.h` are
+generated and committed; after editing [`jit/stencils.c`](jit/stencils.c) or
+the value layouts it reads, regenerate them with
+`python jit/gen_stencils.py --clang <path to clang>`. Building with the JIT does
+not require Python.
 
 ## Documentation and source
 
@@ -382,7 +420,8 @@ The debug adapter requires runtime debugging support.
 The core implementation is in [`src/`](src/), the public API in
 [`include/`](include/), and the standard library in [`stdlib/`](stdlib/).
 [`lsp/`](lsp/) and [`dap/`](dap/) provide editor and debugger services;
-[`sample/`](sample/) contains example programs.
+[`jit/`](jit/) contains the experimental JIT; [`sample/`](sample/) contains
+example programs.
 
 ## License
 

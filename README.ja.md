@@ -221,6 +221,15 @@ cmake --build --preset debug
 .\build\debug\lhat.exe sample\factorial.lh
 ```
 
+インタプリタをより速くしたい場合は、Visual Studio に同梱の Clang（「C++ Clang tools for Windows」コンポーネント。
+`devshell.ps1` の後は `PATH` から使えます）でビルドしてください。
+MSVC では書けないジャンプテーブルによる命令の振り分けが使えます。Windows 版の配布バイナリもこの方法でビルドしています。
+
+```powershell
+cmake --preset release -DCMAKE_C_COMPILER=clang-cl
+cmake --build --preset release
+```
+
 Ninja プリセットは Visual Studio 2022 以降に対応しています。
 Visual Studio 2026 のジェネレータを使う場合は、次のようにビルドできます。
 
@@ -301,7 +310,7 @@ ctest --test-dir build/debug -L check --output-on-failure
 ```
 
 テストのラベルは `core`、`check`、`vm`、`stdlib`、`lsp`、`dap`、`e2e` です。
-CI では MSVC・GCC・Clang によるビルドと、サニタイザを有効にした検証を行っています。
+CI では MSVC・GCC・Clang によるビルドと、サニタイザを有効にした検証、JIT を有効にした Windows でのビルドを行っています。
 
 ### ビルド構成
 
@@ -339,8 +348,32 @@ cmake --preset release -DLHAT_BUILD_TESTS=OFF
 | `LHAT_WITH_RESOLUTIONS` | `ON` | ツール用の名前解決情報 |
 | `LHAT_SANITIZE` | `OFF` | AddressSanitizer と、対応環境での UBSan |
 | `LHAT_PGO` | `OFF` | PGO モード：`OFF`、`GENERATE`、`USE` |
+| `LHAT_JIT` | `OFF` | 試験的な JIT コンパイラ（x86-64 Windows の `clang-cl` のみ） |
 
 言語サーバにはフロントエンドと名前解決情報が、デバッグアダプタには実行時のデバッグ支援が必要です。
+
+L^ を CMake のサブディレクトリとして取り込むホストは、コアと一緒に自分のバイナリにも PGO を適用できます。
+`add_subdirectory()` の前に `LHAT_PGO`（`USE` のときは `LHAT_PGO_PROFILE` も）を設定し、
+L^ をリンクするライブラリまたは実行ファイルに対して `lhat_apply_pgo(<target>)` を呼んでください。
+
+### 試験的な JIT
+
+`LHAT_JIT=ON` で copy-and-patch 方式の JIT コンパイラを組み込みます。
+あらかじめ用意した命令ごとの機械語の型紙から実行コードを組み立て、対応していない部分はインタプリタに任せるため、
+プログラムの動作は JIT の有無で変わりません。
+数値計算のループはおおむね 2〜3 倍、関数呼び出しを含むコードは 1.3〜1.8 倍ほど速くなります。
+現在は `clang-cl` でビルドした x86-64 Windows のみに対応しています。
+
+```powershell
+cmake --preset release -DCMAKE_C_COMPILER=clang-cl -DLHAT_JIT=ON
+cmake --build --preset release
+```
+
+環境変数 `LHAT_JIT=0` を設定すると、同じバイナリのまま JIT を使わずに実行します。
+機械語の型紙 `jit/stencils_x86_64-windows.h` は生成済みのものをリポジトリに含めています。
+[`jit/stencils.c`](jit/stencils.c) や、型紙が参照する値の構造を変更した場合は、
+`python jit/gen_stencils.py --clang <clang のパス>` で再生成してください。
+JIT を有効にしたビルド自体に Python は不要です。
 
 ## ドキュメントとソース
 
@@ -350,7 +383,7 @@ cmake --preset release -DLHAT_BUILD_TESTS=OFF
 - [設計文書の索引](DesignDocuments/README.md)：コンパイル、開発ツール、多言語対応を含む仕様書の一覧。設計文書は日本語で記述しています。
 
 処理系の本体は [`src/`](src/)、公開 API は [`include/`](include/)、標準ライブラリは [`stdlib/`](stdlib/) にあります。
-[`lsp/`](lsp/) と [`dap/`](dap/) はエディタ・デバッガ連携、[`sample/`](sample/) はサンプルプログラムです。
+[`lsp/`](lsp/) と [`dap/`](dap/) はエディタ・デバッガ連携、[`jit/`](jit/) は試験的な JIT、[`sample/`](sample/) はサンプルプログラムです。
 
 ## ライセンス
 
