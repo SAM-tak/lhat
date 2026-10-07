@@ -693,7 +693,7 @@ static void test_reloading(void)
 // and until its cleanup has run there is still something pointing into what
 // lhat_program_discard_retired is about to free.
 //
-// The whole of the answer is that lhat_machine_collectgarbage runs those
+// The whole of the answer is that lhat_machine_gc_collect runs those
 // cleanups itself, so lhat_machine_pending_disposals reads zero and the host
 // has a question it can actually ask. Worth running under asan: without the
 // drain this is a use-after-free the next time anything runs.
@@ -770,7 +770,7 @@ static void test_reloading_with_a_pending_cleanup(void)
         // And here is the whole point: the cycle finds the coroutine and
         // runs its finally^ -- against the old body, which is still there
         // because nothing has been discarded yet.
-        lhat_machine_collectgarbage(machine);
+        lhat_machine_gc_collect(machine);
         LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(machine), 0);
 
         // Only now may the old bodies go.
@@ -780,7 +780,7 @@ static void test_reloading_with_a_pending_cleanup(void)
         // The new ones run, and nothing reaches into what was freed.
         ran = lhat_run(machine, lhat_unit_proto(root));
         LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
-        lhat_machine_collectgarbage(machine);
+        lhat_machine_gc_collect(machine);
         LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(machine), 0);
 
         lhat_machine_dispose(machine);
@@ -839,7 +839,7 @@ static void test_reloading_with_a_pending_cleanup(void)
         LHAT_CHECK(lhat_machine_forget_unit(machine, "ns.gen"),
                    "the machine forgot what the old unit registered");
 
-        lhat_machine_collectgarbage(machine);
+        lhat_machine_gc_collect(machine);
         LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(machine), 0);
         // No frames of the abandoned cleanup left to walk, and so none
         // holding the body about to go.
@@ -848,7 +848,7 @@ static void test_reloading_with_a_pending_cleanup(void)
         lhat_program_discard_retired(&program);
         LHAT_CHECK_EQ_INT(lhat_run(machine, lhat_unit_proto(root)).status,
                           LHAT_RUN_OK);
-        lhat_machine_collectgarbage(machine);
+        lhat_machine_gc_collect(machine);
         lhat_machine_dispose(machine);
     }
     lhat_program_dispose(&program);
@@ -2786,7 +2786,7 @@ static void test_host_data_release(void)
     with_cells("import^ store\n"
                "var^ drop = p^ { var^ c = store.make() }\n"
                "drop()\n"
-               "L^.collectgarbage()\n"
+               "L^.gc.collect()\n"
                "return^ 0\n",
                &live, &freed);
     LHAT_CHECK_EQ_INT(live, 0);
@@ -2796,7 +2796,7 @@ static void test_host_data_release(void)
     with_cells("import^ store\n"
                "var^ drop = p^ { var^ c = store.make()  c.dispose() }\n"
                "drop()\n"
-               "L^.collectgarbage()\n"
+               "L^.gc.collect()\n"
                "return^ 0\n",
                &live, &freed);
     LHAT_CHECK_EQ_INT(live, 0);
@@ -3391,7 +3391,7 @@ static void test_hostvalue_escape(void)
              // The collector runs a step at a time (config.h), so one call is
              // a step and not a cycle -- enough of them is what reaches the
              // sweep an unreached descriptor would be freed by.
-             "repeat^ 200 { collectgarbage() }\n"
+             "repeat^ 200 { L^.gc.collect() }\n"
              "return^ (v - 2) * 10 + (v - \"x\")\n"},
         };
         program_with(&program, &disk, files, 1);

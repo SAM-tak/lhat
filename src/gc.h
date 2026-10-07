@@ -88,13 +88,21 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object);
 #define LHAT_GC_PROPAGATE 1
 #define LHAT_GC_SWEEP     2
 
-// LHAT_GC_STEP_WORK objects' worth of whatever phase the collector is in,
+// stepsize * stepmul% objects' worth of whatever phase the collector is in,
 // and then back to the program. Also sets when the next step is due.
 void lhat_gc_step(struct LhatMachine *machine);
 
+// L^.gc.step: up to `budget` objects' worth, paused or not. True when a cycle
+// finished inside it.
+bool lhat_gc_advance(struct LhatMachine *machine, size_t budget);
+
+// Sets when the next automatic step is due from the machine's settings and
+// where the cycle is -- never, while paused.
+void lhat_gc_rearm(struct LhatMachine *machine);
+
 // A whole cycle, now, and nothing left half done: what the program cannot
 // reach when this is called has been freed when it answers. What 05 の 8.6's
-// collectgarbage() is, and the only thing that gives a pause the size of the
+// gc.collect() is, and the only thing that gives a pause the size of the
 // heap -- which is why the program has to ask for it by name.
 void lhat_gc_collect(struct LhatMachine *machine);
 

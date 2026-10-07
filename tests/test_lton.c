@@ -392,8 +392,8 @@ static void test_load(void)
              "import^ std.lton\n"
              "let^ c = try^ std.lton.parse(\"width = 960, window = { title = "
              "\\\"t\\\" },\")\n"
-             "L^.collectgarbage()\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
+             "L^.gc.collect()\n"
              "if^ (c[\"window\"][\"title\"] = \"t\") and^ (c[\"width\"] = 960) {"
              " return^ 1 }\n"
              "return^ 0\n"},
@@ -467,7 +467,7 @@ static void test_load(void)
 // What a host reads a field with. The key has to be a string on the machine,
 // and making one allocates -- which is safe here and is the point: the
 // collector advances inside the interpreter's loop and in
-// lhat_machine_collectgarbage and nowhere else, so a table held in a C
+// lhat_machine_gc_collect and nowhere else, so a table held in a C
 // variable keeps for as long as no L^ runs.
 static LhatValue field(LhatMachine *machine, LhatValue table, const char *name)
 {

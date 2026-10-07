@@ -15,7 +15,6 @@
 
 #define LHAT_ENVIRONMENT(X)                                                  \
     X(modules, lhat_object((LhatObject *)modules_value), modules_type)       \
-    X(collectgarbage, lhat_object((LhatObject *)collectgarbage_value),       \
-      collectgarbage_type)
+    X(gc, lhat_object((LhatObject *)gc_value), gc_type)
 
 #endif  // LHAT_ENVIRONMENT_H

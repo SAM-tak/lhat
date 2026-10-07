@@ -934,7 +934,7 @@ static void test_values_keep_their_members(void)
              "    let^ s = scene.makeSprite()\n"
              "    n := n + s.id()\n"
              "    let^ r = scene.makeResource()\n"
-             "    if^ i % 32 = 0 { L^.collectgarbage() }\n"
+             "    if^ i % 32 = 0 { L^.gc.collect() }\n"
              "}\n"
              "return^ n\n"},
         };
@@ -1112,7 +1112,7 @@ static void test_the_weak_cache(void)
              "for^ i from^ 1 to^ 200 {\n"
              "    let^ again = scene.cached(0)\n"
              "    if^ again is^ held { same := same + 1 }\n"
-             "    L^.collectgarbage()\n"
+             "    L^.gc.collect()\n"
              "}\n"
              "return^ same\n"},
         };
@@ -1154,7 +1154,7 @@ static void test_the_weak_cache(void)
                                                             &cache_nodes[1])),
                    "and answered while it is there");
 
-        lhat_machine_collectgarbage(machine);
+        lhat_machine_gc_collect(machine);
         LHAT_CHECK(lhat_is_nil(lhat_machine_weak_cache_get(machine,
                                                            &cache_nodes[1])),
                    "the collector took the entry out itself");
@@ -1198,7 +1198,7 @@ static void test_the_weak_cache(void)
                    "remembered");
 
         // 05 の 8.7改5 made a machine's heap small enough that a whole
-        // cycle passes inside one step (LHAT_GC_STEP_WORK is 20), and then
+        // cycle passes inside one step (stepsize * stepmul%), and then
         // the loop below would never SEE the marking. So give the marking
         // enough to walk -- REACHABLE objects, since unreachable ones are
         // work for the sweep and none for the marking.
@@ -1323,7 +1323,7 @@ static void test_registrations_are_shared(void)
              "var^ n = 0\n"
              "for^ i from^ 1 to^ 200 {\n"
              "    n := n + scene.makeSprite().id()\n"
-             "    if^ i % 16 = 0 { L^.collectgarbage() }\n"
+             "    if^ i % 16 = 0 { L^.gc.collect() }\n"
              "}\n"
              "return^ n\n"},
         };

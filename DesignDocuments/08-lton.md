@@ -234,7 +234,7 @@ L^ 側では `REJECTED` と `FAULTED` がどちらも `LtonError.Rejected` に�
 ### 返るテーブルの寿命［補足］
 
 vm.h の「WHAT A HOST IS HOLDING IS NOT A ROOT」がここでも効く。ただし
-**回収が進むのは解釈器のループの中と `lhat_machine_collectgarbage` だけ**
+**回収が進むのは解釈器のループの中と `lhat_machine_gc_collect`・`lhat_machine_gc_step` だけ**
 なので、`lhat_machine_make_string` で鍵を作って `lhat_table_get` で引く、
 という読み出しの最中に回収は起きない。**読み切ってから次を走らせる**、
 だけで足りる。

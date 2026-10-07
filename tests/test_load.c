@@ -242,7 +242,7 @@ static void test_files(void)
     LHAT_TEST("a loaded script's body is collected with its closures");
     {
         static const File files[] = {
-            {"main.lh", "L^.collectgarbage()\nreturn^ 0\n"},
+            {"main.lh", "L^.gc.collect()\nreturn^ 0\n"},
             {NULL, NULL},
         };
         LhatProgram *program = NULL;

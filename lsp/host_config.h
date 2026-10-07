@@ -7,8 +7,8 @@
 // host's equivalent -- and applying it re-plays the registrations against
 // a fresh LhatProgram with a stub callback, which checking never calls.
 //
-// Without the file the server falls back to the two names cli/main.c binds
-// unconditionally (print, collectgarbage), and anything else a script uses
+// Without the file the server falls back to the name cli/main.c binds
+// unconditionally (print), and anything else a script uses
 // from its host is a known false positive.
 
 #ifndef LSP_HOST_CONFIG_H

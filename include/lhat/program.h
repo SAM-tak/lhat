@@ -167,7 +167,7 @@ size_t lhat_program_invalidate(LhatProgram *program, const char *path);
 //
 // How to know, per machine the program was installed on: drop what held the
 // old bodies (in an editor, dress everything in the new ones), then
-// lhat_machine_collectgarbage, and then check
+// lhat_machine_gc_collect, and then check
 // lhat_machine_pending_disposals is zero. The collection is what takes the
 // closures nothing holds any more; the second is the one thing a collection
 // cannot finish on its own -- 02 の 10.7 keeps a dropped coroutine alive

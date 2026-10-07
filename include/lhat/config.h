@@ -107,24 +107,28 @@
 // as many as LHAT_MAX_CLEANUPS does -- the two are the same limit seen from
 // two different structures, not a coincidence.
 #define LHAT_COROUTINE_CLEANUPS LHAT_MAX_CLEANUPS
-// A collection's starting threshold, and what it grows to afterwards: a
-// multiple of what survived, plus a floor so a nearly-empty heap does not
-// collect again almost immediately.
+// A collection's starting threshold, and the floor added to what it grows to
+// afterwards so a nearly-empty heap does not collect again almost at once.
 #define LHAT_GC_INITIAL_THRESHOLD 256
-#define LHAT_GC_GROWTH_FACTOR 2
 #define LHAT_GC_MIN_THRESHOLD 64
-// 5.12: how much of a cycle one step does, counted in objects looked at --
-// traversed while marking, or passed over while sweeping. The pause a
-// collection costs is this, not the whole heap.
-#define LHAT_GC_STEP_WORK 20
-// And how many allocations go by before the next step. Their **ratio** is
-// what decides whether the collector keeps up with the program: more work per
-// allocation finishes cycles sooner and leaves less floating garbage. The
-// sizes themselves decide only how long one pause is, so they are small --
-// a heap of a hundred objects should be collected over several steps and not
-// in one, or the whole point of stepping is lost on everything but the
-// largest heaps.
+// What a machine's collector starts from (vm.h's LhatGcSettings), all counted
+// in objects. GROWTH: a cycle starts once the heap reaches this percentage of
+// what the last one left alive. STEPMUL: a step does this percentage of the
+// allocations since the last one in work -- traversed while marking, passed
+// over while sweeping -- which is what decides whether a cycle keeps up with
+// the program; too little, and what is allocated while it runs piles up as
+// garbage the next cycle has to find. STEP_SIZE: how many allocations go by
+// between steps, and so, with STEPMUL, how long one pause is.
+//
+// Measured against a game's frame loop (300k live objects): 200/200 let the
+// heap reach 3.3 times what was live; 150/800 holds it near twice, for about
+// 1.7 times the collector's total work.
+#define LHAT_GC_GROWTH 150
+#define LHAT_GC_STEPMUL 800
 #define LHAT_GC_STEP_SIZE 10
+// 16.3: how many finished loop coroutines a machine keeps to reuse. Enough
+// for loops nested this deep over generators; more would only hold memory.
+#define LHAT_SPARE_COROUTINES 8
 
 // value
 // 14 章 makes a table both a sequence and a mapping, and one holding itself

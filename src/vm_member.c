@@ -83,7 +83,7 @@ LhatRuntimeType *vm_tag_type(LhatHeap *heap, LhatValue value)
         // it outlives every machine that ever reflects one of its values.
         const LhatCoroutine *coroutine = (const LhatCoroutine *)lhat_as_object(value);
         const LhatProto *proto =
-            coroutine->closure != NULL ? coroutine->closure->proto : NULL;
+            coroutine->frame.closure != NULL ? coroutine->frame.closure->proto : NULL;
         LhatRuntimeType *type = lhat_type_rt_new(heap, LHAT_TYPE_RT_COROUTINE);
         if (type != NULL && proto != NULL) {
             type->receive = proto->yield_receive_type;
@@ -820,6 +820,36 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
             return LHAT_RUN_TYPE_ERROR;
         }
         return bind_native(m, into, which, on, unbound);
+    }
+    // 05 の 8.6: L^.gc answers the collector's controls. Nothing else is
+    // read off it, and nothing is ever written.
+    if (lhat_is_object_kind(on, LHAT_OBJECT_NATIVE) &&
+        ((const LhatNative *)lhat_as_object(on))->kind == LHAT_NATIVE_GC) {
+        static const struct {
+            const char *name;
+            LhatNativeKind kind;
+        } controls[] = {
+            {"collect", LHAT_NATIVE_GC_COLLECT},
+            {"pause", LHAT_NATIVE_GC_PAUSE},
+            {"step", LHAT_NATIVE_GC_STEP},
+            {"settings", LHAT_NATIVE_GC_SETTINGS},
+            {"configure", LHAT_NATIVE_GC_CONFIGURE},
+            {"stats", LHAT_NATIVE_GC_STATS},
+        };
+        if (lhat_is_object_kind(member_key, LHAT_OBJECT_STRING)) {
+            const LhatString *asked =
+                (const LhatString *)lhat_as_object(member_key);
+            for (size_t i = 0; i < sizeof controls / sizeof controls[0];
+                 i++) {
+                if (strlen(controls[i].name) == asked->length &&
+                    memcmp(controls[i].name, asked->text, asked->length) ==
+                        0) {
+                    return bind_native(m, into, controls[i].kind, on,
+                                       unbound);
+                }
+            }
+        }
+        return LHAT_RUN_TYPE_ERROR;
     }
     // 02 の 12.6 and 15.6: a coroutine answers the operations the
     // runtime provides, bound to what they came through.

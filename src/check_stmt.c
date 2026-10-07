@@ -43,6 +43,69 @@ static bool is_environment(const Checker *c, const LhatNode *node)
                                     c->lexer->strings);
 }
 
+// A record of number^ members.
+static LhatType *gc_numbers(Checker *c, const char *const *names,
+                            size_t count)
+{
+    LhatTypeArena *types = c->result->types;
+    LhatType *record = lhat_type_table(types);
+    LhatType *number = chk_simple(c, LHAT_TYPE_NUMBER);
+    for (size_t i = 0; i < count; i++) {
+        lhat_type_add_member(types, record, names[i], strlen(names[i]),
+                             number);
+    }
+    return record;
+}
+
+// 05 の 8.6: L^.gc, the collector's controls. Running the collector is an
+// effect, so what answers nothing is a p^ (12.7's shape); what answers a
+// value is an f^, as a table's own mutating members are.
+static LhatType *chk_gc_type(Checker *c)
+{
+    static const char *const settings[] = {"growth", "stepmul", "stepsize"};
+    static const char *const counts[] = {"live", "collected", "cycles",
+                                         "threshold"};
+    LhatTypeArena *types = c->result->types;
+    LhatType *gc = lhat_type_table(types);
+    if (gc == NULL) {
+        return NULL;
+    }
+    gc->v.table.sealed = true;
+    gc->v.table.is_module = true;
+
+    LhatType *settings_type = gc_numbers(c, settings, 3);
+    LhatType *stats_type = gc_numbers(c, counts, 4);
+    lhat_type_add_member(types, stats_type, "phase", 5,
+                         chk_simple(c, LHAT_TYPE_STRING));
+    lhat_type_add_member(types, stats_type, "paused", 6,
+                         chk_simple(c, LHAT_TYPE_BOOL));
+
+    LhatType *collect = lhat_type_func(types, false);
+    LhatType *pause = lhat_type_func(types, false);
+    lhat_type_add_param(types, pause, chk_simple(c, LHAT_TYPE_BOOL));
+    LhatType *step = lhat_type_func(types, true);
+    lhat_type_add_param(types, step, chk_simple(c, LHAT_TYPE_NUMBER));
+    step->v.func.result = chk_simple(c, LHAT_TYPE_BOOL);
+    LhatType *read = lhat_type_func(types, true);
+    read->v.func.result = settings_type;
+    LhatType *configure = lhat_type_func(types, true);
+    // The whole record, as settings() answers it: a table literal cannot
+    // leave a member out of a t^{} (14 章), so the way to change one is to
+    // read them all, write the one, and hand them back.
+    lhat_type_add_param(types, configure, settings_type);
+    configure->v.func.result = settings_type;
+    LhatType *stats = lhat_type_func(types, true);
+    stats->v.func.result = stats_type;
+
+    lhat_type_add_member(types, gc, "collect", 7, collect);
+    lhat_type_add_member(types, gc, "pause", 5, pause);
+    lhat_type_add_member(types, gc, "step", 4, step);
+    lhat_type_add_member(types, gc, "settings", 8, read);
+    lhat_type_add_member(types, gc, "configure", 9, configure);
+    lhat_type_add_member(types, gc, "stats", 5, stats);
+    return gc;
+}
+
 // What L^ carries. vm.c's build_environment makes the values; the two lists
 // have to say the same thing.
 LhatType *chk_environment_type(Checker *c)
@@ -50,12 +113,11 @@ LhatType *chk_environment_type(Checker *c)
     if (c->environment != NULL) {
         return c->environment;
     }
-    LhatType *env = lhat_type_table(c->result->types);
-    LhatType *modules_type = lhat_type_table(c->result->types);
-    // 12.7's shape: a p^ taking nothing and answering nothing. Running the
-    // collector is an effect, so it is not an f^.
-    LhatType *collectgarbage_type = lhat_type_func(c->result->types, false);
-    if (env == NULL || modules_type == NULL || collectgarbage_type == NULL) {
+    LhatTypeArena *types = c->result->types;
+    LhatType *env = lhat_type_table(types);
+    LhatType *modules_type = lhat_type_table(types);
+    LhatType *gc_type = chk_gc_type(c);
+    if (env == NULL || modules_type == NULL || gc_type == NULL) {
         return NULL;
     }
     // 05 の 8.6: L^ is the machine itself, and the registry inside it is

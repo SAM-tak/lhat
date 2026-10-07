@@ -113,7 +113,7 @@ typedef struct {
 _Static_assert(sizeof(((Frame *)0)->cleanups[0]) >=
                    sizeof(lhat_bx((LhatInstruction)0)),
                "a cleanup has to hold a Bx");
-_Static_assert(sizeof(((LhatCoroutine *)0)->cleanups[0]) >=
+_Static_assert(sizeof(((LhatCoroutine *)0)->frame.cleanups[0]) >=
                    sizeof(((Frame *)0)->cleanups[0]),
                "a coroutine has to hold what a frame hands it");
 _Static_assert(LHAT_MAX_CLEANUPS <= UINT8_MAX,
@@ -249,6 +249,14 @@ struct LhatMachine {
 
     size_t collected;
     size_t threshold;   // how many live objects before the next step
+    // How the collector paces itself (vm.h's LhatGcSettings), seeded from
+    // config.h and changed by L^.gc.configure. A paused collector takes no
+    // automatic steps; L^.gc.step and L^.gc.collect still run.
+    uint32_t gc_growth;
+    uint32_t gc_stepmul;
+    uint32_t gc_stepsize;
+    bool gc_paused;
+    size_t gc_cycles;   // cycles completed
 
     // 05 の 8.6: what L^ answers. The one table nothing has to import, so it
     // is made with the machine and rooted by it rather than by any frame.
@@ -348,6 +356,10 @@ struct LhatMachine {
     // receiver of its own (LhatNative.unbound), so one per kind serves every
     // such call. Made on first use and held weakly (gc.c's atomic).
     struct LhatNative *unbound_natives[LHAT_NATIVE_CLEAR + 1];
+    // 16.3: coroutines a for^ loop made and ran to their end, kept to be made
+    // again (vm_coroutine_new). Rooted by gc.c; none is reachable otherwise.
+    struct LhatCoroutine *spare_coroutines[LHAT_SPARE_COROUTINES];
+    size_t spare_count;
 };
 
 typedef struct LhatMachine Machine;

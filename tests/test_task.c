@@ -997,8 +997,21 @@ static void test_await_transfer(void)
         "var^n = data.answer\n"
         "if^std.task.await(t) fits^std.task.TaskError.Taken {n += 1}\n"
         "if^t.done() {n += 10}\n"
-        "t.dispose()\nstd.task.stop()\nL^.collectgarbage()\nreturn^n + data.answer\n");
+        "t.dispose()\nstd.task.stop()\nL^.gc.collect()\nreturn^n + data.answer\n");
     LHAT_CHECK_RAN_INTEGER(ran, 95);
+    lhat_test_ran_dispose(&ran);
+
+    // 05 の 8.6: a task's machine collects the way the spawner's did when
+    // it spawned -- read then, on the spawner's thread.
+    LHAT_TEST("a task's machine takes the spawner's collector settings");
+    ran = run_source(
+        "import^std.task\ntry^std.task.start(1)\n"
+        "var^ s = L^.gc.settings()\ns.growth := 150\ns.stepsize := 7\n"
+        "L^.gc.configure(s)\n"
+        "let^t = try^std.task.async(f^{L^.gc.settings().growth * 100 + "
+        "L^.gc.settings().stepsize})\n"
+        "let^n = try^std.task.await(t)\nstd.task.stop()\nreturn^n\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 15007);
     lhat_test_ran_dispose(&ran);
 
     LHAT_TEST("nil is a result that can only be taken once");
@@ -1016,7 +1029,7 @@ static void test_await_transfer(void)
         "import^std.task\ntry^std.task.start(1)\n"
         "let^t = try^std.task.async(f^{let^x = {answer = 42} return^f^{x.answer}})\n"
         "let^f = try^std.task.await(t)\nt.dispose()\n"
-        "std.task.stop()\nL^.collectgarbage()\nreturn^f()\n");
+        "std.task.stop()\nL^.gc.collect()\nreturn^f()\n");
     LHAT_CHECK_RAN_INTEGER(ran, 42);
     lhat_test_ran_dispose(&ran);
 
@@ -1059,7 +1072,7 @@ static void test_await_transfer(void)
         "import^std.task\nimport^std.lton\ntry^std.task.start(1)\n"
         "let^t = try^std.task.async(f^{return^std.lton.parse(\"answer = 42, child = {text = 'hello'}\")})\n"
         "let^data = try^std.task.await(t)\nt.dispose()\nstd.task.stop()\n"
-        "L^.collectgarbage()\nL^.collectgarbage()\n"
+        "L^.gc.collect()\nL^.gc.collect()\n"
         "return^if^data fits^t^{answer:number^, child:t^{text:string^}}:\n"
         " data.answer + (if^data.child.text = 'hello': 5 el^: 0;) el^: 0;\n");
     LHAT_CHECK_RAN_INTEGER(ran, 47);
@@ -1069,7 +1082,7 @@ static void test_await_transfer(void)
     ran = lhat_test_run(lton_regs, 2,
         "import^std.task\nimport^std.lton\ntry^std.task.start(1)\n"
         "let^t = try^std.task.async(f^{return^std.lton.load('missing.lton')})\n"
-        "let^r = std.task.await(t)\nstd.task.stop()\nL^.collectgarbage()\n"
+        "let^r = std.task.await(t)\nstd.task.stop()\nL^.gc.collect()\n"
         "return^if^r fits^std.lton.LtonError.CannotRead: 1 el^: 0;\n");
     LHAT_CHECK_RAN_INTEGER(ran, 1);
     lhat_test_ran_dispose(&ran);
@@ -1102,7 +1115,7 @@ static void test_member_race(void)
         " let^b = try^std.task.async(p^{return^read(222)})\n"
         " total += try^std.task.await(a) + try^std.task.await(b)\n"
         " a.dispose() b.dispose()\n"
-        " L^.collectgarbage()\n}\n"
+        " L^.gc.collect()\n}\n"
         "std.task.stop()\nreturn^total\n");
     LHAT_CHECK_RAN_INTEGER(ran, 8 * 333);
     lhat_test_ran_dispose(&ran);

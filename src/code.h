@@ -299,6 +299,15 @@ typedef enum {
     // (LhatNative.unbound) instead of a fresh object. CALLMEMBER says the
     // same of its own A.
     LHAT_BC_GETMETHOD,  // A B C as GETMEMBER; R[A] feeds only a method call
+
+    // 16.3: a for^ loop's head. Reads the member named by cache[C] off R[B]
+    // (= A + 1) as GETMETHOD does. Where that is the built-in walk of a table
+    // (iterate^, keys^, values^), the walk is laid in R[A..A+3] -- the table,
+    // the part, and the two positions of an LhatWalkCursor -- and the JUMP
+    // after this runs, past the call. Otherwise the JUMP is stepped over and
+    // the call that follows makes the walk as before. RESUME and ISDONE
+    // read a table in R[B] as such a walk.
+    LHAT_BC_ITERPREP,   // A B C R[A] = R[B].<cache[C]>, or a walk laid inline
     LHAT_BC_COUNT
 } LhatOpcode;
 
@@ -316,6 +325,10 @@ typedef enum {
 // a body, where what the frame answers is the nil^ of falling off the end.
 // Meaningless on the plain calls, which never discard what they answer.
 #define LHAT_CALL_DROP 0x80u
+// 16.3: the same bit on a CALL or CALLMETHOD, which never drops: the answer
+// is a for^ loop's walk and nothing else reads it. A coroutine the call makes
+// is then the loop's alone (LhatCoroutine.owned).
+#define LHAT_CALL_WALK 0x80u
 
 static inline unsigned lhat_call_prepared(uint8_t c)
 {

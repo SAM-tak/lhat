@@ -183,22 +183,43 @@ LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
     if (coroutine == NULL) {
         return NULL;
     }
-    // 2.2: the saved frame in the stack's own two-run shape. calloc gives
-    // all-zero payloads and tags, and tag zero is LHAT_VALUE_NIL -- so the
-    // slots start as nil^ without a pass of their own.
+    return lhat_coroutine_frame_init(&coroutine->frame, closure, registers)
+               ? coroutine : NULL;
+}
+
+bool lhat_coroutine_frame_init(LhatCoroutineFrame *frame,
+                               const LhatClosure *closure, size_t registers)
+{
+    // 2.2: the saved frame in the stack's own two-run shape. Zero payloads
+    // and tags are nil^ (tag zero is LHAT_VALUE_NIL), so fresh runs come
+    // from calloc and kept ones are zeroed.
     size_t width = registers ? registers : 1;
-    coroutine->registers.values = (LhatValueUnion *)lhat_calloc(
-        width, sizeof *coroutine->registers.values);
-    coroutine->registers.tags =
-        (uint8_t *)lhat_calloc(width, sizeof *coroutine->registers.tags);
-    if (coroutine->registers.values == NULL ||
-        coroutine->registers.tags == NULL) {
-        return NULL;
+    if (frame->register_capacity < width) {
+        lhat_free(frame->registers.values);
+        lhat_free(frame->registers.tags);
+        frame->registers.values = (LhatValueUnion *)lhat_calloc(
+            width, sizeof *frame->registers.values);
+        frame->registers.tags =
+            (uint8_t *)lhat_calloc(width, sizeof *frame->registers.tags);
+        frame->register_capacity = width;
+        if (frame->registers.values == NULL ||
+            frame->registers.tags == NULL) {
+            frame->register_capacity = 0;
+            frame->register_count = 0;
+            return false;
+        }
+    } else {
+        memset(frame->registers.values, 0,
+               width * sizeof *frame->registers.values);
+        memset(frame->registers.tags, 0, width * sizeof *frame->registers.tags);
     }
-    coroutine->closure = closure;
-    coroutine->state = LHAT_COROUTINE_FRESH;
-    coroutine->register_count = registers;
-    return coroutine;
+    frame->closure = closure;
+    frame->state = LHAT_COROUTINE_FRESH;
+    frame->register_count = registers;
+    frame->pc = 0;
+    frame->sent_into = 0;
+    frame->cleanup_count = 0;
+    return true;
 }
 
 LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table,
@@ -210,10 +231,10 @@ LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table,
     if (walk == NULL) {
         return NULL;
     }
-    walk->state = LHAT_COROUTINE_FRESH;
+    walk->frame.state = LHAT_COROUTINE_FRESH;
     walk->source = LHAT_COROUTINE_TABLE;
-    walk->part = part;
-    walk->walking = table;
+    walk->cursor.part = part;
+    walk->cursor.walking = table;
     return walk;
 }
 
@@ -227,7 +248,7 @@ LhatCoroutine *lhat_host_iterator(LhatHeap *heap, LhatHostStepFn step,
     if (walk == NULL) {
         return NULL;
     }
-    walk->state = LHAT_COROUTINE_FRESH;
+    walk->frame.state = LHAT_COROUTINE_FRESH;
     walk->source = LHAT_COROUTINE_HOST;
     walk->step = step;
     walk->host_state = context;
@@ -236,7 +257,7 @@ LhatCoroutine *lhat_host_iterator(LhatHeap *heap, LhatHostStepFn step,
     return walk;
 }
 
-bool lhat_table_walk(LhatCoroutine *walk, LhatValue *key, LhatValue *value)
+bool lhat_table_walk(LhatWalkCursor *walk, LhatValue *key, LhatValue *value)
 {
     const LhatTable *table = walk->walking;
     if (table == NULL) {
@@ -847,8 +868,8 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
             if (type->coroutine_top || type->kind_any || !type->is_function) return true;
             const LhatCoroutine *co = (const LhatCoroutine *)lhat_as_object(value);
             if (co->source == LHAT_COROUTINE_TABLE) return true;
-            return co->source == LHAT_COROUTINE_BODY && co->closure != NULL &&
-                   co->closure->proto != NULL && co->closure->proto->is_function;
+            return co->source == LHAT_COROUTINE_BODY && co->frame.closure != NULL &&
+                   co->frame.closure->proto != NULL && co->frame.closure->proto->is_function;
         }
         // 04 の 2.7: a family, not every error. The two tops are disjoint, so
         // asking error^ of a localerror^ answers false.
@@ -1695,8 +1716,8 @@ void lhat_object_free(LhatObject *object)
         lhat_proto_free(((LhatLoadedScript *)object)->root);
         break;
     case LHAT_OBJECT_COROUTINE:
-        lhat_free(((LhatCoroutine *)object)->registers.values);
-        lhat_free(((LhatCoroutine *)object)->registers.tags);
+        lhat_free(((LhatCoroutine *)object)->frame.registers.values);
+        lhat_free(((LhatCoroutine *)object)->frame.registers.tags);
         break;
     case LHAT_OBJECT_TYPE:
         lhat_free(((LhatRuntimeType *)object)->parts);

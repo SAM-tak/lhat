@@ -9,6 +9,8 @@
 
 #include "gc.h"
 
+#include <stdint.h>
+
 #ifdef LHAT_GC_PARANOID
 #include <stdio.h>
 #include <stdlib.h>
@@ -134,11 +136,11 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
 
         case LHAT_OBJECT_COROUTINE: {
             const LhatCoroutine *co = (const LhatCoroutine *)object;
-            for (size_t i = 0; i < co->register_count; i++) {
-                lhat_gc_reach(gray, lhat_slots_get(co->registers, i));
+            for (size_t i = 0; i < co->frame.register_count; i++) {
+                lhat_gc_reach(gray, lhat_slots_get(co->frame.registers, i));
             }
-            reach(gray, (LhatObject *)(void *)co->closure);
-            reach(gray, (LhatObject *)(void *)co->walking);
+            reach(gray, (LhatObject *)(void *)co->frame.closure);
+            reach(gray, (LhatObject *)(void *)co->cursor.walking);
             // 05 の 8.8: what a host's walk asked kept -- the hostdata being
             // walked, usually. nil^ on every other source.
             lhat_gc_reach(gray, co->held);
@@ -234,6 +236,10 @@ static void mark_roots(Machine *m)
     for (size_t i = 0; i < m->hostvalue_member_count; i++) {
         lhat_gc_reach(&m->gray,
                       lhat_object((LhatObject *)m->hostvalue_members[i]));
+    }
+    for (size_t i = 0; i < m->spare_count; i++) {
+        lhat_gc_reach(&m->gray,
+                      lhat_object((LhatObject *)m->spare_coroutines[i]));
     }
     for (size_t i = 0; i < m->frame_count; i++) {
         Frame *frame = &m->frames[i];
@@ -345,7 +351,7 @@ static void hold_pending_disposals(Machine *m)
         // neither closure nor registers -- entering a frame for one would
         // read through NULL. Said outright rather than left to the count.
         if (co->source != LHAT_COROUTINE_BODY ||
-            co->state != LHAT_COROUTINE_SUSPENDED || co->cleanup_count == 0) {
+            co->frame.state != LHAT_COROUTINE_SUSPENDED || co->frame.cleanup_count == 0) {
             continue;
         }
         lhat_gc_reach(&m->gray, lhat_object(object));
@@ -500,6 +506,7 @@ static size_t sweep_some(Machine *m, size_t budget)
     if (*m->sweep == NULL) {
         m->sweep = NULL;
         m->gcstate = LHAT_GC_PAUSE;
+        m->gc_cycles++;
     }
     return looked;
 }
@@ -511,10 +518,11 @@ static void start_cycle(Machine *m)
     m->gcstate = LHAT_GC_PROPAGATE;
 }
 
-// The smallest piece of work there is in whatever phase the cycle is in.
-// Answers how much it did, in objects looked at. `atomic` is the exception
-// and is charged what it is: the pause a step-at-a-time collector still has.
-static size_t single_step(Machine *m)
+// The smallest piece of work there is in whatever phase the cycle is in, a
+// sweep taking up to `budget` of it. Answers how much it did, in objects
+// looked at. `atomic` is the exception and is charged the whole budget left:
+// the pause a step-at-a-time collector still has.
+static size_t single_step(Machine *m, size_t budget)
 {
     switch (m->gcstate) {
         case LHAT_GC_PAUSE:
@@ -527,41 +535,72 @@ static size_t single_step(Machine *m)
                 return 1;
             }
             atomic(m);
-            return LHAT_GC_STEP_WORK;
+            return budget;
 
         case LHAT_GC_SWEEP:
-            return sweep_some(m, LHAT_GC_STEP_WORK);
+            return sweep_some(m, budget);
     }
     return 0;
 }
 
-// 03 の 1.2: Lua's incremental collector, borrowed. A step's worth of
-// whichever phase the cycle is in, and then back to the program.
-void lhat_gc_step(Machine *m)
+void lhat_gc_rearm(Machine *m)
 {
-    size_t done = 0;
-    do {
-        done += single_step(m);
-    } while (done < LHAT_GC_STEP_WORK && m->gcstate != LHAT_GC_PAUSE);
-
+    if (m->gc_paused) {
+        // LHAT_GC_POLL compares against this, so nothing steps until a
+        // resume rearms it.
+        m->threshold = SIZE_MAX;
+        return;
+    }
     if (m->gcstate == LHAT_GC_PAUSE) {
-        // A cycle just ended. What survived is the new baseline, so a program
+        // Between cycles. What survived is the new baseline, so a program
         // holding a lot does not collect on every allocation, and the floor
         // keeps a nearly-empty heap from starting the next one at once.
-        m->threshold =
-            m->objects.count * LHAT_GC_GROWTH_FACTOR + LHAT_GC_MIN_THRESHOLD;
+        m->threshold = m->objects.count * m->gc_growth / 100 +
+                       LHAT_GC_MIN_THRESHOLD;
     } else {
         // In the middle of one, so the next step is due after a fixed number
         // of allocations rather than at a size of heap.
-        m->threshold = m->objects.count + LHAT_GC_STEP_SIZE;
+        m->threshold = m->objects.count + m->gc_stepsize;
     }
+}
+
+bool lhat_gc_advance(Machine *m, size_t budget)
+{
+    size_t done = 0;
+    bool finished = false;
+    while (done < budget) {
+        bool began_idle = m->gcstate == LHAT_GC_PAUSE;
+        done += single_step(m, budget - done);
+        if (!began_idle && m->gcstate == LHAT_GC_PAUSE) {
+            finished = true;
+            break;
+        }
+    }
+    lhat_gc_rearm(m);
+    return finished;
+}
+
+// 03 の 1.2: Lua's incremental collector, borrowed. A step's worth of
+// whichever phase the cycle is in, and then back to the program. The ratio
+// of work to the allocations between steps is what decides whether the
+// collector keeps up, so a step does stepsize * stepmul% of it.
+void lhat_gc_step(Machine *m)
+{
+    size_t budget = (size_t)m->gc_stepsize * m->gc_stepmul / 100;
+    size_t done = 0;
+    do {
+        done += single_step(m, budget - done);
+    } while (done < budget && m->gcstate != LHAT_GC_PAUSE);
+    lhat_gc_rearm(m);
 #ifdef LHAT_GC_PARANOID
     // A step at every instruction, so that a cycle is nearly always half
     // done and every barrier is on the path something takes. Without this a
     // small heap finishes its marking inside one step and the barriers are
     // never reached at all -- which reads as "the tests pass" and means
     // "the tests do not go there". Lua's HARDMEMTESTS is the same idea.
-    m->threshold = 0;
+    if (!m->gc_paused) {
+        m->threshold = 0;
+    }
 #endif
 }
 
@@ -572,14 +611,13 @@ void lhat_gc_collect(Machine *m)
     // asking the question now. Then one cycle from a standing start, which
     // is. Lua's luaC_fullgc takes the same two.
     while (m->gcstate != LHAT_GC_PAUSE) {
-        single_step(m);
+        single_step(m, SIZE_MAX);
     }
     start_cycle(m);
     while (m->gcstate != LHAT_GC_PAUSE) {
-        single_step(m);
+        single_step(m, SIZE_MAX);
     }
-    m->threshold =
-        m->objects.count * LHAT_GC_GROWTH_FACTOR + LHAT_GC_MIN_THRESHOLD;
+    lhat_gc_rearm(m);
 }
 
 // ---------------------------------------------------------------------------

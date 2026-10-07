@@ -100,6 +100,7 @@ typedef struct {
     LhatCarried **arguments;
     size_t argument_count;
     struct ThreadHandle *handle;  // owned by spawn's caller, not by this
+    LhatGcSettings gc;  // the spawning machine's, read when it spawned
 } ThreadStart;
 
 typedef struct ThreadHandle {
@@ -287,6 +288,7 @@ static int thread_main(void *raw)
     if (machine == NULL) {
         handle->status = LHAT_RUN_OUT_OF_MEMORY;
     } else {
+        lhat_machine_gc_configure(machine, &start->gc);
         LhatValue fn = lhat_nil();
         LhatValue *arguments = NULL;
         // 05 の 8.7: a registration becomes an object on the heap of the
@@ -497,6 +499,7 @@ static void thread_spawn(LhatMachine *machine, void *context,
     start->arguments = carried;
     start->argument_count = carried_count;
     start->handle = handle;
+    lhat_machine_gc_settings(machine, &start->gc);
 
     if (!lhat_thread_start(&handle->os, thread_main, start)) {
         free_carried_values(carried, carried_count);

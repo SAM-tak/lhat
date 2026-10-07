@@ -162,10 +162,11 @@ static bool build_environment(Machine *m)
     // 05 の 5.3: the registry a unit is loaded into once. Empty until
     // something is loaded, and grown the way 8.8 grows any table.
     LhatTable *modules_value = lhat_table_new(&m->objects);
-    LhatNative *collectgarbage_value =
-        lhat_native_new(&m->objects, LHAT_NATIVE_COLLECTGARBAGE, lhat_nil());
-    if (m->environment == NULL || modules_value == NULL ||
-        collectgarbage_value == NULL) {
+    // 05 の 8.6: the collector's controls, one value (vm_get_member reads
+    // its members).
+    LhatNative *gc_value =
+        lhat_native_new(&m->objects, LHAT_NATIVE_GC, lhat_nil());
+    if (m->environment == NULL || modules_value == NULL || gc_value == NULL) {
         return false;
     }
     // environment.h's one list -- check.c's environment_type expands the
@@ -256,6 +257,9 @@ LhatMachine *lhat_machine_new_with_size(size_t frames, size_t slots)
     m->slots.tags = (uint8_t *)(values + slots);
     m->slot_capacity = slots;
     m->threshold = LHAT_GC_INITIAL_THRESHOLD;
+    m->gc_growth = LHAT_GC_GROWTH;
+    m->gc_stepmul = LHAT_GC_STEPMUL;
+    m->gc_stepsize = LHAT_GC_STEP_SIZE;
     if (!build_environment(m)) {
         lhat_machine_dispose(m);
         return NULL;
@@ -321,7 +325,7 @@ bool lhat_machine_holds_body(const LhatMachine *machine,
         } else if (object->kind == LHAT_OBJECT_COROUTINE) {
             const LhatCoroutine *coroutine = (const LhatCoroutine *)object;
             proto =
-                coroutine->closure != NULL ? coroutine->closure->proto : NULL;
+                coroutine->frame.closure != NULL ? coroutine->frame.closure->proto : NULL;
         }
         if (proto == NULL) {
             continue;

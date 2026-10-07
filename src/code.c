@@ -497,6 +497,7 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_GETMEMBER:   return "getmember";
         case LHAT_BC_CALLMEMBER:  return "callmember";
         case LHAT_BC_GETMETHOD:   return "getmethod";
+        case LHAT_BC_ITERPREP:    return "iterprep";
         case LHAT_BC_SETINDEX:    return "setindex";
         case LHAT_BC_CHECKRUN:    return "checkrun";
         case LHAT_BC_PACK:        return "pack";
@@ -578,8 +579,13 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
             // before tuples reads exactly as it did. 5.3: a tail call that
             // throws the answer away says so beside the count.
             unsigned prepared = lhat_call_prepared(lhat_c(i));
+            // 16.3: the bit is LHAT_CALL_WALK on a call that is not a tail.
+            bool tail_op = lhat_op(i) == LHAT_BC_TAILCALL ||
+                           lhat_op(i) == LHAT_BC_TAILCALLMETHOD;
             const char *dropped =
-                (lhat_c(i) & LHAT_CALL_DROP) != 0 ? ", dropped" : "";
+                (lhat_c(i) & LHAT_CALL_DROP) == 0 ? ""
+                : tail_op                         ? ", dropped"
+                                                  : ", walk";
             if (prepared > 1) {
                 snprintf(out, size, "%-10s r%u (%u args, %u slots%s)", name,
                          lhat_a(i), lhat_b(i), prepared, dropped);

@@ -118,6 +118,7 @@ struct Task {
     LhatMachine *machine;
     LhatValue driving;  // the coroutine being resumed, once there is one
     bool driving_set;
+    LhatGcSettings gc;  // the spawning machine's, read when it spawned
     LhatRunResult ran;  // what the last turn answered
     TaskMove move;
     int64_t parked_on;  // the std.async id it is parked on
@@ -392,6 +393,7 @@ static StepResult task_begin(TaskModule *module, Task *task)
         return STEP_DONE;
     }
     lhat_machine_set_budget(task->machine, TASK_SLICE);
+    lhat_machine_gc_configure(task->machine, &task->gc);
 
     LhatValue job = lhat_nil();
     if (!lhat_uncarry(task->machine, task->job, &job)) {
@@ -782,6 +784,9 @@ static void task_async(LhatMachine *machine, void *context,
     lhat_condition_init(&task->done);
     task->module = module;
     task->holds = 1;  // the wrapper answered below
+    // A task collects the way the machine that made it does. Read here, on
+    // the spawner's thread: the worker cannot ask a machine that is running.
+    lhat_machine_gc_settings(machine, &task->gc);
     const LhatRuntimeType *result_type = lhat_body_result_type(arguments[0]);
     task->result_type = result_type != NULL
                            ? lhat_runtime_type_clone(&task->type_heap, result_type)

@@ -156,7 +156,7 @@ static void test_coroutines(void)
     // 8.1's "nothing is visible" is untouched.
     LHAT_TEST("L^ carries the collector and the registry");
     check_text(&u,
-               "L^.collectgarbage()\n"
+               "L^.gc.collect()\n"
                "var^ m = L^.modules\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -166,9 +166,33 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    LHAT_TEST("and collectgarbage takes no argument");
-    check_text(&u, "L^.collectgarbage(1)\n");
+    LHAT_TEST("and gc.collect takes no argument");
+    check_text(&u, "L^.gc.collect(1)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
+    unit_dispose(&u);
+
+    LHAT_TEST("L^.gc's controls answer what they say");
+    check_text(&u,
+               "L^.gc.pause(true^)\n"
+               "var^ done : bool^ = L^.gc.step(100)\n"
+               "var^ s = L^.gc.settings()\n"
+               "s.growth := 150\n"
+               "var^ was : number^ = L^.gc.configure(s).growth\n"
+               "var^ st = L^.gc.stats()\n"
+               "var^ live : number^ = st.live\n"
+               "var^ phase : string^ = st.phase\n"
+               "var^ paused : bool^ = st.paused\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and configure takes the whole record settings answers");
+    check_text(&u, "L^.gc.configure({ growth = 150 })\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("the collector is no longer reached as collectgarbage");
+    check_text(&u, "L^.collectgarbage()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
     // 05 の 8.6: the registry is the machine's, and 5.3's registration
@@ -181,19 +205,19 @@ static void test_coroutines(void)
     unit_dispose(&u);
 
     LHAT_TEST("and writing over what it holds is the same refusal");
-    check_text(&u, "L^.collectgarbage := p^ { }\n");
+    check_text(&u, "L^.gc.collect := p^ { }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TABLE_IS_SEALED);
     unit_dispose(&u);
 
     // 15.1改 answers the f^ side of the same question; this is the other one.
     LHAT_TEST("a p^ reaches it no more than the top level does");
-    check_text(&u, "var^ f = p^ { L^.collectgarbage := p^ { } }\n");
+    check_text(&u, "var^ f = p^ { L^.gc.collect := p^ { } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TABLE_IS_SEALED);
     unit_dispose(&u);
 
     LHAT_TEST("but reading it is untouched");
     check_text(&u,
-               "L^.collectgarbage()\n"
+               "L^.gc.collect()\n"
                "var^ m = L^.modules\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);

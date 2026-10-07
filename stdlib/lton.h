@@ -94,7 +94,7 @@ bool lhatstdlib_lton_register(LhatProgram *program);
 // WHAT COMES BACK IS THE MACHINE'S. vm.h's rule holds here as everywhere: a
 // value a host is holding is not a root. Nothing between these calls and the
 // reading collects -- the collector advances inside the interpreter's loop
-// and in lhat_machine_collectgarbage, and nowhere else, so making a key with
+// and in lhat_machine_gc_collect, and nowhere else, so making a key with
 // lhat_machine_make_string and asking lhat_table_get for it is safe as it
 // stands. Read what is wanted out of the table before running L^ again;
 // a table kept across a run wants somewhere the machine reaches

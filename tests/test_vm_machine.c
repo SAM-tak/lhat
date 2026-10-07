@@ -562,13 +562,13 @@ static void test_collection(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 5.12: collectgarbage() answers for the heap as it is when it is
+    // 5.12: gc.collect() answers for the heap as it is when it is
     // called, which a cycle already half run does not. So it finishes that
     // one and then runs another from a standing start -- and 02 の 10.7's
     // holding back happens in the second, where the drop is visible. Without
     // the second cycle this coroutine's finally^ would wait for whenever the
     // collector next came round.
-    LHAT_TEST("collectgarbage answers for the heap as it is, mid-cycle");
+    LHAT_TEST("gc.collect answers for the heap as it is, mid-cycle");
     run_text(&r,
              "var^ log = { n := 0 }\n"
              "var^ gen = p^ {\n"
@@ -587,7 +587,7 @@ static void test_collection(void)
              "}\n"
              "repeat^ 2000 { var^ waste = { a := 1 } }\n"
              "outer()\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
@@ -616,7 +616,7 @@ static void test_collection(void)
              "  b.other := a\n"
              "  n := n + 1\n"
              "}\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
              "return^ n\n");
     CHECK_INTEGER(&r, 2000);
     LHAT_CHECK(r.ran.live < 500, "the cycles went");
@@ -633,7 +633,7 @@ static void test_collection(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 05 の 8.6 の host 版: lhat_machine_collectgarbage is the same cycle
+    // 05 の 8.6 の host 版: lhat_machine_gc_collect is the same cycle
     // asked for from C, for a host that has a machine and no L^ code it
     // wants to run to reach one.
     //
@@ -650,12 +650,12 @@ static void test_collection(void)
     CHECK_INTEGER(&r, 1);
     LHAT_CHECK(r.ran.live > 2000, "the run ended holding every table");
     {
-        size_t after = lhat_machine_collectgarbage(r.machine);
+        size_t after = lhat_machine_gc_collect(r.machine);
         LHAT_CHECK(after < 500, "and the host's cycle reclaimed them: %zu",
                    after);
         // The same count LhatRunResult.live carries, and nothing was
         // allocated in between, so asking again answers the same.
-        LHAT_CHECK_EQ_INT(lhat_machine_collectgarbage(r.machine), after);
+        LHAT_CHECK_EQ_INT(lhat_machine_gc_collect(r.machine), after);
     }
     run_dispose(&r);
 
@@ -664,14 +664,14 @@ static void test_collection(void)
     LHAT_TEST("a machine that ran nothing keeps what L^ carries");
     {
         LhatMachine *m = lhat_machine_new();
-        size_t live = lhat_machine_collectgarbage(m);
+        size_t live = lhat_machine_gc_collect(m);
         LHAT_CHECK(live > 0, "L^ and its members are still there: %zu", live);
-        LHAT_CHECK_EQ_INT(lhat_machine_collectgarbage(m), live);
+        LHAT_CHECK_EQ_INT(lhat_machine_gc_collect(m), live);
         lhat_machine_dispose(m);
     }
 
     LHAT_TEST("no machine is nothing to collect");
-    LHAT_CHECK_EQ_INT(lhat_machine_collectgarbage(NULL), 0);
+    LHAT_CHECK_EQ_INT(lhat_machine_gc_collect(NULL), 0);
     LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(NULL), 0);
 
     // 02 の 10.7 の host 版. A coroutine still suspended when the run ends
@@ -704,14 +704,14 @@ static void test_collection(void)
     CHECK_INTEGER(&r, 1);
     LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(r.machine), 0);
     {
-        size_t live = lhat_machine_collectgarbage(r.machine);
+        size_t live = lhat_machine_gc_collect(r.machine);
         LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(r.machine), 0);
         LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(r.machine), 0);
         // The coroutine, its closure and the table its cleanup wrote into
         // all went in the cycle that follows the drain. Held back, they
         // could not have.
         LhatMachine *empty = lhat_machine_new();
-        size_t bare = lhat_machine_collectgarbage(empty);
+        size_t bare = lhat_machine_gc_collect(empty);
         LHAT_CHECK(live <= bare, "only L^ is left: %zu against %zu", live,
                    bare);
         lhat_machine_dispose(empty);
@@ -740,11 +740,11 @@ static void test_collection(void)
              "return^ 1\n");
     CHECK_INTEGER(&r, 1);
     {
-        size_t live = lhat_machine_collectgarbage(r.machine);
+        size_t live = lhat_machine_gc_collect(r.machine);
         LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(r.machine), 0);
         LHAT_CHECK_EQ_INT(lhat_machine_fault_depth(r.machine), 0);
         LhatMachine *empty = lhat_machine_new();
-        size_t bare = lhat_machine_collectgarbage(empty);
+        size_t bare = lhat_machine_gc_collect(empty);
         LHAT_CHECK(live <= bare, "nothing of it was left: %zu against %zu",
                    live, bare);
         lhat_machine_dispose(empty);
@@ -1027,7 +1027,7 @@ static void test_host_table_write(void)
              "var^ kept = { }\n"
              "for^ i from^ 0 to^ 1999 { kept[i] := { a := i } }\n"
              "return^ { held := kept, check := f^ {\n"
-             "  L^.collectgarbage()\n"
+             "  L^.gc.collect()\n"
              "  return^ kept[5000]\n"
              "} }\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
@@ -1107,8 +1107,8 @@ static void test_host_table_write(void)
                        !refused,
                    "written");
 
-        size_t holding = lhat_machine_collectgarbage(r.machine);
-        lhat_machine_collectgarbage(r.machine);
+        size_t holding = lhat_machine_gc_collect(r.machine);
+        lhat_machine_gc_collect(r.machine);
         LhatValue held = lhat_table_get(root, key);
         LHAT_CHECK(lhat_is_object_kind(held, LHAT_OBJECT_STRING),
                    "still there after two cycles");
@@ -1121,7 +1121,7 @@ static void test_host_table_write(void)
                                           &refused) &&
                        !refused,
                    "let go");
-        size_t after = lhat_machine_collectgarbage(r.machine);
+        size_t after = lhat_machine_gc_collect(r.machine);
         LHAT_CHECK(after < holding, "and it goes: %zu against %zu", after,
                    holding);
     }
@@ -1255,8 +1255,8 @@ static void test_detached_results(void)
         LHAT_CHECK(lhat_as_object(got) == (LhatObject *)t, "same root address");
         LHAT_CHECK(memcmp(&array, &t->array, sizeof array) == 0, "same backing array");
         LHAT_REQUIRE(lhat_machine_set_global(target, "result", got), "rooted");
-        lhat_machine_collectgarbage(target);
-        lhat_machine_collectgarbage(target);
+        lhat_machine_gc_collect(target);
+        lhat_machine_gc_collect(target);
         LHAT_CHECK(lhat_as_object(lhat_slots_get(t->array, 9999)) == lhat_as_object(child),
                    "shared child survived collection");
         LhatValue back = lhat_table_get((LhatTable *)lhat_as_object(child), text);
@@ -1286,12 +1286,233 @@ static void test_member_cache_lifetime(void)
     LhatTable *table = (LhatTable *)lhat_as_object(value);
     LHAT_REQUIRE(lhat_machine_set_global(m, "kept", value), "rooted table");
     m->member_caches[0].answered = table;
-    lhat_machine_collectgarbage(m);
+    lhat_machine_gc_collect(m);
     LHAT_CHECK(m->member_caches[0].answered == table, "reachable hint retained");
     LHAT_REQUIRE(lhat_machine_set_global(m, "kept", lhat_nil()), "dropped root");
-    lhat_machine_collectgarbage(m);
+    lhat_machine_gc_collect(m);
     LHAT_CHECK(m->member_caches[0].answered == NULL, "dead hint invalidated");
     lhat_machine_dispose(m);
+}
+
+// The peak live count a machine paced by `growth` reaches under the same
+// churn, read after each call. Zero from a build that steps at every
+// instruction (LHAT_GC_PARANOID, the Debug configuration's), where pacing
+// decides nothing -- it shows as a threshold of 0 once a step has run.
+static size_t churn_peak(uint32_t growth)
+{
+    Run r;
+    run_text(&r,
+             "var^ sink = {}\n"
+             "return^ p^ { repeat^ 500 { sink := { 1 } } }\n");
+    size_t peak = 0;
+    if (r.ran.status == LHAT_RUN_OK &&
+        lhat_machine_set_global(r.machine, "Churn", r.ran.value)) {
+        LhatGcSettings s;
+        lhat_machine_gc_settings(r.machine, &s);
+        s.growth = growth;
+        lhat_machine_gc_configure(r.machine, &s);
+        lhat_machine_call(r.machine, r.ran.value, NULL, 0);
+        LhatGcStats paced;
+        lhat_machine_gc_stats(r.machine, &paced);
+        if (paced.threshold == 0) {
+            run_dispose(&r);
+            return 0;
+        }
+        for (int i = 0; i < 40; i++) {
+            LhatRunResult ran =
+                lhat_machine_call(r.machine, r.ran.value, NULL, 0);
+            LhatGcStats stats;
+            lhat_machine_gc_stats(r.machine, &stats);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            if (stats.live > peak) {
+                peak = stats.live;
+            }
+        }
+    }
+    run_dispose(&r);
+    return peak;
+}
+
+// 16.3: a for^ loop over a table keeps its walk in its own registers, and one
+// over a generator it made gives the coroutine back to be made again -- so a
+// loop that has run once allocates nothing for its walk after that.
+static void test_loop_walks(void)
+{
+    Run r;
+
+    LHAT_TEST("a loop's walk allocates nothing once warm");
+    run_text(&r,
+             "var^ t = { 1, 2, 3, x = 4 }\n"
+             "let^ gen = p^ n:number^ { var^ i = 0  repeat^ n { yield^ i  i += 1 } }\n"
+             "return^ f^ -> number^ {\n"
+             "  var^ s = 0\n"
+             "  for^ v in^ t { s += v }\n"
+             "  for^ k, v in^ t { s += v }\n"
+             "  for^ k in^ t.keys^() { s += 1 }\n"
+             "  for^ v in^ t.values^() { s += v }\n"
+             "  for^ v in^ t { if^ v = 2 { break^ } }\n"
+             "  for^ x in^ gen(4) { s += x }\n"
+             "  return^ s\n"
+             "}\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    {
+        LhatMachine *m = r.machine;
+        LhatValue walks = r.ran.value;
+        LHAT_CHECK(lhat_machine_set_global(m, "Walks", walks), "rooted");
+        LhatRunResult first = lhat_machine_call(m, walks, NULL, 0);
+        LHAT_CHECK_EQ_INT(first.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(first.value), 36);
+        lhat_machine_gc_pause(m, true);
+        LhatGcStats before;
+        lhat_machine_gc_stats(m, &before);
+        for (int i = 0; i < 20; i++) {
+            LhatRunResult again = lhat_machine_call(m, walks, NULL, 0);
+            LHAT_CHECK_EQ_INT(lhat_as_integer(again.value), 36);
+        }
+        LhatGcStats after;
+        lhat_machine_gc_stats(m, &after);
+        LHAT_CHECK_EQ_INT((long long)after.live, (long long)before.live);
+    }
+    run_dispose(&r);
+
+    LHAT_TEST("a generator held elsewhere is walked, not reused");
+    run_text(&r,
+             "let^ gen = p^ n:number^ { var^ i = 0  repeat^ n { yield^ i  i += 1 } }\n"
+             "var^ g = gen(3)\n"
+             "var^ seen = 0\n"
+             "for^ x in^ g { seen += 1 }\n"
+             "for^ x in^ gen(5) { if^ x = 1 { break^ } }\n"
+             "for^ x in^ gen(2) { seen += 10 }\n"
+             "if^ g.done() { seen += 100 }\n"
+             "return^ seen\n");
+    CHECK_INTEGER(&r, 123);
+    run_dispose(&r);
+
+    LHAT_TEST("the same loop nested by recursion walks each generator apart");
+    run_text(&r,
+             "let^ gen = p^ n:number^ { var^ i = 0  repeat^ n { yield^ i  i += 1 } }\n"
+             "let^ nest = f^ d:number^ -> number^ {\n"
+             "  var^ s = 0\n"
+             "  for^ x in^ gen(2) { s += 1  if^ d > 0 { s += this^(d - 1) } }\n"
+             "  return^ s\n"
+             "}\n"
+             "return^ nest(3)\n");
+    CHECK_INTEGER(&r, 30);
+    run_dispose(&r);
+}
+
+// 05 の 8.6: L^.gc and the host's lhat_machine_gc_*, one set of controls.
+static void test_gc_controls(void)
+{
+    Run r;
+
+    LHAT_TEST("a machine starts from config.h's pacing");
+    run_text(&r,
+             "var^ sink = {}\n"
+             "return^ p^ { repeat^ 2000 { sink := { 1 } } }\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    {
+        LhatMachine *m = r.machine;
+        LhatValue churn = r.ran.value;
+        LHAT_CHECK(lhat_machine_set_global(m, "Churn", churn),
+                   "the churn is rooted");
+        LhatGcSettings s;
+        lhat_machine_gc_settings(m, &s);
+        LHAT_CHECK_EQ_INT(s.growth, 150);
+        LHAT_CHECK_EQ_INT(s.stepmul, 800);
+        LHAT_CHECK_EQ_INT(s.stepsize, 10);
+
+        LHAT_TEST("configure refuses what would stall or never collect");
+        LhatGcSettings bad = s;
+        bad.growth = 50;
+        LHAT_CHECK(!lhat_machine_gc_configure(m, &bad), "growth below 100");
+        bad = s;
+        bad.stepsize = 0;
+        LHAT_CHECK(!lhat_machine_gc_configure(m, &bad), "no allocations");
+        LhatGcSettings kept;
+        lhat_machine_gc_settings(m, &kept);
+        LHAT_CHECK_EQ_INT(kept.growth, 150);
+
+        LHAT_TEST("a paused machine takes no automatic steps");
+        lhat_machine_gc_collect(m);
+        lhat_machine_gc_pause(m, true);
+        LhatGcStats before;
+        lhat_machine_gc_stats(m, &before);
+        for (int i = 0; i < 3; i++) {
+            LHAT_CHECK_EQ_INT(lhat_machine_call(m, churn, NULL, 0).status,
+                              LHAT_RUN_OK);
+        }
+        LhatGcStats during;
+        lhat_machine_gc_stats(m, &during);
+        LHAT_CHECK(during.paused, "paused");
+        LHAT_CHECK_EQ_INT(during.cycles, before.cycles);
+        LHAT_CHECK(during.live >= before.live + 6000,
+                   "everything made is still there: %zu after %zu",
+                   during.live, before.live);
+        LHAT_CHECK(during.threshold == SIZE_MAX, "no step is due");
+
+        LHAT_TEST("and a manual step still runs, finishing a cycle");
+        bool finished = false;
+        for (int i = 0; i < 1000 && !finished; i++) {
+            finished = lhat_machine_gc_step(m, 1000);
+        }
+        LHAT_CHECK(finished, "the cycle finished");
+        LhatGcStats after;
+        lhat_machine_gc_stats(m, &after);
+        LHAT_CHECK_EQ_INT(after.cycles, before.cycles + 1);
+        LHAT_CHECK_EQ_INT(after.phase, LHAT_GC_PHASE_PAUSE);
+        LHAT_CHECK(after.live + 6000 <= during.live,
+                   "the garbage went: %zu after %zu", after.live,
+                   during.live);
+
+        LHAT_TEST("resumed, it collects again on its own");
+        lhat_machine_gc_pause(m, false);
+        for (int i = 0; i < 3; i++) {
+            lhat_machine_call(m, churn, NULL, 0);
+        }
+        LhatGcStats resumed;
+        lhat_machine_gc_stats(m, &resumed);
+        LHAT_CHECK(resumed.cycles > after.cycles, "cycles: %zu after %zu",
+                   resumed.cycles, after.cycles);
+    }
+    run_dispose(&r);
+
+    LHAT_TEST("a lower growth keeps fewer objects waiting");
+    {
+        size_t eager = churn_peak(100);
+        size_t lazy = churn_peak(400);
+        LHAT_CHECK(lazy == 0 || eager < lazy,
+                   "peak %zu at 100%%, %zu at 400%%", eager, lazy);
+    }
+
+    LHAT_TEST("L^.gc reads and changes the same settings");
+    run_text(&r,
+             "var^ s = L^.gc.settings()\n"
+             "s.stepmul := 400\n"
+             "let^ was = L^.gc.configure(s)\n"
+             "return^ was.stepmul * 1000 + L^.gc.settings().stepmul\n");
+    CHECK_INTEGER(&r, 800400);
+    run_dispose(&r);
+
+    LHAT_TEST("and refuses a setting out of range");
+    run_text(&r,
+             "var^ s = L^.gc.settings()\n"
+             "s.growth := 10\n"
+             "L^.gc.configure(s)\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    LHAT_TEST("a control read as a value still works");
+    run_text(&r,
+             "let^ stats = L^.gc.stats\n"
+             "let^ step = L^.gc.step\n"
+             "L^.gc.pause(true^)\n"
+             "step(1)\n"
+             "if^ stats().paused { return^ 1 }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
 }
 
 int main(void)
@@ -1305,5 +1526,7 @@ int main(void)
     test_collection();
     test_host_table_write();
     test_fault_span();
+    test_gc_controls();
+    test_loop_walks();
     return lhat_test_report("test_vm_machine");
 }

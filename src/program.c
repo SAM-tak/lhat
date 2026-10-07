@@ -4732,7 +4732,7 @@ static size_t reload_held(LhatProgram *program, const char *path,
     }
     bool held = false;
     for (size_t i = 0; i < machine_count && !held; i++) {
-        lhat_machine_collectgarbage(machines[i]);
+        lhat_machine_gc_collect(machines[i]);
         held = lhat_machine_pending_disposals(machines[i]) > 0 ||
                lhat_machine_holds_body(machines[i], flat, bodies);
     }

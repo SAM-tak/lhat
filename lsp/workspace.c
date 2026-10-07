@@ -257,7 +257,6 @@ static void bind_host_names(const LspProject *project, LhatProgram *program)
     }
     lhat_register_global(program, "print", "f^...->nil^;", lsp_stub_host_fn, NULL);
     lhat_bind_initial(program, "print", "L^.print");
-    lhat_bind_initial(program, "collectgarbage", "L^.collectgarbage");
 }
 
 static char *read_config_text(LspWorkspace *ws, const char *path,

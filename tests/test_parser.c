@@ -1150,7 +1150,7 @@ static void test_statements(void)
     parse_dispose(&p);
 
     LHAT_TEST("L^ begins a statement after a call");
-    parse_text(&p, "foo()\nL^.collectgarbage()");
+    parse_text(&p, "foo()\nL^.gc.collect()");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 

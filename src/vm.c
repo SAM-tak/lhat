@@ -226,6 +226,54 @@ bool vm_three_way(LhatValue left, LhatValue right, int *out)
     return false;
 }
 
+// 16.3: ITERPREP's question -- whether what it read into `at` is the
+// built-in walk of the table at `at + 1`. If so the walk is laid in the four
+// registers from `at` (code.h) and no coroutine is made for it: what the
+// call would have built, held where the loop already keeps its own state.
+static bool lay_walk_inline(Machine *m, size_t at)
+{
+    LhatValue read = lhat_slots_get(m->slots, at);
+    if (!lhat_is_object_kind(read, LHAT_OBJECT_NATIVE)) {
+        return false;
+    }
+    LhatNativeKind kind = ((const LhatNative *)lhat_as_object(read))->kind;
+    LhatWalkPart part = kind == LHAT_NATIVE_KEYS     ? LHAT_WALK_KEYS
+                        : kind == LHAT_NATIVE_VALUES ? LHAT_WALK_VALUES
+                                                     : LHAT_WALK_PAIR;
+    const LhatTable *over = vm_table_of(lhat_slots_get(m->slots, at + 1));
+    if ((kind != LHAT_NATIVE_ITERATE && part == LHAT_WALK_PAIR) ||
+        over == NULL) {
+        return false;
+    }
+    lhat_slots_set(m->slots, at, lhat_object((LhatObject *)(void *)over));
+    lhat_slots_set(m->slots, at + 1, lhat_integer(part));
+    lhat_slots_set(m->slots, at + 2, lhat_integer(0));
+    lhat_slots_set(m->slots, at + 3, lhat_integer(0));
+    return true;
+}
+
+// The cursor ITERPREP laid from `at`, read back. False for anything it did
+// not lay -- an unchecked RESUME of some other table -- so that the bounds
+// the step checks are the only ones that matter.
+static bool read_walk_inline(Machine *m, size_t at, LhatWalkCursor *cursor)
+{
+    LhatValue part = lhat_slots_get(m->slots, at + 1);
+    LhatValue array = lhat_slots_get(m->slots, at + 2);
+    LhatValue entry = lhat_slots_get(m->slots, at + 3);
+    if (!lhat_is_integer(part) || !lhat_is_integer(array) ||
+        !lhat_is_integer(entry) || lhat_as_integer(part) < 0 ||
+        lhat_as_integer(part) > LHAT_WALK_VALUES ||
+        lhat_as_integer(array) < 0 || lhat_as_integer(entry) < 0) {
+        return false;
+    }
+    cursor->walking =
+        (const LhatTable *)lhat_as_object(lhat_slots_get(m->slots, at));
+    cursor->part = (LhatWalkPart)lhat_as_integer(part);
+    cursor->at_array = (size_t)lhat_as_integer(array);
+    cursor->at_entry = (size_t)lhat_as_integer(entry);
+    return true;
+}
+
 // 11.9: every ordering is read off a three-way answer, whether the
 // answer came from a type that orders its own or from a written op^<=>. False
 // when neither side is one of those, which is what sends the question on.
@@ -335,7 +383,7 @@ static bool hook_line(Machine *m, Frame *frame, size_t at,
 // top is a disposal one (vm_enter_disposal_frame), which has no instructions of
 // its own to run -- only cleanups to walk. It is what the loop's own
 // `goto drain` does for a disposal it entered itself, said from outside so
-// that a host can start one (lhat_machine_collectgarbage).
+// that a host can start one (lhat_machine_gc_collect).
 static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                      bool draining);
 
@@ -597,6 +645,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         VM_LABEL(LHAT_BC_FORLOOPD),
         VM_LABEL(LHAT_BC_CHECKSTEP),
         VM_LABEL(LHAT_BC_GETMETHOD),
+        VM_LABEL(LHAT_BC_ITERPREP),
     };
 #endif
 
@@ -614,7 +663,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // instruction that made the object it goes into needs no barrier.
         //
         // 5.12: a step, not a collection. What this costs is bounded by
-        // LHAT_GC_STEP_WORK whatever the heap has grown to.
+        // the machine's step settings whatever the heap has grown to.
 #ifdef LHAT_GC_PARANOID
         // The paranoid build polls at every boundary on purpose: its point
         // is that a cycle is nearly always half done so every barrier gets
@@ -648,7 +697,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // 4.3改: the queued one's own width. gc.c holds back only a
             // suspended BODY coroutine, so the closure is there to ask.
             if (next_base +
-                    m->pending_dispose->closure->proto->chunk.registers >=
+                    m->pending_dispose->frame.closure->proto->chunk.registers >=
                 m->slot_capacity) {
                 return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), pc);
             }
@@ -658,7 +707,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                  &chunk, &pc);
             // 15.4: same as an explicit dispose -- the slot a yield^ answers
             // into gets nil^, since nothing sent anything in.
-            SET_R(co->sent_into, lhat_nil());
+            SET_R(co->frame.sent_into, lhat_nil());
             goto drain;
         }
 
@@ -1209,6 +1258,23 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 member_key = chunk->constants[chunk->member_keys[cc]];
                 filling = cache;
                 goto member_body;
+            }
+
+            // 16.3: a for^ loop's head (code.h). The read is GETMETHOD's,
+            // so the member a table carries is what decides -- and only the
+            // built-in walk is laid inline.
+            VM_CASE(LHAT_BC_ITERPREP) {
+                LHAT_GC_POLL();  // a member read may bind what it found
+                LhatRunStatus status = vm_get_member(
+                    m, rbase + a, rbase + b, rbase + a,
+                    chunk->constants[chunk->member_keys[cc]], NULL, true);
+                if (status != LHAT_RUN_OK) {
+                    return vm_finish(m, chunk, status, lhat_nil(), at);
+                }
+                if (!lay_walk_inline(m, rbase + a)) {
+                    pc++;  // past the JUMP, to the call that makes the walk
+                }
+                VM_NEXT();
             }
 
             VM_CASE(LHAT_BC_GETINDEX)
@@ -1994,8 +2060,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         }
                         SET_R(a, lhat_bool(
                             native->kind == LHAT_NATIVE_DONE
-                                ? co->state == LHAT_COROUTINE_DONE
-                                : co->state != LHAT_COROUTINE_FRESH));
+                                ? co->frame.state == LHAT_COROUTINE_DONE
+                                : co->frame.state != LHAT_COROUTINE_FRESH));
                         VM_NEXT();
                     }
 
@@ -2013,8 +2079,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     if (native->kind == LHAT_NATIVE_RESUME) {
                         const LhatProto *from =
                             co->source == LHAT_COROUTINE_BODY &&
-                                    co->closure != NULL
-                                ? co->closure->proto
+                                    co->frame.closure != NULL
+                                ? co->frame.closure->proto
                                 : NULL;
                         // 16.3's built-in walk receives nothing either, and
                         // has no proto to say so. 13.8改: a tuple R takes
@@ -2032,8 +2098,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         }
                         // And the run still has to fit the suspended frame
                         // (5.1's stop, never a scribble past it).
-                        if (b > 1 && co->state == LHAT_COROUTINE_SUSPENDED &&
-                            (size_t)co->sent_into + b >= co->register_count) {
+                        if (b > 1 && co->frame.state == LHAT_COROUTINE_SUSPENDED &&
+                            (size_t)co->frame.sent_into + b >= co->frame.register_count) {
                             return vm_finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
                                           at);
                         }
@@ -2042,12 +2108,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // 15.2: start and resume split the two jobs, so each has
                     // to be called on the state that makes it meaningful.
                     if (native->kind == LHAT_NATIVE_START &&
-                        co->state != LHAT_COROUTINE_FRESH) {
+                        co->frame.state != LHAT_COROUTINE_FRESH) {
                         return vm_finish(m, chunk, LHAT_RUN_COROUTINE_ALREADY_STARTED,
                                       lhat_nil(), at);
                     }
                     if (native->kind == LHAT_NATIVE_RESUME &&
-                        co->state == LHAT_COROUTINE_FRESH) {
+                        co->frame.state == LHAT_COROUTINE_FRESH) {
                         return vm_finish(m, chunk, LHAT_RUN_COROUTINE_NOT_STARTED,
                                       lhat_nil(), at);
                     }
@@ -2056,10 +2122,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // never runs the same cleanup twice, so a coroutine that
                     // has finished simply has nothing left to do.
                     bool dispose = native->kind == LHAT_NATIVE_DISPOSE;
-                    if (co->state == LHAT_COROUTINE_DONE ||
-                        (dispose && co->state == LHAT_COROUTINE_FRESH)) {
+                    if (co->frame.state == LHAT_COROUTINE_DONE ||
+                        (dispose && co->frame.state == LHAT_COROUTINE_FRESH)) {
                         if (dispose) {
-                            co->state = LHAT_COROUTINE_DONE;
+                            co->frame.state = LHAT_COROUTINE_DONE;
                             // 05 の 8.8: a host walk's state goes back with
                             // the disposal. Nothing on any other source.
                             lhat_coroutine_release((LhatObject *)co, m);
@@ -2068,7 +2134,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         }
                         return vm_finish(m, chunk, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
                     }
-                    if (co->state == LHAT_COROUTINE_RUNNING) {
+                    if (co->frame.state == LHAT_COROUTINE_RUNNING) {
                         return vm_finish(m, chunk, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
                     }
 
@@ -2079,7 +2145,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // the whole of either.
                     if (co->source == LHAT_COROUTINE_TABLE) {
                         if (dispose) {
-                            co->state = LHAT_COROUTINE_DONE;
+                            co->frame.state = LHAT_COROUTINE_DONE;
                             SET_R(a, lhat_nil());
                             VM_NEXT();
                         }
@@ -2087,7 +2153,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         // 16.3改2: a projection yields one value, so one slot
                         // is what it wants and a run has nothing to put in
                         // the second position.
-                        if (co->part != LHAT_WALK_PAIR) {
+                        if (co->cursor.part != LHAT_WALK_PAIR) {
                             if (room > 1) {
                                 return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                               lhat_nil(), at);
@@ -2121,12 +2187,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         // the walk ending still answers nil^; a pair coming
                         // back has nowhere to land.
                         LhatValue key, value;
-                        if (!lhat_table_walk(co, &key, &value)) {
-                            co->state = LHAT_COROUTINE_DONE;
+                        if (!lhat_table_walk(&co->cursor, &key, &value)) {
+                            co->frame.state = LHAT_COROUTINE_DONE;
                             SET_R(a, lhat_nil());
                             VM_NEXT();
                         }
-                        co->state = LHAT_COROUTINE_SUSPENDED;
+                        co->frame.state = LHAT_COROUTINE_SUSPENDED;
                         return vm_finish(m, chunk, LHAT_RUN_TUPLE_UNEXPECTED,
                                       lhat_nil(), at);
                     }
@@ -2137,7 +2203,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // rather than up front the way a table's part allows.
                     if (co->source == LHAT_COROUTINE_HOST) {
                         if (dispose) {
-                            co->state = LHAT_COROUTINE_DONE;
+                            co->frame.state = LHAT_COROUTINE_DONE;
                             lhat_coroutine_release((LhatObject *)co, m);
                             SET_R(a, lhat_nil());
                             VM_NEXT();
@@ -2178,7 +2244,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     size_t next_base = rbase + (a) + 1;
                     // 4.3改: a suspension's saved registers are its body's
                     // width, which is the window the restore lays down.
-                    if (next_base + co->register_count >= m->slot_capacity) {
+                    if (next_base + co->frame.register_count >= m->slot_capacity) {
                         return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                     }
                     frame->pc = pc;
@@ -2192,7 +2258,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         // coroutine here, so the slot a yield^ answers into
                         // is written the way a resume writes it -- with
                         // nil^, since dispose sends nothing in.
-                        SET_R(co->sent_into, sent);
+                        SET_R(co->frame.sent_into, sent);
                         goto drain;
                     }
 
@@ -2215,8 +2281,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             vm_stash_sent_hostvalue(m, rbase + first);
                         const LhatHostValueTag *sent_tag =
                             sent_run[0].as.hostvalue_run[0].hostvalue;
-                        if ((size_t)co->sent_into + sent_tag->width >
-                            co->register_count) {
+                        if ((size_t)co->frame.sent_into + sent_tag->width >
+                            co->frame.register_count) {
                             return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                           lhat_nil(), at);
                         }
@@ -2232,7 +2298,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         m, co, next_base, a, (uint8_t)lhat_call_prepared(cc),
                         sent_run, sent_count);
                     rbase = frame->base;
-                    chunk = &co->closure->proto->chunk;
+                    chunk = &co->frame.closure->proto->chunk;
                     pc = frame->pc;
                     VM_NEXT();
                 }
@@ -2327,12 +2393,14 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // started -- which is why the colouring of async/await never
                 // arises here.
                 if (callee->proto->yields) {
-                    LhatCoroutine *co =
-                        lhat_coroutine_new(&m->objects, callee,
-                                           callee->proto->chunk.registers);
+                    LhatCoroutine *co = vm_coroutine_new(
+                        m, callee, callee->proto->chunk.registers);
                     if (co == NULL) {
                         return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
+                    // 16.3: made for a for^ loop's walk and handed to
+                    // nothing else (code.h's LHAT_CALL_WALK).
+                    co->owned = !tail && (cc & LHAT_CALL_WALK) != 0;
                     // 05 の 8.9: without a spread the arguments sit in their
                     // laid-out slots, widths included, so the copy is
                     // slot-blind -- what lets a wide parameter cross. A
@@ -2344,7 +2412,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         for (size_t i = 0; i < callee->proto->parameter_slots;
                              i++) {
                             lhat_slots_set(
-                                co->registers, i,
+                                co->frame.registers, i,
                                 lhat_slots_get(m->slots,
                                                rbase + a + skip + i));
                         }
@@ -2352,13 +2420,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         size_t fixed =
                             callee->proto->has_variadic ? required : given;
                         for (size_t i = 0; i < fixed; i++) {
-                            lhat_slots_set(co->registers, i,
+                            lhat_slots_set(co->frame.registers, i,
                                            call_arg(m->slots, rbase, a, skip,
                                                     spread_table, before_spread, i));
                         }
                     }
                     if (callee->proto->has_variadic) {
-                        lhat_slots_set(co->registers, required, collected_variadic);
+                        lhat_slots_set(co->frame.registers, required, collected_variadic);
                     }
                     SET_R(a, lhat_object((LhatObject *)co));
                     VM_NEXT();
@@ -2574,7 +2642,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // is about to be copied into the coroutine and then left
                 // behind, so no register survives to be read from the
                 // resumer's side. What the resume sends comes back into the
-                // first position's slot (co->sent_into below) whatever its
+                // first position's slot (co->frame.sent_into below) whatever its
                 // own width is -- one value, a host value laid out whole, or
                 // 13.8改's several as a run head with the positions after.
                 //
@@ -2624,8 +2692,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                 }
 
-                for (size_t i = 0; i < co->register_count; i++) {
-                    lhat_slots_set(co->registers, i, R(i));
+                for (size_t i = 0; i < co->frame.register_count; i++) {
+                    lhat_slots_set(co->frame.registers, i, R(i));
                     // 5.12: the coroutine has just taken a whole frame's
                     // worth of the stack into itself. The backward barrier,
                     // as for a table: one more visit to the coroutine costs
@@ -2645,7 +2713,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     LhatUpvalue *up = m->open;
                     m->open = up->next_open;
                     size_t offset = (size_t)(up->location.value - suspending);
-                    up->location = lhat_slots_ref(co->registers, offset);
+                    up->location = lhat_slots_ref(co->frame.registers, offset);
                     up->suspended_in = co;
                     up->next_open = co->open;
                     co->open = up;
@@ -2654,17 +2722,17 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     lhat_gc_barrier(m, (LhatObject *)up,
                                     lhat_object((LhatObject *)co));
                 }
-                co->pc = pc;
-                co->sent_into = a;
-                co->state = LHAT_COROUTINE_SUSPENDED;
+                co->frame.pc = pc;
+                co->frame.sent_into = a;
+                co->frame.state = LHAT_COROUTINE_SUSPENDED;
                 if (frame->cleanup_count > LHAT_COROUTINE_CLEANUPS) {
                     return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
-                co->cleanup_count = frame->cleanup_count;
+                co->frame.cleanup_count = frame->cleanup_count;
                 for (size_t i = 0; i < frame->cleanup_count; i++) {
-                    co->cleanups[i] = frame->cleanups[i];
+                    co->frame.cleanups[i] = frame->cleanups[i];
                 }
-                if (co->cleanup_count > 0) {
+                if (co->frame.cleanup_count > 0) {
                     m->cleanup_carriers++;  // 10.7: a suspended carrier
                 }
 
@@ -2816,26 +2884,34 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // finished, since 13.9 makes what a resume answers the union of
             // its yield type and its return type.
             VM_CASE(LHAT_BC_ISDONE) {
+                // 16.3: a walk ITERPREP laid inline is a table while it runs
+                // and nil^ once RESUME has found its end.
+                if (lhat_is_nil(R(b)) ||
+                    lhat_is_object_kind(R(b), LHAT_OBJECT_TABLE)) {
+                    SET_R(a, lhat_bool(lhat_is_nil(R(b))));
+                    VM_NEXT();
+                }
                 if (!lhat_is_object_kind(R(b), LHAT_OBJECT_COROUTINE)) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                const LhatCoroutine *co =
-                    (const LhatCoroutine *)lhat_as_object(R(b));
-                SET_R(a, lhat_bool(co->state == LHAT_COROUTINE_DONE));
+                LhatCoroutine *co = (LhatCoroutine *)lhat_as_object(R(b));
+                bool done = co->frame.state == LHAT_COROUTINE_DONE;
+                SET_R(a, lhat_bool(done));
+                // 16.3: a loop's own coroutine, run to its end, is given back
+                // to be made again -- the loop held it in R(b), and in R(b+1)
+                // too where the bound itself was the call that made it.
+                if (done && co->owned) {
+                    if (lhat_is_object(R(b + 1)) &&
+                        lhat_as_object(R(b + 1)) == (LhatObject *)co) {
+                        SET_R(b + 1, lhat_nil());
+                    }
+                    SET_R(b, lhat_nil());
+                    vm_coroutine_spare(m, co);
+                }
                 VM_NEXT();
             }
 
             VM_CASE(LHAT_BC_RESUME) {
-                if (!lhat_is_object_kind(R(b), LHAT_OBJECT_COROUTINE)) {
-                    return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
-                }
-                LhatCoroutine *co =
-                    (LhatCoroutine *)lhat_as_object(R(b));
-                if (co->state == LHAT_COROUTINE_DONE ||
-                    co->state == LHAT_COROUTINE_RUNNING) {
-                    return vm_finish(m, chunk, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
-                }
-
                 // 16.3 with 13.8改: which shape one step puts down. C is the
                 // loop's word -- the count of names is syntax, so unchecked
                 // and checked compiles say the same thing (03 の 4.2).
@@ -2846,6 +2922,38 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                 : cc >= 3                    ? WALK_AS_RUN
                                 : cc == 2                    ? WALK_AS_VALUE
                                                              : WALK_AS_ANSWER;
+                // 16.3: a walk ITERPREP laid inline -- the same step a
+                // table's walk takes below, on the cursor in the registers.
+                if (lhat_is_object_kind(R(b), LHAT_OBJECT_TABLE)) {
+                    LhatWalkCursor cursor;
+                    if (!read_walk_inline(m, rbase + b, &cursor)) {
+                        return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR,
+                                         lhat_nil(), at);
+                    }
+                    if (mode == WALK_AS_RUN &&
+                        (cursor.part != LHAT_WALK_PAIR || (size_t)cc != 3 ||
+                         rbase + a + 2 >= m->slot_capacity)) {
+                        return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
+                                         lhat_nil(), at);
+                    }
+                    if (vm_step_walk(m, &cursor, mode, rbase + a, frame) ==
+                        WALK_ENDED) {
+                        SET_R(b, lhat_nil());
+                    } else {
+                        SET_R(b + 2, lhat_integer((int64_t)cursor.at_array));
+                        SET_R(b + 3, lhat_integer((int64_t)cursor.at_entry));
+                    }
+                    VM_NEXT();
+                }
+                if (!lhat_is_object_kind(R(b), LHAT_OBJECT_COROUTINE)) {
+                    return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                LhatCoroutine *co =
+                    (LhatCoroutine *)lhat_as_object(R(b));
+                if (co->frame.state == LHAT_COROUTINE_DONE ||
+                    co->frame.state == LHAT_COROUTINE_RUNNING) {
+                    return vm_finish(m, chunk, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
+                }
 
                 // 16.3: a table's walk has no body to enter, so resuming it
                 // is one step and nothing more.
@@ -2855,7 +2963,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // 16.3改2: and a projection yields no pair at all, so a
                     // loop written with two names is asking the same way.
                     if (mode == WALK_AS_RUN &&
-                        (co->part != LHAT_WALK_PAIR || (size_t)cc != 3 ||
+                        (co->cursor.part != LHAT_WALK_PAIR || (size_t)cc != 3 ||
                          rbase + a + 2 >= m->slot_capacity)) {
                         return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);
@@ -2919,7 +3027,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     ((cc & LHAT_RESUME_WIDE) != 0
                          ? (size_t)(cc & ~LHAT_RESUME_WIDE)
                          : cc >= 3 ? (size_t)cc : 1);
-                if (next_base + co->register_count >= m->slot_capacity) {  // 4.3改
+                if (next_base + co->frame.register_count >= m->slot_capacity) {  // 4.3改
                     return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
 
@@ -2937,9 +3045,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     sent_run[0] = vm_stash_sent_hostvalue(m, rbase + a);
                     const LhatHostValueTag *sent_tag =
                         sent_run[0].as.hostvalue_run[0].hostvalue;
-                    if (co->state == LHAT_COROUTINE_SUSPENDED &&
-                        (size_t)co->sent_into + sent_tag->width >
-                            co->register_count) {
+                    if (co->frame.state == LHAT_COROUTINE_SUSPENDED &&
+                        (size_t)co->frame.sent_into + sent_tag->width >
+                            co->frame.register_count) {
                         return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);
                     }
@@ -2958,8 +3066,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // As at the natives' resume: the run has to fit the
                 // suspended frame (5.1's stop for an unchecked proto).
                 if (sent_count > 1 &&
-                    co->state == LHAT_COROUTINE_SUSPENDED &&
-                    (size_t)co->sent_into + sent_count >= co->register_count) {
+                    co->frame.state == LHAT_COROUTINE_SUSPENDED &&
+                    (size_t)co->frame.sent_into + sent_count >= co->frame.register_count) {
                     return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY, lhat_nil(),
                                   at);
                 }
@@ -2983,7 +3091,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         : cc >= 3 ? cc : (cc == 0 ? 0 : 1),
                     sent_run, sent_count);
                 rbase = frame->base;
-                chunk = &co->closure->proto->chunk;
+                chunk = &co->frame.closure->proto->chunk;
                 pc = frame->pc;
                 VM_NEXT();
             }
@@ -3357,8 +3465,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // 5.11: the body is over, so the coroutine has nothing left to
             // resume and its cleanups have all run.
             if (frame->coroutine != NULL) {
-                frame->coroutine->state = LHAT_COROUTINE_DONE;
-                frame->coroutine->cleanup_count = 0;
+                frame->coroutine->frame.state = LHAT_COROUTINE_DONE;
+                frame->coroutine->frame.cleanup_count = 0;
             }
 
             // 03 の 4.3: a session's top-level slots outlive the input, so

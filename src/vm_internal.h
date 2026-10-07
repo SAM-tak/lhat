@@ -150,6 +150,11 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
 
 // vm_call.c
 void vm_clear_scratch(Machine *m, size_t base, const LhatProto *proto);
+// 16.3: a coroutine for `closure`, taken from the machine's spares when one
+// is wide enough; and one a for^ loop has finished with, given back to them.
+LhatCoroutine *vm_coroutine_new(Machine *m, const LhatClosure *closure,
+                                size_t registers);
+void vm_coroutine_spare(Machine *m, LhatCoroutine *co);
 void vm_enter_disposal_frame(Machine *m, LhatCoroutine *co,
                                  size_t next_base, uint8_t result,
                                  Frame **frame, size_t *rbase,
@@ -161,6 +166,10 @@ bool vm_host_faulted(Machine *m, size_t frames_before,
                          LhatRunStatus *status, LhatValue *value);
 LhatRunResult vm_finish(Machine *m, const LhatChunk *chunk,
                             LhatRunStatus status, LhatValue value, size_t at);
+// One step of a walk wherever its cursor lives -- a coroutine's, or a loop's
+// registers (vm.c's ITERPREP). The table walk below is this plus the state.
+WalkStep vm_step_walk(Machine *m, LhatWalkCursor *cursor, WalkMode mode,
+                      size_t at, Frame *frame);
 WalkStep vm_step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
                                 size_t at, Frame *frame);
 WalkStep vm_step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,

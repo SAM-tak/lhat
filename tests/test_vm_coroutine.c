@@ -171,7 +171,7 @@ static void test_coroutines(void)
     LHAT_TEST("and what it holds survives a collection");
     run_text(&r,
              "var^ L^.modules.ns1.mod1 = { greet := 7 }\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
              "return^ L^.modules.ns1.mod1.greet\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
@@ -478,7 +478,7 @@ static void test_coroutines(void)
              "  c.start()\n"
              "}\n"
              "drop()\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
@@ -502,7 +502,7 @@ static void test_coroutines(void)
              "  c.start()\n"
              "}\n"
              "drop()\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
              "log.seen := log.n\n"
              "return^ log.seen\n");
     CHECK_INTEGER(&r, 5);
@@ -526,7 +526,7 @@ static void test_coroutines(void)
              "  c.dispose()\n"
              "}\n"
              "drop()\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
@@ -550,8 +550,8 @@ static void test_coroutines(void)
              "  c.start()\n"
              "}\n"
              "drop()\n"
-             "L^.collectgarbage()\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
+             "L^.gc.collect()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
@@ -574,7 +574,7 @@ static void test_coroutines(void)
              "  c.resume()\n"
              "}\n"
              "drop()\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
@@ -591,7 +591,7 @@ static void test_coroutines(void)
              "}\n"
              "var^ drop = p^ { var^ c = gen() }\n"
              "drop()\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -616,7 +616,7 @@ static void test_coroutines(void)
              "  var^ c = gen()  c.start()\n"
              "}\n"
              "drop()\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
              "return^ log.n\n");
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
@@ -642,7 +642,7 @@ static void test_coroutines(void)
              "  c.start()\n"
              "}\n"
              "drop()\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
              "return^ log.s\n");
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
@@ -711,7 +711,7 @@ static void test_coroutines(void)
                      "  w.start()\n"
                      "}\n"
                      "drop()\n"
-                     "L^.collectgarbage()\n"
+                     "L^.gc.collect()\n"
                      "return^ 7\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
@@ -790,8 +790,8 @@ static void test_coroutines(void)
              "  c.start()\n"
              "}\n"
              "hold()\n"
-             "L^.collectgarbage()\n"
-             "L^.collectgarbage()\n"
+             "L^.gc.collect()\n"
+             "L^.gc.collect()\n"
              "var^ gf = g ?? f^ -> number^ { return^ -1 }\n"
              "return^ gf()\n");
     CHECK_INTEGER(&r, 7);

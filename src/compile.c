@@ -152,6 +152,9 @@ typedef struct Compiler {
     // that is itself a call is not the one in tail position.
     bool tail_call;
     bool tail_drop;  // and its answer is thrown away (a bare call statement)
+    // 16.3: likewise read and cleared there -- the call about to be compiled
+    // is a for^ loop's bound, and its answer goes nowhere but the walk.
+    bool walk_call;
 
     // 02 の 11.7改2: a guarded postfix run answers nil^ from wherever its
     // first '?' found one, so every guard in the run writes the same
@@ -2366,8 +2369,10 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     // none of those is the one standing in tail position.
     bool tail = c->tail_call;
     bool drop = c->tail_drop;
+    bool walk_call = c->walk_call;
     c->tail_call = false;
     c->tail_drop = false;
+    c->walk_call = false;
 
     uint8_t mark = c->next_register;
     // 11.7改2: the run this call ends, if it ends one. Opened before anything
@@ -2564,6 +2569,8 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
     uint8_t operand = lhat_call_operand(spread, (unsigned)prepared);
     if (tail && drop) {
         operand |= LHAT_CALL_DROP;
+    } else if (!tail && walk_call) {
+        operand |= LHAT_CALL_WALK;
     }
     if (fuse_cache != SIZE_MAX) {
         emit(c, lhat_encode_abc(LHAT_BC_CALLMEMBER, callee, fuse_receiver,
@@ -5347,12 +5354,56 @@ static void compile_loop(Compiler *c, const LhatNode *node)
     uint8_t walk = 0;
     uint8_t taken = 0;
     if (kind == LHAT_FOR_IN) {
+        // 16.3: the walk's four registers (code.h's ITERPREP) -- the table or
+        // coroutine, then the receiver, which an inline walk reuses with the
+        // two after it for its cursor.
         walk = reserve(c);
         uint8_t receiver = reserve(c);
-        compile_expression(c, bound, receiver);
-        emit_method_read(c, walk, "iterate^", 8);
-        emit(c, lhat_encode_abc(LHAT_BC_CALLMETHOD, walk, 0, 0));
-        c->next_register = (uint8_t)(walk + 1);
+        (void)reserve(c);
+        (void)reserve(c);
+        // 16.3改2: 'in^ t.keys^()' and 'in^ t.values^()' are a walk of t too,
+        // so their call is the head's to make rather than the bound's.
+        const char *walk_name = "iterate^";
+        size_t walk_length = 8;
+        const LhatNode *walked = bound;
+        const char *named = NULL;
+        size_t named_length = 0;
+        const LhatNode *member = bound->kind == LHAT_NODE_CALL
+                                     ? bound->v.access.target : NULL;
+        if (member != NULL && member->kind == LHAT_NODE_MEMBER &&
+            bound->v.access.argument == NULL && !bound->v.access.nil_safe &&
+            !member->v.access.nil_safe &&
+            node_name(c, member->v.access.argument, &named, &named_length) &&
+            ((named_length == 5 && memcmp(named, "keys^", 5) == 0) ||
+             (named_length == 7 && memcmp(named, "values^", 7) == 0))) {
+            walk_name = named;
+            walk_length = named_length;
+            walked = member->v.access.target;
+        }
+        c->walk_call = walked->kind == LHAT_NODE_CALL;
+        compile_expression(c, walked, receiver);
+        c->walk_call = false;
+        size_t cache = member_cache_named(c, walk_name, walk_length);
+        size_t laid = SIZE_MAX;
+        if (cache != SIZE_MAX) {
+            emit(c, lhat_encode_abc(LHAT_BC_ITERPREP, walk, receiver,
+                                    (uint8_t)cache));
+            laid = emit_jump(c, LHAT_BC_JUMP, 0);
+        } else {
+            emit_method_read(c, walk, walk_name, walk_length);
+        }
+        emit(c, lhat_encode_abc(LHAT_BC_CALLMETHOD, walk, 0, LHAT_CALL_WALK));
+        if (walked != bound) {
+            // What the projection answered is walked the way any bound is.
+            emit(c, lhat_encode_abc(LHAT_BC_MOVE, receiver, walk, 0));
+            emit_method_read(c, walk, "iterate^", 8);
+            emit(c, lhat_encode_abc(LHAT_BC_CALLMETHOD, walk, 0,
+                                    LHAT_CALL_WALK));
+        }
+        if (laid != SIZE_MAX) {
+            lhat_chunk_patch_here(&c->proto->chunk, laid);
+        }
+        c->next_register = (uint8_t)(walk + 4);
         // 13.8改: several names take a run -- one head slot plus a position
         // each -- and one name takes one value, so the answer's room is
         // sized by the count. The count is syntax, which is what lets an

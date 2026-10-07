@@ -17,7 +17,7 @@ static void reattach_upvalues(Machine *m, LhatCoroutine *co, size_t base)
     while (co->open != NULL) {
         LhatUpvalue *up = co->open;
         co->open = up->next_open;
-        size_t offset = (size_t)(up->location.value - co->registers.values);
+        size_t offset = (size_t)(up->location.value - co->frame.registers.values);
         up->location = lhat_slots_ref(m->slots, base + offset);
         up->suspended_in = NULL;
         up->next_open = m->open;
@@ -66,14 +66,14 @@ void vm_enter_disposal_frame(Machine *m, LhatCoroutine *co,
                                  Frame **frame, size_t *rbase,
                                  const LhatChunk **chunk, size_t *pc)
 {
-    for (size_t i = 0; i < co->register_count; i++) {
+    for (size_t i = 0; i < co->frame.register_count; i++) {
         lhat_slots_set(m->slots, next_base + i,
-                       lhat_slots_get(co->registers, i));
+                       lhat_slots_get(co->frame.registers, i));
     }
     reattach_upvalues(m, co, next_base);
     Frame *called = &m->frames[m->frame_count++];
-    called->closure = co->closure;
-    called->pc = co->pc;
+    called->closure = co->frame.closure;
+    called->pc = co->frame.pc;
     called->base = next_base;
     called->result = result;
     called->prepared = 1;  // 13.8改: a dispose answers nothing to take apart
@@ -83,18 +83,18 @@ void vm_enter_disposal_frame(Machine *m, LhatCoroutine *co,
     called->returning = true;
     called->drain_target = 0;
     called->answer = lhat_nil();
-    called->cleanup_count = co->cleanup_count;
-    for (size_t i = 0; i < co->cleanup_count; i++) {
-        called->cleanups[i] = co->cleanups[i];
+    called->cleanup_count = co->frame.cleanup_count;
+    for (size_t i = 0; i < co->frame.cleanup_count; i++) {
+        called->cleanups[i] = co->frame.cleanups[i];
     }
-    if (co->state == LHAT_COROUTINE_SUSPENDED && co->cleanup_count > 0) {
+    if (co->frame.state == LHAT_COROUTINE_SUSPENDED && co->frame.cleanup_count > 0) {
         m->cleanup_carriers--;  // 10.7: its cleanups are the frame's now
     }
-    co->state = LHAT_COROUTINE_RUNNING;
+    co->frame.state = LHAT_COROUTINE_RUNNING;
 
     *frame = called;
     *rbase = called->base;
-    *chunk = &co->closure->proto->chunk;
+    *chunk = &co->frame.closure->proto->chunk;
     *pc = called->pc;
 }
 
@@ -277,23 +277,21 @@ LhatRunResult vm_finish(Machine *m, const LhatChunk *chunk,
 // Puts one step down at slot `at` (WALK_AS_RUN fills at..at+2). The caller
 // reserved the slots; the bounds check is the caller's, since the loop's
 // reservation and a hand-driven call site reserve different widths.
-WalkStep vm_step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
-                                size_t at, Frame *frame)
+WalkStep vm_step_walk(Machine *m, LhatWalkCursor *cursor, WalkMode mode,
+                      size_t at, Frame *frame)
 {
     // 16.3改2: a projection walks the whole table and hands over one half of
     // each step, so the mode says nothing here -- there is one slot to fill
     // whichever way the caller asked. A caller that reserved a run is refused
     // above; this is only ever reached with a slot to write.
-    if (co->part != LHAT_WALK_PAIR) {
+    if (cursor->part != LHAT_WALK_PAIR) {
         LhatValue key, value;
-        if (!lhat_table_walk(co, &key, &value)) {
-            co->state = LHAT_COROUTINE_DONE;
+        if (!lhat_table_walk(cursor, &key, &value)) {
             lhat_slots_set(m->slots, at, lhat_nil());
             return WALK_ENDED;
         }
-        co->state = LHAT_COROUTINE_SUSPENDED;
         lhat_slots_set(m->slots, at,
-                       co->part == LHAT_WALK_KEYS ? key : value);
+                       cursor->part == LHAT_WALK_KEYS ? key : value);
         return WALK_TOOK;
     }
 
@@ -301,25 +299,21 @@ WalkStep vm_step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
         // Only the dense half, by index -- lhat_table_walk would go on into
         // the keyed half, which this form does not visit. 14.10: it ends at
         // the sequence's length, and a nil^ position is visited as nil^.
-        const LhatTable *table = co->walking;
-        if (table == NULL || co->at_array >= table->array_count) {
-            co->state = LHAT_COROUTINE_DONE;
+        const LhatTable *table = cursor->walking;
+        if (table == NULL || cursor->at_array >= table->array_count) {
             lhat_slots_set(m->slots, at, lhat_nil());
             return WALK_ENDED;
         }
-        LhatValue value = lhat_slots_get(table->array, co->at_array++);
-        co->state = LHAT_COROUTINE_SUSPENDED;
+        LhatValue value = lhat_slots_get(table->array, cursor->at_array++);
         lhat_slots_set(m->slots, at, value);
         return WALK_TOOK;
     }
 
     LhatValue key, value;
-    if (!lhat_table_walk(co, &key, &value)) {
-        co->state = LHAT_COROUTINE_DONE;
+    if (!lhat_table_walk(cursor, &key, &value)) {
         lhat_slots_set(m->slots, at, lhat_nil());
         return WALK_ENDED;
     }
-    co->state = LHAT_COROUTINE_SUSPENDED;
 
     if (mode == WALK_AS_RUN) {
         // 13.8改: the pair as a tuple, laid into the caller's reserved slots.
@@ -341,6 +335,15 @@ WalkStep vm_step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
     frame->answer_tags[2] = (uint8_t)value.tag;
     lhat_slots_set(m->slots, at, lhat_run_head(2));
     return WALK_TOOK;
+}
+
+WalkStep vm_step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
+                            size_t at, Frame *frame)
+{
+    WalkStep step = vm_step_walk(m, &co->cursor, mode, at, frame);
+    co->frame.state = step == WALK_ENDED ? LHAT_COROUTINE_DONE
+                                         : LHAT_COROUTINE_SUSPENDED;
+    return step;
 }
 
 // 05 の 8.8: the same step for a walk the host wrote -- its body is one C
@@ -366,7 +369,7 @@ WalkStep vm_step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
     *fault = LHAT_RUN_OK;
     LhatValue out = lhat_nil();
     int written = 0;
-    co->state = LHAT_COROUTINE_RUNNING;
+    co->frame.state = LHAT_COROUTINE_RUNNING;
     m->tuple_scratch_count = 0;
     bool more = co->step((LhatMachine *)m, co->host_state, sent, sent_count,
                          m->tuple_scratch, &written);
@@ -377,7 +380,7 @@ WalkStep vm_step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
     if (!more) {
         // 02 の 10.7: the walk is over, so its state goes back now rather
         // than waiting on a collection.
-        co->state = LHAT_COROUTINE_DONE;
+        co->frame.state = LHAT_COROUTINE_DONE;
         lhat_coroutine_release((LhatObject *)co, m);
         // 13.9: what a walk wrote as it ended is T -- the slot a body
         // coroutine fills by writing return^. It is placed like any
@@ -389,7 +392,7 @@ WalkStep vm_step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
             return WALK_ENDED;
         }
     } else {
-        co->state = LHAT_COROUTINE_SUSPENDED;
+        co->frame.state = LHAT_COROUTINE_SUSPENDED;
         if (written == 0) {
             // A walk that goes on has to hand something over: `for^`
             // binds what came back, and there would be nothing to bind.
@@ -477,15 +480,15 @@ Frame *vm_enter_resume_frame(Machine *m, LhatCoroutine *co,
                                  uint8_t prepared, const LhatValue *sent,
                                  size_t sent_count)
 {
-    bool resuming = co->state == LHAT_COROUTINE_SUSPENDED;
-    for (size_t i = 0; i < co->register_count; i++) {
+    bool resuming = co->frame.state == LHAT_COROUTINE_SUSPENDED;
+    for (size_t i = 0; i < co->frame.register_count; i++) {
         lhat_slots_set(m->slots, next_base + (i),
-                       lhat_slots_get(co->registers, i));
+                       lhat_slots_get(co->frame.registers, i));
     }
     reattach_upvalues(m, co, next_base);
     Frame *called = &m->frames[m->frame_count++];
-    called->closure = co->closure;
-    called->pc = co->pc;
+    called->closure = co->frame.closure;
+    called->pc = co->frame.pc;
     called->base = next_base;
     called->result = result_slot;
     called->prepared = prepared;
@@ -498,32 +501,32 @@ Frame *vm_enter_resume_frame(Machine *m, LhatCoroutine *co,
     called->derive = LHAT_FRAME_NO_DERIVE;
     called->derive_equal = false;
     called->returning = false;
-    called->cleanup_count = co->cleanup_count;
-    for (size_t i = 0; i < co->cleanup_count; i++) {
-        called->cleanups[i] = co->cleanups[i];
+    called->cleanup_count = co->frame.cleanup_count;
+    for (size_t i = 0; i < co->frame.cleanup_count; i++) {
+        called->cleanups[i] = co->frame.cleanups[i];
     }
-    if (resuming && co->cleanup_count > 0) {
+    if (resuming && co->frame.cleanup_count > 0) {
         m->cleanup_carriers--;  // 10.7: its cleanups are the frame's now
     }
-    co->state = LHAT_COROUTINE_RUNNING;
+    co->frame.state = LHAT_COROUTINE_RUNNING;
     if (resuming) {
         // 15.4: what the resume sent arrives where the yield^ put out what
         // it sent. 13.8改: several arrive as a run -- head in that slot and
         // the positions after it, which the yield^'s own binding reserved.
         if (sent_count > 1) {
-            lhat_slots_set(m->slots, next_base + co->sent_into,
+            lhat_slots_set(m->slots, next_base + co->frame.sent_into,
                            lhat_run_head(sent_count));
             for (size_t i = 0; i < sent_count; i++) {
-                lhat_slots_set(m->slots, next_base + co->sent_into + 1 + i,
+                lhat_slots_set(m->slots, next_base + co->frame.sent_into + 1 + i,
                                sent[i]);
             }
         } else if (sent_count == 1 && lhat_is_hostvalue(sent[0])) {
             // 05 の 8.9: the pointer form the gather built, written out
             // whole where the yield^ receives -- the callers checked the
             // width against the frame already.
-            vm_place_hostvalue_answer(m, next_base + co->sent_into, sent[0]);
+            vm_place_hostvalue_answer(m, next_base + co->frame.sent_into, sent[0]);
         } else {
-            lhat_slots_set(m->slots, next_base + co->sent_into,
+            lhat_slots_set(m->slots, next_base + co->frame.sent_into,
                            sent_count == 1 ? sent[0] : lhat_nil());
         }
     }
@@ -640,6 +643,41 @@ LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
     }
 
     return vm_run_frames(m, 0, false);
+}
+
+LhatCoroutine *vm_coroutine_new(Machine *m, const LhatClosure *closure,
+                                size_t registers)
+{
+    size_t width = registers ? registers : 1;
+    for (size_t i = 0; i < m->spare_count; i++) {
+        LhatCoroutine *co = m->spare_coroutines[i];
+        if (co->frame.register_capacity < width) {
+            continue;
+        }
+        m->spare_coroutines[i] = m->spare_coroutines[--m->spare_count];
+        lhat_coroutine_frame_init(&co->frame, closure, registers);
+        co->owned = false;
+        co->open = NULL;
+        co->next_pending = NULL;
+        // Born again, so coloured as anything born now is: a spare the
+        // marking already blackened would otherwise take the arguments
+        // written into it next without the collector ever seeing them.
+        co->header.color = m->objects.white;
+        return co;
+    }
+    return lhat_coroutine_new(&m->objects, closure, registers);
+}
+
+void vm_coroutine_spare(Machine *m, LhatCoroutine *co)
+{
+    if (m->spare_count >= LHAT_SPARE_COROUTINES) {
+        return;
+    }
+    // Nothing it held is held any more: no closure, no slots to walk.
+    co->frame.closure = NULL;
+    co->frame.register_count = 0;
+    co->owned = false;
+    m->spare_coroutines[m->spare_count++] = co;
 }
 
 LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
@@ -818,11 +856,11 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
     size_t next_base = 0;
     LhatSlots destination = m->slots;
     if (proto->yields) {
-        co = lhat_coroutine_new(&m->objects, closure, proto->chunk.registers);
+        co = vm_coroutine_new(m, closure, proto->chunk.registers);
         if (co == NULL) {
             return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
         }
-        destination = co->registers;
+        destination = co->frame.registers;
     } else {
         if (base >= m->frame_capacity) {
             return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
@@ -956,7 +994,7 @@ static bool run_one_disposal(Machine *m, LhatRunStatus *status)
         base == 0 ? 0
                   : m->frames[base - 1].base +
                         m->frames[base - 1].closure->proto->chunk.registers;
-    if (next_base + m->pending_dispose->closure->proto->chunk.registers >=
+    if (next_base + m->pending_dispose->frame.closure->proto->chunk.registers >=
         m->slot_capacity) {  // 4.3改
         return false;
     }
@@ -971,7 +1009,7 @@ static bool run_one_disposal(Machine *m, LhatRunStatus *status)
     vm_enter_disposal_frame(m, co, next_base, 0, &frame, &rbase, &chunk, &pc);
     // 15.4: same as an explicit dispose -- the slot a yield^ answers into
     // gets nil^, since nothing sent anything in.
-    lhat_slots_set(m->slots, rbase + co->sent_into, lhat_nil());
+    lhat_slots_set(m->slots, rbase + co->frame.sent_into, lhat_nil());
     *status = vm_run_frames(m, base, true).status;
 
     // 04 の 11.6改: a fault leaves its frames standing so that a traceback
@@ -994,7 +1032,7 @@ static bool run_one_disposal(Machine *m, LhatRunStatus *status)
     return true;
 }
 
-size_t lhat_machine_collectgarbage(LhatMachine *machine)
+size_t lhat_machine_gc_collect(LhatMachine *machine)
 {
     Machine *m = (Machine *)machine;
     if (m == NULL) {
@@ -1042,6 +1080,57 @@ size_t lhat_machine_collectgarbage(LhatMachine *machine)
     }
     return m->objects.count;
 }
+void lhat_machine_gc_settings(const LhatMachine *machine, LhatGcSettings *out)
+{
+    const Machine *m = (const Machine *)machine;
+    out->growth = m->gc_growth;
+    out->stepmul = m->gc_stepmul;
+    out->stepsize = m->gc_stepsize;
+}
+
+bool lhat_machine_gc_configure(LhatMachine *machine,
+                               const LhatGcSettings *settings)
+{
+    Machine *m = (Machine *)machine;
+    if (m == NULL || settings == NULL || settings->growth < 100 ||
+        settings->stepmul < 100 || settings->stepsize < 1 ||
+        settings->growth > LHAT_GC_SETTING_MAX ||
+        settings->stepmul > LHAT_GC_SETTING_MAX ||
+        settings->stepsize > LHAT_GC_SETTING_MAX) {
+        return false;
+    }
+    m->gc_growth = settings->growth;
+    m->gc_stepmul = settings->stepmul;
+    m->gc_stepsize = settings->stepsize;
+    lhat_gc_rearm(m);
+    return true;
+}
+
+void lhat_machine_gc_pause(LhatMachine *machine, bool paused)
+{
+    Machine *m = (Machine *)machine;
+    m->gc_paused = paused;
+    lhat_gc_rearm(m);
+}
+
+bool lhat_machine_gc_step(LhatMachine *machine, size_t budget)
+{
+    return lhat_gc_advance((Machine *)machine, budget);
+}
+
+void lhat_machine_gc_stats(const LhatMachine *machine, LhatGcStats *out)
+{
+    const Machine *m = (const Machine *)machine;
+    out->live = m->objects.count;
+    out->collected = m->collected;
+    out->cycles = m->gc_cycles;
+    out->threshold = m->threshold;
+    out->phase = m->gcstate == LHAT_GC_PROPAGATE ? LHAT_GC_PHASE_PROPAGATE
+                 : m->gcstate == LHAT_GC_SWEEP   ? LHAT_GC_PHASE_SWEEP
+                                                 : LHAT_GC_PHASE_PAUSE;
+    out->paused = m->gc_paused;
+}
+
 size_t lhat_machine_pending_disposals(const LhatMachine *machine)
 {
     return machine != NULL ? waiting_disposals((const Machine *)machine) : 0;
@@ -1131,8 +1220,8 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
     // 15.2's guards as the instructions make them -- resume subsumes start
     // here (lua_resume's shape): a fresh body runs from the top, and that
     // first `sent` is discarded, since no yield^ awaits it yet.
-    if (co->state == LHAT_COROUTINE_DONE ||
-        co->state == LHAT_COROUTINE_RUNNING) {
+    if (co->frame.state == LHAT_COROUTINE_DONE ||
+        co->frame.state == LHAT_COROUTINE_RUNNING) {
         return call_fault(m, LHAT_RUN_DEAD_COROUTINE);
     }
 
@@ -1141,14 +1230,14 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
     // positions of a tuple (13.8改), the way any tuple crosses it.
     if (co->source == LHAT_COROUTINE_TABLE) {
         LhatValue key, value;
-        if (!lhat_table_walk(co, &key, &value)) {
-            co->state = LHAT_COROUTINE_DONE;
+        if (!lhat_table_walk(&co->cursor, &key, &value)) {
+            co->frame.state = LHAT_COROUTINE_DONE;
             return call_fault(m, LHAT_RUN_OK);
         }
-        co->state = LHAT_COROUTINE_SUSPENDED;
+        co->frame.state = LHAT_COROUTINE_SUSPENDED;
         LhatRunResult made = call_fault(m, LHAT_RUN_OK);
-        if (co->part != LHAT_WALK_PAIR) {
-            made.value = co->part == LHAT_WALK_KEYS ? key : value;
+        if (co->cursor.part != LHAT_WALK_PAIR) {
+            made.value = co->cursor.part == LHAT_WALK_KEYS ? key : value;
             return made;
         }
         m->tuple_scratch[0] = key;
@@ -1166,7 +1255,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
     if (co->source == LHAT_COROUTINE_HOST) {
         LhatValue out = lhat_nil();
         int written = 0;
-        co->state = LHAT_COROUTINE_RUNNING;
+        co->frame.state = LHAT_COROUTINE_RUNNING;
         m->tuple_scratch_count = 0;
         bool more = co->step(machine, co->host_state, sent, sent_count,
                              m->tuple_scratch, &written);
@@ -1174,13 +1263,13 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
             return call_fault(m, LHAT_RUN_TUPLE_ARITY);
         }
         if (!more) {
-            co->state = LHAT_COROUTINE_DONE;
+            co->frame.state = LHAT_COROUTINE_DONE;
             lhat_coroutine_release((LhatObject *)co, machine);
             // 13.9: what it wrote as it ended is T, and a resume from C
             // reads it the way a written one does. Nothing written is a
             // walk that ended with nothing.
         } else {
-            co->state = LHAT_COROUTINE_SUSPENDED;
+            co->frame.state = LHAT_COROUTINE_SUSPENDED;
             if (written == 0) {
                 return call_fault(m, LHAT_RUN_TUPLE_ARITY);
             }
@@ -1208,7 +1297,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
     // the top when the body has not started. The yield that suspends it
     // again leaves through LHAT_BC_YIELD's base case, the way a return
     // leaves through its own.
-    if (co->closure == NULL || co->closure->proto == NULL) {
+    if (co->frame.closure == NULL || co->frame.closure->proto == NULL) {
         return call_fault(m, LHAT_RUN_NOT_CALLABLE);
     }
     // 13.8改: the count a resume sends is the R's -- checked here the way
@@ -1226,8 +1315,8 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
             return call_fault(m, LHAT_RUN_TYPE_ERROR);
         }
     }
-    if (co->state == LHAT_COROUTINE_SUSPENDED) {
-        const LhatProto *from = co->closure->proto;
+    if (co->frame.state == LHAT_COROUTINE_SUSPENDED) {
+        const LhatProto *from = co->frame.closure->proto;
         // As at the natives' resume: an unknown proto keeps the old ceiling
         // of one, since only a checked body has reserved the run's slots.
         if (from->yield_receives_known
@@ -1236,7 +1325,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
             return call_fault(m, LHAT_RUN_ARITY);
         }
         if (sent_count > 1 &&
-            (size_t)co->sent_into + sent_count >= co->register_count) {
+            (size_t)co->frame.sent_into + sent_count >= co->frame.register_count) {
             return call_fault(m, LHAT_RUN_ARITY);
         }
         if (sent_count == 1 && lhat_is_hostvalue(sent[0])) {
@@ -1251,7 +1340,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
             if (stag == NULL ||
                 (wants != NULL && (wants->kind != LHAT_TYPE_RT_HOSTVALUE ||
                                    wants->hostvalue_tag != stag)) ||
-                (size_t)co->sent_into + stag->width > co->register_count) {
+                (size_t)co->frame.sent_into + stag->width > co->frame.register_count) {
                 return call_fault(m, LHAT_RUN_TYPE_ERROR);
             }
         }
@@ -1264,7 +1353,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
         base == 0 ? 0
                   : m->frames[base - 1].base +
                         m->frames[base - 1].closure->proto->chunk.registers;
-    if (next_base + co->register_count >= m->slot_capacity) {  // 4.3改
+    if (next_base + co->frame.register_count >= m->slot_capacity) {  // 4.3改
         return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
     }
     // prepared = 1: the host boundary takes one value, as host_call says.
@@ -1285,8 +1374,8 @@ static const LhatCoroutine *fresh_body(LhatValue coroutine)
     // Every other field of a FRESH body is still what lhat_coroutine_new
     // left: only vm_enter_resume_frame and YIELD write pc, sent_into, the
     // cleanups and the open list, and neither has run.
-    return co->state == LHAT_COROUTINE_FRESH &&
-                   co->source == LHAT_COROUTINE_BODY && co->closure != NULL
+    return co->frame.state == LHAT_COROUTINE_FRESH &&
+                   co->source == LHAT_COROUTINE_BODY && co->frame.closure != NULL
                ? co
                : NULL;
 }
@@ -1299,14 +1388,14 @@ bool lhat_coroutine_is_fresh_body(LhatValue coroutine)
 size_t lhat_coroutine_fresh_width(LhatValue coroutine)
 {
     const LhatCoroutine *co = fresh_body(coroutine);
-    return co != NULL ? co->register_count : 0;
+    return co != NULL ? co->frame.register_count : 0;
 }
 
 LhatValue lhat_coroutine_fresh_slot(LhatValue coroutine, size_t index)
 {
     const LhatCoroutine *co = fresh_body(coroutine);
-    return co != NULL && index < co->register_count
-               ? lhat_slots_get(co->registers, index)
+    return co != NULL && index < co->frame.register_count
+               ? lhat_slots_get(co->frame.registers, index)
                : lhat_nil();
 }
 
@@ -1314,7 +1403,7 @@ const LhatRuntimeType *lhat_body_result_type(LhatValue value)
 {
     const LhatClosure *closure = NULL;
     if (lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE)) {
-        closure = ((const LhatCoroutine *)lhat_as_object(value))->closure;
+        closure = ((const LhatCoroutine *)lhat_as_object(value))->frame.closure;
     } else if (lhat_is_object_kind(value, LHAT_OBJECT_SUBROUTINE)) {
         closure = (const LhatClosure *)lhat_as_object(value);
     }
@@ -1325,7 +1414,7 @@ const LhatRuntimeType *lhat_body_result_type(LhatValue value)
 LhatValue lhat_coroutine_fresh_closure(LhatValue coroutine)
 {
     const LhatCoroutine *co = fresh_body(coroutine);
-    return co != NULL ? lhat_object((LhatObject *)(void *)co->closure)
+    return co != NULL ? lhat_object((LhatObject *)(void *)co->frame.closure)
                       : lhat_nil();
 }
 
@@ -1350,8 +1439,8 @@ bool lhat_machine_make_coroutine_from(LhatMachine *machine, LhatValue closure,
     // The image as it stands: the same slot-blind copy the interpreter makes
     // where a call answers a coroutine, so a wide host value's continuation
     // slots travel beside their head.
-    for (size_t i = 0; i < count && i < co->register_count; i++) {
-        lhat_slots_set(co->registers, i, slots[i]);
+    for (size_t i = 0; i < count && i < co->frame.register_count; i++) {
+        lhat_slots_set(co->frame.registers, i, slots[i]);
         lhat_gc_barrier_back(m, (LhatObject *)co, slots[i]);
     }
     *out = lhat_object((LhatObject *)co);
@@ -1374,6 +1463,6 @@ LhatRunResult lhat_machine_continue(LhatMachine *machine)
 bool lhat_machine_coroutine_done(LhatValue coroutine)
 {
     return lhat_is_object_kind(coroutine, LHAT_OBJECT_COROUTINE) &&
-           ((const LhatCoroutine *)lhat_as_object(coroutine))->state ==
+           ((const LhatCoroutine *)lhat_as_object(coroutine))->frame.state ==
                LHAT_COROUTINE_DONE;
 }

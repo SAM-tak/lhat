@@ -228,7 +228,7 @@ static void one_round(void)
                        lhat_program_compile(program),
                    "and both units were made again");
         lhat_machine_forget_unit(machine, "ns.lib");
-        lhat_machine_collectgarbage(machine);
+        lhat_machine_gc_collect(machine);
         LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(machine), 0);
         lhat_program_discard_retired(program);
     }

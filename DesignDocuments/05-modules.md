@@ -523,7 +523,7 @@ program の寿命まで抱える（後述）ので、全部を差し替えるの
 残っていない、と言えるのはホストだけだから。`lhat_program_free` も捨てる。
 
 **確かめ方**は、機械ごとに: 古い本体を握っていたものを落とし（エディタなら
-全部を新しい本体で着せ直し）、`lhat_machine_collectgarbage`、そのあと
+全部を新しい本体で着せ直し）、`lhat_machine_gc_collect`、そのあと
 `lhat_machine_pending_disposals` が 0 であること。回収が、もう誰も握って
 いない閉包を持っていく。2つめは**回収だけでは終われない唯一のもの**——
 10.7 は落ちたコルーチンをその `finally^` が走るまで生かし、そのコルーチンは
@@ -568,7 +568,7 @@ lhat_reload(program, path, machines, machine_count);  // machines は載せた�
 ```
 
 解放は「信じてくれ」ではなく**確かめて**行う。機械ごとに
-`lhat_machine_collectgarbage` のあと、退役した本体（入れ子含む）の閉包・
+`lhat_machine_gc_collect` のあと、退役した本体（入れ子含む）の閉包・
 コルーチンがどの機械のヒープにも無く（`lhat_machine_holds_body`）、後始末
 待ちも無い——そのときだけ `discard_retired` が走る。握られていれば
 **見送るだけ**で、次の差し替えに持ち越す。何もしないホストが program の
@@ -780,12 +780,10 @@ let^ print = require^ "system/debug.lh".print
 ```c
 lhat_register_global(&program, "print", "f^string^ -> nil^;", host_print, NULL);
 lhat_bind_initial(&program, "print", "L^.print");
-lhat_bind_initial(&program, "collectgarbage", "L^.collectgarbage");
 ```
 
 ```lhat
 print("hello")           # 修飾は要らない
-collectgarbage()         # 8.6 が L^ に置いているものも同じ形で結べる
 ```
 
 ##### 8.1 は崩れない［重要］
@@ -797,11 +795,10 @@ collectgarbage()         # 8.6 が L^ に置いているものも同じ形で結
 したがって同じ綴りの `var^` が普通に遮蔽する。
 
 ```lhat
-let^ collectgarbage = p^ {
-    print("start garbage collection")
-    L^.collectgarbage()      # 元のものはいつでも届く
+let^ print = f^ s:string^ -> nil^ {
+    return^ L^.print("> " .. s)      # 元のものはいつでも届く
 }
-collectgarbage()             # 自分で書いたほう
+print("hello")                       # 自分で書いたほう
 ```
 
 `L^` で元に届くのは 8.1 の最後がそのまま効いているためである。
@@ -909,13 +906,58 @@ L^ は 15.2 の推論を持ち、C API との対称性を先に決めてもい�
 便利な道具は標準ライブラリに属し、8.1 のとおり `require^` で取り込む。
 
 ```lhat
-L^.collectgarbage()      # GCを手で走らせる
+L^.gc                    # GCの操作
 L^.modules               # 登録簿
 ```
 
-`collectgarbage` は `p^;` である。効果であって値を作らないので `f^` ではない。
+#### `L^.gc` は回収器の操作である
 
-**ホストからも同じ周期を頼める** — `lhat_machine_collectgarbage`。組み込み先は
+```lhat
+L^.gc.collect()                  # 1周期をいま最後まで走らせる
+L^.gc.pause(true^)               # 自動の歩みを止める（false^ で再開）
+var^ done = L^.gc.step(1000)     # 1000 オブジェクト分だけ進める。周期を終えたら true^
+var^ s = L^.gc.settings()        # { growth, stepmul, stepsize }
+s.growth := 150
+var^ was = L^.gc.configure(s)    # 適用し、それまでの設定を答える
+var^ st = L^.gc.stats()          # { live, collected, cycles, threshold, phase, paused }
+```
+
+`collect` と `pause` は `p^` である。効果であって値を作らないので `f^` ではない。
+値を答える残りは、テーブルの書き換え系の組み込み（`push` など）と同じく `f^` である。
+
+回収器は 03 の 5.12 の漸進式で、**歩み方を決めるのが設定の3つ**である。
+どれもオブジェクトの個数で数える（ヒープはバイト数を数えていない）。
+
+- **`growth`**（%）— 周期を終えたあと、生き残った数のこの割合までヒープが
+  育ったら次の周期を始める（小さな床を足す）。既定 150。
+  下げるほど回収待ちのゴミが減り、回収に使う時間が増える。100 以上
+- **`stepmul`**（%）— 1歩の仕事量を、歩みの間の確保数に対する割合で決める。
+  既定 800。上げるほど速く確保するプログラムに追いつき、1歩が長くなる。100 以上
+- **`stepsize`** — 何回の確保ごとに1歩進めるか。既定 10。1歩の長さは
+  `stepsize × stepmul / 100` オブジェクト分である。1 以上
+
+既定値は `include/lhat/config.h` の `LHAT_GC_*` から作る。設定は**機械ごと**で、
+`std.task` と `std.thread` が作る機械は、作った側の機械の設定をその時点で
+引き継ぐ（止めてあることは引き継がない）。
+
+`configure` は `settings` が答えるのと同じ、3つ全部を持つテーブルを取る。
+`t^{}` のリテラルはメンバを省けないので（14 章）、1つ変えるなら全部読んで
+1つ書いて渡す。範囲外の値は型エラーで止まり、何も変えない。
+
+`pause(true^)` の間も `collect` と `step` は走る。ゲームのように止まって
+よい時間が決まっている組み込み先は、自動の歩みを止めてフレームの空きに
+`step` で進める、という使い方ができる。`step` は後始末待ち（02 の 10.7）を
+走らせない。次の命令境界か `collect` が走らせる。
+
+`stats` の `threshold` は次の自動の歩みが起きる生存数で、止めてある間は -1 を
+答える。`phase` は `"pause"`（周期の間）・`"propagate"`（印付け）・
+`"sweep"`（解放）のどれか。
+
+`L^.gc` 自体は呼べない。メンバはこの6つだけで、書き換えも足すこともできない。
+
+**ホストからも同じ口がある** — `lhat_machine_gc_settings`・`_configure`・
+`_pause`・`_step`・`_stats`（include/lhat/vm.h）。範囲外の設定は `false` を
+返して何も変えない。周期を最後まで走らせるのは `lhat_machine_gc_collect`。組み込み先は
 L^ のコードを一行も走らせずに機械を持っていることがあり、そこに口が無いと
 回収を頼む手段が無い。C 側は生存オブジェクト数を答える（バイト数ではない。
 ヒープが数えているのはオブジェクトだけ）。
@@ -927,7 +969,7 @@ L^ のコードを一行も走らせずに機械を持っていることがあ�
 持っていく。**走り終わった run のレジスタも根ではない**——フレームが無いので、
 プログラムが持っていたものはその時点で誰も持っていない。
 
-02 の 10.7 の後始末待ちも、`L^.collectgarbage()` と同じく**ここで走る**。
+02 の 10.7 の後始末待ちも、`L^.gc.collect()` と同じく**ここで走る**。
 つまりこの呼び出しは L^ のコードを走らせる——落ちたコルーチンの `finally^`
 や `with^` を。走らせるのはこの周期が見つけた分だけで、後始末自体がさらに
 コルーチンを落としたら次の呼び出しに回る（際限なく続けさせない）。
@@ -980,7 +1022,7 @@ let^ L^.modules.ns1.mod2 = ...   # ns1 は両方を持つ
 
 ```lhat
 let^ L^.modules.ns1.mod1 = { }   # 誤り
-L^.collectgarbage := p^ { }      # 誤り
+L^.gc.collect := p^ { }      # 誤り
 ```
 
 読むことは妨げない。`L^.modules` を辿って何が読み込まれているかを見るのは通る。
@@ -1049,7 +1091,7 @@ return^ L^.modules.ns.one.v        # 読める
 > **`L^`、その登録簿、そして `require^`／`import^` が答えるテーブルは、
 > ホストが自分の API で書く。L^ の側からは書けない。**
 
-- **差し替え** — `L^.collectgarbage := …`、`m.name := …`
+- **差し替え** — `L^.gc.collect := …`、`m.name := …`
 - **追加** — `var^ L^.modules.ns.m = …`、`var^ m.name = …`
 
 読むことは妨げない。
@@ -2982,6 +3024,20 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
 761KB。
 
 ## 改定履歴（要約）
+
+- **回収器の既定を 150 / 800 / 10 にした（8.6）。** 旧既定 200 / 200 は、周期の
+  途中に確保されたものに追いつけず、ゲームのフレームループで生存の 3.3 倍まで
+  ヒープが育った。組み込み先が 120 / 800 で落ち着いたのを受け、汎用には growth を
+  150 に留めた（ピークへの効き目の大半は stepmul で、growth を下げるほど総仕事量が
+  増える）。確保だけを回す測定でピーク 51 万 → 4 万、時間は約 15% 増
+
+- **`L^.collectgarbage` を `L^.gc` にした（8.6）。** 回収器の歩み方は
+  config.h の定数だけで、組み込み先が調整する口が無かった。LÖVE の組み込み先で
+  生存 30 万に対し回収待ちが 3 倍強溜まるのが測られ、まず口を作った（既定値は
+  据え置き、測ってから決める）。停止・手動の歩み・設定・統計を足し、
+  ホストの `lhat_machine_collectgarbage` は `lhat_machine_gc_collect` に改めた。
+  `L^.gc` はテーブルではなく1つの値で、メンバは読むときに答える——機械ごとの
+  `L^` の組み立てにオブジェクトを増やさないため
 
 - **共有の表はホストも書かない（8.7改5）／ホストの根の表（8.12）。**
   封印を見ていたのは `SETINDEX` だけで、`lhat_machine_register` は共有の表へ

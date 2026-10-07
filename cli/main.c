@@ -1041,13 +1041,11 @@ static void host_print(LhatMachine *machine, void *context,
 }
 
 // 05 の 8.2: the host decides what a program sees without a require^. This
-// driver binds print, and collectgarbage because 8.6 already puts it in L^ --
-// writing both out is what shows the two are the same mechanism.
+// driver binds print -- the mechanism that reaches 8.6's own L^ members too.
 static bool bind_host_names(LhatProgram *program)
 {
     lhat_register_global(program, "print", "f^...->nil^;", host_print, NULL);
     lhat_bind_initial(program, "print", "L^.print");
-    lhat_bind_initial(program, "collectgarbage", "L^.collectgarbage");
 
 #ifdef LHAT_CLI_WITH_STDLIB
     if (!lhatstdlib_io_register(program) ||

@@ -289,20 +289,51 @@ typedef bool (*LhatHostStepFn)(struct LhatMachine *machine, void *context,
                                const LhatValue *sent, size_t sent_count,
                                LhatValue *answers, int *answer_count);
 
-typedef struct LhatCoroutine {
-    LhatObject header;
-    const LhatClosure *closure;
-    LhatCoroutineState state;
-    LhatCoroutineSource source;
-    LhatWalkPart part;  // LHAT_COROUTINE_TABLE only
-
-    // LHAT_COROUTINE_TABLE only: where the walk has reached. The dense part
-    // comes first in index order, then the rest.
+// 16.3: where a walk of a table has reached -- the whole of a built-in walk's
+// state. The dense part comes first in index order, then the rest. A loop
+// whose walk needs no coroutine keeps the same three numbers in its own
+// registers (vm.c's ITERPREP), so the two read through one routine.
+typedef struct LhatWalkCursor {
     const LhatTable *walking;
     size_t at_array;
     size_t at_entry;
+    LhatWalkPart part;
+} LhatWalkCursor;
 
-    // LHAT_COROUTINE_HOST only -- `walking`'s shape for a walk the host
+// What a coroutine's body has got to: everything that changes as it runs,
+// apart from what identifies the coroutine. Kept together so that making
+// one, taking one back from the machine's spares (vm.c) and putting a body
+// back where it stood are each one routine over this struct.
+typedef struct LhatCoroutineFrame {
+    const LhatClosure *closure;
+    LhatCoroutineState state;
+
+    // 2.2: the saved frame, as wide as the body needs, in the same two-run
+    // shape the stack keeps -- what a yield^'s copy and a capture's
+    // retargeting both move between. `register_capacity` is how many the
+    // runs hold; a spare reused for a narrower body keeps its runs.
+    LhatSlots registers;
+    size_t register_count;
+    size_t register_capacity;
+    size_t pc;
+    uint8_t sent_into;     // the register a resume's value arrives in
+
+    // 02 の 10.7: what a discarded coroutine still has to run. Each is an
+    // instruction index, which is a Bx and so 16 bits wide wherever it is
+    // written down (code.h's lhat_bx) -- a jump could not reach past that
+    // anyway. Most coroutines carry none of these, so the room the array
+    // costs whether or not it is used is worth keeping small.
+    uint16_t cleanups[LHAT_COROUTINE_CLEANUPS];
+    uint8_t cleanup_count;
+} LhatCoroutineFrame;
+
+typedef struct LhatCoroutine {
+    LhatObject header;
+    LhatCoroutineFrame frame;
+    LhatCoroutineSource source;
+    LhatWalkCursor cursor;  // LHAT_COROUTINE_TABLE only
+
+    // LHAT_COROUTINE_HOST only -- `cursor`'s shape for a walk the host
     // wrote. `step` is called once per resume; `host_release` is handed
     // `host_state` back when the walk ends or the coroutine is collected,
     // under the same contract as a hostdata dispose^ (once, and never
@@ -315,22 +346,6 @@ typedef struct LhatCoroutine {
     bool host_released;
     LhatValue held;
 
-    // 2.2: the saved frame, as wide as the body needs, in the same two-run
-    // shape the stack keeps -- what a yield^'s copy and a capture's
-    // retargeting both move between.
-    LhatSlots registers;
-    size_t register_count;
-    size_t pc;
-    uint8_t sent_into;     // the register a resume's value arrives in
-
-    // 02 の 10.7: what a discarded coroutine still has to run. Each is an
-    // instruction index, which is a Bx and so 16 bits wide wherever it is
-    // written down (code.h's lhat_bx) -- a jump could not reach past that
-    // anyway. Most coroutines carry none of these, so the room the array
-    // costs whether or not it is used is worth keeping small.
-    uint16_t cleanups[LHAT_COROUTINE_CLEANUPS];
-    uint8_t cleanup_count;
-
     // 02 の 10.7: the collector is the last place a discarded coroutine's
     // cleanups can be reached from, so one found unreachable with some still
     // pending is put on the machine's list of them rather than freed. Only
@@ -341,12 +356,18 @@ typedef struct LhatCoroutine {
 
     // 15.4 with 5.4: the captures of the suspended frame's own slots. They
     // travel with the registers -- at a yield^ each is retargeted from the
-    // stack into `registers` above and moved here off the machine's open
+    // stack into `frame.registers` and moved here off the machine's open
     // list; every resume moves them back (vm.c's reattach_upvalues). Kept in
     // ascending slot order, which is what lets the resume splice them onto
     // the machine's descending list head without a search. NULL while the
     // coroutine is running or fresh.
     LhatUpvalue *open;
+
+    // Made by the call a for^ loop's head runs (code.h's LHAT_CALL_WALK) and
+    // held by nothing but that loop's registers -- so once the loop has run
+    // it to its end, nothing can tell whether it is reused, which is what
+    // lets the machine take it back into its spares (vm_coroutine_spare).
+    bool owned;
 } LhatCoroutine;
 
 // 03 の 2.1 keeps a type tag on every value, which is what lets a written
@@ -514,9 +535,17 @@ typedef enum {
     // runs the body, so both answer whatever state the coroutine is in.
     LHAT_NATIVE_DONE,     // the body has run to its end
     LHAT_NATIVE_STARTED,  // start() has already run, so resume() is the way on
-    // 05 の 8.6: what L^ carries. Reaching the collector by hand is the one
-    // thing a program cannot arrange for itself.
-    LHAT_NATIVE_COLLECTGARBAGE,
+    // 05 の 8.6: L^.gc itself, and what it carries. Reaching the collector by
+    // hand is the one thing a program cannot arrange for itself. The members
+    // are read off the one value as a coroutine's are, so a machine pays for
+    // one object and not a table of them.
+    LHAT_NATIVE_GC,
+    LHAT_NATIVE_GC_COLLECT,
+    LHAT_NATIVE_GC_PAUSE,
+    LHAT_NATIVE_GC_STEP,
+    LHAT_NATIVE_GC_SETTINGS,
+    LHAT_NATIVE_GC_CONFIGURE,
+    LHAT_NATIVE_GC_STATS,
     // 02 の 14.17: every value carries this one, not just a coroutine.
     LHAT_NATIVE_TOSTRING,
     // 14.17改2: the other way round, and only a string^ carries it -- it is
@@ -850,6 +879,13 @@ LhatError *lhat_error_new(LhatHeap *heap, const LhatErrorKind *kind);
 LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
                                   size_t registers);
 
+// Puts `frame` where a body that has not started stands: `closure`, FRESH,
+// `registers` slots of nil^, nothing to clean up. Keeps the runs it already
+// has when they are wide enough. False, leaving the frame with no runs, when
+// wider ones cannot be had.
+bool lhat_coroutine_frame_init(LhatCoroutineFrame *frame,
+                               const LhatClosure *closure, size_t registers);
+
 // 02 の 16.3: the coroutine a table answers with. It has no body; resuming it
 // reads the next key and value. 16.3改2: `part` says which half of that step
 // reaches the writer -- the pair, the key alone, or the value alone.
@@ -858,7 +894,7 @@ LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table,
 
 // Reads the next pair of a table walk, advancing it. Answers false when the
 // walk is over.
-bool lhat_table_walk(LhatCoroutine *walk, LhatValue *key, LhatValue *value);
+bool lhat_table_walk(LhatWalkCursor *walk, LhatValue *key, LhatValue *value);
 
 // 05 の 8.8: the coroutine a host's iterate^ answers with -- a walk whose
 // body is `step`, called once per resume. It has no frame; like a table's

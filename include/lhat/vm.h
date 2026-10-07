@@ -170,7 +170,7 @@ LhatDetachStatus lhat_machine_detach_result(LhatMachine *source, LhatValue value
 LhatValue lhat_machine_adopt_result(LhatMachine *receiver, LhatDetachedValue *value);
 void lhat_detached_value_free(LhatDetachedValue *value);
 
-// 05 の 8.6: what L^.collectgarbage() is, for a host that has a machine and
+// 05 の 8.6: what L^.gc.collect() is, for a host that has a machine and
 // no L^ code it wants to run to reach one. A whole cycle, now: what the
 // machine cannot reach when this is called has been freed when it answers.
 // It is the only thing that gives a pause the size of the heap, which is why
@@ -193,7 +193,7 @@ void lhat_detached_value_free(LhatDetachedValue *value);
 // it somewhere first, or collect before making it rather than after.
 //
 // 02 の 10.7: a coroutine dropped with cleanups still pending has them run
-// here, as L^.collectgarbage() does -- so this runs L^ code, and a finally^
+// here, as L^.gc.collect() does -- so this runs L^ code, and a finally^
 // or a with^ of a dropped coroutine is what it runs. Only what the cycle
 // above found: a cleanup that drops another coroutine leaves that one for the
 // next call, so this cannot be made to go on for ever.
@@ -208,10 +208,61 @@ void lhat_detached_value_free(LhatDetachedValue *value);
 // under way -- this call refuses to interleave two unwindings, as the
 // interpreter does -- and one there is no frame or stack room for.
 // lhat_machine_pending_disposals below is how a host tells.
-size_t lhat_machine_collectgarbage(LhatMachine *machine);
+size_t lhat_machine_gc_collect(LhatMachine *machine);
+
+// 05 の 8.6: how the collector paces itself, per machine -- what L^.gc.settings
+// answers and L^.gc.configure takes. Counted in objects, as everything the
+// collector does is.
+//
+// growth: a cycle starts once the heap has grown to this percentage of what
+//   the last one left alive (plus a small floor). 200 waits for it to double.
+// stepmul: how much work a step does, as a percentage of the allocations
+//   between steps. Higher keeps up with a program that allocates fast, and
+//   leaves less garbage waiting.
+// stepsize: how many allocations go by between steps -- the length of one
+//   pause, together with stepmul.
+//
+// A machine starts from config.h's LHAT_GC_* values: 150, 800, 10.
+typedef struct LhatGcSettings {
+    uint32_t growth;
+    uint32_t stepmul;
+    uint32_t stepsize;
+} LhatGcSettings;
+
+// Where a cycle has got to.
+typedef enum LhatGcPhase {
+    LHAT_GC_PHASE_PAUSE,      // between cycles
+    LHAT_GC_PHASE_PROPAGATE,  // marking
+    LHAT_GC_PHASE_SWEEP       // freeing what the marking did not reach
+} LhatGcPhase;
+
+typedef struct LhatGcStats {
+    size_t live;        // objects on the heap, garbage not yet swept included
+    size_t collected;   // objects freed since the machine was made
+    size_t cycles;      // cycles completed since the machine was made
+    size_t threshold;   // live count at which the next step runs
+    LhatGcPhase phase;
+    bool paused;
+} LhatGcStats;
+
+void lhat_machine_gc_settings(const LhatMachine *machine, LhatGcSettings *out);
+// False, changing nothing, unless growth >= 100, stepmul >= 100 and
+// stepsize >= 1, each at most LHAT_GC_SETTING_MAX.
+bool lhat_machine_gc_configure(LhatMachine *machine,
+                               const LhatGcSettings *settings);
+#define LHAT_GC_SETTING_MAX 1000000u
+// L^.gc.pause: a paused machine takes no automatic steps. A full collection
+// and lhat_machine_gc_step still run.
+void lhat_machine_gc_pause(LhatMachine *machine, bool paused);
+// L^.gc.step: up to `budget` objects' worth of the cycle, paused or not --
+// starting one if none is under way. True when a cycle finished inside it.
+// Pending cleanups (10.7) are not run here; the next instruction boundary
+// or a full collection runs them.
+bool lhat_machine_gc_step(LhatMachine *machine, size_t budget);
+void lhat_machine_gc_stats(const LhatMachine *machine, LhatGcStats *out);
 
 // 02 の 10.7: how many dropped coroutines are still waiting to have their
-// cleanups run. Zero after an ordinary lhat_machine_collectgarbage, which is
+// cleanups run. Zero after an ordinary lhat_machine_gc_collect, which is
 // what a host wants to see before it frees anything those cleanups would
 // run: a waiting one still holds the closure it was suspended in.
 size_t lhat_machine_pending_disposals(const LhatMachine *machine);
@@ -220,7 +271,7 @@ size_t lhat_machine_pending_disposals(const LhatMachine *machine);
 // `bodies` -- a closure of one, or a coroutine suspended in one. The nested
 // bodies of a unit are the caller's to include; lhat_reload flattens them.
 //
-// Ask after lhat_machine_collectgarbage, when the heap holds only what is
+// Ask after lhat_machine_gc_collect, when the heap holds only what is
 // reachable. Asked before one, a dropped closure not yet swept still
 // answers true -- which errs the only safe way there is.
 bool lhat_machine_holds_body(const LhatMachine *machine,

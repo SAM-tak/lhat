@@ -157,21 +157,148 @@ static void findall_release(struct LhatMachine *machine, void *context,
     lhat_free(context);
 }
 
+// A fresh table of name/value pairs, for what L^.gc answers.
+static LhatTable *gc_record(Machine *m, const char *const *names,
+                            const LhatValue *values, size_t count)
+{
+    LhatTable *record = lhat_table_new(&m->objects);
+    for (size_t i = 0; record != NULL && i < count; i++) {
+        if (!vm_set_member(m, record, names[i], values[i])) {
+            return NULL;
+        }
+    }
+    return record;
+}
+
+static const char *const gc_setting_names[] = {"growth", "stepmul",
+                                               "stepsize"};
+
+static LhatTable *gc_settings_record(Machine *m, const LhatGcSettings *s)
+{
+    LhatValue values[] = {lhat_integer(s->growth), lhat_integer(s->stepmul),
+                          lhat_integer(s->stepsize)};
+    return gc_record(m, gc_setting_names, values, 3);
+}
+
+static LhatRunStatus gc_native(Machine *m, LhatNativeKind kind, size_t into,
+                               LhatValue sent, uint8_t b)
+{
+    LhatMachine *machine = (LhatMachine *)m;
+    if (kind == LHAT_NATIVE_GC) {
+        return LHAT_RUN_NOT_CALLABLE;  // L^.gc carries; it is not called
+    }
+    bool takes_one = kind == LHAT_NATIVE_GC_PAUSE ||
+                     kind == LHAT_NATIVE_GC_STEP ||
+                     kind == LHAT_NATIVE_GC_CONFIGURE;
+    if (b != (takes_one ? 1 : 0)) {
+        return LHAT_RUN_ARITY;
+    }
+    LhatValue answer = lhat_nil();
+    switch (kind) {
+        case LHAT_NATIVE_GC_COLLECT:
+            lhat_gc_collect(m);
+            break;
+        case LHAT_NATIVE_GC_PAUSE:
+            if (!lhat_is_bool(sent)) {
+                return LHAT_RUN_TYPE_ERROR;
+            }
+            lhat_machine_gc_pause(machine, lhat_as_bool(sent));
+            break;
+        case LHAT_NATIVE_GC_STEP: {
+            int64_t budget = 0;
+            if (!vm_ordinal_of(sent, &budget) || budget < 0) {
+                return LHAT_RUN_TYPE_ERROR;
+            }
+            answer = lhat_bool(lhat_machine_gc_step(machine, (size_t)budget));
+            break;
+        }
+        case LHAT_NATIVE_GC_SETTINGS:
+        case LHAT_NATIVE_GC_CONFIGURE: {
+            LhatGcSettings before;
+            lhat_machine_gc_settings(machine, &before);
+            if (kind == LHAT_NATIVE_GC_CONFIGURE) {
+                // What was not written keeps its value.
+                const LhatTable *asked = vm_table_of(sent);
+                if (asked == NULL) {
+                    return LHAT_RUN_TYPE_ERROR;
+                }
+                LhatGcSettings after = before;
+                uint32_t *fields[] = {&after.growth, &after.stepmul,
+                                      &after.stepsize};
+                for (size_t i = 0; i < 3; i++) {
+                    LhatValue given = lhat_table_get_bytes(
+                        asked, gc_setting_names[i],
+                        strlen(gc_setting_names[i]));
+                    int64_t number = 0;
+                    if (lhat_is_nil(given)) {
+                        continue;
+                    }
+                    if (!vm_ordinal_of(given, &number) || number < 0 ||
+                        number > (int64_t)LHAT_GC_SETTING_MAX) {
+                        return LHAT_RUN_TYPE_ERROR;
+                    }
+                    *fields[i] = (uint32_t)number;
+                }
+                if (!lhat_machine_gc_configure(machine, &after)) {
+                    return LHAT_RUN_TYPE_ERROR;
+                }
+            }
+            LhatTable *record = gc_settings_record(m, &before);
+            if (record == NULL) {
+                return LHAT_RUN_OUT_OF_MEMORY;
+            }
+            answer = lhat_object((LhatObject *)record);
+            break;
+        }
+        case LHAT_NATIVE_GC_STATS: {
+            LhatGcStats stats;
+            lhat_machine_gc_stats(machine, &stats);
+            static const char *const phases[] = {"pause", "propagate",
+                                                 "sweep"};
+            LhatString *phase = lhat_string_new(
+                &m->objects, phases[stats.phase], strlen(phases[stats.phase]));
+            if (phase == NULL) {
+                return LHAT_RUN_OUT_OF_MEMORY;
+            }
+            static const char *const names[] = {"live", "collected", "cycles",
+                                                "threshold", "phase",
+                                                "paused"};
+            LhatValue values[] = {
+                lhat_integer((int64_t)stats.live),
+                lhat_integer((int64_t)stats.collected),
+                lhat_integer((int64_t)stats.cycles),
+                // Paused, the threshold is out of reach on purpose; -1
+                // says "never" without an integer the size of memory.
+                lhat_integer(stats.threshold == SIZE_MAX
+                                 ? -1 : (int64_t)stats.threshold),
+                lhat_object((LhatObject *)phase),
+                lhat_bool(stats.paused),
+            };
+            LhatTable *record = gc_record(m, names, values, 6);
+            if (record == NULL) {
+                return LHAT_RUN_OUT_OF_MEMORY;
+            }
+            answer = lhat_object((LhatObject *)record);
+            break;
+        }
+        default:
+            return LHAT_RUN_TYPE_ERROR;
+    }
+    lhat_slots_set(m->slots, into, answer);
+    return LHAT_RUN_OK;
+}
+
 LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
                              size_t into, size_t first, uint8_t b,
                              unsigned prepared)
 {
     LhatValue sent = b > 0 ? lhat_slots_get(m->slots, first) : lhat_nil();
 
-    // 05 の 8.6: the one thing a program cannot arrange for
-    // itself. It takes nothing and answers nothing.
-    if (native->kind == LHAT_NATIVE_COLLECTGARBAGE) {
-        if (b != 0) {
-            return LHAT_RUN_ARITY;
-        }
-        lhat_gc_collect(m);
-        lhat_slots_set(m->slots, into, lhat_nil());
-        return LHAT_RUN_OK;
+    // 05 の 8.6: the collector's controls -- the one thing a program
+    // cannot arrange for itself.
+    if (native->kind >= LHAT_NATIVE_GC &&
+        native->kind <= LHAT_NATIVE_GC_STATS) {
+        return gc_native(m, native->kind, into, sent, b);
     }
 
     // 05 の 8.9: the box's two members. get answers the value

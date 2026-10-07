@@ -389,7 +389,7 @@ static void test_collection(void)
             "    let^ w = v + std.math.vector2.new(i, 0)\n"
             "    n := n + w.y\n"
             "}\n"
-            "L^.collectgarbage()\n"
+            "L^.gc.collect()\n"
             "if^ v.x = 9.0 and^ n = 512.0 { return^ 1 }\n"
             "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 1);
