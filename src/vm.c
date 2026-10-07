@@ -542,9 +542,9 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
     }
 
 // Two integers order exactly (02 の 14.8); a real asks with tolerance.
-#define VM_ORDER_FAST(oper)                                                 \
-    if (lhat_is_integer(R(b)) && lhat_is_integer(R(cc))) {                  \
-        ordered = lhat_as_integer(R(b)) oper lhat_as_integer(R(cc));        \
+#define VM_ORDER_FAST(oper, right)                                          \
+    if (lhat_is_integer(R(b)) && lhat_is_integer(right)) {                  \
+        ordered = lhat_as_integer(R(b)) oper lhat_as_integer(right);        \
         goto ordering_held;                                                 \
     }
 
@@ -642,6 +642,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         VM_LABEL(LHAT_BC_LE),
         VM_LABEL(LHAT_BC_GT),
         VM_LABEL(LHAT_BC_GE),
+        VM_LABEL(LHAT_BC_LTK),
+        VM_LABEL(LHAT_BC_LEK),
+        VM_LABEL(LHAT_BC_GTK),
+        VM_LABEL(LHAT_BC_GEK),
         VM_LABEL(LHAT_BC_SPACESHIP),
         VM_LABEL(LHAT_BC_JUMP),
         VM_LABEL(LHAT_BC_JUMP_FALSE),
@@ -961,19 +965,42 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // 5.1改6: two integers order exactly (14.8), so they need
             // neither the three-way answer nor the tolerance behind it.
             VM_CASE(LHAT_BC_LT)
-                VM_ORDER_FAST(<);
-                goto ordering_rr;
+                VM_ORDER_FAST(<, R(cc));
+                goto ordering_slow;
             VM_CASE(LHAT_BC_LE)
-                VM_ORDER_FAST(<=);
-                goto ordering_rr;
+                VM_ORDER_FAST(<=, R(cc));
+                goto ordering_slow;
             VM_CASE(LHAT_BC_GT)
-                VM_ORDER_FAST(>);
-                goto ordering_rr;
+                VM_ORDER_FAST(>, R(cc));
+                goto ordering_slow;
             VM_CASE(LHAT_BC_GE)
-                VM_ORDER_FAST(>=);
-            ordering_rr: {
+                VM_ORDER_FAST(>=, R(cc));
+                goto ordering_slow;
+            // 5.1改7: the same four with the right operand a constant.
+            VM_CASE(LHAT_BC_LTK)
+                VM_ORDER_FAST(<, chunk->constants[cc]);
+                op = LHAT_BC_LT;
+                k_right = true;
+                goto ordering_slow;
+            VM_CASE(LHAT_BC_LEK)
+                VM_ORDER_FAST(<=, chunk->constants[cc]);
+                op = LHAT_BC_LE;
+                k_right = true;
+                goto ordering_slow;
+            VM_CASE(LHAT_BC_GTK)
+                VM_ORDER_FAST(>, chunk->constants[cc]);
+                op = LHAT_BC_GT;
+                k_right = true;
+                goto ordering_slow;
+            VM_CASE(LHAT_BC_GEK)
+                VM_ORDER_FAST(>=, chunk->constants[cc]);
+                op = LHAT_BC_GE;
+                k_right = true;
+                goto ordering_slow;
+            ordering_slow: {
                 LhatRunStatus status = LHAT_RUN_OK;
-                if (!ordering(op, R(b), R(cc), &ordered, &status)) {
+                if (!ordering(op, R(b), k_right ? chunk->constants[cc] : R(cc),
+                              &ordered, &status)) {
                     // 11.9: numbers order themselves; anything else says
                     // how it orders with a '<=>', and this reads the answer.
                     derive_from = op;

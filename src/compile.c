@@ -2986,16 +2986,23 @@ static const Local *forwardable_local(Compiler *c, const LhatNode *node)
     return NULL;
 }
 
-// Whether evaluating this node writes no local: a name or a literal. What
-// makes it safe to read the left operand in place after it.
+// Whether evaluating this node writes no local: a name, a literal, or (03 の
+// 5.1改7) an operation the checker found between two numbers -- number^
+// answers built in, so no operator body runs -- over operands that run
+// nothing either. What makes it safe to read the left operand in place.
 static bool runs_nothing(Compiler *c, const LhatNode *node)
 {
     if (node == NULL) {
         return false;
     }
     if (node->kind == LHAT_NODE_INT || node->kind == LHAT_NODE_FLOAT ||
-        node->kind == LHAT_NODE_STRING) {
+        node->kind == LHAT_NODE_STRING || forwardable_local(c, node) != NULL) {
         return true;
+    }
+    if (node->kind == LHAT_NODE_BINARY) {
+        return node->checked_numeric &&
+               runs_nothing(c, node->v.binary.left) &&
+               runs_nothing(c, node->v.binary.right);
     }
     const char *name = NULL;
     size_t length = 0;
@@ -3091,10 +3098,16 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
     // right fold the constant into the instruction -- `i + 1` was a LOADK
     // re-run every turn of a loop. The operator fallback still works: the
     // machine's ADDK family carries the constant to call_operator itself.
+    // 5.1改7: the four orderings likewise -- `i < 100` was the same LOADK.
     const LhatNode *right_node = node->v.binary.right;
-    if ((opcode == LHAT_BC_ADD || opcode == LHAT_BC_SUB ||
-         opcode == LHAT_BC_MUL || opcode == LHAT_BC_DIV) &&
-        right_node != NULL &&
+    LhatOpcode folded =
+        opcode == LHAT_BC_ADD || opcode == LHAT_BC_SUB ||
+                opcode == LHAT_BC_MUL || opcode == LHAT_BC_DIV
+            ? (LhatOpcode)(opcode - LHAT_BC_ADD + LHAT_BC_ADDK)
+        : opcode >= LHAT_BC_LT && opcode <= LHAT_BC_GE
+            ? (LhatOpcode)(opcode - LHAT_BC_LT + LHAT_BC_LTK)
+            : LHAT_BC_COUNT;
+    if (folded != LHAT_BC_COUNT && right_node != NULL &&
         (right_node->kind == LHAT_NODE_INT ||
          right_node->kind == LHAT_NODE_FLOAT)) {
         LhatValue constant =
@@ -3111,9 +3124,7 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
             if (home == NULL) {
                 compile_expression(c, node->v.binary.left, left_at);
             }
-            emit(c, lhat_encode_abc(
-                        (LhatOpcode)(opcode - LHAT_BC_ADD + LHAT_BC_ADDK),
-                        into, left_at, (uint8_t)k));
+            emit(c, lhat_encode_abc(folded, into, left_at, (uint8_t)k));
             c->next_register = kmark;
             return;
         }

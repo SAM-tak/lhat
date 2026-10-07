@@ -394,6 +394,20 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
+    // 03 の 5.1改7: a literal on the right folds into the instruction, and
+    // the constant still reaches the op^<=> that takes a number.
+    LHAT_TEST("and against a literal too");
+    run_text(&r,
+             "var^ V = def^{\n"
+             "  self^{ n := 5 },\n"
+             "  op^<=> := f^self^, o:number^ -> number^ { return^ self^.n - o },\n"
+             "}\n"
+             "let^ v = V.new()\n"
+             "if^ v < 7 and^ v > 2.5 and^ v <= 5 and^ !(v >= 6) { return^ 1 }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+
     // and so is equality, for a type that says how it orders: two of them
     // that compare the same are equal, where 14.2 alone would say no.
     LHAT_TEST("and so is equality");

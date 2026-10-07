@@ -1469,6 +1469,13 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
     }
 
     LhatType *right = chk_infer(c, node->v.binary.right);
+    // 03 の 5.1改7: written on every pass, so the last one is what stands.
+    // The three left out reach call_operator even between numbers.
+    ((LhatNode *)node)->checked_numeric =
+        op != LHAT_OP_CONCAT && op != LHAT_OP_CROSS &&
+        op != LHAT_OP_DOT_PRODUCT && left != NULL &&
+        left->kind == LHAT_TYPE_NUMBER && right != NULL &&
+        right->kind == LHAT_TYPE_NUMBER;
 
     switch (op) {
         case LHAT_OP_ADD:

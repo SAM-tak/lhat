@@ -64,6 +64,12 @@ typedef enum {
     LHAT_BC_LE,
     LHAT_BC_GT,
     LHAT_BC_GE,
+    // 03 の 5.1改7: the four again with the right operand a constant, as
+    // ADDK's block is to ADD's -- same order, so compile.c maps by offset.
+    LHAT_BC_LTK,        // A B C R[A] = R[B] < K[C]
+    LHAT_BC_LEK,
+    LHAT_BC_GTK,
+    LHAT_BC_GEK,
     // 02 の 11.9: A B C R[A] = R[B] <=> R[C], a number^ saying which of
     // the two comes first. The four above read their answer off this one
     // whenever they cannot answer for themselves.
