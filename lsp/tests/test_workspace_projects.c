@@ -276,6 +276,100 @@ static void test_current_unit(void)
     remove_directory(base);
 }
 
+static LspRoot *root_at(LspProject *project, const char *path)
+{
+    for (LspRoot *root = project->roots; root != NULL; root = root->next) {
+        if (strcmp(root->path, path) == 0) {
+            return root;
+        }
+    }
+    return NULL;
+}
+
+// A file another root require^s is checked inside that root's program, and
+// holds none of its own -- one program per file would hold every unit an
+// entry point reaches once more for each of them. A config copied under an
+// excluded directory begins no project of its own either.
+static void test_covered_roots(void)
+{
+    char base[512];
+    LHAT_REQUIRE(make_temporary_directory(base, sizeof base),
+                 "could not create a temporary directory");
+    char build[512], copy[512], host[512], settings[512], copied_host[512];
+    char copied_unit[512], main_path[512], lib_path[512];
+    join(build, sizeof build, base, "build");
+    join(copy, sizeof copy, build, "copy");
+    LHAT_REQUIRE(make_directory(build), "could not create %s", build);
+    LHAT_REQUIRE(make_directory(copy), "could not create %s", copy);
+    join(host, sizeof host, base, "lhat-host.json");
+    join(settings, sizeof settings, base, "lhat-lsp.json");
+    join(copied_host, sizeof copied_host, copy, "lhat-host.json");
+    join(copied_unit, sizeof copied_unit, copy, "copied.lh");
+    join(main_path, sizeof main_path, base, "main.lh");
+    join(lib_path, sizeof lib_path, base, "lib.lh");
+    LHAT_REQUIRE(write_file(host, "{}"), "could not write %s", host);
+    LHAT_REQUIRE(write_file(settings, "{\"exclude\": [\"build/\"]}"),
+                 "could not write %s", settings);
+    LHAT_REQUIRE(write_file(copied_host, "{}"), "could not write %s", copied_host);
+    LHAT_REQUIRE(write_file(copied_unit, ""), "could not write %s", copied_unit);
+    LHAT_REQUIRE(write_file(main_path, "require^\"lib.lh\"\n"),
+                 "could not write %s", main_path);
+    LHAT_REQUIRE(write_file(lib_path, "let^x = 1\n"), "could not write %s", lib_path);
+
+    const char *folders[] = {base};
+    LspWorkspace workspace;
+    lsp_workspace_init(&workspace, folders, 1);
+    lsp_workspace_discover_projects(&workspace);
+
+    LHAT_TEST("a config under an excluded directory begins no project");
+    LHAT_CHECK(project_at(&workspace, copy) == NULL,
+               "build/copy is excluded by the project above it");
+
+    LspProject *project = project_at(&workspace, base);
+    LHAT_REQUIRE(project != NULL, "expected a project at the folder");
+    LspRoot *main_root = root_at(project, main_path);
+    LspRoot *lib_root = root_at(project, lib_path);
+    LHAT_REQUIRE(main_root != NULL && lib_root != NULL, "expected both roots");
+
+    LHAT_TEST("a required file holds no program of its own");
+    lsp_workspace_recheck_all(&workspace);
+    LHAT_CHECK_EQ_BOOL(main_root->checked, true);
+    LHAT_CHECK_EQ_BOOL(lib_root->checked, false);
+    int found = 0;
+    lsp_workspace_with_unit(&workspace, lib_path, count_unit, &found);
+    LHAT_CHECK_EQ_INT(found, 1);
+
+    LHAT_TEST("and is checked as its own root once nothing requires it");
+    open_text(&workspace, main_path, "let^y = 2\n", 1);
+    lsp_workspace_recheck_affected(&workspace, main_path);
+    LHAT_CHECK_EQ_BOOL(lib_root->checked, true);
+
+    LHAT_TEST("until something does again");
+    open_text(&workspace, main_path, "require^\"lib.lh\"\n", 2);
+    lsp_workspace_recheck_affected(&workspace, main_path);
+    LHAT_CHECK_EQ_BOOL(main_root->checked, true);
+    LHAT_CHECK_EQ_BOOL(lib_root->checked, false);
+
+    LHAT_TEST("an edit to a covered file rechecks the root covering it");
+    open_text(&workspace, lib_path, "let^x = 3\n", 1);
+    lsp_workspace_recheck_affected(&workspace, lib_path);
+    LHAT_CHECK_EQ_BOOL(lib_root->checked, false);
+    found = 0;
+    lsp_workspace_with_current_unit(&workspace, lib_path, count_unit, &found);
+    LHAT_CHECK_EQ_INT(found, 1);
+
+    lsp_workspace_dispose(&workspace);
+    remove(main_path);
+    remove(lib_path);
+    remove(copied_unit);
+    remove(copied_host);
+    remove(settings);
+    remove(host);
+    remove_directory(copy);
+    remove_directory(build);
+    remove_directory(base);
+}
+
 static char *parity_load(void *context, const char *path, size_t *length)
 {
     (void)path;
@@ -535,6 +629,7 @@ int main(void)
     test_lton_syntax_only_workspace();
     test_nearest_project_wins_inside_each_workspace_folder();
     test_current_unit();
+    test_covered_roots();
     test_execution_pipeline_parity();
     return lhat_test_report("test_workspace_projects");
 }

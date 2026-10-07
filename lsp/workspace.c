@@ -394,12 +394,46 @@ static LspRoot *root_find_or_add(LspProject *project, const char *path)
     return root;
 }
 
-static void recheck_one_root(LspWorkspace *ws, LspProject *project,
-                             LspRoot *root)
+// Forgets what `root`'s last check made, along with what it said it reached.
+static void drop_program(LspProject *project, LspRoot *root)
 {
     reverse_remove_root_everywhere(project, root->path);
     if (root->checked) {
         lhat_program_dispose(&root->program);
+        root->checked = false;
+    }
+}
+
+// Whether another root's checked graph already holds `root` as one of its
+// units. Such a root keeps no program of its own: the unit was checked there
+// from the same text against the same configuration, and a program per root
+// would hold every file a game's entry point require^s once more for each
+// of them. A .lton is never covered -- a require^ reads it as data, which is
+// not the check its own root makes.
+static bool root_covered(LspProject *project, const LspRoot *root)
+{
+    if (lsp_lton_is_path(root->path)) {
+        return false;
+    }
+    LspReverseEntry *entry = reverse_find(project, root->path);
+    for (size_t i = 0; entry != NULL && i < entry->root_count; i++) {
+        if (strcmp(entry->roots[i], root->path) == 0) {
+            continue;
+        }
+        LspRoot *other = root_find(project, entry->roots[i]);
+        if (other != NULL && other->checked) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void recheck_one_root(LspWorkspace *ws, LspProject *project,
+                             LspRoot *root)
+{
+    drop_program(project, root);
+    if (root_covered(project, root)) {
+        return;
     }
     bool strict = lsp_settings_strict(
         project->settings, lsp_host_config_strict(project->host_config, true));
@@ -419,6 +453,23 @@ static void recheck_one_root(LspWorkspace *ws, LspProject *project,
         LspReverseEntry *entry = reverse_find_or_add(project, unit->path);
         if (entry != NULL) {
             reverse_entry_add_root(entry, root->path);
+        }
+        LspRoot *covered = strcmp(unit->path, root->path) != 0
+                               ? root_find(project, unit->path) : NULL;
+        if (covered != NULL && !lsp_lton_is_path(covered->path)) {
+            drop_program(project, covered);
+        }
+    }
+}
+
+// Checks every root no other root covers any more -- one a recheck stopped
+// require^ing, or one that was covered when it was first met.
+static void check_uncovered(LspWorkspace *ws, LspProject *project)
+{
+    for (LspRoot *root = project->roots; root != NULL; root = root->next) {
+        if (!root->checked && !lsp_lton_is_path(root->path) &&
+            !root_covered(project, root)) {
+            recheck_one_root(ws, project, root);
         }
     }
 }
@@ -470,6 +521,33 @@ static bool starts_child_project(LspWorkspace *ws, const LspProject *project,
            project_at_root(ws, directory) != NULL;
 }
 
+// The project a directory found during discovery begins, or `enclosing` when
+// it begins none. Its configs are read at once, because what it excludes
+// decides which of its subdirectories discovery descends into: a config
+// copied under an excluded build/ directory is not a project of its own.
+static const LspProject *open_config_project(LspWorkspace *ws,
+                                             const char *dir,
+                                             const LspProject *enclosing)
+{
+    if (!directory_has_config(ws, dir) || project_at_root(ws, dir) != NULL) {
+        return enclosing;
+    }
+    LspProject *project = (LspProject *)calloc(1, sizeof *project);
+    if (project == NULL) {
+        return enclosing;
+    }
+    project->root_path = lsp_strdup(dir);
+    if (project->root_path == NULL) {
+        free(project);
+        return enclosing;
+    }
+    project->config_boundary = true;
+    project->next = ws->projects;
+    ws->projects = project;
+    load_project_configs(ws, project);
+    return project;
+}
+
 #ifdef _WIN32
 static void scan_project_dir(LspWorkspace *ws, LspProject *project,
                              const char *dir)
@@ -505,7 +583,7 @@ static void scan_project_dir(LspWorkspace *ws, LspProject *project,
 }
 
 static void discover_config_dirs_in(LspWorkspace *ws, const char *workspace,
-                                    const char *dir)
+                                    const char *dir, const LspProject *enclosing)
 {
     char pattern[MAX_PATH];
     if ((size_t)snprintf(pattern, sizeof pattern, "%s/*", dir) >= sizeof pattern) {
@@ -528,23 +606,12 @@ static void discover_config_dirs_in(LspWorkspace *ws, const char *workspace,
                              data.cFileName) >= sizeof child) {
             continue;
         }
-        if (workspace_root_for_path(ws, child) != workspace) {
+        if (workspace_root_for_path(ws, child) != workspace ||
+            (enclosing != NULL && path_excluded(enclosing, child))) {
             continue;
         }
-        if (directory_has_config(ws, child) && project_at_root(ws, child) == NULL) {
-            LspProject *project = (LspProject *)calloc(1, sizeof *project);
-            if (project != NULL) {
-                project->root_path = lsp_strdup(child);
-                if (project->root_path != NULL) {
-                    project->config_boundary = true;
-                    project->next = ws->projects;
-                    ws->projects = project;
-                } else {
-                    free(project);
-                }
-            }
-        }
-        discover_config_dirs_in(ws, workspace, child);
+        discover_config_dirs_in(ws, workspace, child,
+                                open_config_project(ws, child, enclosing));
     } while (FindNextFileA(handle, &data));
     FindClose(handle);
 }
@@ -583,7 +650,7 @@ static void scan_project_dir(LspWorkspace *ws, LspProject *project,
 }
 
 static void discover_config_dirs_in(LspWorkspace *ws, const char *workspace,
-                                    const char *dir)
+                                    const char *dir, const LspProject *enclosing)
 {
     DIR *handle = opendir(dir);
     if (handle == NULL) {
@@ -603,23 +670,12 @@ static void discover_config_dirs_in(LspWorkspace *ws, const char *workspace,
         if (stat(child, &st) != 0 || !S_ISDIR(st.st_mode)) {
             continue;
         }
-        if (workspace_root_for_path(ws, child) != workspace) {
+        if (workspace_root_for_path(ws, child) != workspace ||
+            (enclosing != NULL && path_excluded(enclosing, child))) {
             continue;
         }
-        if (directory_has_config(ws, child) && project_at_root(ws, child) == NULL) {
-            LspProject *project = (LspProject *)calloc(1, sizeof *project);
-            if (project != NULL) {
-                project->root_path = lsp_strdup(child);
-                if (project->root_path != NULL) {
-                    project->config_boundary = true;
-                    project->next = ws->projects;
-                    ws->projects = project;
-                } else {
-                    free(project);
-                }
-            }
-        }
-        discover_config_dirs_in(ws, workspace, child);
+        discover_config_dirs_in(ws, workspace, child,
+                                open_config_project(ws, child, enclosing));
     }
     closedir(handle);
 }
@@ -817,14 +873,13 @@ void lsp_workspace_discover_projects(LspWorkspace *ws)
     for (size_t i = 0; i < ws->workspace_count; i++) {
         // Always install the folder's fallback project. If it has a config,
         // it is also the nearest configuration project for files below it.
-        add_project(ws, ws->workspace_paths[i]);
-        discover_config_dirs_in(ws, ws->workspace_paths[i], ws->workspace_paths[i]);
-    }
-    for (LspProject *project = ws->projects; project != NULL;
-         project = project->next) {
-        project->config_boundary =
-            directory_has_config(ws, project->root_path);
-        load_project_configs(ws, project);
+        const char *folder = ws->workspace_paths[i];
+        LspProject *project = project_at_root(ws, folder);
+        if (project == NULL && (project = add_project(ws, folder)) != NULL) {
+            project->config_boundary = directory_has_config(ws, folder);
+            load_project_configs(ws, project);
+        }
+        discover_config_dirs_in(ws, folder, folder, project);
     }
     for (LspProject *project = ws->projects; project != NULL;
          project = project->next) {
@@ -930,8 +985,53 @@ void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path)
             free(affected[i]);
         }
         free(affected);
+        check_uncovered(ws, project);
     }
     lhat_mutex_unlock(&ws->lock);
+}
+
+static size_t path_depth(const char *path)
+{
+    size_t depth = 0;
+    for (; *path != '\0'; path++) {
+        depth += *path == '/';
+    }
+    return depth;
+}
+
+static int shallower_first(const void *a, const void *b)
+{
+    const LspRoot *x = *(LspRoot *const *)a;
+    const LspRoot *y = *(LspRoot *const *)b;
+    size_t dx = path_depth(x->path), dy = path_depth(y->path);
+    return dx != dy ? (dx < dy ? -1 : 1) : strcmp(x->path, y->path);
+}
+
+// Every root of `project`, the shallowest first. An entry point tends to sit
+// above what it require^s, and once it is checked the roots it covers are
+// not checked at all -- so this order is what keeps a first pass from
+// holding a program for every file of the project at once.
+static void recheck_project(LspWorkspace *ws, LspProject *project)
+{
+    size_t count = 0;
+    for (LspRoot *root = project->roots; root != NULL; root = root->next) {
+        count++;
+    }
+    LspRoot **order = count ? (LspRoot **)malloc(count * sizeof *order) : NULL;
+    if (order != NULL) {
+        size_t at = 0;
+        for (LspRoot *root = project->roots; root != NULL; root = root->next) {
+            order[at++] = root;
+        }
+        qsort(order, count, sizeof *order, shallower_first);
+        for (size_t i = 0; i < count; i++) {
+            if (!lsp_lton_is_path(order[i]->path)) {  // checked from open text
+                recheck_one_root(ws, project, order[i]);
+            }
+        }
+        free(order);
+    }
+    check_uncovered(ws, project);
 }
 
 void lsp_workspace_recheck_all(LspWorkspace *ws)
@@ -961,10 +1061,7 @@ void lsp_workspace_recheck_all(LspWorkspace *ws)
     lhat_mutex_lock(&ws->lock);
     for (LspProject *project = ws->projects; project != NULL;
          project = project->next) {
-        for (LspRoot *root = project->roots; root != NULL; root = root->next) {
-            if (lsp_lton_is_path(root->path)) continue; // checked from open text above
-            recheck_one_root(ws, project, root);
-        }
+        recheck_project(ws, project);
     }
     lhat_mutex_unlock(&ws->lock);
 }

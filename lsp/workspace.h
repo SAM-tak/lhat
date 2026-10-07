@@ -1,10 +1,11 @@
 // L^ (lhat) -- LSP server: project roots, checked and re-checked.
 //
 // The unit of re-checking here is a whole LhatProgram. Every *.lh file
-// under a project root is its own root and gets its own LhatProgram; a
-// file several roots require gets re-parsed once per root that reaches it.
-// That duplication is the cost this design pays for not needing a cache
-// inside program.h itself.
+// under a project root is its own root, but only a root no other checked
+// root reaches holds a LhatProgram: one that another root's graph require^s
+// is checked there and has none of its own. A file two such entry points
+// both require^ is still re-parsed once per entry point -- the cost this
+// design pays for not needing a cache inside program.h itself.
 //
 // 05 の 5.7 has since given program.h a way to invalidate one unit inside an
 // already-checked program, which would make the re-check here incremental.
@@ -132,6 +133,8 @@ void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path);
 // workspace through recheck_affected one root at a time, which
 // would re-check a root each time another root that reaches it came up
 // next in the same batch (05 の 6.2's require^ walk makes reach transitive).
+// The shallowest paths go first, so an entry point above what it require^s
+// covers those before they are checked at all.
 void lsp_workspace_recheck_all(LspWorkspace *ws);
 
 // Calls `sink` once per distinct absolute path currently held by any root,
