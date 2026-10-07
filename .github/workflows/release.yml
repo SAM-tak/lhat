@@ -25,8 +25,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # 03 の 5.2改: cl.exe has no computed goto, so the interpreter loop
+          # reads a switch there. Visual Studio's own clang-cl -- first on
+          # the PATH the MSVC environment step exports -- builds the faster
+          # spelling against the same headers and libraries.
           - slug: win32-x64
             os: windows-latest
+            extra: '-DCMAKE_C_COMPILER=clang-cl'
           - slug: linux-x64
             os: ubuntu-latest
           - slug: linux-arm64
@@ -69,8 +74,8 @@ jobs:
       - name: Configure
         shell: bash
         # ${VAR:+"$VAR"} is "this argument, quoted, or no argument at all" --
-        # every target but macOS names no extra, and an empty string would be
-        # an argument of its own.
+        # the Linux targets name no extra, and an empty string would be an
+        # argument of its own.
         run: cmake --preset release ${EXTRA:+"$EXTRA"}
         env:
           EXTRA: ${{ matrix.extra }}
