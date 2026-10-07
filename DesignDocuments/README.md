@@ -12,7 +12,7 @@
 | [04-errors.md](04-errors.md) | 誤りの表現と伝播（`errordef^`、`catch^`、`try^`、網羅性、取りこぼしの検出） | 未決事項なし |
 | [05-modules.md](05-modules.md) | 名前空間とモジュール（`module^`、`public^`、`require^`、型のラベル、初期束縛、ホスト API） | M2・M4・M7・M8 が未決 |
 | [07-language-server.md](07-language-server.md) | 言語サーバとエディタ統合（`lhatls` の機能、ホバー、VSCode 拡張の構成） | L5 が未決 |
-| [08-lton.md](08-lton.md) | LTON（L^ のテーブルをテキストで書く綴り、`std.lton`、読み込み、ホストからの入口） | T1〜T3 が未決 |
+| [08-lton.md](08-lton.md) | LTON（L^ のテーブルをテキストで書く綴り、`std.lton`、読み込み、ホストからの入口） | 未決なし（T1・T2 は閉じた） |
 | [09-debugger.md](09-debugger.md) | デバッガ（機械の行フック、フレームと束縛の内観、コンパイラの名前の表、`lhat --dap` の DAP アダプタ、Godot 連携） | 未決事項なし |
 | [10-localization.md](10-localization.md) | 多言語化（プログラムが観測できる文は変えない原則、メッセージの ID と穴、カタログと英語の書き出し、言語の選択、L^ プログラム自身の多言語化） | I2 が未決 |
 
