@@ -35,6 +35,12 @@ jobs:
             os: ubuntu-latest
           - name: macos / clang
             os: macos-latest
+          # The copy-and-patch JIT (jit/jit.h) lays out x86-64 Windows code
+          # under Clang only, so it is built and run here and nowhere else.
+          - name: windows / clang-cl + jit
+            os: windows-latest
+            extra: '-DCMAKE_C_COMPILER=clang-cl -DLHAT_JIT=ON'
+            stencils: true
     steps:
       - uses: actions/checkout@v5
 
@@ -63,8 +69,21 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja
 
+      # The stencils' bytes are committed; this says whether their sources
+      # changed since they were made. It reads a hash, so it needs no Clang
+      # of any particular version (jit/gen_stencils.py).
+      - name: Stencils up to date
+        if: matrix.stencils
+        run: python jit/gen_stencils.py --check
+
       - name: Configure
-        run: cmake --preset release
+        shell: bash
+        # ${VAR:+...} is the arguments or none at all, as in release.yml --
+        # an empty string would be an argument of its own. Unquoted on
+        # purpose: the JIT row passes two.
+        run: cmake --preset release ${EXTRA:+$EXTRA}
+        env:
+          EXTRA: ${{ matrix.extra }}
 
       - name: Build
         run: cmake --build --preset release
