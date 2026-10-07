@@ -114,6 +114,48 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
                             size_t key_slot, LhatValue member_key,
                             LhatMemberCache *filling, bool for_call);
 
+// 03 の 5.1改: the member a GETMEMBER, GETMETHOD or CALLMEMBER site found
+// last time, when it is still the answer for `receiver` -- or NULL, and
+// `*cache` is where the slow path writes what it finds.
+//
+// Cache collisions are harmless only within a machine: the receiver and the
+// layout are validated below, then the key at the remembered position.
+// Chunks are immutable and may be executed by multiple machines at once.
+static inline const LhatValue *vm_cached_member(Machine *m,
+                                                const LhatChunk *chunk,
+                                                size_t site,
+                                                LhatValue receiver,
+                                                LhatMemberCache **cache)
+{
+    size_t slot = (((uintptr_t)chunk >> 4) + site) % LHAT_MEMBER_CACHE_COUNT;
+    LhatMemberCache *remembered = &m->member_caches[slot];
+    *cache = remembered;
+    const LhatTable *start = vm_readable_table(receiver);
+    const LhatTable *answered = remembered->answered;
+    if (answered == NULL || start == NULL) {
+        return NULL;
+    }
+    bool same_layout =
+        remembered->from_definition
+            // An instance is a fresh table per value, so what is compared
+            // is not the table but the fact that it has never been
+            // structurally written since it was cloned -- and 5.10 seals the
+            // prototype, so such a clone carries the prototype's keys and no
+            // others and cannot be shadowing this member.
+            ? (start->version == 0 && start->definition == answered &&
+               answered->version == remembered->version)
+            // 05 の 8.8 shares one members table per host type, so for
+            // those this is the same table every time.
+            : (start == answered && start->version == remembered->version);
+    uint32_t index = remembered->index;
+    if (!same_layout || (size_t)index >= answered->entry_capacity ||
+        !lhat_value_equal(answered->entries[index].key,
+                          chunk->constants[chunk->member_keys[site]])) {
+        return NULL;
+    }
+    return &answered->entries[index].value;
+}
+
 // vm_host.c
 LhatTable *vm_hostvalue_members_of(Machine *m, const LhatHostValueTag *tag);
 bool vm_hostvalue_equal(LhatSlots slots, size_t left, size_t right);

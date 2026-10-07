@@ -320,21 +320,6 @@ static LhatValue call_arg(LhatSlots regs, size_t rbase, uint8_t a, size_t skip,
     }
     return lhat_slots_get(regs, rbase + a + skip + i);
 }
-// Cache collisions are harmless only within a machine: validate the current
-// receiver and layout below, then check the key at the remembered position.
-// Chunks are immutable and may be executed by multiple machines concurrently.
-static LhatMemberCache *member_cache(Machine *m, const LhatChunk *chunk,
-                                     size_t site)
-{
-    size_t slot = (((uintptr_t)chunk >> 4) + site) % LHAT_MEMBER_CACHE_COUNT;
-    return &m->member_caches[slot];
-}
-
-static bool cached_here(const LhatTable *table, uint32_t index, LhatValue key)
-{
-    return (size_t)index < table->entry_capacity &&
-           lhat_value_equal(table->entries[index].key, key);
-}
 // 03 の 5.12改2: the collector's poll, beside the instructions that can have
 // allocated -- Lua places its checkGC against the allocating opcodes the same
 // way. Instructions that never allocate never ask; the paranoid build (debug)
@@ -438,17 +423,31 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
         }                                                                   \
     } while (0)
 
-// A loop turning: the slice poll every jump back makes, and then -- in a
-// build with the JIT -- the compiled code of the chunk, entered where the
-// loop starts. It answers where the interpreter goes on from.
+// Where a run turns back on itself or enters a body: the slice poll made
+// there, and then -- in a build with the JIT -- the chunk's compiled code,
+// entered at the instruction the interpreter stands at. It answers where
+// the interpreter goes on from, in the frame on top: the code may have
+// called and returned, so the frame is read again.
 #ifdef LHAT_WITH_JIT
-#define VM_LOOP_POLL()                                                      \
+#define VM_ENTER_JIT()                                                      \
+    do {                                                                    \
+        if (lhat_jit_may_enter(chunk->jit, pc)) {                           \
+            size_t left_ = lhat_jit_run(m, chunk, rbase, pc);               \
+            pc = left_ & ~LHAT_JIT_MOVED;                                   \
+            if (left_ & LHAT_JIT_MOVED) {                                   \
+                frame = &m->frames[m->frame_count - 1];                     \
+                rbase = frame->base;                                        \
+                chunk = &frame->closure->proto->chunk;                      \
+            }                                                               \
+        }                                                                   \
+    } while (0)
+#define VM_POLL_AND_JIT()                                                   \
     do {                                                                    \
         LHAT_SLICE_POLL();                                                  \
-        pc = lhat_jit_run(m, chunk, rbase, pc);                             \
+        VM_ENTER_JIT();                                                     \
     } while (0)
 #else
-#define VM_LOOP_POLL() LHAT_SLICE_POLL()
+#define VM_POLL_AND_JIT() LHAT_SLICE_POLL()
 #endif
 
 // 03 の 5.2改: how the loop gets from one instruction to the next. GCC and
@@ -573,7 +572,7 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
             SET_R(a, lhat_integer(focus_));                                 \
             if (focus_ oper lhat_as_integer(R(a + 1))) {                    \
                 pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction)); \
-                VM_LOOP_POLL();                                             \
+                VM_POLL_AND_JIT();                                          \
             }                                                               \
         }                                                                   \
         /* An overflow is past any integer bound: the loop is over. */      \
@@ -1038,7 +1037,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         int32_t offset = lhat_jump_offset(paired);
                         pc = (size_t)((int64_t)pc + offset);
                         if (offset < 0) {
-                            VM_LOOP_POLL();
+                            VM_POLL_AND_JIT();
                         }
                     }
                 }
@@ -1065,7 +1064,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 int32_t offset = lhat_jump_offset(instruction);
                 pc = (size_t)((int64_t)pc + offset);
                 if (offset < 0) {
-                    VM_LOOP_POLL();
+                    VM_POLL_AND_JIT();
                 }
                 VM_NEXT();
             }
@@ -1078,7 +1077,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     int32_t offset = lhat_jump_offset(instruction);
                     pc = (size_t)((int64_t)pc + offset);
                     if (offset < 0) {
-                        VM_LOOP_POLL();
+                        VM_POLL_AND_JIT();
                     }
                 }
                 VM_NEXT();
@@ -1309,26 +1308,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // long it takes (4.2).
             VM_CASE(LHAT_BC_GETMEMBER)
             VM_CASE(LHAT_BC_GETMETHOD) {
-                LhatMemberCache *cache = member_cache(m, chunk, cc);
-                const LhatTable *start = vm_readable_table(R(b));
-                if (cache->answered != NULL && start != NULL &&
-                    (cache->from_definition
-                         // An instance is a fresh table per value, so what is
-                         // compared is not the table but the fact that it has
-                         // never been structurally written since it was cloned
-                         // -- and 5.10 seals the prototype, so such a clone
-                         // carries the prototype's keys and no others and
-                         // cannot be shadowing this member.
-                         ? (start->version == 0 &&
-                            start->definition == cache->answered &&
-                            cache->answered->version == cache->version)
-                         // 05 の 8.8 shares one members table per host type,
-                         // so for those this is the same table every time.
-                         : (start == cache->answered &&
-                            start->version == cache->version)) &&
-                    cached_here(cache->answered, cache->index,
-                                chunk->constants[chunk->member_keys[cc]])) {
-                    SET_R(a, cache->answered->entries[cache->index].value);
+                LhatMemberCache *cache;
+                const LhatValue *hit =
+                    vm_cached_member(m, chunk, cc, R(b), &cache);
+                if (hit != NULL) {
+                    SET_R(a, *hit);
                     VM_NEXT();
                 }
                 member_key = chunk->constants[chunk->member_keys[cc]];
@@ -1341,18 +1325,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // instruction; a miss is GETMEMBER to the letter, and the pair
             // runs as itself on the next turn.
             VM_CASE(LHAT_BC_CALLMEMBER) {
-                LhatMemberCache *cache = member_cache(m, chunk, cc);
-                const LhatTable *start = vm_readable_table(R(b));
-                if (cache->answered != NULL && start != NULL &&
-                    (cache->from_definition
-                         ? (start->version == 0 &&
-                            start->definition == cache->answered &&
-                            cache->answered->version == cache->version)
-                         : (start == cache->answered &&
-                            start->version == cache->version)) &&
-                    cached_here(cache->answered, cache->index,
-                                chunk->constants[chunk->member_keys[cc]])) {
-                    SET_R(a, cache->answered->entries[cache->index].value);
+                LhatMemberCache *cache;
+                const LhatValue *hit =
+                    vm_cached_member(m, chunk, cc, R(b), &cache);
+                if (hit != NULL) {
+                    SET_R(a, *hit);
                     at = pc;
                     instruction = chunk->code[pc++];
                     a = lhat_a(instruction);
@@ -2621,7 +2598,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                     chunk = &callee->proto->chunk;
                     pc = 0;
-                    LHAT_SLICE_POLL();
+                    VM_POLL_AND_JIT();
                     VM_NEXT();
                 }
 
@@ -2633,7 +2610,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 rbase = frame->base;
                 chunk = &callee->proto->chunk;
                 pc = 0;
-                LHAT_SLICE_POLL();
+                VM_POLL_AND_JIT();
                 VM_NEXT();
             }
 
@@ -3304,7 +3281,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                          &more, &status);
                 if (more) {
                     pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction));
-                    VM_LOOP_POLL();
+                    VM_POLL_AND_JIT();
                 }
                 VM_NEXT();
             }
@@ -3760,6 +3737,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             } else {
                 SET_R(into, value);
             }
+#ifdef LHAT_WITH_JIT
+            // Back in the caller with the answer in place: its code goes on
+            // from the instruction after the call.
+            VM_ENTER_JIT();
+#endif
         }
     }
 

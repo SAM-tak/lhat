@@ -14,7 +14,7 @@
 #include <string.h>
 
 #include "code.h"
-#include "machine.h"
+#include "vm_internal.h"
 
 #include "stencils_x86_64-windows.h"
 
@@ -30,16 +30,14 @@
 // took in and no jump lands on); entries[count] is the code that answers
 // the end of the chunk.
 //
-// `loops[pc]` says the interpreter may come in at pc: the start of a loop
-// whose every instruction has code of its own. Coming in costs the
-// trampoline's saves, which a loop paying them on every turn -- leaving
-// again at a call a few instructions on -- does not win back.
+// `enter[pc]` says the interpreter may come in at pc. First, so that the
+// interpreter reads it through LhatJitCodeHead (jit.h).
 #define NO_ENTRY UINT32_MAX
 typedef struct {
+    bool *enter;
     uint8_t *memory;
     size_t size;
     uint32_t *entries;
-    bool *loops;
 } JitCode;
 
 // Process-wide, read once: LHAT_JIT=0 in the environment turns the JIT off
@@ -196,6 +194,32 @@ static Choice choose(const LhatChunk *chunk, size_t pc)
             choice.stencil = op == LHAT_BC_FORLOOP ? &lhat_jit_stencil_forloop
                                                    : &lhat_jit_stencil_forloopd;
             break;
+        case LHAT_BC_THIS:
+            choice.stencil = &lhat_jit_stencil_this;
+            break;
+        // 5.3: the plain call and the return of one value; what else either
+        // can be -- a method, a tail call, a tuple -- is the interpreter's.
+        case LHAT_BC_CALL:
+        case LHAT_BC_CALLMETHOD:
+            choice.stencil = &lhat_jit_stencil_call;
+            break;
+        // 03 の 5.1改4: taken with the CALLMETHOD it reads for, the way the
+        // interpreter takes the two.
+        case LHAT_BC_CALLMEMBER:
+            if (pc + 1 < chunk->count &&
+                lhat_op(chunk->code[pc + 1]) == LHAT_BC_CALLMETHOD) {
+                choice.stencil = &lhat_jit_stencil_call;
+                choice.next = pc + 2;
+            }
+            break;
+        case LHAT_BC_RETURN:
+            if (lhat_b(instruction) == 0) {
+                choice.stencil = &lhat_jit_stencil_return;
+            }
+            break;
+        case LHAT_BC_RETURN_NIL:
+            choice.stencil = &lhat_jit_stencil_return_nil;
+            break;
         default:
             break;
     }
@@ -204,6 +228,9 @@ static Choice choose(const LhatChunk *chunk, size_t pc)
 
 // ---------------------------------------------------------------------------
 // Laying out.
+
+static LhatJitHelper jit_call;
+static LhatJitHelper jit_return;
 
 static uint64_t hole_value(const Choice *choice, const LhatJitHole *hole,
                            LhatInstruction instruction, size_t pc,
@@ -220,6 +247,8 @@ static uint64_t hole_value(const Choice *choice, const LhatJitHole *hole,
             return (uint64_t)(uintptr_t)(memory + entries[choice->next]);
         case LHAT_JIT_HOLE_TARGET:
             return (uint64_t)(uintptr_t)(memory + entries[choice->target]);
+        case LHAT_JIT_HOLE_CALL: return (uint64_t)(uintptr_t)&jit_call;
+        case LHAT_JIT_HOLE_RETURN: return (uint64_t)(uintptr_t)&jit_return;
         case LHAT_JIT_HOLE_COUNT: break;
     }
     return 0;
@@ -270,20 +299,12 @@ static JitCode *lay_out(const LhatChunk *chunk)
                         choices[pc - 1].next == pc + 1 && !landed[pc];
         entries[pc] = taken_in ? NO_ENTRY : 0;
     }
-    bool *loops = landed;  // what landed[] was for is done
-    memset(loops, 0, (count + 1) * sizeof *loops);
-    for (size_t pc = 0; pc < count; pc++) {
-        size_t start = choices[pc].target;
-        if (choices[pc].stencil == &lhat_jit_stencil_exit || start > pc ||
-            !is_jump(lhat_op(chunk->code[pc]))) {
-            continue;
-        }
-        bool whole = true;
-        for (size_t q = start; q <= pc && whole; q++) {
-            whole = entries[q] == NO_ENTRY ||
-                    choices[q].stencil != &lhat_jit_stencil_exit;
-        }
-        loops[start] = loops[start] || whole;
+    // Where the interpreter may come in: anywhere there is code of an
+    // instruction's own, not the code that only sends it back.
+    bool *enter = landed;  // what landed[] was for is done
+    for (size_t pc = 0; pc <= count; pc++) {
+        enter[pc] = pc < count && entries[pc] != NO_ENTRY &&
+                    choices[pc].stencil != &lhat_jit_stencil_exit;
     }
     size_t following = count;
     for (size_t pc = count + 1; pc-- > 0;) {
@@ -292,7 +313,7 @@ static JitCode *lay_out(const LhatChunk *chunk)
             following = pc;
         }
     }
-    size_t size = lhat_jit_stencil_trampoline.size;
+    size_t size = 0;
     for (size_t pc = 0; pc <= count; pc++) {
         if (entries[pc] == NO_ENTRY) {
             continue;
@@ -310,8 +331,6 @@ static JitCode *lay_out(const LhatChunk *chunk)
         free(after);
         goto failed;
     }
-    memcpy(memory, lhat_jit_stencil_trampoline.code,
-           lhat_jit_stencil_trampoline.size);
     for (size_t pc = 0; pc <= count; pc++) {
         if (entries[pc] == NO_ENTRY) {
             continue;
@@ -346,7 +365,7 @@ static JitCode *lay_out(const LhatChunk *chunk)
     code->memory = memory;
     code->size = size;
     code->entries = entries;
-    code->loops = loops;
+    code->enter = enter;
     free(choices);
     return code;
 
@@ -369,7 +388,7 @@ void lhat_jit_free(void *code)
     }
     VirtualFree(laid->memory, 0, MEM_RELEASE);
     free(laid->entries);
-    free(laid->loops);
+    free(laid->enter);
     free(laid);
 }
 
@@ -384,7 +403,7 @@ static JitCode *code_of(const LhatChunk *chunk)
     if (code != NULL) {
         return code;
     }
-    JitCode *laid = lay_out(chunk);
+    JitCode *laid = jit_enabled() ? lay_out(chunk) : NULL;
     JitCode *want = laid != NULL ? laid : &refused;
     JitCode *expected = NULL;
     if (!__atomic_compare_exchange_n((JitCode **)&mutable_chunk->jit,
@@ -396,20 +415,158 @@ static JitCode *code_of(const LhatChunk *chunk)
     return want;
 }
 
+// The code of the chunk at pc, when there is code of its own to enter there
+// and nothing the traps word stands for is waiting on the interpreter.
+static LhatJitOp *enter_at(const Machine *m, const LhatChunk *chunk,
+                           size_t pc)
+{
+    if (m->traps) {
+        return NULL;
+    }
+    JitCode *code = code_of(chunk);
+    if (code == &refused || pc > chunk->count || !code->enter[pc]) {
+        return NULL;
+    }
+    return (LhatJitOp *)(void *)(code->memory + code->entries[pc]);
+}
+
+// The frame on top is the one the code goes on in.
+static void moved_to(LhatJitContext *context, const Frame *frame)
+{
+    Machine *m = context->machine;
+    context->values = m->slots.values + frame->base;
+    context->tags = m->slots.tags + frame->base;
+    context->closure = frame->closure;
+    context->moved = true;
+}
+
+// 5.3, what the interpreter's CALL and CALLMETHOD do for the case they are
+// most often asked: an L^ body taking exactly the arguments laid out for
+// it, no spread, no collected tail, not a coroutine to make -- and, for a
+// CALLMEMBER, a member its site remembers (03 の 5.1改4), read on the way
+// into the CALLMETHOD it is paired with. Nothing is allocated, which is why
+// the collector's poll is not asked here. The body is entered the way the
+// interpreter enters one, slice and all. The instruction is read here
+// rather than handed in: what the call needs of it depends on which it is.
+static LhatJitOp *jit_call(LhatJitContext *context, uintptr_t unused_a,
+                           uintptr_t unused_b, uintptr_t unused_c,
+                           uintptr_t pc)
+{
+    (void)unused_a;
+    (void)unused_b;
+    (void)unused_c;
+    Machine *m = context->machine;
+    Frame *frame = &m->frames[m->frame_count - 1];
+    const LhatChunk *chunk = &frame->closure->proto->chunk;
+    size_t rbase = frame->base;
+    LhatInstruction instruction = chunk->code[pc];
+    size_t resume = pc + 1;
+    context->leave_pc = pc;
+    if (lhat_op(instruction) == LHAT_BC_CALLMEMBER) {
+        LhatInstruction paired = chunk->code[pc + 1];
+        LhatMemberCache *cache;
+        const LhatValue *hit = vm_cached_member(
+            m, chunk, lhat_c(instruction),
+            lhat_slots_get(m->slots, rbase + lhat_b(instruction)), &cache);
+        if (hit == NULL || lhat_op(paired) != LHAT_BC_CALLMETHOD) {
+            return NULL;
+        }
+        lhat_slots_set(m->slots, rbase + lhat_a(instruction), *hit);
+        instruction = paired;
+        resume = pc + 2;
+    }
+    size_t a = lhat_a(instruction);
+    size_t given = lhat_b(instruction);
+    uint8_t c = lhat_c(instruction);
+    LhatValue called = lhat_slots_get(m->slots, rbase + a);
+    if (!lhat_is_object_kind(called, LHAT_OBJECT_SUBROUTINE)) {
+        return NULL;
+    }
+    const LhatClosure *callee = (const LhatClosure *)lhat_as_object(called);
+    const LhatProto *proto = callee->proto;
+    if (proto == NULL) {
+        return NULL;
+    }
+    // 14.4: the receiver sits between the callee and the arguments, and
+    // is the first of them only for a callee that takes it.
+    size_t skip = 1;
+    if (lhat_op(instruction) == LHAT_BC_CALLMETHOD) {
+        if (proto->takes_self) {
+            given++;
+        } else {
+            skip = 2;
+        }
+    }
+    size_t next_base = rbase + a + skip;
+    if ((c & LHAT_CALL_SPREAD) != 0 || proto->has_variadic || proto->yields ||
+        given != proto->parameters || m->frame_count >= m->frame_capacity ||
+        next_base + proto->chunk.registers >= m->slot_capacity) {
+        return NULL;
+    }
+    vm_clear_scratch(m, next_base, proto);
+    frame->pc = resume;
+    Frame *entered = vm_push_frame(m, callee, next_base, (uint8_t)a,
+                                   (uint8_t)lhat_call_prepared(c));
+    moved_to(context, entered);
+    // 02 § 15.15 at a body's entry, as the interpreter polls it. A slice
+    // about to run out is left for the interpreter to end, at the body's
+    // first instruction.
+    context->leave_pc = 0;
+    if (m->steps_left == 1) {
+        return NULL;
+    }
+    if (m->steps_left != 0) {
+        m->steps_left--;
+    }
+    return enter_at(m, &proto->chunk, 0);
+}
+
+// The interpreter's RETURN and the drain after it, for a frame with nothing
+// to drain: no cleanup waiting, no coroutine whose body it is, no operator
+// whose answer is read again (11.9), one plain value. Not the run's own
+// frame either -- that one ends the run, which is vm_finish's.
+static LhatJitOp *jit_return(LhatJitContext *context, uintptr_t a,
+                             uintptr_t nil, uintptr_t c, uintptr_t pc)
+{
+    (void)c;
+    Machine *m = context->machine;
+    Frame *frame = &m->frames[m->frame_count - 1];
+    context->leave_pc = pc;
+    if (m->frame_count <= m->run_base + 1 || frame->cleanup_count != 0 ||
+        frame->coroutine != NULL || frame->derive != LHAT_FRAME_NO_DERIVE ||
+        m->cleanup_carriers != 0) {
+        return NULL;
+    }
+    LhatValue value =
+        nil ? lhat_nil() : lhat_slots_get(m->slots, frame->base + a);
+    if (lhat_is_hostvalue(value)) {
+        return NULL;
+    }
+    if (frame->drop_answer) {
+        value = lhat_nil();
+    }
+    vm_close_upvalues(m, frame->base + frame->closure->proto->kept);
+    uint8_t into = frame->result;
+    m->frame_count--;
+    Frame *caller = &m->frames[m->frame_count - 1];
+    lhat_slots_set(m->slots, caller->base + into, value);
+    moved_to(context, caller);
+    context->leave_pc = caller->pc;
+    return enter_at(m, &caller->closure->proto->chunk, caller->pc);
+}
+
 size_t lhat_jit_run(Machine *m, const LhatChunk *chunk, size_t rbase,
                     size_t pc)
 {
-    if (!jit_enabled() || m->traps) {
+    LhatJitOp *entry = enter_at(m, chunk, pc);
+    if (entry == NULL) {
         return pc;
     }
-    JitCode *code = code_of(chunk);
-    if (code == &refused || pc > chunk->count ||
-        !code->loops[pc]) {
-        return pc;
-    }
-    LhatJitPoll poll = {&m->steps_left, &m->traps};
-    LhatJitTrampoline *enter = (LhatJitTrampoline *)(void *)code->memory;
-    LhatJitOp *entry = (LhatJitOp *)(void *)(code->memory + code->entries[pc]);
-    return (size_t)enter(m->slots.values + rbase, m->slots.tags + rbase, &poll,
-                         entry);
+    LhatJitContext context = {
+        &m->steps_left, &m->traps, m,
+        m->slots.values + rbase, m->slots.tags + rbase,
+        m->frames[m->frame_count - 1].closure, pc, false,
+    };
+    size_t left = (size_t)entry(context.values, context.tags, &context);
+    return context.moved ? left | LHAT_JIT_MOVED : left;
 }

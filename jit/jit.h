@@ -25,12 +25,23 @@
 
 #include "lhat/value.h"
 
-// What a stencil asks of the machine, at a jump back -- the two questions
-// the interpreter's slice poll asks (02 § 15.15 and the traps word).
-typedef struct LhatJitPoll {
+// What the code runs against, beside the frame's slots. `steps_left` and
+// `traps` are the two questions the interpreter's slice poll asks at a jump
+// back (02 § 15.15 and the traps word). A call or a return made in the code
+// moves to another frame: the helper that made it (jit.c) writes that
+// frame's slots and closure here, and the stencil goes on with them. When
+// it cannot go on in compiled code it writes `leave_pc` instead -- the pc
+// the interpreter takes up, in whichever frame is on top by then.
+typedef struct LhatJitContext {
     int64_t *steps_left;
     const bool *traps;
-} LhatJitPoll;
+    struct LhatMachine *machine;
+    LhatValueUnion *values;
+    uint8_t *tags;
+    const void *closure;
+    uintptr_t leave_pc;
+    bool moved;  // a helper changed the frame on top
+} LhatJitContext;
 
 // The holes a stencil may leave, by the name of the symbol it refers to.
 // gen_stencils.py reads the names; jit.c writes the values.
@@ -43,6 +54,8 @@ typedef enum {
     LHAT_JIT_HOLE_PC,        // this instruction's pc, answered on leaving
     LHAT_JIT_HOLE_CONTINUE,  // the code of the instruction that follows
     LHAT_JIT_HOLE_TARGET,    // the code of the instruction jumped to
+    LHAT_JIT_HOLE_CALL,      // jit.c's call helper
+    LHAT_JIT_HOLE_RETURN,    // jit.c's return helper
     LHAT_JIT_HOLE_COUNT
 } LhatJitHoleKind;
 
@@ -65,18 +78,21 @@ typedef struct {
     uint8_t hole_count;
 } LhatJitStencil;
 
-#if defined(LHAT_JIT_STENCIL_SOURCE) || defined(LHAT_WITH_JIT)
-// Every stencil is one of these. preserve_none puts the three arguments in
-// registers the stencils hand on untouched, and lets a stencil use every
-// other register without saving it: nothing lives across a stencil.
-#define LHAT_JIT_CC __attribute__((preserve_none))
-typedef LHAT_JIT_CC uintptr_t LhatJitOp(LhatValueUnion *values,
-                                         uint8_t *tags, LhatJitPoll *poll);
-// The way in, in the ordinary convention: a host compiled by MSVC cannot
-// call a preserve_none function, so this is a stencil too.
-typedef uintptr_t LhatJitTrampoline(LhatValueUnion *values, uint8_t *tags,
-                                    LhatJitPoll *poll, LhatJitOp *entry);
-#endif
+// Every stencil is one of these, in the platform's ordinary convention: the
+// three arguments arrive in registers the stencils hand on untouched, and
+// a stencil's work fits in the registers the convention lets it clobber, so
+// none saves anything -- which makes the code enterable by a plain call,
+// from any compiler, at the price of nothing.
+typedef uintptr_t LhatJitOp(LhatValueUnion *values, uint8_t *tags,
+                            LhatJitContext *context);
+
+// A call or a return the code hands to C: done, it answers the code to go
+// on with (context->values and ->tags say where); refused or done with no
+// code to go on in, it answers NULL and context->leave_pc says where the
+// interpreter takes up. `a`, `b`, `c` are the instruction's operands and
+// `pc` is where it stands.
+typedef LhatJitOp *LhatJitHelper(LhatJitContext *context, uintptr_t a,
+                                 uintptr_t b, uintptr_t c, uintptr_t pc);
 
 #ifdef LHAT_WITH_JIT
 #include <stddef.h>
@@ -84,9 +100,31 @@ typedef uintptr_t LhatJitTrampoline(LhatValueUnion *values, uint8_t *tags,
 struct LhatChunk;
 struct LhatMachine;
 
+// What a chunk's `jit` points at begins with this, so the interpreter can
+// ask whether there is code to enter at a pc without calling anything:
+// `enter` is NULL for a chunk that will not be laid out (or with the JIT
+// turned off), and otherwise true where code of an instruction's own
+// begins. A chunk not laid out yet has a NULL `jit` and is asked by
+// calling lhat_jit_run, which lays it out.
+typedef struct {
+    const bool *enter;
+} LhatJitCodeHead;
+
+static inline bool lhat_jit_may_enter(const void *jit, size_t pc)
+{
+    const LhatJitCodeHead *head = (const LhatJitCodeHead *)jit;
+    return head == NULL || (head->enter != NULL && head->enter[pc]);
+}
+
+// Set in what lhat_jit_run answers when a call or a return made in the
+// code changed which frame is on top -- the interpreter reads it again only
+// then.
+#define LHAT_JIT_MOVED ((size_t)1 << (sizeof(size_t) * 8 - 1))
+
 // Runs the chunk's compiled code from `pc`, laying the chunk out first if
 // it has not been. Answers the pc the interpreter goes on from -- `pc`
-// itself when there is nothing compiled to enter there.
+// itself when there is nothing compiled to enter there -- in the frame on
+// top of the machine, with LHAT_JIT_MOVED or'd in when that frame changed.
 size_t lhat_jit_run(struct LhatMachine *m, const struct LhatChunk *chunk,
                     size_t rbase, size_t pc);
 

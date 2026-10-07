@@ -1,7 +1,7 @@
 // L^ (lhat) -- the stencils: one instruction's work each, as Clang compiles
 // it, kept as bytes by gen_stencils.py. Never linked into anything.
 //
-// Each is a preserve_none function over the frame's payloads `v` and tags
+// Each is an LhatJitOp (jit.h) over the frame's payloads `v` and tags
 // `t` (both already offset to the frame's base) and the machine's poll `p`.
 // It ends by tail-calling the next instruction's code, by jumping to its
 // target's, or by answering a pc: the instruction the interpreter goes on
@@ -13,11 +13,12 @@
 // The holes are the addresses of symbols nothing defines. Under the large
 // code model each one is a 64-bit immediate the layout writes (jit.c).
 
-#define LHAT_JIT_STENCIL_SOURCE
 #include "jit.h"
 
 extern LhatJitOp _JIT_CONTINUE;
 extern LhatJitOp _JIT_TARGET;
+extern LhatJitHelper _JIT_CALL;
+extern LhatJitHelper _JIT_RETURN;
 extern char _JIT_A, _JIT_B, _JIT_C, _JIT_K, _JIT_KTAG, _JIT_PC;
 
 #define HOLE(name) ((uintptr_t)&_JIT_##name)
@@ -27,8 +28,8 @@ extern char _JIT_A, _JIT_B, _JIT_C, _JIT_K, _JIT_KTAG, _JIT_PC;
 #define BOOL LHAT_VALUE_BOOL
 
 #define STENCIL(name)                                                       \
-    LHAT_JIT_CC uintptr_t lhat_jit_s_##name(LhatValueUnion *v, uint8_t *t,  \
-                                            LhatJitPoll *p)
+    uintptr_t lhat_jit_s_##name(LhatValueUnion *v, uint8_t *t,              \
+                                LhatJitContext *p)
 
 #define NEXT() __attribute__((musttail)) return _JIT_CONTINUE(v, t, p)
 #define JUMP() __attribute__((musttail)) return _JIT_TARGET(v, t, p)
@@ -56,14 +57,6 @@ static inline LhatValueUnion constant(void)
     LhatValueUnion k;
     k.integer = (int64_t)HOLE(K);
     return k;
-}
-
-// The way in: the ordinary convention on one side, preserve_none on the
-// other. Copied into the code like any other stencil (jit.h says why).
-uintptr_t lhat_jit_s_trampoline(LhatValueUnion *v, uint8_t *t, LhatJitPoll *p,
-                                LhatJitOp *entry)
-{
-    return entry(v, t, p);
 }
 
 STENCIL(exit)
@@ -264,3 +257,43 @@ STENCIL(jump_false_back)
 
 FORLOOP(forloop, __builtin_add_overflow, <=)
 FORLOOP(forloopd, __builtin_sub_overflow, >=)
+
+// 02 の 15.10: the subroutine running, which the context keeps beside the
+// frame it is running in.
+STENCIL(this)
+{
+    uintptr_t a = HOLE(A);
+    v[a].object = (LhatObject *)(uintptr_t)p->closure;
+    t[a] = LHAT_VALUE_OBJECT;
+    NEXT();
+}
+
+// 5.3: a call and a return are the machine's frames moving, which is C's
+// to do (jit.c). Done, the helper names the code of the frame now on top,
+// and the stencil goes there with that frame's slots; anything it would
+// not do is left where it stands.
+#define MOVE_FRAME(helper, a, b, c)                                         \
+    do {                                                                    \
+        LhatJitOp *next = helper(p, a, b, c, HOLE(PC));                     \
+        if (next == NULL) {                                                 \
+            return p->leave_pc;                                             \
+        }                                                                   \
+        __attribute__((musttail)) return next(p->values, p->tags, p);       \
+    } while (0)
+
+// The helper reads the instruction itself: a call's operands mean different
+// things for each of the three opcodes this stands for.
+STENCIL(call)
+{
+    MOVE_FRAME(_JIT_CALL, 0, 0, 0);
+}
+
+STENCIL(return)
+{
+    MOVE_FRAME(_JIT_RETURN, HOLE(A), 0, 0);
+}
+
+STENCIL(return_nil)
+{
+    MOVE_FRAME(_JIT_RETURN, 0, 1, 0);
+}
