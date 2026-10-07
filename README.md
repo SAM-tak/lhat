@@ -17,8 +17,8 @@ this interoperability, so a program can work with both text-based and visual
 tools throughout its development.
 
 - **Visual programming, built into the design.** A shared source format for code
-  and graphs, with a graph view already available in VS Code and visual authoring
-  in development.
+  and graphs. The visual editor is a work in progress: its graph view in VS Code
+  is nearly complete, while editing in the graph is not finished yet.
 - **Type safety with less annotation.** Static checking and bidirectional type
   inference help catch mistakes early while keeping everyday code concise.
 - **Tools and engine integrations you can use today.** VS Code language support,
@@ -47,9 +47,13 @@ programs the benefits of ordinary source files: version control, readable diffs,
 code review, and access to the same compiler and type checker.
 
 The language and its tooling preserve the structure and comments needed to
-present code as a graph. The VS Code extension already provides a graph view;
-visual authoring is a work in progress in the
-[extension repository](https://github.com/SAM-tak/lhat-vscode-extension).
+present code as a graph.
+
+> [!NOTE]
+> The visual editor is a work in progress. Displaying a program as a graph in
+> the VS Code extension is nearly complete; editing a program in the graph is
+> not finished yet. Development happens in the
+> [extension repository](https://github.com/SAM-tak/lhat-vscode-extension).
 
 For example, [this program](sample/factorial.lh) computes the factorial of 10
 with an anonymous function. **`this^` refers to the function itself**, so it can
