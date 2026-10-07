@@ -445,13 +445,16 @@ static Choice choose(const LhatChunk *chunk, size_t pc)
         // can be -- a method, a tail call, a tuple -- is the interpreter's.
         case LHAT_BC_CALL:
         case LHAT_BC_CALLMETHOD:
+        case LHAT_BC_TAILCALL:
+        case LHAT_BC_TAILCALLMETHOD:
             choice.stencil = &lhat_jit_stencil_call;
             break;
         // 03 の 5.1改4: taken with the CALLMETHOD it reads for, the way the
         // interpreter takes the two.
         case LHAT_BC_CALLMEMBER:
             if (pc + 1 < chunk->count &&
-                lhat_op(chunk->code[pc + 1]) == LHAT_BC_CALLMETHOD) {
+                (lhat_op(chunk->code[pc + 1]) == LHAT_BC_CALLMETHOD ||
+                 lhat_op(chunk->code[pc + 1]) == LHAT_BC_TAILCALLMETHOD)) {
                 choice.stencil = &lhat_jit_stencil_call;
                 choice.next = pc + 2;
             }
@@ -704,11 +707,11 @@ static void moved_to(LhatJitContext *context, const Frame *frame)
     context->moved = true;
 }
 
-// 5.3, what the interpreter's CALL and CALLMETHOD do for the case they are
-// most often asked: an L^ body taking exactly the arguments laid out for
-// it, no spread, no collected tail, not a coroutine to make -- and, for a
-// CALLMEMBER, a member its site remembers (03 の 5.1改4), read on the way
-// into the CALLMETHOD it is paired with. Nothing is allocated, which is why
+// 5.3, what the interpreter's calls -- plain, method and tail -- do for the
+// case they are most often asked: an L^ body taking exactly the arguments
+// laid out for it, no spread, no collected tail, not a coroutine to make --
+// and, for a CALLMEMBER, a member its site remembers (03 の 5.1改4), read
+// on the way into the call it is paired with. Nothing is allocated, which is why
 // the collector's poll is not asked here. The body is entered the way the
 // interpreter enters one, slice and all. The instruction is read here
 // rather than handed in: what the call needs of it depends on which it is.
@@ -732,7 +735,8 @@ static LhatJitOp *jit_call(LhatJitContext *context, uintptr_t unused_a,
         const LhatValue *hit = vm_cached_member(
             m, chunk, lhat_c(instruction),
             lhat_slots_get(m->slots, rbase + lhat_b(instruction)), &cache);
-        if (hit == NULL || lhat_op(paired) != LHAT_BC_CALLMETHOD) {
+        if (hit == NULL || (lhat_op(paired) != LHAT_BC_CALLMETHOD &&
+                            lhat_op(paired) != LHAT_BC_TAILCALLMETHOD)) {
             return NULL;
         }
         lhat_slots_set(m->slots, rbase + lhat_a(instruction), *hit);
@@ -751,10 +755,12 @@ static LhatJitOp *jit_call(LhatJitContext *context, uintptr_t unused_a,
     if (proto == NULL) {
         return NULL;
     }
+    LhatOpcode op = lhat_op(instruction);
+    bool tail = op == LHAT_BC_TAILCALL || op == LHAT_BC_TAILCALLMETHOD;
     // 14.4: the receiver sits between the callee and the arguments, and
     // is the first of them only for a callee that takes it.
     size_t skip = 1;
-    if (lhat_op(instruction) == LHAT_BC_CALLMETHOD) {
+    if (op == LHAT_BC_CALLMETHOD || op == LHAT_BC_TAILCALLMETHOD) {
         if (proto->takes_self) {
             given++;
         } else {
@@ -771,15 +777,40 @@ static LhatJitOp *jit_call(LhatJitContext *context, uintptr_t unused_a,
                    proto->yields || given != proto->parameters)) {
         return NULL;
     }
-    if (m->frame_count >= m->frame_capacity ||
+    // 5.3: a tail call takes this frame over where it is free to go -- not
+    // while a cleanup is pending, not a coroutine's body, not a session's
+    // top level -- and is an ordinary call everywhere else.
+    bool reuse = tail && frame->cleanup_count == 0 &&
+                 frame->coroutine == NULL && frame->closure->proto->kept == 0;
+    if ((!reuse && m->frame_count >= m->frame_capacity) ||
         next_base + proto->chunk.registers >= m->slot_capacity) {
         return NULL;
     }
     vm_clear_scratch(m, next_base, proto);
-    frame->pc = resume;
-    Frame *entered = vm_push_frame(m, callee, next_base, (uint8_t)a,
-                                   (uint8_t)lhat_call_prepared(c));
-    entered->jit_return = code->resumes[pc];
+    Frame *entered = frame;
+    if (reuse) {
+        // As the interpreter does it: what points into these registers takes
+        // its value first, then the callee's window moves down onto them.
+        // `base`, `result`, `prepared`, `derive` and `jit_return` stay the
+        // original caller's -- the answer still goes where that call asked.
+        vm_close_upvalues(m, frame->base);
+        size_t window = proto->chunk.registers;
+        for (size_t i = 0; i < window; i++) {
+            m->slots.values[frame->base + i] = m->slots.values[next_base + i];
+            m->slots.tags[frame->base + i] = m->slots.tags[next_base + i];
+        }
+        frame->closure = callee;
+        frame->pc = 0;
+        frame->returning = false;
+        if ((c & LHAT_CALL_DROP) != 0) {
+            frame->drop_answer = true;  // sticky, as there
+        }
+    } else {
+        frame->pc = resume;
+        entered = vm_push_frame(m, callee, next_base, (uint8_t)a,
+                                (uint8_t)lhat_call_prepared(c));
+        entered->jit_return = code->resumes[pc];
+    }
     moved_to(context, entered);
     // 02 § 15.15 at a body's entry, as the interpreter polls it. A slice
     // about to run out is left for the interpreter to end, at the body's
