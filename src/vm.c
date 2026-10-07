@@ -194,6 +194,14 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
 // member 11.8 names.
 bool vm_three_way(LhatValue left, LhatValue right, int *out)
 {
+    // 14.8: two integers name themselves exactly. Through doubles, two
+    // neighbours past 2^53 would round to one value and order as equal.
+    if (lhat_is_integer(left) && lhat_is_integer(right)) {
+        int64_t x = lhat_as_integer(left);
+        int64_t y = lhat_as_integer(right);
+        *out = (x > y) - (x < y);
+        return true;
+    }
     if (lhat_is_number(left) && lhat_is_number(right)) {
         // 14.8: one type over integers and reals, and the same question '='
         // asks -- so two numbers within the error a real carries order as
@@ -515,6 +523,47 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
 #define VM_NEXT() continue
 #endif
 
+// 03 の 5.1改6: the fast paths. Bare `if`s rather than do/while(0) on
+// purpose -- under the switch VM_NEXT is the loop's `continue`, which a
+// do/while would catch. Each falls through when it cannot answer.
+//
+// Two integers take the exact operation and two reals the plain one; an
+// overflow, a mixed pair and every non-number go to arithmetic().
+#define VM_ARITH_FAST(exact, oper, left, right)                             \
+    if (lhat_is_integer(left) && lhat_is_integer(right)) {                  \
+        int64_t whole_;                                                     \
+        if (exact(lhat_as_integer(left), lhat_as_integer(right), &whole_)) {\
+            SET_R(a, lhat_integer(whole_));                                 \
+            VM_NEXT();                                                      \
+        }                                                                   \
+    } else if (lhat_is_real(left) && lhat_is_real(right)) {                 \
+        SET_R(a, lhat_real(lhat_as_real(left) oper lhat_as_real(right)));   \
+        VM_NEXT();                                                          \
+    }
+
+// Two integers order exactly (02 の 14.8); a real asks with tolerance.
+#define VM_ORDER_FAST(oper)                                                 \
+    if (lhat_is_integer(R(b)) && lhat_is_integer(R(cc))) {                  \
+        ordered = lhat_as_integer(R(b)) oper lhat_as_integer(R(cc));        \
+        goto ordering_held;                                                 \
+    }
+
+#define VM_FORLOOP_FAST(exact, oper)                                        \
+    if (lhat_is_integer(R(a)) && lhat_is_integer(R(a + 1)) &&              \
+        lhat_is_integer(R(a + 2))) {                                        \
+        int64_t focus_;                                                     \
+        if (exact(lhat_as_integer(R(a)), lhat_as_integer(R(a + 2)),        \
+                  &focus_)) {                                               \
+            SET_R(a, lhat_integer(focus_));                                 \
+            if (focus_ oper lhat_as_integer(R(a + 1))) {                    \
+                pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction)); \
+                LHAT_SLICE_POLL();                                          \
+            }                                                               \
+        }                                                                   \
+        /* An overflow is past any integer bound: the loop is over. */      \
+        VM_NEXT();                                                          \
+    }
+
 static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                      bool draining)
 {
@@ -547,6 +596,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
     // Whether call_operator's right operand is K[cc] rather than R(cc)
     // -- set only by the ADDK family's fallback below.
     bool k_right = false;
+    // An ordering's answer, settled by either of its two paths before the
+    // shared tail that writes it and takes the jump reading it.
+    bool ordered = false;
     // 03 の 5.1改: what GETINDEX and GETMEMBER share. Declared out here
     // because the second jumps into the first's body having settled them
     // -- the key it asks by, and the cache to fill on the way out (NULL
@@ -766,13 +818,23 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             VM_CASE(LHAT_BC_DOT_PRODUCT)
                 goto call_operator;
 
+            // 5.1改6: a pair of one representation answers here, each
+            // instruction with its own operation; a mixed pair, an
+            // overflow and everything that is not a number go on below.
             VM_CASE(LHAT_BC_ADD)
+                VM_ARITH_FAST(add_exact, +, R(b), R(cc));
+                goto arithmetic_rr;
             VM_CASE(LHAT_BC_SUB)
+                VM_ARITH_FAST(subtract_exact, -, R(b), R(cc));
+                goto arithmetic_rr;
             VM_CASE(LHAT_BC_MUL)
+                VM_ARITH_FAST(multiply_exact, *, R(b), R(cc));
+                goto arithmetic_rr;
             VM_CASE(LHAT_BC_DIV)
             VM_CASE(LHAT_BC_IDIV)
             VM_CASE(LHAT_BC_MOD)
-            VM_CASE(LHAT_BC_POW) {
+            VM_CASE(LHAT_BC_POW)
+            arithmetic_rr: {
                 LhatValue out;
                 LhatRunStatus status = LHAT_RUN_OK;
                 if (arithmetic(op, R(b), R(cc), &out,
@@ -801,9 +863,16 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // a number by construction (compile.c emits these for numeric
             // literals alone), so only the left can carry an operator.
             VM_CASE(LHAT_BC_ADDK)
+                VM_ARITH_FAST(add_exact, +, R(b), chunk->constants[cc]);
+                goto arithmetic_rk;
             VM_CASE(LHAT_BC_SUBK)
+                VM_ARITH_FAST(subtract_exact, -, R(b), chunk->constants[cc]);
+                goto arithmetic_rk;
             VM_CASE(LHAT_BC_MULK)
-            VM_CASE(LHAT_BC_DIVK) {
+                VM_ARITH_FAST(multiply_exact, *, R(b), chunk->constants[cc]);
+                goto arithmetic_rk;
+            VM_CASE(LHAT_BC_DIVK)
+            arithmetic_rk: {
                 LhatValue out;
                 LhatRunStatus status = LHAT_RUN_OK;
                 op = (LhatOpcode)(op - LHAT_BC_ADDK + LHAT_BC_ADD);
@@ -876,27 +945,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // number here. A key and a constant go on asking the
                 // exact question -- lhat_value_close is only what '=' and
                 // 11.9's orderings read.
-                {
-                    bool held =
-                        lhat_value_close(R(b), R(cc),
-                                         LHAT_NUMBER_TOLERANCE) ==
-                        (op == LHAT_BC_EQ);
-                    SET_R(a, lhat_bool(held));
-                    // 5.1改5, as the orderings below
-                    LhatInstruction paired = chunk->code[pc];
-                    if (lhat_op(paired) == LHAT_BC_JUMP_FALSE &&
-                        lhat_a(paired) == a) {
-                        pc++;
-                        if (!held) {
-                            int32_t offset = lhat_jump_offset(paired);
-                            pc = (size_t)((int64_t)pc + offset);
-                            if (offset < 0) {
-                                LHAT_SLICE_POLL();
-                            }
-                        }
-                    }
-                }
-                VM_NEXT();
+                ordered = lhat_value_close(R(b), R(cc),
+                                           LHAT_NUMBER_TOLERANCE) ==
+                          (op == LHAT_BC_EQ);
+                goto ordering_held;
             VM_CASE(LHAT_BC_SAME) {
                 bool same;
                 if (!lhat_value_same(R(b), R(cc), &same)) {
@@ -906,37 +958,48 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
+            // 5.1改6: two integers order exactly (14.8), so they need
+            // neither the three-way answer nor the tolerance behind it.
             VM_CASE(LHAT_BC_LT)
+                VM_ORDER_FAST(<);
+                goto ordering_rr;
             VM_CASE(LHAT_BC_LE)
+                VM_ORDER_FAST(<=);
+                goto ordering_rr;
             VM_CASE(LHAT_BC_GT)
-            VM_CASE(LHAT_BC_GE) {
-                bool out = false;
+                VM_ORDER_FAST(>);
+                goto ordering_rr;
+            VM_CASE(LHAT_BC_GE)
+                VM_ORDER_FAST(>=);
+            ordering_rr: {
                 LhatRunStatus status = LHAT_RUN_OK;
-                if (ordering(op, R(b), R(cc), &out, &status)) {
-                    SET_R(a, lhat_bool(out));
-                    // 03 の 5.1改5: the JUMP_FALSE that reads this answer,
-                    // consumed on the spot when it stands right here --
-                    // one turn for the pair. Any jump that lands on it
-                    // still runs it as itself.
-                    LhatInstruction paired = chunk->code[pc];
-                    if (lhat_op(paired) == LHAT_BC_JUMP_FALSE &&
-                        lhat_a(paired) == a) {
-                        pc++;
-                        if (!out) {
-                            int32_t offset = lhat_jump_offset(paired);
-                            pc = (size_t)((int64_t)pc + offset);
-                            if (offset < 0) {
-                                LHAT_SLICE_POLL();
-                            }
+                if (!ordering(op, R(b), R(cc), &ordered, &status)) {
+                    // 11.9: numbers order themselves; anything else says
+                    // how it orders with a '<=>', and this reads the answer.
+                    derive_from = op;
+                    op = LHAT_BC_SPACESHIP;
+                    goto call_operator;
+                }
+            }
+            ordering_held: {
+                SET_R(a, lhat_bool(ordered));
+                // 03 の 5.1改5: the JUMP_FALSE that reads this answer,
+                // consumed on the spot when it stands right here --
+                // one turn for the pair. Any jump that lands on it
+                // still runs it as itself.
+                LhatInstruction paired = chunk->code[pc];
+                if (lhat_op(paired) == LHAT_BC_JUMP_FALSE &&
+                    lhat_a(paired) == a) {
+                    pc++;
+                    if (!ordered) {
+                        int32_t offset = lhat_jump_offset(paired);
+                        pc = (size_t)((int64_t)pc + offset);
+                        if (offset < 0) {
+                            LHAT_SLICE_POLL();
                         }
                     }
-                    VM_NEXT();
                 }
-                // 11.9: numbers order themselves; anything else says
-                // how it orders with a '<=>', and this reads the answer.
-                derive_from = op;
-                op = LHAT_BC_SPACESHIP;
-                goto call_operator;
+                VM_NEXT();
             }
 
             // 11.9: written out. number^ and string^ each order their
@@ -3176,8 +3239,15 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
+            // 5.1改6: integers all three, the loop counts in integers. Its
+            // overflow is not widened: a real that far up is within
+            // tolerance of the bound (14.8) and would never leave it.
             VM_CASE(LHAT_BC_FORLOOP)
-            VM_CASE(LHAT_BC_FORLOOPD) {
+                VM_FORLOOP_FAST(add_exact, <=);
+                goto forloop_generic;
+            VM_CASE(LHAT_BC_FORLOOPD)
+                VM_FORLOOP_FAST(subtract_exact, >=);
+            forloop_generic: {
                 bool down = op == LHAT_BC_FORLOOPD;
                 LhatValue moved = lhat_nil();
                 LhatRunStatus status = LHAT_RUN_OK;

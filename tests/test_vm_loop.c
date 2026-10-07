@@ -464,6 +464,19 @@ static void test_for(void)
     CHECK_INTEGER(&r, 321);
     run_dispose(&r);
 
+    // 14.8: integers order exactly. Through doubles, neighbours past 2^53
+    // are one value and the loop below would not have been entered; the
+    // last advance overflows, which ends it rather than wrapping.
+    LHAT_TEST("integers near the top order exactly");
+    run_text(&r,
+             "let^ top = 9223372036854775807\n"
+             "var^ n = 0\n"
+             "for^ i from^ top - 2 to^ top { n := n + 1 }\n"
+             "for^ i from^ -top + 1 downto^ -top - 1 { n := n + 1 }\n"
+             "return^ n * 10 + (if^ top - 1 < top: 1 el^: 0)\n");
+    CHECK_INTEGER(&r, 61);
+    run_dispose(&r);
+
     // 16.4: step^ is a positive amount either way; the sign belongs to the
     // clause.
     LHAT_TEST("step^ is a positive amount for both directions");
