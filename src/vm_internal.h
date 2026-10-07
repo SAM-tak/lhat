@@ -94,6 +94,9 @@ static inline Frame *vm_push_frame(Machine *m, const LhatClosure *closure,
 // vm.c
 bool vm_three_way(LhatValue left, LhatValue right, int *out);
 LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining);
+LhatRunStatus vm_make_closure(Machine *m, const Frame *frame, uint8_t a,
+                              uint16_t which);
+LhatRunStatus vm_make_instance(Machine *m, size_t rbase, uint8_t a, uint8_t b);
 
 // vm_member.c
 const char *vm_operator_name(LhatOpcode op, size_t *length);

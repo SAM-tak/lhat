@@ -382,7 +382,7 @@ EQUALITY(ne, false)
 // cache, a table write with its barrier -- done in place, or left whole.
 STENCIL(step)
 {
-    if (!_JIT_STEP(p, HOLE(A), HOLE(B), HOLE(C))) {
+    if (!_JIT_STEP(p, HOLE(A), HOLE(B), HOLE(C), HOLE(PC))) {
         LEAVE();
     }
     NEXT();

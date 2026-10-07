@@ -70,11 +70,30 @@ static LhatValue step_read(const LhatJitContext *context, uintptr_t r)
     return v;
 }
 
+// The frame's slots start this far into the machine's.
+static size_t step_base(const LhatJitContext *context)
+{
+    return (size_t)(context->values - context->machine->slots.values);
+}
+
+// 03 の 5.12改2: the collector's poll beside an instruction that allocates,
+// where the interpreter's LHAT_GC_POLL stands -- the frame names the next
+// instruction while the step runs, as it does there. Every value the code
+// holds is in a slot, so the roots are what they always are.
+static void step_gc_poll(Machine *m, uintptr_t pc)
+{
+    if (m->objects.count >= m->threshold) {
+        m->frames[m->frame_count - 1].pc = pc + 1;
+        lhat_gc_step(m);
+    }
+}
+
 // 03 の 5.1改: a member the site's cache answers. A miss is the
 // interpreter's, whose lookup fills the cache for the next time.
 static bool jit_get_member(LhatJitContext *context, uintptr_t a, uintptr_t b,
-                           uintptr_t c)
+                           uintptr_t c, uintptr_t pc)
 {
+    (void)pc;
     Machine *m = context->machine;
     const Frame *frame = &m->frames[m->frame_count - 1];
     LhatMemberCache *cache;
@@ -93,8 +112,9 @@ static bool jit_get_member(LhatJitContext *context, uintptr_t a, uintptr_t b,
 // out of memory, nothing was written, and the interpreter runs the write
 // again to say why.
 static bool jit_set_index(LhatJitContext *context, uintptr_t a, uintptr_t b,
-                          uintptr_t c)
+                          uintptr_t c, uintptr_t pc)
 {
+    (void)pc;
     LhatValue owner = step_read(context, a);
     if (lhat_is_hostvalue(owner)) {
         return false;
@@ -109,28 +129,91 @@ static bool jit_set_index(LhatJitContext *context, uintptr_t a, uintptr_t b,
            !refused;
 }
 
-// The frame's slots start this far into the machine's.
-static size_t step_base(const LhatJitContext *context)
-{
-    return (size_t)(context->values - context->machine->slots.values);
-}
-
 // 5.4: what still points into these registers takes its value with it.
 static bool jit_close(LhatJitContext *context, uintptr_t a, uintptr_t b,
-                      uintptr_t c)
+                      uintptr_t c, uintptr_t pc)
 {
     (void)b;
     (void)c;
+    (void)pc;
     vm_close_upvalues(context->machine, step_base(context) + a);
     return true;
 }
 
 static bool jit_close_one(LhatJitContext *context, uintptr_t a, uintptr_t b,
-                          uintptr_t c)
+                          uintptr_t c, uintptr_t pc)
 {
     (void)b;
     (void)c;
+    (void)pc;
     vm_close_one_upvalue(context->machine, step_base(context) + a);
+    return true;
+}
+
+// What allocates: each the interpreter's own construction, after the poll
+// it makes. A failure has written nothing, and the interpreter runs the
+// instruction again to report it.
+static bool jit_closure(LhatJitContext *context, uintptr_t a, uintptr_t b,
+                        uintptr_t c, uintptr_t pc)
+{
+    (void)b;
+    (void)c;
+    Machine *m = context->machine;
+    step_gc_poll(m, pc);
+    const Frame *frame = &m->frames[m->frame_count - 1];
+    LhatInstruction instruction = frame->closure->proto->chunk.code[pc];
+    return vm_make_closure(m, frame, (uint8_t)a, lhat_bx(instruction)) ==
+           LHAT_RUN_OK;
+}
+
+static bool jit_new_table(LhatJitContext *context, uintptr_t a, uintptr_t b,
+                          uintptr_t c, uintptr_t pc)
+{
+    (void)c;
+    Machine *m = context->machine;
+    step_gc_poll(m, pc);
+    LhatTable *table = lhat_table_new(&m->objects);
+    if (table == NULL) {
+        return false;
+    }
+    table->is_definition = b != 0;  // 14.9
+    context->values[a].object = (LhatObject *)table;
+    context->tags[a] = LHAT_VALUE_OBJECT;
+    return true;
+}
+
+static bool jit_new_instance(LhatJitContext *context, uintptr_t a,
+                             uintptr_t b, uintptr_t c, uintptr_t pc)
+{
+    (void)c;
+    Machine *m = context->machine;
+    step_gc_poll(m, pc);
+    return vm_make_instance(m, step_base(context), (uint8_t)a, (uint8_t)b) ==
+           LHAT_RUN_OK;
+}
+
+// 02 の 11.2: two strings join. Every other '..' -- two plain tables, an
+// operator a type carries -- is the interpreter's, asked before anything
+// is allocated.
+static bool jit_concat(LhatJitContext *context, uintptr_t a, uintptr_t b,
+                       uintptr_t c, uintptr_t pc)
+{
+    LhatValue left = step_read(context, b);
+    LhatValue right = step_read(context, c);
+    if (!lhat_is_object_kind(left, LHAT_OBJECT_STRING) ||
+        !lhat_is_object_kind(right, LHAT_OBJECT_STRING)) {
+        return false;
+    }
+    Machine *m = context->machine;
+    step_gc_poll(m, pc);
+    LhatString *joined = lhat_string_concat(
+        &m->objects, (const LhatString *)lhat_as_object(left),
+        (const LhatString *)lhat_as_object(right));
+    if (joined == NULL) {
+        return false;
+    }
+    context->values[a].object = (LhatObject *)joined;
+    context->tags[a] = LHAT_VALUE_OBJECT;
     return true;
 }
 
@@ -290,6 +373,22 @@ static Choice choose(const LhatChunk *chunk, size_t pc)
         case LHAT_BC_CLOSEONE:
             choice.stencil = &lhat_jit_stencil_step;
             choice.step = &jit_close_one;
+            break;
+        case LHAT_BC_CLOSURE:
+            choice.stencil = &lhat_jit_stencil_step;
+            choice.step = &jit_closure;
+            break;
+        case LHAT_BC_NEWTABLE:
+            choice.stencil = &lhat_jit_stencil_step;
+            choice.step = &jit_new_table;
+            break;
+        case LHAT_BC_NEWINSTANCE:
+            choice.stencil = &lhat_jit_stencil_step;
+            choice.step = &jit_new_instance;
+            break;
+        case LHAT_BC_CONCAT:
+            choice.stencil = &lhat_jit_stencil_step;
+            choice.step = &jit_concat;
             break;
         case LHAT_BC_JUMP:
             choice.target = jump_target(pc, instruction);

@@ -99,9 +99,10 @@ typedef LhatJitOp *LhatJitHelper(LhatJitContext *context, uintptr_t a,
                                  uintptr_t b, uintptr_t c, uintptr_t pc);
 
 // One instruction's work handed to C without moving any frame: true when it
-// was done, false when it was left untouched for the interpreter.
+// was done, false when it was left untouched for the interpreter. `pc` is
+// where it stands, which a step that allocates tells the collector.
 typedef bool LhatJitStep(LhatJitContext *context, uintptr_t a, uintptr_t b,
-                         uintptr_t c);
+                         uintptr_t c, uintptr_t pc);
 
 #ifdef LHAT_WITH_JIT
 #include <stddef.h>

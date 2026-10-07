@@ -363,6 +363,96 @@ static bool hook_line(Machine *m, Frame *frame, size_t at,
     return vm_host_faulted(m, frames_before, status, value);
 }
 #endif  // LHAT_WITH_DEBUGGER
+// CLOSURE: a closure of the body's nested proto `which`, into register `a`
+// of `frame`. Shared with the JIT (jit/jit.c), which makes them too; the
+// collector's poll is each caller's own, made before this is.
+LhatRunStatus vm_make_closure(Machine *m, const Frame *frame, uint8_t a,
+                              uint16_t which)
+{
+    const LhatProto *nested = frame->closure->proto->protos[which];
+    LhatClosure *closure = (LhatClosure *)lhat_object_alloc(
+        &m->objects, sizeof *closure, LHAT_OBJECT_SUBROUTINE);
+    if (closure == NULL) {
+        return LHAT_RUN_OUT_OF_MEMORY;
+    }
+    closure->proto = nested;
+    closure->upvalue_count = nested->upvalue_count;
+    if (nested->upvalue_count > 0) {
+        closure->upvalues = (LhatUpvalue **)lhat_calloc(
+            nested->upvalue_count, sizeof *closure->upvalues);
+        if (closure->upvalues == NULL) {
+            return LHAT_RUN_OUT_OF_MEMORY;
+        }
+    }
+    // 5.4: a register of this frame, one of its own upvalues when the name
+    // came from further out, or -- 15.10's this^^ -- this frame's own
+    // closure, boxed closed on the spot: nothing on the stack holds it, so
+    // there is nothing to keep open.
+    for (size_t i = 0; i < nested->upvalue_count; i++) {
+        const LhatUpvalueDesc *desc = &nested->upvalues[i];
+        LhatUpvalue *made = NULL;
+        switch (desc->source) {
+            case LHAT_UPVALUE_REGISTER:
+                made = vm_capture(m, frame->base + desc->index);
+                break;
+            case LHAT_UPVALUE_OUTER:
+                made = frame->closure->upvalues[desc->index];
+                break;
+            case LHAT_UPVALUE_THIS:
+                made = (LhatUpvalue *)lhat_object_alloc(
+                    &m->objects, sizeof *made, LHAT_OBJECT_UPVALUE);
+                if (made != NULL) {
+                    lhat_ref_set(lhat_upvalue_closed_ref(made),
+                                 lhat_object((LhatObject *)frame->closure));
+                    made->location = lhat_upvalue_closed_ref(made);
+                    made->next_open = NULL;
+                }
+                break;
+        }
+        closure->upvalues[i] = made;
+        if (made == NULL) {
+            return LHAT_RUN_OUT_OF_MEMORY;
+        }
+    }
+    lhat_slots_set(m->slots, frame->base + a,
+                   lhat_object((LhatObject *)closure));
+    return LHAT_RUN_OK;
+}
+
+// NEWINSTANCE: 14.11's construction is the machine's -- a copy of the
+// prototype the definition in register `b` holds under self^, which is where
+// every field starts as its default. A table held in a field is copied as
+// its own tree; a definition among the values is shared. 14.3 and 14.7: the
+// copy holds its own fields and reads the shared members through the link;
+// 14.2 fixes it here and gives no way to change it afterwards. Shared with
+// the JIT, as vm_make_closure is.
+LhatRunStatus vm_make_instance(Machine *m, size_t rbase, uint8_t a, uint8_t b)
+{
+    LhatValue named = lhat_slots_get(m->slots, rbase + b);
+    if (!lhat_is_object_kind(named, LHAT_OBJECT_TABLE)) {
+        return LHAT_RUN_TYPE_ERROR;
+    }
+    const LhatTable *definition = (const LhatTable *)lhat_as_object(named);
+    LhatValue held = lhat_table_get(definition,
+                                    lhat_object((LhatObject *)m->self_key));
+    LhatTable *instance;
+    bool too_deep = false;
+    if (lhat_is_object_kind(held, LHAT_OBJECT_TABLE)) {
+        instance = vm_clone_table(m, (const LhatTable *)lhat_as_object(held),
+                                  0, &too_deep);
+    } else {
+        // A table wearing the definition mark without a prototype -- a host
+        // built it. Empty, with the link.
+        instance = lhat_table_new(&m->objects);
+    }
+    if (instance == NULL) {
+        return too_deep ? LHAT_RUN_MUTABLE_DEFAULT : LHAT_RUN_OUT_OF_MEMORY;
+    }
+    instance->definition = definition;
+    lhat_slots_set(m->slots, rbase + a, lhat_object((LhatObject *)instance));
+    return LHAT_RUN_OK;
+}
+
 // The run loop itself, shared by lhat_run (base_depth == 0, a fresh unit
 // entered through its own wrapper closure) and lhat_machine_call
 // (base_depth == m->frame_count at the time of the call, a value already
@@ -1085,58 +1175,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
 
             VM_CASE(LHAT_BC_CLOSURE) {
                 LHAT_GC_POLL();  // this case allocates
-                const LhatProto *nested =
-                    frame->closure->proto->protos[lhat_bx(instruction)];
-                LhatClosure *closure = (LhatClosure *)lhat_object_alloc(
-                    &m->objects, sizeof *closure, LHAT_OBJECT_SUBROUTINE);
-                if (closure == NULL) {
-                    return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
+                LhatRunStatus status =
+                    vm_make_closure(m, frame, a, lhat_bx(instruction));
+                if (status != LHAT_RUN_OK) {
+                    return vm_finish(m, chunk, status, lhat_nil(), at);
                 }
-                closure->proto = nested;
-                closure->upvalue_count = nested->upvalue_count;
-                if (nested->upvalue_count > 0) {
-                    closure->upvalues = (LhatUpvalue **)lhat_calloc(
-                        nested->upvalue_count, sizeof *closure->upvalues);
-                    if (closure->upvalues == NULL) {
-                        return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
-                    }
-                }
-                // 5.4: a register of this frame, one of its own upvalues
-                // when the name came from further out, or -- 15.10's
-                // this^^ -- this frame's own closure, boxed closed on the
-                // spot: nothing on the stack holds it, so there is nothing
-                // to keep open.
-                for (size_t i = 0; i < nested->upvalue_count; i++) {
-                    const LhatUpvalueDesc *desc = &nested->upvalues[i];
-                    LhatUpvalue *made = NULL;
-                    switch (desc->source) {
-                        case LHAT_UPVALUE_REGISTER:
-                            made = vm_capture(m, rbase + desc->index);
-                            break;
-                        case LHAT_UPVALUE_OUTER:
-                            made = frame->closure->upvalues[desc->index];
-                            break;
-                        case LHAT_UPVALUE_THIS:
-                            made = (LhatUpvalue *)lhat_object_alloc(
-                                &m->objects, sizeof *made,
-                                LHAT_OBJECT_UPVALUE);
-                            if (made != NULL) {
-                                lhat_ref_set(
-                                    lhat_upvalue_closed_ref(made),
-                                    lhat_object(
-                                        (LhatObject *)frame->closure));
-                                made->location =
-                                    lhat_upvalue_closed_ref(made);
-                                made->next_open = NULL;
-                            }
-                            break;
-                    }
-                    closure->upvalues[i] = made;
-                    if (made == NULL) {
-                        return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
-                    }
-                }
-                SET_R(a, lhat_object((LhatObject *)closure));
                 VM_NEXT();
             }
 
@@ -1689,41 +1732,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 SET_R(a, lhat_bool(lhat_is_nil(R(b))));
                 VM_NEXT();
 
-            // 14.11: construction is the machine's -- a copy of the
-            // prototype the definition's self^ holds, which is where every
-            // field starts as its default. A table held in a field is
-            // copied as its own tree; a definition among the values is
-            // shared. 14.3 and 14.7: the copy holds its own fields and
-            // reads the shared members through the link; 14.2 fixes it
-            // here and gives no way to change it afterwards.
+            // 14.11: construction is the machine's (vm_make_instance).
             VM_CASE(LHAT_BC_NEWINSTANCE) {
                 LHAT_GC_POLL();  // this case allocates
-                if (!lhat_is_object_kind(R(b), LHAT_OBJECT_TABLE)) {
-                    return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                LhatRunStatus status = vm_make_instance(m, rbase, a, b);
+                if (status != LHAT_RUN_OK) {
+                    return vm_finish(m, chunk, status, lhat_nil(), at);
                 }
-                const LhatTable *definition =
-                    (const LhatTable *)lhat_as_object(R(b));
-                LhatValue held = lhat_table_get(
-                    definition, lhat_object((LhatObject *)m->self_key));
-                LhatTable *instance;
-                bool too_deep = false;
-                if (lhat_is_object_kind(held, LHAT_OBJECT_TABLE)) {
-                    instance = vm_clone_table(
-                        m, (const LhatTable *)lhat_as_object(held), 0,
-                        &too_deep);
-                } else {
-                    // A table wearing the definition mark without a
-                    // prototype -- a host built it. Empty, with the link.
-                    instance = lhat_table_new(&m->objects);
-                }
-                if (instance == NULL) {
-                    return vm_finish(m, chunk,
-                                  too_deep ? LHAT_RUN_MUTABLE_DEFAULT
-                                           : LHAT_RUN_OUT_OF_MEMORY,
-                                  lhat_nil(), at);
-                }
-                instance->definition = definition;
-                SET_R(a, lhat_object((LhatObject *)instance));
                 VM_NEXT();
             }
 
