@@ -30,7 +30,7 @@ tools throughout its development.
   depends only on the C standard library and math library (`libc` and `libm`),
   with a C API for embedding and custom host types.
 
-**Version:** 0.3.11 · **Status:** pre-1.0, under active development ·
+**Version:** 0.4.0 · **Status:** pre-1.0, under active development ·
 **License:** Apache 2.0
 
 [Visual programming](#text-and-visual-programming) ·
