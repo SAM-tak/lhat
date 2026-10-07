@@ -214,7 +214,7 @@ static void test_type_chains(void)
     lhat_type_write_full(outer, text, sizeof text);
     LHAT_CHECK(strcmp(text, "t^{ read : f^self^; }") == 0, "type spelling: %s", text);
     LhatHeap heap = {0};
-    LhatRuntimeType *rt = lhat_rt_from_checked(&heap, outer);
+    LhatRuntimeType *rt = lhat_rt_from_checked(&heap, outer, NULL);
     LHAT_REQUIRE(rt != NULL, "runtime descriptor");
     LHAT_CHECK_EQ_INT(rt->member_count, 1);
     lhat_object_free_all(&heap);

@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "lhat/object.h"  // 05 の 8.8's tag, which a host type is written as
+#include "rttype.h"
 #include "testutil.h"
 #include "type.h"
 #include "instantiation_internal.h"
@@ -924,8 +925,63 @@ static void test_ambiguous_shapes(void)
     types_dispose(&t);
 }
 
+static const LhatRuntimeType *rt_member(const LhatRuntimeType *rt,
+                                        const char *name)
+{
+    for (size_t i = 0; i < rt->member_count; i++) {
+        const LhatString *n = rt->members[i].name;
+        if (n->length == strlen(name) && memcmp(n->text, name, n->length) == 0) {
+            return rt->members[i].type;
+        }
+    }
+    return NULL;
+}
+
+// rttype.h: a descriptor converted with none of its reach in view stands for
+// every later conversion of the same type, and only for those.
+static void test_remembered_descriptors(void)
+{
+    Types t;
+    types_init(&t);
+    // def^{ self^{ x : number^ }, make = f^ -> <the instance> }
+    LhatType *definition = lhat_type_table(&t.arena);
+    LhatType *instance = lhat_type_table(&t.arena);
+    definition->v.table.is_definition = true;
+    definition->v.table.instance = instance;
+    lhat_type_add_member(&t.arena, instance, "x", 1,
+                         lhat_type_simple(&t.arena, LHAT_TYPE_NUMBER));
+    LhatType *make = lhat_type_func(&t.arena, true);
+    make->v.func.result = instance;
+    lhat_type_add_member(&t.arena, definition, "make", 4, make);
+
+    LhatHeap heap = {0};
+    LhatRtCache cache;
+    lhat_rt_cache_init(&cache, &heap);
+
+    LHAT_TEST("a type converted again is the descriptor it was converted to");
+    LhatRuntimeType *alone = lhat_rt_from_checked(&heap, make, &cache);
+    LHAT_REQUIRE(alone != NULL, "descriptor");
+    LHAT_CHECK(lhat_rt_from_checked(&heap, make, &cache) == alone, "kept");
+    LHAT_CHECK(alone->result->kind == LHAT_TYPE_RT_TABLE, "the instance written out");
+
+    LHAT_TEST("but not inside the definition, where the instance is Self^");
+    LhatRuntimeType *kept = lhat_rt_from_checked(&heap, definition, &cache);
+    LhatRuntimeType *fresh = lhat_rt_from_checked(&heap, definition, NULL);
+    LHAT_REQUIRE(kept != NULL && fresh != NULL, "descriptors");
+    LHAT_CHECK(lhat_runtime_type_equal(kept, fresh), "the same as converting afresh");
+    const LhatRuntimeType *inside = rt_member(kept, "make");
+    LHAT_REQUIRE(inside != NULL, "make is a member");
+    LHAT_CHECK(inside != alone, "converted again");
+    LHAT_CHECK(inside->result->kind == LHAT_TYPE_RT_SELF, "Self^");
+
+    lhat_rt_cache_dispose(&cache);
+    lhat_object_free_all(&heap);
+    types_dispose(&t);
+}
+
 int main(void)
 {
+    test_remembered_descriptors();
     test_specializations();
     test_primitives();
     test_writing_whole();

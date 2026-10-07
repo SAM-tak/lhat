@@ -1448,7 +1448,7 @@ const struct LhatRuntimeType *lhat_unit_export_type(const LhatUnit *unit,
     }
     if (filling->export_rt[at] == NULL) {
         filling->export_rt[at] =
-            lhat_rt_from_checked(&unit->proto->chunk.heap, m->type);
+            lhat_rt_from_checked(&unit->proto->chunk.heap, m->type, NULL);
     }
     return filling->export_rt[at];
 }
@@ -1597,7 +1597,7 @@ static LhatRuntimeType **lower_host_params(LhatProgram *program,
     size_t at = 0;
     for (const LhatTypeList *p = signature->v.func.params;
          p != NULL && at < count; p = p->next) {
-        types[at++] = lhat_rt_from_checked(&program->host_heap, p->type);
+        types[at++] = lhat_rt_from_checked(&program->host_heap, p->type, NULL);
     }
     while (at < count) {
         types[at++] = NULL;
@@ -1651,7 +1651,7 @@ static bool keep_entry(LhatProgram *program, const char *module,
         entry->has_variadic = signature->v.func.variadic != NULL;
         entry->takes_self = signature->v.func.takes_self;
         entry->self_last = signature->v.func.self_last;
-        entry->runtime_signature = lhat_rt_from_checked(&program->host_heap, signature);
+        entry->runtime_signature = lhat_rt_from_checked(&program->host_heap, signature, NULL);
         if (entry->runtime_signature == NULL) return false;
         entry->parameter_types =
             lower_host_params(program, signature, entry->parameters);
@@ -2920,7 +2920,7 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         entry->has_variadic = written->v.func.variadic != NULL;
         entry->takes_self = written->v.func.takes_self;
         entry->self_last = written->v.func.self_last;
-        entry->runtime_signature = lhat_rt_from_checked(&program->host_heap, written);
+        entry->runtime_signature = lhat_rt_from_checked(&program->host_heap, written, NULL);
         if (entry->runtime_signature == NULL) return false;
         entry->parameter_types =
             lower_host_params(program, written, entry->parameters);

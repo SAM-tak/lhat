@@ -199,6 +199,10 @@ typedef struct Compiler {
     // way a body somewhere else can -- through L^.modules.
     const LhatNode *foreign_scope;
     const char *foreign_module;
+
+    // The descriptors this unit's compile has converted onto the outermost
+    // proto's heap (rttype.h). Only the outermost compiler's is used.
+    LhatRtCache rt_cache;
 } Compiler;
 
 typedef struct ErrorDecl {
@@ -1611,7 +1615,9 @@ static void compile_fits(Compiler *c, const LhatNode *node, uint8_t into)
 static LhatRuntimeType *runtime_type(Compiler *c, const LhatType *type)
 {
     while (type != NULL && type->kind == LHAT_TYPE_ARGUMENT) type = type->v.argument.bound;
-    LhatRuntimeType *rt = lhat_rt_from_checked(&root_of(c)->proto->chunk.heap, type);
+    Compiler *root = root_of(c);
+    LhatRuntimeType *rt = lhat_rt_from_checked(&root->proto->chunk.heap, type,
+                                               &root->rt_cache);
     if (rt == NULL && type != NULL && type->kind != LHAT_TYPE_NONE) {
         fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
     }
@@ -3280,7 +3286,8 @@ static void load_type_constant(Compiler *c, const LhatType *checked,
     LhatRuntimeType *rt =
         checked != NULL && checked->kind != LHAT_TYPE_UNKNOWN &&
                 !lhat_rt_mentions_error(checked)
-            ? lhat_rt_from_checked(&c->proto->chunk.heap, checked)
+            ? lhat_rt_from_checked(&c->proto->chunk.heap, checked,
+                                   &root_of(c)->rt_cache)
             : lhat_type_rt_new(&c->proto->chunk.heap, LHAT_TYPE_RT_UNKNOWN);
     if (rt == NULL) {
         fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
@@ -3422,7 +3429,8 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                             checked->kind == LHAT_TYPE_NONE
                         ? lhat_type_rt_new(&c->proto->chunk.heap,
                                            LHAT_TYPE_RT_ANY)
-                        : lhat_rt_from_checked(&c->proto->chunk.heap, checked);
+                        : lhat_rt_from_checked(&c->proto->chunk.heap, checked,
+                                               &root_of(c)->rt_cache);
                 c->next_register = mark;
                 if (rt == NULL) {
                     fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
@@ -6587,6 +6595,7 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
     }
 
     c.units = units;
+    lhat_rt_cache_init(&c.rt_cache, &proto->chunk.heap);
     proto->is_unit = true;
     const char *module_name = units != NULL ? units->module_name : NULL;
     bool registers = units != NULL && units->registers;
@@ -6624,6 +6633,7 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         compile_statements(&c, unit->v.list.items);
     }
     emit(&c, lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0));
+    lhat_rt_cache_dispose(&c.rt_cache);
 
     // A session hands the registries back so the next input has them; without
     // one they were the compiler's, and the kind objects they point at belong

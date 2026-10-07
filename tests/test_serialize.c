@@ -734,7 +734,7 @@ static void check_signature(LhatProgram *program, const char *text)
         return;
     }
     const LhatRuntimeType *expected =
-        lhat_rt_from_checked(&program->host_heap, written);
+        lhat_rt_from_checked(&program->host_heap, written, NULL);
     LHAT_CHECK(expected != NULL && held->kind == LHAT_TYPE_RT_SUBROUTINE,
                "a subroutine");
     if (expected == NULL) {
