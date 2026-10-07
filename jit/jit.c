@@ -109,6 +109,31 @@ static bool jit_set_index(LhatJitContext *context, uintptr_t a, uintptr_t b,
            !refused;
 }
 
+// The frame's slots start this far into the machine's.
+static size_t step_base(const LhatJitContext *context)
+{
+    return (size_t)(context->values - context->machine->slots.values);
+}
+
+// 5.4: what still points into these registers takes its value with it.
+static bool jit_close(LhatJitContext *context, uintptr_t a, uintptr_t b,
+                      uintptr_t c)
+{
+    (void)b;
+    (void)c;
+    vm_close_upvalues(context->machine, step_base(context) + a);
+    return true;
+}
+
+static bool jit_close_one(LhatJitContext *context, uintptr_t a, uintptr_t b,
+                          uintptr_t c)
+{
+    (void)b;
+    (void)c;
+    vm_close_one_upvalue(context->machine, step_base(context) + a);
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Choosing.
 
@@ -175,6 +200,26 @@ static const LhatJitStencil *order_stencil(LhatOpcode op, bool fused)
     return fused ? taking[at] : plain[at];
 }
 
+// 03 の 5.1改5: the JUMP_FALSE reading a comparison's answer is taken in,
+// as the interpreter takes it -- forward only, so the jump back a loop turns
+// on keeps its poll. Says whether it was, having pointed `choice` past it.
+static bool take_jump_false(const LhatChunk *chunk, size_t pc,
+                            Choice *choice)
+{
+    if (pc + 1 >= chunk->count) {
+        return false;
+    }
+    LhatInstruction paired = chunk->code[pc + 1];
+    if (lhat_op(paired) != LHAT_BC_JUMP_FALSE ||
+        lhat_a(paired) != lhat_a(chunk->code[pc]) ||
+        lhat_jump_offset(paired) < 0) {
+        return false;
+    }
+    choice->next = pc + 2;
+    choice->target = jump_target(pc + 1, paired);
+    return true;
+}
+
 static Choice choose(const LhatChunk *chunk, size_t pc)
 {
     LhatInstruction instruction = chunk->code[pc];
@@ -216,24 +261,36 @@ static Choice choose(const LhatChunk *chunk, size_t pc)
                 break;  // a real constant orders with tolerance
             }
             // fallthrough
-        case LHAT_BC_LT: case LHAT_BC_LE: case LHAT_BC_GT: case LHAT_BC_GE: {
-            // 03 の 5.1改5: the JUMP_FALSE reading this answer is taken in,
-            // as the interpreter takes it -- forward only, so the jump back
-            // a loop turns on keeps its poll.
-            bool fused = false;
-            if (pc + 1 < chunk->count) {
-                LhatInstruction paired = chunk->code[pc + 1];
-                fused = lhat_op(paired) == LHAT_BC_JUMP_FALSE &&
-                        lhat_a(paired) == lhat_a(instruction) &&
-                        lhat_jump_offset(paired) >= 0;
-                if (fused) {
-                    choice.next = pc + 2;
-                    choice.target = jump_target(pc + 1, paired);
-                }
-            }
-            choice.stencil = order_stencil(op, fused);
+        case LHAT_BC_LT: case LHAT_BC_LE: case LHAT_BC_GT: case LHAT_BC_GE:
+            choice.stencil = order_stencil(op, take_jump_false(chunk, pc,
+                                                               &choice));
+            break;
+        case LHAT_BC_EQ:
+        case LHAT_BC_NE: {
+            bool fused = take_jump_false(chunk, pc, &choice);
+            choice.stencil =
+                op == LHAT_BC_EQ
+                    ? (fused ? &lhat_jit_stencil_eq_fused : &lhat_jit_stencil_eq)
+                    : (fused ? &lhat_jit_stencil_ne_fused : &lhat_jit_stencil_ne);
             break;
         }
+        case LHAT_BC_ENV:
+            choice.stencil = &lhat_jit_stencil_env;
+            break;
+        case LHAT_BC_ISNIL:
+            choice.stencil = &lhat_jit_stencil_isnil;
+            break;
+        case LHAT_BC_NOT:
+            choice.stencil = &lhat_jit_stencil_not;
+            break;
+        case LHAT_BC_CLOSE:
+            choice.stencil = &lhat_jit_stencil_step;
+            choice.step = &jit_close;
+            break;
+        case LHAT_BC_CLOSEONE:
+            choice.stencil = &lhat_jit_stencil_step;
+            choice.step = &jit_close_one;
+            break;
         case LHAT_BC_JUMP:
             choice.target = jump_target(pc, instruction);
             choice.stencil = lhat_jump_offset(instruction) < 0
@@ -681,7 +738,7 @@ size_t lhat_jit_run(Machine *m, const LhatChunk *chunk, size_t rbase,
     LhatJitContext context = {
         &m->steps_left, &m->traps, m,
         m->slots.values + rbase, m->slots.tags + rbase,
-        m->frames[m->frame_count - 1].closure, pc, false,
+        m->frames[m->frame_count - 1].closure, pc, false, m->environment,
     };
     size_t left = (size_t)entry(context.values, context.tags, &context);
     return context.moved ? left | LHAT_JIT_MOVED : left;

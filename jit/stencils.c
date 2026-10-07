@@ -296,6 +296,88 @@ STENCIL(getindex)
     NEXT();
 }
 
+// 05 の 8.6: one table per machine, so naming it is a move.
+STENCIL(env)
+{
+    uintptr_t a = HOLE(A);
+    v[a].object = (LhatObject *)(uintptr_t)p->environment;
+    t[a] = LHAT_VALUE_OBJECT;
+    NEXT();
+}
+
+STENCIL(isnil)
+{
+    uintptr_t a = HOLE(A), b = HOLE(B);
+    bool absent = t[b] == LHAT_VALUE_NIL;
+    v[a].integer = absent;
+    t[a] = BOOL;
+    NEXT();
+}
+
+// 02 の 5.4: only a bool is a truth value; anything else is the
+// interpreter's to refuse.
+STENCIL(not)
+{
+    uintptr_t a = HOLE(A), b = HOLE(B);
+    if (t[b] != BOOL) {
+        LEAVE();
+    }
+    bool negated = !v[b].boolean;
+    v[a].integer = negated;
+    t[a] = BOOL;
+    NEXT();
+}
+
+// 02 の 11.9 with 14.8: of the values that answer '=' for themselves, nil^,
+// bool^ and an integer name themselves exactly, so two of them are equal
+// when their tags and payloads are. A real (tolerance), a string, and
+// anything that may carry an op^= are the interpreter's. `same` is what
+// the instruction answers when the two are equal: true for EQ, false for NE.
+#define EXACT_KIND(tag) ((tag) == LHAT_VALUE_NIL || (tag) == BOOL || (tag) == INT)
+#define EQUALITY(name, same)                                                \
+    __attribute__((always_inline)) static inline bool name##_answer(        \
+        LhatValueUnion *v, uint8_t *t, uintptr_t b, uintptr_t c,            \
+        bool *held)                                                         \
+    {                                                                       \
+        if (!EXACT_KIND(t[b]) || !EXACT_KIND(t[c])) {                       \
+            return false;                                                   \
+        }                                                                   \
+        bool equal = t[b] == t[c] &&                                        \
+                     (t[b] == LHAT_VALUE_NIL ||                             \
+                      (t[b] == BOOL ? v[b].boolean == v[c].boolean          \
+                                    : v[b].integer == v[c].integer));       \
+        *held = equal == (same);                                            \
+        return true;                                                        \
+    }                                                                       \
+    STENCIL(name)                                                           \
+    {                                                                       \
+        uintptr_t a = HOLE(A);                                              \
+        bool held;                                                          \
+        if (!name##_answer(v, t, HOLE(B), HOLE(C), &held)) {                \
+            LEAVE();                                                        \
+        }                                                                   \
+        v[a].integer = held;                                                \
+        t[a] = BOOL;                                                        \
+        NEXT();                                                             \
+    }                                                                       \
+    STENCIL(name##_fused)                                                   \
+    {                                                                       \
+        uintptr_t a = HOLE(A);                                              \
+        bool held;                                                          \
+        if (!name##_answer(v, t, HOLE(B), HOLE(C), &held)) {                \
+            LEAVE();                                                        \
+        }                                                                   \
+        v[a].integer = held;                                                \
+        t[a] = BOOL;                                                        \
+        if (!held) {                                                        \
+            JUMP();                                                         \
+        }                                                                   \
+        NEXT();                                                             \
+    }
+
+EQUALITY(eq, true)
+EQUALITY(ne, false)
+
 // An instruction whose work is C's -- a member read through the site's
 // cache, a table write with its barrier -- done in place, or left whole.
 STENCIL(step)

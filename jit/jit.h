@@ -43,6 +43,7 @@ typedef struct LhatJitContext {
     const void *closure;
     uintptr_t leave_pc;
     bool moved;  // a helper changed the frame on top
+    const void *environment;  // 05 の 8.6: the machine's one table
 } LhatJitContext;
 
 // The holes a stencil may leave, by the name of the symbol it refers to.
