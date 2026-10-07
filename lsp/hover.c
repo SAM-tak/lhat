@@ -23,6 +23,7 @@
 
 #include "ast.h"
 #include "check.h"
+#include "compile.h"
 #include "resolution.h"
 #include "type.h"
 #include "util.h"
@@ -438,12 +439,71 @@ static char *abstract_note_for(const LhatTypeMember *unfilled)
     return note;
 }
 
+typedef struct {
+    uint32_t offset;
+    const LhatNode *test;
+    const LhatNode *asked;
+} FitsSearch;
+
+static void fits_search(const LhatNode *node, FitsSearch *state);
+
+static void fits_search_child(void *context, const char *field, bool in_list,
+                              const LhatNode *child)
+{
+    (void)field;
+    (void)in_list;
+    fits_search(child, (FitsSearch *)context);
+}
+
+static void fits_search(const LhatNode *node, FitsSearch *state)
+{
+    if (node == NULL || state->offset < lhat_node_span_start(node) ||
+        state->offset >= node->end) return;
+    if (node->kind == LHAT_NODE_BINARY && node->v.binary.op == LHAT_OP_FITS &&
+        state->offset >= node->offset && state->offset < node->offset + 5) {
+        state->test = node;
+        state->asked = node->v.binary.right;
+    } else if (node->kind == LHAT_NODE_COMPARE_CHAIN) {
+        const LhatNode *operand = node->v.chain.operands;
+        for (const LhatNode *op = node->v.chain.operators;
+             op != NULL && operand != NULL; op = op->next) {
+            operand = operand->next;
+            if (op->v.unary.op == LHAT_OP_FITS &&
+                state->offset >= op->offset && state->offset < op->offset + 5) {
+                state->test = op;
+                state->asked = operand;
+            }
+        }
+    }
+    lhat_node_visit_children(node, fits_search_child, state);
+}
+
+static bool fits_hover(const LhatUnit *unit, uint32_t offset, LspHoverPart *out)
+{
+    FitsSearch found = {offset, NULL, NULL};
+    fits_search(unit->parsed.root, &found);
+    if (found.test == NULL || found.asked == NULL ||
+        found.test->offset + 5 > unit->source.length ||
+        memcmp(unit->source.text + found.test->offset, "fits^", 5) != 0)
+        return false; // Do not expose a desugared test as a written operator.
+    int answer = lhat_compile_fits_answer(&unit->lexer, found.asked,
+                                          found.test->checked_fits_type);
+    out->line = lsp_strdup("fits^");
+    out->fits_evaluation = answer < 0 ? LSP_HOVER_FITS_RUNTIME
+        : answer ? LSP_HOVER_FITS_TRUE : LSP_HOVER_FITS_FALSE;
+    out->has_range = true;
+    out->from = lsp_unit_position_at(unit, found.test->offset);
+    out->to = lsp_unit_position_at(unit, found.test->offset + 5);
+    return true;
+}
+
 bool lsp_hover_locate(const LhatUnit *unit, uint32_t offset, LspHoverPart *out)
 {
     memset(out, 0, sizeof *out);
     if (unit == NULL || unit->parsed.root == NULL) {
         return false;
     }
+    if (fits_hover(unit, offset, out)) return true;
     const LhatResolution *resolved =
         lhat_check_resolution_at(&unit->checked, offset);
 
@@ -587,6 +647,11 @@ static bool append_text(char **buffer, size_t *used, size_t *capacity,
 
 cJSON *lsp_hover_render(const LspHoverPart *part)
 {
+    return lsp_hover_render_localized(part, NULL);
+}
+
+cJSON *lsp_hover_render_localized(const LspHoverPart *part, const char *language)
+{
     if (part->line == NULL && part->type == NULL) {
         return NULL;
     }
@@ -616,9 +681,19 @@ cJSON *lsp_hover_render(const LspHoverPart *part)
              append_text(&joined, &used, &capacity, part->type);
     }
     ok = ok && append_text(&joined, &used, &capacity, "\n```");
-    if (part->documentation != NULL) {
+    const char *documentation = part->documentation;
+    if (part->fits_evaluation != LSP_HOVER_NOT_FITS) {
+        bool japanese = language != NULL &&
+            (strcmp(language, "ja") == 0 || strncmp(language, "ja-", 3) == 0);
+        documentation = part->fits_evaluation == LSP_HOVER_FITS_RUNTIME
+            ? (japanese ? "実行時に判定します。" : "Runtime: tests the value at runtime.")
+            : part->fits_evaluation == LSP_HOVER_FITS_TRUE
+            ? (japanese ? "コンパイル時に確定します: `true^`。" : "Compile-time: always `true^`.")
+            : (japanese ? "コンパイル時に確定します: `false^`。" : "Compile-time: always `false^`.");
+    }
+    if (documentation != NULL) {
         ok = ok && append_text(&joined, &used, &capacity, "\n\n") &&
-             append_text(&joined, &used, &capacity, part->documentation);
+             append_text(&joined, &used, &capacity, documentation);
     }
     if (!ok) {
         free(joined);

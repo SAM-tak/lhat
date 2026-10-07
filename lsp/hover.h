@@ -26,6 +26,12 @@
 typedef struct {
     // The name itself, for the editor to underline. Nothing to mark when
     // `has_range` is false.
+    enum {
+        LSP_HOVER_NOT_FITS,
+        LSP_HOVER_FITS_RUNTIME,
+        LSP_HOVER_FITS_FALSE,
+        LSP_HOVER_FITS_TRUE
+    } fits_evaluation;
     bool has_range;
     LspPosition from;
     LspPosition to;
@@ -67,6 +73,7 @@ void lsp_hover_describe(const LhatUnit *defining, LspHoverPart *part);
 // The Hover the two halves make, or NULL when neither found anything to
 // show. The caller owns it.
 cJSON *lsp_hover_render(const LspHoverPart *part);
+cJSON *lsp_hover_render_localized(const LspHoverPart *part, const char *language);
 
 void lsp_hover_part_dispose(LspHoverPart *part);
 

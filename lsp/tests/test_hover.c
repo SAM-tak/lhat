@@ -664,6 +664,54 @@ static void test_callable_summaries(void)
     check_dispose(&c);
 }
 
+static void test_fits(void)
+{
+    static const struct { const char *source; const char *expected; } cases[] = {
+        {"let^x = 1 fits^ number^\n", "Compile-time: always `true^`."},
+        {"let^x = 1 fits^ string^\n", "Compile-time: always `false^`."},
+        {"let^f = f^x:any^ { return^x fits^ number^ }\n", "Runtime"},
+        {"let^f = f^x:number^|nil^ { return^x fits^ number^ }\n", "Runtime"},
+        {"let^x = 0 < 1 fits^ number^\n", "Compile-time: always `true^`."},
+        {"let^f = f^x:number^|string^ { return^x fits^ number^ }\n", "Runtime"},
+        {"let^f = f^x:number^|string^ { if^x fits^ number^ { return^x fits^ number^ } return^false^ }\n", "Compile-time: always `true^`."},
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        LHAT_TEST("fits^ hover uses the compiler's decision and operator range");
+        Checked c;
+        check_text(&c, cases[i].source);
+        LHAT_CHECK_EQ_INT(c.parsed.diagnostic_count, 0);
+        LHAT_CHECK_EQ_INT(c.checked.diagnostic_count, 0);
+        uint32_t offset = last_offset(&c, "fits^");
+        for (uint32_t character = 0; character < 5; character++) {
+            char *text = hover_text(&c, offset + character);
+            expect_contains(text, cases[i].expected);
+            free(text);
+        }
+        LspHoverPart part;
+        LHAT_CHECK(lsp_hover_locate(&c.unit, offset, &part), "missing fits^ hover");
+        LHAT_CHECK_EQ_INT(part.from.character, offset);
+        LHAT_CHECK_EQ_INT(part.to.character, offset + 5);
+        cJSON *ja = lsp_hover_render_localized(&part, "ja-JP");
+        const cJSON *contents = cJSON_GetObjectItemCaseSensitive(ja, "contents");
+        const cJSON *value = cJSON_GetObjectItemCaseSensitive(contents, "value");
+        expect_contains(cJSON_GetStringValue(value),
+                        part.fits_evaluation == LSP_HOVER_FITS_RUNTIME ? "実行時" : "コンパイル時");
+        cJSON_Delete(ja);
+        lsp_hover_part_dispose(&part);
+        char *after = hover_text(&c, offset + 5);
+        LHAT_CHECK(after == NULL, "operator hover leaked into whitespace");
+        free(after);
+        check_dispose(&c);
+    }
+    LHAT_TEST("text spelling fits^ inside a string has no operator hover");
+    Checked c;
+    check_text(&c, "let^x = \"fits^\"\n");
+    char *text = hover_text(&c, last_offset(&c, "fits^"));
+    LHAT_CHECK(text == NULL, "string received an operator hover");
+    free(text);
+    check_dispose(&c);
+}
+
 int main(void)
 {
     {
@@ -681,6 +729,7 @@ int main(void)
         free(text);
         check_dispose(&c);
     }
+    test_fits();
     test_definition();
     test_callable_summaries();
     test_member();

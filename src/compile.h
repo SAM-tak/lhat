@@ -19,6 +19,11 @@
 #include "lhat/lexer.h"
 #include "lhat/module.h"  // LhatCompileStatus, and what a compile answers
 
+// Shared with tooling: 1/0 when fits^ is folded at compile time, -1 when
+// its value must be tested at runtime. Reads the checked operand types.
+int lhat_compile_fits_answer(const LhatLexer *lexer, const LhatNode *asked,
+                             const struct LhatType *actual);
+
 // 05 の 5 章. The compile-time twin of check.h's LhatRequireResolver: asked
 // for the unit at `path`, it answers where that unit sits in what the machine
 // will be given, or LHAT_NO_UNIT when there is none. The checker has already

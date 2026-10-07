@@ -88,7 +88,7 @@ cJSON *lsp_handle_hover(LspServer *server, const cJSON *params)
                                 request.part.definition_path, describe,
                                 &request.part);
     }
-    cJSON *result = lsp_hover_render(&request.part);
+    cJSON *result = lsp_hover_render_localized(&request.part, server->workspace.language);
     lsp_hover_part_dispose(&request.part);
     return result;
 }

@@ -1522,12 +1522,14 @@ static int fits_split_by_nil(const LhatType *actual, const LhatType *target)
 
 // The answer when it is settled before the run: 1 or 0, and -1 when only
 // the value can say.
-static int fits_settled_answer(Compiler *c, const LhatNode *asked,
-                               const LhatType *actual)
+int lhat_compile_fits_answer(const LhatLexer *lexer, const LhatNode *asked,
+                             const LhatType *actual)
 {
     const char *name = NULL;
     size_t length = 0;
-    if (node_name(c, asked, &name, &length) && name_is(name, length, "any^")) {
+    if (asked == NULL) return -1;
+    if (lhat_node_name(asked, lexer->source->text, lexer->strings,
+                       &name, &length) && name_is(name, length, "any^")) {
         return 1;
     }
     const LhatType *target = asked->checked_type;
@@ -1543,7 +1545,7 @@ static void compile_fits_test(Compiler *c, const LhatNode *asked,
                              const LhatType *actual, uint8_t value,
                              uint8_t into)
 {
-    int settled = fits_settled_answer(c, asked, actual);
+    int settled = lhat_compile_fits_answer(c->lexer, asked, actual);
     if (settled >= 0) {
         emit(c, lhat_encode_abc(LHAT_BC_LOADBOOL, into, (uint8_t)settled, 0));
         return;
@@ -5257,7 +5259,7 @@ static void filter_targets(Compiler *c, const LhatNode *focus,
                 : element;
         if (param == NULL || param->kind != LHAT_NODE_PARAM ||
             param->v.param.type == NULL ||
-            fits_settled_answer(c, param->v.param.type,
+            lhat_compile_fits_answer(c->lexer, param->v.param.type,
                                 param->checked_fits_type) == 1) {
             continue;
         }
