@@ -49,10 +49,14 @@ typedef struct LhatJitContext {
 // The holes a stencil may leave, by the name of the symbol it refers to.
 // gen_stencils.py reads the names; jit.c writes the values.
 typedef enum {
-    LHAT_JIT_HOLE_A,         // register operand A
+    LHAT_JIT_HOLE_A,         // register operand A, as an index (the tags)
     LHAT_JIT_HOLE_B,         // register operand B
     LHAT_JIT_HOLE_C,         // register operand C
-    LHAT_JIT_HOLE_K,         // a constant's payload, as its 64 bits
+    LHAT_JIT_HOLE_A8,        // register operand A, as a byte offset (payloads)
+    LHAT_JIT_HOLE_B8,        // register operand B
+    LHAT_JIT_HOLE_C8,        // register operand C
+    LHAT_JIT_HOLE_K_LO,      // a constant's payload, its low 32 bits
+    LHAT_JIT_HOLE_K_HI,      // and its high 32 bits
     LHAT_JIT_HOLE_KTAG,      // a constant's tag
     LHAT_JIT_HOLE_PC,        // this instruction's pc, answered on leaving
     LHAT_JIT_HOLE_CONTINUE,  // the code of the instruction that follows
@@ -63,10 +67,20 @@ typedef enum {
     LHAT_JIT_HOLE_COUNT
 } LhatJitHoleKind;
 
-// One hole: eight bytes at `offset` get the value of `kind` plus `addend`.
+// How a hole's field is written: what the relocation the compiler left asks.
+typedef enum {
+    LHAT_JIT_FORM_ABS64,     // eight bytes, the value
+    LHAT_JIT_FORM_ABS32,     // four bytes, the value, unsigned
+    LHAT_JIT_FORM_ABS32S,    // four bytes, the value, sign-extended on use
+    LHAT_JIT_FORM_REL32,     // four bytes, the value relative to the field
+} LhatJitHoleForm;
+
+// One hole: the field at `offset` gets the value of `kind` plus `addend`,
+// written as `form` says.
 typedef struct {
     uint16_t offset;
     uint8_t kind;
+    uint8_t form;
     int32_t addend;
 } LhatJitHole;
 
@@ -82,27 +96,38 @@ typedef struct {
     uint8_t hole_count;
 } LhatJitStencil;
 
-// Every stencil is one of these, in the platform's ordinary convention: the
-// three arguments arrive in registers the stencils hand on untouched, and
-// a stencil's work fits in the registers the convention lets it clobber, so
-// none saves anything -- which makes the code enterable by a plain call,
-// from any compiler, at the price of nothing.
-typedef uintptr_t LhatJitOp(LhatValueUnion *values, uint8_t *tags,
-                            LhatJitContext *context);
+// The stencils are compiled for an ELF target -- the one whose small code
+// model gives a hole a 32-bit field (gen_stencils.py) -- but run on Windows,
+// so everything that crosses between them and C says the Windows x64
+// convention outright. Under clang-cl it is the convention anyway.
+#if defined(__clang__) || defined(__GNUC__)
+#define LHAT_JIT_ABI __attribute__((ms_abi))
+#else
+#define LHAT_JIT_ABI
+#endif
+
+// Every stencil is one of these, in that convention: the three arguments
+// arrive in registers the stencils hand on untouched, and a stencil's work
+// fits in the registers the convention lets it clobber, so none saves
+// anything -- which makes the code enterable by a plain call, from any
+// compiler, at the price of nothing.
+typedef LHAT_JIT_ABI uintptr_t LhatJitOp(LhatValueUnion *values, uint8_t *tags,
+                                         LhatJitContext *context);
 
 // A call or a return the code hands to C: done, it answers the code to go
 // on with (context->values and ->tags say where); refused or done with no
 // code to go on in, it answers NULL and context->leave_pc says where the
 // interpreter takes up. `a`, `b`, `c` are the instruction's operands and
 // `pc` is where it stands.
-typedef LhatJitOp *LhatJitHelper(LhatJitContext *context, uintptr_t a,
-                                 uintptr_t b, uintptr_t c, uintptr_t pc);
+typedef LHAT_JIT_ABI LhatJitOp *LhatJitHelper(LhatJitContext *context,
+                                              uintptr_t a, uintptr_t b,
+                                              uintptr_t c, uintptr_t pc);
 
 // One instruction's work handed to C without moving any frame: true when it
 // was done, false when it was left untouched for the interpreter. `pc` is
 // where it stands, which a step that allocates tells the collector.
-typedef bool LhatJitStep(LhatJitContext *context, uintptr_t a, uintptr_t b,
-                         uintptr_t c, uintptr_t pc);
+typedef LHAT_JIT_ABI bool LhatJitStep(LhatJitContext *context, uintptr_t a,
+                                      uintptr_t b, uintptr_t c, uintptr_t pc);
 
 #ifdef LHAT_WITH_JIT
 #include <stddef.h>

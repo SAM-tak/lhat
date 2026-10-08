@@ -483,11 +483,19 @@ static uint64_t hole_value(const Choice *choice, const LhatJitHole *hole,
                            LhatInstruction instruction, size_t pc,
                            const uint8_t *memory, const uint32_t *entries)
 {
+    uint64_t k = (uint64_t)choice->k.as.integer;
     switch ((LhatJitHoleKind)hole->kind) {
         case LHAT_JIT_HOLE_A: return lhat_a(instruction);
         case LHAT_JIT_HOLE_B: return lhat_b(instruction);
         case LHAT_JIT_HOLE_C: return lhat_c(instruction);
-        case LHAT_JIT_HOLE_K: return (uint64_t)choice->k.as.integer;
+        case LHAT_JIT_HOLE_A8:
+            return (uint64_t)lhat_a(instruction) * sizeof(LhatValueUnion);
+        case LHAT_JIT_HOLE_B8:
+            return (uint64_t)lhat_b(instruction) * sizeof(LhatValueUnion);
+        case LHAT_JIT_HOLE_C8:
+            return (uint64_t)lhat_c(instruction) * sizeof(LhatValueUnion);
+        case LHAT_JIT_HOLE_K_LO: return k & 0xFFFFFFFFu;
+        case LHAT_JIT_HOLE_K_HI: return k >> 32;
         case LHAT_JIT_HOLE_KTAG: return (uint64_t)choice->k.tag;
         case LHAT_JIT_HOLE_PC: return pc;
         case LHAT_JIT_HOLE_CONTINUE:
@@ -500,6 +508,40 @@ static uint64_t hole_value(const Choice *choice, const LhatJitHole *hole,
         case LHAT_JIT_HOLE_COUNT: break;
     }
     return 0;
+}
+
+// Writes a hole's field as its form says. A value the field cannot hold --
+// a jump further than 2 GB, an offset past 32 bits -- refuses the whole
+// layout rather than writing something else; the chunk stays interpreted.
+static bool write_hole(uint8_t *field, LhatJitHoleForm form, uint64_t value)
+{
+    switch (form) {
+        case LHAT_JIT_FORM_ABS64:
+            memcpy(field, &value, sizeof value);
+            return true;
+        case LHAT_JIT_FORM_ABS32: {
+            if (value > UINT32_MAX) {
+                return false;
+            }
+            uint32_t narrow = (uint32_t)value;
+            memcpy(field, &narrow, sizeof narrow);
+            return true;
+        }
+        case LHAT_JIT_FORM_ABS32S:
+        case LHAT_JIT_FORM_REL32: {
+            int64_t wide = (int64_t)value;
+            if (form == LHAT_JIT_FORM_REL32) {
+                wide -= (int64_t)(uintptr_t)field;
+            }
+            if (wide < INT32_MIN || wide > INT32_MAX) {
+                return false;
+            }
+            int32_t narrow = (int32_t)wide;
+            memcpy(field, &narrow, sizeof narrow);
+            return true;
+        }
+    }
+    return false;
 }
 
 static JitCode *lay_out(const LhatChunk *chunk)
@@ -600,7 +642,12 @@ static JitCode *lay_out(const LhatChunk *chunk)
             uint64_t value = hole_value(choice, hole, instruction, pc, memory,
                                         entries) +
                              (uint64_t)(int64_t)hole->addend;
-            memcpy(at + hole->offset, &value, sizeof value);
+            if (!write_hole(at + hole->offset, (LhatJitHoleForm)hole->form,
+                            value)) {
+                VirtualFree(memory, 0, MEM_RELEASE);
+                free(after);
+                goto failed;
+            }
         }
     }
     free(after);

@@ -10,28 +10,45 @@
 // stencil was not written for is handled: by the code that already handles
 // it (03 の 5.1).
 //
-// The holes are the addresses of symbols nothing defines. Under the large
-// code model each one is a 64-bit immediate the layout writes (jit.c).
+// The holes are the addresses of symbols nothing defines, compiled for the
+// small code model without position independence: each is a 32-bit field in
+// the instruction that uses it. A register's hole is two, its index into
+// the tags (A) and its byte offset into the payloads (A8), so that either is
+// a displacement the load or store carries rather than a value computed
+// first. The helpers are the exception: they may be anywhere in the address
+// space, so their addresses are 64-bit immediates (FAR).
 
 #include "jit.h"
 #include "lhat/object.h"
 
 extern LhatJitOp _JIT_CONTINUE;
 extern LhatJitOp _JIT_TARGET;
-extern LhatJitHelper _JIT_CALL;
-extern LhatJitHelper _JIT_RETURN;
-extern LhatJitStep _JIT_STEP;
-extern char _JIT_A, _JIT_B, _JIT_C, _JIT_K, _JIT_KTAG, _JIT_PC;
+extern char _JIT_A[], _JIT_B[], _JIT_C[], _JIT_A8[], _JIT_B8[], _JIT_C8[];
+extern char _JIT_K_LO[], _JIT_K_HI[], _JIT_KTAG[], _JIT_PC[];
 
-#define HOLE(name) ((uintptr_t)&_JIT_##name)
+#define HOLE(name) ((uintptr_t)_JIT_##name)
+
+// Register r's payload and tag, and those of the ones after it.
+#define V(r) VN(r, 0)
+#define T(r) TN(r, 0)
+#define VN(r, n) (*(LhatValueUnion *)((char *)v + HOLE(r##8) + 8 * (n)))
+#define TN(r, n) (t[HOLE(r) + (n)])
+
+// A helper's address, as a 64-bit immediate.
+#define FAR(type, symbol)                                                   \
+    ({                                                                      \
+        type *far_;                                                         \
+        __asm__("movabsq $" #symbol ", %0" : "=r"(far_));                   \
+        far_;                                                               \
+    })
 
 #define INT LHAT_VALUE_INTEGER
 #define REAL LHAT_VALUE_REAL
 #define BOOL LHAT_VALUE_BOOL
 
 #define STENCIL(name)                                                       \
-    uintptr_t lhat_jit_s_##name(LhatValueUnion *v, uint8_t *t,              \
-                                LhatJitContext *p)
+    LHAT_JIT_ABI uintptr_t lhat_jit_s_##name(LhatValueUnion *v, uint8_t *t, \
+                                             LhatJitContext *p)
 
 #define NEXT() __attribute__((musttail)) return _JIT_CONTINUE(v, t, p)
 #define JUMP() __attribute__((musttail)) return _JIT_TARGET(v, t, p)
@@ -53,11 +70,12 @@ extern char _JIT_A, _JIT_B, _JIT_C, _JIT_K, _JIT_KTAG, _JIT_PC;
         }                                                                   \
     } while (0)
 
-// The constant hole as the value it carries.
+// The constant the two halves of the K hole carry.
 static inline LhatValueUnion constant(void)
 {
     LhatValueUnion k;
-    k.integer = (int64_t)HOLE(K);
+    k.integer = (int64_t)(((uint64_t)(uint32_t)HOLE(K_HI) << 32) |
+                          (uint32_t)HOLE(K_LO));
     return k;
 }
 
@@ -68,18 +86,15 @@ STENCIL(exit)
 
 STENCIL(loadk)
 {
-    uintptr_t a = HOLE(A);
-    v[a] = constant();
-    t[a] = (uint8_t)HOLE(KTAG);
+    V(A) = constant();
+    T(A) = (uint8_t)HOLE(KTAG);
     NEXT();
 }
 
 STENCIL(move)
 {
-    uintptr_t a = HOLE(A);
-    uintptr_t b = HOLE(B);
-    v[a] = v[b];
-    t[a] = t[b];
+    V(A) = V(B);
+    T(A) = T(B);
     NEXT();
 }
 
@@ -89,19 +104,18 @@ STENCIL(move)
 #define ARITH_RR(name, overflows, oper)                                     \
     STENCIL(name)                                                           \
     {                                                                       \
-        uintptr_t a = HOLE(A), b = HOLE(B), c = HOLE(C);                    \
-        if (t[b] == INT && t[c] == INT) {                                   \
+        if (T(B) == INT && T(C) == INT) {                                   \
             int64_t r;                                                      \
-            if (overflows(v[b].integer, v[c].integer, &r)) {                \
+            if (overflows(V(B).integer, V(C).integer, &r)) {                \
                 LEAVE();                                                    \
             }                                                               \
-            v[a].integer = r;                                               \
-            t[a] = INT;                                                     \
+            V(A).integer = r;                                               \
+            T(A) = INT;                                                     \
             NEXT();                                                         \
         }                                                                   \
-        if (t[b] == REAL && t[c] == REAL) {                                 \
-            v[a].real = v[b].real oper v[c].real;                           \
-            t[a] = REAL;                                                    \
+        if (T(B) == REAL && T(C) == REAL) {                                 \
+            V(A).real = V(B).real oper V(C).real;                           \
+            T(A) = REAL;                                                    \
             NEXT();                                                         \
         }                                                                   \
         LEAVE();                                                            \
@@ -117,32 +131,30 @@ ARITH_RR(mul, __builtin_mul_overflow, *)
 #define ARITH_RK_INT(name, overflows)                                       \
     STENCIL(name)                                                           \
     {                                                                       \
-        uintptr_t a = HOLE(A), b = HOLE(B);                                 \
         int64_t r;                                                          \
-        if (t[b] != INT ||                                                  \
-            overflows(v[b].integer, constant().integer, &r)) {              \
+        if (T(B) != INT ||                                                  \
+            overflows(V(B).integer, constant().integer, &r)) {              \
             LEAVE();                                                        \
         }                                                                   \
-        v[a].integer = r;                                                   \
-        t[a] = INT;                                                         \
+        V(A).integer = r;                                                   \
+        T(A) = INT;                                                         \
         NEXT();                                                             \
     }
 
 #define ARITH_R_REAL(name, oper, right)                                     \
     STENCIL(name)                                                           \
     {                                                                       \
-        uintptr_t a = HOLE(A), b = HOLE(B);                                 \
-        if (t[b] != REAL || (right##_TAG) != REAL) {                        \
+        if (T(B) != REAL || (right##_TAG) != REAL) {                        \
             LEAVE();                                                        \
         }                                                                   \
-        v[a].real = v[b].real oper right##_VALUE;                           \
-        t[a] = REAL;                                                        \
+        V(A).real = V(B).real oper right##_VALUE;                           \
+        T(A) = REAL;                                                        \
         NEXT();                                                             \
     }
 #define KREAL_TAG REAL
 #define KREAL_VALUE constant().real
-#define RREAL_TAG t[HOLE(C)]
-#define RREAL_VALUE v[HOLE(C)].real
+#define RREAL_TAG T(C)
+#define RREAL_VALUE V(C).real
 
 ARITH_RK_INT(addk_int, __builtin_add_overflow)
 ARITH_RK_INT(subk_int, __builtin_sub_overflow)
@@ -161,23 +173,21 @@ ARITH_R_REAL(div, /, RREAL)
 #define ORDER(name, oper, right)                                            \
     STENCIL(name)                                                           \
     {                                                                       \
-        uintptr_t a = HOLE(A), b = HOLE(B);                                 \
-        if (t[b] != INT || (right##_TAG) != INT) {                          \
+        if (T(B) != INT || (right##_TAG) != INT) {                          \
             LEAVE();                                                        \
         }                                                                   \
-        v[a].integer = v[b].integer oper right##_VALUE;                     \
-        t[a] = BOOL;                                                        \
+        V(A).integer = V(B).integer oper right##_VALUE;                     \
+        T(A) = BOOL;                                                        \
         NEXT();                                                             \
     }                                                                       \
     STENCIL(name##_fused)                                                   \
     {                                                                       \
-        uintptr_t a = HOLE(A), b = HOLE(B);                                 \
-        if (t[b] != INT || (right##_TAG) != INT) {                          \
+        if (T(B) != INT || (right##_TAG) != INT) {                          \
             LEAVE();                                                        \
         }                                                                   \
-        bool held = v[b].integer oper right##_VALUE;                        \
-        v[a].integer = held;                                                \
-        t[a] = BOOL;                                                        \
+        bool held = V(B).integer oper right##_VALUE;                        \
+        V(A).integer = held;                                                \
+        T(A) = BOOL;                                                        \
         if (!held) {                                                        \
             JUMP();                                                         \
         }                                                                   \
@@ -185,8 +195,8 @@ ARITH_R_REAL(div, /, RREAL)
     }
 #define KINT_TAG INT
 #define KINT_VALUE constant().integer
-#define RINT_TAG t[HOLE(C)]
-#define RINT_VALUE v[HOLE(C)].integer
+#define RINT_TAG T(C)
+#define RINT_VALUE V(C).integer
 
 ORDER(lt, <, RINT)
 ORDER(le, <=, RINT)
@@ -211,11 +221,10 @@ STENCIL(jump_back)
 
 STENCIL(jump_false)
 {
-    uintptr_t a = HOLE(A);
-    if (t[a] != BOOL) {
+    if (T(A) != BOOL) {
         LEAVE();
     }
-    if (!v[a].boolean) {
+    if (!V(A).boolean) {
         JUMP();
     }
     NEXT();
@@ -223,11 +232,10 @@ STENCIL(jump_false)
 
 STENCIL(jump_false_back)
 {
-    uintptr_t a = HOLE(A);
-    if (t[a] != BOOL) {
+    if (T(A) != BOOL) {
         LEAVE();
     }
-    if (!v[a].boolean) {
+    if (!V(A).boolean) {
         POLL_OR_LEAVE();
         COUNT_TURN();
         JUMP();
@@ -240,17 +248,16 @@ STENCIL(jump_false_back)
 #define FORLOOP(name, overflows, oper)                                      \
     STENCIL(name)                                                           \
     {                                                                       \
-        uintptr_t a = HOLE(A);                                              \
-        if (t[a] != INT || t[a + 1] != INT || t[a + 2] != INT) {            \
+        if (T(A) != INT || TN(A, 1) != INT || TN(A, 2) != INT) {            \
             LEAVE();                                                        \
         }                                                                   \
         POLL_OR_LEAVE();                                                    \
         int64_t focus;                                                      \
-        if (overflows(v[a].integer, v[a + 2].integer, &focus)) {            \
+        if (overflows(V(A).integer, VN(A, 2).integer, &focus)) {            \
             NEXT();                                                         \
         }                                                                   \
-        v[a].integer = focus;                                               \
-        if (focus oper v[a + 1].integer) {                                  \
+        V(A).integer = focus;                                               \
+        if (focus oper VN(A, 1).integer) {                                  \
             COUNT_TURN();                                                   \
             JUMP();                                                         \
         }                                                                   \
@@ -264,11 +271,11 @@ FORLOOP(forloopd, __builtin_sub_overflow, >=)
 // closed alike -- the location aims at whichever holds the value now.
 STENCIL(getupval)
 {
-    uintptr_t a = HOLE(A), b = HOLE(B);
+    LhatUpvalue *const *upvalues = ((const LhatClosure *)p->closure)->upvalues;
     const LhatUpvalue *shared =
-        ((const LhatClosure *)p->closure)->upvalues[b];
-    v[a] = *shared->location.value;
-    t[a] = *shared->location.tag;
+        *(LhatUpvalue *const *)((const char *)upvalues + HOLE(B8));
+    V(A) = *shared->location.value;
+    T(A) = *shared->location.tag;
     NEXT();
 }
 
@@ -277,40 +284,37 @@ STENCIL(getupval)
 // a value that is not a table -- is the lookup the interpreter makes.
 STENCIL(getindex)
 {
-    uintptr_t a = HOLE(A), b = HOLE(B), c = HOLE(C);
-    if (t[b] != LHAT_VALUE_OBJECT || t[c] != INT) {
+    if (T(B) != LHAT_VALUE_OBJECT || T(C) != INT) {
         LEAVE();
     }
-    const LhatObject *object = v[b].object;
+    const LhatObject *object = V(B).object;
     if (object == NULL || object->kind != LHAT_OBJECT_TABLE) {
         LEAVE();
     }
     const LhatTable *table = (const LhatTable *)object;
-    uint64_t at = (uint64_t)v[c].integer;
+    uint64_t at = (uint64_t)V(C).integer;
     if (at >= table->array_count ||
         table->array.tags[at] == LHAT_VALUE_NIL) {
         LEAVE();
     }
-    v[a] = table->array.values[at];
-    t[a] = table->array.tags[at];
+    V(A) = table->array.values[at];
+    T(A) = table->array.tags[at];
     NEXT();
 }
 
 // 05 の 8.6: one table per machine, so naming it is a move.
 STENCIL(env)
 {
-    uintptr_t a = HOLE(A);
-    v[a].object = (LhatObject *)(uintptr_t)p->environment;
-    t[a] = LHAT_VALUE_OBJECT;
+    V(A).object = (LhatObject *)(uintptr_t)p->environment;
+    T(A) = LHAT_VALUE_OBJECT;
     NEXT();
 }
 
 STENCIL(isnil)
 {
-    uintptr_t a = HOLE(A), b = HOLE(B);
-    bool absent = t[b] == LHAT_VALUE_NIL;
-    v[a].integer = absent;
-    t[a] = BOOL;
+    bool absent = T(B) == LHAT_VALUE_NIL;
+    V(A).integer = absent;
+    T(A) = BOOL;
     NEXT();
 }
 
@@ -318,13 +322,12 @@ STENCIL(isnil)
 // interpreter's to refuse.
 STENCIL(not)
 {
-    uintptr_t a = HOLE(A), b = HOLE(B);
-    if (t[b] != BOOL) {
+    if (T(B) != BOOL) {
         LEAVE();
     }
-    bool negated = !v[b].boolean;
-    v[a].integer = negated;
-    t[a] = BOOL;
+    bool negated = !V(B).boolean;
+    V(A).integer = negated;
+    T(A) = BOOL;
     NEXT();
 }
 
@@ -333,100 +336,56 @@ STENCIL(not)
 // when their tags and payloads are. A real (tolerance), a string, and
 // anything that may carry an op^= are the interpreter's. `same` is what
 // the instruction answers when the two are equal: true for EQ, false for NE.
+// `right` names what B is compared with: register C, or the K constant.
 #define EXACT_KIND(tag) ((tag) == LHAT_VALUE_NIL || (tag) == BOOL || (tag) == INT)
-#define EQUALITY(name, same)                                                \
-    __attribute__((always_inline)) static inline bool name##_answer(        \
-        LhatValueUnion *v, uint8_t *t, uintptr_t b, uintptr_t c,            \
-        bool *held)                                                         \
-    {                                                                       \
-        if (!EXACT_KIND(t[b]) || !EXACT_KIND(t[c])) {                       \
-            return false;                                                   \
-        }                                                                   \
-        bool equal = t[b] == t[c] &&                                        \
-                     (t[b] == LHAT_VALUE_NIL ||                             \
-                      (t[b] == BOOL ? v[b].boolean == v[c].boolean          \
-                                    : v[b].integer == v[c].integer));       \
-        *held = equal == (same);                                            \
-        return true;                                                        \
-    }                                                                       \
-    STENCIL(name)                                                           \
-    {                                                                       \
-        uintptr_t a = HOLE(A);                                              \
-        bool held;                                                          \
-        if (!name##_answer(v, t, HOLE(B), HOLE(C), &held)) {                \
-            LEAVE();                                                        \
-        }                                                                   \
-        v[a].integer = held;                                                \
-        t[a] = BOOL;                                                        \
-        NEXT();                                                             \
-    }                                                                       \
-    STENCIL(name##_fused)                                                   \
-    {                                                                       \
-        uintptr_t a = HOLE(A);                                              \
-        bool held;                                                          \
-        if (!name##_answer(v, t, HOLE(B), HOLE(C), &held)) {                \
-            LEAVE();                                                        \
-        }                                                                   \
-        v[a].integer = held;                                                \
-        t[a] = BOOL;                                                        \
-        if (!held) {                                                        \
-            JUMP();                                                         \
-        }                                                                   \
-        NEXT();                                                             \
-    }
-
-EQUALITY(eq, true)
-EQUALITY(ne, false)
-
+#define RIGHT_REG_EXACT EXACT_KIND(T(C))
+#define RIGHT_REG_EQUAL                                                     \
+    (T(B) == T(C) &&                                                        \
+     (T(B) == LHAT_VALUE_NIL ||                                             \
+      (T(B) == BOOL ? V(B).boolean == V(C).boolean                          \
+                    : V(B).integer == V(C).integer)))
 // Against an integer constant: equal only to an integer holding it, and
 // unequal to every other value that names itself exactly.
-#define EQUALITY_K(name, same)                                              \
-    __attribute__((always_inline)) static inline bool name##_answer(        \
-        LhatValueUnion *v, uint8_t *t, uintptr_t b, uintptr_t c,            \
-        bool *held)                                                         \
-    {                                                                       \
-        (void)c;                                                            \
-        if (!EXACT_KIND(t[b])) {                                            \
-            return false;                                                   \
-        }                                                                   \
-        bool equal = t[b] == INT && v[b].integer == constant().integer;     \
-        *held = equal == (same);                                            \
-        return true;                                                        \
-    }                                                                       \
+#define RIGHT_KINT_EXACT true
+#define RIGHT_KINT_EQUAL (T(B) == INT && V(B).integer == constant().integer)
+#define EQUALITY(name, same, right)                                         \
     STENCIL(name)                                                           \
     {                                                                       \
-        uintptr_t a = HOLE(A);                                              \
-        bool held;                                                          \
-        if (!name##_answer(v, t, HOLE(B), 0, &held)) {                      \
+        if (!EXACT_KIND(T(B)) || !(RIGHT_##right##_EXACT)) {                \
             LEAVE();                                                        \
         }                                                                   \
-        v[a].integer = held;                                                \
-        t[a] = BOOL;                                                        \
+        bool held = (RIGHT_##right##_EQUAL) == (same);                      \
+        V(A).integer = held;                                                \
+        T(A) = BOOL;                                                        \
         NEXT();                                                             \
     }                                                                       \
     STENCIL(name##_fused)                                                   \
     {                                                                       \
-        uintptr_t a = HOLE(A);                                              \
-        bool held;                                                          \
-        if (!name##_answer(v, t, HOLE(B), 0, &held)) {                      \
+        if (!EXACT_KIND(T(B)) || !(RIGHT_##right##_EXACT)) {                \
             LEAVE();                                                        \
         }                                                                   \
-        v[a].integer = held;                                                \
-        t[a] = BOOL;                                                        \
+        bool held = (RIGHT_##right##_EQUAL) == (same);                      \
+        V(A).integer = held;                                                \
+        T(A) = BOOL;                                                        \
         if (!held) {                                                        \
             JUMP();                                                         \
         }                                                                   \
         NEXT();                                                             \
     }
 
-EQUALITY_K(eqk, true)
-EQUALITY_K(nek, false)
+EQUALITY(eq, true, REG)
+EQUALITY(ne, false, REG)
+EQUALITY(eqk, true, KINT)
+EQUALITY(nek, false, KINT)
 
 // An instruction whose work is C's -- a member read through the site's
 // cache, a table write with its barrier -- done in place, or left whole.
+// The step and the operands it is handed are indices, not offsets: what C
+// reads, it reads through the context.
 STENCIL(step)
 {
-    if (!_JIT_STEP(p, HOLE(A), HOLE(B), HOLE(C), HOLE(PC))) {
+    if (!FAR(LhatJitStep, _JIT_STEP)(p, HOLE(A), HOLE(B), HOLE(C),
+                                      HOLE(PC))) {
         LEAVE();
     }
     NEXT();
@@ -436,9 +395,8 @@ STENCIL(step)
 // frame it is running in.
 STENCIL(this)
 {
-    uintptr_t a = HOLE(A);
-    v[a].object = (LhatObject *)(uintptr_t)p->closure;
-    t[a] = LHAT_VALUE_OBJECT;
+    V(A).object = (LhatObject *)(uintptr_t)p->closure;
+    T(A) = LHAT_VALUE_OBJECT;
     NEXT();
 }
 
@@ -448,7 +406,7 @@ STENCIL(this)
 // not do is left where it stands.
 #define MOVE_FRAME(helper, a, b, c)                                         \
     do {                                                                    \
-        LhatJitOp *next = helper(p, a, b, c, HOLE(PC));                     \
+        LhatJitOp *next = FAR(LhatJitHelper, helper)(p, a, b, c, HOLE(PC)); \
         if (next == NULL) {                                                 \
             return p->leave_pc;                                             \
         }                                                                   \
@@ -456,7 +414,7 @@ STENCIL(this)
     } while (0)
 
 // The helper reads the instruction itself: a call's operands mean different
-// things for each of the three opcodes this stands for.
+// things for each of the opcodes this stands for.
 STENCIL(call)
 {
     MOVE_FRAME(_JIT_CALL, 0, 0, 0);
