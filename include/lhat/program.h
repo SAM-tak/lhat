@@ -103,6 +103,9 @@ typedef void (*LhatProgramLockFn)(void *context);
 void lhat_program_set_lock(LhatProgram *program, LhatProgramLockFn lock,
                            LhatProgramLockFn unlock, void *context);
 
+// Create and register programs serially before checking/compiling independent
+// programs on separate threads. Creation prepares shared language identities;
+// each program's loader and other mutable state must also be independent.
 LhatProgram *lhat_program_new(bool strict, LhatProgramLoader load,
                               void *context);
 void lhat_program_free(LhatProgram *program);

@@ -4366,6 +4366,12 @@ void lhat_program_dispose(LhatProgram *program)
 LhatProgram *lhat_program_new(bool strict, LhatProgramLoader load,
                               void *context)
 {
+    // Prepare the language's shared error before a host hands independently
+    // registered programs to compiler threads. Checking/serialization may ask
+    // for it even when the program has never executed a cast.
+    if (lhat_registry_cast_failure() == NULL) {
+        return NULL;
+    }
     LhatProgram *program = (LhatProgram *)lhat_alloc(sizeof *program);
     if (program != NULL) {
         lhat_program_init(program, strict, load, context);
