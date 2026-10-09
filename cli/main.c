@@ -1829,8 +1829,42 @@ static void print_usage(void)
     cli_say(stdout, CLI_USAGE, NULL, 0);
 }
 
+#ifdef _WIN32
+// The manifest sets the process code page, not the console's, and L^ text is
+// UTF-8 both ways. The console outlives this process, so what it had is put
+// back on the way out -- a Ctrl+C included, which leaves without atexit.
+static UINT console_input_cp;
+static UINT console_output_cp;
+
+static void restore_console(void)
+{
+    if (console_input_cp != 0) SetConsoleCP(console_input_cp);
+    if (console_output_cp != 0) SetConsoleOutputCP(console_output_cp);
+}
+
+static BOOL WINAPI restore_console_on_break(DWORD event)
+{
+    (void)event;
+    restore_console();
+    return FALSE;  // and the default handler ends the process as before
+}
+
+static void use_utf8_console(void)
+{
+    console_input_cp = GetConsoleCP();
+    console_output_cp = GetConsoleOutputCP();
+    SetConsoleCP(CP_UTF8);
+    SetConsoleOutputCP(CP_UTF8);
+    atexit(restore_console);
+    SetConsoleCtrlHandler(restore_console_on_break, TRUE);
+}
+#endif
+
 int main(int argc, char **argv)
 {
+#ifdef _WIN32
+    use_utf8_console();
+#endif
     atexit(cli_extensions_dispose);
     bool has_extensions = false;
     const char *path = NULL;
