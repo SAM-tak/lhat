@@ -418,6 +418,11 @@ endif()
 if(LHAT_BUILD_CLI)
     add_executable(lhat_cli cli/main.c cli/native_extensions.c)
     set_target_properties(lhat_cli PROPERTIES OUTPUT_NAME lhat)
+    # Paths are UTF-8 throughout (include/lhat/port.h); the manifest makes
+    # argv and the narrow Windows file APIs agree. lhat_lsp takes it too.
+    if(MSVC)
+        target_sources(lhat_cli PRIVATE cmake/utf8.manifest)
+    endif()
     target_link_libraries(lhat_cli PRIVATE lhat ${CMAKE_DL_LIBS})
     # The dump and REPL paths read tokens, trees and each stage's results
     # directly -- the cli is an in-tree front end, so it names the internal
@@ -583,6 +588,9 @@ if(LHAT_BUILD_LSP)
         OUTPUT_NAME lhat-lsp
         RUNTIME_OUTPUT_NAME lhatls
     )
+    if(MSVC)
+        target_sources(lhat_lsp PRIVATE cmake/utf8.manifest)
+    endif()
     target_link_libraries(lhat_lsp PRIVATE lhat cjson lhattransport lhatthread)
     # The repository root as well: lsp/lton.c names stdlib/lton.h for the
     # wrapper an LTON file is read inside (08-lton.md). A header and no

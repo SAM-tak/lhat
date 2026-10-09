@@ -29,6 +29,8 @@
 // pointed at while a case runs. Both are removed by the case that made them.
 #define SCRATCH "test_io_scratch.txt"
 #define CAPTURED "test_io_out.txt"
+// SCRATCH again with a name outside every single-byte code page.
+#define SCRATCH_UTF8 "test_io_あやね.txt"
 
 // A name nothing will have made. Relative, so it is looked for in the
 // directory ctest runs the executable in rather than anywhere in particular.
@@ -180,6 +182,47 @@ static void test_open(void)
         LHAT_CHECK_RAN_TEXT(ran, "alpha");
         lhat_test_ran_dispose(&ran);
         remove(SCRATCH);
+    }
+
+    // A script's strings are UTF-8, and so is the path it names -- on
+    // Windows too, where the process code page may be anything. The file is
+    // looked for by its UTF-16 name, which no code page stands between.
+    LHAT_TEST("a UTF-8 path names the file it spells, read back by lhat_load_file");
+    {
+#ifdef _WIN32
+        const wchar_t *wide = L"test_io_あやね.txt";
+        _wremove(wide);
+#else
+        remove(SCRATCH_UTF8);
+#endif
+        LhatTestRan ran =
+            run_source("import^ std.io\n"
+                       "let^ out = std.io.open(\"" SCRATCH_UTF8 "\", \"w\")\n"
+                       "if^ out fits^ std.io.File {\n"
+                       "    out.write(\"gamma\")\n"
+                       "    out.dispose()\n"
+                       "    return^ \"written\"\n"
+                       "}\n"
+                       "return^ \"not opened\"\n");
+        LHAT_CHECK_RAN_TEXT(ran, "written");
+        lhat_test_ran_dispose(&ran);
+#ifdef _WIN32
+        FILE *spelled = _wfopen(wide, L"rb");
+#else
+        FILE *spelled = fopen(SCRATCH_UTF8, "rb");
+#endif
+        LHAT_CHECK(spelled != NULL, "expected the file under its own name");
+        if (spelled != NULL) fclose(spelled);
+        size_t length = 0;
+        char *back = lhat_load_file(NULL, SCRATCH_UTF8, &length);
+        LHAT_CHECK(back != NULL && length == 5 && memcmp(back, "gamma", 5) == 0,
+                   "expected lhat_load_file to read it back");
+        lhat_free(back);
+#ifdef _WIN32
+        _wremove(wide);
+#else
+        remove(SCRATCH_UTF8);
+#endif
     }
 }
 

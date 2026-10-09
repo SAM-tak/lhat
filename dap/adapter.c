@@ -254,6 +254,28 @@ static char *own_text(const char *text)
 }
 
 #ifdef _WIN32
+// UTF-8 to UTF-16 and back, malloc'd; NULL when the text is not what it
+// claims to be.
+static wchar_t *wide_of(const char *text)
+{
+    int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
+    wchar_t *wide = length > 0 ? (wchar_t *)malloc((size_t)length * sizeof *wide) : NULL;
+    if (wide != NULL) {
+        MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, length);
+    }
+    return wide;
+}
+
+static char *utf8_of(const wchar_t *wide)
+{
+    int length = WideCharToMultiByte(CP_UTF8, 0, wide, -1, NULL, 0, NULL, NULL);
+    char *text = length > 0 ? (char *)malloc((size_t)length) : NULL;
+    if (text != NULL) {
+        WideCharToMultiByte(CP_UTF8, 0, wide, -1, text, length, NULL, NULL);
+    }
+    return text;
+}
+
 // 09 の D6: _fullpath canonicalises a spelling -- '.', '..', a relative
 // start, the separators -- but walks no reparse point, so a junction or a
 // symbolic link keeps its own name and two spellings of one file compare
@@ -266,66 +288,50 @@ static char *own_text(const char *text)
 // for metadata alone, so no read permission is needed either.
 // FILE_FLAG_BACKUP_SEMANTICS is what lets a directory be opened at all.
 //
-// Narrow on purpose. Every other path in the tree goes through fopen
-// (src/source.c, lsp/workspace.c), so this reads a path the same way the
-// rest of the program does; a wide call here would resolve names nothing
-// else could then open.
+// Wide throughout. Paths are UTF-8 (include/lhat/port.h), and the adapter
+// also runs inside a host's process, whose code page is not lhat's to set.
 //
 // NULL when the path names nothing that can be opened -- an editor may well
 // ask about a file that has since been moved -- and the caller keeps
-// _fullpath's spelling for it.
-static char *resolve_links(const char *path)
+// _wfullpath's spelling for it.
+static char *resolve_links(const wchar_t *path)
 {
-    HANDLE handle = CreateFileA(
+    HANDLE handle = CreateFileW(
         path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
     if (handle == INVALID_HANDLE_VALUE) {
         return NULL;
     }
-    // The documented two-call shape: a short answer fits, and a long one
-    // reports the room it needs (that count includes the terminator, the
-    // successful one does not).
+    // Asked with no room, it reports the room it needs (terminator counted);
+    // the successful call counts without it.
     const DWORD kind = FILE_NAME_NORMALIZED | VOLUME_NAME_DOS;
-    char small[MAX_PATH];
-    char *answer = small;
-    DWORD room = (DWORD)sizeof small;
-    DWORD wrote = GetFinalPathNameByHandleA(handle, small, room, kind);
-    if (wrote >= room) {
-        answer = (char *)malloc(wrote);
-        room = answer != NULL ? wrote : 0;
-        wrote = answer != NULL
-                    ? GetFinalPathNameByHandleA(handle, answer, room, kind)
-                    : 0;
-    }
+    DWORD room = GetFinalPathNameByHandleW(handle, NULL, 0, kind);
+    wchar_t *answer = room > 0 ? (wchar_t *)malloc(room * sizeof *answer) : NULL;
+    DWORD wrote = answer != NULL
+                      ? GetFinalPathNameByHandleW(handle, answer, room, kind)
+                      : 0;
     CloseHandle(handle);
-    if (wrote == 0 || wrote >= room) {
-        if (answer != small) {
-            free(answer);
+    char *copy = NULL;
+    if (wrote > 0 && wrote < room) {
+        // What comes back wears the extended prefix. Every other path here is
+        // written the way a person writes one, and the two must compare equal.
+        const wchar_t *shown = answer;
+        if (wcsncmp(answer, L"\\\\?\\UNC\\", 8) == 0) {
+            // \\?\UNC\server\share -> \\server\share
+            answer[6] = L'\\';
+            shown = answer + 6;
+        } else if (wcsncmp(answer, L"\\\\?\\", 4) == 0) {
+            shown = answer + 4;
         }
-        return NULL;
+        copy = utf8_of(shown);
     }
-    // What comes back wears the extended prefix. Every other path here is
-    // written the way a person writes one, and the two must compare equal.
-    const char *shown = answer;
-    char unc[MAX_PATH * 4];
-    if (strncmp(answer, "\\\\?\\UNC\\", 8) == 0) {
-        // \\?\UNC\server\share -> \\server\share
-        if (snprintf(unc, sizeof unc, "\\\\%s", answer + 8) < (int)sizeof unc) {
-            shown = unc;
-        }
-    } else if (strncmp(answer, "\\\\?\\", 4) == 0) {
-        shown = answer + 4;
-    }
-    char *copy = _strdup(shown);
-    if (answer != small) {
-        free(answer);
-    }
+    free(answer);
     return copy;
 }
 #endif
 
 #ifndef _WIN32
-// What _fullpath settles for the Windows branch: an absolute path with '.'
+// What _wfullpath settles for the Windows branch: an absolute path with '.'
 // and '..' taken out, decided by reading the spelling. realpath does that
 // and follows links besides, but answers only for a path that is on this
 // disk -- and 09 の 5.2 asks for two spellings of one file to compare equal
@@ -388,16 +394,15 @@ char *dap_normalize_path(const char *path)
         return NULL;
     }
 #ifdef _WIN32
-    char *full = _fullpath(NULL, path, 0);
-    if (full == NULL) {
-        return _strdup(path);
-    }
-    char *resolved = resolve_links(full);
-    if (resolved == NULL) {
-        return full;
+    wchar_t *wide = wide_of(path);
+    wchar_t *full = wide != NULL ? _wfullpath(NULL, wide, 0) : NULL;
+    free(wide);
+    char *answer = full != NULL ? resolve_links(full) : NULL;
+    if (answer == NULL && full != NULL) {
+        answer = utf8_of(full);
     }
     free(full);
-    return resolved;
+    return answer != NULL ? answer : _strdup(path);
 #else
     char resolved[PATH_MAX];
     if (realpath(path, resolved) != NULL) {

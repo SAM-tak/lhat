@@ -1,7 +1,7 @@
 // L^ (lhat) -- what the core asks of its surroundings.
 //
 // Two things the language needs but does not want to decide: where memory
-// comes from, and how a unit's text is read. Both are declared here and
+// comes from, and how a unit's text is read (with the fopen it reads through). Both are declared here and
 // defined in port/, which is a library of its own.
 //
 // **The seam is the linker, not a registration.** A host that wants its own
@@ -25,6 +25,7 @@
 #include <stddef.h>
 
 #include <stdbool.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,10 +65,24 @@ typedef struct {
 bool lhat_set_allocator(const LhatAllocator *allocator);
 
 // ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
+//
+// **Every path lhat takes or hands out is UTF-8**, whatever the OS calls its
+// narrow encoding. That is the encoding of a script's strings and of an LSP
+// URI, and a host has no other single answer to give either.
+//
+// fopen with a UTF-8 path. Windows' fopen reads its path in the process code
+// page, which is UTF-8 only when the user or an executable's manifest says
+// so -- a host DLL gets neither -- so there the path goes through UTF-16 to
+// _wfopen. NULL (errno set) for a path that is not UTF-8.
+FILE *lhat_fopen(const char *path, const char *mode);
+
+// ---------------------------------------------------------------------------
 // Reading a unit
 // ---------------------------------------------------------------------------
 
-// 05 の 5.1: the bytes at `path`, or NULL when there are none there. The
+// 05 の 5.1: the bytes at `path` (UTF-8), or NULL when there are none there. The
 // caller frees the result with lhat_free. Normalising newlines and the BOM
 // belongs to the source (01 の 1 章) and is not done here.
 //

@@ -155,7 +155,7 @@ static bool file_or_open_document_exists(LspWorkspace *ws, const char *path)
     if (lsp_document_store_has(&ws->documents, path)) {
         return true;
     }
-    FILE *file = fopen(path, "rb");
+    FILE *file = lhat_fopen(path, "rb");
     if (file == NULL) {
         return false;
     }
@@ -905,7 +905,7 @@ bool lsp_workspace_is_binary_unit(const char *path)
     if (path == NULL) {
         return false;
     }
-    FILE *file = fopen(path, "rb");
+    FILE *file = lhat_fopen(path, "rb");
     if (file == NULL) {
         return false;
     }

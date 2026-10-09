@@ -163,10 +163,10 @@ static void file_open(LhatMachine *machine, void *context,
         !arg_text(arguments[1], &mode, &mode_length)) {
         return;
     }
-    // object.c の lhat_string_new が text[length] = '\0' を書くので、
-    // どちらも fopen が読める NUL 終端済みのバイト列になっている。
+    // lhat_string_new (object.c) writes text[length] = '\0', so both are
+    // NUL-terminated UTF-8 that lhat_fopen can take as they are.
     errno = 0;
-    FILE *stream = fopen(path, mode);
+    FILE *stream = lhat_fopen(path, mode);
     if (stream == NULL) {
         const LhatErrorKind *kind =
             errno == EACCES ? module->denied : module->not_found;

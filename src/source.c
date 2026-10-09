@@ -105,7 +105,7 @@ bool lhat_source_init_from_file(LhatSource *src, const char *path, char **error)
         *error = NULL;
     }
 
-    FILE *fp = fopen(path, "rb");
+    FILE *fp = lhat_fopen(path, "rb");
     if (fp == NULL) {
         if (error != NULL) {
             *error = error_text(SOURCE_CANNOT_OPEN, path);

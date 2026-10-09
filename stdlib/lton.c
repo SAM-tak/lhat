@@ -20,10 +20,6 @@
 #include <stdlib.h>
 #include <math.h>
 #include <locale.h>
-#include <limits.h>
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 #include "lhat/object.h"
 #include "lhat/port.h"
@@ -546,24 +542,10 @@ static void lton_save(LhatMachine *machine, void *context,
     if (w.error == NULL) serialize_table(&w, arguments[1]);
     FILE *file = NULL;
     if (w.error == NULL) {
-#ifdef _WIN32
-        int length = path->length <= INT_MAX ? MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
-            path->text, (int)path->length, NULL, 0) : 0;
-        wchar_t *wide = length > 0 ? lhat_alloc(((size_t)length + 1) * sizeof *wide) : NULL;
-        if (length <= 0) write_fail(&w, w.module->cannot_write, "invalid UTF-8 file path");
-        else if (wide == NULL) write_fail(&w, w.module->out_of_memory, "out of memory");
-        else {
-            MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path->text, (int)path->length, wide, length);
-            wide[length] = 0;
-            file = _wfopen(wide, L"wb");
-        }
-        lhat_free(wide);
-#else
         char *name = c_string(path);
         if (name == NULL) write_fail(&w, w.module->out_of_memory, "out of memory");
-        else file = fopen(name, "wb");
+        else file = lhat_fopen(name, "wb");
         lhat_free(name);
-#endif
         if (file == NULL) write_fail(&w, w.module->cannot_write, "cannot open file for writing");
     }
     if (file != NULL) {

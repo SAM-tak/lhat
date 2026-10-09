@@ -16,17 +16,15 @@
 #include <string.h>
 
 #include "adapter.h"
+#include "lhat/port.h"
 
 #include "testutil.h"
 
 #ifdef _WIN32
-#include <direct.h>
 #include <windows.h>
-#define remove_dir(p) _rmdir(p)
 #else
 #include <sys/stat.h>
 #include <unistd.h>
-#define remove_dir(p) rmdir(p)
 #endif
 
 // A directory `link` that stands for `target`. False when the platform will
@@ -40,8 +38,8 @@ static bool link_directory(const char *link, const char *target)
     wchar_t given[MAX_PATH];
     wchar_t wide_target[MAX_PATH];
     wchar_t wide_link[MAX_PATH];
-    if (MultiByteToWideChar(CP_ACP, 0, target, -1, given, MAX_PATH) == 0 ||
-        MultiByteToWideChar(CP_ACP, 0, link, -1, wide_link, MAX_PATH) == 0) {
+    if (MultiByteToWideChar(CP_UTF8, 0, target, -1, given, MAX_PATH) == 0 ||
+        MultiByteToWideChar(CP_UTF8, 0, link, -1, wide_link, MAX_PATH) == 0) {
         return false;
     }
     // A junction names its target absolutely, in the object manager's form.
@@ -107,11 +105,13 @@ static bool link_directory(const char *link, const char *target)
 #endif
 }
 
+// Paths here are UTF-8, as the adapter's are. Windows is asked in UTF-16 --
+// this executable's code page is whatever the machine's is.
 static void unlink_directory(const char *link)
 {
 #ifdef _WIN32
     wchar_t wide[MAX_PATH];
-    if (MultiByteToWideChar(CP_ACP, 0, link, -1, wide, MAX_PATH) != 0) {
+    if (MultiByteToWideChar(CP_UTF8, 0, link, -1, wide, MAX_PATH) != 0) {
         RemoveDirectoryW(wide);  // a junction is removed as the directory it is
     }
 #else
@@ -122,9 +122,32 @@ static void unlink_directory(const char *link)
 static bool make_dir(const char *path)
 {
 #ifdef _WIN32
-    return _mkdir(path) == 0;
+    wchar_t wide[MAX_PATH];
+    return MultiByteToWideChar(CP_UTF8, 0, path, -1, wide, MAX_PATH) != 0 &&
+           CreateDirectoryW(wide, NULL);
 #else
     return mkdir(path, 0777) == 0;
+#endif
+}
+
+static void remove_dir(const char *path)
+{
+#ifdef _WIN32
+    unlink_directory(path);
+#else
+    rmdir(path);
+#endif
+}
+
+static void remove_file(const char *path)
+{
+#ifdef _WIN32
+    wchar_t wide[MAX_PATH];
+    if (MultiByteToWideChar(CP_UTF8, 0, path, -1, wide, MAX_PATH) != 0) {
+        DeleteFileW(wide);
+    }
+#else
+    remove(path);
 #endif
 }
 
@@ -184,23 +207,26 @@ static void test_the_spelling_alone(void)
     LHAT_CHECK(dap_normalize_path(NULL) == NULL, "expected NULL for NULL");
 }
 
-static void test_through_a_link(void)
+// `real` names the directory behind the link: the answer for a file inside
+// is the one GetFinalPathNameByHandle spells, so a name outside the process
+// code page is what shows whether that spelling survives.
+static void test_through_a_link(const char *real_what, const char *title)
 {
     char real[128];
     char link[128];
-    temp_name(real, sizeof real, "real");
+    temp_name(real, sizeof real, real_what);
     temp_name(link, sizeof link, "link");
     unlink_directory(link);
     remove_dir(real);
 
-    LHAT_TEST("D6: a file reached through a link is the file behind it");
+    LHAT_TEST(title);
     if (!make_dir(real)) {
         LHAT_CHECK(false, "could not make a directory to link to");
         return;
     }
     char inside[256];
     snprintf(inside, sizeof inside, "%s/a.lh", real);
-    FILE *file = fopen(inside, "wb");
+    FILE *file = lhat_fopen(inside, "wb");
     if (file != NULL) {
         fputs("let^ a = 1\n", file);
         fclose(file);
@@ -212,7 +238,7 @@ static void test_through_a_link(void)
         // test could ever look green without testing anything.
         LHAT_CHECK(file != NULL, "expected the file to be written");
         printf("  (skipped: this platform would not make a link)\n");
-        remove(inside);
+        remove_file(inside);
         remove_dir(real);
         return;
     }
@@ -222,13 +248,14 @@ static void test_through_a_link(void)
     expect_same(through, inside, "a link and the directory behind it");
 
     unlink_directory(link);
-    remove(inside);
+    remove_file(inside);
     remove_dir(real);
 }
 
 int main(void)
 {
     test_the_spelling_alone();
-    test_through_a_link();
+    test_through_a_link("real", "D6: a file reached through a link is the file behind it");
+    test_through_a_link("実体", "and a UTF-8 name behind the link comes back as itself");
     return lhat_test_report("test_dap_path");
 }
