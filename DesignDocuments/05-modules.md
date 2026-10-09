@@ -2821,6 +2821,55 @@ cli/            コマンドライン      → lhat.exe
 
 ---
 
+### 8.13 ネイティブ拡張の共通ヘルパー
+
+`<lhat/extension.h>` は、型検査前にネイティブのバインドを追加するための
+C ABI と `lhat_extensions_*` を提供する。言語コアは SDL や OS のローダーに
+依存しない。ホストが `LhatExtensionLoader` に open / symbol / close と
+任意の error コールバックを渡す。マニフェストの形式、読み取り元、許可する
+パス、パスの正規化はホストが決める。実行中の `import^` が DLL を探す仕組みではない。
+
+共有ライブラリは `lhat_extension_v1` を C リンケージで export し、静的寿命の
+`LhatExtension` 記述子を返す。ヘルパーは ABI 番号・構造体サイズ・L^ 版数・
+値サイズを検証する。拡張は別の lhat をリンクせず、渡された
+`LhatExtensionAPI` の関数表でホストのランタイムを使う。
+
+ホスト側の手順は次のとおり。
+
+1. `lhat_extensions_new(&loader)` でホスト所有のプールを作る。
+2. `lhat_extensions_load(pool, path)` で必要な拡張を読み込む。
+   キーは文字列の完全一致で比較し、同じキーの再ロードは既存モジュールを返す。
+   静的リンクした記述子は `lhat_extensions_add(pool, key, descriptor)` で追加できる。
+   静的拡張だけなら loader は NULL でよい。
+3. program にホスト本体と標準ライブラリを登録し、型検査前に
+   `lhat_extensions_register(pool, program, modules, count)` を呼ぶ。
+   modules は今回使う拡張の配列で、プール全体を自動登録するわけではない。
+4. program・machine・保持している値をすべて解放し、プロセス共有レジストリの
+   コールバックも破棄した後で `lhat_extensions_free(pool)` を呼ぶ。
+   通常の単一ホストでは `lhat_registry_dispose` の後になる。
+
+登録は指定順に全拡張の `LHAT_EXTENSION_TYPES`、続いて全拡張の
+`LHAT_EXTENSION_MEMBERS` を呼ぶ。型・enum・エラーは TYPES、関数・メンバは
+MEMBERS で登録する。別拡張の型は MEMBERS で参照できる。TYPES 同士に依存が
+あれば依存先を先に並べる。登録関数は成功時 NULL、失敗時は説明文字列を返す。
+診断は `lhat_extensions_error` で得る。失敗時の登録は巻き戻さず、その program を捨てる。
+
+登録関数の `void **state` は登録のたびに NULL で始まり、その program の
+二段階の呼び出しで共有される。状態を確保した拡張は直ちに
+`lhat_program_on_dispose` で後始末を登録する。プールは複数の program や
+restart を越えて再利用できる。登録処理とプール操作はホストが直列化する。
+プールの解放は共有ライブラリを読み込みの逆順で閉じるが、program やレジストリを
+代わりに破棄することはない。C ABI を越えて例外を送出してはならない。
+
+VM 専用版では、各拡張が記述子の `signatures` / `signatures_size` に
+フル版で出力した署名表を埋め込む。ヘルパーが各段階の登録直前にその表へ
+切り替える。表の置き換えは既に登録した型・関数を削除しない。表が無い、または
+読めない場合は登録を拒否する。フル版は埋め込み表を使わないので、初回の
+署名表生成時には NULL にできる。登録や L^ の版が変わったら表も再生成する。
+
+`tests/test_extensions.c` は SDL なしのホストで、ロードの共有、二段階登録、
+複数 program の状態分離、解放順を検証する。
+
 ## 9. 未決事項
 
 - **M2 — 標準ライブラリの構成**

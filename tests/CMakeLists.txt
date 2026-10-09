@@ -50,6 +50,7 @@ lhat_add_test(test_type core)
 lhat_add_test(test_value core)
 lhat_add_test(test_object core)
 lhat_add_test(test_program core)
+lhat_add_test(test_extensions core)
 # 07 §6: the fixes a diagnostic carries, applied and checked again.
 lhat_add_test(test_fixes core)
 lhat_add_test(test_completion_core core)

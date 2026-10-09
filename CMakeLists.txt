@@ -210,6 +210,7 @@ set(LHAT_CORE_SOURCES
     src/number.c
     src/type.c
     src/program.c
+    src/extension.c
     src/registry.c
     src/code.c
     src/rttype.c
