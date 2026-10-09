@@ -3,7 +3,9 @@
 #include "testutil.h"
 
 static int phase_order, disposed, opened, closed;
-static int close_order[8];
+static int close_order[8], shutdown_order[8], shutdown_count;
+static void shutdown_a(void) { LHAT_CHECK_EQ_INT(disposed, 2); shutdown_order[shutdown_count++] = 1; }
+static void shutdown_b(void) { LHAT_CHECK_EQ_INT(disposed, 2); shutdown_order[shutdown_count++] = 2; }
 
 static void cleanup(void *context)
 {
@@ -52,11 +54,11 @@ static const char *install_b(const LhatExtensionAPI *api, LhatProgram *program,
 
 static const LhatExtension a = {
     LHAT_EXTENSION_ABI, sizeof(LhatExtension), LHAT_VERSION, sizeof(LhatValue),
-    "A", NULL, 0, install_a
+    "A", NULL, 0, install_a, shutdown_a
 };
 static const LhatExtension b = {
     LHAT_EXTENSION_ABI, sizeof(LhatExtension), LHAT_VERSION, sizeof(LhatValue),
-    "B", NULL, 0, install_b
+    "B", NULL, 0, install_b, shutdown_b
 };
 static const LhatExtension *entry_a(void) { return &a; }
 static const LhatExtension *entry_b(void) { return &b; }
@@ -70,13 +72,14 @@ static void *open_module(void *context, const char *path)
 }
 static LhatExtensionSymbol symbol(void *context, void *library, const char *name)
 {
-    LHAT_CHECK(strcmp(name, "lhat_extension_v1") == 0, "portable entry name");
+    LHAT_CHECK(strcmp(name, "lhat_extension_v2") == 0, "portable entry name");
     if (context != NULL) return NULL;
     return (LhatExtensionSymbol)(library == &a ? entry_a : entry_b);
 }
 static void close_module(void *context, void *library)
 {
     (void) context;
+    if (context == NULL) LHAT_CHECK_EQ_INT(shutdown_count, closed + 1);
     close_order[closed++] = library == &a ? 1 : 2;
 }
 static const char *loader_error(void *context) { (void)context; return "test loader refused"; }
@@ -119,7 +122,7 @@ static void exercise_programs(LhatExtensions *pool, const LhatExtensionModule **
 static void test_static(void)
 {
     LHAT_TEST("static descriptors, independent programs and phase ordering");
-    disposed = 0;
+    disposed = shutdown_count = 0;
     LhatExtensions *pool = lhat_extensions_new(NULL);
     LHAT_REQUIRE(pool != NULL, "pool");
     const LhatExtensionModule *modules[] = {
@@ -138,12 +141,15 @@ static void test_static(void)
     exercise_programs(pool, modules);
     lhat_registry_dispose();
     lhat_extensions_free(pool);
+    LHAT_CHECK_EQ_INT(shutdown_count, 2);
+    LHAT_CHECK_EQ_INT(shutdown_order[0], 2);
+    LHAT_CHECK_EQ_INT(shutdown_order[1], 1);
 }
 
 static void test_loader(void)
 {
     LHAT_TEST("host loader, cache and reverse close order");
-    disposed = opened = closed = 0;
+    disposed = opened = closed = shutdown_count = 0;
     LhatExtensionLoader loader = {NULL, open_module, symbol, close_module, loader_error};
     LhatExtensions *pool = lhat_extensions_new(&loader);
     LHAT_REQUIRE(pool != NULL, "pool");
@@ -157,6 +163,7 @@ static void test_loader(void)
     LHAT_CHECK(strstr(lhat_extensions_error(pool), "test loader refused") != NULL, "loader diagnostic retained");
     exercise_programs(pool, modules);
     LHAT_CHECK_EQ_INT(closed, 0);
+    LHAT_CHECK_EQ_INT(shutdown_count, 0);
     lhat_registry_dispose();
     lhat_extensions_free(pool);
     LHAT_CHECK_EQ_INT(closed, 2);
@@ -167,7 +174,7 @@ static void test_loader(void)
     pool = lhat_extensions_new(&loader);
     LHAT_REQUIRE(pool != NULL, "second pool");
     LHAT_CHECK(lhat_extensions_load(pool, "a") == NULL, "missing entry refused");
-    LHAT_CHECK(strstr(lhat_extensions_error(pool), "missing lhat_extension_v1") != NULL, "entry diagnostic");
+    LHAT_CHECK(strstr(lhat_extensions_error(pool), "missing lhat_extension_v2") != NULL, "entry diagnostic");
     LHAT_CHECK_EQ_INT(closed, 3);
     lhat_extensions_free(pool);
     LHAT_CHECK_EQ_INT(closed, 3);

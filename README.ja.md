@@ -375,6 +375,19 @@ cmake --build --preset release
 `python jit/gen_stencils.py --clang <clang のパス>` で再生成してください。
 JIT を有効にしたビルド自体に Python は不要です。
 
+## 拡張DLLの型情報を出力する
+
+フル版CLIの `--dump-host-api` に `--extension` を追加すると、指定した共有ライブラリの定義もJSONへ含められる。
+
+```powershell
+lhat --dump-host-api lhat-host.json --extension ./native/eos_lhat.dll
+lhat --dump-host-api --extension ./native/first.dll --extension ./native/second.dll
+```
+
+`--extension` は複数指定でき、現在は `--dump-host-api` 専用。拡張子を含めたパスを指定し、相対パスは作業ディレクトリから解決する。出力先を省略すれば標準出力へ書く。標準ライブラリ等の登録後、全拡張の型、全拡張のメンバを登録して出力する。拡張はホストのL^版数・拡張ABIに合わせ、依存するSDKライブラリもOSが解決できる場所へ配置する。
+
+ゲームのスクリプトは実行しないが、DLLの入口と登録関数は実行する。終了フックはProgram・レジストリの破棄後に呼ぶ。
+
 ## ドキュメントとソース
 
 - [言語仕様](DesignDocuments/02-syntax.md)：構文、型、オブジェクト、関数、コルーチン、パターンマッチ。

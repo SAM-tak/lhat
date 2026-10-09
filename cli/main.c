@@ -16,6 +16,7 @@
 #endif
 
 #include "lhat.h"
+#include "native_extensions.h"
 
 // The dump modes and the diagnostic rendering read each stage's results off
 // a unit directly -- the cli is one of the language's own front ends, so it
@@ -488,6 +489,8 @@ static const LhatMessageEntry CLI_MESSAGES[] = {
         "(default for the prompt)\n"
         "  --dump-host-api [file]  write what this driver registers as "
         "JSON, for lhatls\n"
+        "  --extension PATH  include a native library in --dump-host-api "
+        "(repeatable; explicit path with suffix)\n"
         "  --dump-messages DIR  write the English messages under DIR, one "
         "file per source, as the catalogs a translation is made from\n"
         "  --language TAG  say things in that language rather than the one "
@@ -1828,6 +1831,8 @@ static void print_usage(void)
 
 int main(int argc, char **argv)
 {
+    atexit(cli_extensions_dispose);
+    bool has_extensions = false;
     const char *path = NULL;
     char **arguments = NULL;
     size_t argument_count = 0;
@@ -1873,6 +1878,16 @@ int main(int argc, char **argv)
             strictness = STRICTNESS_RELAXED;
         } else if (strcmp(argv[i], "--dump-host-api") == 0) {
             dump_host_api = true;
+        } else if (strcmp(argv[i], "--extension") == 0) {
+            if (i + 1 >= argc || argv[i + 1][0] == '-') {
+                fprintf(stderr, "lhat: --extension requires a library path\n");
+                return EXIT_FAILURE;
+            }
+            if (!cli_extension_path(argv[++i])) {
+                fprintf(stderr, "lhat: out of memory collecting extensions\n");
+                return EXIT_FAILURE;
+            }
+            has_extensions = true;
         } else if (strcmp(argv[i], "--compile") == 0) {
             compile_out = true;
         } else if (strcmp(argv[i], "--strip-debug") == 0) {
@@ -1940,6 +1955,11 @@ int main(int argc, char **argv)
         return EXIT_SUCCESS;
     }
 
+    if (has_extensions && (!dump_host_api || argument_count != 0)) {
+        fprintf(stderr, "lhat: use --extension PATH with --dump-host-api [output.json]; repeat --extension for more libraries\n");
+        return EXIT_FAILURE;
+    }
+
     // What this driver registers, written out for a reader that cannot run
     // its C -- the language server. With a path the JSON goes there
     // (lhat-host.json at a workspace root is what lhatls looks for);
@@ -1954,6 +1974,10 @@ int main(int argc, char **argv)
         speak(&program);
         if (!bind_host_names(&program)) {
             cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
+            lhat_program_dispose(&program);
+            return EXIT_FAILURE;
+        }
+        if (!cli_extensions_register(&program)) {
             lhat_program_dispose(&program);
             return EXIT_FAILURE;
         }

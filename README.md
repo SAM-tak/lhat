@@ -408,6 +408,24 @@ the value layouts it reads, regenerate them with
 `python jit/gen_stencils.py --clang <path to clang>`. Building with the JIT does
 not require Python.
 
+## Dump extension APIs for the editor
+
+The CLI can include additional native libraries in its host API JSON:
+
+```sh
+lhat --dump-host-api lhat-host.json --extension ./native/eos_lhat.dll
+lhat --dump-host-api --extension ./native/first.so --extension ./native/second.so
+```
+
+`--extension` is repeatable and currently applies only to `--dump-host-api`.
+Supply explicit paths, including platform suffixes; relative paths use the working
+directory. With no output filename, JSON is written to stdout. The driver registers
+its own APIs first, then all extension types, then all extension members. Libraries
+must match the host's L^ version and extension ABI. Their SDK dependencies must be
+available to the OS loader. Extension shutdown runs after program and registry
+cleanup. No game script is executed, though native library entry points and binding
+registration callbacks do run.
+
 ## Documentation and source
 
 - [Language specification](DesignDocuments/02-syntax.md): syntax, types, objects,

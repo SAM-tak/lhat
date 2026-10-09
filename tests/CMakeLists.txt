@@ -194,3 +194,20 @@ if(LHAT_BUILD_CLI)
         set_tests_properties(e2e_${stem} PROPERTIES LABELS e2e TIMEOUT 60)
     endforeach()
 endif()
+
+# CLI dump integration with actual shared libraries and no proprietary SDK.
+if(TARGET lhat_cli AND LHAT_WITH_FRONTEND)
+    foreach(name probe peer)
+        add_library(cli_extension_${name} SHARED cli_extension.c)
+        target_include_directories(cli_extension_${name} PRIVATE
+            ${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR}/include)
+        set_target_properties(cli_extension_${name} PROPERTIES PREFIX "")
+    endforeach()
+    target_compile_definitions(cli_extension_peer PRIVATE PEER=1)
+    add_test(NAME cli_extensions COMMAND ${CMAKE_COMMAND}
+        -DCLI=$<TARGET_FILE:lhat_cli> -DPROBE=$<TARGET_FILE:cli_extension_probe>
+        -DPEER=$<TARGET_FILE:cli_extension_peer>
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/run/cli extensions"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cli_extensions.cmake)
+    set_tests_properties(cli_extensions PROPERTIES LABELS e2e)
+endif()

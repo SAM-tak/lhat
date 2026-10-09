@@ -416,9 +416,9 @@ endif()
 
 # ---- Driver ---------------------------------------------------------------
 if(LHAT_BUILD_CLI)
-    add_executable(lhat_cli cli/main.c)
+    add_executable(lhat_cli cli/main.c cli/native_extensions.c)
     set_target_properties(lhat_cli PROPERTIES OUTPUT_NAME lhat)
-    target_link_libraries(lhat_cli PRIVATE lhat)
+    target_link_libraries(lhat_cli PRIVATE lhat ${CMAKE_DL_LIBS})
     # The dump and REPL paths read tokens, trees and each stage's results
     # directly -- the cli is an in-tree front end, so it names the internal
     # headers honestly instead of getting them by leakage.

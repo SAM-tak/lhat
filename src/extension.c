@@ -53,6 +53,7 @@ void lhat_extensions_free(LhatExtensions *pool)
     while (pool->modules != NULL) {
         LhatExtensionModule *module = pool->modules;
         pool->modules = module->next;
+        if (module->descriptor->shutdown != NULL) module->descriptor->shutdown();
         if (module->library != NULL)
             pool->loader.close(pool->loader.context, module->library);
         lhat_free(module->key);
@@ -139,10 +140,10 @@ const LhatExtensionModule *lhat_extensions_load(LhatExtensions *pool, const char
         return NULL;
     }
     LhatExtensionSymbol symbol = pool->loader.symbol(pool->loader.context, library,
-                                                     "lhat_extension_v1");
+                                                     "lhat_extension_v2");
     const LhatExtensionModule *module = NULL;
     if (symbol == NULL) {
-        fail(pool, "%s: missing lhat_extension_v1 entry point", path);
+        fail(pool, "%s: missing lhat_extension_v2 entry point", path);
     } else {
         const LhatExtension *(*entry)(void) = (const LhatExtension *(*)(void)) symbol;
         module = lhat_extensions_add(pool, path, entry());

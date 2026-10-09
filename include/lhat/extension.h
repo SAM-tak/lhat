@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-#define LHAT_EXTENSION_ABI 1u
+#define LHAT_EXTENSION_ABI 2u
 #define LHAT_EXTENSION_TYPES 0u
 #define LHAT_EXTENSION_MEMBERS 1u
 
@@ -80,11 +80,17 @@ typedef struct LhatExtension {
     const char *(*register_bindings)(const LhatExtensionAPI *host,
                                     LhatProgram *program, uint32_t phase,
                                     void **state);
+    // Optional process/module cleanup, called by extensions_free before unload.
+    // All programs, machines, carried values and registry callbacks must already
+    // be gone. Runs in reverse load order, also for static descriptors. May be
+    // called without register_bindings ever having run. Never throw or reenter
+    // the pool. Hosts must keep this pool until their final shutdown, not restart.
+    void (*shutdown)(void);
 } LhatExtension;
 
 // Export this symbol from a shared library. A statically linked extension can
 // hand its descriptor directly to lhat_extensions_add instead.
-LHAT_EXTENSION_EXPORT const LhatExtension *lhat_extension_v1(void);
+LHAT_EXTENSION_EXPORT const LhatExtension *lhat_extension_v2(void);
 
 // The core knows no OS loader, filesystem, search path or manifest format.
 // Callbacks run synchronously on the host's registration thread. Their context
@@ -104,7 +110,7 @@ typedef struct LhatExtensionModule LhatExtensionModule;
 // NULL loader permits static descriptors only. No process-global pool: the
 // host owns one and can reuse its modules across several programs/restarts.
 LhatExtensions *lhat_extensions_new(const LhatExtensionLoader *loader);
-// Close libraries in reverse load order, AFTER all their programs/machines,
+// Call shutdown and close libraries in reverse load order, AFTER all their programs/machines,
 // carried values, and process-wide registry callbacks have been released.
 // In the usual single-host process: registry_dispose, then extensions_free.
 // This function does not dispose the registry or any program for the caller.
