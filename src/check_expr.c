@@ -2363,13 +2363,12 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         for (const LhatTypeList *arm = callee->v.composite.arms; arm != NULL;
              arm = arm->next, position++) {
             if (chk_signature_accepts(arm->type, args, tracked, through_member)) {
-                // 03 の 5.11c: under strict this is the answer, not a guess --
-                // an argument whose type is not settled is 3.1's gap and is
-                // reported where it reaches a place wanting a concrete type,
-                // and a call fitting no arm is the MISMATCH below. So the
-                // compiler may bake the arm in and let the run skip 5.11's
-                // search. Relaxed writes nothing and keeps the search, which
-                // is the only thing left there to decide the call.
+                // 03 の 5.11c: once every argument's type is settled this is
+                // the answer, not a guess -- a call fitting no arm is the
+                // MISMATCH below. So the compiler may bake the arm in and let
+                // the run skip 5.11's search, under either strictness. An
+                // argument that is any^, unknown or has a gap leaves nothing
+                // written, and the search decides the call at run time.
                 bool settled = true;
                 for (size_t i = 0; i < tracked; i++) {
                     if (args[i] == NULL || args[i]->kind == LHAT_TYPE_UNKNOWN ||

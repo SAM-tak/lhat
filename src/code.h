@@ -542,8 +542,8 @@ struct LhatProto {
 
     // 15.2, 13.9. What a yielding body's yield^ sites agreed on --
     // there is no written form for either, so these come only from 03 の
-    // 5.11a's checked_type when checking ran; NULL otherwise (yields is
-    // false, or the checker never settled one).
+    // 5.11a's checked_type; NULL when yields is false or the checker never
+    // settled one.
     struct LhatRuntimeType *yield_produce_type;  // Y
     struct LhatRuntimeType *yield_receive_type;  // R
     // 13.9 with 13.8改: how many arguments a resume of this body sends --

@@ -8027,7 +8027,7 @@ typeof^(A.new()) = typeof^(B.new())    # true^
 #### コルーチンのR,Y,Tもリフレクションを持つ
 
 書かれていない戻り値型は、03 の 5.11a の
-狭い注釈経路で `infer_func` の推論結果を読む。
+経路で `infer_func` の推論結果を読む。
 `f^ { return^ 42 }` は `f^ -> number^;` を返す。
 
 gen を呼び出して得られたコルーチンを `typeof^` すると 5.11a の同じ経路（`LhatProto` に載せた
