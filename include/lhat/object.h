@@ -589,6 +589,13 @@ typedef enum {
     LHAT_NATIVE_ABS,
     LHAT_NATIVE_SIGN,
     LHAT_NATIVE_CLAMP,
+    // 02 の 14.23: its bits -- any or all of a mask set, one bit by position
+    // -- and whether it is a whole number those bits can be read off at all.
+    // EQ through ISINTEGER stay together: they are the number^'s own.
+    LHAT_NATIVE_BITANY,
+    LHAT_NATIVE_BITALL,
+    LHAT_NATIVE_BITAT,
+    LHAT_NATIVE_ISINTEGER,
     // 05 の 8.9: the two members every host value box carries. get answers
     // the value onto the stack, whole; set writes a value of the same tag
     // over the bytes.

@@ -462,6 +462,11 @@ static const Word WORDS[] = {
     {"as^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"fits^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"typeof^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
+    {"bitand^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
+    {"bitor^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
+    {"bitxor^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
+    {"bitshift^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
+    {"bitnot^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
 
     // The types a name is not needed for (check.c's builtin_type), with
     // 13.13's word for the literal being written inside.

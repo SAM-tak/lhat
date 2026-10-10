@@ -1474,6 +1474,33 @@ static void test_precedence(void)
     parse_dispose(&p);
 
     // 11.5 の (1): '..' sits below '+' and associates to the right.
+    // 11.6: the bitwise words sit at '*''s level, one level for all four.
+    LHAT_TEST("bitwise words bind like multiplication");
+    parse_text(&p, "x := a + b bitand^ c bitor^ d = e");
+    {
+        const LhatNode *e = first_value(&p);
+        LHAT_CHECK(is_binary(e, LHAT_OP_EQ), "top should be =");
+        const LhatNode *sum = e != NULL ? e->v.binary.left : NULL;
+        LHAT_CHECK(is_binary(sum, LHAT_OP_ADD), "then +");
+        const LhatNode *bits = sum != NULL ? sum->v.binary.right : NULL;
+        LHAT_CHECK(is_binary(bits, LHAT_OP_BITOR), "then bitor^, left to right");
+        LHAT_CHECK(bits != NULL && is_binary(bits->v.binary.left, LHAT_OP_BITAND),
+                   "bitand^ nested on the left");
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("bitnot^ is a prefix");
+    parse_text(&p, "x := bitnot^ a bitshift^ 2");
+    {
+        const LhatNode *e = first_value(&p);
+        LHAT_CHECK(is_binary(e, LHAT_OP_BITSHIFT), "top should be bitshift^");
+        const LhatNode *left = e != NULL ? e->v.binary.left : NULL;
+        LHAT_CHECK(left != NULL && left->kind == LHAT_NODE_UNARY &&
+                       left->v.unary.op == LHAT_OP_BITNOT,
+                   "its left the bitnot^");
+    }
+    parse_dispose(&p);
+
     LHAT_TEST("concatenation is below addition");
     parse_text(&p, "x := \"n = \" .. a + b");
     {

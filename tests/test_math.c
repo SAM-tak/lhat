@@ -131,6 +131,20 @@ static void test_number_members(void)
     LHAT_TEST("clamp asks for its two bounds");
     LHAT_CHECK(!checks("return^ (5).clamp(1)\n"), "one bound is not enough");
 
+    // 02 の 14.23: the bitwise words take a number^ and nothing else, and
+    // no op^ reaches them.
+    LHAT_TEST("the bitwise words take number^ alone");
+    LHAT_CHECK(checks("let^ m = 12\nreturn^ (m bitand^ 4) = 4\n"),
+               "two numbers");
+    LHAT_CHECK(checks("return^ (12).bitat(2) and^ (3).isinteger()\n"),
+               "the members answer bool^");
+    LHAT_CHECK(!checks("return^ true^ bitand^ 1\n"), "a bool");
+    LHAT_CHECK(!checks("return^ bitnot^ \"1\"\n"), "a string");
+    LHAT_CHECK(!checks("return^ (12).bitat(true^)\n"), "a bool position");
+    LHAT_CHECK(!checks("let^ V = def^{ op^bitand^ = f^ self^, o { return^ 1 } }\n"
+                       "return^ V.new() bitand^ 1\n"),
+               "no op^ reaches them");
+
     // 02 の 14.8改2: the representation's constants are static members of
     // the type's own word; nothing else is.
     LHAT_TEST("number^ carries its constants");

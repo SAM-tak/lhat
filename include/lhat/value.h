@@ -348,6 +348,27 @@ static inline double lhat_number_as_real(LhatValue v)
     return v.tag == LHAT_VALUE_INTEGER ? (double)v.as.integer : v.as.real;
 }
 
+// The value as a 64-bit integer when it names one, whichever representation
+// holds it: 8.0 does, 2.5 and 1e300 do not, and neither does NaN (it fails
+// both comparisons). Answers by value, never by representation (02 の 14.8改).
+static inline bool lhat_number_as_whole(LhatValue v, int64_t *out)
+{
+    if (v.tag == LHAT_VALUE_INTEGER) {
+        *out = v.as.integer;
+        return true;
+    }
+    if (v.tag != LHAT_VALUE_REAL) {
+        return false;
+    }
+    double d = v.as.real;
+    if (d >= -9223372036854775808.0 && d < 9223372036854775808.0 &&
+        d == (double)(int64_t)d) {
+        *out = (int64_t)d;
+        return true;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Comparison
 // ---------------------------------------------------------------------------

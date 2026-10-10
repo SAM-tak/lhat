@@ -33,6 +33,12 @@ const char *vm_operator_name(LhatOpcode op, size_t *length)
         case LHAT_BC_ASCAST:
             *length = 3;
             return "as^";
+        // 02 の 14.23: never overloaded, named so a stop says which one.
+        case LHAT_BC_BNOT:   *length = 7; return "bitnot^";
+        case LHAT_BC_BAND:   *length = 7; return "bitand^";
+        case LHAT_BC_BOR:    *length = 6; return "bitor^";
+        case LHAT_BC_BXOR:   *length = 7; return "bitxor^";
+        case LHAT_BC_BSHIFT: *length = 9; return "bitshift^";
         default:
             *length = 0;
             return NULL;
@@ -316,6 +322,10 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         { "abs", 3, LHAT_NATIVE_ABS, false },
         { "sign", 4, LHAT_NATIVE_SIGN, false },
         { "clamp", 5, LHAT_NATIVE_CLAMP, false },
+        { "bitany", 6, LHAT_NATIVE_BITANY, false },
+        { "bitall", 6, LHAT_NATIVE_BITALL, false },
+        { "bitat", 5, LHAT_NATIVE_BITAT, false },
+        { "isinteger", 9, LHAT_NATIVE_ISINTEGER, false },
         { "substring", 9, LHAT_NATIVE_SUBSTRING, false },
         { "substr", 6, LHAT_NATIVE_SUBSTRING, false },
         { "sub", 3, LHAT_NATIVE_SUBSTRING, false },
@@ -416,6 +426,12 @@ bool vm_plain_table(LhatValue on)
     return table->definition == NULL && !table->is_definition;
 }
 
+// The members only a number^ answers (02 の 14.20 to 14.23).
+static bool number_native(LhatNativeKind kind)
+{
+    return kind >= LHAT_NATIVE_EQ && kind <= LHAT_NATIVE_ISINTEGER;
+}
+
 // 02 の 16.3: `in^ e` asks e for the coroutine to walk. A table answers with
 // one over its keys and a coroutine answers with itself, and both are built
 // in -- the same footing 12.6 gives dispose(). A member of that name written
@@ -464,11 +480,9 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
         return lhat_is_object_kind(on, LHAT_OBJECT_STRING);
     }
     // 14.20: and only a number^ has an error term to say anything about.
-    // 14.21: nor has anything else a whole number below or above it.
-    if (*out == LHAT_NATIVE_EQ || *out == LHAT_NATIVE_FLOOR ||
-        *out == LHAT_NATIVE_CEIL || *out == LHAT_NATIVE_ROUND ||
-        *out == LHAT_NATIVE_ABS || *out == LHAT_NATIVE_SIGN ||
-        *out == LHAT_NATIVE_CLAMP) {
+    // 14.21: nor has anything else a whole number below or above it, nor
+    // (14.23) bits.
+    if (number_native(*out)) {
         return lhat_is_number(on);
     }
     if (lhat_is_object_kind(on, LHAT_OBJECT_COROUTINE)) {
@@ -984,13 +998,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
              bare == LHAT_NATIVE_SPLIT ||
              bare == LHAT_NATIVE_TOUPPER ||
              bare == LHAT_NATIVE_TOLOWER ||
-             bare == LHAT_NATIVE_EQ ||
-             bare == LHAT_NATIVE_FLOOR ||
-             bare == LHAT_NATIVE_CEIL ||
-             bare == LHAT_NATIVE_ROUND ||
-             bare == LHAT_NATIVE_ABS ||
-             bare == LHAT_NATIVE_SIGN ||
-             bare == LHAT_NATIVE_CLAMP)) {
+             number_native(bare))) {
             return bind_native(m, into, bare, on, unbound);
         }
         // 02 の 14.18: and a string^ answers how long it is,

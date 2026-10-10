@@ -55,6 +55,12 @@ typedef enum {
     LHAT_BC_CONCAT,     // A B C R[A] = R[B] .. R[C]  (02 の 11.2)
     LHAT_BC_NEG,        // A B   R[A] = -R[B]
     LHAT_BC_NOT,        // A B   R[A] = !R[B]
+    // 02 の 14.23: over 64-bit integers, stopping on anything not one.
+    LHAT_BC_BNOT,       // A B   R[A] = bitnot^ R[B]
+    LHAT_BC_BAND,       // A B C R[A] = R[B] bitand^ R[C]
+    LHAT_BC_BOR,
+    LHAT_BC_BXOR,
+    LHAT_BC_BSHIFT,     // logical; a negative count shifts right
     LHAT_BC_TYPEOF,     // A B   R[A] = typeof^(R[B])  (02 の 14.16)
 
     LHAT_BC_EQ,         // A B C R[A] = R[B] = R[C]

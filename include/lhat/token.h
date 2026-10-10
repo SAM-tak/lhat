@@ -140,6 +140,13 @@ typedef enum {
     LHAT_OP_IS,          // is^   identity: the same instance, not just equal
     LHAT_OP_FITS,         // fits^  fits: the left may stand where the type is
     LHAT_OP_CATCH,       // catch^  (04 の 4 章)
+    // 01 の 7.5: bitwise operators are words, since '|' and '&' belong to
+    // types. They work on 64-bit integers only and nothing overloads them.
+    LHAT_OP_BITAND,      // bitand^
+    LHAT_OP_BITOR,       // bitor^
+    LHAT_OP_BITXOR,      // bitxor^
+    LHAT_OP_BITSHIFT,    // bitshift^  logical; a negative count shifts right
+    LHAT_OP_BITNOT,      // bitnot^    prefix
 
 
     LHAT_OP_UNION,       // |    type union, valid only in a type context

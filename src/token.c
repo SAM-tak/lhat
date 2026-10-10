@@ -84,6 +84,11 @@ const char *lhat_op_name(LhatOpKind op)
         case LHAT_OP_IS:         return "is^";
         case LHAT_OP_FITS:        return "fits^";
         case LHAT_OP_CATCH:      return "catch^";
+        case LHAT_OP_BITAND:     return "bitand^";
+        case LHAT_OP_BITOR:      return "bitor^";
+        case LHAT_OP_BITXOR:     return "bitxor^";
+        case LHAT_OP_BITSHIFT:   return "bitshift^";
+        case LHAT_OP_BITNOT:     return "bitnot^";
         case LHAT_OP_UNION:      return "|";
         case LHAT_OP_INTERSECT:  return "&";
         case LHAT_OP_DOT:        return ".";

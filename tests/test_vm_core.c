@@ -193,6 +193,56 @@ static void test_arithmetic(void)
     run_dispose(&r);
 }
 
+// 02 の 14.23: the bitwise words work on 64-bit integers, never widen, and
+// stop on a number that is not a whole one within 64 bits.
+static void test_bitwise(void)
+{
+    static const struct {
+        const char *text;
+        int64_t expected;
+    } answers[] = {
+        {"return^ 240 bitand^ 60\n", 48},
+        {"return^ 240 bitor^ 15\n", 255},
+        {"return^ 255 bitxor^ 15\n", 240},
+        {"return^ bitnot^ 0\n", -1},
+        {"return^ 1 bitshift^ 4\n", 16},
+        {"return^ 256 bitshift^ -4\n", 16},
+        // Logical: the sign bit is not copied in from the left.
+        {"return^ -1 bitshift^ -1\n", INT64_MAX},
+        // Into the sign bit and past it -- bits fall off, nothing widens.
+        {"return^ 1 bitshift^ 63\n", INT64_MIN},
+        {"return^ 1 bitshift^ 64\n", 0},
+        {"return^ -1 bitshift^ -64\n", 0},
+        // A real naming a whole number is that number.
+        {"return^ 8.0 bitand^ 12\n", 8},
+        // 11.6: '*''s level, so tighter than '+' and the comparisons.
+        {"return^ 2 + 3 bitand^ 1\n", 3},
+        {"return^ 6 bitor^ 1 bitand^ 3\n", 3},
+    };
+    for (size_t i = 0; i < sizeof answers / sizeof answers[0]; i++) {
+        LHAT_TEST(answers[i].text);
+        Run r;
+        run_text(&r, answers[i].text);
+        CHECK_INTEGER(&r, answers[i].expected);
+        run_dispose(&r);
+    }
+
+    static const char *const refused[] = {
+        "var^ x = 2.5\nreturn^ x bitand^ 1\n",
+        "var^ x = 1e300\nreturn^ 0 bitor^ x\n",
+        "var^ x = 0 / 0\nreturn^ bitnot^ x\n",
+        "return^ true^ bitxor^ 1\n",
+        "var^ n = 0.5\nreturn^ 1 bitshift^ n\n",
+    };
+    for (size_t i = 0; i < sizeof refused / sizeof refused[0]; i++) {
+        LHAT_TEST(refused[i]);
+        Run r;
+        run_text(&r, refused[i]);
+        LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+        run_dispose(&r);
+    }
+}
+
 // 02 の 11.6改3: one cast, which answers the value or a failure. What it
 // asks is lhat_value_satisfies, the same question 14.12's overload search
 // puts to a candidate.
@@ -2062,6 +2112,7 @@ int main(void)
 {
     test_encoding();
     test_arithmetic();
+    test_bitwise();
     test_casts();
     test_names();
     test_control();

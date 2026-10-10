@@ -2988,6 +2988,10 @@ static bool binary_opcode(LhatOpKind op, LhatOpcode *out)
         case LHAT_OP_FLOORDIV: *out = LHAT_BC_IDIV; return true;
         case LHAT_OP_MOD:      *out = LHAT_BC_MOD;  return true;
         case LHAT_OP_POW:      *out = LHAT_BC_POW;  return true;
+        case LHAT_OP_BITAND:   *out = LHAT_BC_BAND; return true;
+        case LHAT_OP_BITOR:    *out = LHAT_BC_BOR;  return true;
+        case LHAT_OP_BITXOR:   *out = LHAT_BC_BXOR; return true;
+        case LHAT_OP_BITSHIFT: *out = LHAT_BC_BSHIFT; return true;
         case LHAT_OP_CONCAT:   *out = LHAT_BC_CONCAT; return true;
         case LHAT_OP_EQ:       *out = LHAT_BC_EQ;   return true;
         case LHAT_OP_IS:       *out = LHAT_BC_SAME; return true;
@@ -3839,6 +3843,8 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             }
             emit(c, lhat_encode_abc(node->v.unary.op == LHAT_OP_NOT
                                         ? LHAT_BC_NOT
+                                    : node->v.unary.op == LHAT_OP_BITNOT
+                                        ? LHAT_BC_BNOT
                                         : LHAT_BC_NEG,
                                     into, operand, 0));
             c->next_register = mark;

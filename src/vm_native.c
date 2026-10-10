@@ -532,6 +532,39 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
+    // 02 の 14.23: isinteger is asked by value and never stops;
+    // the other three read bits, so both sides must be whole
+    // numbers within 64 bits, the bitwise operators' own rule.
+    if (native->kind == LHAT_NATIVE_ISINTEGER) {
+        if (b != 0) {
+            return LHAT_RUN_ARITY;
+        }
+        int64_t whole;
+        lhat_slots_set(m->slots, into, lhat_bool(lhat_number_as_whole(
+                                           native->bound, &whole)));
+        return LHAT_RUN_OK;
+    }
+    if (native->kind == LHAT_NATIVE_BITANY ||
+        native->kind == LHAT_NATIVE_BITALL ||
+        native->kind == LHAT_NATIVE_BITAT) {
+        if (b != 1) {
+            return LHAT_RUN_ARITY;
+        }
+        int64_t self, arg;
+        if (!lhat_number_as_whole(native->bound, &self) ||
+            !lhat_number_as_whole(sent, &arg)) {
+            return LHAT_RUN_TYPE_ERROR;
+        }
+        uint64_t bits = (uint64_t)self;
+        uint64_t mask = (uint64_t)arg;
+        lhat_slots_set(m->slots, into, lhat_bool(
+            native->kind == LHAT_NATIVE_BITANY   ? (bits & mask) != 0
+            : native->kind == LHAT_NATIVE_BITALL ? (bits & mask) == mask
+            // A position past either end holds no bit.
+            : arg >= 0 && arg < 64 && ((bits >> arg) & 1) != 0));
+        return LHAT_RUN_OK;
+    }
+
     // 02 の 14.17改2: the number^ a string^ names, or nil^
     // where it names none. Takes nothing, or a format -- the
     // same two signatures 14.17's takes, told apart the same

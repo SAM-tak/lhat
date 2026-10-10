@@ -1320,6 +1320,21 @@ static LhatType *successful_error_result(Checker *c, LhatType *type)
     return type;
 }
 
+// 14.23: a bitwise operand is a number^ and nothing else -- no op^ reaches
+// these. Whether it is a whole number within 64 bits is the machine's to ask.
+static LhatType *expect_bitwise(Checker *c, const LhatNode *at,
+                                LhatType *operand)
+{
+    LhatType *number = chk_simple(c, LHAT_TYPE_NUMBER);
+    LhatType *bare = NULL;
+    bool by_nil = nil_arm_apart(c, operand, &bare) &&
+                  lhat_type_conforms(bare, number);
+    chk_expect(c, at, operand, number,
+               by_nil ? LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL
+                      : LHAT_CHECK_ERR_NOT_NUMBER);
+    return number;
+}
+
 LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
 {
     LhatOpKind op = node->v.binary.op;
@@ -1493,6 +1508,13 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
             LhatType *answer = infer_operator(c, node, op, left, right);
             return answer != NULL ? answer : chk_simple(c, LHAT_TYPE_NUMBER);
         }
+
+        case LHAT_OP_BITAND:
+        case LHAT_OP_BITOR:
+        case LHAT_OP_BITXOR:
+        case LHAT_OP_BITSHIFT:
+            expect_bitwise(c, node->v.binary.left, left);
+            return expect_bitwise(c, node->v.binary.right, right);
 
         // 11.9: the one comparison a type writes. Asked exactly the way
         // '..' and the arithmetic are, so an op^<=> on either side answers it
@@ -2745,6 +2767,20 @@ static LhatType *builtin_whole(Checker *c)
     return signature;
 }
 
+// 02 の 14.23: questions about the bits, answered true^ or false^. bitany,
+// bitall and bitat take a number^ (a mask or a position); isinteger nothing.
+static LhatType *builtin_bits(Checker *c, bool takes_number)
+{
+    LhatType *signature = lhat_type_func(c->result->types, true);
+    signature->v.func.takes_self = true;
+    if (takes_number) {
+        lhat_type_add_param(c->result->types, signature,
+                            chk_simple(c, LHAT_TYPE_NUMBER));
+    }
+    signature->v.func.result = chk_simple(c, LHAT_TYPE_BOOL);
+    return signature;
+}
+
 // 02 の 14.17改2: tostring read backwards, carried by the one value a number^
 // can be read out of. The two signatures are shaped exactly as 14.17's and
 // made an intersection for the same reason -- 14.12 forbids them overlapping,
@@ -2966,12 +3002,13 @@ static bool run_of_names(const LhatNode *node, bool allow_scope)
 // Bare, because the enumeration tries "word" and "word^" for each and keeps
 // whichever answers (01 の 2.3: the hat is part of the name).
 const char *const chk_builtin_words[] = {
-    "ReturnType", "abs", "at", "cause",
+    "ReturnType", "abs", "at", "bitall",
+    "bitany", "bitat", "cause",
     "ceil", "clamp", "clear", "clone",
     "contains", "count", "dispose", "done",
     "enum", "eq", "extend", "find",
     "findall", "floor", "get", "indexof",
-    "insert", "iterate", "join", "keys",
+    "insert", "isinteger", "iterate", "join", "keys",
     "len", "length", "message", "move",
     "pop", "push", "remove", "replace",
     "resize", "resume", "reverse", "round", "self",
@@ -3386,6 +3423,13 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
              chk_name_is(name, length, "abs") ||
              chk_name_is(name, length, "sign"))) {
             return builtin_whole(c);
+        }
+        if (target->kind == LHAT_TYPE_NUMBER &&
+            (chk_name_is(name, length, "bitany") ||
+             chk_name_is(name, length, "bitall") ||
+             chk_name_is(name, length, "bitat") ||
+             chk_name_is(name, length, "isinteger"))) {
+            return builtin_bits(c, !chk_name_is(name, length, "isinteger"));
         }
         if (target->kind == LHAT_TYPE_NUMBER &&
             chk_name_is(name, length, "clamp")) {
@@ -6744,6 +6788,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 chk_expect(c, node, operand, chk_simple(c, LHAT_TYPE_BOOL),
                            LHAT_CHECK_ERR_NOT_BOOL);
                 return chk_simple(c, LHAT_TYPE_BOOL);
+            }
+            if (node->v.unary.op == LHAT_OP_BITNOT) {
+                return expect_bitwise(c, node->v.unary.operand, operand);
             }
             // 11.8改: 14.8 gives number^ the negation, and a type that wrote
             // its own is asked only where that does not reach -- the order the

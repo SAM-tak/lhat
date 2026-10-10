@@ -739,6 +739,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         VM_LABEL(LHAT_BC_CONCAT),
         VM_LABEL(LHAT_BC_NEG),
         VM_LABEL(LHAT_BC_NOT),
+        VM_LABEL(LHAT_BC_BNOT),
+        VM_LABEL(LHAT_BC_BAND),
+        VM_LABEL(LHAT_BC_BOR),
+        VM_LABEL(LHAT_BC_BXOR),
+        VM_LABEL(LHAT_BC_BSHIFT),
         VM_LABEL(LHAT_BC_TYPEOF),
         VM_LABEL(LHAT_BC_EQ),
         VM_LABEL(LHAT_BC_SAME),
@@ -1026,6 +1031,40 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 SET_R(a, lhat_bool(!lhat_as_bool(R(b))));
+                VM_NEXT();
+            }
+
+            // 02 の 14.23: a whole number within 64 bits, whichever
+            // representation holds it, or the run stops -- these never widen
+            // and nothing overloads them.
+            VM_CASE(LHAT_BC_BNOT) {
+                int64_t x;
+                if (!lhat_number_as_whole(R(b), &x)) {
+                    return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                SET_R(a, lhat_integer((int64_t)~(uint64_t)x));
+                VM_NEXT();
+            }
+
+            VM_CASE(LHAT_BC_BAND)
+            VM_CASE(LHAT_BC_BOR)
+            VM_CASE(LHAT_BC_BXOR)
+            VM_CASE(LHAT_BC_BSHIFT) {
+                int64_t x, y;
+                if (!lhat_number_as_whole(R(b), &x) ||
+                    !lhat_number_as_whole(R(cc), &y)) {
+                    return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
+                }
+                uint64_t u = (uint64_t)x;
+                uint64_t v = (uint64_t)y;
+                SET_R(a, lhat_integer((int64_t)(
+                    op == LHAT_BC_BAND  ? u & v
+                    : op == LHAT_BC_BOR ? u | v
+                    : op == LHAT_BC_BXOR ? u ^ v
+                    // Logical both ways; a count of 64 or more empties it.
+                    : y >= 64 || y <= -64 ? 0
+                    : y >= 0 ? u << y
+                             : u >> -y)));
                 VM_NEXT();
             }
 

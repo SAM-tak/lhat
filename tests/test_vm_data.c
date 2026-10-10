@@ -262,6 +262,40 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
+    // 02 の 14.23: the bits, read by mask or by position.
+    LHAT_TEST("bitany, bitall and bitat read the bits");
+    run_checked_text(&r,
+                     "var^ n = 12\n"  // 1100
+                     "return^ n.bitany(4) and^ !n.bitany(3)\n"
+                     "    and^ n.bitall(12) and^ !n.bitall(6)\n"
+                     "    and^ n.bitat(2) and^ !n.bitat(0)\n"
+                     "    and^ (8.0).bitat(3)\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("a position past either end holds no bit");
+    run_checked_text(&r,
+                     "var^ n = -1\n"
+                     "return^ !n.bitat(64) and^ !n.bitat(-1) and^ n.bitat(63)\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("and a number with no bits to read stops the run");
+    run_checked_text(&r, "var^ n = 2.5\nreturn^ n.bitany(1)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    // isinteger asks by value, and what it says yes to is exactly what the
+    // bitwise words take: 1e300 is whole but not within 64 bits.
+    LHAT_TEST("isinteger answers by value");
+    run_checked_text(&r,
+                     "var^ zero = 0.0\n"
+                     "return^ (3).isinteger() and^ (3.0).isinteger()\n"
+                     "    and^ !(2.5).isinteger() and^ !(1.0e300).isinteger()\n"
+                     "    and^ !(zero / zero).isinteger()\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
     // 02 の 11.2: '..' is concatenation in general; strings are the case
     // that is settled, and 14.5's composition of definitions is the other.
     LHAT_TEST("'..' joins two strings");

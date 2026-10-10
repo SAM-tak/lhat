@@ -1774,15 +1774,10 @@ bool lhat_string_equal(const LhatString *a, const LhatString *b)
 // it names the same number.
 static LhatValue normalise_key(LhatValue key)
 {
-    if (!lhat_is_real(key)) {
-        return key;
-    }
-    double d = lhat_as_real(key);
-    if (d >= -9223372036854775808.0 && d < 9223372036854775808.0 &&
-        d == (double)(int64_t)d) {
-        return lhat_integer((int64_t)d);
-    }
-    return key;
+    int64_t whole;
+    return lhat_is_real(key) && lhat_number_as_whole(key, &whole)
+               ? lhat_integer(whole)
+               : key;
 }
 
 // A key has to answer the same hash every time it is asked, which a NaN

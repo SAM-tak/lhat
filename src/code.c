@@ -477,6 +477,11 @@ const char *lhat_opcode_name(LhatOpcode op)
         case LHAT_BC_CONCAT:      return "concat";
         case LHAT_BC_NEG:         return "neg";
         case LHAT_BC_NOT:         return "not";
+        case LHAT_BC_BNOT:        return "bnot";
+        case LHAT_BC_BAND:        return "band";
+        case LHAT_BC_BOR:         return "bor";
+        case LHAT_BC_BXOR:        return "bxor";
+        case LHAT_BC_BSHIFT:      return "bshift";
         case LHAT_BC_TYPEOF:      return "typeof";
         case LHAT_BC_EQ:          return "eq";
         case LHAT_BC_SAME:        return "same";
@@ -653,6 +658,7 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
         case LHAT_BC_MOVE:
         case LHAT_BC_NEG:
         case LHAT_BC_NOT:
+        case LHAT_BC_BNOT:
         case LHAT_BC_NEWERROR:
         case LHAT_BC_ISERROR:
         case LHAT_BC_ISNIL:

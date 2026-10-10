@@ -3018,6 +3018,8 @@ static void test_the_built_ins_are_asked_for(void)
     expect_offered(&seen, "floor", true);
     expect_offered(&seen, "clamp", true);
     expect_offered(&seen, "abs", true);
+    expect_offered(&seen, "bitany", true);
+    expect_offered(&seen, "isinteger", true);
     expect_offered(&seen, "length", false);
     unit_dispose(&u);
 

@@ -2656,14 +2656,16 @@ static LhatNode *parse_unary(Parser *p)
         return finish(p, node);
     }
 
-    if (check_op(p, LHAT_OP_NOT) || check_op(p, LHAT_OP_SUB)) {
+    // 11.6: 'bitnot^' is a prefix word at '!''s level.
+    bool bitnot = check_hat(p, "bitnot");
+    if (bitnot || check_op(p, LHAT_OP_NOT) || check_op(p, LHAT_OP_SUB)) {
         LhatToken at = p->current;
         advance(p);
         LhatNode *node = make(p, LHAT_NODE_UNARY, &at);
         if (node == NULL) {
             return NULL;
         }
-        node->v.unary.op = at.v.op;
+        node->v.unary.op = bitnot ? LHAT_OP_BITNOT : at.v.op;
         node->v.unary.operand = parse_unary(p);
         return finish(p, node);
     }
@@ -2756,6 +2758,19 @@ static bool binary_info(const Parser *p, LhatOpKind *op, int *precedence,
             *op = LHAT_OP_DOT_PRODUCT;
             *precedence = PREC_MUL;
             return true;
+        }
+        // 11.6: the bitwise words share '*''s level, one level for all four,
+        // so a mix reads left to right like any other run of products.
+        static const struct { const char *word; LhatOpKind op; } bitwise[] = {
+            {"bitand", LHAT_OP_BITAND}, {"bitor", LHAT_OP_BITOR},
+            {"bitxor", LHAT_OP_BITXOR}, {"bitshift", LHAT_OP_BITSHIFT},
+        };
+        for (size_t i = 0; i < sizeof bitwise / sizeof bitwise[0]; i++) {
+            if (check_hat(p, bitwise[i].word)) {
+                *op = bitwise[i].op;
+                *precedence = PREC_MUL;
+                return true;
+            }
         }
         if (check_hat(p, "or")) {
             *op = LHAT_OP_OR;
@@ -3027,7 +3042,11 @@ static bool continues_expression(const Parser *p, const LhatToken *token)
             return token_is_hat(p, token, "and") || token_is_hat(p, token, "or") ||
                    token_is_hat(p, token, "is") || token_is_hat(p, token, "as") ||
                    token_is_hat(p, token, "catch") ||
-                   token_is_hat(p, token, "to");
+                   token_is_hat(p, token, "to") ||
+                   token_is_hat(p, token, "bitand") ||
+                   token_is_hat(p, token, "bitor") ||
+                   token_is_hat(p, token, "bitxor") ||
+                   token_is_hat(p, token, "bitshift");
         default:
             return false;
     }
