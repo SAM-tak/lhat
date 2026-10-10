@@ -2938,7 +2938,7 @@ VM 専用版では、各拡張が記述子の `signatures` / `signatures_size` �
 プログラムがバイト列を見て分岐する。だから VM のみビルドへ移してもファイル名は
 変わらず、ホストのローダも何も知らなくてよい。
 
-```
+```sh
 lhat --compile main.lh -o out        # 到達した全単位を out に同じ相対配置・同じ名前で
 lhat --run out/main.lh               # テキストと同じ道で走る
 ```
