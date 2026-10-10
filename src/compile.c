@@ -941,7 +941,7 @@ static void load_string(Compiler *c, uint8_t into, const LhatNode *node)
 // The key of a member access or an index. 01 の 10.1 makes digits after a '.'
 // an integer key, and a name after it a string key, so the two forms differ
 // only in how the key was written.
-// 03 の 5.1改: a cache for the member `node` reads, or SIZE_MAX where the
+// 12 の 3: a cache for the member `node` reads, or SIZE_MAX where the
 // site cannot have one -- an INDEX (the key changes), a name the compiler
 // cannot spell, a chunk that has run out of the 256 a byte can name. The
 // caller then emits the unspecialised read, which answers the same thing.
@@ -2078,7 +2078,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
                 // 14.12: and an override^ over an overloaded name takes the
                 // one arm it overlaps rather than the group.
                 write = LHAT_BC_OVERRIDEINDEX;
-                // 03 の 5.11c: the checker knows which arm that is, so the
+                // 12 の 2: the checker knows which arm that is, so the
                 // group can keep its shape instead of carrying the replaced
                 // arm behind the replacement. OVERRIDEARM reads the value at
                 // key + 1, which is where it is -- but the fallback keeps
@@ -2444,10 +2444,10 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
             fail(c, LHAT_COMPILE_TOO_COMPLEX);
             return;
         }
-        // 03 の 5.1改: 'x.m()' is where a member read is hottest, and the
+        // 12 の 3: 'x.m()' is where a member read is hottest, and the
         // name is written, so the site remembers where it found it.
         size_t cache = member_cache_for(c, target);
-        // 03 の 5.1改4: when every argument runs nothing, the read moves
+        // 12 の 3.1: when every argument runs nothing, the read moves
         // down to sit against the call and fuses with it (CALLMEMBER) --
         // nothing between them could have changed which member is called.
         // An argument that runs something keeps today's order: the member
@@ -2562,7 +2562,7 @@ static void compile_call_wide(Compiler *c, const LhatNode *node, uint8_t into,
         return;
     }
 
-    // 03 の 5.11c: strict settled which candidate of an overloaded member this
+    // 12 の 2: strict settled which candidate of an overloaded member this
     // call means, so the search 5.11 would run is replaced by taking that
     // one. Emitted here rather than beside the callee so the one place that
     // knows the call is complete is the one place that decides -- the
@@ -3040,7 +3040,7 @@ static bool runs_nothing(Compiler *c, const LhatNode *node)
             name_is(name, length, "false^") || name_is(name, length, "nil^"));
 }
 
-// The constant a literal right operand is folded into (03 の 5.1), or
+// The constant a literal right operand is folded into (12 の 4.1), or
 // SIZE_MAX where it is not one: a number always, a string when `strings`.
 static size_t literal_constant(Compiler *c, const LhatNode *node,
                                bool strings)
@@ -3142,14 +3142,14 @@ static void compile_binary(Compiler *c, const LhatNode *node, uint8_t into)
     // per operand. The answer may be wide too (a registered "+"), which the
     // machine writes whole at `into` -- reserved by this node's own caller.
     //
-    // 03 の 5.1: an operand that is a bare name is read where it lies
+    // 12 の 4.1: an operand that is a bare name is read where it lies
     // rather than MOVEd into scratch -- the staging copies were most of a
     // loop body's instructions. The right side always may (nothing runs
     // between its evaluation and the instruction); the left only when
     // evaluating the right can write no local -- a call reaches any of
     // them through a capture, so the left forwards only past a right that
     // runs nothing (a name, a literal).
-    // 03 の 5.1: the four common operations with a numeric literal on the
+    // 12 の 4.1: the four common operations with a numeric literal on the
     // right fold the constant into the instruction -- `i + 1` was a LOADK
     // re-run every turn of a loop. The operator fallback still works: the
     // machine's ADDK family carries the constant to call_operator itself.
@@ -3698,7 +3698,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 return;
             }
 
-            // 03 の 5.1改: a written member name is the same key every time
+            // 12 の 3: a written member name is the same key every time
             // this instruction runs, so the site can remember where it found
             // it.
             size_t cache = member_cache_for(c, node);
@@ -3817,7 +3817,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
 
         case LHAT_NODE_UNARY: {
             uint8_t mark = c->next_register;
-            // 03 の 5.1: a name is read where it lies, as a binary operand
+            // 12 の 4.1: a name is read where it lies, as a binary operand
             // is -- each of these reads its operand before it writes.
             // 05 の 8.9: a host value operand keeps its width, as everywhere.
             const Local *home = forwardable_local(c, node->v.unary.operand);
@@ -5538,7 +5538,7 @@ static void compile_loop(Compiler *c, const LhatNode *node)
         load_constant(c, count_step, lhat_integer(1));
     }
 
-    // 03 の 5.1改3: one instruction a turn, when the shape allows -- the
+    // 12 の 4.4: one instruction a turn, when the shape allows -- the
     // triple laid consecutively (a fresh focus; 8.6改 reuse of an existing
     // name lands elsewhere) and no pre^ (9.10 runs pre^ on the refusing turn
     // too, which a bottom-of-loop test cannot). Anything else keeps the
@@ -5899,7 +5899,7 @@ static void compile_statement(Compiler *c, const LhatNode *node)
                 c->next_register = mark;
                 return;
             }
-            // 03 の 5.1: a name is returned where it lies. RETURN takes its
+            // 12 の 4.1: a name is returned where it lies. RETURN takes its
             // answer before the frame drains (5.5), so a copy would hold
             // nothing the name does not.
             const Local *home = forwardable_local(c, node->v.jump.value);

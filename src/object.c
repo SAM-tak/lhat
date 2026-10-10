@@ -924,7 +924,7 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
         // walk has already been through. Asked of a value it answers what the
         // cycle used to be flattened to -- that it is a table -- since telling
         // more would mean walking a value that may hold itself as well. The
-        // checker is where the shape is judged (03 の 5.11c); this is 11.6's
+        // checker is where the shape is judged (12 の 2); this is 11.6's
         // own check, and it says no less than it did.
         case LHAT_TYPE_RT_SELF:
             return lhat_is_object_kind(value, LHAT_OBJECT_TABLE);
@@ -1591,7 +1591,7 @@ LhatOverload *lhat_overload_with_first(LhatHeap *heap,
     return made;
 }
 
-// 03 の 5.11c: the same replacement, once the checker has named the arm. The
+// 12 の 2: the same replacement, once the checker has named the arm. The
 // group then holds exactly the arms the name's type says it does -- the one
 // replaced is gone rather than kept behind the replacement -- so an index
 // into the arms means the same thing on both sides, which is what lets a
@@ -1967,7 +1967,7 @@ static bool grow_entries(LhatTable *table)
     table->entry_capacity = capacity;
     table->entry_count = moved;
     table->entry_tombs = 0;  // none survived the move
-    // 03 の 5.1改: a rehash moves everything, so nothing remembered about
+    // 12 の 3: a rehash moves everything, so nothing remembered about
     // where a key was is worth anything afterwards.
     table->version++;
     return true;
@@ -2050,7 +2050,7 @@ static LhatValue take_entry(LhatTable *table, LhatTableEntry *entry)
     entry->value = lhat_bool(true);  // a tombstone
     table->entry_count--;
     table->entry_tombs++;
-    table->version++;  // 03 の 5.1改: an entry left its place
+    table->version++;  // 12 の 3: an entry left its place
     return value;
 }
 
@@ -2280,7 +2280,7 @@ LhatValue lhat_table_get_by_value(const LhatTable *table,
 // the fourth state a slot can be in (free, tombstone, live, seat). It reads
 // as absent (table_get_in skips it), the walkers show it as (key, nil^),
 // and filling it is an overwrite -- no layout change, so no version bump,
-// which is what keeps 03 の 5.1改's member cache standing across new.
+// which is what keeps 12 の 3's member cache standing across new.
 
 bool lhat_table_reserve(LhatTable *table, LhatValue key)
 {

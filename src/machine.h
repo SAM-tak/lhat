@@ -231,7 +231,7 @@ struct LhatMachine {
     // middle of a collection is no place to run any.
     LhatCoroutine *pending_dispose;
 
-    // 03 の 5.2改: whether anything must be looked at before the next
+    // 12 の 5: whether anything must be looked at before the next
     // instruction runs -- a coroutine held back above, or the debugger's
     // hook below. The dispatch asks this one word instead of loading both,
     // which matters because computed goto pays that test at every
@@ -364,7 +364,7 @@ struct LhatMachine {
     // every level's table has to stay reachable, not just the innermost.
     // The nodes live on the C stack of the built-in that pushed them.
     struct LhatNativeHold *native_hold;
-    // 03 の 5.1改: a built-in member read only to be called carries no
+    // 12 の 3: a built-in member read only to be called carries no
     // receiver of its own (LhatNative.unbound), so one per kind serves every
     // such call. Made on first use and held weakly (gc.c's atomic).
     struct LhatNative *unbound_natives[LHAT_NATIVE_CLEAR + 1];

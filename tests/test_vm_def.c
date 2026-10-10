@@ -900,7 +900,7 @@ static void test_definitions(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_NO_CANDIDATE);
     run_dispose(&r);
 
-    // 03 の 5.11c. The two paths answer differently here, which is the whole
+    // 12 の 2. The two paths answer differently here, which is the whole
     // reason the static one exists: a parameter left to inference (03 の 3.4)
     // is a type the checker knows and the descriptor fits_call reads does not
     // -- lower_type had no annotation to read, and a descriptor that is not
@@ -926,7 +926,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
-    // 03 の 5.11c: an arm index means the same thing on both sides only if
+    // 12 の 2: an arm index means the same thing on both sides only if
     // the group holds what the checker's type says it holds. An override^
     // over an overloaded name is where that is decided -- the replacement
     // takes the place of the arm it replaces rather than going in front of a
@@ -976,7 +976,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 124);
     run_dispose(&r);
 
-    // 03 の 5.11c, the case the two orders differ in most: the arm replaced
+    // 12 の 2, the case the two orders differ in most: the arm replaced
     // is neither the first nor the last, so putting the replacement in front
     // instead of in its place would move both of the others.
     LHAT_TEST("an override^ of a middle arm moves none of the others");
@@ -2084,7 +2084,7 @@ static void test_reserved_seats(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     {
         const LhatTable *made = (const LhatTable *)lhat_as_object(r.ran.value);
-        // The whole of what keeps 03 の 5.1's member cache standing.
+        // The whole of what keeps 12 の 3's member cache standing.
         LHAT_CHECK_EQ_INT(made->version, 0);
         LhatValue key = lhat_nil();
         LHAT_CHECK(lhat_machine_make_string(r.machine, "v", 1, &key), "a key");

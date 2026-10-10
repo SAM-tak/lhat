@@ -540,7 +540,7 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
 #define VM_POLL_AND_JIT() LHAT_SLICE_POLL()
 #endif
 
-// 03 の 5.2改: how the loop gets from one instruction to the next. GCC and
+// 12 の 5: how the loop gets from one instruction to the next. GCC and
 // Clang can take the address of a label, which lets every instruction end
 // with its own jump to the next one. The branch predictor then keeps a
 // history per opcode instead of one shared by every instruction in the
@@ -628,7 +628,7 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
 #define VM_NEXT() continue
 #endif
 
-// 03 の 5.1改6: the fast paths. Bare `if`s rather than do/while(0) on
+// 12 の 4.2: the fast paths. Bare `if`s rather than do/while(0) on
 // purpose -- under the switch VM_NEXT is the loop's `continue`, which a
 // do/while would catch. Each falls through when it cannot answer.
 //
@@ -704,7 +704,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
     // An ordering's answer, settled by either of its two paths before the
     // shared tail that writes it and takes the jump reading it.
     bool ordered = false;
-    // 03 の 5.1改: what GETINDEX and GETMEMBER share. Declared out here
+    // 12 の 3: what GETINDEX and GETMEMBER share. Declared out here
     // because the second jumps into the first's body having settled them
     // -- the key it asks by, and the cache to fill on the way out (NULL
     // for a GETINDEX, which remembers nothing).
@@ -1132,7 +1132,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
             ordering_held: {
                 SET_R(a, lhat_bool(ordered));
-                // 03 の 5.1改5: the JUMP_FALSE that reads this answer,
+                // 12 の 4.3: the JUMP_FALSE that reads this answer,
                 // consumed on the spot when it stands right here --
                 // one turn for the pair. Any jump that lands on it
                 // still runs it as itself.
@@ -1200,7 +1200,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 03 の 5.11c: strict already found the one arm that fits (14.12
+            // 12 の 2: strict already found the one arm that fits (14.12
             // leaves at most one), so the call ahead takes it instead of
             // asking every candidate again. Nothing else is touched: a value
             // that is not a group reached here some way the checker did not
@@ -1356,7 +1356,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // way this fails is being asked of something that is not a table.
             // An error answers from its fields: 2.3 gives every kind message
             // and cause, and they are reached the same way as a member.
-            // 03 の 5.1改: a written member name, which is the same key every
+            // 12 の 3: a written member name, which is the same key every
             // time this site runs. What it remembers is where the answer was
             // last found, and a hit is two comparisons -- against a walk of
             // the 14.7 chain and a probe with a full key equality in it.
@@ -1380,7 +1380,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 goto member_body;
             }
 
-            // 03 の 5.1改4: GETMEMBER fused with its call. A hit loads
+            // 12 の 3.1: GETMEMBER fused with its call. A hit loads
             // the member and walks straight into the paired call
             // instruction; a miss is GETMEMBER to the letter, and the pair
             // runs as itself on the next turn.
@@ -1654,7 +1654,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 goto set_index;
             }
 
-            // 03 の 5.11c: the same write with the arm named. What it replaces
+            // 12 の 2: the same write with the arm named. What it replaces
             // is dropped rather than shadowed, so the arms left are the arms
             // the checker's type says the name carries -- which is what makes
             // an arm index mean the same thing on both sides. super^ is
@@ -3523,7 +3523,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
         }
         // Both operands are read before either slot of the new window is
-        // written: 03 の 5.1's forwarding reads an operand where it lies,
+        // written: 12 の 4.1's forwarding reads an operand where it lies,
         // and a destination that is itself a local puts the window right on
         // top of one -- 's := s .. t' has t sitting at next_base.
         LhatValue left_operand = receiver_on_right ? R(b) : actual_receiver;

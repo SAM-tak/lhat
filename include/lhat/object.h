@@ -93,7 +93,7 @@ typedef struct LhatTable {
                               // needs a truly free slot to stop at
     size_t entry_capacity;
 
-    // 03 の 5.1改: how many times the LAYOUT of `entries` has changed -- a
+    // 12 の 3: how many times the LAYOUT of `entries` has changed -- a
     // key added, a key removed, a rehash, a run drained into the array half.
     // Writing over a key that is already there does not move anything and
     // does not count, which is what lets 'self^.x := 1' in a loop leave every
@@ -966,7 +966,7 @@ LhatOverload *lhat_overload_with_first(LhatHeap *heap,
                                        const LhatOverload *existing,
                                        LhatValue candidate);
 
-// 03 の 5.11c: a new group with arm `arm` of `existing` replaced. NULL when
+// 12 の 2: a new group with arm `arm` of `existing` replaced. NULL when
 // there is no such arm, which leaves the caller to fall back on the search
 // form above. The old group is left as it was, again for super^.
 LhatOverload *lhat_overload_replacing(LhatHeap *heap,
@@ -1050,7 +1050,7 @@ LhatValue lhat_table_get(const LhatTable *table, LhatValue key);
 LhatValue lhat_table_get_bytes(const LhatTable *table, const char *name,
                                size_t length);
 
-// 03 の 5.1改: the same lookup, saying where it found the answer -- which
+// 12 の 3: the same lookup, saying where it found the answer -- which
 // table of the 14.7 chain, and which entry of its hash half. `found_in` is
 // NULL when nothing was found or when the answer came off the sequence half,
 // which a written member name never reaches. `inherited` is true when the

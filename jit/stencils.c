@@ -8,7 +8,7 @@
 // from. A stencil answers its own pc before it has written anything, so the
 // interpreter runs that instruction whole -- which is how every case a
 // stencil was not written for is handled: by the code that already handles
-// it (03 の 5.1).
+// it (12 の 7).
 //
 // The holes are the addresses of symbols nothing defines, compiled for the
 // small code model without position independence: each is a 32-bit field in
@@ -169,7 +169,7 @@ ARITH_R_REAL(div, /, RREAL)
 
 // 02 の 14.8: two integers order exactly. A real orders with tolerance,
 // which is the interpreter's. `fused` is the JUMP_FALSE after it that reads
-// the answer (03 の 5.1改5), taken here: the target when it is false.
+// the answer (12 の 4.3), taken here: the target when it is false.
 #define ORDER(name, oper, right)                                            \
     STENCIL(name)                                                           \
     {                                                                       \
@@ -243,7 +243,7 @@ STENCIL(jump_false_back)
     NEXT();
 }
 
-// 03 の 5.1改6: integers all three, the loop counts in integers, and an
+// 12 の 4.2: integers all three, the loop counts in integers, and an
 // overflow is past any integer bound -- the loop is over.
 #define FORLOOP(name, overflows, oper)                                      \
     STENCIL(name)                                                           \

@@ -233,7 +233,7 @@ LhatTable *vm_clone_table(Machine *m, const LhatTable *source,
             return NULL;
         }
     }
-    // 03 の 5.1改: the building above counted as layout changes, but the
+    // 12 の 3: the building above counted as layout changes, but the
     // clone is only now born -- no cache can remember a table that did not
     // exist. Version zero is what lets a from_definition answer stand for
     // an instance that only ever filled its declared seats.

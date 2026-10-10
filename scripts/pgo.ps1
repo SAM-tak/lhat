@@ -1,6 +1,6 @@
 # Builds the profile-guided lhat. Two phases over one build tree: GENERATE
 # instruments, a training run over bench/ and sample/ writes the profile, and
-# flipping the cache to USE builds again with it. 03 の 6.2改: this is the
+# flipping the cache to USE builds again with it. 12 の 6: this is the
 # cure for the code-layout lottery, and the finishing bench run prints this
 # machine's numbers.
 #

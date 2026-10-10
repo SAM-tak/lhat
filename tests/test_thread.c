@@ -881,7 +881,7 @@ static void test_program_lock(void)
 }
 
 // ---------------------------------------------------------------------------
-// 03 の 5.1改5: the member cache under several machines at once
+// 12 の 4.3: the member cache under several machines at once
 // ---------------------------------------------------------------------------
 
 // Workers share a proto but keep independent member caches. Alternate two

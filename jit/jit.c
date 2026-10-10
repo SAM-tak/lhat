@@ -88,7 +88,7 @@ static void step_gc_poll(Machine *m, uintptr_t pc)
     }
 }
 
-// 03 の 5.1改: a member the site's cache answers. A miss is the
+// 12 の 3: a member the site's cache answers. A miss is the
 // interpreter's, whose lookup fills the cache for the next time.
 static bool jit_get_member(LhatJitContext *context, uintptr_t a, uintptr_t b,
                            uintptr_t c, uintptr_t pc)
@@ -283,7 +283,7 @@ static const LhatJitStencil *order_stencil(LhatOpcode op, bool fused)
     return fused ? taking[at] : plain[at];
 }
 
-// 03 の 5.1改5: the JUMP_FALSE reading a comparison's answer is taken in,
+// 12 の 4.3: the JUMP_FALSE reading a comparison's answer is taken in,
 // as the interpreter takes it -- forward only, so the jump back a loop turns
 // on keeps its poll. Says whether it was, having pointed `choice` past it.
 static bool take_jump_false(const LhatChunk *chunk, size_t pc,
@@ -449,7 +449,7 @@ static Choice choose(const LhatChunk *chunk, size_t pc)
         case LHAT_BC_TAILCALLMETHOD:
             choice.stencil = &lhat_jit_stencil_call;
             break;
-        // 03 の 5.1改4: taken with the CALLMETHOD it reads for, the way the
+        // 12 の 3.1: taken with the CALLMETHOD it reads for, the way the
         // interpreter takes the two.
         case LHAT_BC_CALLMEMBER:
             if (pc + 1 < chunk->count &&
@@ -757,7 +757,7 @@ static void moved_to(LhatJitContext *context, const Frame *frame)
 // 5.3, what the interpreter's calls -- plain, method and tail -- do for the
 // case they are most often asked: an L^ body taking exactly the arguments
 // laid out for it, no spread, no collected tail, not a coroutine to make --
-// and, for a CALLMEMBER, a member its site remembers (03 の 5.1改4), read
+// and, for a CALLMEMBER, a member its site remembers (12 の 3.1), read
 // on the way into the call it is paired with. Nothing is allocated, which is why
 // the collector's poll is not asked here. The body is entered the way the
 // interpreter enters one, slice and all. The instruction is read here

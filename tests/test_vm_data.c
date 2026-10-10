@@ -394,7 +394,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 03 の 5.1改7: a literal on the right folds into the instruction, and
+    // 12 の 4.1: a literal on the right folds into the instruction, and
     // the constant still reaches the op^<=> that takes a number.
     LHAT_TEST("and against a literal too");
     run_text(&r,
@@ -2031,7 +2031,7 @@ static void test_table_methods(void)
     run_dispose(&r);
 }
 
-// 03 の 5.1改: a written member read remembers where it found the answer, and
+// 12 の 3: a written member read remembers where it found the answer, and
 // asks the table's version before trusting the place again. What is pinned
 // here is that the remembering never changes an answer -- the cases are the
 // ones where a cache that did not notice something would hand back the

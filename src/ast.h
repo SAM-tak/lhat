@@ -257,7 +257,7 @@ struct LhatNode {
     void *display_type;
 #endif
 
-    // 03 の 5.11c: which arm of an overloaded member (02 の 14.12) the checker
+    // 12 の 2: which arm of an overloaded member (02 の 14.12) the checker
     // settled on, as the index into that member's arms plus one -- zero means
     // it settled nothing, which is what an unchecked compile always sees.
     //

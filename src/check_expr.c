@@ -1469,7 +1469,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
     }
 
     LhatType *right = chk_infer(c, node->v.binary.right);
-    // 03 の 5.1改7: written on every pass, so the last one is what stands.
+    // 12 の 4.1: written on every pass, so the last one is what stands.
     // The three left out reach call_operator even between numbers.
     ((LhatNode *)node)->checked_numeric =
         op != LHAT_OP_CONCAT && op != LHAT_OP_CROSS &&
@@ -2363,7 +2363,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         for (const LhatTypeList *arm = callee->v.composite.arms; arm != NULL;
              arm = arm->next, position++) {
             if (chk_signature_accepts(arm->type, args, tracked, through_member)) {
-                // 03 の 5.11c: once every argument's type is settled this is
+                // 12 の 2: once every argument's type is settled this is
                 // the answer, not a guess -- a call fitting no arm is the
                 // MISMATCH below. So the compiler may bake the arm in and let
                 // the run skip 5.11's search, under either strictness. An
@@ -5540,7 +5540,7 @@ static LhatType *override_one(Checker *c, const LhatNode *entry,
         return replacement;
     }
 
-    // 03 の 5.11c: which arm this is settles the shape of the group the run
+    // 12 の 2: which arm this is settles the shape of the group the run
     // builds, so the compiler is told rather than left to put the replacement
     // in front of a group that keeps the arm it replaced. Not a strict-only
     // matter: 03 の 4.2 asks that what runs be the same either way, and the

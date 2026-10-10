@@ -25,7 +25,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 03 の 5.2改: cl.exe has no computed goto, so the interpreter loop
+          # 12 の 5: cl.exe has no computed goto, so the interpreter loop
           # reads a switch there. Visual Studio's own clang-cl -- first on
           # the PATH the MSVC environment step exports -- builds the faster
           # spelling against the same headers and libraries.

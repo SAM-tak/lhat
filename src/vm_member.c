@@ -1025,7 +1025,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
                      m->slots.values + key_slot + 1));
         return LHAT_RUN_OK;
     }
-    // 03 の 5.1改: the one path a cache is about -- what a table
+    // 12 の 3: the one path a cache is about -- what a table
     // holds under a written name. Everything else this
     // instruction answers (a coroutine's operations, a host
     // value's fields, the built-ins every value carries) is made
@@ -1053,7 +1053,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
         }
         lhat_slots_set(m->slots, into, got);
     on = lhat_slots_get(m->slots, receiver);
-        // 03 の 5.1改: only where the walk found it in a hash
+        // 12 の 3: only where the walk found it in a hash
         // entry, and -- for the inherited case -- where the
         // receiver itself has not been structurally written,
         // since that is what a hit will be trusting. A delegated

@@ -774,7 +774,7 @@ static LhatValue member_of(const LhatValue owner, const char *name)
     return found;
 }
 
-// 03 の 5.1改: a built-in member read only to be called is the machine's
+// 12 の 3: a built-in member read only to be called is the machine's
 // shared copy, bound at the call to the receiver laid out after it -- so a
 // call allocates nothing for the member. Read as a value it is bound as
 // before, and stays bound to what it was read off.

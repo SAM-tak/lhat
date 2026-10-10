@@ -1,6 +1,6 @@
 // L^ (lhat) -- what a member read costs, measured rather than assumed.
 //
-// 03 の 5.1 foretold specialised instructions for places where the type is
+// 12 の 1 foretold specialised instructions for places where the type is
 // settled, the first of them (5.11c) being in. The next candidate is the
 // member read: 'x.m' is LHAT_BC_GETINDEX, a probe of the receiver's table.
 // Replacing it with a slot read is a large change either way -- a vtable-like

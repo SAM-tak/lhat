@@ -44,7 +44,7 @@ typedef enum {
     LHAT_BC_POW,
     LHAT_BC_CROSS,       // A B C: overloaded cross product
     LHAT_BC_DOT_PRODUCT, // A B C: overloaded dot product
-    // 03 の 5.1, measured first: the four common ones again with the right
+    // 12 の 4.1, measured first: the four common ones again with the right
     // operand a constant. A loop's `i + 1` was a LOADK re-run every turn,
     // and these fold it into the instruction. The block stays contiguous
     // and in ADD's order, so compile.c maps by offset.
@@ -64,7 +64,7 @@ typedef enum {
     LHAT_BC_LE,
     LHAT_BC_GT,
     LHAT_BC_GE,
-    // 03 の 5.1改7: the four again with the right operand a constant, as
+    // 12 の 4.1: the four again with the right operand a constant, as
     // ADDK's block is to ADD's -- same order, so compile.c maps by offset.
     LHAT_BC_LTK,        // A B C R[A] = R[B] < K[C]
     LHAT_BC_LEK,
@@ -98,7 +98,7 @@ typedef enum {
                         //         the answer. 0 and 1 both mean one, which is
                         //         every call written before tuples existed.
                         //         The byte was a boolean and had the room.
-    // 03 の 5.11c: strict settled which candidate of an overloaded member
+    // 12 の 2: strict settled which candidate of an overloaded member
     // (02 の 14.12) the call ahead means, so the search 5.11 runs is not
     // run. Anything but a group in R[A] is left alone -- a value that got
     // here another way is still called the ordinary way.
@@ -127,7 +127,7 @@ typedef enum {
     LHAT_BC_RESERVE,    // A B   table A gains key B's seat -- the key with
                         //       no value (02 の 14.15's declaration)
     LHAT_BC_GETINDEX,   // A B C R[A] = R[B][R[C]]
-    // 03 の 5.1改: the same read where the key was written rather than
+    // 12 の 3: the same read where the key was written rather than
     // computed -- 'x.m', never 'x[k]'. C names a member_keys entry; the
     // machine caches its lookup, so a hit needs validation instead of
     // a walk of the definition chain and a probe with a full key equality
@@ -157,7 +157,7 @@ typedef enum {
     LHAT_BC_MAKERUN,    // A B   R[A] = the head of the B positions at R[A+1]
     LHAT_BC_ADDOVERLOAD,// A B C R[A][R[B]] gains R[C] as another way to call it
     LHAT_BC_OVERRIDEINDEX, // A B C R[A][R[B]] := R[C], ahead of any overload
-    // 03 の 5.11c: the same write, once the checker has said which arm is
+    // 12 の 2: the same write, once the checker has said which arm is
     // being replaced. The group then keeps its shape -- the arm goes in the
     // place of the one it replaces instead of in front of it, and that one is
     // dropped rather than left shadowed, so the arms a call can reach are the
@@ -271,7 +271,7 @@ typedef enum {
     LHAT_BC_ASCAST,     // A B   R[A] = R[A], or a CastFailure
 
 
-    // 03 の 5.1改4: GETMEMBER fused with the call it feeds. Operands are
+    // 12 の 3.1: GETMEMBER fused with the call it feeds. Operands are
     // GETMEMBER's own (A the callee slot, B the receiver, C the cache);
     // the paired CALLMETHOD/TAILCALLMETHOD sits right after it, and a
     // cache hit reads that instruction's counts and enters the call
@@ -280,7 +280,7 @@ typedef enum {
     // instructions stay in the chunk and only the dispatch is saved.
     LHAT_BC_CALLMEMBER, // A B C as GETMEMBER; pairs with the next instruction
 
-    // 03 の 5.1改3 with 02 の 16.4: the counted loop's turn as one
+    // 12 の 4.4 with 02 の 16.4: the counted loop's turn as one
     // instruction. A, A+1, A+2 are the focus, the bound and the step^,
     // laid consecutively by the compiler -- which falls back to the
     // spelled-out compare/jump/add form when the shape does not allow it
@@ -625,7 +625,7 @@ size_t lhat_chunk_constant_raw(LhatChunk *chunk, LhatValue value);
 // The same for a string literal: the bytes are copied into a string the chunk
 // owns. Two literals spelling the same thing share one constant, which is
 // what makes t.foo and t["foo"] one key.
-// 03 の 5.1改: a fresh cache for one written member read, answering its Bx.
+// 12 の 3: a fresh cache for one written member read, answering its Bx.
 // `key` is the constant that names the member. SIZE_MAX when there is no
 // memory or the chunk already holds 65536 of them -- the caller then emits
 // the unspecialised read, which answers the same thing.

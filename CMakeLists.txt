@@ -35,7 +35,7 @@ if(NOT LHAT_WITH_FRONTEND)
     set(LHAT_BUILD_TESTS OFF)
     set(LHAT_BUILD_BENCH OFF)
 endif()
-# 03 の 5.1: what a specialised instruction would be worth, measured.
+# 12 の 1: what a specialised instruction would be worth, measured.
 # Off by default -- it takes minutes to run and asserts almost nothing, so
 # it has no business in an ordinary build or in CI.
 option(LHAT_BUILD_BENCH "Build the L^ member-read benchmark" OFF)
@@ -93,7 +93,7 @@ if(LHAT_SANITIZE)
 endif()
 
 # ---- PGO ------------------------------------------------------------------
-# 03 の 6.2: the cure for the code-layout lottery. Two phases share one build
+# 12 の 6: the cure for the code-layout lottery. Two phases share one build
 # tree (scripts/pgo.ps1 drives them): GENERATE instruments, a training run
 # writes the profile, USE relinks with it. Under MSVC the /GL objects are
 # common to both phases, so the second build is a relink; GCC/Clang carry
@@ -482,7 +482,7 @@ if(LHAT_BUILD_CLI)
 endif()
 
 # ---- Benchmark --------------------------------------------------------------
-# 03 の 5.1: the member read is the next candidate for a specialised
+# 12 の 3: the member read is the next candidate for a specialised
 # instruction, and replacing it is a large change whichever shape it takes.
 # This is what puts a number in front of that decision. Not a test -- a claim
 # about time does not pass or fail -- so it is built only when asked for and

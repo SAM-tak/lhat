@@ -118,7 +118,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
                             size_t key_slot, LhatValue member_key,
                             LhatMemberCache *filling, bool for_call);
 
-// 03 の 5.1改: the member a GETMEMBER, GETMETHOD or CALLMEMBER site found
+// 12 の 3: the member a GETMEMBER, GETMETHOD or CALLMEMBER site found
 // last time, when it is still the answer for `receiver` -- or NULL, and
 // `*cache` is where the slow path writes what it finds.
 //
