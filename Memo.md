@@ -219,54 +219,22 @@ hash^ ユーザー定義のハッシュ。これがないと値比較でテー�
 #### ビット演算
 
 ```lhat
-band^
-bor^
-bxor^
+bitand^
+bitor^
+bitxor^
+bitnot^
+bitshift^ # 算術シフトではなく論理シフト
+
+# 引数がtrue^だったら一個でも立っているビットがあるか？false^だったら一個でも寝ているビットがあるか？
+number^.bitany = f^self^, number^ -> bool^;
+# 全ビットが、引数がtrue^だったら立っているか？false^だったら寝ているか？
+number^.bitall = f^self^, number^ -> bool^;
+# 指定したビット桁が立っているか？
+number^.bitat  = f^self^, number^ -> bool^; # 範囲外は、false^
+# bitand^ 等と同じく、実数だったら整数化して実行する（self^には変更無し）。
 ```
 
-うーん… Lua は「なにげに & | を使ってなかった」が大きいんだよなぁ
-
-が、型アノテーション位置など、型が関わる位置とそうでない位置、で & | ~ の扱いを変えれば…
-と思ったが、L^ では ^ を XOR の意味にするのは難しいので、名前で、普通の関数で、のほうがいいか…
-まぁ、Luaでも ^ を階乗の意味に使ってるから、二項の ~ が XOR で 単項の ~ が NOT という、
-結構違和感のある選択になってる。
-
-```lhat
-let^bit = import^std.bit
-
-bit.not(bit.and(bit.or(a, b), c))
-```
-
-てな感じかなぁ。
-
-```lhat
-std.bit.and = f^a:number^, b:number^-> number^;
-std.bit.or = f^a:number^, b:number^-> number^;
-std.bit.xor = f^a:number^, b:number^-> number^;
-std.bit.not = f^a:number^-> number^;
-std.bit.eq = f^a:number^, b:number^-> bool;
-std.bit.any = f^a:number^, bool^-> bool^;
-std.bit.all = f^a:number^, bool^-> bool^;
-
-std.bit.Error.NotInteger # local errordef。エラーは、返したほうがいい、んじゃないかな…
-
-std.bit.Bit64  # HostValue
-
-let^a = std.bit.new(number1) # Bit64 にして返す
-let^b = std.bit.new(number2)
-let^c = a.and(b).not()
-let^c = -(a * b) # これが等価、と言うアイデアもある。…だめか？二項の - が XOR ということになる…
-if^ c.any(true^) { print("ビット立ってる") }
-c = c.shift(-8).shift(8) # 良くないか…？ left が + 方向ということだが。
-c = c >> 8 << 8 # 突然？却下かなぁ…
-c = c."»"(-8)."«"(8) # 一応こういうことも可能は可能だ。一応。
-c = c.rs(8).ls(8) # これもあんまり良くないか？
-c = c.rightshift(8).leftshift(8) # 無難か…？いや、やっぱleft right は分かりづらい。
-```
-
-<< >> 演算子というアイデアがいかに優秀かという話。
-
-どの道、L^のビット演算はビットマスク、フラグ演算のためにあるもので、速度のためじゃない、と割り切る。
+という形で決着。ついでに number^.isinteger も入った。
 
 #### パラメトリック多相
 
