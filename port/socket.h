@@ -1,13 +1,10 @@
-// L^ (lhat) -- a listening TCP socket on the loopback, on whichever system.
+// L^ (lhat) -- sockets, on whichever system.
 //
 // The core asks for none of this, and neither does the language: this is for
-// what is built beside it -- the debug adapter (dap/), which a debugger
-// reaches over a socket because DAP travels that way. So it lives in port/
-// beside thread.h and is a target of its own that `lhat` does not link.
-//
-// Loopback only. The adapter serves one debugger on the same machine (a
-// VS Code extension it was spawned by, or an editor); nothing here is meant
-// to face a network, and binding 127.0.0.1 is the whole of that intent.
+// what is built beside it. The debug adapter (dap/) listens for one debugger
+// over TCP on the loopback, because DAP travels that way; std.net (11 章)
+// sends and receives UDP datagrams. So it lives in port/ beside thread.h and
+// is a target of its own that `lhat` does not link.
 
 #ifndef LHAT_PORT_SOCKET_H
 #define LHAT_PORT_SOCKET_H
@@ -26,11 +23,15 @@ typedef struct {
     intptr_t handle;
 } LhatSocket;
 
-// Winsock needs a process-wide startup; elsewhere this is a no-op that
-// answers true. Call once before any other call here, and cleanup once at
-// the end.
+// Winsock needs a startup before any other call here and a cleanup after;
+// elsewhere both do nothing. Winsock counts them, so each user pairs its own
+// and the last cleanup is the one that takes effect.
 bool lhat_socket_startup(void);
 void lhat_socket_cleanup(void);
+
+// ---------------------------------------------------------------------------
+// TCP, loopback only. The adapter serves one debugger on the same machine;
+// binding 127.0.0.1 is the whole of that intent.
 
 // Listens on 127.0.0.1:`port`. false when the port could not be taken.
 bool lhat_socket_listen(LhatSocket *out, uint16_t port);
@@ -52,6 +53,53 @@ long lhat_socket_recv(LhatSocket socket, char *buffer, size_t size);
 bool lhat_socket_send_all(LhatSocket socket, const char *bytes, size_t size);
 
 void lhat_socket_close(LhatSocket socket);
+
+// ---------------------------------------------------------------------------
+// UDP
+
+// An address of either family, held the way the system spells one.
+typedef struct {
+    uint64_t storage[16];  // room for a sockaddr_storage
+    uint32_t length;
+} LhatSocketAddress;
+
+typedef enum {
+    LHAT_SOCKET_DONE,
+    LHAT_SOCKET_EMPTY,  // nothing has arrived: the receive would have blocked
+    LHAT_SOCKET_IN_USE,
+    LHAT_SOCKET_UNREACHABLE,
+    LHAT_SOCKET_TOO_LARGE,
+    LHAT_SOCKET_FAILED
+} LhatSocketStatus;
+
+// `host` by name or number, IPv4 or IPv6, the first answer the resolver
+// gives. `passive` reads an empty host as every local address. Blocks while
+// a name is looked up. False when nothing was found.
+bool lhat_socket_resolve(const char *host, uint16_t port, bool passive,
+                         LhatSocketAddress *out);
+
+// A datagram socket of the family `address` is in, which never blocks:
+// a receive with nothing waiting answers LHAT_SOCKET_EMPTY.
+bool lhat_socket_udp(LhatSocket *out, const LhatSocketAddress *address);
+
+LhatSocketStatus lhat_socket_bind(LhatSocket socket,
+                                  const LhatSocketAddress *address);
+LhatSocketStatus lhat_socket_send_to(LhatSocket socket, const void *bytes,
+                                     size_t size, const LhatSocketAddress *to);
+
+// One datagram into `buffer`, its size in `*got` and its sender in `*from`.
+LhatSocketStatus lhat_socket_receive_from(LhatSocket socket, void *buffer,
+                                          size_t size, size_t *got,
+                                          LhatSocketAddress *from);
+
+bool lhat_socket_set_broadcast(LhatSocket socket, bool on);
+
+// Where the socket is bound -- the port the system picked for port 0.
+bool lhat_socket_local(LhatSocket socket, LhatSocketAddress *out);
+
+// The numeric host ("192.168.0.12", "::1") and the port.
+bool lhat_socket_address_text(const LhatSocketAddress *address, char *host,
+                              size_t capacity, uint16_t *port);
 
 #ifdef __cplusplus
 }

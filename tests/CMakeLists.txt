@@ -120,6 +120,13 @@ if(LHAT_BUILD_STDLIB)
     lhat_add_test(test_io stdlib)
     target_link_libraries(test_io PRIVATE lhatstdlib)
 
+    lhat_add_test(test_binary stdlib)
+    target_link_libraries(test_binary PRIVATE lhatstdlib)
+    if(LHAT_WITH_NET)
+        lhat_add_test(test_net stdlib)
+        target_link_libraries(test_net PRIVATE lhatstdlib)
+    endif()
+
     lhat_add_test(test_json stdlib)
     target_link_libraries(test_json PRIVATE lhatstdlib)
 

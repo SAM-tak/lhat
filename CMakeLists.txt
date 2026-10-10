@@ -366,9 +366,27 @@ target_include_directories(lhatthread
 # it in the Driver section below for as long as LHAT_BUILD_STDLIB is ON.
 option(LHAT_BUILD_STDLIB "Build the L^ sample standard library (stdlib/)" ON)
 
+# ---- Sockets --------------------------------------------------------------
+# port/socket: TCP on the loopback for the debug adapter (09 章), UDP for
+# std.net (11 章). Built when either is; neither the core nor `lhat` links it.
+option(LHAT_BUILD_STDLIB_NET "Build std.net (UDP) into the sample standard library" ON)
+set(LHAT_WITH_NET OFF)
+if(LHAT_BUILD_STDLIB AND LHAT_BUILD_STDLIB_NET)
+    set(LHAT_WITH_NET ON)
+endif()
+if(LHAT_BUILD_DAP OR LHAT_WITH_NET)
+    add_library(lhatsocket STATIC port/socket.c)
+    target_include_directories(lhatsocket
+        PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+    if(WIN32)
+        target_link_libraries(lhatsocket PUBLIC ws2_32)
+    endif()
+endif()
+
 if(LHAT_BUILD_STDLIB)
     set(LHAT_STDLIB_SOURCES
         stdlib/async.c
+        stdlib/binary.c
         stdlib/carry.c
         stdlib/channel.c
         stdlib/debug.c
@@ -391,6 +409,9 @@ if(LHAT_BUILD_STDLIB)
         stdlib/task.c
         stdlib/thread.c
     )
+    if(LHAT_WITH_NET)
+        list(APPEND LHAT_STDLIB_SOURCES stdlib/net.c)
+    endif()
     add_library(lhatstdlib ${LHAT_STDLIB_SOURCES})
     # lhat.h is the whole of what it needs (no private path into src/) --
     # for the same reason port/ has none, this is itself the worked example
@@ -401,12 +422,19 @@ if(LHAT_BUILD_STDLIB)
         PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
                $<INSTALL_INTERFACE:include>)
     target_link_libraries(lhatstdlib PUBLIC lhat PRIVATE lhatthread)
+    # std.net reaches the system through port/socket, as std.thread does
+    # through port/thread.
+    if(LHAT_WITH_NET)
+        target_link_libraries(lhatstdlib PRIVATE lhatsocket)
+        install(TARGETS lhatsocket EXPORT lhatTargets ARCHIVE DESTINATION lib)
+        install(FILES stdlib/net.h DESTINATION include/lhatstdlib)
+    endif()
 
     install(TARGETS lhatstdlib EXPORT lhatTargets
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
-    install(FILES stdlib/async.h stdlib/carry.h stdlib/channel.h stdlib/debug.h stdlib/error.h stdlib/io.h stdlib/json.h
+    install(FILES stdlib/async.h stdlib/binary.h stdlib/carry.h stdlib/channel.h stdlib/debug.h stdlib/error.h stdlib/io.h stdlib/json.h
              stdlib/lton.h stdlib/math.h stdlib/mathcomplex.h stdlib/mathquaternion.h
              stdlib/mathvector2.h stdlib/mathvector3.h stdlib/mathvector4.h stdlib/random.h stdlib/regex.h stdlib/load.h
             stdlib/task.h
@@ -440,6 +468,9 @@ if(LHAT_BUILD_CLI)
         # repository root goes on its path and it writes "stdlib/foo.h".
         target_include_directories(lhat_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
         target_compile_definitions(lhat_cli PRIVATE LHAT_CLI_WITH_STDLIB)
+        if(LHAT_WITH_NET)
+            target_compile_definitions(lhat_cli PRIVATE LHAT_CLI_WITH_NET)
+        endif()
     endif()
     # 09 章: `lhat --dap=PORT` drives a run under a debugger. The adapter is
     # its own library, so cli/main.c names it only under the macro.
@@ -504,12 +535,6 @@ endif()
 # debugger over a loopback socket (port/socket). Linked into the cli, which
 # turns it on with --dap=PORT.
 if(LHAT_BUILD_DAP)
-    add_library(lhatsocket STATIC port/socket.c)
-    target_include_directories(lhatsocket PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-    if(WIN32)
-        target_link_libraries(lhatsocket PUBLIC ws2_32)
-    endif()
-
     add_library(lhatdap STATIC
         dap/adapter.c
         dap/protocol.c

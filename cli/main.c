@@ -30,6 +30,7 @@
 
 #ifdef LHAT_CLI_WITH_STDLIB
 #include "stdlib/async.h"
+#include "stdlib/binary.h"
 #include "stdlib/channel.h"
 #include "stdlib/debug.h"
 #include "stdlib/error.h"
@@ -47,6 +48,9 @@
 #include "stdlib/task.h"
 #include "stdlib/load.h"
 #include "stdlib/thread.h"
+#endif
+#ifdef LHAT_CLI_WITH_NET
+#include "stdlib/net.h"
 #endif
 
 #ifdef LHAT_CLI_WITH_DAP
@@ -1065,13 +1069,19 @@ static bool bind_host_names(LhatProgram *program)
         !lhatstdlib_debug_register(program) ||
         !lhatstdlib_async_register(program) ||
         !lhatstdlib_channel_register(program) ||
-        !lhatstdlib_task_register(program)) {
+        !lhatstdlib_task_register(program) ||
+        !lhatstdlib_binary_register(program)) {
         return false;
     }
     // 05 の 10.8 with 08 の 7改: text through the front end, bytes without
     // it -- so both are here in every build.
     if (!lhatstdlib_lton_register(program) ||
         !lhatstdlib_load_register(program)) {
+        return false;
+    }
+#endif
+#ifdef LHAT_CLI_WITH_NET
+    if (!lhatstdlib_net_register(program)) {
         return false;
     }
 #endif

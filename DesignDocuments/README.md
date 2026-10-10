@@ -15,6 +15,7 @@
 | [08-lton.md](08-lton.md) | LTON（L^ のテーブルをテキストで書く綴り、`std.lton`、読み込み、ホストからの入口） | 未決なし（T1・T2 は閉じた） |
 | [09-debugger.md](09-debugger.md) | デバッガ（機械の行フック、フレームと束縛の内観、コンパイラの名前の表、`lhat --dap` の DAP アダプタ、Godot 連携） | 未決事項なし |
 | [10-localization.md](10-localization.md) | 多言語化（プログラムが観測できる文は変えない原則、メッセージの ID と穴、カタログと英語の書き出し、言語の選択、L^ プログラム自身の多言語化） | I2 が未決 |
+| [11-binary-and-net.md](11-binary-and-net.md) | ビット単位の直列化と UDP（`std.binary` の形式と種類、ビット順、`std.net` の待たない受信） | v1 実装済み。B1・B3・N1 が未決 |
 
 06 は欠番である。ビジュアルエディタの設計は拡張のリポジトリへ移した
 （`../lhat-vscode-extension/devdocs/06-visual-editor.md`）。
