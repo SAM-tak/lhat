@@ -11,12 +11,17 @@
 #include "../stdlib/binary.h"
 #include "../stdlib/net.h"
 
-static const LhatTestRegister regs[] = {lhatstdlib_net_register};
+// std.binary first: std.net registers its Bytes overloads only when it
+// finds that module already there.
+static const LhatTestRegister regs[] = {lhatstdlib_binary_register, lhatstdlib_net_register};
 
 static LhatTestRan run_source(const char *text)
 {
-    return lhat_test_run(regs, 1, text);
+    return lhat_test_run(regs, 2, text);
 }
+
+// std.net on its own, a host that registered no std.binary.
+static const LhatTestRegister net_only[] = {lhatstdlib_net_register};
 
 // Two sockets, `a` bound on the loopback at `port` and `b` not bound at all.
 #define PAIR                                            \
@@ -138,9 +143,34 @@ static void test_errors(void)
     }
 }
 
+static void test_without_binary(void)
+{
+    LHAT_TEST("without std.binary, std.net still sends and receives string^");
+    {
+        LhatTestRan ran = lhat_test_run(net_only, 1,
+                                        "import^ std.net\n"
+                                        "let^ a = try^ std.net.udp()\n"
+                                        "let^ b = try^ std.net.udp()\n"
+                                        "try^ a.bind(\"127.0.0.1\", 0)\n"
+                                        "let^ host, port = a.getLocal()\n"
+                                        "try^ b.sendTo(\"plain\", \"127.0.0.1\", port)\n" RECEIVE
+                                        "return^ got\n");
+        LHAT_CHECK_RAN_TEXT(ran, "plain");
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("and has no Bytes overloads to offer");
+    LHAT_CHECK(!lhat_test_check_text(net_only, 1,
+                                     "import^ std.net\n"
+                                     "let^ a = try^ std.net.udp()\n"
+                                     "let^ d, h, p = try^ a.receiveInto(5)\n"),
+               "receiveInto is not there");
+}
+
 int main(void)
 {
     test_round_trip();
     test_errors();
+    test_without_binary();
     return lhat_test_report("test_net");
 }

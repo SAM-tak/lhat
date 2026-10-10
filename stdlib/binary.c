@@ -75,6 +75,9 @@ typedef struct {
 // every program that registers the module.
 static BinaryModule shared;
 
+static LhatBinaryBytes *bytes_of(LhatValue value);
+static bool bytes_resize(LhatBinaryBytes *bytes, size_t length);
+
 // ---------------------------------------------------------------------------
 // Kinds
 
@@ -719,12 +722,12 @@ static void format_encode_into(LhatMachine *machine, void *context,
     (void)answers;
     (void)answer_count;
     const Kind *format = (const Kind *)live(arguments[0], shared.format_tag);
-    LhatBinaryBytes *bytes = lhatstdlib_binary_bytes(arguments[2]);
+    LhatBinaryBytes *bytes = bytes_of(arguments[2]);
     if (format == NULL || bytes == NULL) {
         lhat_machine_panic_text(machine, "std.binary: the format or the bytes were disposed");
         return;
     }
-    if (!lhatstdlib_binary_bytes_resize(bytes, (size_t)((format->bits + 7) / 8))) {
+    if (!bytes_resize(bytes, (size_t)((format->bits + 7) / 8))) {
         out_of_memory(machine);
         return;
     }
@@ -843,7 +846,7 @@ static bool input_bytes(LhatValue value, const uint8_t **data, size_t *length)
         *length = text->length;
         return true;
     }
-    LhatBinaryBytes *bytes = lhatstdlib_binary_bytes(value);
+    LhatBinaryBytes *bytes = bytes_of(value);
     if (bytes != NULL) {
         *data = bytes->data;
         *length = bytes->length;
@@ -923,12 +926,12 @@ static void format_decode_into(LhatMachine *machine, void *context,
 // ---------------------------------------------------------------------------
 // Bytes
 
-LhatBinaryBytes *lhatstdlib_binary_bytes(LhatValue value)
+static LhatBinaryBytes *bytes_of(LhatValue value)
 {
     return shared.bytes_tag != NULL ? (LhatBinaryBytes *)live(value, shared.bytes_tag) : NULL;
 }
 
-bool lhatstdlib_binary_bytes_resize(LhatBinaryBytes *bytes, size_t length)
+static bool bytes_resize(LhatBinaryBytes *bytes, size_t length)
 {
     if (length > bytes->capacity) {
         uint8_t *grown = (uint8_t *)lhat_realloc(bytes->data, length);
@@ -966,7 +969,7 @@ static void bytes_size(LhatMachine *machine, void *context,
 {
     (void)context;
     (void)count;
-    LhatBinaryBytes *bytes = lhatstdlib_binary_bytes(arguments[0]);
+    LhatBinaryBytes *bytes = bytes_of(arguments[0]);
     if (bytes == NULL) {
         lhat_machine_panic_text(machine, "std.binary: the bytes were disposed");
         return;
@@ -981,7 +984,7 @@ static void bytes_to_string(LhatMachine *machine, void *context,
 {
     (void)context;
     (void)count;
-    LhatBinaryBytes *bytes = lhatstdlib_binary_bytes(arguments[0]);
+    LhatBinaryBytes *bytes = bytes_of(arguments[0]);
     LhatValue text = lhat_nil();
     if (bytes == NULL) {
         lhat_machine_panic_text(machine, "std.binary: the bytes were disposed");
@@ -1016,9 +1019,14 @@ static void bytes_dispose(LhatMachine *machine, void *context,
 
 #define M "std.binary"
 
+// Every registration's context, so that lhat_lookup_host_context finds it
+// under any of them; binary.h names "bytes".
+static const LhatBinaryInterface binary_interface = {LHAT_BINARY_INTERFACE_VERSION,
+                                                     bytes_of, bytes_resize};
+
 bool lhatstdlib_binary_register(LhatProgram *program)
 {
-    if (lhat_lookup_host_context(program, M, NULL, "format") != NULL) {
+    if (lhat_lookup_host_context(program, M, NULL, "bytes") != NULL) {
         return true;
     }
     static const char *const variants[] = {"Truncated", "Malformed"};
@@ -1036,7 +1044,7 @@ bool lhatstdlib_binary_register(LhatProgram *program)
     if (shared.format_tag == NULL || shared.bytes_tag == NULL) {
         return false;
     }
-    BinaryModule *module = &shared;
+    void *module = (void *)&binary_interface;
     return lhat_register_func(program, M, "uint", "f^number^ -> std.binary.Kind;", binary_uint, module) &&
            lhat_register_func(program, M, "int", "f^number^ -> std.binary.Kind;", binary_int, module) &&
            lhat_register_func(program, M, "bool", "f^ -> std.binary.Kind;", binary_bool, module) &&

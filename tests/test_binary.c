@@ -4,6 +4,7 @@
 // promise other machines read; the other kinds are pinned by a round trip
 // and by what decode refuses.
 
+#include "lhat/extension.h"
 #include "stdlibutil.h"
 #include "testutil.h"
 
@@ -214,6 +215,105 @@ static void test_types(void)
     }
 }
 
+// A native extension reaching Bytes the way 11 の 2.1 tells one to: through
+// the ABI table's lookup, registering its Bytes overload only when the host
+// registered std.binary. ext.total answers the sum of the bytes it is given;
+// ext.fill makes a Bytes n bytes of 1.
+static void total_text(LhatMachine *machine, void *context, const LhatValue *arguments,
+                       size_t count, LhatValue *answers, int *answer_count)
+{
+    (void)machine; (void)context; (void)count;
+    const LhatString *text = (const LhatString *)lhat_as_object(arguments[0]);
+    int64_t sum = 0;
+    for (size_t i = 0; i < text->length; i++) sum += (unsigned char)text->text[i];
+    answers[0] = lhat_integer(sum);
+    *answer_count = 1;
+}
+
+static void total_bytes(LhatMachine *machine, void *context, const LhatValue *arguments,
+                        size_t count, LhatValue *answers, int *answer_count)
+{
+    (void)machine; (void)count;
+    const LhatBinaryInterface *binary = (const LhatBinaryInterface *)context;
+    const LhatBinaryBytes *bytes = binary->bytes(arguments[0]);
+    int64_t sum = 0;
+    for (size_t i = 0; bytes != NULL && i < bytes->length; i++) sum += bytes->data[i];
+    answers[0] = lhat_integer(sum);
+    *answer_count = 1;
+}
+
+static void fill_bytes(LhatMachine *machine, void *context, const LhatValue *arguments,
+                       size_t count, LhatValue *answers, int *answer_count)
+{
+    (void)machine; (void)count; (void)answers; (void)answer_count;
+    const LhatBinaryInterface *binary = (const LhatBinaryInterface *)context;
+    LhatBinaryBytes *bytes = binary->bytes(arguments[0]);
+    if (bytes != NULL && binary->resize(bytes, (size_t)lhat_as_integer(arguments[1]))) {
+        memset(bytes->data, 1, bytes->length);
+    }
+}
+
+static const char *install_ext(const LhatExtensionAPI *api, LhatProgram *program,
+                               uint32_t phase, void **state)
+{
+    (void)state;
+    if (phase != LHAT_EXTENSION_MEMBERS) return NULL;
+    void *binary = api->lhat_lookup_host_context(program, "std.binary", NULL, "bytes");
+    bool ok = api->lhat_register_func(program, "ext", "total", "f^string^ -> number^;",
+                                      total_text, NULL);
+    if (ok && binary != NULL) {
+        ok = api->lhat_register_func(program, "ext", "total", "f^std.binary.Bytes -> number^;",
+                                     total_bytes, binary) &&
+             api->lhat_register_func(program, "ext", "fill", "p^std.binary.Bytes, number^;",
+                                     fill_bytes, binary);
+    }
+    return ok ? NULL : "registration failed";
+}
+
+static const LhatExtension ext = {
+    LHAT_EXTENSION_ABI, sizeof(LhatExtension), LHAT_VERSION, sizeof(LhatValue),
+    "ext", NULL, 0, install_ext, NULL
+};
+
+static LhatExtensions *pool;
+
+static bool register_ext(LhatProgram *program)
+{
+    static const LhatExtensionModule *module;
+    if (pool == NULL) {
+        pool = lhat_extensions_new(NULL);
+        module = pool != NULL ? lhat_extensions_add(pool, "ext", &ext) : NULL;
+    }
+    return module != NULL && lhat_extensions_register(pool, program, &module, 1);
+}
+
+static void test_extension(void)
+{
+    static const LhatTestRegister with_binary[] = {lhatstdlib_binary_register, register_ext};
+    static const LhatTestRegister alone[] = {register_ext};
+
+    LHAT_TEST("an extension reads and fills a Bytes through the interface");
+    {
+        LhatTestRan ran = lhat_test_run(with_binary, 2,
+                                        "import^ std.binary\n"
+                                        "import^ ext\n"
+                                        "let^ out = std.binary.bytes()\n"
+                                        "ext.fill(out, 3)\n"
+                                        "return^ ext.total(out) * 1000 + ext.total(\"ab\")\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 3195);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("and without std.binary it offers the string^ overload alone");
+    {
+        LhatTestRan ran = lhat_test_run(alone, 1, "import^ ext\nreturn^ ext.total(\"ab\")\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 195);
+        lhat_test_ran_dispose(&ran);
+        LHAT_CHECK(!lhat_test_check_text(alone, 1, "import^ ext\next.fill(1, 3)\n"),
+                   "fill is not there");
+    }
+}
+
 int main(void)
 {
     test_order();
@@ -221,5 +321,9 @@ int main(void)
     test_errors();
     test_reuse();
     test_types();
-    return lhat_test_report("test_binary");
+    test_extension();
+    int failed = lhat_test_report("test_binary");
+    // After every program: a pool outlives what it registered into.
+    lhat_extensions_free(pool);
+    return failed;
 }

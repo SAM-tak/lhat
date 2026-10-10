@@ -64,10 +64,33 @@ try^ sock.send(out)
 | `bytes.toString()` | `string^` — 中身の写し |
 | `bytes.dispose()` | — |
 
-バイト列を受け取る側（`decode`・`decodeInto`・`send`・`sendTo`）は
-`string^|std.binary.Bytes` を受ける。書き込む側は `fmt.encodeInto` と
-`sock.receiveInto` で、どちらも中身を置き換える。中身を 1 バイトずつ読み書きする
-口は持たない — 読み書きは形式（3 章）を通す。
+バイト列を受け取る側は `string^` と `Bytes` の両方を受ける。`decode`・
+`decodeInto` は合併 `string^|std.binary.Bytes` の1本、`send`・`sendTo` は
+`string^` 版と `Bytes` 版の2本のオーバーロード（02 の 14.12）である。
+書き込む側は `fmt.encodeInto` と `sock.receiveInto` で、どちらも中身を
+置き換える。中身を 1 バイトずつ読み書きする口は持たない — 読み書きは
+形式（3 章）を通す。
+
+### 2.2 std.binary の外から Bytes に触る［補足］
+
+std.net やネイティブ拡張（05 の拡張 ABI）のように、std.binary の外にある C が
+`Bytes` を読み書きするときは、std.binary が登録時に置いた口を引く。
+
+```c
+const LhatBinaryInterface *binary =
+    lhat_lookup_host_context(program, "std.binary", NULL, "bytes");
+```
+
+拡張は関数表の `lhat_lookup_host_context` を使う。答えは `stdlib/binary.h` の
+`LhatBinaryInterface` で、`bytes(value)`（dispose 済みなら NULL）と
+`resize(bytes, length)` を持つ。読み書きしてよいのは `data` と `length` で、
+確保と大きさの変更は `resize` に任せる。
+
+**std.binary が無いプログラムでは NULL が返る。** そのときは `Bytes` 版の
+オーバーロードを登録せず、`string^` 版だけを持つ。合併の引数にすると
+`std.binary.Bytes` が引けない時点で署名が通らないので、`Bytes` を受ける口は
+オーバーロードの1本として足す。std.net もこの形で、`Bytes` を受ける
+`send`・`sendTo`・`receiveInto` は std.binary が先に登録されているときだけ現れる。
 
 ## 3. std.binary
 
@@ -274,8 +297,10 @@ try^ sock.send(data)
 | `sock.setBroadcast(bool^)` | `nil^\|std.net.Error` |
 | `sock.dispose()` | — |
 
-`data` は `string^|std.binary.Bytes` である（2.1）。`receiveInto` は届いた
-データグラムを渡した `Bytes` に書き込み、データの位置にその `Bytes` を返す。
+`data` は `string^` か `std.binary.Bytes` で、どちらも1本ずつのオーバーロード
+である（2.1）。`receiveInto` は届いたデータグラムを渡した `Bytes` に書き込み、
+データの位置にその `Bytes` を返す。`Bytes` を取る3つは、std.binary が先に
+登録されているときだけある（2.2）。
 
 誤りは答え全体と合併する。02 の 13.8改2 は**タプルの位置に誤り型を置かない**
 ので、`receive` の誤りは 3 つの答えを覆う。受け側は `try^`（か `catch^`）で
@@ -363,8 +388,8 @@ lhat には DAP（9 章）のためのソケット層 `port/socket.c`（`lhatsoc
 - CMake は `option(LHAT_BUILD_STDLIB_NET)`（既定 ON）で任意にする。Windows は
   `ws2_32` をリンクする
 
-`std.net` を登録すると `std.binary` も登録される（`Bytes` を読み書きするため）。
-どちらの登録も 2 回呼んでよい［補足］。
+`std.net` は `std.binary` に依らない。`Bytes` を使うホストは `std.binary` を
+先に登録する（2.2）。どちらの登録も 2 回呼んでよい［補足］。
 
 ### 4.6 機械をまたがない
 
@@ -404,3 +429,7 @@ lhat には DAP（9 章）のためのソケット層 `port/socket.c`（`lhatsoc
 - **v1 を実装した。** 使い回す入れ物 `std.binary.Bytes` を足した（2.1）。
   `receive` の答えは、13.8改2 に合わせて誤りがタプル全体を覆う形にした（4.1）。
   B2・N2・N3 を閉じた
+- **std.net を std.binary から切り離した（2026-10-10）。** `send`・`sendTo` の
+  `string^|std.binary.Bytes` を2本のオーバーロードに分け、`Bytes` 版は
+  std.binary が登録されているときだけ足す。std.binary の外から `Bytes` に触る口
+  （2.2）を設け、拡張の関数表に `lhat_lookup_host_context` を足した

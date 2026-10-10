@@ -52,7 +52,8 @@ extern "C" {
     X(bool, lhat_table_set, (LhatTable *table, LhatValue key, LhatValue value, bool *refused)) \
     X(size_t, lhat_table_length, (const LhatTable *table)) \
     X(size_t, lhat_value_text, (LhatValue value, char *out, size_t capacity)) \
-    X(bool, lhat_value_equal, (LhatValue a, LhatValue b))
+    X(bool, lhat_value_equal, (LhatValue a, LhatValue b)) \
+    X(void *, lhat_lookup_host_context, (const LhatProgram *program, const char *module, const char *type, const char *name))
 
 typedef struct LhatExtensionAPI {
     uint32_t abi_version;

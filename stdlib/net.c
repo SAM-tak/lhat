@@ -29,6 +29,10 @@ typedef struct {
     const LhatErrorKind *too_large;
     const LhatErrorKind *closed;
     const LhatErrorKind *failed;
+    // std.binary's, when a program registered it: what the Bytes overloads
+    // read and fill through. Never read on a program without it, since its
+    // Bytes overloads are not registered there.
+    const LhatBinaryInterface *binary;
 } NetModule;
 
 static NetModule shared;
@@ -159,7 +163,7 @@ static bool payload(LhatValue data, const void **bytes, size_t *size)
         *size = text->length;
         return true;
     }
-    LhatBinaryBytes *held = lhatstdlib_binary_bytes(data);
+    LhatBinaryBytes *held = shared.binary != NULL ? shared.binary->bytes(data) : NULL;
     if (held != NULL) {
         *bytes = held->data;
         *size = held->length;
@@ -381,7 +385,7 @@ static void udp_receive_into(LhatMachine *machine, void *context, const LhatValu
 {
     (void)context;
     (void)count;
-    LhatBinaryBytes *bytes = lhatstdlib_binary_bytes(arguments[1]);
+    LhatBinaryBytes *bytes = shared.binary->bytes(arguments[1]);
     if (bytes == NULL) {
         lhat_machine_panic_text(machine, "std.net: the bytes were disposed");
         return;
@@ -393,7 +397,7 @@ static void udp_receive_into(LhatMachine *machine, void *context, const LhatValu
         }
         return;
     }
-    if (!lhatstdlib_binary_bytes_resize(bytes, RECEIVE_ROOM)) {
+    if (!shared.binary->resize(bytes, RECEIVE_ROOM)) {
         lhat_machine_panic_text(machine, "out of memory");
         return;
     }
@@ -455,7 +459,10 @@ static void udp_dispose(LhatMachine *machine, void *context, const LhatValue *ar
 }
 
 #define M "std.net"
-#define DATA "string^|std.binary.Bytes"
+// send and sendTo take a string^ or a Bytes: one overload arm each (02 の
+// 14.12), so a call with a settled argument is bound at compile time.
+#define SEND(DATA) "p^self^, " DATA " -> nil^|std.net.Error;"
+#define SEND_TO(DATA) "p^self^, " DATA ", string^, number^ -> nil^|std.net.Error;"
 // 02 の 13.8改2: an error stands for the whole answer, never one position.
 #define FROM ", string^, number^)|std.net.Error;"
 
@@ -463,9 +470,6 @@ bool lhatstdlib_net_register(LhatProgram *program)
 {
     if (lhat_lookup_host_context(program, M, NULL, "udp") != NULL) {
         return true;
-    }
-    if (!lhatstdlib_binary_register(program)) {
-        return false;
     }
     static const char *const variants[] = {"AddressInUse", "Resolve",  "Unreachable",
                                            "TooLarge",     "Closed",   "Failed"};
@@ -484,7 +488,16 @@ bool lhatstdlib_net_register(LhatProgram *program)
         return false;
     }
     NetModule *module = &shared;
-    return lhat_register_func(program, M, "udp", "p^ -> std.net.Udp|std.net.Error;", net_udp,
+    // 11 の 2.1: the Bytes overloads come with std.binary, registered before
+    // this. Without it std.net sends and receives string^ alone.
+    const LhatBinaryInterface *binary =
+        (const LhatBinaryInterface *)lhat_lookup_host_context(program, "std.binary", NULL, "bytes");
+    if (binary != NULL && binary->version >= LHAT_BINARY_INTERFACE_VERSION) {
+        shared.binary = binary;
+    } else {
+        binary = NULL;
+    }
+    bool ok = lhat_register_func(program, M, "udp", "p^ -> std.net.Udp|std.net.Error;", net_udp,
                               module) &&
            lhat_register_member(program, M, "Udp", "bind",
                                 "p^self^, string^, number^ -> nil^|std.net.Error;", udp_bind,
@@ -492,20 +505,23 @@ bool lhatstdlib_net_register(LhatProgram *program)
            lhat_register_member(program, M, "Udp", "setPeer",
                                 "p^self^, string^, number^ -> nil^|std.net.Error;",
                                 udp_set_peer, module) &&
-           lhat_register_member(program, M, "Udp", "send",
-                                "p^self^, " DATA " -> nil^|std.net.Error;", udp_send, module) &&
-           lhat_register_member(program, M, "Udp", "sendTo",
-                                "p^self^, " DATA ", string^, number^ -> nil^|std.net.Error;",
-                                udp_send_to, module) &&
+           lhat_register_member(program, M, "Udp", "send", SEND("string^"), udp_send, module) &&
+           lhat_register_member(program, M, "Udp", "sendTo", SEND_TO("string^"), udp_send_to,
+                                module) &&
            lhat_register_member(program, M, "Udp", "receive",
                                 "p^self^ -> (string^|nil^" FROM, udp_receive, module) &&
-           lhat_register_member(program, M, "Udp", "receiveInto",
-                                "p^self^, std.binary.Bytes -> (std.binary.Bytes|nil^" FROM,
-                                udp_receive_into, module) &&
            lhat_register_member(program, M, "Udp", "getLocal", "p^self^ -> string^, number^;",
                                 udp_get_local, module) &&
            lhat_register_member(program, M, "Udp", "setBroadcast",
                                 "p^self^, bool^ -> nil^|std.net.Error;", udp_set_broadcast,
                                 module) &&
            lhat_register_member(program, M, "Udp", "dispose", "p^self^;", udp_dispose, module);
+    return ok && (binary == NULL ||
+                  (lhat_register_member(program, M, "Udp", "send", SEND("std.binary.Bytes"),
+                                        udp_send, module) &&
+                   lhat_register_member(program, M, "Udp", "sendTo", SEND_TO("std.binary.Bytes"),
+                                        udp_send_to, module) &&
+                   lhat_register_member(program, M, "Udp", "receiveInto",
+                                        "p^self^, std.binary.Bytes -> (std.binary.Bytes|nil^" FROM,
+                                        udp_receive_into, module)));
 }
