@@ -1,7 +1,7 @@
 # std.binary と std.net — ビット単位の直列化と UDP
 
 **状態: v1 実装済み**（`stdlib/binary.c`・`stdlib/net.c`・`port/socket.c`）。
-残る未決事項は末尾（B1・B3・N1）に並べる。
+現在の未決事項はない。
 
 `std.binary` はテーブルをビット単位で詰めてバイト列にし、戻す。`std.net` は UDP の
 ソケットを開き、そのバイト列を送受信する。どちらも標準ライブラリで、特定のホスト
@@ -103,7 +103,11 @@ const LhatBinaryInterface *binary =
 import^ std.binary
 
 let^ b = std.binary
-let^ input = b.format({
+let^ Input = t^{
+    aaa : number^, bbb : number^,
+    buttonA : bool^, buttonB : bool^, buttonC : bool^,
+}
+let^ input = b.format(Input, {
     { "aaa", b.uint(16) },
     { "bbb", b.uint(8) },
     { "buttonA", b.bool() },
@@ -116,18 +120,21 @@ let^ input = b.format({
 16.3。ハッシュ部の順序は約束されない）ので、`{ aaa = 16, bbb = 8 }` の形では
 ビットの並び順を決められない。
 
-`std.binary.format` は列を一度だけ読んで、**形式オブジェクト**
-（`std.binary.Format`、8.8 の hostdata）にする。次をここで検査する。
+`std.binary.format` は最初の型値と列を一度だけ読んで、**型付き形式オブジェクト**
+（`std.binary.Format<T>`、8.8 の hostdata）にする。上の `input` は
+`std.binary.Format<Input>` である。次をここで検査する。
 
 - 名前が文字列で、重複していない
 - 各種類の幅が 1〜64 ビットに収まる
 - 総ビット数（上限 2³² ビット［補足］）
+- 種類の木が復号する構造が、指定した型 `T` に適合する
 
 誤りは panic である。形式はプログラムの書き手が書くものなので、間違いは
 プログラマの誤りになる（04 の線引き）。
 
-形式は可変長のデータを持つので、ホスト値（8.9、248 バイト上限・スタック限定）
-にはできず、hostdata になる。
+形式オブジェクト自身は可変個数のフィールド定義を持つので、ホスト値
+（8.9、248 バイト上限・スタック限定）にはできず、hostdata になる。これは
+符号化される値の幅が可変という意味ではない。
 
 #### 種類も hostdata である［補足］
 
@@ -157,11 +164,13 @@ let^ input = b.format({
 入力をまとめて冗長に送り、1 つ欠けても次の 1 つで埋め合わせるのが定石である。
 
 ```lhat
-let^ frame = b.format({
+let^ Frame = t^{ stick : number^, buttons : number^ }
+let^ Packet = t^{ first : number^, history : t^{Frame[8]} }
+let^ frame = b.format(Frame, {
     { "stick", b.range(0, 8) },     # 9 directions, 4 bits
     { "buttons", b.uint(6) },
 })
-let^ packet = b.format({
+let^ packet = b.format(Packet, {
     { "first", b.uint(32) },             # the frame number of history[0]
     { "history", b.array(8, frame) },    # a format is itself a kind
 })
@@ -173,8 +182,15 @@ let^ packet = b.format({
 GC の根ではないので、そうしないと復号で返すメンバが回収されうる。E 1 つにつき
 1 つで、同じ E を何度渡しても増えない。
 
-可変長の種類（長さ付きのバイト列 `bytes()`、文字列 `text()`、存在ビット付きの
-`optional(種類)`）は、総ビット数が固定でなくなる。入れるかどうかは B3 で決める。
+**Format は固定ビット長の形式だけを扱う。** 長さ付きのバイト列、文字列、可変長の
+列など、値によって幅が変わる種類は持たない。これにより `bits()` と `size()` は
+常に形式だけから決まり、符号化前に出力領域を正確に確保できる。可変長のデータが
+必要なプロトコルは、固定長のヘッダと別のバイト列に分け、Format の外で境界を
+管理する。
+
+存在しない値を表す種類を後で設ける場合も、存在ビットに常に値の領域を続ける
+固定幅とする。可変個数の列が必要なら、個数と最大個数分の領域を持つ固定幅の形式を
+使う。いずれも Format の固定長という契約を変えない。
 
 ### 3.3 符号化と復号
 
@@ -186,12 +202,12 @@ let^ data = input.encode({
 data.size                  # 4
 
 let^ got = try^ input.decode(data)
-got["aaa"]                 # 11111
+got.aaa                    # 11111
 ```
 
-- `fmt.encode(t) -> string^` — テーブルから形式どおりに詰める
+- `fmt.encode(t) -> string^` — `T` のテーブルから形式どおりに詰める
 - `fmt.encodeInto(t, bytes)` — 同じものを `Bytes` に書き込む（2.1）
-- `fmt.decode(s) -> t^{}|std.binary.Error` — 新しいテーブルに戻す。`s` は
+- `fmt.decode(s) -> T|std.binary.Error` — 新しい `T` のテーブルに戻す。`s` は
   `string^|std.binary.Bytes`
 - `fmt.decodeInto(s, t) -> nil^|std.binary.Error` — **既存のテーブルへ書き込む**。
   毎フレーム `decode` で新しいテーブルを作ると、そのたびにごみが出る。受け側が
@@ -201,9 +217,15 @@ got["aaa"]                 # 11111
 - `fmt.bits()`、`fmt.size()` — 総ビット数とバイト数。`bits()` は種類にもある。
   hostdata のメンバは関数なので、呼び出しで書く［補足］
 
-`decode` が返すテーブルは `t^{}` で、形を約束しない。名前で読む `got.aaa` は
-検査を通らず、添字の `got["aaa"]` で読む（`std.json.decode` と同じ）。形式の
-並びから型を作るかは B1 で決める。
+`decode` が返すテーブルは `format` に渡した `T` を保つ。したがって
+`let^ got = try^ input.decode(data)` の `got` は上の `Input` であり、`got.aaa` は
+検査を通り、`got.aaaa` のような綴り間違いは起動前に見つかる。
+
+型値は単なる注釈ではない。`format` は種類の木から復号結果の構造型を一度作り、
+それが `T` に適合しなければ panic にする。たとえば `uint` のフィールドを
+`string^` と宣言することはできない。検査済みの型記述子は `Format` が所有し、
+8.8改2 の型引数として公開する。`encode` と `decode` のメンバ署名はそれぞれ
+`self^.T0` を引数と答えに使う。
 
 ### 3.4 ビット順とバイト順［重要］
 
@@ -394,8 +416,15 @@ lhat には DAP（9 章）のためのソケット層 `port/socket.c`（`lhatsoc
 
 ### 4.6 機械をまたがない
 
-`Udp` は作った機械が使う。共有契約（carry、8.8）は宣言しない。別の機械へ
-渡すか（N1）は後で決める。`Kind`・`Format`・`Bytes` も宣言しない［補足］。
+`Udp` は作った一つの機械だけが使う。共有契約（carry、8.8）は宣言せず、別の
+機械へは渡さない。ソケットを task に持たせるなら、その task の中で `Udp` を
+作る。送受信するデータは `string^` として Task の結果や `Channel<string^>` で
+機械の間を渡す。継続する送受信には Channel を使い、その一つの所有者が送信と
+受信を直列化する。
+
+`Kind`・`Format`・`Bytes` も共有契約を宣言しない［補足］。`Bytes` を使う
+`receiveInto`・`encodeInto` は、その Bytes を作った機械の中で使う。機械をまたぐ
+ときは `receive`・`encode` の `string^` を使う。
 
 ## 5. 展望（この章では作らない）
 
@@ -409,15 +438,17 @@ lhat には DAP（9 章）のためのソケット層 `port/socket.c`（`lhatsoc
 
 ## 6. 未決事項
 
-- **B1** `decode` が返すテーブルの型を、形式の並びから静的に作れるか。作れる
-  なら `got.aaa` が型検査を通り、`got.aaaa` の綴り間違いが起動前に見つかる
-- **B3** 可変長の種類（`bytes()`、`text()`、`optional(種類)`）を入れるか。
-  入れると `fmt.bits()` / `fmt.size()` が固定でなくなる
-- **N1** `Udp` を機械をまたいで渡せるようにするか（共有契約を宣言するか）
+現在はない。
 
 閉じたもの:
 
+- **B1** `format(type, fields)` が `Format<T>` を作り、`decode` は `T` を返す。
+  種類の木と型は `format` 時に一度照合する（3.1・3.3）
 - **B2** `fixed` の丸めは最も近い刻み（3.4）［補足］
+- **B3** Format は固定ビット長だけを扱う。可変長の種類は持たず、`bits()` と
+  `size()` は常に形式だけから決まる（3.2）
+- **N1** `Udp` は共有契約を持たず、作った一つの機械だけが所有する。機械間の
+  送受信データは `string^` として Task または Channel で渡す（4.6）
 - **N2** 受信の最大は 65536 バイト固定（4.3）［補足］
 - **N3** VM のみのビルド（`LHAT_WITH_FRONTEND=OFF`）にも両方が入る。どちらも
   構文解析器に依らない［補足］
@@ -434,3 +465,10 @@ lhat には DAP（9 章）のためのソケット層 `port/socket.c`（`lhatsoc
   `string^|std.binary.Bytes` を2本のオーバーロードに分け、`Bytes` 版は
   std.binary が登録されているときだけ足す。std.binary の外から `Bytes` に触る口
   （2.2）を設け、拡張の関数表に `lhat_lookup_host_context` を足した
+- **B1 を閉じた（2026-10-11）。** `format(type, fields)` が型記述子を所有する
+  `Format<T>` を作り、`decode` の答えと `encode` の引数を `T` にした。種類の木が
+  復号する構造と `T` は形式の作成時に照合する
+- **B3 を閉じた（2026-10-11）。** Format は固定ビット長だけを扱う。可変長の
+  バイト列・文字列・列は種類に加えず、必要なら固定長ヘッダの外で境界を管理する
+- **N1 を閉じた（2026-10-11）。** `Udp` は共有せず、作った一つの機械が所有する。
+  機械間では送受信データだけを `string^` として Task または Channel で渡す

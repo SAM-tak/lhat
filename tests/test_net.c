@@ -81,7 +81,8 @@ static void test_round_trip(void)
     LHAT_TEST("setPeer names where send goes, and a Bytes goes as it is");
     {
         LhatTestRan ran = run_source(PAIR
-                                     "let^ f = std.binary.format({ { \"n\", std.binary.uint(16) } })\n"
+                                     "let^ f = std.binary.format(t^{n:number^},\n"
+                                     "    { { \"n\", std.binary.uint(16) } })\n"
                                      "let^ out = std.binary.bytes()\n"
                                      "f.encodeInto({ n = 515 }, out)\n"
                                      "try^ b.setPeer(\"127.0.0.1\", port)\n"
@@ -92,7 +93,7 @@ static void test_round_trip(void)
                                      "    if^ d fits^ std.binary.Bytes {\n"
                                      "        let^ t = f.decode(d)\n"
                                      "        if^ t fits^ std.binary.Error { return^ 0 }\n"
-                                     "        return^ t[\"n\"] * 10 + into.size()\n"
+                                     "        return^ t.n * 10 + into.size()\n"
                                      "    }\n"
                                      "}\n"
                                      "return^ 0\n");

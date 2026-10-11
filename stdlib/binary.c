@@ -57,6 +57,11 @@ struct Kind {
     // FORMAT
     Field *fields;
     size_t field_count;
+    // A Format<T> owns T independently of the type value handed to format().
+    // Nested copies need only the encoding tree, so kind_copy leaves these
+    // empty.
+    LhatHeap type_heap;
+    LhatRuntimeType *value_type;
 };
 
 // The largest format is 2^32 bits: what one datagram or one string holds is
@@ -93,6 +98,7 @@ static void kind_free(Kind *kind)
     }
     lhat_free(kind->fields);
     lhat_free((void *)kind->members);
+    lhat_object_free_all(&kind->type_heap);
     lhat_free(kind);
 }
 
@@ -107,6 +113,8 @@ static Kind *kind_copy(const Kind *from)
     kind->fields = NULL;
     kind->field_count = 0;
     kind->members = NULL;
+    memset(&kind->type_heap, 0, sizeof kind->type_heap);
+    kind->value_type = NULL;
     bool ok = true;
     if (from->members != NULL) {
         size_t size = (size_t)(from->span + 1) * sizeof *kind->members;
@@ -397,6 +405,49 @@ static LhatTable *as_table(LhatValue value)
                : NULL;
 }
 
+// The exact structural type produced by decoding one kind. A Format<T> is
+// accepted only when this type conforms to T, so its dependent signatures do
+// not promise more than the bytes can produce.
+static LhatRuntimeType *decoded_type(LhatHeap *heap, const Kind *kind)
+{
+    switch (kind->tag) {
+    case KIND_UINT:
+    case KIND_INT:
+    case KIND_RANGE:
+    case KIND_FIXED:
+        return lhat_type_rt_new(heap, LHAT_TYPE_RT_NUMBER);
+    case KIND_BOOL:
+        return lhat_type_rt_new(heap, LHAT_TYPE_RT_BOOL);
+    case KIND_ENUM:
+        return kind->owner != NULL
+                   ? lhat_runtime_type_clone(heap, kind->owner->decl)
+                   : NULL;
+    case KIND_ARRAY: {
+        LhatRuntimeType *table = lhat_type_rt_new(heap, LHAT_TYPE_RT_TABLE);
+        LhatRuntimeType *element = decoded_type(heap, kind->element);
+        if (table == NULL || element == NULL) return NULL;
+        for (size_t i = 0; i < kind->length; i++) {
+            if (!lhat_type_rt_add_part(table, element)) return NULL;
+        }
+        return table;
+    }
+    case KIND_FORMAT: {
+        LhatRuntimeType *table = lhat_type_rt_new(heap, LHAT_TYPE_RT_TABLE);
+        if (table == NULL) return NULL;
+        for (size_t i = 0; i < kind->field_count; i++) {
+            const Field *field = &kind->fields[i];
+            LhatString *name = lhat_string_new(heap, field->name, field->length);
+            LhatRuntimeType *member = decoded_type(heap, field->kind);
+            if (name == NULL || member == NULL ||
+                !lhat_type_rt_add_member(table, name, member)) return NULL;
+        }
+        lhat_type_rt_sort_members(table);
+        return table;
+    }
+    }
+    return NULL;
+}
+
 // 11 の 3.1: the rows are read once, here, and every mistake in them is the
 // writer's.
 static void binary_format(LhatMachine *machine, void *context,
@@ -405,7 +456,11 @@ static void binary_format(LhatMachine *machine, void *context,
 {
     (void)context;
     (void)count;
-    const LhatTable *rows = as_table(arguments[0]);
+    const LhatRuntimeType *declared =
+        lhat_is_object_kind(arguments[0], LHAT_OBJECT_TYPE)
+            ? (const LhatRuntimeType *)lhat_as_object(arguments[0])
+            : NULL;
+    const LhatTable *rows = as_table(arguments[1]);
     size_t length = rows != NULL ? lhat_table_length(rows) : 0;
     Kind *format = new_kind(KIND_FORMAT, 0, 0);
     if (format != NULL && length > 0) {
@@ -467,7 +522,38 @@ static void binary_format(LhatMachine *machine, void *context,
         field->name[name->length] = '\0';
         format->bits += kind->bits;
     }
+    LhatHeap produced_heap = {0};
+    LhatRuntimeType *produced = decoded_type(&produced_heap, format);
+    if (produced == NULL) {
+        lhat_object_free_all(&produced_heap);
+        kind_free(format);
+        out_of_memory(machine);
+        return;
+    }
+    bool conforms = declared != NULL &&
+                    lhat_runtime_type_conforms(produced, declared);
+    lhat_object_free_all(&produced_heap);
+    if (!conforms) {
+        kind_free(format);
+        lhat_machine_panic_text(
+            machine,
+            "std.binary.format: the declared type does not describe what the format decodes");
+        return;
+    }
+    format->value_type = lhat_runtime_type_clone(&format->type_heap, declared);
+    if (format->value_type == NULL) {
+        kind_free(format);
+        out_of_memory(machine);
+        return;
+    }
     answer_kind(machine, format, answers, answer_count);
+}
+
+static const LhatRuntimeType *format_type_argument(const void *pointer,
+                                                   size_t index, void *context)
+{
+    (void)context;
+    return index == 0 ? ((const Kind *)pointer)->value_type : NULL;
 }
 
 static void kind_bits(LhatMachine *machine, void *context,
@@ -1055,19 +1141,22 @@ bool lhatstdlib_binary_register(LhatProgram *program)
            lhat_register_func(program, M, "enum", "f^any^ -> std.binary.Kind;", binary_enum, module) &&
            lhat_register_func(program, M, "array", "f^number^, std.binary.Kind -> std.binary.Kind;",
                               binary_array, module) &&
-           lhat_register_func(program, M, "format", "f^t^{} -> std.binary.Format;", binary_format,
-                              module) &&
+           lhat_register_func(program, M, "format",
+                              "f^type^, t^{} -> std.binary.Format<ARG0.T0>;",
+                              binary_format, module) &&
            lhat_register_func(program, M, "bytes", "f^ -> std.binary.Bytes;", binary_bytes, module) &&
            lhat_register_member(program, M, "Kind", "bits", "f^self^ -> number^;", kind_bits, module) &&
            lhat_register_member(program, M, "Kind", "dispose", "p^self^;", kind_dispose, module) &&
            lhat_register_member(program, M, "Format", "size", "f^self^ -> number^;", format_size,
                                 module) &&
-           lhat_register_member(program, M, "Format", "encode", "f^self^, t^{} -> string^;",
+           lhat_register_member(program, M, "Format", "encode",
+                                "f^self^, self^.T0 -> string^;",
                                 format_encode, module) &&
            lhat_register_member(program, M, "Format", "encodeInto",
-                                "p^self^, t^{}, std.binary.Bytes;", format_encode_into, module) &&
+                                "p^self^, self^.T0, std.binary.Bytes;",
+                                format_encode_into, module) &&
            lhat_register_member(program, M, "Format", "decode",
-                                "f^self^, string^|std.binary.Bytes -> t^{}|std.binary.Error;",
+                                "f^self^, string^|std.binary.Bytes -> self^.T0|std.binary.Error;",
                                 format_decode, module) &&
            lhat_register_member(program, M, "Format", "decodeInto",
                                 "p^self^, string^|std.binary.Bytes, t^{} -> nil^|std.binary.Error;",
@@ -1075,5 +1164,7 @@ bool lhatstdlib_binary_register(LhatProgram *program)
            lhat_register_member(program, M, "Bytes", "size", "f^self^ -> number^;", bytes_size, module) &&
            lhat_register_member(program, M, "Bytes", "toString", "f^self^ -> string^;",
                                 bytes_to_string, module) &&
-           lhat_register_member(program, M, "Bytes", "dispose", "p^self^;", bytes_dispose, module);
+           lhat_register_member(program, M, "Bytes", "dispose", "p^self^;", bytes_dispose, module) &&
+           lhat_register_hostdata_type_arguments(program, M, "Format",
+                                                 format_type_argument, NULL);
 }

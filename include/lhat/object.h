@@ -963,6 +963,12 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a,
 // cannot see the structure it names, and asks only that the value be a table.
 bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type);
 
+// Whether every value described by `value` may stand where `target` is
+// asked for. This is the descriptor-to-descriptor half of the same runtime
+// relation lhat_value_satisfies uses.
+bool lhat_runtime_type_conforms(const LhatRuntimeType *value,
+                                const LhatRuntimeType *target);
+
 LhatOverload *lhat_overload_new(LhatHeap *heap);
 bool lhat_overload_add(LhatOverload *overload, LhatValue candidate);
 

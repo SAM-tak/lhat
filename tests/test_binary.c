@@ -25,7 +25,9 @@ static bool checks(const char *text)
 #define INPUT                                   \
     "import^ std.binary\n"                      \
     "let^ b = std.binary\n"                     \
-    "let^ input = b.format({\n"                 \
+    "let^ Input = t^{ aaa : number^, bbb : number^,\n" \
+    "    buttonA : bool^, buttonB : bool^, buttonC : bool^ }\n" \
+    "let^ input = b.format(Input, {\n"          \
     "    { \"aaa\", b.uint(16) },\n"            \
     "    { \"bbb\", b.uint(8) },\n"             \
     "    { \"buttonA\", b.bool() },\n"          \
@@ -56,8 +58,8 @@ static void test_order(void)
         LhatTestRan ran = run_source(INPUT
                                      "let^ got = input.decode(input.encode(value))\n"
                                      "if^ got fits^ std.binary.Error { return^ 0 }\n"
-                                     "if^ got[\"buttonA\"] and^ !got[\"buttonC\"] {\n"
-                                     "    return^ got[\"aaa\"] + got[\"bbb\"]\n"
+                                     "if^ got.buttonA and^ !got.buttonC {\n"
+                                     "    return^ got.aaa + got.bbb\n"
                                      "}\n"
                                      "return^ 0\n");
         LHAT_CHECK_RAN_INTEGER(ran, 11222);
@@ -73,8 +75,12 @@ static void test_kinds(void)
             "import^ std.binary\n"
             "let^ b = std.binary\n"
             "enum^ Dir { N, E, S, W }\n"
-            "let^ frame = b.format({ { \"stick\", b.range(0, 8) }, { \"dir\", b.enum(Dir) } })\n"
-            "let^ packet = b.format({\n"
+            "let^ Frame = t^{ stick : number^, dir : Dir }\n"
+            "let^ Packet = t^{ delta : number^, low : number^, ratio : number^,\n"
+            "    history : t^{Frame[3]} }\n"
+            "let^ frame = b.format(Frame,\n"
+            "    { { \"stick\", b.range(0, 8) }, { \"dir\", b.enum(Dir) } })\n"
+            "let^ packet = b.format(Packet, {\n"
             "    { \"delta\", b.int(5) },\n"
             "    { \"low\", b.range(-8, 7) },\n"
             "    { \"ratio\", b.fixed(0, 1, 0.01) },\n"
@@ -85,11 +91,11 @@ static void test_kinds(void)
             "                { stick = 3, dir = Dir.S } } })\n"
             "let^ got = packet.decode(data)\n"
             "if^ got fits^ std.binary.Error { return^ \"error\" }\n"
-            "let^ h = got[\"history\"]\n"
-            "if^ got[\"delta\"] = 0 - 16 and^ got[\"low\"] = 0 - 8\n"
-            "    and^ got[\"ratio\"] > 0.4399 and^ got[\"ratio\"] < 0.4401\n"
-            "    and^ h[0][\"stick\"] = 8 and^ h[0][\"dir\"] = Dir.W\n"
-            "    and^ h[2][\"stick\"] = 3 and^ h[2][\"dir\"] = Dir.S {\n"
+            "let^ h = got.history\n"
+            "if^ got.delta = 0 - 16 and^ got.low = 0 - 8\n"
+            "    and^ got.ratio > 0.4399 and^ got.ratio < 0.4401\n"
+            "    and^ h[0].stick = 8 and^ h[0].dir = Dir.W\n"
+            "    and^ h[2].stick = 3 and^ h[2].dir = Dir.S {\n"
             "    return^ \"ok\"\n"
             "}\n"
             "return^ \"wrong\"\n");
@@ -124,7 +130,8 @@ static void test_errors(void)
     {
         // '?' is 0x3F: the low four bits are 15, past range(0, 8)'s 8.
         LhatTestRan ran = run_source("import^ std.binary\n"
-                                     "let^ f = std.binary.format({ { \"s\", std.binary.range(0, 8) } })\n"
+                                     "let^ f = std.binary.format(t^{s:number^},\n"
+                                     "    { { \"s\", std.binary.range(0, 8) } })\n"
                                      "let^ got = f.decode(\"?\")\n"
                                      "if^ got fits^ std.binary.Error.Malformed { return^ \"malformed\" }\n"
                                      "return^ \"other\"\n");
@@ -141,19 +148,18 @@ static void test_errors(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    LHAT_TEST("and so is a missing field");
+    LHAT_TEST("and a missing field is rejected before running");
     {
-        LhatTestRan ran = run_source(INPUT
-                                     "return^ input.encode({ aaa = 1 })\n");
-        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_PANIC);
-        lhat_test_ran_dispose(&ran);
+        LHAT_CHECK(!checks(INPUT "return^ input.encode({ aaa = 1 })\n"),
+                   "the typed format requires every declared field");
     }
 
     LHAT_TEST("and a name written twice in a format");
     {
         LhatTestRan ran = run_source("import^ std.binary\n"
                                      "let^ b = std.binary\n"
-                                     "let^ f = b.format({ { \"a\", b.bool() }, { \"a\", b.bool() } })\n"
+                                     "let^ f = b.format(t^{a:bool^},\n"
+                                     "    { { \"a\", b.bool() }, { \"a\", b.bool() } })\n"
                                      "return^ 1\n");
         LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_PANIC);
         lhat_test_ran_dispose(&ran);
@@ -171,7 +177,7 @@ static void test_reuse(void)
                                      "input.encodeInto(value, out)\n"
                                      "let^ got = input.decode(out)\n"
                                      "if^ got fits^ std.binary.Error { return^ 0 }\n"
-                                     "return^ got[\"aaa\"] * 100 + out.size()\n");
+                                     "return^ got.aaa * 100 + out.size()\n");
         LHAT_CHECK_RAN_INTEGER(ran, 704);
         lhat_test_ran_dispose(&ran);
     }
@@ -203,15 +209,41 @@ static void test_reuse(void)
 
 static void test_types(void)
 {
-    LHAT_TEST("decode answers a table that promises nothing (B1)");
+    LHAT_TEST("a Format retains its table type for encode and decode");
     {
         LHAT_CHECK(checks(INPUT
-                          "let^ got = input.decode(\"abcd\")\n"
-                          "if^ got fits^ std.binary.Error { return^ 0 }\n"
-                          "let^ n = got[\"aaa\"]\n"),
-                   "read by index");
+                          "let^ got = try^ input.decode(\"abcd\")\n"
+                          "let^ n:number^ = got.aaa\n"),
+                   "decode preserves the declared structure");
+        LHAT_CHECK(!checks(INPUT
+                           "let^ got = try^ input.decode(\"abcd\")\n"
+                           "let^ n = got.aaaa\n"),
+                   "an unknown decoded field is rejected");
         LHAT_CHECK(!checks(INPUT "let^ s = input.encode(5)\n"),
-                   "and encode takes a table");
+                   "encode takes the same structure");
+    }
+
+    LHAT_TEST("format rejects a declared type its kinds cannot decode");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.binary\n"
+            "let^ f = std.binary.format(t^{s:string^},\n"
+            "    { { \"s\", std.binary.uint(8) } })\n"
+            "return^ 1\n");
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_PANIC);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("an erased Format exposes its invariant table type at runtime");
+    {
+        LhatTestRan ran = run_source(
+            INPUT
+            "let^ erased:std.binary.Format = input\n"
+            "if^ !(erased fits^ std.binary.Format<Input>) { return^ 0 }\n"
+            "if^ erased fits^ std.binary.Format<t^{aaa:string^}> { return^ 0 }\n"
+            "return^ 1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
     }
 }
 

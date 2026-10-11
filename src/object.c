@@ -938,6 +938,12 @@ bool lhat_value_satisfies(LhatValue value, const LhatRuntimeType *type)
     return value_satisfies(value, type, NULL);
 }
 
+bool lhat_runtime_type_conforms(const LhatRuntimeType *value,
+                                const LhatRuntimeType *target)
+{
+    return rt_fits(value, target, NULL, NULL, NULL);
+}
+
 static int compare_members(const void *a, const void *b)
 {
     const LhatString *left = ((const LhatRuntimeTypeMember *)a)->name;
