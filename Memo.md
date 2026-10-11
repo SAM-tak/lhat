@@ -17,7 +17,7 @@ Modern & Better Lua with Visual Programming.
 
 ## 影響を受けた言語
 
-Lua / Zig / TypeScript / Python / Luau / Ruby / OCaml / Elixir
+Lua / Zig / Rust / Go / TypeScript / Python / Luau / Ruby / OCaml / Elixir
 
 ## 言語コア
 
@@ -196,27 +196,287 @@ print(t[1, 2])
 
 ### 検討項目
 
-> 文面は「添字」を含んでいるのに、実装は ( しか見ていない（parser.c:1827 にだけ !at.preceded_by_newline があり、その直前の [ の枝には無い）。
+#### hash^ ユーザー定義のハッシュ
 
-```lhat
-let^ t = { 10, 20 }
-let^ a = t
-[1]
-print(a)          # → 10
-```
-
-> t[1] として解釈される。10.9 が防ごうとした Lua の罠が、[ について現存している。
-
-が、これが実害をもたらすのは本当にC#風の[属性]を入れたときや、[]をリストリテラルにした時、
-なので放置でいいか…？
-
-hash^ ユーザー定義のハッシュ。これがないと値比較でテーブルのキーにすることができないだろう、けど、
+これがないと値比較でテーブルのキーにすることができないだろう、けど、
 自動化できないか？
 
-静的無限ループを検知してエラーにする
-  脱出条件のないrepeat、等
+#### 静的無限ループを検知してエラーにする
 
-#### ビット演算
+脱出条件のないrepeat、等
+
+#### アクセス指定子
+
+現状、モジュールの公開メンバをマークする `public^` しか存在しない。
+
+発想の元が Lua の全部テーブル、だし、根っこがテーブルである限り難しい、のではないか…？
+正直自分は偏執的アクセス制御の厳格化（基本全部privateであるべき、など）には懐疑的だし。
+
+---
+
+結論から言うと、「構造型付け」「private」「平坦な合成」を全部そのまま成立させる言語は少なく、たいていどれかを少し曲げている。解決法は大きく4系統ある。
+
+##### 1. private だけ名目的にする — TypeScript型
+
+TypeScriptは基本的に構造型だが、`private` を含むクラス同士の適合性だけは「同じ宣言から生まれたprivateか」を見る。
+
+```ts
+class A {
+    private state = 0;
+}
+
+class B {
+    private state = 0;
+}
+```
+
+`A` と `B` は公開構造が同じでも互換にならない。privateがクラス固有のブランドとして働くためである。[TypeScript公式](https://www.typescriptlang.org/docs/handbook/type-compatibility)
+
+概念的には次のような型になる。
+
+```text
+A = {
+    [private A::state] : number
+}
+
+B = {
+    [private B::state] : number
+}
+```
+
+文字列 `"state"` ではなく、「宣言Aが所有するstate」という一意な名前として扱う。
+
+ただしTypeScriptの `private` キーワードは実行時には通常のJavaScriptプロパティなので、実体上の衝突までは解決しない。実行時にも分離するのがJavaScriptの `#state` で、異なるクラスの同名privateは完全に別の要素として共存する。[MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Classes/Private_elements)
+
+L^へ持ち込むなら、内部的にこうする案になる。
+
+```text
+公開キー:      "value"
+非公開キー:    PrivateKey(definition_id, "state")
+```
+
+これはかなり筋がよい。構造型付けは公開面に残し、privateだけを名目的なキーにできる。
+
+##### 2. 合成しても平坦化しない — Go型
+
+Goの埋め込みは、見かけ上メンバを昇格させるが、実体は内側の構造体を保持している。
+
+```go
+type A struct {
+    state int
+}
+
+type B struct {
+    state string
+}
+
+type C struct {
+    A
+    B
+}
+```
+
+`C` は概念的には次の形であり、二つの `state` は本当に別の場所にある。
+
+```text
+C {
+    A { state int }
+    B { state string }
+}
+```
+
+`c.state` は曖昧なので使えないが、`c.A.state` と `c.B.state` なら区別できる。埋め込みの同じ深さに同名があればセレクタを曖昧にするのがGoの基本方針である。[Go言語仕様](https://go.dev/ref/spec)、[Effective Go](https://go.dev/doc/effective_go)
+
+また、Goでは異なるパッケージの非公開フィールド名は、綴りが同じでも型同一性上は別名として扱われる。ここにも「非公開名へ宣言元の識別子を加える」発想がある。
+
+これはL^の現在の合成と対照的。
+
+```lhat
+let^ C = A .. B
+```
+
+現在のL^はAとBのインスタンス領域を一つの平坦な表へ展開する。Go方式にするなら、内部的には次のように区画を残す必要がある。
+
+```text
+C {
+    hidden A-part { state }
+    hidden B-part { state }
+    promoted public members...
+}
+```
+
+強力だが、`self^` がどの区画を指すか、`new` がどう初期化するか、委譲と合成をどう区別するかまで変わる。
+
+##### 3. private をオブジェクト型から消す — OCaml型
+
+OCamlのオブジェクト型は構造的で、private methodは外部から見えるオブジェクト型に現れない。
+
+```ocaml
+class counter = object (self)
+  val mutable value = 0
+  method get = value
+  method private increment = value <- value + 1
+  method bump = self#increment
+end
+```
+
+外側から見る型は概ねこうなる。
+
+```text
+< get : int; bump : unit >
+```
+
+`increment` は実装には存在するが、構造型の一部にはならない。OCamlではprivate methodは基本的に `self` 経由でのみ呼ぶものとして定義されており、Java/C++型の「同じクラスなら別インスタンスのprivateも読める」とは異なる。[OCamlマニュアル](https://ocaml.org/manual/5.5/ocaml-5.5-refman.pdf)
+
+これは先ほど提案したL^の公開ビュー／内部ビューに最も近い。
+
+ただし、型から消すだけでは実体の同名衝突を解決しない。OCamlではオブジェクトの内部表現や継承機構がそれを処理するが、L^のような文字列キーの平坦なテーブルでは、別途内部キーが必要になる。
+
+##### 4. private状態をオブジェクト外へ出す — クロージャ／能力型
+
+LuaやJavaScriptで昔から使われる方法。
+
+```lhat
+let^ makeFoo = f^ {
+    var^ state = 0
+
+    return^ {
+        get = f^ -> number^ { state },
+        set = p^v:number^ { state := v },
+    }
+}
+```
+
+`state` は返すテーブルのメンバではなく、クロージャの環境にある。したがって同名衝突という問題自体が存在しない。
+
+JavaScriptではネイティブprivate field以前に、クロージャや `WeakMap<object, state>` が使われていた。一般化すると、
+
+```text
+PrivateStorage[definition_id][instance] = private state
+```
+
+というサイドテーブル方式になる。
+
+L^でも実装可能だが、
+
+- インスタンスの割り当てが増える
+- GCがサイドテーブルを認識する必要がある
+- `self^.state` が普通のテーブルアクセスではなくなる
+- 値のコピーやシリアライズとの関係が複雑になる
+
+というコストがある。
+
+##### L^に適用できる三つの現実案
+
+###### A. 衝突を禁止する
+
+```lhat
+let^ A = def^{ self^{ private^ state := 0 } }
+let^ B = def^{ self^{ private^ state := "" } }
+let^ C = A .. B  # 衝突
+```
+
+最小実装。OCaml風の外部型消去だけ行い、格納方式は変えない。
+
+欠点は、利用者には見えない実装詳細が合成可能性を壊すこと。同じミックスインを独立に改修しただけで、利用側の合成が壊れうる。
+
+###### B. privateキーを宣言元で修飾する
+
+```text
+A::state
+B::state
+```
+
+ソース上は両方とも `self^.state` だが、宣言元のメソッド本体を検査・コンパイルするときに、それぞれ異なる内部キーへ解決する。
+
+```lhat
+let^ A = def^{
+    self^{ private^ state := 0 }
+    a = f^self^ { self^.state }  # A::state
+}
+
+let^ B = def^{
+    self^{ private^ state := "" }
+    b = f^self^ { self^.state }  # B::state
+}
+
+let^ C = A .. B                  # 成立
+```
+
+実体は概念的にこうなる。
+
+```text
+{
+    PrivateKey(A, state): 0,
+    PrivateKey(B, state): "",
+    "a": ...,
+    "b": ...
+}
+```
+
+JavaScript `#field` とGoの非公開名のidentityに近い方式。L^にはこれが最も向いていると思う。
+
+必要になるのは、文字列以外のメンバーキー、またはコンパイル時に生成する決してユーザー名と衝突しないIDである。VM命令が現在文字列定数をキーにしているなら、例えば次の二系統にする。
+
+```text
+GET_MEMBER       "value"
+GET_PRIVATE      definition_id, private_slot
+SET_PRIVATE      definition_id, private_slot
+```
+
+さらに効率を求めるなら、private fieldをテーブルのハッシュキーではなく、定義レイアウト中のスロット番号にできる。
+
+```text
+A::state → private slot 0
+B::state → private slot 1
+```
+
+これはアクセス制御だけでなく高速化にもつながる。
+
+###### C. 合成パートを保持する
+
+Goのように、AとBを内部サブオブジェクトとして残す。
+
+```text
+C instance
+├─ A part
+│  └─ state
+└─ B part
+   └─ state
+```
+
+A由来のメソッドへ渡す `self^` は、C全体ではなく「Cに埋め込まれたAビュー」を指す。
+
+これは最も厳密だが、現在のL^の「合成後は一つの構造として振る舞う」という性質が弱くなる。`self^` の同一性にも影響するため、大改造になる。
+
+##### 私ならこう進める
+
+まずAで仕様を成立させ、その後Bへ移れるよう型情報だけは最初から宣言元IDを持たせる。
+
+つまり初期実装でも、
+
+```c
+private_member {
+    owner_definition;
+    source_name;
+}
+```
+
+としておき、実行時だけ当面 `"state"` に降ろす。将来、格納キーを `(owner_definition, private_slot)` に変えれば、言語仕様をほぼ変えずに同名共存へ移行できる。
+
+ただ、後方互換性を気にしなくてよい現在の段階なら、最初からBも十分ありだと思う。L^では定義のメンバがすでに静的に解決され、`def^` の合成も定義時に確定しているため、「privateアクセスを宣言元固有スロットに解決する」条件がかなり揃っている。
+
+要するに、構造型言語でよく使われる答えは：
+
+> 公開名は構造的な文字列名、private名だけは宣言元に結びついた名目的なシンボル。
+
+L^にとっても、これが一番きれいな着地点だと思う。
+
+---
+
+とのこと。自動 private slot 番号型、が確かに一番いいかな…
+
+#### ビット演算（済）
 
 ```lhat
 bitand^
@@ -236,7 +496,7 @@ number^.bitat  = f^self^, number^ -> bool^; # 範囲外は、false^
 
 という形で決着。ついでに number^.isinteger も入った。
 
-#### パラメトリック多相
+#### パラメトリック多相（済）
 
 インスタンス化検査が入ったことで実質パラメトリック多相を実現している、という認識。
 
