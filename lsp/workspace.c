@@ -286,83 +286,8 @@ static void load_project_configs(LspWorkspace *ws, LspProject *project)
 }
 
 // ---------------------------------------------------------------------------
-// Roots and their reverse index -- all private to one project
+// Roots and the two project-wide programs
 // ---------------------------------------------------------------------------
-
-static LspReverseEntry *reverse_find(LspProject *project, const char *path)
-{
-    for (LspReverseEntry *entry = project->reverse; entry != NULL;
-         entry = entry->next) {
-        if (strcmp(entry->path, path) == 0) {
-            return entry;
-        }
-    }
-    return NULL;
-}
-
-static LspReverseEntry *reverse_find_or_add(LspProject *project,
-                                             const char *path)
-{
-    LspReverseEntry *entry = reverse_find(project, path);
-    if (entry != NULL) {
-        return entry;
-    }
-    entry = (LspReverseEntry *)calloc(1, sizeof *entry);
-    if (entry == NULL) {
-        return NULL;
-    }
-    entry->path = lsp_strdup(path);
-    if (entry->path == NULL) {
-        free(entry);
-        return NULL;
-    }
-    entry->next = project->reverse;
-    project->reverse = entry;
-    return entry;
-}
-
-static void reverse_entry_add_root(LspReverseEntry *entry, const char *root)
-{
-    for (size_t i = 0; i < entry->root_count; i++) {
-        if (strcmp(entry->roots[i], root) == 0) {
-            return;
-        }
-    }
-    if (entry->root_count == entry->root_capacity) {
-        size_t grown = entry->root_capacity ? entry->root_capacity * 2 : 4;
-        char **bigger = (char **)realloc(entry->roots, grown * sizeof *bigger);
-        if (bigger == NULL) {
-            return;
-        }
-        entry->roots = bigger;
-        entry->root_capacity = grown;
-    }
-    entry->roots[entry->root_count] = lsp_strdup(root);
-    if (entry->roots[entry->root_count] != NULL) {
-        entry->root_count++;
-    }
-}
-
-static void reverse_entry_remove_root(LspReverseEntry *entry, const char *root)
-{
-    for (size_t i = 0; i < entry->root_count; i++) {
-        if (strcmp(entry->roots[i], root) == 0) {
-            free(entry->roots[i]);
-            entry->roots[i] = entry->roots[entry->root_count - 1];
-            entry->root_count--;
-            return;
-        }
-    }
-}
-
-static void reverse_remove_root_everywhere(LspProject *project,
-                                           const char *root)
-{
-    for (LspReverseEntry *entry = project->reverse; entry != NULL;
-         entry = entry->next) {
-        reverse_entry_remove_root(entry, root);
-    }
-}
 
 static LspRoot *root_find(LspProject *project, const char *path)
 {
@@ -394,82 +319,73 @@ static LspRoot *root_find_or_add(LspProject *project, const char *path)
     return root;
 }
 
-// Forgets what `root`'s last check made, along with what it said it reached.
-static void drop_program(LspProject *project, LspRoot *root)
+static bool program_has_path(const LhatProgram *program, const char *path)
 {
-    reverse_remove_root_everywhere(project, root->path);
-    if (root->checked) {
-        lhat_program_dispose(&root->program);
-        root->checked = false;
-    }
-}
-
-// Whether another root's checked graph already holds `root` as one of its
-// units. Such a root keeps no program of its own: the unit was checked there
-// from the same text against the same configuration, and a program per root
-// would hold every file a game's entry point require^s once more for each
-// of them. A .lton is never covered -- a require^ reads it as data, which is
-// not the check its own root makes.
-static bool root_covered(LspProject *project, const LspRoot *root)
-{
-    if (lsp_lton_is_path(root->path)) {
-        return false;
-    }
-    LspReverseEntry *entry = reverse_find(project, root->path);
-    for (size_t i = 0; entry != NULL && i < entry->root_count; i++) {
-        if (strcmp(entry->roots[i], root->path) == 0) {
-            continue;
-        }
-        LspRoot *other = root_find(project, entry->roots[i]);
-        if (other != NULL && other->checked) {
+    for (const LhatUnit *unit = program->units; unit != NULL;
+         unit = unit->next) {
+        if (unit->path != NULL && strcmp(unit->path, path) == 0) {
             return true;
         }
     }
     return false;
 }
 
-static void recheck_one_root(LspWorkspace *ws, LspProject *project,
-                             LspRoot *root)
+static bool project_has_roots(const LspProject *project, bool data)
 {
-    drop_program(project, root);
-    if (root_covered(project, root)) {
+    for (const LspRoot *root = project->roots; root != NULL;
+         root = root->next) {
+        if (lsp_lton_is_path(root->path) == data) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void recheck_semantic_project(LspWorkspace *ws, LspProject *project)
+{
+    if (project->checked) {
+        lhat_program_dispose(&project->program);
+        project->checked = false;
+    }
+    if (!project_has_roots(project, false)) {
         return;
     }
     bool strict = lsp_settings_strict(
         project->settings, lsp_host_config_strict(project->host_config, true));
-    lhat_program_init(&root->program, strict, lsp_program_load, ws);
-    root->program.syntax_only = lsp_lton_is_path(root->path);
-    speak(ws, &root->program);
-    if (!root->program.syntax_only) bind_host_names(project, &root->program);
-    lhat_program_check(&root->program, root->path);
+    lhat_program_init(&project->program, strict, lsp_program_load, ws);
+    speak(ws, &project->program);
+    bind_host_names(project, &project->program);
+    project->checked = true;
 
-    if (!root->program.syntax_only && !lhat_program_has_errors(&root->program)) {
-        (void)lhat_program_compile(&root->program);
+    // One broken entry point must not keep later, independent roots from
+    // receiving trees and checker results. Code generation remains a whole-
+    // program operation and is attempted only after every root was checked.
+    for (LspRoot *root = project->roots; root != NULL; root = root->next) {
+        if (!lsp_lton_is_path(root->path)) {
+            (void)lhat_program_check(&project->program, root->path);
+        }
     }
-    root->checked = true;
-
-    for (const LhatUnit *unit = root->program.units; unit != NULL;
-         unit = unit->next) {
-        LspReverseEntry *entry = reverse_find_or_add(project, unit->path);
-        if (entry != NULL) {
-            reverse_entry_add_root(entry, root->path);
-        }
-        LspRoot *covered = strcmp(unit->path, root->path) != 0
-                               ? root_find(project, unit->path) : NULL;
-        if (covered != NULL && !lsp_lton_is_path(covered->path)) {
-            drop_program(project, covered);
-        }
+    if (!lhat_program_has_errors(&project->program)) {
+        (void)lhat_program_compile(&project->program);
     }
 }
 
-// Checks every root no other root covers any more -- one a recheck stopped
-// require^ing, or one that was covered when it was first met.
-static void check_uncovered(LspWorkspace *ws, LspProject *project)
+static void recheck_data_project(LspWorkspace *ws, LspProject *project)
 {
+    if (project->data_checked) {
+        lhat_program_dispose(&project->data_program);
+        project->data_checked = false;
+    }
+    if (!project_has_roots(project, true)) {
+        return;
+    }
+    lhat_program_init(&project->data_program, true, lsp_program_load, ws);
+    project->data_program.syntax_only = true;
+    speak(ws, &project->data_program);
+    project->data_checked = true;
     for (LspRoot *root = project->roots; root != NULL; root = root->next) {
-        if (!root->checked && !lsp_lton_is_path(root->path) &&
-            !root_covered(project, root)) {
-            recheck_one_root(ws, project, root);
+        if (lsp_lton_is_path(root->path)) {
+            (void)lhat_program_check(&project->data_program, root->path);
         }
     }
 }
@@ -503,11 +419,7 @@ static void drop_excluded_roots(LspProject *project)
             link = &root->next;
             continue;
         }
-        reverse_remove_root_everywhere(project, root->path);
         *link = root->next;
-        if (root->checked) {
-            lhat_program_dispose(&root->program);
-        }
         free(root->path);
         free(root);
     }
@@ -778,26 +690,18 @@ static LspProject *ensure_project_for_path(LspWorkspace *ws, const char *path)
 
 static void dispose_project(LspProject *project)
 {
+    if (project->checked) {
+        lhat_program_dispose(&project->program);
+    }
+    if (project->data_checked) {
+        lhat_program_dispose(&project->data_program);
+    }
     LspRoot *root = project->roots;
     while (root != NULL) {
         LspRoot *next = root->next;
-        if (root->checked) {
-            lhat_program_dispose(&root->program);
-        }
         free(root->path);
         free(root);
         root = next;
-    }
-    LspReverseEntry *entry = project->reverse;
-    while (entry != NULL) {
-        LspReverseEntry *next = entry->next;
-        for (size_t i = 0; i < entry->root_count; i++) {
-            free(entry->roots[i]);
-        }
-        free(entry->roots);
-        free(entry->path);
-        free(entry);
-        entry = next;
     }
     lsp_host_config_free(project->host_config);
     lsp_settings_free(project->settings);
@@ -928,6 +832,7 @@ void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path)
     if (lsp_lton_is_path(path) && !lsp_document_store_has(&ws->documents, path)) {
         // didClose releases the data tree instead of rereading it from disk.
         for (LspProject *project = ws->projects; project != NULL; project = project->next) {
+            bool removed = false;
             LspRoot **link = &project->roots;
             while (*link != NULL) {
                 LspRoot *root = *link;
@@ -935,11 +840,18 @@ void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path)
                     link = &root->next;
                     continue;
                 }
-                reverse_remove_root_everywhere(project, path);
                 *link = root->next;
-                if (root->checked) lhat_program_dispose(&root->program);
                 free(root->path);
                 free(root);
+                removed = true;
+            }
+            bool semantic_changed = project->checked &&
+                                    program_has_path(&project->program, path);
+            if (removed) {
+                recheck_data_project(ws, project);
+            }
+            if (semantic_changed) {
+                recheck_semantic_project(ws, project);
             }
         }
         lhat_mutex_unlock(&ws->lock);
@@ -952,86 +864,28 @@ void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path)
     for (LspProject *project = ws->projects; project != NULL;
          project = project->next) {
         bool should_add_own_root = project == owner && !path_excluded(project, path);
-        LspReverseEntry *entry = reverse_find(project, path);
-        if (!should_add_own_root && entry == NULL) {
-            continue;
-        }
-        // recheck_one_root rebuilds `entry`, so copy the root names before
-        // rechecking this file's own root.
-        size_t count = entry != NULL ? entry->root_count : 0;
-        char **affected = count ? (char **)calloc(count, sizeof *affected) : NULL;
-        size_t copied = 0;
-        if (affected != NULL) {
-            for (size_t i = 0; i < count; i++) {
-                affected[copied] = lsp_strdup(entry->roots[i]);
-                if (affected[copied] != NULL) {
-                    copied++;
-                }
-            }
-        }
+        bool data = lsp_lton_is_path(path);
+        bool semantic_changed = project->checked &&
+                                program_has_path(&project->program, path);
+        bool data_changed = project->data_checked &&
+                            program_has_path(&project->data_program, path);
         if (should_add_own_root) {
-            LspRoot *root = root_find_or_add(project, path);
-            if (root != NULL) {
-                recheck_one_root(ws, project, root);
-            }
-        }
-        for (size_t i = 0; i < copied; i++) {
-            if (strcmp(affected[i], path) != 0) {
-                LspRoot *root = root_find_or_add(project, affected[i]);
-                if (root != NULL) {
-                    recheck_one_root(ws, project, root);
+            if (root_find_or_add(project, path) != NULL) {
+                if (data) {
+                    data_changed = true;
+                } else {
+                    semantic_changed = true;
                 }
             }
-            free(affected[i]);
         }
-        free(affected);
-        check_uncovered(ws, project);
+        if (semantic_changed) {
+            recheck_semantic_project(ws, project);
+        }
+        if (data_changed) {
+            recheck_data_project(ws, project);
+        }
     }
     lhat_mutex_unlock(&ws->lock);
-}
-
-static size_t path_depth(const char *path)
-{
-    size_t depth = 0;
-    for (; *path != '\0'; path++) {
-        depth += *path == '/';
-    }
-    return depth;
-}
-
-static int shallower_first(const void *a, const void *b)
-{
-    const LspRoot *x = *(LspRoot *const *)a;
-    const LspRoot *y = *(LspRoot *const *)b;
-    size_t dx = path_depth(x->path), dy = path_depth(y->path);
-    return dx != dy ? (dx < dy ? -1 : 1) : strcmp(x->path, y->path);
-}
-
-// Every root of `project`, the shallowest first. An entry point tends to sit
-// above what it require^s, and once it is checked the roots it covers are
-// not checked at all -- so this order is what keeps a first pass from
-// holding a program for every file of the project at once.
-static void recheck_project(LspWorkspace *ws, LspProject *project)
-{
-    size_t count = 0;
-    for (LspRoot *root = project->roots; root != NULL; root = root->next) {
-        count++;
-    }
-    LspRoot **order = count ? (LspRoot **)malloc(count * sizeof *order) : NULL;
-    if (order != NULL) {
-        size_t at = 0;
-        for (LspRoot *root = project->roots; root != NULL; root = root->next) {
-            order[at++] = root;
-        }
-        qsort(order, count, sizeof *order, shallower_first);
-        for (size_t i = 0; i < count; i++) {
-            if (!lsp_lton_is_path(order[i]->path)) {  // checked from open text
-                recheck_one_root(ws, project, order[i]);
-            }
-        }
-        free(order);
-    }
-    check_uncovered(ws, project);
 }
 
 void lsp_workspace_recheck_all(LspWorkspace *ws)
@@ -1061,7 +915,8 @@ void lsp_workspace_recheck_all(LspWorkspace *ws)
     lhat_mutex_lock(&ws->lock);
     for (LspProject *project = ws->projects; project != NULL;
          project = project->next) {
-        recheck_project(ws, project);
+        recheck_semantic_project(ws, project);
+        recheck_data_project(ws, project);
     }
     lhat_mutex_unlock(&ws->lock);
 }
@@ -1075,11 +930,14 @@ void lsp_workspace_collect_diagnostics(LspWorkspace *ws,
     size_t capacity = 0;
     for (LspProject *project = ws->projects; project != NULL;
          project = project->next) {
-        for (LspRoot *root = project->roots; root != NULL; root = root->next) {
-            if (!root->checked) {
-                continue;
-            }
-            for (const LhatUnit *unit = root->program.units; unit != NULL;
+        // Prefer the syntax-only copy when an open LTON is also required by
+        // a semantic unit: editor features for data must see the data tree.
+        const LhatProgram *programs[] = {&project->data_program,
+                                         &project->program};
+        bool checked[] = {project->data_checked, project->checked};
+        for (size_t p = 0; p < 2; p++) {
+            if (!checked[p]) continue;
+            for (const LhatUnit *unit = programs[p]->units; unit != NULL;
                  unit = unit->next) {
                 LspProject *owner = unit->loaded ? project_for_path(ws, unit->path) : NULL;
                 if (!unit->loaded || unit->path == NULL ||
@@ -1108,8 +966,8 @@ void lsp_workspace_collect_diagnostics(LspWorkspace *ws,
                     lsp_host_config_strict(project->host_config, true));
                 cJSON *diagnostics = lsp_diagnostics_for_unit(unit, relaxed);
                 const char *failed_in = NULL;
-                LhatCompileResult failure =
-                    lhat_program_compile_failure(&root->program, &failed_in);
+                LhatCompileResult failure = lhat_program_compile_failure(
+                    programs[p], &failed_in);
                 if (failed_in != NULL && strcmp(failed_in, unit->path) == 0) {
                     lsp_diagnostics_add_compile_failure(diagnostics, unit, failure);
                 }
@@ -1131,11 +989,12 @@ static bool with_unit_in_project(LspProject *project, const char *path,
     if (project == NULL) {
         return false;
     }
-    for (LspRoot *root = project->roots; root != NULL; root = root->next) {
-        if (!root->checked) {
-            continue;
-        }
-        for (const LhatUnit *unit = root->program.units; unit != NULL;
+    const LhatProgram *programs[] = {&project->data_program,
+                                     &project->program};
+    bool checked[] = {project->data_checked, project->checked};
+    for (size_t p = 0; p < 2; p++) {
+        if (!checked[p]) continue;
+        for (const LhatUnit *unit = programs[p]->units; unit != NULL;
              unit = unit->next) {
             if (unit->loaded && strcmp(unit->path, path) == 0) {
                 sink(context, unit);
@@ -1238,12 +1097,13 @@ static void with_every_unit_in_project(LspProject *project, LspUnitSink sink,
     char **seen = NULL;
     size_t count = 0;
     size_t capacity = 0;
-    for (LspRoot *root = project != NULL ? project->roots : NULL; root != NULL;
-         root = root->next) {
-        if (!root->checked) {
-            continue;
-        }
-        for (const LhatUnit *unit = root->program.units; unit != NULL;
+    if (project == NULL) return;
+    const LhatProgram *programs[] = {&project->data_program,
+                                     &project->program};
+    bool checked[] = {project->data_checked, project->checked};
+    for (size_t p = 0; p < 2; p++) {
+        if (!checked[p]) continue;
+        for (const LhatUnit *unit = programs[p]->units; unit != NULL;
              unit = unit->next) {
             if (!unit->loaded || unit->path == NULL) {
                 continue;
@@ -1375,12 +1235,14 @@ LspUnitExports *lsp_workspace_copy_exports(LspWorkspace *ws,
     LspProject *project = ensure_project_for_path(ws, path);
     LspUnitExports *units = NULL;
     size_t capacity = 0;
-    for (LspRoot *root = project != NULL ? project->roots : NULL; root != NULL;
-         root = root->next) {
-        if (!root->checked) {
-            continue;
-        }
-        for (const LhatUnit *unit = root->program.units; unit != NULL;
+    const LhatProgram *programs[] = {
+        project != NULL ? &project->data_program : NULL,
+        project != NULL ? &project->program : NULL};
+    bool checked[] = {project != NULL && project->data_checked,
+                      project != NULL && project->checked};
+    for (size_t p = 0; p < 2; p++) {
+        if (!checked[p]) continue;
+        for (const LhatUnit *unit = programs[p]->units; unit != NULL;
              unit = unit->next) {
             if (!unit->loaded || unit->path == NULL) {
                 continue;

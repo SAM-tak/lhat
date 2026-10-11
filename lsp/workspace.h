@@ -1,20 +1,18 @@
 // L^ (lhat) -- LSP server: project roots, checked and re-checked.
 //
-// The unit of re-checking here is a whole LhatProgram. Every *.lh file
-// under a project root is its own root, but only a root no other checked
-// root reaches holds a LhatProgram: one that another root's graph require^s
-// is checked there and has none of its own. A file two such entry points
-// both require^ is still re-parsed once per entry point -- the cost this
-// design pays for not needing a cache inside program.h itself.
+// Every *.lh root of one independently configured project is checked into
+// one LhatProgram. lhat_program_check accepts more than one entry point, and
+// a required unit already in that program is consequently parsed, checked
+// and compiled only once however many test or application roots reach it.
 //
-// 05 の 5.7 has since given program.h a way to invalidate one unit inside an
-// already-checked program, which would make the re-check here incremental.
-// Not taken yet.
+// A changed source currently rebuilds that project's program. Invalidation
+// cannot reclaim the program-wide type arena, while an editor has no running
+// machine or closure that requires an old world to survive; rebuilding both
+// bounds memory across edits and leaves the update simple.
 //
-// A reverse index (path -> the roots whose last check reached it) keeps a
-// single edit from re-checking the whole workspace: changing one file
-// re-checks that file's own root plus whatever roots' graphs passed through
-// it, and nothing else.
+// LTON documents use a second, project-wide syntax-only program. syntax_only
+// is a program property, so data trees cannot inhabit the semantic program;
+// they still share one program rather than one per open document.
 
 #ifndef LSP_WORKSPACE_H
 #define LSP_WORKSPACE_H
@@ -33,19 +31,8 @@
 
 typedef struct LspRoot {
     char *path;  // absolute, '/'-separated -- this root's own file (uri.h)
-    LhatProgram program;
-    bool checked;
     struct LspRoot *next;
 } LspRoot;
-
-// path -> the absolute root paths whose last check reached it.
-typedef struct LspReverseEntry {
-    char *path;
-    char **roots;  // owned strings
-    size_t root_count;
-    size_t root_capacity;
-    struct LspReverseEntry *next;
-} LspReverseEntry;
 
 // One independently configured part of a workspace. A project begins at a
 // directory containing either lhat-host.json or lhat-lsp.json; the fallback
@@ -55,7 +42,10 @@ typedef struct LspReverseEntry {
 typedef struct LspProject {
     char *root_path;  // absolute filesystem path; this project's boundary
     LspRoot *roots;
-    LspReverseEntry *reverse;
+    LhatProgram program;
+    bool checked;
+    LhatProgram data_program;  // open LTON documents, syntax-only
+    bool data_checked;
     LspHostConfig *host_config;
     LspSettings *settings;
     bool config_boundary;
@@ -124,17 +114,13 @@ bool lsp_workspace_is_unit_path(const char *path);
 // character. False for a file that is not there to read.
 bool lsp_workspace_is_binary_unit(const char *path);
 
-// Resolves `path` to its nearest project, then re-checks its own root plus
-// every root that project's reverse index says last reached `path`.
+// Resolves `path` to its nearest project, then rebuilds every project whose
+// checked program contains that path. The nearest project also gains the
+// path as a root when it is an included source or an open LTON document.
 void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path);
 
-// Re-checks every known root. worker.c calls this once after project
-// discovery -- one hop per root rather than draining a freshly discovered
-// workspace through recheck_affected one root at a time, which
-// would re-check a root each time another root that reaches it came up
-// next in the same batch (05 の 6.2's require^ walk makes reach transitive).
-// The shallowest paths go first, so an entry point above what it require^s
-// covers those before they are checked at all.
+// Rebuilds every project's semantic and syntax-only programs and checks all
+// known roots. worker.c calls this once after project discovery.
 void lsp_workspace_recheck_all(LspWorkspace *ws);
 
 // Calls `sink` once per distinct absolute path currently held by any root,
@@ -149,9 +135,8 @@ void lsp_workspace_collect_diagnostics(LspWorkspace *ws,
 // `sink` with it while still holding the workspace lock -- a request
 // handler (e.g. semantic tokens) needs the tree for one path, but a
 // pointer handed back after unlocking could be freed by the worker
-// thread's next recheck (recheck_one_root disposes and rebuilds a root's
-// whole LhatProgram). Not called at all when `path` is not part of any
-// checked root's graph.
+// thread's next project rebuild. Not called at all when `path` is not part
+// of any checked root's graph.
 typedef void (*LspUnitSink)(void *context, const LhatUnit *unit);
 void lsp_workspace_with_unit(LspWorkspace *ws, const char *path,
                              LspUnitSink sink, void *context);

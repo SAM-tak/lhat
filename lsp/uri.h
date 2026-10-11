@@ -6,9 +6,9 @@
 // it. So handing program.h absolute paths keeps a whole dependency graph
 // absolute automatically, with no workspace-relative bookkeeping needed.
 // This server settles on that: every path key -- LspDocumentStore,
-// LhatUnit::path, the workspace's reverse index -- is this absolute,
-// forward-slashed form. Client-visible positions travel as file:// URIs
-// instead; these two functions are the only place that boundary is crossed.
+// LhatUnit::path, LspRoot::path -- is this absolute, forward-slashed form.
+// Client-visible positions travel as file:// URIs instead; these two
+// functions are the only place that boundary is crossed.
 
 #ifndef LSP_URI_H
 #define LSP_URI_H

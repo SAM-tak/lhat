@@ -110,12 +110,9 @@ static int worker_main(void *arg)
 {
     LspServer *server = (LspServer *)arg;
 
-    // The initial check is every discovered root at once (recheck_all)
-    // rather than one queue entry at a time: recheck_affected's own reach
-    // is transitive (05 の 6.2's require^ walk), so draining a freshly
-    // discovered workspace one root at a time would re-check an already
-    // up-to-date root again each time a root that depends on it came up
-    // next in the same batch.
+    // Build each discovered project's program once, adding all its roots as
+    // entry points. Dependencies common to application and test roots are
+    // consequently parsed and checked only once.
     lsp_workspace_recheck_all(&server->workspace);
     lsp_server_publish_diagnostics(server);
     refresh_semantic_tokens(server);

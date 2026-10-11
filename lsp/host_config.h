@@ -20,7 +20,7 @@
 #include "program_internal.h"
 
 // A parsed lhat-host.json, ready to apply to any number of programs --
-// workspace.c re-checks a root by rebuilding its whole LhatProgram, so one
+// workspace.c re-checks a project by rebuilding its LhatProgram, so one
 // load serves every rebuild until the file changes.
 typedef struct LspHostConfig LspHostConfig;
 

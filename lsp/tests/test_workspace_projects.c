@@ -276,27 +276,38 @@ static void test_current_unit(void)
     remove_directory(base);
 }
 
-static LspRoot *root_at(LspProject *project, const char *path)
+static const LhatUnit *unit_at(const LhatProgram *program, const char *path)
 {
-    for (LspRoot *root = project->roots; root != NULL; root = root->next) {
-        if (strcmp(root->path, path) == 0) {
-            return root;
+    for (const LhatUnit *unit = program->units; unit != NULL;
+         unit = unit->next) {
+        if (strcmp(unit->path, path) == 0) {
+            return unit;
         }
     }
     return NULL;
 }
 
-// A file another root require^s is checked inside that root's program, and
-// holds none of its own -- one program per file would hold every unit an
-// entry point reaches once more for each of them. A config copied under an
-// excluded directory begins no project of its own either.
-static void test_covered_roots(void)
+static size_t program_unit_count(const LhatProgram *program)
+{
+    size_t count = 0;
+    for (const LhatUnit *unit = program->units; unit != NULL;
+         unit = unit->next) {
+        count++;
+    }
+    return count;
+}
+
+// Every entry point of one project inhabits one program, so a shared
+// dependency is checked once. A broken entry point does not stop independent
+// roots after it from receiving checker results.
+static void test_project_program(void)
 {
     char base[512];
     LHAT_REQUIRE(make_temporary_directory(base, sizeof base),
                  "could not create a temporary directory");
     char build[512], copy[512], host[512], settings[512], copied_host[512];
-    char copied_unit[512], main_path[512], lib_path[512];
+    char copied_unit[512], main_path[512], lib_path[512], good_path[512];
+    char bad_path[512];
     join(build, sizeof build, base, "build");
     join(copy, sizeof copy, build, "copy");
     LHAT_REQUIRE(make_directory(build), "could not create %s", build);
@@ -307,6 +318,8 @@ static void test_covered_roots(void)
     join(copied_unit, sizeof copied_unit, copy, "copied.lh");
     join(main_path, sizeof main_path, base, "main.lh");
     join(lib_path, sizeof lib_path, base, "lib.lh");
+    join(good_path, sizeof good_path, base, "good.lh");
+    join(bad_path, sizeof bad_path, base, "bad.lh");
     LHAT_REQUIRE(write_file(host, "{}"), "could not write %s", host);
     LHAT_REQUIRE(write_file(settings, "{\"exclude\": [\"build/\"]}"),
                  "could not write %s", settings);
@@ -315,6 +328,10 @@ static void test_covered_roots(void)
     LHAT_REQUIRE(write_file(main_path, "require^\"lib.lh\"\n"),
                  "could not write %s", main_path);
     LHAT_REQUIRE(write_file(lib_path, "let^x = 1\n"), "could not write %s", lib_path);
+    LHAT_REQUIRE(write_file(good_path, "let^answer = 42\n"),
+                 "could not write %s", good_path);
+    LHAT_REQUIRE(write_file(bad_path, "let^ =\n"),
+                 "could not write %s", bad_path);
 
     const char *folders[] = {base};
     LspWorkspace workspace;
@@ -327,40 +344,40 @@ static void test_covered_roots(void)
 
     LspProject *project = project_at(&workspace, base);
     LHAT_REQUIRE(project != NULL, "expected a project at the folder");
-    LspRoot *main_root = root_at(project, main_path);
-    LspRoot *lib_root = root_at(project, lib_path);
-    LHAT_REQUIRE(main_root != NULL && lib_root != NULL, "expected both roots");
 
-    LHAT_TEST("a required file holds no program of its own");
+    LHAT_TEST("all roots of a project share one program");
     lsp_workspace_recheck_all(&workspace);
-    LHAT_CHECK_EQ_BOOL(main_root->checked, true);
-    LHAT_CHECK_EQ_BOOL(lib_root->checked, false);
+    LHAT_CHECK(project->checked, "the semantic program was checked");
+    LHAT_CHECK_EQ_INT(program_unit_count(&project->program), 4);
+    LHAT_CHECK(unit_at(&project->program, main_path) != NULL,
+               "the entry point is in the project program");
+    LHAT_CHECK(unit_at(&project->program, lib_path) != NULL,
+               "its dependency is in the same program exactly once");
+
+    LHAT_TEST("a broken root does not stop another root from being checked");
+    const LhatUnit *bad = unit_at(&project->program, bad_path);
+    const LhatUnit *good = unit_at(&project->program, good_path);
+    LHAT_REQUIRE(bad != NULL && good != NULL, "both roots were loaded");
+    LHAT_CHECK(lhat_unit_diagnostic_count(bad) > 0,
+               "the broken root reports its error");
+    LHAT_CHECK(good->loaded && good->parsed.root != NULL &&
+                   good->checked.types != NULL,
+               "the independent root reached semantic checking");
+
+    LHAT_TEST("an edit rebuilds the project and exposes the new unit");
+    open_text(&workspace, lib_path, "let^x = 3\n", 1);
+    lsp_workspace_recheck_affected(&workspace, lib_path);
     int found = 0;
     lsp_workspace_with_unit(&workspace, lib_path, count_unit, &found);
     LHAT_CHECK_EQ_INT(found, 1);
-
-    LHAT_TEST("and is checked as its own root once nothing requires it");
-    open_text(&workspace, main_path, "let^y = 2\n", 1);
-    lsp_workspace_recheck_affected(&workspace, main_path);
-    LHAT_CHECK_EQ_BOOL(lib_root->checked, true);
-
-    LHAT_TEST("until something does again");
-    open_text(&workspace, main_path, "require^\"lib.lh\"\n", 2);
-    lsp_workspace_recheck_affected(&workspace, main_path);
-    LHAT_CHECK_EQ_BOOL(main_root->checked, true);
-    LHAT_CHECK_EQ_BOOL(lib_root->checked, false);
-
-    LHAT_TEST("an edit to a covered file rechecks the root covering it");
-    open_text(&workspace, lib_path, "let^x = 3\n", 1);
-    lsp_workspace_recheck_affected(&workspace, lib_path);
-    LHAT_CHECK_EQ_BOOL(lib_root->checked, false);
-    found = 0;
     lsp_workspace_with_current_unit(&workspace, lib_path, count_unit, &found);
-    LHAT_CHECK_EQ_INT(found, 1);
+    LHAT_CHECK_EQ_INT(found, 2);
 
     lsp_workspace_dispose(&workspace);
     remove(main_path);
     remove(lib_path);
+    remove(good_path);
+    remove(bad_path);
     remove(copied_unit);
     remove(copied_host);
     remove(settings);
@@ -431,22 +448,25 @@ static void test_lton_syntax_only_workspace(void)
     LHAT_CHECK_EQ_INT(calls, 2);
     LspProject *project = project_at(&workspace, base);
     LHAT_REQUIRE(project != NULL && project->roots != NULL, "LTON discovered");
-    LHAT_CHECK(!lhat_program_compile(&project->roots->program), "parse-only results cannot compile");
+    LHAT_CHECK(!lhat_program_compile(&project->data_program),
+               "parse-only results cannot compile");
 
     size_t bad_length = 0;
     char *bad = parity_load("value = { nested = },\n", path, &bad_length);
     lsp_document_store_put(&workspace.documents, path, bad, bad_length, 2);
     lsp_workspace_recheck_affected(&workspace, path);
-    const LhatUnit *unit = project->roots->program.units;
+    const LhatUnit *unit = project->data_program.units;
     LHAT_REQUIRE(unit != NULL, "rechecked unit");
     LHAT_CHECK(unit->parsed.diagnostic_count > 0, "syntax errors retained after editing");
-    LHAT_CHECK(lhat_program_has_errors(&project->roots->program), "syntax errors published");
+    LHAT_CHECK(lhat_program_has_errors(&project->data_program),
+               "syntax errors published");
 
     lsp_workspace_discover_projects(&workspace);
     lsp_workspace_recheck_all(&workspace);
     project = project_at(&workspace, base);
     LHAT_REQUIRE(project != NULL && project->roots != NULL, "open LTON survives config rediscovery");
-    LHAT_CHECK(lhat_program_has_errors(&project->roots->program), "unsaved text rechecked");
+    LHAT_CHECK(lhat_program_has_errors(&project->data_program),
+               "unsaved text rechecked");
     lsp_document_store_remove(&workspace.documents, path);
     lsp_workspace_recheck_affected(&workspace, path);
     LHAT_CHECK_EQ_INT(root_count(project), 0);
@@ -543,13 +563,13 @@ static void test_execution_pipeline_parity(void)
             lsp_workspace_recheck_affected(&workspace, path);
             LspProject *project = project_at(&workspace, base);
             LHAT_REQUIRE(project != NULL && project->roots != NULL, "workspace root");
-            LhatProgram *editor = &project->roots->program;
+            LhatProgram *editor = &project->program;
 
             LhatProgram execution;
             lhat_program_init(&execution, strict, parity_load, (void *)sources[i]);
             lsp_host_config_apply(project->host_config, &execution);
             const LhatUnit *a = lhat_program_check(&execution, path);
-            const LhatUnit *b = editor->units;
+            const LhatUnit *b = unit_at(editor, path);
             LHAT_REQUIRE(a != NULL && b != NULL, "both entry points checked the source");
             LHAT_CHECK_EQ_BOOL(editor->strict, strict);
             LHAT_CHECK_EQ_BOOL(lhat_program_has_errors(&execution), lhat_program_has_errors(editor));
@@ -629,7 +649,7 @@ int main(void)
     test_lton_syntax_only_workspace();
     test_nearest_project_wins_inside_each_workspace_folder();
     test_current_unit();
-    test_covered_roots();
+    test_project_program();
     test_execution_pipeline_parity();
     return lhat_test_report("test_workspace_projects");
 }
