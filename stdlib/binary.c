@@ -44,9 +44,9 @@ struct Kind {
     // being 0. RANGE adds `low` back; FIXED multiplies by `step` from
     // `origin`.
     uint64_t span;
-    int64_t low;
-    double origin;
-    double step;
+    LhatInteger low;
+    LhatReal origin;
+    LhatReal step;
     // ENUM: the members by their 0-based place. The enum is rooted on the
     // machine that made this kind (lhat_machine_host_root), which keeps them.
     const LhatEnum *owner;
@@ -216,8 +216,8 @@ static Kind *new_kind(KindTag tag, unsigned width, uint64_t span)
 
 // An argument that has to be an integer in [low, high], or a panic naming
 // the function it was handed to.
-static bool integer_argument(LhatMachine *machine, LhatValue value, int64_t low,
-                             int64_t high, const char *function, int64_t *out)
+static bool integer_argument(LhatMachine *machine, LhatValue value, LhatInteger low,
+                             LhatInteger high, const char *function, LhatInteger *out)
 {
     if (!lhat_is_integer(value) || lhat_as_integer(value) < low ||
         lhat_as_integer(value) > high) {
@@ -237,7 +237,7 @@ static void binary_uint(LhatMachine *machine, void *context,
 {
     (void)context;
     (void)count;
-    int64_t n = 0;
+    LhatInteger n = 0;
     if (integer_argument(machine, arguments[0], 1, 64, "uint", &n)) {
         uint64_t span = n == 64 ? UINT64_MAX : ((uint64_t)1 << n) - 1;
         answer_kind(machine, new_kind(KIND_UINT, (unsigned)n, span), answers,
@@ -251,7 +251,7 @@ static void binary_int(LhatMachine *machine, void *context,
 {
     (void)context;
     (void)count;
-    int64_t n = 0;
+    LhatInteger n = 0;
     if (integer_argument(machine, arguments[0], 1, 64, "int", &n)) {
         answer_kind(machine, new_kind(KIND_INT, (unsigned)n, 0), answers,
                     answer_count);
@@ -274,8 +274,8 @@ static void binary_range(LhatMachine *machine, void *context,
 {
     (void)context;
     (void)count;
-    int64_t low = 0;
-    int64_t high = 0;
+    LhatInteger low = 0;
+    LhatInteger high = 0;
     if (!integer_argument(machine, arguments[0], INT64_MIN, INT64_MAX, "range", &low) ||
         !integer_argument(machine, arguments[1], low, INT64_MAX, "range", &high)) {
         return;
@@ -292,10 +292,10 @@ static void binary_fixed(LhatMachine *machine, void *context,
 {
     (void)context;
     (void)count;
-    double low = lhat_number_as_real(arguments[0]);
-    double high = lhat_number_as_real(arguments[1]);
-    double step = lhat_number_as_real(arguments[2]);
-    double steps = (high - low) / step;
+    LhatReal low = lhat_number_as_real(arguments[0]);
+    LhatReal high = lhat_number_as_real(arguments[1]);
+    LhatReal step = lhat_number_as_real(arguments[2]);
+    LhatReal steps = (high - low) / step;
     // 2^53: past it the steps are no longer whole numbers a double can count.
     if (!(step > 0) || !(high >= low) || !(steps < 9007199254740992.0)) {
         lhat_machine_panic_text(
@@ -365,9 +365,9 @@ static void binary_array(LhatMachine *machine, void *context,
 {
     (void)context;
     (void)count;
-    int64_t length = 0;
+    LhatInteger length = 0;
     const Kind *element = (const Kind *)live(arguments[1], shared.kind_tag);
-    if (!integer_argument(machine, arguments[0], 0, (int64_t)MAX_BITS, "array", &length)) {
+    if (!integer_argument(machine, arguments[0], 0, (LhatInteger)MAX_BITS, "array", &length)) {
         return;
     }
     if (element == NULL) {
@@ -475,7 +475,7 @@ static void binary_format(LhatMachine *machine, void *context,
         return;
     }
     for (size_t i = 0; i < length; i++) {
-        const LhatTable *row = as_table(lhat_table_get(rows, lhat_integer((int64_t)i)));
+        const LhatTable *row = as_table(lhat_table_get(rows, lhat_integer((LhatInteger)i)));
         const LhatString *name =
             row != NULL ? as_string(lhat_table_get(row, lhat_integer(0))) : NULL;
         const Kind *kind =
@@ -567,7 +567,7 @@ static void kind_bits(LhatMachine *machine, void *context,
         lhat_machine_panic_text(machine, "std.binary: the kind was disposed");
         return;
     }
-    answers[0] = lhat_integer((int64_t)kind->bits);
+    answers[0] = lhat_integer((LhatInteger)kind->bits);
     *answer_count = 1;
 }
 
@@ -582,7 +582,7 @@ static void format_size(LhatMachine *machine, void *context,
         lhat_machine_panic_text(machine, "std.binary: the format was disposed");
         return;
     }
-    answers[0] = lhat_integer((int64_t)((kind->bits + 7) / 8));
+    answers[0] = lhat_integer((LhatInteger)((kind->bits + 7) / 8));
     *answer_count = 1;
 }
 
@@ -638,7 +638,7 @@ static uint64_t get_bits(const uint8_t *in, uint64_t *at, unsigned width)
 // under it when there is one.
 typedef struct {
     const Field *field;
-    int64_t index;
+    LhatInteger index;
 } Place;
 
 static bool refuse(LhatMachine *machine, Place place, const char *why)
@@ -667,10 +667,10 @@ static bool encode_kind(LhatMachine *machine, const Kind *kind, LhatValue value,
         if (!lhat_is_integer(value)) {
             return refuse(machine, place, "is not an integer");
         }
-        int64_t n = lhat_as_integer(value);
+        LhatInteger n = lhat_as_integer(value);
         uint64_t packed;
         if (kind->tag == KIND_INT) {
-            int64_t half = kind->width == 64 ? INT64_MIN : -((int64_t)1 << (kind->width - 1));
+            LhatInteger half = kind->width == 64 ? INT64_MIN : -((LhatInteger)1 << (kind->width - 1));
             if (n < half || (kind->width < 64 && n > -half - 1)) {
                 return refuse(machine, place, "does not fit int");
             }
@@ -696,9 +696,9 @@ static bool encode_kind(LhatMachine *machine, const Kind *kind, LhatValue value,
         if (!lhat_is_number(value)) {
             return refuse(machine, place, "is not a number^");
         }
-        double steps = (lhat_number_as_real(value) - kind->origin) / kind->step;
+        LhatReal steps = (lhat_number_as_real(value) - kind->origin) / kind->step;
         // B2: the nearest step. Half a step past either end still rounds onto it.
-        if (!(steps >= -0.5) || !(steps <= (double)kind->span + 0.5)) {
+        if (!(steps >= -0.5) || !(steps <= (LhatReal)kind->span + 0.5)) {
             return refuse(machine, place, "is out of range");
         }
         uint64_t packed = (uint64_t)llround(steps);
@@ -722,8 +722,8 @@ static bool encode_kind(LhatMachine *machine, const Kind *kind, LhatValue value,
             return refuse(machine, place, "is not a table");
         }
         for (size_t i = 0; i < kind->length; i++) {
-            Place inside = {place.field, (int64_t)i};
-            LhatValue item = lhat_table_get(items, lhat_integer((int64_t)i));
+            Place inside = {place.field, (LhatInteger)i};
+            LhatValue item = lhat_table_get(items, lhat_integer((LhatInteger)i));
             if (lhat_is_nil(item)) {
                 return refuse(machine, inside, "is missing");
             }
@@ -852,7 +852,7 @@ static Decoded decode_kind(LhatMachine *machine, const Kind *kind, const uint8_t
         if (packed > kind->span || (kind->tag == KIND_UINT && packed > (uint64_t)INT64_MAX)) {
             return MALFORMED;
         }
-        *out = lhat_integer((int64_t)((uint64_t)kind->low + packed));
+        *out = lhat_integer((LhatInteger)((uint64_t)kind->low + packed));
         return DECODED;
     }
     case KIND_INT: {
@@ -860,7 +860,7 @@ static Decoded decode_kind(LhatMachine *machine, const Kind *kind, const uint8_t
         if (kind->width < 64 && (packed >> (kind->width - 1)) != 0) {
             packed |= UINT64_MAX << kind->width;
         }
-        *out = lhat_integer((int64_t)packed);
+        *out = lhat_integer((LhatInteger)packed);
         return DECODED;
     }
     case KIND_BOOL:
@@ -871,7 +871,7 @@ static Decoded decode_kind(LhatMachine *machine, const Kind *kind, const uint8_t
         if (packed > kind->span) {
             return MALFORMED;
         }
-        *out = lhat_real(kind->origin + (double)packed * kind->step);
+        *out = lhat_real(kind->origin + (LhatReal)packed * kind->step);
         return DECODED;
     }
     case KIND_ENUM: {
@@ -896,7 +896,7 @@ static Decoded decode_kind(LhatMachine *machine, const Kind *kind, const uint8_t
         size_t parts = kind->tag == KIND_ARRAY ? kind->length : kind->field_count;
         for (size_t i = 0; i < parts; i++) {
             const Field *field = kind->tag == KIND_FORMAT ? &kind->fields[i] : NULL;
-            LhatValue key = lhat_integer((int64_t)i);
+            LhatValue key = lhat_integer((LhatInteger)i);
             if (field != NULL) {
                 key = own_key(table, field);
                 if (lhat_is_nil(key) &&
@@ -1060,7 +1060,7 @@ static void bytes_size(LhatMachine *machine, void *context,
         lhat_machine_panic_text(machine, "std.binary: the bytes were disposed");
         return;
     }
-    answers[0] = lhat_integer((int64_t)bytes->length);
+    answers[0] = lhat_integer((LhatInteger)bytes->length);
     *answer_count = 1;
 }
 

@@ -629,8 +629,8 @@ void chk_check_define(Checker *c, const LhatNode *node)
             // A construct's own binding (a counted for^'s focus, a with^) is
             // left alone: the machine moves a focus, and bound_the_focus says
             // what it may hold.
-            int64_t lo = 0;
-            int64_t hi = 0;
+            LhatInteger lo = 0;
+            LhatInteger hi = 0;
             bool bounded = node->v.binding.immutable &&
                            !node->v.binding.bound_by_form && tuple == NULL &&
                            chk_bounds_of(c, value, &lo, &hi);
@@ -1714,9 +1714,9 @@ static void check_step(Checker *c, const LhatNode *step)
         negative = !negative;
         literal = literal->v.unary.operand;
     }
-    double value;
+    LhatReal value;
     if (literal != NULL && literal->kind == LHAT_NODE_INT) {
-        value = (double)(int64_t)literal->v.integer.value;
+        value = (LhatReal)(LhatInteger)literal->v.integer.value;
     } else if (literal != NULL && literal->kind == LHAT_NODE_FLOAT) {
         value = literal->v.real;
     } else {
@@ -1746,15 +1746,15 @@ static void bound_the_focus(Checker *c, const LhatNode *node)
     }
     // Either end may be a range rather than one number -- 'to^ d - 1' where d
     // is bounded -- and the focus then stays inside the widest the two allow.
-    int64_t from_lo = 0;
-    int64_t from_hi = 0;
-    int64_t limit_lo = 0;
-    int64_t limit_hi = 0;
+    LhatInteger from_lo = 0;
+    LhatInteger from_hi = 0;
+    LhatInteger limit_lo = 0;
+    LhatInteger limit_hi = 0;
     if (!chk_bounds_of(c, focus->v.binding.values, &from_lo, &from_hi) ||
         !chk_bounds_of(c, node->v.loop.bound, &limit_lo, &limit_hi)) {
         return;
     }
-    int64_t step = 1;
+    LhatInteger step = 1;
     if (node->v.loop.step != NULL &&
         (!chk_whole_literal(node->v.loop.step, &step) || step <= 0)) {
         return;

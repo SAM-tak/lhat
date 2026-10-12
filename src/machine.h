@@ -108,7 +108,7 @@ typedef struct {
     // instead (a head-shaped run, as everywhere at the host boundary), and
     // nesting is free: a cleanup's own calls return through their own
     // frames' rooms.
-    LhatValueUnion answer_run[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
+    LhatValueUnion answer_run[LHAT_HOSTVALUE_MAX_SLOTS];
 
     // 02 の 13.8改: the tags of the run above, when it is carrying a tuple
     // rather than a host value. A host value's continuation slots are raw
@@ -116,7 +116,7 @@ typedef struct {
     // collector has to read them as values while the cleanups run -- so this
     // array is the whole of what a tuple adds to the room. Meaningful only
     // when `answer` is LHAT_VALUE_RUN.
-    uint8_t answer_tags[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
+    uint8_t answer_tags[LHAT_HOSTVALUE_MAX_SLOTS];
 } Frame;
 
 // 5.5: a cleanup is remembered as the Bx of the PUSHCLEANUP that entered it,
@@ -134,7 +134,7 @@ _Static_assert(LHAT_MAX_CLEANUPS <= UINT8_MAX,
 // 02 の 13.8改: the room above holds one head slot plus the positions, and a
 // tuple shares it with 05 の 8.9's host values. Keeping the two limits tied
 // here means widening one cannot silently outgrow the other.
-_Static_assert(LHAT_MAX_TUPLE <= LHAT_HOSTVALUE_MAX_BYTES / 8,
+_Static_assert(LHAT_MAX_TUPLE < LHAT_HOSTVALUE_MAX_SLOTS,
                "LHAT_MAX_TUPLE must fit a frame's answer room");
 
 // What `derive` holds when a frame's answer is its own. LOADK is never a
@@ -315,7 +315,7 @@ struct LhatMachine {
     // answers with. Consumed the moment the call returns (the machine writes
     // it out into slots before anything else runs), so one is enough even
     // when hosts call back in.
-    LhatValueUnion hostvalue_scratch[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
+    LhatValueUnion hostvalue_scratch[LHAT_HOSTVALUE_MAX_SLOTS];
 
     // 02 の 13.8改: the same room for the several values a host answers with,
     // and what a run answered to a host is copied into on the way out. One is

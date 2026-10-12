@@ -44,16 +44,16 @@ static LhatValue fail_with(LhatMachine *machine, const LhatErrorKind *kind,
 
 // xorshift64* refuses an all-zero state, so a seed of exactly that value
 // (or 0 itself, once XORed with the mixing constant below) is nudged aside.
-static uint64_t seeded_state(int64_t seed)
+static uint64_t seeded_state(LhatInteger seed)
 {
     uint64_t mixed = (uint64_t)seed ^ 0x9E3779B97F4A7C15ULL;
     return mixed != 0 ? mixed : 0x2545F4914F6CDD1DULL;
 }
 
-static int64_t arg_as_integer(LhatValue value)
+static LhatInteger arg_as_integer(LhatValue value)
 {
     return lhat_is_integer(value) ? lhat_as_integer(value)
-                                  : (int64_t)lhat_as_real(value);
+                                  : (LhatInteger)lhat_as_real(value);
 }
 
 static uint64_t next_raw(Random *r)
@@ -80,8 +80,8 @@ static void random_new(LhatMachine *machine, void *context,
         *answer_count = 1;
         return;
     }
-    int64_t seed = arg_as_integer(arguments[0]);
-    r->state = seeded_state(seed != 0 ? seed : (int64_t)time(NULL));
+    LhatInteger seed = arg_as_integer(arguments[0]);
+    r->state = seeded_state(seed != 0 ? seed : (LhatInteger)time(NULL));
 
     LhatValue out = lhat_nil();
     if (!lhat_machine_make_hostdata(machine, module->tag, r, &out)) {
@@ -124,7 +124,7 @@ static void random_next(LhatMachine *machine, void *context,
         return;
     }
     uint64_t bits = next_raw(r) >> 11;
-    answers[0] = lhat_real((double)bits / (double)(1ULL << 53));
+    answers[0] = lhat_real((LhatReal)bits / (LhatReal)(1ULL << 53));
     *answer_count = 1;
 }
 
@@ -138,16 +138,16 @@ static void random_range(LhatMachine *machine, void *context,
     (void)count;
     const RandomModule *module = (const RandomModule *)context;
     Random *r = (Random *)lhat_hostdata_pointer(arguments[0], module->tag);
-    double lo = lhat_number_as_real(arguments[1]);
-    double hi = lhat_number_as_real(arguments[2]);
+    LhatReal lo = lhat_number_as_real(arguments[1]);
+    LhatReal hi = lhat_number_as_real(arguments[2]);
     if (r == NULL || hi <= lo) {
-        answers[0] = lhat_integer((int64_t)lo);
+        answers[0] = lhat_integer((LhatInteger)lo);
         *answer_count = 1;
         return;
     }
     uint64_t span = (uint64_t)(hi - lo) + 1;
     uint64_t offset = next_raw(r) % span;
-    answers[0] = lhat_integer((int64_t)lo + (int64_t)offset);
+    answers[0] = lhat_integer((LhatInteger)lo + (LhatInteger)offset);
     *answer_count = 1;
 }
 

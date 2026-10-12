@@ -31,7 +31,7 @@ extern "C" {
     X(bool, lhat_register_func, (LhatProgram *program, const char *module, const char *name, const char *signature, LhatHostFn call, void *context)) \
     X(bool, lhat_register_global, (LhatProgram *program, const char *name, const char *signature, LhatHostFn call, void *context)) \
     X(bool, lhat_register_enum, (LhatProgram *program, const char *module, const char *type, const char *name, const char *const *members, size_t count)) \
-    X(bool, lhat_register_enum_valued, (LhatProgram *program, const char *module, const char *type, const char *name, const char *const *members, const int64_t *values, size_t count)) \
+    X(bool, lhat_register_enum_valued, (LhatProgram *program, const char *module, const char *type, const char *name, const char *const *members, const LhatInteger *values, size_t count)) \
     X(bool, lhat_register_error_kind, (LhatProgram *program, const char *module, const char *name, const char *const *variant_names, size_t variant_count, const LhatErrorKind **out_group, const LhatErrorKind **out_variants)) \
     X(bool, lhat_program_on_dispose, (LhatProgram *program, LhatProgramDisposeFn call, void *context)) \
     X(bool, lhat_machine_make_table, (LhatMachine *machine, LhatValue *out)) \

@@ -145,7 +145,7 @@ LhatValue lhat_hostvalue_field_value(const LhatValueUnion *data,
         case LHAT_HVFIELD_F32: {
             float f;
             memcpy(&f, bytes, sizeof f);
-            return lhat_real((double)f);
+            return lhat_real((LhatReal)f);
         }
         case LHAT_HVFIELD_F64: {
             double d;
@@ -401,7 +401,7 @@ bool lhat_make_hostvalue(LhatMachine *machine, const LhatHostValueTag *tag,
 bool lhat_machine_make_enum(LhatMachine *machine, const char *name,
                             const struct LhatRuntimeType *decl,
                             const char *const *members,
-                            const int64_t *values, size_t count,
+                            const LhatInteger *values, size_t count,
                             LhatValue *out)
 {
     Machine *m = (Machine *)machine;
@@ -424,7 +424,7 @@ bool lhat_machine_make_enum(LhatMachine *machine, const char *name,
         }
         LhatEnumerator *e = lhat_enumerator_new(
             &m->objects, made, member,
-            lhat_integer(values != NULL ? values[i] : (int64_t)i),
+            lhat_integer(values != NULL ? values[i] : (LhatInteger)i),
             i + 1);
         if (e == NULL) {
             return false;

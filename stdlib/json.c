@@ -222,7 +222,7 @@ static bool write_string(Writer *w, const JsonModule *m, const char *text,
 // always do; 15 usually do and read better, so they are tried first and
 // kept where they hold. lhat_value_text is no use here -- 14.17 writes a
 // number for a reader, with %g, which does not come back the same.
-static bool write_real(Writer *w, const JsonModule *m, double real)
+static bool write_real(Writer *w, const JsonModule *m, LhatReal real)
 {
     if (isnan(real) || isinf(real)) {
         refuse(w, m->unsupported, "a real JSON has no spelling for");
@@ -349,7 +349,7 @@ static bool write_table(Writer *w, const JsonModule *m, const LhatTable *table,
     }
     size_t filled = 0;
     for (size_t i = 0; i < table->array_count; i++) {
-        name_key(&members[filled], lhat_integer((int64_t)i),
+        name_key(&members[filled], lhat_integer((LhatInteger)i),
                  lhat_slots_get(table->array, i));
         filled++;
     }
@@ -680,13 +680,13 @@ static bool read_number(Reader *r, LhatValue *out)
         errno = 0;
         long long held = strtoll(spelt, &stopped, 10);
         if (*stopped == '\0' && errno != ERANGE) {
-            *out = lhat_integer((int64_t)held);
+            *out = lhat_integer((LhatInteger)held);
             return true;
         }
     }
     stopped = NULL;
     errno = 0;
-    double real = strtod(spelt, &stopped);
+    LhatReal real = strtod(spelt, &stopped);
     if (stopped == spelt || *stopped != '\0') {
         return reject(r, r->module->bad_text, "a number JSON has no shape for");
     }
@@ -726,7 +726,7 @@ static bool read_array(Reader *r, LhatValue *out, size_t depth)
         r->at++;
         return true;
     }
-    int64_t at = 0;
+    LhatInteger at = 0;
     for (;;) {
         LhatValue held = lhat_nil();
         if (!read_value(r, &held, depth + 1)) {

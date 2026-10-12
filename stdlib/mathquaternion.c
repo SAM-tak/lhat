@@ -37,7 +37,7 @@ static LhatValue vector3_value(LhatMachine *machine,
                ? out : lhat_nil();
 }
 
-static double vector3_length(const double v[3])
+static LhatReal vector3_length(const LhatReal v[3])
 {
     return sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
 }
@@ -55,12 +55,12 @@ static void quaternion_from_to(LhatMachine *machine, void *context,
         !vector3_arg(module, args[1], &to)) {
         return;
     }
-    double a[3], b[3];
+    LhatReal a[3], b[3];
     for (size_t i = 0; i < 3; i++) {
         a[i] = from.component[i];
         b[i] = to.component[i];
     }
-    double alen = vector3_length(a), blen = vector3_length(b);
+    LhatReal alen = vector3_length(a), blen = vector3_length(b);
     if (alen == 0.0 || blen == 0.0) {
         answers[0] = lhat_nil();
         *answer_count = 1;
@@ -70,7 +70,7 @@ static void quaternion_from_to(LhatMachine *machine, void *context,
         a[i] /= alen;
         b[i] /= blen;
     }
-    double dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+    LhatReal dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
     MathValue q = { { 0 } };
     if (dot > 1.0 - 1e-12) {
         q.component[3] = 1.0f;
@@ -81,19 +81,19 @@ static void quaternion_from_to(LhatMachine *machine, void *context,
                 basis = i;
             }
         }
-        double axis[3] = { 0.0, 0.0, 0.0 };
+        LhatReal axis[3] = { 0.0, 0.0, 0.0 };
         // a × unit[basis].
         axis[(basis + 1) % 3] = a[(basis + 2) % 3];
         axis[(basis + 2) % 3] = -a[(basis + 1) % 3];
-        double length = vector3_length(axis);
+        LhatReal length = vector3_length(axis);
         for (size_t i = 0; i < 3; i++) {
             q.component[i] = (float)(axis[i] / length);
         }
     } else {
-        double cross[3] = { a[1]*b[2] - a[2]*b[1],
+        LhatReal cross[3] = { a[1]*b[2] - a[2]*b[1],
                             a[2]*b[0] - a[0]*b[2],
                             a[0]*b[1] - a[1]*b[0] };
-        double length = sqrt(cross[0]*cross[0] + cross[1]*cross[1] +
+        LhatReal length = sqrt(cross[0]*cross[0] + cross[1]*cross[1] +
                              cross[2]*cross[2] + (1.0 + dot)*(1.0 + dot));
         for (size_t i = 0; i < 3; i++) {
             q.component[i] = (float)(cross[i] / length);
@@ -116,15 +116,15 @@ static void quaternion_from_axis_angle(LhatMachine *machine, void *context,
         !lhat_is_number(args[1])) {
         return;
     }
-    double v[3] = { axis.component[0], axis.component[1], axis.component[2] };
-    double length = vector3_length(v);
+    LhatReal v[3] = { axis.component[0], axis.component[1], axis.component[2] };
+    LhatReal length = vector3_length(v);
     if (length == 0.0) {
         answers[0] = lhat_nil();
         *answer_count = 1;
         return;
     }
-    double half = math_real(args[1]) * 0.5;
-    double sine = sin(half) / length;
+    LhatReal half = math_real(args[1]) * 0.5;
+    LhatReal sine = sin(half) / length;
     MathValue q = { { (float)(v[0] * sine), (float)(v[1] * sine),
                       (float)(v[2] * sine), (float)cos(half) } };
     answers[0] = math_value(machine, &module->math, q);
@@ -144,13 +144,13 @@ static void quaternion_rotate(LhatMachine *machine, void *context,
         !vector3_arg(module, args[1], &v)) {
         return;
     }
-    double length = math_magnitude(q);
+    LhatReal length = math_magnitude(q);
     if (length != 0.0) {
-        double x = q.component[0] / length, y = q.component[1] / length;
-        double z = q.component[2] / length, w = q.component[3] / length;
-        double tx = 2.0 * (y * v.component[2] - z * v.component[1]);
-        double ty = 2.0 * (z * v.component[0] - x * v.component[2]);
-        double tz = 2.0 * (x * v.component[1] - y * v.component[0]);
+        LhatReal x = q.component[0] / length, y = q.component[1] / length;
+        LhatReal z = q.component[2] / length, w = q.component[3] / length;
+        LhatReal tx = 2.0 * (y * v.component[2] - z * v.component[1]);
+        LhatReal ty = 2.0 * (z * v.component[0] - x * v.component[2]);
+        LhatReal tz = 2.0 * (x * v.component[1] - y * v.component[0]);
         Vector3Value rotated = { { (float)(v.component[0] + w*tx + y*tz - z*ty),
                                    (float)(v.component[1] + w*ty + z*tx - x*tz),
                                    (float)(v.component[2] + w*tz + x*ty - y*tx) } };

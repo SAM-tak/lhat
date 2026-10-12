@@ -267,7 +267,7 @@ bool lhat_table_walk(LhatWalkCursor *walk, LhatValue *key, LhatValue *value)
     // sequence and a mapping, and the sequence half has an order worth
     // keeping. What order the rest comes in is not promised.
     if (walk->at_array < table->array_count) {
-        *key = lhat_integer((int64_t)walk->at_array);
+        *key = lhat_integer((LhatInteger)walk->at_array);
         *value = lhat_slots_get(table->array, walk->at_array++);
         return true;
     }
@@ -749,14 +749,14 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
             RtScope inner = {type, scope};
             scope = &inner;
             for (size_t i = 0; i < type->part_count; i++) {
-                LhatValue held = lhat_table_get(table, lhat_integer((int64_t)i));
+                LhatValue held = lhat_table_get(table, lhat_integer((LhatInteger)i));
                 if (lhat_is_nil(held) || !value_satisfies(held, type->parts[i], scope)) {
                     return false;
                 }
             }
             if (type->variadic != NULL) {
                 for (size_t i = type->part_count;; i++) {
-                    LhatValue held = lhat_table_get(table, lhat_integer((int64_t)i));
+                    LhatValue held = lhat_table_get(table, lhat_integer((LhatInteger)i));
                     if (lhat_is_nil(held)) {
                         break;
                     }
@@ -786,7 +786,7 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
                 for (size_t i = 0; i < table->array_count; i++) {
                     LhatValue held = lhat_slots_get(table->array, i);
                     if (!lhat_is_nil(held) &&
-                        (!value_satisfies(lhat_integer((int64_t)i),
+                        (!value_satisfies(lhat_integer((LhatInteger)i),
                                           type->index_key, scope) ||
                          !value_satisfies(held, type->index_value, scope))) {
                         return false;
@@ -1780,7 +1780,7 @@ bool lhat_string_equal(const LhatString *a, const LhatString *b)
 // it names the same number.
 static LhatValue normalise_key(LhatValue key)
 {
-    int64_t whole;
+    LhatInteger whole;
     return lhat_is_real(key) && lhat_number_as_whole(key, &whole)
                ? lhat_integer(whole)
                : key;
@@ -1827,7 +1827,7 @@ static uint32_t hash_key(LhatValue key)
             return (uint32_t)(bits ^ (bits >> 32));
         }
         case LHAT_VALUE_REAL: {
-            double d = lhat_as_real(key);
+            LhatReal d = lhat_as_real(key);
             uint64_t bits;
             memcpy(&bits, &d, sizeof bits);
             return (uint32_t)(bits ^ (bits >> 32));
@@ -1991,15 +1991,15 @@ static bool grow_entries(LhatTable *table)
 // never a run to begin with, and the dense half is what tells the two apart.
 static bool array_index(const LhatTable *table, LhatValue key, size_t *index)
 {
-    int64_t i;
+    LhatInteger i;
     if (lhat_is_integer(key)) {
         i = lhat_as_integer(key);
     } else if (lhat_is_real(key)) {
-        double d = lhat_as_real(key);
+        LhatReal d = lhat_as_real(key);
         if (!(d > -9.0e15 && d < 9.0e15)) {
             return false;  // past what a position could name either way
         }
-        i = (int64_t)floor(d + 0.5);
+        i = (LhatInteger)floor(d + 0.5);
     } else {
         return false;
     }
@@ -2038,7 +2038,7 @@ static LhatTableEntry *find_entry(LhatTable *table, size_t index)
     if (table->entry_count == 0) {
         return NULL;
     }
-    LhatValue key = lhat_integer((int64_t)index);
+    LhatValue key = lhat_integer((LhatInteger)index);
     LhatTableEntry *entry =
         probe(table->entries, table->entry_capacity, key, hash_key(key));
     return lhat_is_nil(entry->key) ? NULL : entry;

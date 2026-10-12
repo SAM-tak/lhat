@@ -66,14 +66,14 @@ static const char *string_of(const cJSON *object, const char *key)
 // A constant's integer. cJSON holds a number as a double, exact only within
 // 2^53, so the dump writes one past that as its digits in a string -- and
 // both are read here.
-static bool integer_of(const cJSON *value, int64_t *out)
+static bool integer_of(const cJSON *value, LhatInteger *out)
 {
     if (cJSON_IsNumber(value)) {
         double d = value->valuedouble;
         if (!(d >= -9223372036854775808.0 && d < 9223372036854775808.0)) {
             return false;
         }
-        *out = (int64_t)d;
+        *out = (LhatInteger)d;
         return true;
     }
     if (!cJSON_IsString(value)) {
@@ -85,13 +85,13 @@ static bool integer_of(const cJSON *value, int64_t *out)
     if (errno != 0 || end == value->valuestring || *end != '\0') {
         return false;
     }
-    *out = (int64_t)parsed;
+    *out = (LhatInteger)parsed;
     return true;
 }
 
 // A constant's real. JSON has no spelling for the infinities or NaN, so the
 // dump writes those as the strings "inf", "-inf" and "nan".
-static bool real_of(const cJSON *value, double *out)
+static bool real_of(const cJSON *value, LhatReal *out)
 {
     if (cJSON_IsNumber(value)) {
         *out = value->valuedouble;
@@ -304,8 +304,8 @@ static void apply_type(const cJSON *entry, LhatProgram *program)
         }
         const char **names =
             (const char **)malloc((size_t)count * sizeof *names);
-        int64_t *numbers =
-            (int64_t *)malloc((size_t)count * sizeof *numbers);
+        LhatInteger *numbers =
+            (LhatInteger *)malloc((size_t)count * sizeof *numbers);
         if (names == NULL || numbers == NULL) {
             free(names);
             free(numbers);
@@ -317,8 +317,8 @@ static void apply_type(const cJSON *entry, LhatProgram *program)
             names[i] = cJSON_IsString(mn) ? mn->valuestring : "";
             const cJSON *v = valued ? cJSON_GetArrayItem(values, i) : NULL;
             numbers[i] = v != NULL && cJSON_IsNumber(v)
-                             ? (int64_t)v->valuedouble
-                             : (int64_t)i + 1;
+                             ? (LhatInteger)v->valuedouble
+                             : (LhatInteger)i + 1;
         }
         lhat_register_enum_valued(program, module, string_of(entry, "type"),
                                   name, names, numbers, (size_t)count);
@@ -398,8 +398,8 @@ static void apply_function(const cJSON *entry, LhatProgram *program)
         if (cmodule == NULL || value_kind == NULL) {
             return;
         }
-        int64_t integer = 0;
-        double real = 0.0;
+        LhatInteger integer = 0;
+        LhatReal real = 0.0;
         if (strcmp(value_kind, "integer") == 0 && integer_of(value, &integer)) {
             lhat_register_const_integer(program, cmodule, ctype, name,
                                         integer);

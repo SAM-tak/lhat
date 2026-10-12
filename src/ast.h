@@ -281,7 +281,7 @@ struct LhatNode {
             uint8_t base;
         } integer;
 
-        double real;
+        LhatReal real;
 
         // STRING / INTERP_TEXT: bytes live in the lexer's decoded string
         // storage, so the lexer must outlive the tree.
@@ -688,7 +688,7 @@ bool lhat_name_is(const char *text, size_t length, const char *literal);
 // 02 の 14.8改2: the constant number^ carries under `name` as a static
 // member (inf, nan), or NULL. The checker asks whether there is
 // one and the compiler what it is, off this one table.
-const double *lhat_number_constant(const char *name, size_t length);
+const LhatReal *lhat_number_constant(const char *name, size_t length);
 
 // The same table read as a list: the name at `index`, or NULL past the end.
 // 07 の 4 章 lists them, since 'number^' is a word rather than a type and

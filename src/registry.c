@@ -244,7 +244,8 @@ const LhatHostValueTag *lhat_registry_hostvalue(const char *module,
     tag->module = module_copy;
     tag->name = name_copy;
     tag->size = size;
-    tag->width = 1 + (size + 7) / 8;  // one head slot, then the bytes
+    tag->width = 1 + size / sizeof(LhatValueUnion) +
+                 (size % sizeof(LhatValueUnion) != 0);  // one head slot, then the bytes
     // The index is the process's, so a machine's array of members tables is
     // taken to the width of everything declared rather than to what one
     // program happened to declare.

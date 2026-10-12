@@ -21,9 +21,9 @@ typedef struct {
 
 static const char *const math_names[MATH_DIM] = MATH_NAMES;
 
-static double math_real(LhatValue v)
+static LhatReal math_real(LhatValue v)
 {
-    return lhat_is_integer(v) ? (double)lhat_as_integer(v) : lhat_as_real(v);
+    return lhat_is_integer(v) ? (LhatReal)lhat_as_integer(v) : lhat_as_real(v);
 }
 
 static bool math_arg(const MathModule *module, LhatValue v, MathValue *out)
@@ -231,9 +231,9 @@ static void math_clamp(LhatMachine *machine, void *context,
         return;
     }
     for (size_t i = 0; i < MATH_DIM; i++) {
-        double lo = scalar ? math_real(args[1]) : low.component[i];
-        double hi = scalar ? math_real(args[2]) : high.component[i];
-        double component = value.component[i];
+        LhatReal lo = scalar ? math_real(args[1]) : low.component[i];
+        LhatReal hi = scalar ? math_real(args[2]) : high.component[i];
+        LhatReal component = value.component[i];
         value.component[i] = (float)(component < lo ? lo : component > hi ? hi : component);
     }
     answers[0] = math_value(machine, module, value);
@@ -252,10 +252,10 @@ static void math_lerp(LhatMachine *machine, void *context,
         !math_arg(module, args[1], &b) || !lhat_is_number(args[2])) {
         return;
     }
-    double t = math_real(args[2]);
+    LhatReal t = math_real(args[2]);
     for (size_t i = 0; i < MATH_DIM; i++) {
         result.component[i] = (float)(a.component[i] +
-                                      ((double)b.component[i] - a.component[i]) * t);
+                                      ((LhatReal)b.component[i] - a.component[i]) * t);
     }
     answers[0] = math_value(machine, module, result);
     *answer_count = 1;
@@ -274,9 +274,9 @@ static void math_angle(LhatMachine *machine, void *context,
     if (count < 1 || !math_arg((const MathModule *)context, args[0], &v)) {
         return;
     }
-    double angle = v.component[0] == 0.0f && v.component[1] == 0.0f
+    LhatReal angle = v.component[0] == 0.0f && v.component[1] == 0.0f
                        ? 0.0
-                       : atan2((double)v.component[1], (double)v.component[0]);
+                       : atan2((LhatReal)v.component[1], (LhatReal)v.component[0]);
     answers[0] = lhat_real(angle);
     *answer_count = 1;
 }
@@ -293,8 +293,8 @@ static void math_rotate(LhatMachine *machine, void *context,
         !lhat_is_number(args[1])) {
         return;
     }
-    double angle = math_real(args[1]);
-    double cosine = cos(angle), sine = sin(angle);
+    LhatReal angle = math_real(args[1]);
+    LhatReal cosine = cos(angle), sine = sin(angle);
     result.component[0] = (float)(v.component[0] * cosine - v.component[1] * sine);
     result.component[1] = (float)(v.component[0] * sine + v.component[1] * cosine);
     answers[0] = math_value(machine, module, result);
@@ -350,11 +350,11 @@ static void math_conjugate(LhatMachine *machine, void *context,
 }
 #endif
 
-static double math_magnitude(MathValue v)
+static LhatReal math_magnitude(MathValue v)
 {
-    double sum = 0.0;
+    LhatReal sum = 0.0;
     for (size_t i = 0; i < MATH_DIM; i++) {
-        sum += (double)v.component[i] * v.component[i];
+        sum += (LhatReal)v.component[i] * v.component[i];
     }
     return sqrt(sum);
 }
@@ -374,15 +374,15 @@ static void math_slerp(LhatMachine *machine, void *context,
         !math_arg(module, args[1], &b) || !lhat_is_number(args[2])) {
         return;
     }
-    double t = math_real(args[2]);
-    double a_length = math_magnitude(a), b_length = math_magnitude(b);
+    LhatReal t = math_real(args[2]);
+    LhatReal a_length = math_magnitude(a), b_length = math_magnitude(b);
     if (a_length == 0.0 || b_length == 0.0) {
         for (size_t i = 0; i < 4; i++) {
             result.component[i] = (float)((1.0 - t) * a.component[i] +
                                            t * b.component[i]);
         }
     } else {
-        double u[4], v[4], dot = 0.0;
+        LhatReal u[4], v[4], dot = 0.0;
         for (size_t i = 0; i < 4; i++) {
             u[i] = a.component[i] / a_length;
             v[i] = b.component[i] / b_length;
@@ -395,14 +395,14 @@ static void math_slerp(LhatMachine *machine, void *context,
             }
         }
         // Near parallel, sin(angle) is too small for a stable quotient.
-        double from = 1.0 - t, to = t;
+        LhatReal from = 1.0 - t, to = t;
         if (dot < 0.9995) {
-            double angle = acos(fmin(dot, 1.0));
-            double sine = sin(angle);
+            LhatReal angle = acos(fmin(dot, 1.0));
+            LhatReal sine = sin(angle);
             from = sin((1.0 - t) * angle) / sine;
             to = sin(t * angle) / sine;
         }
-        double blended[4], length = 0.0;
+        LhatReal blended[4], length = 0.0;
         for (size_t i = 0; i < 4; i++) {
             blended[i] = from * u[i] + to * v[i];
             length += blended[i] * blended[i];
@@ -458,7 +458,7 @@ static void math_normalized(LhatMachine *machine, void *context,
     if (count < 1 || !math_arg(module, args[0], &v)) {
         return;
     }
-    double length = math_magnitude(v);
+    LhatReal length = math_magnitude(v);
     if (length != 0.0) {
         for (size_t i = 0; i < MATH_DIM; i++) {
             v.component[i] = (float)(v.component[i] / length);
@@ -480,9 +480,9 @@ static void math_dot(LhatMachine *machine, void *context,
         !math_arg(module, args[1], &b)) {
         return;
     }
-    double sum = 0.0;
+    LhatReal sum = 0.0;
     for (size_t i = 0; i < MATH_DIM; i++) {
-        sum += (double)a.component[i] * b.component[i];
+        sum += (LhatReal)a.component[i] * b.component[i];
     }
     answers[0] = lhat_real(sum);
     *answer_count = 1;
@@ -503,8 +503,8 @@ static void math_cross(LhatMachine *machine, void *context,
 #if defined(MATH_VECTOR2)
     // Signed area: the z component of the lifted 3D cross product.
     (void)machine;
-    answers[0] = lhat_real((double)a.component[0] * b.component[1] -
-                           (double)a.component[1] * b.component[0]);
+    answers[0] = lhat_real((LhatReal)a.component[0] * b.component[1] -
+                           (LhatReal)a.component[1] * b.component[0]);
 #else
     MathValue result = { { 0 } };
     result.component[0] = a.component[1] * b.component[2] - a.component[2] * b.component[1];
@@ -529,7 +529,7 @@ static void math_tostring(LhatMachine *machine, void *context,
     text[used++] = '{';
     for (size_t i = 0; i < MATH_DIM; i++) {
         char spelt[64];
-        if (lhat_value_text(lhat_real((double)v.component[i]), spelt, sizeof spelt) >= sizeof spelt) {
+        if (lhat_value_text(lhat_real((LhatReal)v.component[i]), spelt, sizeof spelt) >= sizeof spelt) {
             return;
         }
         int written = snprintf(text + used, sizeof text - used, "%s%s:%s",

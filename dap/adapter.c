@@ -731,7 +731,7 @@ static bool parse_value(LhatMachine *machine, const char *text, LhatValue *out)
         *out = lhat_integer(integer);
         return true;
     }
-    double real = strtod(text, &end);
+    LhatReal real = strtod(text, &end);
     if (end == text + length && end != text) {
         *out = lhat_real(real);
         return true;

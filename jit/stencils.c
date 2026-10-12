@@ -74,7 +74,7 @@ extern char _JIT_K_LO[], _JIT_K_HI[], _JIT_KTAG[], _JIT_PC[];
 static inline LhatValueUnion constant(void)
 {
     LhatValueUnion k;
-    k.integer = (int64_t)(((uint64_t)(uint32_t)HOLE(K_HI) << 32) |
+    k.integer = (LhatInteger)(((uint64_t)(uint32_t)HOLE(K_HI) << 32) |
                           (uint32_t)HOLE(K_LO));
     return k;
 }
@@ -105,7 +105,7 @@ STENCIL(move)
     STENCIL(name)                                                           \
     {                                                                       \
         if (T(B) == INT && T(C) == INT) {                                   \
-            int64_t r;                                                      \
+            LhatInteger r;                                                      \
             if (overflows(V(B).integer, V(C).integer, &r)) {                \
                 LEAVE();                                                    \
             }                                                               \
@@ -131,7 +131,7 @@ ARITH_RR(mul, __builtin_mul_overflow, *)
 #define ARITH_RK_INT(name, overflows)                                       \
     STENCIL(name)                                                           \
     {                                                                       \
-        int64_t r;                                                          \
+        LhatInteger r;                                                          \
         if (T(B) != INT ||                                                  \
             overflows(V(B).integer, constant().integer, &r)) {              \
             LEAVE();                                                        \
@@ -252,7 +252,7 @@ STENCIL(jump_false_back)
             LEAVE();                                                        \
         }                                                                   \
         POLL_OR_LEAVE();                                                    \
-        int64_t focus;                                                      \
+        LhatInteger focus;                                                      \
         if (overflows(V(A).integer, VN(A, 2).integer, &focus)) {            \
             NEXT();                                                         \
         }                                                                   \

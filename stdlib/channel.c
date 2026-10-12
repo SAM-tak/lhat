@@ -33,7 +33,7 @@
 // channel's own.
 typedef struct {
     void *waits;
-    int64_t id;
+    LhatInteger id;
 } Waiter;
 
 typedef struct Channel {
@@ -111,7 +111,7 @@ static void tell_waiters(Waiter *waiters, size_t count)
 // `channel->lock` is held. False when there is no room, and then the caller
 // answers 0 -- a task that cannot park polls instead, which is slower but
 // never wrong.
-static bool remember_waiter(Channel *channel, void *waits, int64_t id)
+static bool remember_waiter(Channel *channel, void *waits, LhatInteger id)
 {
     if (channel->waiter_count == channel->waiter_capacity) {
         size_t wanted =
@@ -305,13 +305,13 @@ static LhatValue fail_with(LhatMachine *machine, const LhatErrorKind *kind,
 // nothing to wait for (zero, a negative, a NaN) is not an error.
 static int64_t milliseconds_of(LhatValue value)
 {
-    double seconds = lhat_is_integer(value) ? (double)lhat_as_integer(value)
+    LhatReal seconds = lhat_is_integer(value) ? (LhatReal)lhat_as_integer(value)
                                             : lhat_as_real(value);
-    double ms = seconds * 1000.0;
+    LhatReal ms = seconds * 1000.0;
     if (!(ms > 0.0)) {
         return 0;
     }
-    return ms >= (double)INT64_MAX ? INT64_MAX : (int64_t)ms;
+    return ms >= (LhatReal)INT64_MAX ? INT64_MAX : (int64_t)ms;
 }
 
 static Channel *self_of(const ChannelModule *module, LhatValue value)
@@ -582,7 +582,7 @@ static void channel_push(LhatMachine *machine, void *context,
             answers[0] = fail_with(machine, module->out_of_memory,
                                    "the channel could not grow");
         } else {
-            answers[0] = lhat_integer((int64_t)id);
+            answers[0] = lhat_integer((LhatInteger)id);
         }
     }
     *answer_count = 1;
@@ -736,14 +736,14 @@ static void channel_demand(LhatMachine *machine, void *context,
 // lock so that a push landing between the look and the ask cannot slip
 // past: either the value is already here, or the ask is on the list before
 // the push can take it off.
-static int64_t arm_wait(Channel *channel, LhatMachine *machine,
+static LhatInteger arm_wait(Channel *channel, LhatMachine *machine,
                         const ChannelModule *module)
 {
     void *waits = lhatstdlib_async_waits(module->program);
     if (waits == NULL) {
         return 0;
     }
-    int64_t id = lhatstdlib_async_external(waits, machine);
+    LhatInteger id = lhatstdlib_async_external(waits, machine);
     if (id != 0 && !remember_waiter(channel, waits, id)) {
         lhatstdlib_async_complete(waits, id);  // no room; let it go at once
         return 0;
@@ -758,7 +758,7 @@ static void channel_awaitable(LhatMachine *machine, void *context,
     const ChannelModule *module = (const ChannelModule *)context;
     (void)count;
     Channel *channel = self_of(module, arguments[0]);
-    int64_t id = 0;
+    LhatInteger id = 0;
     if (channel != NULL) {
         enter(channel, machine);
         if (channel->count == 0) {
@@ -821,7 +821,7 @@ static bool take_step(LhatMachine *machine, void *context,
 
     enter(channel, machine);
     LhatCarried *item = pop_locked(channel);
-    int64_t id = item == NULL ? arm_wait(channel, machine, walk->module) : 0;
+    LhatInteger id = item == NULL ? arm_wait(channel, machine, walk->module) : 0;
     leave(channel, machine);
 
     *answer_count = 1;
@@ -894,10 +894,10 @@ static void channel_count(LhatMachine *machine, void *context,
     const ChannelModule *module = (const ChannelModule *)context;
     (void)count;
     Channel *channel = self_of(module, arguments[0]);
-    int64_t held = 0;
+    LhatInteger held = 0;
     if (channel != NULL) {
         enter(channel, machine);
-        held = (int64_t)channel->count;
+        held = (LhatInteger)channel->count;
         leave(channel, machine);
     }
     answers[0] = lhat_integer(held);
@@ -913,9 +913,9 @@ static void channel_has_read(LhatMachine *machine, void *context,
     Channel *channel = self_of(module, arguments[0]);
     bool read = false;
     if (channel != NULL) {
-        int64_t id = lhat_is_integer(arguments[1])
+        LhatInteger id = lhat_is_integer(arguments[1])
                          ? lhat_as_integer(arguments[1])
-                         : (int64_t)lhat_as_real(arguments[1]);
+                         : (LhatInteger)lhat_as_real(arguments[1]);
         enter(channel, machine);
         read = id <= 0 || channel->received >= (uint64_t)id;
         leave(channel, machine);

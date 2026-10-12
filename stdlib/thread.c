@@ -134,7 +134,7 @@ typedef struct ThreadHandle {
     // over. 0 until it is asked for. Under `done_lock` because the two ends
     // of it are two threads.
     void *waits;
-    int64_t await_id;
+    LhatInteger await_id;
     // What spawned it: the list to leave, and the hook to tell.
     ThreadModule *module;
 } ThreadHandle;
@@ -187,7 +187,7 @@ static void mark_finished(ThreadHandle *handle)
     lhat_mutex_lock(&handle->done_lock);
     handle->finished = true;
     void *waits = handle->waits;
-    int64_t id = handle->await_id;
+    LhatInteger id = handle->await_id;
     lhat_mutex_unlock(&handle->done_lock);
     if (id != 0) {
         lhatstdlib_async_complete(waits, id);
@@ -592,16 +592,16 @@ static void thread_sleep(LhatMachine *machine, void *context,
     (void)count;
     (void)answers;
     (void)answer_count;
-    double seconds = lhat_is_integer(arguments[0])
-                         ? (double)lhat_as_integer(arguments[0])
+    LhatReal seconds = lhat_is_integer(arguments[0])
+                         ? (LhatReal)lhat_as_integer(arguments[0])
                          : lhat_as_real(arguments[0]);
     // Compared the way round that answers for a NaN as well: nothing to wait
     // for is not an error, the same line 14.19 draws for a range that does
     // not hold. The ceiling is what an int carries -- about 24 days.
-    double milliseconds = seconds * 1000.0;
+    LhatReal milliseconds = seconds * 1000.0;
     int wait = 0;
     if (milliseconds > 0.0) {
-        wait = milliseconds >= (double)INT_MAX ? INT_MAX : (int)milliseconds;
+        wait = milliseconds >= (LhatReal)INT_MAX ? INT_MAX : (int)milliseconds;
     }
     // Do not make a debugger wait for the whole requested duration. There is
     // no lock held here, so each boundary may park safely.
@@ -656,7 +656,7 @@ static void thread_awaitable(LhatMachine *machine, void *context,
     const ThreadModule *module = (const ThreadModule *)context;
     ThreadHandle *handle =
         (ThreadHandle *)lhat_hostdata_pointer(arguments[0], module->handle_tag);
-    int64_t id = 0;
+    LhatInteger id = 0;
     if (handle != NULL && !handle->joined) {
         lhat_mutex_lock(&handle->done_lock);
         if (handle->await_id == 0) {

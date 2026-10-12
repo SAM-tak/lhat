@@ -2531,7 +2531,7 @@ static bool is_nil_literal(const Checker *c, const LhatNode *node)
 // numbers and 14.8's one type admits reals as readily. '-1' is the unary it
 // is written as and still a number written down -- positions count from 0,
 // so the end just before the first is spelt with it.
-bool chk_whole_literal(const LhatNode *node, int64_t *value)
+bool chk_whole_literal(const LhatNode *node, LhatInteger *value)
 {
     bool negated = node != NULL && node->kind == LHAT_NODE_UNARY &&
                    node->v.unary.op == LHAT_OP_SUB;
@@ -2541,7 +2541,7 @@ bool chk_whole_literal(const LhatNode *node, int64_t *value)
     if (node == NULL || node->kind != LHAT_NODE_INT) {
         return false;
     }
-    int64_t written = (int64_t)node->v.integer.value;
+    LhatInteger written = (LhatInteger)node->v.integer.value;
     *value = negated ? -written : written;
     return true;
 }
@@ -2565,7 +2565,7 @@ static bool ordering_op(LhatOpKind op, bool *upward, bool *strict)
 // ordering -- '!(d < 1)' is 'd >= 1', and that is what makes the guard
 // written as an early exit bound the rest of the body.
 static void bound_from_comparison(Checker *c, const LhatNode *path,
-                                  LhatOpKind op, int64_t limit,
+                                  LhatOpKind op, LhatInteger limit,
                                   bool path_leads, bool holds)
 {
     bool upward = false;
@@ -2672,8 +2672,8 @@ LhatType *chk_narrowed_type(Checker *c, const LhatNode *path)
     return NULL;
 }
 
-bool chk_narrowed_bounds(Checker *c, const LhatNode *path, int64_t *lo,
-                         int64_t *hi)
+bool chk_narrowed_bounds(Checker *c, const LhatNode *path, LhatInteger *lo,
+                         LhatInteger *hi)
 {
     // A write ends what a branch knew, exactly as it does of a type above.
     if (c->writing_to != NULL && same_path(c, c->writing_to, path)) {
@@ -2692,7 +2692,7 @@ bool chk_narrowed_bounds(Checker *c, const LhatNode *path, int64_t *lo,
 // One end moved by a written amount. An end nothing bounded stays unbounded,
 // and one that would run past the int64_t range stops at its edge -- which is
 // still an end nothing bounded, so it reads the same.
-static int64_t shift_end(int64_t end, int64_t by)
+static LhatInteger shift_end(LhatInteger end, LhatInteger by)
 {
     if (end == INT64_MIN || end == INT64_MAX) {
         return end;
@@ -2711,9 +2711,9 @@ static int64_t shift_end(int64_t end, int64_t by)
 // away. Nothing wider: a write is what would let a range grow round after
 // round in 3.4改2, and every form here is read where it stands and kept by
 // nothing but an index or a let^.
-bool chk_bounds_of(Checker *c, const LhatNode *node, int64_t *lo, int64_t *hi)
+bool chk_bounds_of(Checker *c, const LhatNode *node, LhatInteger *lo, LhatInteger *hi)
 {
-    int64_t k = 0;
+    LhatInteger k = 0;
     if (chk_whole_literal(node, &k)) {
         *lo = *hi = k;
         return true;
@@ -2729,8 +2729,8 @@ bool chk_bounds_of(Checker *c, const LhatNode *node, int64_t *lo, int64_t *hi)
         return false;
     }
     bool subtract = node->v.binary.op == LHAT_OP_SUB;
-    int64_t a = 0;
-    int64_t b = 0;
+    LhatInteger a = 0;
+    LhatInteger b = 0;
     if (chk_whole_literal(node->v.binary.right, &k) &&
         chk_bounds_of(c, node->v.binary.left, &a, &b)) {
         // 'd + k' and 'd - k'.
@@ -2771,14 +2771,14 @@ static void push_narrowing(Checker *c, const LhatNode *path, LhatType *type)
     c->narrowings = n;
 }
 
-void chk_push_bounds(Checker *c, const LhatNode *path, int64_t lo, int64_t hi)
+void chk_push_bounds(Checker *c, const LhatNode *path, LhatInteger lo, LhatInteger hi)
 {
     // 13.11改: 'd >= 1 and^ d <= 9' pushes one side and then the other, so
     // what is known here is what both sides said. The and^ of a condition
     // narrows from each half in turn (chk_narrow_from), which is what leaves
     // the earlier record standing to meet this one.
-    int64_t known_lo = 0;
-    int64_t known_hi = 0;
+    LhatInteger known_lo = 0;
+    LhatInteger known_hi = 0;
     if (chk_narrowed_bounds(c, path, &known_lo, &known_hi)) {
         if (known_lo > lo) {
             lo = known_lo;
@@ -3064,7 +3064,7 @@ void chk_narrow_from(Checker *c, const LhatNode *condition, bool truth)
             if (right == NULL) {
                 break;
             }
-            int64_t limit = 0;
+            LhatInteger limit = 0;
             LhatOpKind op = marker->v.unary.op;
             if (chk_whole_literal(right, &limit)) {
                 bound_from_comparison(c, operand, op, limit, true, true);
@@ -3085,7 +3085,7 @@ void chk_narrow_from(Checker *c, const LhatNode *condition, bool truth)
         // path on one side. Both branches bound it -- what an ordering denies
         // is the ordering the other way -- so a guard written as an early
         // exit leaves the rest of the body knowing what it let through.
-        int64_t limit = 0;
+        LhatInteger limit = 0;
         bool upward = false;
         bool strict = false;
         if (ordering_op(op, &upward, &strict)) {

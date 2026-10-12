@@ -199,7 +199,7 @@ static bool is_ascii_space(char c)
 }
 
 bool lhat_number_read(const char *text, size_t length, bool *is_real,
-                      int64_t *whole, double *real)
+                      LhatInteger *whole, LhatReal *real)
 {
     size_t from = 0;
     while (from < length && is_ascii_space(text[from])) {
@@ -243,11 +243,11 @@ bool lhat_number_read(const char *text, size_t length, bool *is_real,
     }
     *is_real = false;
     if (!negative) {
-        *whole = (int64_t)read.integer;
+        *whole = (LhatInteger)read.integer;
     } else if (read.integer == (uint64_t)INT64_MAX + 1) {
         *whole = INT64_MIN;
     } else {
-        *whole = -(int64_t)read.integer;
+        *whole = -(LhatInteger)read.integer;
     }
     return true;
 }

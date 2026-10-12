@@ -10,9 +10,9 @@
 
 #include <math.h>
 
-static const double degrees_per_radian = 57.29577951308232087680;
+static const LhatReal degrees_per_radian = 57.29577951308232087680;
 
-static bool number_arg(LhatValue value, double *out)
+static bool number_arg(LhatValue value, LhatReal *out)
 {
     if (!lhat_is_number(value)) {
         return false;
@@ -27,8 +27,8 @@ static bool number_arg(LhatValue value, double *out)
 typedef struct {
     const char *name;
     const char *signature;
-    double (*one)(double);
-    double (*two)(double, double);
+    LhatReal (*one)(LhatReal);
+    LhatReal (*two)(LhatReal, LhatReal);
 } Entry;
 
 static void unary(LhatMachine *machine, void *context,
@@ -36,7 +36,7 @@ static void unary(LhatMachine *machine, void *context,
                   LhatValue *answers, int *answer_count)
 {
     (void)machine;
-    double x = 0.0;
+    LhatReal x = 0.0;
     if (count != 1 || !number_arg(arguments[0], &x)) {
         return;
     }
@@ -49,8 +49,8 @@ static void binary(LhatMachine *machine, void *context,
                    LhatValue *answers, int *answer_count)
 {
     (void)machine;
-    double x = 0.0;
-    double y = 0.0;
+    LhatReal x = 0.0;
+    LhatReal y = 0.0;
     if (count != 2 || !number_arg(arguments[0], &x) ||
         !number_arg(arguments[1], &y)) {
         return;
@@ -63,26 +63,26 @@ static void binary(LhatMachine *machine, void *context,
 // import whose address is not a constant (MSVC), and a static table wants
 // one. Angles are radians, as <math.h> and Lua take them, so the trigonometry
 // is libm's as it stands.
-static double sin_of(double x) { return sin(x); }
-static double cos_of(double x) { return cos(x); }
-static double tan_of(double x) { return tan(x); }
-static double asin_of(double x) { return asin(x); }
-static double acos_of(double x) { return acos(x); }
-static double atan_of(double x) { return atan(x); }
-static double atan2_of(double y, double x) { return atan2(y, x); }
-static double to_radians(double degrees) { return degrees / degrees_per_radian; }
-static double to_degrees(double radians) { return radians * degrees_per_radian; }
-static double sqrt_of(double x) { return sqrt(x); }
-static double cbrt_of(double x) { return cbrt(x); }
-static double exp_of(double x) { return exp(x); }
-static double log_of(double x) { return log(x); }
-static double log2_of(double x) { return log2(x); }
-static double log10_of(double x) { return log10(x); }
-static double hypot_of(double x, double y) { return hypot(x, y); }
-static double fmod_of(double x, double y) { return fmod(x, y); }
-static double log_base(double x, double base) { return log(x) / log(base); }
+static LhatReal sin_of(LhatReal x) { return sin(x); }
+static LhatReal cos_of(LhatReal x) { return cos(x); }
+static LhatReal tan_of(LhatReal x) { return tan(x); }
+static LhatReal asin_of(LhatReal x) { return asin(x); }
+static LhatReal acos_of(LhatReal x) { return acos(x); }
+static LhatReal atan_of(LhatReal x) { return atan(x); }
+static LhatReal atan2_of(LhatReal y, LhatReal x) { return atan2(y, x); }
+static LhatReal to_radians(LhatReal degrees) { return degrees / degrees_per_radian; }
+static LhatReal to_degrees(LhatReal radians) { return radians * degrees_per_radian; }
+static LhatReal sqrt_of(LhatReal x) { return sqrt(x); }
+static LhatReal cbrt_of(LhatReal x) { return cbrt(x); }
+static LhatReal exp_of(LhatReal x) { return exp(x); }
+static LhatReal log_of(LhatReal x) { return log(x); }
+static LhatReal log2_of(LhatReal x) { return log2(x); }
+static LhatReal log10_of(LhatReal x) { return log10(x); }
+static LhatReal hypot_of(LhatReal x, LhatReal y) { return hypot(x, y); }
+static LhatReal fmod_of(LhatReal x, LhatReal y) { return fmod(x, y); }
+static LhatReal log_base(LhatReal x, LhatReal base) { return log(x) / log(base); }
 
-static double lerp(double a, double b, double t) { return a + (b - a) * t; }
+static LhatReal lerp(LhatReal a, LhatReal b, LhatReal t) { return a + (b - a) * t; }
 
 static void math_lerp(LhatMachine *machine, void *context,
                       const LhatValue *arguments, size_t count,
@@ -90,7 +90,7 @@ static void math_lerp(LhatMachine *machine, void *context,
 {
     (void)machine;
     (void)context;
-    double a = 0.0, b = 0.0, t = 0.0;
+    LhatReal a = 0.0, b = 0.0, t = 0.0;
     if (count != 3 || !number_arg(arguments[0], &a) ||
         !number_arg(arguments[1], &b) || !number_arg(arguments[2], &t)) {
         return;
@@ -107,12 +107,12 @@ static LhatValue extreme(const LhatValue *arguments, size_t count, bool most)
         return lhat_nil();
     }
     LhatValue best = arguments[0];
-    double best_real = 0.0;
+    LhatReal best_real = 0.0;
     if (!number_arg(best, &best_real)) {
         return lhat_nil();
     }
     for (size_t i = 1; i < count; i++) {
-        double candidate = 0.0;
+        LhatReal candidate = 0.0;
         if (!number_arg(arguments[i], &candidate)) {
             return lhat_nil();
         }

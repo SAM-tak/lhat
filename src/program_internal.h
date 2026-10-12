@@ -29,7 +29,7 @@ typedef struct {
 
 typedef struct {
     LhatAnnotationArgumentKind kind;
-    double number;
+    LhatReal number;
     bool boolean;
     LhatReflectedText text;  // STRING and NAME
 } LhatReflectedArgument;
@@ -159,7 +159,7 @@ typedef struct LhatProgramEnum {
     char *type;  // NULL for an enum of the module itself
     char *name;
     char **members;   // owned, each owned
-    int64_t *values;  // owned
+    LhatInteger *values;  // owned
     size_t count;
     LhatRuntimeType *decl_rt;
 } LhatProgramEnum;
@@ -229,8 +229,8 @@ typedef struct LhatHostEntry {
     // `call` is NULL then, as for a type declaration -- const_kind is what
     // tells the two apart. const_text is owned.
     LhatHostConstKind const_kind;
-    int64_t const_integer;
-    double const_real;
+    LhatInteger const_integer;
+    LhatReal const_real;
     bool const_bool;
     char *const_text;
 } LhatHostEntry;

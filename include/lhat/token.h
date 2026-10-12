@@ -15,6 +15,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "lhat/config.h"
+
 // LHAT_WITH_COMMENTS changes the shape of LhatLexer and LhatNode, so it
 // comes from the generated header rather than a compile definition.
 #include "lhat/version.h"
@@ -202,7 +204,7 @@ typedef struct {
             uint8_t base;  // 2, 8, 10 or 16
         } integer;
 
-        double real;
+        LhatReal real;
 
         // Also used by LHAT_TOKEN_INTERP_TEXT and LHAT_TOKEN_INTERP_FORMAT.
         struct {

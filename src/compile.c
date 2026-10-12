@@ -1016,7 +1016,7 @@ static void compile_key(Compiler *c, const LhatNode *node, uint8_t into)
             return;
         }
         case LHAT_NODE_INT:
-            load_constant(c, into, lhat_integer((int64_t)key->v.integer.value));
+            load_constant(c, into, lhat_integer((LhatInteger)key->v.integer.value));
             return;
         default:
             compile_expression(c, key, into);
@@ -1364,7 +1364,7 @@ static void compile_enumdef(Compiler *c, const LhatNode *node)
     }
     emit(c, lhat_encode_abx(LHAT_BC_NEWENUM, reg, (uint16_t)k));
 
-    int64_t running = 0;
+    LhatInteger running = 0;
     uint8_t mark = c->next_register;
     uint8_t member_name = reserve(c);
     uint8_t member_value = reserve(c);
@@ -2339,7 +2339,7 @@ static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
 {
     emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, into, 0, 0));
 
-    int64_t position = 0;
+    LhatInteger position = 0;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
         uint8_t mark = c->next_register;
@@ -3054,7 +3054,7 @@ static size_t literal_constant(Compiler *c, const LhatNode *node,
     }
     if (node->kind == LHAT_NODE_INT) {
         return lhat_chunk_constant(
-            &c->proto->chunk, lhat_integer((int64_t)node->v.integer.value));
+            &c->proto->chunk, lhat_integer((LhatInteger)node->v.integer.value));
     }
     if (node->kind == LHAT_NODE_FLOAT) {
         return lhat_chunk_constant(&c->proto->chunk,
@@ -3343,7 +3343,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
     }
     switch (node->kind) {
         case LHAT_NODE_INT:
-            load_constant(c, into, lhat_integer((int64_t)node->v.integer.value));
+            load_constant(c, into, lhat_integer((LhatInteger)node->v.integer.value));
             return;
 
         case LHAT_NODE_FLOAT:
@@ -3666,7 +3666,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 name_is(on_name, on_length, "number^")) {
                 const char *constant = NULL;
                 size_t constant_length = 0;
-                const double *held =
+                const LhatReal *held =
                     node_name(c, node->v.access.argument, &constant,
                               &constant_length)
                         ? lhat_number_constant(constant, constant_length)

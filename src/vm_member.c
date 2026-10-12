@@ -1019,7 +1019,7 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
             size_t held = counted == COUNTED_SIZE
                               ? text->length
                               : lhat_string_characters(text);
-            lhat_slots_set(m->slots, into, lhat_integer((int64_t)held));
+            lhat_slots_set(m->slots, into, lhat_integer((LhatInteger)held));
             return LHAT_RUN_OK;
         }
         return LHAT_RUN_TYPE_ERROR;
@@ -1120,7 +1120,7 @@ member_answered:;
         size_t held = counting == COUNTED_COUNT
                           ? lhat_table_count(table)
                           : lhat_table_length(table);
-        lhat_slots_set(m->slots, into, lhat_integer((int64_t)held));
+        lhat_slots_set(m->slots, into, lhat_integer((LhatInteger)held));
     }
     return LHAT_RUN_OK;
 }

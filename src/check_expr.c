@@ -3904,14 +3904,14 @@ static LhatType *reachable_by_key(Checker *c, const LhatType *over,
 static LhatType *within_declared_positions(Checker *c, const LhatType *over,
                                            const LhatNode *key)
 {
-    int64_t lo = 0;
-    int64_t hi = 0;
+    LhatInteger lo = 0;
+    LhatInteger hi = 0;
     if (key == NULL || key->next != NULL ||
         !chk_bounds_of(c, key, &lo, &hi) || lo < 0) {
         return NULL;
     }
     LhatType *reached = NULL;
-    for (int64_t at = lo; at <= hi; at++) {
+    for (LhatInteger at = lo; at <= hi; at++) {
         const LhatTypeMember *m = lhat_type_member_at(over, (size_t)at);
         if (m == NULL) {
             return NULL;  // past what the type declares

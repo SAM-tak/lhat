@@ -380,8 +380,8 @@ static int compare_entries(const void *a, const void *b)
     int rank = key_rank(x), other = key_rank(y);
     if (rank != other) return rank < other ? -1 : 1;
     if (rank == 0) {
-        double left = x.tag == LHAT_VALUE_INTEGER ? (double)x.as.integer : x.as.real;
-        double right = y.tag == LHAT_VALUE_INTEGER ? (double)y.as.integer : y.as.real;
+        LhatReal left = x.tag == LHAT_VALUE_INTEGER ? (LhatReal)x.as.integer : x.as.real;
+        LhatReal right = y.tag == LHAT_VALUE_INTEGER ? (LhatReal)y.as.integer : y.as.real;
         if (left != right) return left < right ? -1 : 1;
         if (x.tag != y.tag) return x.tag == LHAT_VALUE_INTEGER ? -1 : 1;
         if (x.tag == LHAT_VALUE_INTEGER)

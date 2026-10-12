@@ -188,8 +188,8 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
                                   LhatValue *answer);
 
 // vm_native.c
-bool vm_ordinal_of(LhatValue value, int64_t *out);
-int64_t vm_resolve_ordinal(int64_t written, size_t count);
+bool vm_ordinal_of(LhatValue value, LhatInteger *out);
+LhatInteger vm_resolve_ordinal(LhatInteger written, size_t count);
 LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
                              size_t into, size_t first, uint8_t b,
                              unsigned prepared);

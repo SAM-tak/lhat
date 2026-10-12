@@ -8,6 +8,14 @@
 #ifndef LHATCONFIG_H
 #define LHATCONFIG_H
 
+#include <stdint.h>
+
+// The numeric representations used by L^ values and numeric APIs.
+// These aliases preserve the current 64-bit representation; changing them
+// also requires adapting numeric limits, conversions, and storage assumptions.
+typedef double LhatReal;
+typedef int64_t LhatInteger;
+
 // lexer
 // Longest numeric literal we are willing to parse. Anything beyond this is
 // far past the range of uint64_t or double and is treated as malformed.
@@ -90,12 +98,17 @@
 // whole value (one head slot plus the data slots) fits the machine's answer
 // scratch. Generous for the small mathematical types the feature exists for.
 #define LHAT_HOSTVALUE_MAX_BYTES 248
+// One head slot plus enough payload slots for the largest host value.
+// Expand after LhatValueUnion is defined (in value.h).
+#define LHAT_HOSTVALUE_MAX_SLOTS \
+    (1 + (LHAT_HOSTVALUE_MAX_BYTES + sizeof(LhatValueUnion) - 1) / \
+             sizeof(LhatValueUnion))
 // 02 の 13.8改: how many positions a tuple may have. A tuple rides a frame's
 // answer room through the cleanup drain the way a host value does, so it is
 // bounded by the same scratch -- one head slot plus this many positions. Far
 // beyond anything a signature is written with; the bound exists so the room
 // can be a fixed array rather than an allocation on the way out.
-#define LHAT_MAX_TUPLE (LHAT_HOSTVALUE_MAX_BYTES / 8)
+#define LHAT_MAX_TUPLE (LHAT_HOSTVALUE_MAX_SLOTS - 1)
 // How deep a call may recurse before the machine gives up, rather than
 // letting the host's own stack decide it for us -- again what
 // lhat_machine_new asks for, with Machine.frame_capacity the real one.

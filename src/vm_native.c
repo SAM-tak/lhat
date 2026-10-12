@@ -18,14 +18,14 @@
 // going to the even side. printf's "%.0f" reads the same mode, which is why
 // 14.21's round and 14.17's format agree on a half -- one setting, not two
 // implementations that happen to match.
-static LhatValue whole_of(LhatValue value, double (*toward)(double))
+static LhatValue whole_of(LhatValue value, LhatReal (*toward)(LhatReal))
 {
     if (lhat_is_integer(value)) {
         return value;  // already the whole number it names
     }
-    double whole = toward(lhat_as_real(value));
+    LhatReal whole = toward(lhat_as_real(value));
     if (whole >= -9223372036854775808.0 && whole < 9223372036854775808.0) {
-        return lhat_integer((int64_t)whole);
+        return lhat_integer((LhatInteger)whole);
     }
     return lhat_real(whole);
 }
@@ -39,7 +39,7 @@ static LhatValue whole_of(LhatValue value, double (*toward)(double))
 // ordinal is resolved by adding an integer, and only a rounding that
 // commutes with that gives one answer whichever order the two happen in;
 // rounding away from zero does not.
-bool vm_ordinal_of(LhatValue value, int64_t *out)
+bool vm_ordinal_of(LhatValue value, LhatInteger *out)
 {
     if (lhat_is_integer(value)) {
         *out = lhat_as_integer(value);
@@ -48,21 +48,21 @@ bool vm_ordinal_of(LhatValue value, int64_t *out)
     if (!lhat_is_number(value)) {
         return false;
     }
-    double real = lhat_number_as_real(value);
+    LhatReal real = lhat_number_as_real(value);
     if (!(real > -9.0e15 && real < 9.0e15)) {
         return false;  // past what an ordinal could name either way
     }
-    *out = (int64_t)floor(real + 0.5);
+    *out = (LhatInteger)floor(real + 0.5);
     return true;
 }
 
 // 14.19: a written ordinal as a position counting from 0. A negative one
 // counts from the end, so -1 is the last character. What still falls
 // outside 0..count-1 is the caller's to refuse.
-int64_t vm_resolve_ordinal(int64_t written, size_t count)
+LhatInteger vm_resolve_ordinal(LhatInteger written, size_t count)
 {
     if (written < 0) {
-        return (int64_t)count + written;
+        return (LhatInteger)count + written;
     }
     return written;
 }
@@ -140,7 +140,7 @@ static bool findall_step(struct LhatMachine *machine, void *context,
     walk->chars_before =
         ordinal + characters_before(walk->subject->text + at, past - at);
     walk->next_byte = past;
-    answers[0] = lhat_integer((int64_t)ordinal);
+    answers[0] = lhat_integer((LhatInteger)ordinal);
     *answer_count = 1;
     return true;
 }
@@ -205,7 +205,7 @@ static LhatRunStatus gc_native(Machine *m, LhatNativeKind kind, size_t into,
             lhat_machine_gc_pause(machine, lhat_as_bool(sent));
             break;
         case LHAT_NATIVE_GC_STEP: {
-            int64_t budget = 0;
+            LhatInteger budget = 0;
             if (!vm_ordinal_of(sent, &budget) || budget < 0) {
                 return LHAT_RUN_TYPE_ERROR;
             }
@@ -229,12 +229,12 @@ static LhatRunStatus gc_native(Machine *m, LhatNativeKind kind, size_t into,
                     LhatValue given = lhat_table_get_bytes(
                         asked, gc_setting_names[i],
                         strlen(gc_setting_names[i]));
-                    int64_t number = 0;
+                    LhatInteger number = 0;
                     if (lhat_is_nil(given)) {
                         continue;
                     }
                     if (!vm_ordinal_of(given, &number) || number < 0 ||
-                        number > (int64_t)LHAT_GC_SETTING_MAX) {
+                        number > (LhatInteger)LHAT_GC_SETTING_MAX) {
                         return LHAT_RUN_TYPE_ERROR;
                     }
                     *fields[i] = (uint32_t)number;
@@ -264,13 +264,13 @@ static LhatRunStatus gc_native(Machine *m, LhatNativeKind kind, size_t into,
                                                 "threshold", "phase",
                                                 "paused"};
             LhatValue values[] = {
-                lhat_integer((int64_t)stats.live),
-                lhat_integer((int64_t)stats.collected),
-                lhat_integer((int64_t)stats.cycles),
+                lhat_integer((LhatInteger)stats.live),
+                lhat_integer((LhatInteger)stats.collected),
+                lhat_integer((LhatInteger)stats.cycles),
                 // Paused, the threshold is out of reach on purpose; -1
                 // says "never" without an integer the size of memory.
                 lhat_integer(stats.threshold == SIZE_MAX
-                                 ? -1 : (int64_t)stats.threshold),
+                                 ? -1 : (LhatInteger)stats.threshold),
                 lhat_object((LhatObject *)phase),
                 lhat_bool(stats.paused),
             };
@@ -467,7 +467,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         // be, which is the number they have in hand. Scaled
         // the same way all the same, so the answer does not
         // change with where on the line the two sit.
-        double allowed = lhat_number_as_real(width);
+        LhatReal allowed = lhat_number_as_real(width);
         lhat_slots_set(m->slots, into, lhat_bool(lhat_value_close(
                      native->bound, against, allowed)));
         return LHAT_RUN_OK;
@@ -501,12 +501,12 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         }
         LhatValue self = native->bound;
         if (native->kind == LHAT_NATIVE_SIGN) {
-            double d = lhat_number_as_real(self);
+            LhatReal d = lhat_number_as_real(self);
             lhat_slots_set(m->slots, into, lhat_integer(d > 0 ? 1 : d < 0 ? -1 : 0));
         } else if (lhat_is_integer(self)) {
-            int64_t i = lhat_as_integer(self);
+            LhatInteger i = lhat_as_integer(self);
             lhat_slots_set(m->slots, into, i == INT64_MIN
-                         ? lhat_real(-(double)i)
+                         ? lhat_real(-(LhatReal)i)
                          : lhat_integer(i < 0 ? -i : i));
         } else {
             lhat_slots_set(m->slots, into, lhat_real(fabs(lhat_as_real(self))));
@@ -525,7 +525,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         // The answer is one of the three as handed over, so
         // an integer bound keeps its representation.
         LhatValue self = native->bound;
-        double d = lhat_number_as_real(self);
+        LhatReal d = lhat_number_as_real(self);
         lhat_slots_set(m->slots, into, d < lhat_number_as_real(low)    ? low
                  : d > lhat_number_as_real(high) ? high
                                                  : self);
@@ -539,7 +539,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         if (b != 0) {
             return LHAT_RUN_ARITY;
         }
-        int64_t whole;
+        LhatInteger whole;
         lhat_slots_set(m->slots, into, lhat_bool(lhat_number_as_whole(
                                            native->bound, &whole)));
         return LHAT_RUN_OK;
@@ -550,7 +550,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         if (b != 1) {
             return LHAT_RUN_ARITY;
         }
-        int64_t self, arg;
+        LhatInteger self, arg;
         if (!lhat_number_as_whole(native->bound, &self) ||
             !lhat_number_as_whole(sent, &arg)) {
             return LHAT_RUN_TYPE_ERROR;
@@ -580,8 +580,8 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
             // 01 の 10 章's own grammar, so what tonumber
             // reads and what L^ reads cannot drift apart.
             bool is_real = false;
-            int64_t whole = 0;
-            double real = 0.0;
+            LhatInteger whole = 0;
+            LhatReal real = 0.0;
             if (!lhat_number_read(subject->text,
                                   subject->length, &is_real,
                                   &whole, &real)) {
@@ -629,8 +629,8 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         }
         const LhatString *subject =
             (const LhatString *)lhat_as_object(native->bound);
-        int64_t from = 0;
-        int64_t to = 0;
+        LhatInteger from = 0;
+        LhatInteger to = 0;
         if (!vm_ordinal_of(sent, &from) ||
             (b == 2 && !vm_ordinal_of(lhat_slots_get(m->slots, first + 1), &to))) {
             // Handing over something that is not a number is
@@ -641,12 +641,12 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         size_t count = subject->characters;
         // The one ordinal ends where it starts for at, and at
         // the last character (-1) for substring.
-        int64_t last = single  ? from
+        LhatInteger last = single  ? from
                        : b == 2 ? to
                                 : -1;
-        int64_t start = vm_resolve_ordinal(from, count);
-        int64_t end = vm_resolve_ordinal(last, count);
-        if (start < 0 || end < start || end >= (int64_t)count) {
+        LhatInteger start = vm_resolve_ordinal(from, count);
+        LhatInteger end = vm_resolve_ordinal(last, count);
+        if (start < 0 || end < start || end >= (LhatInteger)count) {
             LhatString *empty =
                 lhat_string_new(&m->objects, "", 0);
             if (empty == NULL) {
@@ -658,7 +658,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         // The whole of it is the string itself: nothing about
         // a string changes, so a copy would be a second name
         // for the same bytes and nothing more.
-        if (start == 0 && end == (int64_t)count - 1) {
+        if (start == 0 && end == (LhatInteger)count - 1) {
             lhat_slots_set(m->slots, into, native->bound);
             return LHAT_RUN_OK;
         }
@@ -749,7 +749,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         m->native_hold = &hold;
         bool refused = false;
         bool ok = true;
-        int64_t position = 0;
+        LhatInteger position = 0;
         if (b == 0) {
             // The words: whitespace runs split, empties drop.
             size_t i = 0;
@@ -857,7 +857,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
             // The optional second ordinal reads as
             // substring's does -- from 0, negative from
             // the end.
-            int64_t from = 0;
+            LhatInteger from = 0;
             if (b == 2 && !vm_ordinal_of(lhat_slots_get(m->slots, first + 1), &from)) {
                 return LHAT_RUN_TYPE_ERROR;
             }
@@ -877,7 +877,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
                 return LHAT_RUN_OK;
             }
             lhat_slots_set(m->slots, into, lhat_integer(
-                          (int64_t)characters_before(
+                          (LhatInteger)characters_before(
                               subject->text, found)));
             return LHAT_RUN_OK;
         }

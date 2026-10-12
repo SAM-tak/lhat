@@ -31,8 +31,8 @@ typedef struct {
 typedef struct {
     NodeKind kind;
     bool boolean;
-    int64_t integer;
-    double real;
+    LhatInteger integer;
+    LhatReal real;
     char *bytes;               // STRING, owned
     size_t length;
     Entry *entries;            // TABLE, owned
@@ -232,7 +232,7 @@ static bool carry_table(Carrier *c, const LhatTable *table, size_t *index)
     for (size_t i = 0; i < table->array_count; i++) {
         size_t key = 0;
         size_t held = 0;
-        if (!carry_value(c, lhat_integer((int64_t)i), &key) ||
+        if (!carry_value(c, lhat_integer((LhatInteger)i), &key) ||
             !carry_value(c, lhat_slots_get(table->array, i), &held)) {
             lhat_free(entries);
             return false;

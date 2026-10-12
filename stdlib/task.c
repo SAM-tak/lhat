@@ -121,7 +121,7 @@ struct Task {
     LhatGcSettings gc;  // the spawning machine's, read when it spawned
     LhatRunResult ran;  // what the last turn answered
     TaskMove move;
-    int64_t parked_on;  // the std.async id it is parked on
+    LhatInteger parked_on;  // the std.async id it is parked on
 
     // What to run: the job, and the arguments where it is a closure. Owned
     // here until a worker has rebuilt them.
@@ -144,7 +144,7 @@ struct Task {
 
     // 15.14改: the wait a scheduler parks on, pushed when the job ends.
     void *waits;
-    int64_t await_id;
+    LhatInteger await_id;
 
     // 05 の 8.8改2: a wrapper on some machine, the queue, the worker
     // running it. The last to let go frees it.
@@ -207,7 +207,7 @@ static void task_finished(Task *task)
     lhat_mutex_lock(&task->lock);
     task->finished = true;
     void *waits = task->waits;
-    int64_t id = task->await_id;
+    LhatInteger id = task->await_id;
     lhat_condition_broadcast(&task->done);
     lhat_mutex_unlock(&task->lock);
     if (id != 0) {
@@ -365,7 +365,7 @@ static StepResult after_turn(TaskModule *module, Task *task)
     // 05 の 8.7改: taken by id rather than by whatever is ready, which is
     // what keeps two tasks from taking each other's.
     task->move = MOVE_RESUME;
-    int64_t id =
+    LhatInteger id =
         lhat_is_integer(task->ran.value) ? lhat_as_integer(task->ran.value) : 0;
     void *waits = lhatstdlib_async_waits(module->program);
     if (waits == NULL || id <= 0) {
@@ -656,8 +656,8 @@ static void task_start(LhatMachine *machine, void *context,
 
     int wanted = lhat_cpu_count();
     if (count >= 1) {
-        double said = lhat_is_integer(arguments[0])
-                          ? (double)lhat_as_integer(arguments[0])
+        LhatReal said = lhat_is_integer(arguments[0])
+                          ? (LhatReal)lhat_as_integer(arguments[0])
                           : lhat_as_real(arguments[0]);
         // Nothing sensible asked for is one worker: a pool of none would
         // take work and never run it.
@@ -695,7 +695,7 @@ static void task_start(LhatMachine *machine, void *context,
         answers[0] = fail_with(machine, module->out_of_memory,
                                "no worker could be started");
     } else {
-        answers[0] = lhat_integer((int64_t)started);
+        answers[0] = lhat_integer((LhatInteger)started);
     }
     *answer_count = 1;
 }
@@ -721,7 +721,7 @@ static void task_workers(LhatMachine *machine, void *context,
     (void)count;
     TaskModule *module = (TaskModule *)context;
     lhat_mutex_lock(&module->lock);
-    int64_t running = module->running ? (int64_t)module->worker_count : 0;
+    LhatInteger running = module->running ? (LhatInteger)module->worker_count : 0;
     lhat_mutex_unlock(&module->lock);
     answers[0] = lhat_integer(running);
     *answer_count = 1;
@@ -936,7 +936,7 @@ static void task_awaitable(LhatMachine *machine, void *context,
     (void)count;
     const TaskModule *module = (const TaskModule *)context;
     Task *task = self_of(module, arguments[0]);
-    int64_t id = 0;
+    LhatInteger id = 0;
     if (task != NULL) {
         lhat_mutex_lock(&task->lock);
         if (task->await_id == 0) {

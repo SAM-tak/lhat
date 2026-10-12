@@ -488,7 +488,7 @@ typedef enum {
 
 typedef struct {
     LhatAnnotationArgumentKind kind;
-    double number;   // NUMBER, with 18.3's leading '-' already applied
+    LhatReal number;   // NUMBER, with 18.3's leading '-' already applied
     bool boolean;    // BOOL
     // STRING and NAME. Borrowed from the unit, which has to outlive it.
     const char *text;
@@ -913,10 +913,10 @@ bool lhat_register_instantiation_check_handler(
 // every registration is. The string constant's text is copied.
 bool lhat_register_const_integer(LhatProgram *program, const char *module,
                                  const char *type, const char *name,
-                                 int64_t value);
+                                 LhatInteger value);
 bool lhat_register_const_real(LhatProgram *program, const char *module,
                               const char *type, const char *name,
-                              double value);
+                              LhatReal value);
 bool lhat_register_const_bool(LhatProgram *program, const char *module,
                               const char *type, const char *name,
                               bool value);
@@ -946,7 +946,7 @@ bool lhat_register_enum(LhatProgram *program, const char *module,
 bool lhat_register_enum_valued(LhatProgram *program, const char *module,
                                const char *type, const char *name,
                                const char *const *members,
-                               const int64_t *values, size_t count);
+                               const LhatInteger *values, size_t count);
 
 // 04 の 2.2/12.4 の host 版: an errordef^ the host declares in C rather than
 // in an L^ unit -- "L^ has its own errordef^-shaped things without writing

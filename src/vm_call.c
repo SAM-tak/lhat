@@ -633,7 +633,7 @@ LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
         for (size_t i = 0; i < count; i++) {
             bool refused = false;
             if (lhat_is_hostvalue(arguments[i]) ||
-                !vm_set_key(m, collected, lhat_integer((int64_t)i),
+                !vm_set_key(m, collected, lhat_integer((LhatInteger)i),
                          arguments[i], &refused)) {
                 return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), 0);
             }
@@ -896,7 +896,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
             if (lhat_is_hostvalue(arguments[i])) {
                 return call_fault(m, LHAT_RUN_TYPE_ERROR);
             }
-            if (!vm_set_key(m, collected, lhat_integer((int64_t)(i - taken)),
+            if (!vm_set_key(m, collected, lhat_integer((LhatInteger)(i - taken)),
                             arguments[i], &refused)) {
                 return call_fault(m, LHAT_RUN_OUT_OF_MEMORY);
             }

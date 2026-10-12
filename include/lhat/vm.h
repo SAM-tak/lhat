@@ -430,7 +430,7 @@ bool lhat_make_hostvalue(LhatMachine *machine, const LhatHostValueTag *tag,
 // caller's. False when the tag is NULL, the bytes are, or the registered
 // size outgrows the room.
 typedef struct {
-    LhatValueUnion run[1 + LHAT_HOSTVALUE_MAX_BYTES / 8];
+    LhatValueUnion run[LHAT_HOSTVALUE_MAX_SLOTS];
 } LhatHostValueRoom;
 
 bool lhat_place_hostvalue(const LhatHostValueTag *tag, const void *bytes,
@@ -459,7 +459,7 @@ bool lhat_machine_registered(LhatMachine *machine, const char *module,
 bool lhat_machine_make_enum(LhatMachine *machine, const char *name,
                             const struct LhatRuntimeType *decl,
                             const char *const *members,
-                            const int64_t *values, size_t count,
+                            const LhatInteger *values, size_t count,
                             LhatValue *out);
 
 // A string on `machine`'s own heap, made the way 05 の 8.7's registration

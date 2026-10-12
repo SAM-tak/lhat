@@ -155,7 +155,7 @@ static LhatValue do_captures(LhatMachine *machine, const RegexModule *module,
         }
         LhatValue piece = span_string(machine, text->text, spans[i]);
         if (!lhat_machine_table_set(machine, holder,
-                                    lhat_integer((int64_t)i), piece, NULL)) {
+                                    lhat_integer((LhatInteger)i), piece, NULL)) {
             return lhat_nil();
         }
     }
@@ -204,7 +204,7 @@ static bool call_replacement(LhatMachine *machine, LhatValue fn,
     LhatValue arguments[3];
     arguments[0] = span_string(machine, text->text, spans[0]);
     arguments[1] =
-        lhat_integer((int64_t)ordinal_at(text->text, spans[0].begin));
+        lhat_integer((LhatInteger)ordinal_at(text->text, spans[0].begin));
     LhatValue table = lhat_nil();
     if (!lhat_machine_make_table(machine, &table)) {
         return false;
@@ -215,7 +215,7 @@ static bool call_replacement(LhatMachine *machine, LhatValue fn,
             continue;
         }
         if (!lhat_machine_table_set(machine, holder,
-                                    lhat_integer((int64_t)i),
+                                    lhat_integer((LhatInteger)i),
                                     span_string(machine, text->text,
                                                 spans[i]), NULL)) {
             return false;
@@ -315,7 +315,7 @@ static LhatValue do_split(LhatMachine *machine, const RegexModule *module,
     }
     LhatTable *pieces = (LhatTable *)lhat_as_object(table);
     size_t from = 0;
-    int64_t position = 0;
+    LhatInteger position = 0;
     for (;;) {
         LhatRegexSpan spans[LHAT_REGEX_MAX_GROUPS];
         bool blown = false;
@@ -389,7 +389,7 @@ static bool gmatch_step(LhatMachine *machine, void *context,
     // 02 の 13.8改: a `for^ i, s` walk hands over two answers, written
     // where the machine gave the room.
     answers[0] = lhat_integer(
-        (int64_t)ordinal_at(walk->subject->text, spans[0].begin));
+        (LhatInteger)ordinal_at(walk->subject->text, spans[0].begin));
     answers[1] = span_string(machine, walk->subject->text, spans[0]);
     if (spans[0].end == spans[0].begin) {
         walk->from = spans[0].end + step_width(walk->subject->text,

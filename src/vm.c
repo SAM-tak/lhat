@@ -19,10 +19,10 @@
 // letting it wrap. Unsigned wraps by definition, and converting back is
 // implementation-defined rather than undefined -- every target this runs on
 // is two's complement, which C23 now requires outright.
-static bool add_exact(int64_t x, int64_t y, int64_t *out)
+static bool add_exact(LhatInteger x, LhatInteger y, LhatInteger *out)
 {
     uint64_t wrapped = (uint64_t)x + (uint64_t)y;
-    int64_t sum = (int64_t)wrapped;
+    LhatInteger sum = (LhatInteger)wrapped;
     // Overflow is exactly the case where both operands share a sign and the
     // result does not.
     if (((x ^ sum) & (y ^ sum)) < 0) {
@@ -32,10 +32,10 @@ static bool add_exact(int64_t x, int64_t y, int64_t *out)
     return true;
 }
 
-static bool subtract_exact(int64_t x, int64_t y, int64_t *out)
+static bool subtract_exact(LhatInteger x, LhatInteger y, LhatInteger *out)
 {
     uint64_t wrapped = (uint64_t)x - (uint64_t)y;
-    int64_t difference = (int64_t)wrapped;
+    LhatInteger difference = (LhatInteger)wrapped;
     if (((x ^ y) & (x ^ difference)) < 0) {
         return false;
     }
@@ -43,14 +43,14 @@ static bool subtract_exact(int64_t x, int64_t y, int64_t *out)
     return true;
 }
 
-static bool multiply_exact(int64_t x, int64_t y, int64_t *out)
+static bool multiply_exact(LhatInteger x, LhatInteger y, LhatInteger *out)
 {
     if (x == 0 || y == 0) {
         *out = 0;
         return true;
     }
     uint64_t wrapped = (uint64_t)x * (uint64_t)y;
-    int64_t product = (int64_t)wrapped;
+    LhatInteger product = (LhatInteger)wrapped;
     // Dividing back is the check that needs no wider type. The extra guard is
     // INT64_MIN / -1, which is the one division that overflows.
     if (x == -1 && y == INT64_MIN) {
@@ -76,12 +76,12 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
     }
 
     bool exact = lhat_is_integer(left) && lhat_is_integer(right);
-    double a = lhat_number_as_real(left);
-    double b = lhat_number_as_real(right);
+    LhatReal a = lhat_number_as_real(left);
+    LhatReal b = lhat_number_as_real(right);
 
     switch (op) {
         case LHAT_BC_ADD: {
-            int64_t whole = 0;
+            LhatInteger whole = 0;
             *out = exact && add_exact(lhat_as_integer(left),
                                       lhat_as_integer(right), &whole)
                        ? lhat_integer(whole)
@@ -89,7 +89,7 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
             return true;
         }
         case LHAT_BC_SUB: {
-            int64_t whole = 0;
+            LhatInteger whole = 0;
             *out = exact && subtract_exact(lhat_as_integer(left),
                                            lhat_as_integer(right), &whole)
                        ? lhat_integer(whole)
@@ -97,7 +97,7 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
             return true;
         }
         case LHAT_BC_MUL: {
-            int64_t whole = 0;
+            LhatInteger whole = 0;
             *out = exact && multiply_exact(lhat_as_integer(left),
                                            lhat_as_integer(right), &whole)
                        ? lhat_integer(whole)
@@ -117,10 +117,10 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
             // which already answers inf/nan for this the same way '/'
             // does, so ordinary arithmetic stays out of a union either way.
             if (exact && b != 0) {
-                int64_t x = lhat_as_integer(left);
-                int64_t y = lhat_as_integer(right);
-                int64_t quotient = x / y;
-                int64_t remainder = x % y;
+                LhatInteger x = lhat_as_integer(left);
+                LhatInteger y = lhat_as_integer(right);
+                LhatInteger quotient = x / y;
+                LhatInteger remainder = x % y;
                 // Floor rather than truncate, so that '%' agrees in sign with
                 // the divisor as it does in Lua.
                 if (remainder != 0 && ((remainder < 0) != (y < 0))) {
@@ -134,7 +134,7 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
             // floor() rather than a hand-rolled truncate-and-adjust: the
             // quotient can be inf or nan here (b == 0), and casting either
             // to int64_t is undefined.
-            double floored = floor(a / b);
+            LhatReal floored = floor(a / b);
             *out = op == LHAT_BC_IDIV ? lhat_real(floored)
                                       : lhat_real(a - floored * b);
             return true;
@@ -142,20 +142,20 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
         case LHAT_BC_POW:
             if (lhat_is_integer(right)) {
                 // small interger exponent specified hand loop
-                int64_t times = lhat_as_integer(right);
+                LhatInteger times = lhat_as_integer(right);
                 if (times == 0) {
                     *out = lhat_integer(1);
                     return true;
                 }
                 // small positive interger exponent specified hand loop
                 if (lhat_is_integer(left) && times > 0 && times <= 100) {
-                    int64_t r = 1;
-                    int64_t base = lhat_as_integer(left);
+                    LhatInteger r = 1;
+                    LhatInteger base = lhat_as_integer(left);
                     if(base == 0) {
                         *out = lhat_integer(0);
                         return true;
                     }
-                    for (int64_t i = 0; i < times; i++) {
+                    for (LhatInteger i = 0; i < times; i++) {
                         r *= base;
                     }
                     *out = lhat_integer(r);
@@ -163,8 +163,8 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
                 }
                 // generic small interger exponent hand loop
                 if(fabs(a) > 0.00000001 && times <= 100 && times >= -100) {
-                    double r = 1.0;
-                    double base = a;
+                    LhatReal r = 1.0;
+                    LhatReal base = a;
                     // Kept out of libm so the core has no maths dependency yet; only
                     // whole exponents are wanted before the standard library lands.
                     bool invert = times < 0;
@@ -172,7 +172,7 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
                     {
                         times = -times;
                     }
-                    for (int64_t i = 0; i < times; i++)
+                    for (LhatInteger i = 0; i < times; i++)
                     {
                         r *= base;
                     }
@@ -200,8 +200,8 @@ bool vm_three_way(LhatValue left, LhatValue right, int *out)
     // 14.8: two integers name themselves exactly. Through doubles, two
     // neighbours past 2^53 would round to one value and order as equal.
     if (lhat_is_integer(left) && lhat_is_integer(right)) {
-        int64_t x = lhat_as_integer(left);
-        int64_t y = lhat_as_integer(right);
+        LhatInteger x = lhat_as_integer(left);
+        LhatInteger y = lhat_as_integer(right);
         *out = (x > y) - (x < y);
         return true;
     }
@@ -636,7 +636,7 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
 // overflow, a mixed pair and every non-number go to arithmetic().
 #define VM_ARITH_FAST(exact, oper, left, right)                             \
     if (lhat_is_integer(left) && lhat_is_integer(right)) {                  \
-        int64_t whole_;                                                     \
+        LhatInteger whole_;                                                     \
         if (exact(lhat_as_integer(left), lhat_as_integer(right), &whole_)) {\
             SET_R(a, lhat_integer(whole_));                                 \
             VM_NEXT();                                                      \
@@ -656,7 +656,7 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
 #define VM_FORLOOP_FAST(exact, oper)                                        \
     if (lhat_is_integer(R(a)) && lhat_is_integer(R(a + 1)) &&              \
         lhat_is_integer(R(a + 2))) {                                        \
-        int64_t focus_;                                                     \
+        LhatInteger focus_;                                                     \
         if (exact(lhat_as_integer(R(a)), lhat_as_integer(R(a + 2)),        \
                   &focus_)) {                                               \
             SET_R(a, lhat_integer(focus_));                                 \
@@ -1014,7 +1014,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 }
                 // 14.8改: INT64_MIN is the one integer whose negation is not
                 // an integer, so it widens like any other overflow.
-                int64_t negated = 0;
+                LhatInteger negated = 0;
                 SET_R(a,
                     lhat_is_integer(R(b)) &&
                             subtract_exact(0, lhat_as_integer(R(b)),
@@ -1038,11 +1038,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // representation holds it, or the run stops -- these never widen
             // and nothing overloads them.
             VM_CASE(LHAT_BC_BNOT) {
-                int64_t x;
+                LhatInteger x;
                 if (!lhat_number_as_whole(R(b), &x)) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                SET_R(a, lhat_integer((int64_t)~(uint64_t)x));
+                SET_R(a, lhat_integer((LhatInteger)~(uint64_t)x));
                 VM_NEXT();
             }
 
@@ -1050,14 +1050,14 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             VM_CASE(LHAT_BC_BOR)
             VM_CASE(LHAT_BC_BXOR)
             VM_CASE(LHAT_BC_BSHIFT) {
-                int64_t x, y;
+                LhatInteger x, y;
                 if (!lhat_number_as_whole(R(b), &x) ||
                     !lhat_number_as_whole(R(cc), &y)) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 uint64_t u = (uint64_t)x;
                 uint64_t v = (uint64_t)y;
-                SET_R(a, lhat_integer((int64_t)(
+                SET_R(a, lhat_integer((LhatInteger)(
                     op == LHAT_BC_BAND  ? u & v
                     : op == LHAT_BC_BOR ? u | v
                     : op == LHAT_BC_BXOR ? u ^ v
@@ -1562,7 +1562,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // The key is a non-negative integer every time, so
                     // `refused` (04 の 11.3's nil^, a NaN) cannot come back set.
                     bool refused = false;
-                    if (!vm_set_key(m, packed, lhat_integer((int64_t)i),
+                    if (!vm_set_key(m, packed, lhat_integer((LhatInteger)i),
                                  R(a + 1 + i), &refused)) {
                         return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
                                       lhat_nil(), at);
@@ -2533,7 +2533,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                           lhat_nil(), at);
                         }
                         if (!vm_set_key(m, collected,
-                                     lhat_integer((int64_t)(i - required)),
+                                     lhat_integer((LhatInteger)(i - required)),
                                      value, &refused)) {
                             return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY,
                                           lhat_nil(), at);
@@ -3019,7 +3019,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                     for (size_t i = 0; i < positions; i++) {
                         LhatValue held = lhat_table_get(
-                            yielded, lhat_integer((int64_t)i));
+                            yielded, lhat_integer((LhatInteger)i));
                         if (lhat_is_nil(held)) {
                             return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                           lhat_nil(), at);
@@ -3094,8 +3094,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         WALK_ENDED) {
                         SET_R(b, lhat_nil());
                     } else {
-                        SET_R(b + 2, lhat_integer((int64_t)cursor.at_array));
-                        SET_R(b + 3, lhat_integer((int64_t)cursor.at_entry));
+                        SET_R(b + 2, lhat_integer((LhatInteger)cursor.at_array));
+                        SET_R(b + 3, lhat_integer((LhatInteger)cursor.at_entry));
                     }
                     VM_NEXT();
                 }

@@ -653,13 +653,13 @@ bool lhat_name_is(const char *text, size_t length, const char *literal)
 static const struct {
     const char *name;
     size_t length;
-    double value;
+    LhatReal value;
 } NUMBER_CONSTANTS[] = {
     { "inf", 3, HUGE_VAL },
     { "nan", 3, NAN },
 };
 
-const double *lhat_number_constant(const char *name, size_t length)
+const LhatReal *lhat_number_constant(const char *name, size_t length)
 {
     for (size_t i = 0; i < sizeof NUMBER_CONSTANTS / sizeof *NUMBER_CONSTANTS;
          i++) {

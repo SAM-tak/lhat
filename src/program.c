@@ -642,7 +642,7 @@ static LhatAnnotationArgument tree_argument(LhatAnnotation annotation,
 
     // 18.3's leading '-' is kept as the unary it is, and applied here so a
     // host reads one number rather than a shape.
-    double sign = 1.0;
+    LhatReal sign = 1.0;
     if (argument->kind == LHAT_NODE_UNARY) {
         sign = -1.0;
         argument = argument->v.unary.operand;
@@ -654,7 +654,7 @@ static LhatAnnotationArgument tree_argument(LhatAnnotation annotation,
     switch (argument->kind) {
         case LHAT_NODE_INT:
             out.kind = LHAT_ANNOTATION_ARG_NUMBER;
-            out.number = sign * (double)argument->v.integer.value;
+            out.number = sign * (LhatReal)argument->v.integer.value;
             break;
         case LHAT_NODE_FLOAT:
             out.kind = LHAT_ANNOTATION_ARG_NUMBER;
@@ -2539,8 +2539,8 @@ bool lhat_register_instantiation_check_handler(
 // constant or subroutine, refuses it, since a value is no overload arm.
 static bool register_const(LhatProgram *program, const char *module,
                            const char *type, const char *name,
-                           LhatHostConstKind kind, int64_t whole,
-                           double real, bool truth, const char *text)
+                           LhatHostConstKind kind, LhatInteger whole,
+                           LhatReal real, bool truth, const char *text)
 {
     if (program == NULL || module == NULL || name == NULL ||
         (kind == LHAT_HOST_CONST_STRING && text == NULL)) {
@@ -2591,7 +2591,7 @@ static bool register_const(LhatProgram *program, const char *module,
 bool lhat_register_enum_valued(LhatProgram *program, const char *module,
                                const char *type, const char *name,
                                const char *const *members,
-                               const int64_t *values, size_t count)
+                               const LhatInteger *values, size_t count)
 {
     if (program == NULL || module == NULL || name == NULL ||
         members == NULL || count == 0) {
@@ -2619,7 +2619,7 @@ bool lhat_register_enum_valued(LhatProgram *program, const char *module,
     e->type = type != NULL ? duplicate(type) : NULL;
     e->name = duplicate(name);
     e->members = (char **)lhat_calloc(count, sizeof *e->members);
-    e->values = (int64_t *)lhat_alloc(count * sizeof *e->values);
+    e->values = (LhatInteger *)lhat_alloc(count * sizeof *e->values);
     if (e->module == NULL || (type != NULL && e->type == NULL) ||
         e->name == NULL || e->members == NULL || e->values == NULL) {
         return false;
@@ -2633,7 +2633,7 @@ bool lhat_register_enum_valued(LhatProgram *program, const char *module,
         if (e->members[i] == NULL) {
             return false;
         }
-        e->values[i] = values != NULL ? values[i] : (int64_t)i + 1;
+        e->values[i] = values != NULL ? values[i] : (LhatInteger)i + 1;
     }
 
     // The checker's two tiers, 02 の 19 章's -- a unit's when^ over the
@@ -2677,7 +2677,7 @@ bool lhat_register_enum(LhatProgram *program, const char *module,
 
 bool lhat_register_const_integer(LhatProgram *program, const char *module,
                                  const char *type, const char *name,
-                                 int64_t value)
+                                 LhatInteger value)
 {
     return register_const(program, module, type, name,
                           LHAT_HOST_CONST_INTEGER, value, 0.0, false, NULL);
@@ -2685,7 +2685,7 @@ bool lhat_register_const_integer(LhatProgram *program, const char *module,
 
 bool lhat_register_const_real(LhatProgram *program, const char *module,
                               const char *type, const char *name,
-                              double value)
+                              LhatReal value)
 {
     return register_const(program, module, type, name, LHAT_HOST_CONST_REAL,
                           0, value, false, NULL);
@@ -3483,7 +3483,7 @@ static bool shared_enum(LhatProgram *program, LhatTable *root,
         }
         LhatEnumerator *made_one = lhat_enumerator_new(
             heap, made, member,
-            lhat_integer(e->values != NULL ? e->values[i] : (int64_t)i),
+            lhat_integer(e->values != NULL ? e->values[i] : (LhatInteger)i),
             i + 1);
         bool refused = false;
         if (made_one == NULL ||

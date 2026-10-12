@@ -20,6 +20,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "lhat/config.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -119,8 +121,8 @@ typedef struct LhatObject {
 // of padding per value for a tag that needs three bits.
 typedef union LhatValueUnion {
     bool boolean;
-    int64_t integer;
-    double real;
+    LhatInteger integer;
+    LhatReal real;
     LhatObject *object;
     // 05 の 8.9: what a LHAT_VALUE_HOSTVALUE head carries *in a stack slot*.
     // The tag lives on the program, exactly as LhatHostData.tag does, so the
@@ -133,9 +135,6 @@ typedef union LhatValueUnion {
     // moment the call answers, so nothing holds this form for longer than
     // the call.
     const union LhatValueUnion *hostvalue_run;
-    // 05 の 8.9: a continuation slot's eight bytes, and the unit host-value
-    // bytes are copied in and out by.
-    uint8_t bytes[8];
 } LhatValueUnion;
 
 typedef struct {
@@ -262,7 +261,7 @@ static inline LhatValue lhat_bool(bool b)
     return v;
 }
 
-static inline LhatValue lhat_integer(int64_t i)
+static inline LhatValue lhat_integer(LhatInteger i)
 {
     LhatValue v;
     v.tag = LHAT_VALUE_INTEGER;
@@ -276,11 +275,11 @@ static inline LhatValue lhat_run_head(size_t positions)
 {
     LhatValue v;
     v.tag = LHAT_VALUE_RUN;
-    v.as.integer = (int64_t)positions;
+    v.as.integer = (LhatInteger)positions;
     return v;
 }
 
-static inline LhatValue lhat_real(double d)
+static inline LhatValue lhat_real(LhatReal d)
 {
     LhatValue v;
     v.tag = LHAT_VALUE_REAL;
@@ -332,8 +331,8 @@ static inline bool lhat_is_object_kind(LhatValue v, LhatObjectKind kind)
 // ---------------------------------------------------------------------------
 
 static inline bool lhat_as_bool(LhatValue v)       { return v.as.boolean; }
-static inline int64_t lhat_as_integer(LhatValue v) { return v.as.integer; }
-static inline double lhat_as_real(LhatValue v)     { return v.as.real; }
+static inline LhatInteger lhat_as_integer(LhatValue v) { return v.as.integer; }
+static inline LhatReal lhat_as_real(LhatValue v)     { return v.as.real; }
 static inline LhatObject *lhat_as_object(LhatValue v) { return v.as.object; }
 static inline const struct LhatHostValueTag *lhat_as_hostvalue_tag(LhatValue v)
 {
@@ -343,15 +342,15 @@ static inline const struct LhatHostValueTag *lhat_as_hostvalue_tag(LhatValue v)
 // The numeric value whichever representation it has. Reading an integer as a
 // double loses exactness past 2^53, so this is for the places that genuinely
 // want one number, not a shortcut around the two predicates.
-static inline double lhat_number_as_real(LhatValue v)
+static inline LhatReal lhat_number_as_real(LhatValue v)
 {
-    return v.tag == LHAT_VALUE_INTEGER ? (double)v.as.integer : v.as.real;
+    return v.tag == LHAT_VALUE_INTEGER ? (LhatReal)v.as.integer : v.as.real;
 }
 
 // The value as a 64-bit integer when it names one, whichever representation
 // holds it: 8.0 does, 2.5 and 1e300 do not, and neither does NaN (it fails
 // both comparisons). Answers by value, never by representation (02 の 14.8改).
-static inline bool lhat_number_as_whole(LhatValue v, int64_t *out)
+static inline bool lhat_number_as_whole(LhatValue v, LhatInteger *out)
 {
     if (v.tag == LHAT_VALUE_INTEGER) {
         *out = v.as.integer;
@@ -360,10 +359,10 @@ static inline bool lhat_number_as_whole(LhatValue v, int64_t *out)
     if (v.tag != LHAT_VALUE_REAL) {
         return false;
     }
-    double d = v.as.real;
+    LhatReal d = v.as.real;
     if (d >= -9223372036854775808.0 && d < 9223372036854775808.0 &&
-        d == (double)(int64_t)d) {
-        *out = (int64_t)d;
+        d == (LhatReal)(LhatInteger)d) {
+        *out = (LhatInteger)d;
         return true;
     }
     return false;
@@ -406,7 +405,7 @@ bool lhat_value_equal(LhatValue a, LhatValue b);
 //
 // Integers are left alone: two of them name themselves exactly, and a key or
 // an index would not survive a band around it.
-bool lhat_value_close(LhatValue a, LhatValue b, double tolerance);
+bool lhat_value_close(LhatValue a, LhatValue b, LhatReal tolerance);
 
 // Identity as 'is^' means it (02 の 11.6改). Unlike lhat_value_equal, a
 // string is never special-cased into a content comparison and a type object

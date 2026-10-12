@@ -24,6 +24,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "lhat/config.h"
+
 // 14.8: one type, two representations, and which one a text names is this
 // grammar's answer rather than a reading applied afterwards.
 typedef enum {
@@ -56,7 +58,7 @@ typedef struct {
     // themselves -- see lhat_number_read.
     uint64_t integer;
     uint8_t base;  // 2, 8, 10 or 16
-    double real;
+    LhatReal real;
 } LhatNumberLiteral;
 
 // Reads one literal from the front of `text`. `after_dot` is 10.1's rule:
@@ -79,6 +81,6 @@ bool lhat_number_literal(const char *text, size_t length, bool after_dot,
 // `is_real` says which of 14.8's two representations the text named; `whole`
 // or `real` holds the value accordingly.
 bool lhat_number_read(const char *text, size_t length, bool *is_real,
-                      int64_t *whole, double *real);
+                      LhatInteger *whole, LhatReal *real);
 
 #endif  // LHAT_NUMBER_H

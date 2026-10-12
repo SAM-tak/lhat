@@ -11,7 +11,7 @@
 #include "code.h"
 #include "lhat/object.h"
 
-bool lhat_value_close(LhatValue a, LhatValue b, double tolerance)
+bool lhat_value_close(LhatValue a, LhatValue b, LhatReal tolerance)
 {
     // 14.8: only a real carries an error term. Two integers name themselves
     // exactly, and admitting a band around one would put a key, an index and
@@ -22,8 +22,8 @@ bool lhat_value_close(LhatValue a, LhatValue b, double tolerance)
         return lhat_value_equal(a, b);
     }
 
-    double x = lhat_number_as_real(a);
-    double y = lhat_number_as_real(b);
+    LhatReal x = lhat_number_as_real(a);
+    LhatReal y = lhat_number_as_real(b);
     // An infinity is this far from itself and no distance from anything else:
     // the difference below would be a NaN, which is under no bound at all.
     // A NaN reaches neither this nor the bound, which is what makes it equal
@@ -33,9 +33,9 @@ bool lhat_value_close(LhatValue a, LhatValue b, double tolerance)
         return true;
     }
 
-    double apart = x > y ? x - y : y - x;
-    double size = x < 0.0 ? -x : x;
-    double other = y < 0.0 ? -y : y;
+    LhatReal apart = x > y ? x - y : y - x;
+    LhatReal size = x < 0.0 ? -x : x;
+    LhatReal other = y < 0.0 ? -y : y;
     if (other > size) {
         size = other;
     }
@@ -69,14 +69,14 @@ bool lhat_value_equal(LhatValue a, LhatValue b)
         // done the other way round when one side is exact: the real has to
         // be a whole number that survives the trip back.
         if (lhat_is_integer(a)) {
-            double other = b.as.real;
-            return (double)a.as.integer == other &&
-                   (int64_t)other == a.as.integer;
+            LhatReal other = b.as.real;
+            return (LhatReal)a.as.integer == other &&
+                   (LhatInteger)other == a.as.integer;
         }
         if (lhat_is_integer(b)) {
-            double other = a.as.real;
-            return (double)b.as.integer == other &&
-                   (int64_t)other == b.as.integer;
+            LhatReal other = a.as.real;
+            return (LhatReal)b.as.integer == other &&
+                   (LhatInteger)other == b.as.integer;
         }
         return a.as.real == b.as.real;
     }
@@ -233,7 +233,7 @@ static void put_number(Writer *w, const char *format, ...)
 // '%g' already gives a '.' or an exponent to everything but a small whole
 // number, and inf and nan are words -- so what needs the '.0' is a spelling
 // made of digits and a sign alone.
-static void put_real(Writer *w, double real)
+static void put_real(Writer *w, LhatReal real)
 {
     // One spelling for every NaN: a C library may write the sign and a
     // payload ("-nan(ind)"), which says nothing a reader wants.
@@ -679,7 +679,7 @@ bool lhat_number_format(LhatValue value, const char *format,
 
     int written;
     if (family == FORMAT_INTEGER) {
-        int64_t whole;
+        LhatInteger whole;
         if (lhat_is_integer(value)) {
             whole = lhat_as_integer(value);
         } else {
@@ -687,12 +687,12 @@ bool lhat_number_format(LhatValue value, const char *format,
             // as an integer is read as one -- but only where it names one.
             // Outside that range the conversion is undefined in C, which is
             // not an answer this may give.
-            double real = lhat_as_real(value);
+            LhatReal real = lhat_as_real(value);
             if (!(real >= -9223372036854775808.0 &&
                   real < 9223372036854775808.0)) {
                 return false;
             }
-            whole = (int64_t)real;
+            whole = (LhatInteger)real;
         }
         written = snprintf(out, out != NULL ? capacity : 0, rebuilt,
                            (long long)whole);
@@ -836,7 +836,7 @@ bool lhat_number_scan(const char *text, size_t length, const char *format,
     int consumed = -1;
     *read = false;
     if (family == FORMAT_REAL) {
-        double real = 0.0;
+        LhatReal real = 0.0;
         if (sscanf(text, rebuilt, &real, &consumed) == 1 &&
             consumed == (int)length) {
             *out = lhat_real(real);
@@ -849,14 +849,14 @@ bool lhat_number_scan(const char *text, size_t length, const char *format,
         if (sscanf(text, rebuilt, &magnitude, &consumed) == 1 &&
             consumed == (int)length &&
             magnitude <= (unsigned long long)INT64_MAX) {
-            *out = lhat_integer((int64_t)magnitude);
+            *out = lhat_integer((LhatInteger)magnitude);
             *read = true;
         }
     } else {
         long long whole = 0;
         if (sscanf(text, rebuilt, &whole, &consumed) == 1 &&
             consumed == (int)length) {
-            *out = lhat_integer((int64_t)whole);
+            *out = lhat_integer((LhatInteger)whole);
             *read = true;
         }
     }
