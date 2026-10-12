@@ -405,7 +405,7 @@ Set the environment variable `LHAT_JIT=0` to run the same binary without the
 JIT. The machine-code templates in `jit/stencils_x86_64-windows.h` are
 generated and committed; after editing [`jit/stencils.c`](jit/stencils.c) or
 the value layouts it reads, regenerate them with
-`python jit/gen_stencils.py --clang <path to clang>`. Building with the JIT does
+`python scripts/gen_stencils.py --clang <path to clang>`. Building with the JIT does
 not require Python.
 
 ## Dump extension APIs for the editor

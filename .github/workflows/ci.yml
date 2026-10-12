@@ -71,10 +71,10 @@ jobs:
 
       # The stencils' bytes are committed; this says whether their sources
       # changed since they were made. It reads a hash, so it needs no Clang
-      # of any particular version (jit/gen_stencils.py).
+      # of any particular version (scripts/gen_stencils.py).
       - name: Stencils up to date
         if: matrix.stencils
-        run: python jit/gen_stencils.py --check
+        run: python scripts/gen_stencils.py --check
 
       - name: Configure
         shell: bash

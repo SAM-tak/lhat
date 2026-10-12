@@ -289,7 +289,7 @@ Lua の綴り（`LUA_USE_JUMPTABLE`）をそのまま写すと MSVC ABI 版の C
 ### 構成
 
 - **型紙は C、抽出は Python。** `jit/stencils.c` を Clang でオブジェクトに落とし、
-  `jit/gen_stencils.py` が型紙ごとの機械語と穴の位置を取り出して
+  `scripts/gen_stencils.py` が型紙ごとの機械語と穴の位置を取り出して
   `jit/stencils_<target>.h` に書く。**生成物はリポジトリに置く**。Python が要るのは
   型紙を変える者だけで、lhat やバインディングを組む者にも、実行時にも要らない
 - **外部のコード生成器は使わない。** Cranelift のような生成器は、JIT を入れた
