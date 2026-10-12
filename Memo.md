@@ -211,6 +211,7 @@ print(t[1, 2])
 
 発想の元が Lua の全部テーブル、だし、根っこがテーブルである限り難しい、のではないか…？
 正直自分は偏執的アクセス制御の厳格化（基本全部privateであるべき、など）には懐疑的だし。
+明確な設計意図のない隠蔽は単にコピペプログラミングを増やすだけだと想ってる。
 
 ---
 
@@ -475,6 +476,74 @@ L^にとっても、これが一番きれいな着地点だと思う。
 ---
 
 とのこと。自動 private slot 番号型、が確かに一番いいかな…
+
+```lhat
+public^let^A = def^{
+    self^{
+        a = 0,
+        private^{
+            a = 0 # 格納場所が違うので名前が被って良い
+        },
+    },
+    proc = p^self^{
+        self^.private^.a := 1 # self^.private^.a と書く必要がある
+        self^.private^.privateProc() # self^.private^.privateProc と書く必要がある
+        def^.private^.privateStaticProc() # 静的プライベートメンバーは def^.private^.*
+        var^def^.private^.privateStaticData.a = 0 # 静的プライベートメンバーは def^.private^.*
+    },
+    private^{
+        privateProc = p^self^{},
+        privateStatic = p^{},
+        privateStaticData = {}
+    }
+}
+
+public^let^B = A .. def^{
+    self^{
+        private^{
+            a = 0
+        }
+    },
+    proc2 = p^self^{
+        private^.a := 1 # 内部的に、self^.private^[1].a := 1 のような扱いになる
+        # A の private^.a はこの場合先頭なので、self^.private^[0].a のような感じになる
+    },
+}
+```
+
+平坦化された姿は、
+
+```lhat
+B = {
+    self^ = {
+        a = 0,
+        private^ = {
+            { # A の分
+                a = 0
+            },
+            {
+                a = 0
+            }
+        }
+    },
+    private^ = {
+        { # A の分
+            privateProc = p^self^{},
+            privateStatic = p^{},
+            privateStaticData = {}
+        }
+    },
+    proc = p^self^{},
+    proc2 = p^self^{},
+}
+```
+
+こんな感じか？
+
+Q. `a["private^"][0]` などとすればいくらでもアクセスできてしまうが、いいのか？
+A. 良い。private^ は完全なカプセル化ではなく情報の隠蔽（インテリセンスの候補に出さない）が主目的。
+Q. privateメンバーは構造比較の対象か？
+A. 対象外。privateメンバーにしか差がない型は、同一の型とみなされる。
 
 #### ビット演算（済）
 
