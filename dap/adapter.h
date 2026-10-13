@@ -79,6 +79,19 @@ bool dap_session_begin(DapSession **out, LhatMachine *machine,
 // takes the hook off, and closes. Frees the session.
 void dap_session_end(DapSession *session, int exit_code);
 
+// A run that restarts (a game engine booting itself again) keeps its
+// debugger: dap_session_detach after the run, in place of dap_session_end,
+// takes the hook off and lets the program go but keeps the connection and
+// the breakpoints, and the debugger hears only that the thread exited.
+// Requests that arrive meanwhile wait. dap_session_rebind then puts the
+// session on the next run's machine and program (and its path map, whose
+// context may name the program) as dap_session_begin would have, without
+// listening or a handshake. false when the debugger left in between: end
+// the session then and run without one.
+void dap_session_detach(DapSession *session);
+bool dap_session_rebind(DapSession *session, LhatMachine *machine,
+                        const LhatProgram *program, const DapPathMap *paths);
+
 // Whether the debugger ended the run itself (disconnect or terminate), so
 // the caller shows no error of its own for the panic that stopped it.
 bool dap_session_ended_run(const DapSession *session);

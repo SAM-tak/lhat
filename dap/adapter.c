@@ -126,6 +126,10 @@ struct DapSession {
     bool configured;
     bool ended;       // the session is over; every hook panics its machine
     bool peer_ended;  // and it was the debugger's own doing (or its exit)
+    // Between a run that restarts and the next (dap_session_detach and
+    // dap_session_rebind): no program, no machine of its own, every hook
+    // still on a machine of the old run panics it, and requests wait.
+    bool detached;
 
     DapVar *vars;
     size_t var_count;
@@ -1369,6 +1373,11 @@ static int reader_main(void *argument)
             return 0;
         }
         lhat_mutex_lock(&s->lock);
+        // A request between two runs is about the next one: it waits for
+        // it (a restart takes a moment), or for the end.
+        while (s->detached && !s->ended) {
+            lhat_condition_wait(&s->changed, &s->lock);
+        }
         bool over = s->ended;
         if (!over) {
             dispatch(s, request);
@@ -1393,7 +1402,7 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
     DapSession *s = t->session;
 
     lhat_mutex_lock(&s->lock);
-    if (s->ended) {
+    if (s->ended || s->detached) {
         lhat_mutex_unlock(&s->lock);
         if (!lhat_machine_panic_text(
                 machine, dap_text(s->program, DAP_STOPPED_BY_DEBUGGER))) {
@@ -1437,11 +1446,11 @@ static void dap_hook(LhatMachine *machine, void *context, LhatDebugEvent event,
         send_stopped(s, t->id, reason, fault ? t->fault_text : NULL);
     }
     t->parked = true;
-    while (s->stopping && !s->ended) {
+    while (s->stopping && !s->ended && !s->detached) {
         lhat_condition_wait(&s->changed, &s->lock);
     }
     t->parked = false;
-    bool over = s->ended;
+    bool over = s->ended || s->detached;
     lhat_mutex_unlock(&s->lock);
     if (over) {
         if (!lhat_machine_panic_text(
@@ -1586,6 +1595,70 @@ void dap_session_end(DapSession *session, int exit_code)
     lhat_mutex_destroy(&s->write_lock);
     lhat_mutex_destroy(&s->lock);
     free(s);
+}
+
+void dap_session_detach(DapSession *session)
+{
+    if (session == NULL) {
+        return;
+    }
+    DapSession *s = session;
+
+    lhat_mutex_lock(&s->lock);
+    s->detached = true;
+    s->stopping = false;
+    s->pause_all = false;
+    lhat_condition_broadcast(&s->changed);
+    // As at the end: the old run's workers panic at their next line (or wake
+    // from a park and panic), and take themselves off the list; the main
+    // machine, still the caller's, is the one left.
+    while (s->thread_count > 1 && !s->ended) {
+        lhat_condition_wait(&s->changed, &s->lock);
+    }
+    if (s->thread_count == 1) {
+        remove_thread(s, s->threads[0], true);
+    }
+    clear_vars(s);
+    // The program goes with the run: nothing of it may be read from here,
+    // and a source pointer of the next one may land where one of it was.
+    s->program = NULL;
+    s->paths.context = NULL;
+    free(s->cached_normal);
+    s->cached_normal = NULL;
+    s->cached_source = NULL;
+    lhat_mutex_unlock(&s->lock);
+    lhat_debug_watch_machines(NULL);
+}
+
+bool dap_session_rebind(DapSession *session, LhatMachine *machine,
+                        const LhatProgram *program, const DapPathMap *paths)
+{
+    if (session == NULL) {
+        return false;
+    }
+    DapSession *s = session;
+
+    lhat_mutex_lock(&s->lock);
+    if (s->ended) {
+        // The debugger left while the run restarted.
+        lhat_mutex_unlock(&s->lock);
+        return false;
+    }
+    s->program = program;
+    if (paths != NULL) {
+        s->paths = *paths;
+    }
+    add_thread(s, machine, true);
+    s->detached = false;
+    lhat_condition_broadcast(&s->changed);
+    lhat_mutex_unlock(&s->lock);
+
+    LhatMachineWatcher watcher;
+    watcher.context = s;
+    watcher.born = machine_born;
+    watcher.dying = machine_dying;
+    lhat_debug_watch_machines(&watcher);
+    return true;
 }
 
 bool dap_session_ended_run(const DapSession *session)

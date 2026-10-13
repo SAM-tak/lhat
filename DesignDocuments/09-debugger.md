@@ -469,6 +469,28 @@ UTF-16 単位が同じ数になる。本文は `LhatSource` が LF に正規化�
 走査は本文一回分をフレームごとに払う。**人が「今どこか」を訊いたときにしか
 走らない**（命令ごとには決して走らない）ので、覚え書きは置かない。
 
+### 5.4 再起動をまたぐセッション
+
+ホストが自分を起動し直す（ゲームエンジンの `love.event.restart`）とき、
+デバッガは繋がったままでよい。run が終わるたびに `dap_session_end` すると
+`exited` / `terminated` が飛び、エディタはセッションを閉じる——次の起動が
+ポートで待っても、もう誰も来ない。
+
+だから終わり方を二つに分ける。**`dap_session_detach`** は、run の後に
+`end` の代わりに呼ぶ: フックを外し、旧 run の worker を（`end` と同じく
+次の行で）止め、主 machine の `thread exited` だけを伝え、program を手放す
+（`program` と、それを文脈に持つかもしれない写像の `context` を落とし、
+源のキャッシュも消す——次の program の源が同じ番地に来うる）。接続・
+受信スレッド・ブレークポイントは残る。その間に来た要求は**待つ**——
+再起動は一瞬で、要求は次の run についてのものだから。**`dap_session_rebind`**
+は次の run の machine・program・写像でセッションを付け直す: 主 machine を
+新しい thread として `started` を伝え、machine の誕生の観測を戻す。listen も
+握手もしない。間にデバッガが去っていれば false——呼び手は `end` して
+デバッガなしで走る。
+
+ブレークポイントは単位の綴り（写像があれば）か正規化したパスと行で
+持っているので、同じ単位を読み直した次の run にもそのまま効く。
+
 ## 6. Godot
 
 Godot 側は DAP を喋らない。行フックを据え、`where` の行と源を
@@ -562,3 +584,5 @@ lhat: dap listening on 51234
   `GetFinalPathNameByHandle`（昇格不要）、POSIX は元から `realpath`。
   正規化は照合の側だけで、フレームは貰った綴りのまま報告する。ハードリンクや
   bind マウントは届かないままで、そこは写像の領分。
+- 再起動をまたぐセッション（§5.4）。`dap_session_detach` / `dap_session_rebind`:
+  接続とブレークポイントを保ったまま、次の run の machine・program へ付け直す。
