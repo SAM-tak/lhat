@@ -500,6 +500,41 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
+    // 13.11: only the written path ends; its prefix keeps its narrowing.
+    LHAT_TEST("writing a member leaves the receiver narrowed");
+    check_text(&u,
+               "var^ f = f^ -> t^{ y : number^ }|nil^ { return^ nil^ }\n"
+               "var^ t = f()\n"
+               "if^ t? {\n"
+               "    t.y := 1\n"
+               "    var^ n : number^ = t.y\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an indexed write leaves the receiver narrowed too");
+    check_text(&u,
+               "var^ f = f^ -> t^{ y : number^ }|nil^ { return^ nil^ }\n"
+               "var^ t = f()\n"
+               "if^ t? {\n"
+               "    t[\"y\"] := 1\n"
+               "    var^ n : number^ = t.y\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but ends what was reached through the written member");
+    check_text(&u,
+               "var^ f = f^ -> number^|string^ { return^ 0 }\n"
+               "var^ g = f^ -> t^{ a : t^{ b : number^|string^ } } { return^ {a := {b := 0}} }\n"
+               "var^ t = g()\n"
+               "if^ t.a.b fits^ number^ {\n"
+               "    t.a := {b := f()}\n"
+               "    var^ n : number^ = t.a.b\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
     LHAT_TEST("narrowing works in the if expression too");
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"

@@ -2642,13 +2642,18 @@ static bool same_path(const Checker *c, const LhatNode *a, const LhatNode *b)
     return same_name(c, a, b);
 }
 
-// The name a path starts from, which is what a reassignment invalidates.
-static const LhatNode *path_root(const LhatNode *node)
+// Whether `path` is `prefix` or reaches further through it.
+static bool path_passes_through(const Checker *c, const LhatNode *path,
+                                const LhatNode *prefix)
 {
-    while (node != NULL && node->kind == LHAT_NODE_MEMBER) {
-        node = node->v.access.target;
+    for (; path != NULL; path = path->kind == LHAT_NODE_MEMBER
+                                    ? path->v.access.target
+                                    : NULL) {
+        if (same_path(c, path, prefix)) {
+            return true;
+        }
     }
-    return node;
+    return false;
 }
 
 LhatType *chk_narrowed_type(Checker *c, const LhatNode *path)
@@ -2818,11 +2823,23 @@ void chk_pop_narrowings(Checker *c, Narrowing *mark)
 // so it can pop them, and removing a node from under that mark would leave it
 // pointing at freed memory. An emptied entry reports nothing, which sends the
 // caller back to the binding -- the answer wanted here anyway.
+//
+// Only the written path and what is reached through it: 'a.b := v' leaves
+// what was established of 'a' (13.11's own example). An index names no
+// member statically, so 't[k] := v' ends everything reached through t, but
+// not what was established of t itself.
 void chk_drop_narrowings_for(Checker *c, const LhatNode *target)
 {
-    const LhatNode *root = path_root(target);
+    bool indexed = target->kind == LHAT_NODE_INDEX;
+    while (target->kind == LHAT_NODE_INDEX) {
+        target = target->v.access.target;
+    }
     for (Narrowing *n = c->narrowings; n != NULL; n = n->next) {
-        if (same_name(c, path_root(n->path), root)) {
+        const LhatNode *path = n->path;
+        if (indexed) {
+            path = path->kind == LHAT_NODE_MEMBER ? path->v.access.target : NULL;
+        }
+        if (path_passes_through(c, path, target)) {
             n->type = NULL;
             // 13.11改: what the branch knew of the number is ended by the
             // write as surely as what it knew of the type.
