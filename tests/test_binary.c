@@ -56,8 +56,7 @@ static void test_order(void)
     LHAT_TEST("what was encoded decodes back");
     {
         LhatTestRan ran = run_source(INPUT
-                                     "let^ got = input.decode(input.encode(value))\n"
-                                     "if^ got fits^ std.binary.Error { return^ 0 }\n"
+                                     "let^ got, next = try^ input.decode(input.encode(value), 0)\n"
                                      "if^ got.buttonA and^ !got.buttonC {\n"
                                      "    return^ got.aaa + got.bbb\n"
                                      "}\n"
@@ -89,8 +88,7 @@ static void test_kinds(void)
             "let^ data = packet.encode({ delta = 0 - 16, low = 0 - 8, ratio = 0.444,\n"
             "    history = { { stick = 8, dir = Dir.W }, { stick = 0, dir = Dir.N },\n"
             "                { stick = 3, dir = Dir.S } } })\n"
-            "let^ got = packet.decode(data)\n"
-            "if^ got fits^ std.binary.Error { return^ \"error\" }\n"
+            "let^ got, next = try^ packet.decode(data, 0)\n"
             "let^ h = got.history\n"
             "if^ got.delta = 0 - 16 and^ got.low = 0 - 8\n"
             "    and^ got.ratio > 0.4399 and^ got.ratio < 0.4401\n"
@@ -119,7 +117,9 @@ static void test_errors(void)
     LHAT_TEST("3.5: bytes shorter than the format are Truncated");
     {
         LhatTestRan ran = run_source(INPUT
-                                     "let^ got = input.decode(\"ab\")\n"
+                                     "let^ read = f^ s { let^ got, next = try^ input.decode(s, 0)\n"
+                                     "    return^ next }\n"
+                                     "let^ got = read(\"ab\")\n"
                                      "if^ got fits^ std.binary.Error.Truncated { return^ \"truncated\" }\n"
                                      "return^ \"other\"\n");
         LHAT_CHECK_RAN_TEXT(ran, "truncated");
@@ -132,7 +132,9 @@ static void test_errors(void)
         LhatTestRan ran = run_source("import^ std.binary\n"
                                      "let^ f = std.binary.format(t^{s:number^},\n"
                                      "    { { \"s\", std.binary.range(0, 8) } })\n"
-                                     "let^ got = f.decode(\"?\")\n"
+                                     "let^ read = f^ s { let^ got, next = try^ f.decode(s, 0)\n"
+                                     "    return^ next }\n"
+                                     "let^ got = read(\"?\")\n"
                                      "if^ got fits^ std.binary.Error.Malformed { return^ \"malformed\" }\n"
                                      "return^ \"other\"\n");
         LHAT_CHECK_RAN_TEXT(ran, "malformed");
@@ -175,8 +177,7 @@ static void test_reuse(void)
                                      "input.encodeInto(value, out)\n"
                                      "value[\"aaa\"] := 7\n"
                                      "input.encodeInto(value, out)\n"
-                                     "let^ got = input.decode(out)\n"
-                                     "if^ got fits^ std.binary.Error { return^ 0 }\n"
+                                     "let^ got, next = try^ input.decode(out, 0)\n"
                                      "return^ got.aaa * 100 + out.size()\n");
         LHAT_CHECK_RAN_INTEGER(ran, 704);
         lhat_test_ran_dispose(&ran);
@@ -196,13 +197,52 @@ static void test_reuse(void)
     {
         LhatTestRan ran = run_source(INPUT
                                      "let^ into = {}\n"
-                                     "let^ first = input.decodeInto(input.encode(value), into)\n"
+                                     "let^ first = input.decodeInto(input.encode(value), 0, into)\n"
                                      "value[\"aaa\"] := 42\n"
-                                     "let^ second = input.decodeInto(input.encode(value), into)\n"
+                                     "let^ second = input.decodeInto(input.encode(value), 0, into)\n"
                                      "if^ first fits^ std.binary.Error { return^ 0 }\n"
                                      "if^ second fits^ std.binary.Error { return^ 0 }\n"
-                                     "return^ into[\"aaa\"]\n");
-        LHAT_CHECK_RAN_INTEGER(ran, 42);
+                                     "return^ into[\"aaa\"] * 10 + second\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 424);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // 11 の 3.3: a header counts the records after it, and each decode
+    // answers where the next one starts.
+    LHAT_TEST("decode reads from a start and answers where the next begins");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.binary\n"
+            "let^ b = std.binary\n"
+            "let^ header = b.format(t^{count:number^}, { { \"count\", b.uint(8) } })\n"
+            "let^ entry = b.format(t^{n:number^}, { { \"n\", b.uint(16) } })\n"
+            "let^ src = header.encode({ count = 3 }) .. entry.encode({ n = 1 })\n"
+            "    .. entry.encode({ n = 20 }) .. entry.encode({ n = 300 })\n"
+            "let^ h, start = try^ header.decode(src, 0)\n"
+            "var^ at = start\n"
+            "var^ sum = 0\n"
+            "for^ i from^ 1 to^ h.count {\n"
+            "    let^ e, next = try^ entry.decode(src, at)\n"
+            "    sum += e.n\n"
+            "    at := next\n"
+            "}\n"
+            "return^ sum * 100 + at\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 32107);
+        lhat_test_ran_dispose(&ran);
+
+        // A start past the bytes is theirs to answer for: Truncated.
+        ran = run_source(INPUT
+                         "let^ read = f^ s { let^ got, next = try^ input.decode(s, 1)\n"
+                         "    return^ next }\n"
+                         "let^ got = read(input.encode(value))\n"
+                         "if^ got fits^ std.binary.Error.Truncated { return^ \"truncated\" }\n"
+                         "return^ \"other\"\n");
+        LHAT_CHECK_RAN_TEXT(ran, "truncated");
+        lhat_test_ran_dispose(&ran);
+
+        // A negative start is the writer's: a panic.
+        ran = run_source(INPUT "let^ got, next = try^ input.decode(input.encode(value), 0 - 1)\n");
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_PANIC);
         lhat_test_ran_dispose(&ran);
     }
 }
@@ -212,11 +252,11 @@ static void test_types(void)
     LHAT_TEST("a Format retains its table type for encode and decode");
     {
         LHAT_CHECK(checks(INPUT
-                          "let^ got = try^ input.decode(\"abcd\")\n"
+                          "let^ got, next = try^ input.decode(\"abcd\", 0)\n"
                           "let^ n:number^ = got.aaa\n"),
                    "decode preserves the declared structure");
         LHAT_CHECK(!checks(INPUT
-                           "let^ got = try^ input.decode(\"abcd\")\n"
+                           "let^ got, next = try^ input.decode(\"abcd\", 0)\n"
                            "let^ n = got.aaaa\n"),
                    "an unknown decoded field is rejected");
         LHAT_CHECK(!checks(INPUT "let^ s = input.encode(5)\n"),

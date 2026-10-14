@@ -186,7 +186,16 @@ GC の根ではないので、そうしないと復号で返すメンバが回�
 列など、値によって幅が変わる種類は持たない。これにより `bits()` と `size()` は
 常に形式だけから決まり、符号化前に出力領域を正確に確保できる。可変長のデータが
 必要なプロトコルは、固定長のヘッダと別のバイト列に分け、Format の外で境界を
-管理する。
+管理する。境界は `decode` の読み始めの位置と、答える次の位置で渡していく（3.3）。
+
+```lhat
+let^ header, start = try^ Header.decode(src, 0)
+var^ at = start
+for^ i from^ 1 to^ header.count {
+    let^ entry, next = try^ Entry.decode(src, at)
+    at := next
+}
+```
 
 存在しない値を表す種類を後で設ける場合も、存在ビットに常に値の領域を続ける
 固定幅とする。可変個数の列が必要なら、個数と最大個数分の領域を持つ固定幅の形式を
@@ -201,15 +210,20 @@ let^ data = input.encode({
 })
 data.size                  # 4
 
-let^ got = try^ input.decode(data)
+let^ got, next = try^ input.decode(data, 0)
 got.aaa                    # 11111
+next                       # 4
 ```
 
 - `fmt.encode(t) -> string^` — `T` のテーブルから形式どおりに詰める
 - `fmt.encodeInto(t, bytes)` — 同じものを `Bytes` に書き込む（2.1）
-- `fmt.decode(s) -> T|std.binary.Error` — 新しい `T` のテーブルに戻す。`s` は
-  `string^|std.binary.Bytes`
-- `fmt.decodeInto(s, t) -> nil^|std.binary.Error` — **既存のテーブルへ書き込む**。
+- `fmt.decode(s, at) -> (T, number^)|std.binary.Error` — `s` の `at` バイト目から
+  読み、新しい `T` のテーブルと、次の形式が始まる位置 `at + fmt.size()` を返す。
+  `s` は `string^|std.binary.Bytes`。返す位置をそのまま次の `decode` に渡せば、
+  続くレコードを順に読める。サイズでなく位置を返すのは、固定長の形式では
+  サイズが常に `fmt.size()` で新しい情報にならないからである
+- `fmt.decodeInto(s, at, t) -> number^|std.binary.Error` — **既存のテーブルへ書き込む**。
+  答えは `decode` と同じ次の位置。
   毎フレーム `decode` で新しいテーブルを作ると、そのたびにごみが出る。受け側が
   同じテーブルを使い回せるようにする。入れ子の形式と `array` も、そこにある
   テーブルへ書き込む。テーブルが既に持つキーの文字列をそのまま使うので、
@@ -218,7 +232,7 @@ got.aaa                    # 11111
   hostdata のメンバは関数なので、呼び出しで書く［補足］
 
 `decode` が返すテーブルは `format` に渡した `T` を保つ。したがって
-`let^ got = try^ input.decode(data)` の `got` は上の `Input` であり、`got.aaa` は
+`let^ got, next = try^ input.decode(data, 0)` の `got` は上の `Input` であり、`got.aaa` は
 検査を通り、`got.aaaa` のような綴り間違いは起動前に見つかる。
 
 型値は単なる注釈ではない。`format` は種類の木から復号結果の構造型を一度作り、
@@ -268,7 +282,9 @@ data = "\x67\x2B\x6F\x03"
   - `Malformed` — 範囲外の番号（`range` の上限を超える、存在しない enum の番号、
     `uint(64)` で `number^` の整数に収まらない値［補足］）
 
-形式より長い入力は誤りにしない（末尾の余りは無視する）。
+形式より長い入力は誤りにしない（末尾の余りは無視する）。`at` から後ろが形式より
+短ければ `Truncated` である。`at` が 0 以上の整数でないのは書き手の誤りで、panic に
+なる［補足］。
 
 メモリが尽きたときも panic である［補足］。`std.error.OutOfMemory` を答えの
 合併に入れると、毎フレーム呼ぶ `encode` の答えをいちいち絞り込むことになる。
@@ -472,3 +488,7 @@ lhat には DAP（9 章）のためのソケット層 `port/socket.c`（`lhatsoc
   バイト列・文字列・列は種類に加えず、必要なら固定長ヘッダの外で境界を管理する
 - **N1 を閉じた（2026-10-11）。** `Udp` は共有せず、作った一つの機械が所有する。
   機械間では送受信データだけを `string^` として Task または Channel で渡す
+- **復号に読み始めの位置を足した（2026-10-15）。** `decode`・`decodeInto` が
+  開始位置を取り、次の形式が始まる位置を返す。固定長ヘッダの後ろに続く可変個の
+  レコードを、Format の固定長の契約を変えずに読める。バイト単位で切り出す口は、
+  コピーを作るので大きなバイナリでは避けられがちになるとして置かなかった

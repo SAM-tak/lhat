@@ -954,6 +954,10 @@ static bool fail(LhatMachine *machine, const LhatErrorKind *kind, const char *me
     return false;
 }
 
+// 11 の 3.3: reads the format from byte `arguments[2]` on, and answers where
+// the next one starts -- the table first when `answer_table`, then that
+// position. A start that is not a whole number from 0 up is the writer's
+// mistake; one past what the bytes hold is the bytes', and reads Truncated.
 static void decode(LhatMachine *machine, const LhatValue *arguments, LhatValue reuse,
                    bool answer_table, LhatValue *answers, int *answer_count)
 {
@@ -964,19 +968,26 @@ static void decode(LhatMachine *machine, const LhatValue *arguments, LhatValue r
         lhat_machine_panic_text(machine, "std.binary: the format or the bytes were disposed");
         return;
     }
+    if (!lhat_is_integer(arguments[2]) || lhat_as_integer(arguments[2]) < 0) {
+        lhat_machine_panic_text(machine, "std.binary.decode: the start is not a whole number from 0");
+        return;
+    }
+    uint64_t start = (uint64_t)lhat_as_integer(arguments[2]);
+    uint64_t size = (format->bits + 7) / 8;
     // 11 の 3.5: longer is not wrong; what follows the format is left alone.
-    if ((uint64_t)length < (format->bits + 7) / 8) {
+    if (start > (uint64_t)length || (uint64_t)length - start < size) {
         fail(machine, shared.truncated, "shorter than the format", answers, answer_count);
         return;
     }
     uint64_t at = 0;
     LhatValue table = lhat_nil();
-    switch (decode_kind(machine, format, data, &at, reuse, &table)) {
+    switch (decode_kind(machine, format, data + start, &at, reuse, &table)) {
     case DECODED:
+        *answer_count = 0;
         if (answer_table) {
-            answers[0] = table;
-            *answer_count = 1;
+            answers[(*answer_count)++] = table;
         }
+        answers[(*answer_count)++] = lhat_integer((LhatInteger)(start + size));
         return;
     case MALFORMED:
         fail(machine, shared.malformed, "a number outside its kind", answers, answer_count);
@@ -1002,11 +1013,11 @@ static void format_decode_into(LhatMachine *machine, void *context,
 {
     (void)context;
     (void)count;
-    if (as_table(arguments[2]) == NULL) {
+    if (as_table(arguments[3]) == NULL) {
         lhat_machine_panic_text(machine, "std.binary.decodeInto: expected a table");
         return;
     }
-    decode(machine, arguments, arguments[2], false, answers, answer_count);
+    decode(machine, arguments, arguments[3], false, answers, answer_count);
 }
 
 // ---------------------------------------------------------------------------
@@ -1156,10 +1167,10 @@ bool lhatstdlib_binary_register(LhatProgram *program)
                                 "p^self^, self^.T0, std.binary.Bytes;",
                                 format_encode_into, module) &&
            lhat_register_member(program, M, "Format", "decode",
-                                "f^self^, string^|std.binary.Bytes -> self^.T0|std.binary.Error;",
+                                "f^self^, string^|std.binary.Bytes, number^ -> (self^.T0, number^)|std.binary.Error;",
                                 format_decode, module) &&
            lhat_register_member(program, M, "Format", "decodeInto",
-                                "p^self^, string^|std.binary.Bytes, t^{} -> nil^|std.binary.Error;",
+                                "p^self^, string^|std.binary.Bytes, number^, t^{} -> number^|std.binary.Error;",
                                 format_decode_into, module) &&
            lhat_register_member(program, M, "Bytes", "size", "f^self^ -> number^;", bytes_size, module) &&
            lhat_register_member(program, M, "Bytes", "toString", "f^self^ -> string^;",
