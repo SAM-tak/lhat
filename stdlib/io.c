@@ -208,6 +208,46 @@ static void file_read_line(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
+// Everything from where the stream stands to its end, as the bytes they are
+// -- open with "rb" for a binary file, so nothing turns \r\n into \n on the
+// way. At the end already, or after dispose, the answer is the empty string:
+// there is no line to be missing, so no Eof either.
+static void file_read_all(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
+{
+    (void)count;
+    const IoModule *module = (const IoModule *)context;
+    File *handle =
+        (File *)lhat_hostdata_pointer(arguments[0], module->file_tag);
+    char *text = NULL;
+    size_t length = 0;
+    size_t capacity = 0;
+    bool ok = true;
+    while (handle != NULL && handle->stream != NULL) {
+        if (length == capacity) {
+            capacity = capacity ? capacity * 2 : 4096;
+            char *bigger = (char *)lhat_realloc(text, capacity);
+            if (bigger == NULL) {
+                ok = false;
+                break;
+            }
+            text = bigger;
+        }
+        size_t read = fread(text + length, 1, capacity - length, handle->stream);
+        length += read;
+        if (read == 0) {
+            break;
+        }
+    }
+    LhatValue out = lhat_nil();
+    answers[0] = ok && lhat_machine_make_string(machine, text, length, &out)
+                     ? out
+                     : fail_with(machine, module->out_of_memory, "out of memory");
+    *answer_count = 1;
+    lhat_free(text);
+}
+
 static void file_write(LhatMachine *machine, void *context,
                        const LhatValue *arguments, size_t count,
                        LhatValue *answers, int *answer_count)
@@ -297,6 +337,10 @@ bool lhatstdlib_io_register(LhatProgram *program)
                program, "std.io", "File", "readLine",
                "f^self^ -> string^|std.io.IOError.Eof|std.error.OutOfMemory;",
                file_read_line, module) &&
+           lhat_register_member(
+               program, "std.io", "File", "readAll",
+               "f^self^ -> string^|std.error.OutOfMemory;",
+               file_read_all, module) &&
            lhat_register_member(program, "std.io", "File", "write",
                                 "p^self^, string^;", file_write, module) &&
            lhat_register_member(program, "std.io", "File", "dispose",

@@ -282,6 +282,31 @@ static void test_read_line(void)
         lhat_test_ran_dispose(&ran);
         remove(SCRATCH);
     }
+
+    // Opened "rb", so the \r\n and the NUL arrive as the bytes they are; a
+    // second read at the end answers the empty string rather than Eof.
+    LHAT_TEST("readAll takes the rest of the file as its bytes");
+    {
+        LHAT_CHECK(lhat_test_write_file(SCRATCH, "a\r\nb\0c", 6),
+                   "the file to read was written");
+        LhatTestRan ran =
+            run_source("import^ std.io\n"
+                       "let^ back = std.io.open(\"" SCRATCH "\", \"rb\")\n"
+                       "if^ back fits^ std.io.File {\n"
+                       "    let^ all = back.readAll()\n"
+                       "    let^ rest = back.readAll()\n"
+                       "    back.dispose()\n"
+                       "    if^ all fits^ string^ {\n"
+                       "        if^ rest fits^ string^ {\n"
+                       "            return^ all.length * 10 + rest.length\n"
+                       "        }\n"
+                       "    }\n"
+                       "}\n"
+                       "return^ -1\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 60);
+        lhat_test_ran_dispose(&ran);
+        remove(SCRATCH);
+    }
 }
 
 static void test_read_line_from_stdin(void)
