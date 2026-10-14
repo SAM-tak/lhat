@@ -71,6 +71,7 @@ static LhatType *chk_gc_type(Checker *c)
         return NULL;
     }
     gc->v.table.sealed = true;
+    gc->v.table.is_namespace = true;
     gc->v.table.is_module = true;
 
     LhatType *settings_type = gc_numbers(c, settings, 3);
@@ -126,7 +127,9 @@ LhatType *chk_environment_type(Checker *c)
     env->v.table.sealed = true;
     modules_type->v.table.sealed = true;
     // And both are reached through rather than held: L^.print, L^.modules.a.
+    env->v.table.is_namespace = true;
     env->v.table.is_module = true;
+    modules_type->v.table.is_namespace = true;
     modules_type->v.table.is_module = true;
     // environment.h's one list -- vm.c's build_environment expands the same
     // one for the values.
@@ -679,7 +682,8 @@ void chk_check_define(Checker *c, const LhatNode *node)
 
 // 05 の 8.6: the table a dotted import^ or require^ path stands on -- the
 // 'a' of 'import^ a.b.c'. Names are reached through it rather than held in
-// it, which is what `is_module` says.
+// it, which is what `is_module` says to a tool. It is the unit's own name and
+// no part of the registry, so it is not `is_namespace`.
 //
 // Not sealed, unlike the segments the walk above makes: the import^ that
 // built this root goes on to write the segment it brought in *into* it, and
@@ -740,6 +744,7 @@ void chk_register_module_type(Checker *c, const char *module_name,
             // same as the registry itself -- and is named through, the same
             // way.
             made->v.table.sealed = true;
+            made->v.table.is_namespace = true;
             made->v.table.is_module = true;
             owner = made;
         }
@@ -2237,7 +2242,8 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
                 // holds stays as mutable as it was.
                 if (table != NULL) {
                     table->v.table.sealed = true;
-                    table->v.table.is_module = true;  // named through
+                    table->v.table.is_namespace = true;  // named through
+                    table->v.table.is_module = true;
                 }
             }
             // 05 の 6.1: a reader of the published type is in another unit,

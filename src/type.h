@@ -322,23 +322,29 @@ struct LhatType {
             // it records where the structure came from and takes no part in
             // conformance (11.3).
             bool sealed;
-            // 05 の 8.6: a table names are reached *through* rather than one
-            // that holds a value -- L^ and its module registry, a segment of
-            // that registry, what a require^ published, the tree a host
-            // registered, and the root a dotted import^ or require^ path
-            // stands on.
+            // 05 § 8.6: a table of the registry's structure -- L^ itself and
+            // L^.gc, the module registry L^.modules, a segment of that
+            // registry, what a unit published, the tree a host registered.
+            // Names are reached through these; none of them is a value a
+            // unit made. The checker reads it where it walks the registry.
             //
             // Separate from `sealed`, which is next to it and looks like it
             // would do: that one says the program may not write here, and
-            // the two are not the same question. The root of an import^ path
-            // is a namespace and is *not* sealed, because the import itself
-            // writes the segment it brought in there. Like the three above
-            // it records what the structure is for and takes no part in
+            // the two are not the same question. Like the three above it
+            // records what the structure is for and takes no part in
             // conformance (11.3).
+            bool is_namespace;
+            // How a tool shows and walks the table: as the way to a module
+            // rather than as a value -- coloured as a namespace, completed as
+            // a module name, descended into for the types a visual editor
+            // offers (lsp/graph_types.c). Set on everything `is_namespace`
+            // is set on, and on the root a dotted import^ or require^ binds
+            // in a unit ('std' of 'import^ std.task'), which is the unit's own
+            // name and no part of the registry, but is written only to reach
+            // what is under it.
             //
-            // Nothing in the language reads it. It is here so that a tool
-            // can tell a module apart from a table, which is a question the
-            // shape alone cannot answer.
+            // Nothing in the language reads it: it answers a question the
+            // shape alone cannot, and only tools ask it.
             bool is_module;
             // 13.7's variadic collector as a table type, and 14.10's
             // 't^{ T[] }': the sequence half is unbounded, every position

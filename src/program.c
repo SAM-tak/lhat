@@ -1537,7 +1537,8 @@ static LhatType *hosted_table(LhatProgram *program, LhatType *owner,
             // it. Nothing written in L^ adds to it or writes over it -- the
             // host reaches it through this file's own API instead.
             next->v.table.sealed = true;
-            next->v.table.is_module = true;  // and named through, not held
+            next->v.table.is_namespace = true;  // and named through, not held
+            next->v.table.is_module = true;
         }
         if (next->kind != LHAT_TYPE_TABLE) {
             return NULL;  // something that is not a module is already there
@@ -1556,6 +1557,7 @@ static LhatType *hosted_root(LhatProgram *program)
         program->hosted = lhat_type_table(&program->types);
         if (program->hosted != NULL) {
             program->hosted->v.table.sealed = true;  // 05 の 8.6
+            program->hosted->v.table.is_namespace = true;
             program->hosted->v.table.is_module = true;
         }
     }

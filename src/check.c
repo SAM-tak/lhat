@@ -2415,7 +2415,7 @@ static void collect_registered_carriers(Checker *c, const LhatType *module,
         }
         // A segment of the registry, rather than a type registered in it.
         if (m->type != NULL && m->type->kind == LHAT_TYPE_TABLE &&
-            m->type->v.table.is_module) {
+            m->type->v.table.is_namespace) {
             collect_registered_carriers(c, m->type, depth + 1);
         }
     }

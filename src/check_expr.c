@@ -3581,7 +3581,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
                 if (named_type != NULL && m->names_type) {
                     *named_type = m->named_type;
                 }
-                if (node != NULL && target->v.table.is_module) {
+                if (node != NULL && target->v.table.is_namespace) {
                     ((LhatNode *)node)->checked_definition = m->definition;
                 }
                 return lhat_type_instantiate_receiver(c->result->types, m->type, target);
