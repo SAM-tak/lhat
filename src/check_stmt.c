@@ -705,6 +705,14 @@ LhatType *chk_module_root_table(Checker *c)
 //
 // Idempotent: 5.3 loads once, so meeting the same unit again adds nothing
 // and is not the clash 8.7 makes of two let^ writing one place.
+//
+// A unit named under another is a member of that unit's table at run time,
+// whichever registers first (vm_register_unit). Here, where units are named
+// under a unit, it stands as this check's own segment whose `base` is what
+// the unit published: the exports type is the one every requirer of the unit
+// is handed, and what this check read in says nothing about theirs. A name a
+// unit publishes that a unit under it would stand at is the program's to
+// report (lhat_program_check).
 void chk_register_module_type(Checker *c, const char *module_name,
                               LhatType *exports)
 {
@@ -720,33 +728,51 @@ void chk_register_module_type(Checker *c, const char *module_name,
     LhatType *owner = modules->type;
     for (const char *segment = module_name;;) {
         size_t length = strcspn(segment, ".");
-        const LhatTypeMember *found = member_named(owner, segment, length);
+        LhatTypeMember *found =
+            (LhatTypeMember *)member_named(owner, segment, length);
         if (segment[length] == '\0') {
             if (found == NULL) {
                 lhat_type_add_member(c->result->types, owner, segment, length,
                                      exports);
+            } else if (found->type->kind == LHAT_TYPE_TABLE &&
+                       found->type->v.table.registry_segment &&
+                       found->type->v.table.base == NULL) {
+                // Units named under this one came first, into a segment made
+                // to hold them. It stands for this unit from here on.
+                found->type->v.table.base = exports;
             }
+            // Otherwise this unit is there already, or another unit is: 5.3,
+            // and the program's report.
             return;
         }
-        if (found != NULL) {
-            if (found->type->kind != LHAT_TYPE_TABLE) {
-                return;
-            }
-            owner = found->type;
-        } else {
+        if (found != NULL && found->type->kind != LHAT_TYPE_TABLE) {
+            return;  // a unit published something else here; the program says so
+        }
+        if (found == NULL || !found->type->v.table.registry_segment) {
+            // 05 の 8.6: a segment of the registry is the machine's, the same
+            // as the registry itself -- and is named through, the same way.
             LhatType *made = lhat_type_table(c->result->types);
-            if (made == NULL ||
-                lhat_type_add_member(c->result->types, owner, segment, length,
-                                     made) == NULL) {
+            if (made == NULL) {
                 return;
             }
-            // 05 の 8.6: a segment of the registry is the machine's, the
-            // same as the registry itself -- and is named through, the same
-            // way.
             made->v.table.sealed = true;
             made->v.table.is_namespace = true;
             made->v.table.is_module = true;
+            made->v.table.registry_segment = true;
+            if (found == NULL) {
+                if (lhat_type_add_member(c->result->types, owner, segment,
+                                         length, made) == NULL) {
+                    return;
+                }
+            } else {
+                // A unit, or a module the host registered, stands here, and a
+                // unit is named under it: this check's segment takes its place.
+                made->v.table.base = found->type;
+                found->type = made;
+            }
             owner = made;
+        } else {
+            owner = found->type;
         }
         segment += length + 1;
     }

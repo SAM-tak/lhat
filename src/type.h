@@ -346,6 +346,13 @@ struct LhatType {
             // Nothing in the language reads it: it answers a question the
             // shape alone cannot, and only tools ask it.
             bool is_module;
+            // 05 § 5.3: a segment of one check's L^.modules -- made where a
+            // registration's path reached nothing yet, or standing in for a
+            // unit (or a host's module) that units are named under. Those
+            // units are its own members; what the unit published is reached
+            // through `base`. The check's own, so its registrations write
+            // into it and into nothing every requirer is handed.
+            bool registry_segment;
             // 13.7's variadic collector as a table type, and 14.10's
             // 't^{ T[] }': the sequence half is unbounded, every position
             // of it T. NULL everywhere else -- mirrors func.variadic below,

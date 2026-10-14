@@ -1275,7 +1275,9 @@ static const void *type_next(const void *node)
                          type->kind != LHAT_TYPE_HOSTVALUE)) {
         return NULL;
     }
-    // Base links belong to registered host types, delegation to wrappers.
+    // Base links belong to registered host types and to one check's segment
+    // of L^.modules standing in for a unit (05 の 5.3), delegation to
+    // wrappers.
     return type->v.table.base != NULL ? type->v.table.base
                                       : type->v.table.delegate;
 }

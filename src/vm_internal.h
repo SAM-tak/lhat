@@ -177,6 +177,16 @@ bool vm_hostvalue_field_set(LhatValueUnion *data,
 // vm_table.c
 bool vm_set_key(Machine *m, LhatTable *table, LhatValue key,
                     LhatValue value, bool *refused);
+
+// vm_host.c, 05 § 5.3. `exports` -- sealed -- is what the unit the string
+// `path` names published; the machine registers it and answers the unit's
+// table in `answer`, which is another where the units named under it came
+// first. LHAT_RUN_SEALED where the path runs through the program's shared
+// tables (8.7改5).
+LhatRunStatus vm_register_unit(Machine *m, LhatTable *exports, LhatValue path,
+                               LhatValue *answer);
+// The unit's table where it has run, for its guard; nil^ otherwise.
+LhatValue vm_registered_unit(Machine *m, LhatValue path);
 bool vm_bake_default(Machine *m, LhatValue held, LhatValue *out,
                          size_t depth, bool *refused_value);
 LhatTable *vm_clone_table(Machine *m, const LhatTable *source,

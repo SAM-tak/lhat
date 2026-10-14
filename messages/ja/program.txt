@@ -13,5 +13,7 @@ mixed = プログラムは全体がテキストかバイナリのどちらかで
 no-signature = このビルドには署名を読む前段が無く、署名表にもこの署名は無い
 # no-frontend = this build has no front end; only a binary unit runs
 no-frontend = このビルドには前段が無い。走るのはバイナリ単位だけである
+# module-collides = this unit is named under another unit, which already publishes the name it would stand at
+module-collides = この単位は別の単位の下に名乗っているが、その単位は、この単位が入るはずの名前を既に公開している
 # failed = {path}: error: {message}
 failed = {path}: エラー: {message}

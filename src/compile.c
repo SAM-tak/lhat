@@ -6385,54 +6385,24 @@ static void compile_bind_path(Compiler *c, const LhatNode *node,
     c->next_register = mark;
 }
 
-// 05 の 5.3: a unit answers what an earlier require^ of it registered, and
-// runs its body only when there is nothing there. 04 の 11.3 spells "not
-// there" nil^, so a walk of the path with a nil test at each step is the
-// whole of it -- the guard the desugaring in 8.6 writes as an if^.
+// 05 § 5.3: a unit answers what an earlier require^ of it registered, and
+// runs its body only when there is nothing there -- the guard the desugaring
+// in 8.6 writes as an if^. The machine is asked rather than the registry
+// read: units named under this one may have made its table already, and a
+// table is this unit's answer only once this unit has run (REGISTERED).
 static void compile_module_guard(Compiler *c, const char *path)
 {
     uint8_t mark = c->next_register;
     uint8_t into = reserve(c);
     uint8_t test = reserve(c);
-    uint8_t key = reserve(c);
 
-    emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
-    load_string_bytes(c, key, "modules", 7);
-    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
-
-    // Every miss lands on the body, which is emitted after this.
-    size_t misses[LHAT_MAX_LOCALS];
-    size_t miss_count = 0;
-
-    for (const char *segment = path;; ) {
-        size_t length = strcspn(segment, ".");
-        // Reading through what is not a table would fault (5.1), so each
-        // step is guarded rather than only the last.
-        emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, into, 0));
-        emit(c, lhat_encode_abc(LHAT_BC_NOT, test, test, 0));
-        if (miss_count < LHAT_MAX_LOCALS) {
-            misses[miss_count++] = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
-        }
-        load_string_bytes(c, key, segment, length);
-        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
-        if (segment[length] != '.') {
-            break;
-        }
-        segment += length + 1;
-    }
-
-    // Something there is what an earlier require^ registered, and is the
-    // answer without the body running again.
+    load_string_bytes(c, test, path, strlen(path));
+    emit(c, lhat_encode_abc(LHAT_BC_REGISTERED, into, test, 0));
     emit(c, lhat_encode_abc(LHAT_BC_ISNIL, test, into, 0));
     emit(c, lhat_encode_abc(LHAT_BC_NOT, test, test, 0));
-    if (miss_count < LHAT_MAX_LOCALS) {
-        misses[miss_count++] = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
-    }
+    size_t miss = emit_jump(c, LHAT_BC_JUMP_FALSE, test);
     emit(c, lhat_encode_abc(LHAT_BC_RETURN, into, 0, 0));
-
-    for (size_t i = 0; i < miss_count; i++) {
-        lhat_chunk_patch_here(&c->proto->chunk, misses[i]);
-    }
+    lhat_chunk_patch_here(&c->proto->chunk, miss);
     c->next_register = mark;
 }
 
@@ -6485,39 +6455,17 @@ static void compile_module_register(Compiler *c, const LhatNode *statements,
 {
     uint8_t mark = c->next_register;
     uint8_t exports = reserve(c);
-    uint8_t owner = reserve(c);
     uint8_t key = reserve(c);
 
     compile_exports(c, statements, exports);
-    // 05 の 8.6: everything it holds is in, so nothing else writes to
-    // it. Before the registry gets it, since what goes into the registry is
-    // the same object every requirer is handed.
-    emit(c, lhat_encode_abc(LHAT_BC_SEAL, exports, 0, 0));
-    if (path == NULL) {
-        emit(c, lhat_encode_abc(LHAT_BC_RETURN, exports, 0, 0));
-        c->next_register = mark;
-        return;
+    // 05 の 8.6: everything it holds is in, so nothing else writes to it --
+    // sealed and registered in one, since what goes into the registry is the
+    // same object every requirer is handed. The registration is the
+    // machine's, and may answer the table units named under this one made.
+    if (path != NULL) {
+        load_string_bytes(c, key, path, strlen(path));
     }
-
-    emit(c, lhat_encode_abc(LHAT_BC_ENV, owner, 0, 0));
-    load_string_bytes(c, key, "modules", 7);
-    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, owner, owner, key));
-
-    const char *segment = path;
-    size_t length = strcspn(segment, ".");
-    while (segment[length] == '.') {
-        uint8_t next = reserve(c);
-        load_string_bytes(c, key, segment, length);
-        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, next, owner, key));
-        ensure_table_at(c, next, owner, key);
-        emit(c, lhat_encode_abc(LHAT_BC_MOVE, owner, next, 0));
-        c->next_register = next;
-        segment += length + 1;
-        length = strcspn(segment, ".");
-    }
-
-    load_string_bytes(c, key, segment, length);
-    emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, exports));
+    emit(c, lhat_encode_abc(LHAT_BC_SEAL, exports, key, path != NULL));
     emit(c, lhat_encode_abc(LHAT_BC_RETURN, exports, 0, 0));
     c->next_register = mark;
 }

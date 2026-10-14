@@ -269,7 +269,11 @@ typedef enum {
     // instruction may write into it. Emitted where a unit builds what
     // require^ answers with -- what a table holds is written before this,
     // and nothing writes into it afterwards.
-    LHAT_BC_SEAL,       // A     R[A] accepts no further writes
+    // 5.3: C != 0 also registers it as the unit the module path in the
+    // string R[B] names. The machine writes the registry, not an instruction,
+    // so a parent's sealed table takes the units named under it; and where
+    // such a unit came first, its table is this unit's, and R[A] becomes it.
+    LHAT_BC_SEAL,       // A B C R[A] sealed; and registered at R[B]
     // 11.6改3: R[A] is unchanged where it satisfies the type in R[B] -- as^
     // narrows what the checker tracks, not the value. Where it does not,
     // R[A] becomes a localerror^.CastFailure, which is the other arm of
@@ -323,6 +327,10 @@ typedef enum {
     // the call that follows makes the walk as before. RESUME and ISDONE
     // read a table in R[B] as such a walk.
     LHAT_BC_ITERPREP,   // A B C R[A] = R[B].<cache[C]>, or a walk laid inline
+    // 05 の 5.3: a unit's guard. The table of the unit the string R[B] names
+    // where that unit has run -- sealed -- and nil^ otherwise, including where
+    // only the units named under it have made its table.
+    LHAT_BC_REGISTERED, // A B   R[A] = the unit R[B] names, or nil^
     LHAT_BC_COUNT
 } LhatOpcode;
 

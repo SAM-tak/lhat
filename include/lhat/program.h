@@ -53,7 +53,11 @@ typedef enum {
     // hold, in a build that has no front end to read the text with.
     LHAT_PROGRAM_ERR_NO_SIGNATURE,
     // 10.8: a text unit met by a build without the front end.
-    LHAT_PROGRAM_ERR_NO_FRONTEND
+    LHAT_PROGRAM_ERR_NO_FRONTEND,
+    // 05 § 5.3: the unit at `path` is named under another unit, which
+    // publishes the name it would stand at. Both are members of one table in
+    // L^.modules, so one would be written over the other.
+    LHAT_PROGRAM_ERR_MODULE_COLLIDES
 } LhatProgramErrorCode;
 
 typedef struct {

@@ -4794,6 +4794,320 @@ static void test_documentation(void)
 #endif  // LHAT_WITH_COMMENTS
 
 
+// 05 の 5.3: a unit whose name another unit's sits under is a member of that
+// unit's table. Each order of the two is a case of its own: the child read
+// inside the parent's body, after the parent, and before it from elsewhere.
+static const File NESTED[] = {
+    {"a.lh",
+     "module^game\n"
+     "let^b1 = require^\"b.lh\"\n"
+     "public^let^again = p^ -> number^ {\n"
+     "    let^b2 = require^\"b.lh\"\n"
+     "    return^b2.bump()\n"
+     "}\n"
+     "public^let^first = p^ -> number^ { return^b1.bump() }\n"},
+    {"later.lh",
+     "module^game\n"
+     "public^let^later = p^ -> number^ {\n"
+     "    let^b = require^\"b.lh\"\n"
+     "    return^b.bump()\n"
+     "}\n"},
+    {"b.lh",
+     "module^game.b\n"
+     "var^count = 0\n"
+     "public^let^bump = p^ -> number^ {\n"
+     "    count += 1\n"
+     "    return^count\n"
+     "}\n"},
+    {"inside.lh",
+     "let^a = require^\"a.lh\"\n"
+     "return^ a.first() + a.again() * 10 + a.first() * 100\n"},
+    {"after.lh",
+     "let^a = require^\"later.lh\"\n"
+     "return^ a.later() + a.later() * 10\n"},
+    {"before.lh",
+     "let^b = require^\"b.lh\"\n"
+     "let^a = require^\"a.lh\"\n"
+     "return^ b.bump() + a.first() * 10\n"},
+    {"held.lh",
+     "return^ require^\"a.lh\"\n"},
+    // A unit two segments under another, with no unit between them.
+    {"top.lh",
+     "module^deep\n"
+     "public^let^here = 1\n"},
+    {"leaf.lh",
+     "module^deep.x.y\n"
+     "var^count = 0\n"
+     "public^let^bump = p^ -> number^ {\n"
+     "    count += 1\n"
+     "    return^count\n"
+     "}\n"},
+    {"deep.lh",
+     "let^t = require^\"top.lh\"\n"
+     "let^l = require^\"leaf.lh\"\n"
+     "return^ t.here + l.bump() * 10\n"},
+    {"leaf_only.lh",
+     "let^l = require^\"leaf.lh\"\n"
+     "return^ l.bump()\n"},
+    // A unit that publishes another unit's table under a name of its own.
+    {"shelf.lh",
+     "module^shelf\n"
+     "public^let^x = require^\"b.lh\"\n"},
+    {"shelf_root.lh",
+     "let^s = require^\"shelf.lh\"\n"
+     "return^ s.x.bump()\n"},
+    // The registry's type, in a check that read both in.
+    {"through.lh",
+     "let^a = require^\"a.lh\"\n"
+     "let^b = require^\"b.lh\"\n"
+     "return^ L^.modules.game.b.bump() + L^.modules.game.first() * 10\n"},
+    {"through_child_first.lh",
+     "let^b = require^\"b.lh\"\n"
+     "let^a = require^\"a.lh\"\n"
+     "return^ L^.modules.game.first() * 10 + L^.modules.game.b.bump()\n"},
+    {"plain_reads.lh",
+     "module^plain\n"
+     "let^a = require^\"a.lh\"\n"
+     "public^let^check = p^ -> number^ { return^ a.b.bump() }\n"},
+    {"reads_child.lh",
+     "let^a = require^\"a.lh\"\n"
+     "let^b = require^\"b.lh\"\n"
+     "let^c = require^\"plain_reads.lh\"\n"
+     "return^ c.check()\n"},
+    // A name a unit publishes, and a unit named under it at that name.
+    {"taken.lh",
+     "module^game\n"
+     "public^let^b = 1\n"
+     "let^child = require^\"b.lh\"\n"},
+    {"taken_first.lh",
+     "let^a = require^\"taken.lh\"\n"},
+    {"published.lh",
+     "module^game\n"
+     "public^let^b = 1\n"},
+    {"taken_after.lh",
+     "let^a = require^\"published.lh\"\n"
+     "let^child = require^\"b.lh\"\n"},
+};
+
+// `root` checked, compiled and run on a machine that holds the program; its
+// answer in `ran`. The machine is handed back in `kept`, or disposed of.
+static LhatRunResult run_nested(LhatProgram *program, Disk *disk,
+                                const char *root, LhatMachine **kept)
+{
+    LhatRunResult ran;
+    memset(&ran, 0, sizeof ran);
+    ran.status = LHAT_RUN_TYPE_ERROR;
+    program_with(program, disk, NESTED, sizeof NESTED / sizeof NESTED[0]);
+    const LhatUnit *unit = lhat_program_check(program, root);
+    if (unit == NULL || lhat_program_has_errors(program) ||
+        !lhat_program_compile(program)) {
+        return ran;
+    }
+    LhatMachine *machine = lhat_machine_new();
+    lhat_machine_hold_program(machine, program);
+    ran = lhat_run(machine, lhat_unit_proto(unit));
+    if (kept != NULL) {
+        *kept = machine;
+    } else {
+        lhat_machine_dispose(machine);
+    }
+    return ran;
+}
+
+// The same, where the answer is an integer; -1 for anything else.
+static int64_t nested_answer(LhatProgram *program, Disk *disk,
+                             const char *root)
+{
+    LhatRunResult ran = run_nested(program, disk, root, NULL);
+    return ran.status == LHAT_RUN_OK && lhat_is_integer(ran.value)
+               ? (int64_t)lhat_as_integer(ran.value)
+               : -1;
+}
+
+static void test_nested_units(void)
+{
+    LhatProgram program;
+    Disk disk;
+
+    // The report from lhat-love: b's body ran a second time, into the
+    // parent's sealed table, and the run stopped there.
+    LHAT_TEST("a unit read inside the body of the unit it sits under");
+    LHAT_CHECK_EQ_INT(nested_answer(&program, &disk, "inside.lh"), 321);
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and one read for the first time after it");
+    LHAT_CHECK_EQ_INT(nested_answer(&program, &disk, "after.lh"), 21);
+    lhat_program_dispose(&program);
+
+    // b made game's table first, and that table is not game's answer until
+    // game has run: game's own body still runs, and takes b in.
+    LHAT_TEST("and one read before it, from somewhere else");
+    LHAT_CHECK_EQ_INT(nested_answer(&program, &disk, "before.lh"), 21);
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("forgetting a unit leaves the units named under it");
+    {
+        LhatMachine *machine = NULL;
+        LhatRunResult ran = run_nested(&program, &disk, "inside.lh", &machine);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_REQUIRE(machine != NULL, "the machine is there");
+        // Only a unit is forgotten: a name a unit published is not one, and
+        // forgetting it would take it out of the unit's table.
+        LhatValue kept = lhat_nil();
+        LHAT_CHECK(!lhat_machine_forget_unit(machine, "game.first"),
+                   "a name game published is not a unit to forget");
+        LHAT_CHECK(!lhat_machine_forget_unit(machine, "game.b.bump"),
+                   "nor one game.b published");
+        LHAT_CHECK(lhat_machine_registered(machine, "game", NULL, "first",
+                                           &kept),
+                   "and it is still there");
+        // A path is read under L^.modules, so the machine's own tables are no
+        // path at all, and the registry itself is not one either.
+        static const char *const machine_own[] = {"L^", "L^.gc", "L^.modules",
+                                                  "gc", "modules", ""};
+        for (size_t i = 0; i < sizeof machine_own / sizeof machine_own[0];
+             i++) {
+            LHAT_CHECK(!lhat_machine_forget_unit(machine, machine_own[i]),
+                       "'%s' is not a unit to forget", machine_own[i]);
+        }
+        LHAT_CHECK(lhat_machine_forget_unit(machine, "game"),
+                   "the machine forgot the unit above");
+        LHAT_CHECK(!lhat_machine_forget_unit(machine, "game"),
+                   "and what it left is not that unit");
+        LhatValue left = lhat_nil();
+        LHAT_CHECK(lhat_machine_registered(machine, "game", NULL, "b", &left),
+                   "b is still where it was");
+        LHAT_CHECK(!lhat_machine_registered(machine, "game", NULL, "first",
+                                            &left),
+                   "and what game published is gone");
+        // game runs again and finds b where it was, still counting: 4, 5, 6.
+        ran = lhat_run(machine, lhat_unit_proto(
+                                    lhat_program_check(&program, "inside.lh")));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 654);
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    // shelf.x is game.b's table, sealed as a unit's is -- but shelf.x is a
+    // name shelf published, and no unit is named that.
+    LHAT_TEST("another unit's table a unit publishes is not a unit to forget");
+    {
+        LhatMachine *machine = NULL;
+        LhatRunResult ran = run_nested(&program, &disk, "shelf_root.lh",
+                                       &machine);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_REQUIRE(machine != NULL, "the machine is there");
+        LhatValue kept = lhat_nil();
+        LHAT_CHECK(!lhat_machine_forget_unit(machine, "shelf.x"),
+                   "refused");
+        LHAT_CHECK(lhat_machine_registered(machine, "shelf", NULL, "x", &kept),
+                   "and shelf still publishes it");
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    // Code still running may hold the table a unit was forgotten from, so
+    // forgetting takes nothing out of it: a new table stands in its place.
+    LHAT_TEST("what a forgotten unit published stays in the table already held");
+    {
+        LhatMachine *machine = NULL;
+        LhatRunResult ran = run_nested(&program, &disk, "held.lh", &machine);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_REQUIRE(machine != NULL, "the machine is there");
+        LhatValue held = ran.value;
+        LHAT_CHECK(lhat_machine_forget_unit(machine, "game"), "forgotten");
+        LhatRunResult called =
+            lhat_machine_call_member(machine, held, "first", 5, NULL, 0);
+        LHAT_CHECK_EQ_INT(called.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(called.value), 1);
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    // deep.x is no unit: the segment x is all that holds deep.x.y under
+    // deep, and it is what stays when deep goes.
+    LHAT_TEST("a unit further down, with no unit between, stays too");
+    {
+        LhatMachine *machine = NULL;
+        LhatRunResult ran = run_nested(&program, &disk, "deep.lh", &machine);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 11);
+        LHAT_REQUIRE(machine != NULL, "the machine is there");
+        LHAT_CHECK(lhat_machine_forget_unit(machine, "deep"), "forgotten");
+        LhatValue left = lhat_nil();
+        LHAT_CHECK(lhat_machine_registered(machine, "deep.x", NULL, "y", &left),
+                   "deep.x.y is still registered");
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    // Forgetting the only unit under segments that hold nothing else takes
+    // the segments too.
+    LHAT_TEST("the segments a forgotten unit leaves empty go with it");
+    {
+        LhatMachine *machine = NULL;
+        LhatRunResult ran = run_nested(&program, &disk, "leaf_only.lh", &machine);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_REQUIRE(machine != NULL, "the machine is there");
+        LhatValue left = lhat_nil();
+        LHAT_CHECK(lhat_machine_registered(machine, "deep", NULL, "x", &left),
+                   "the segment is there while the unit is");
+        LHAT_CHECK(lhat_machine_forget_unit(machine, "deep.x.y"), "forgotten");
+        LHAT_CHECK(!lhat_machine_registered(machine, "deep", NULL, "x", &left),
+                   "and gone with it");
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    // The type of L^.modules says the same, in a check that read both in.
+    LHAT_TEST("the registry's type reaches the unit through the one above");
+    LHAT_CHECK_EQ_INT(nested_answer(&program, &disk, "through.lh"), 21);
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("whichever of the two that check read in first");
+    LHAT_CHECK_EQ_INT(nested_answer(&program, &disk, "through_child_first.lh"),
+                      12);
+    lhat_program_dispose(&program);
+
+    // What one check read in says nothing about another's: a's exports type
+    // is every requirer's, and the root reading b in does not put b into
+    // what plain_reads.lh -- which never read b -- is handed.
+    LHAT_TEST("and what one check read in is not written into the unit's type");
+    {
+        program_with(&program, &disk, NESTED, sizeof NESTED / sizeof NESTED[0]);
+        lhat_program_check(&program, "reads_child.lh");
+        LHAT_CHECK(lhat_program_has_errors(&program),
+                   "a.b is not a member of a for a unit that never read b in");
+        lhat_program_dispose(&program);
+    }
+
+    // A name the parent publishes cannot also be a unit under it: both are
+    // members of one table. No one check need have read both in, so the
+    // program is what says so.
+    LHAT_TEST("a unit under another may not take a name it publishes");
+    {
+        program_with(&program, &disk, NESTED, sizeof NESTED / sizeof NESTED[0]);
+        lhat_program_check(&program, "taken_first.lh");
+        LHAT_CHECK(has_program_error(&program, LHAT_PROGRAM_ERR_MODULE_COLLIDES),
+                   "when the unit above reads the unit under it itself");
+        lhat_program_dispose(&program);
+
+        program_with(&program, &disk, NESTED, sizeof NESTED / sizeof NESTED[0]);
+        lhat_program_check(&program, "taken_after.lh");
+        LHAT_CHECK(has_program_error(&program, LHAT_PROGRAM_ERR_MODULE_COLLIDES),
+                   "and when another unit reads both");
+        lhat_program_dispose(&program);
+
+        program_with(&program, &disk, NESTED, sizeof NESTED / sizeof NESTED[0]);
+        lhat_program_check(&program, "inside.lh");
+        LHAT_CHECK(!has_program_error(&program,
+                                      LHAT_PROGRAM_ERR_MODULE_COLLIDES),
+                   "and not where no name is taken twice");
+        lhat_program_dispose(&program);
+    }
+}
+
 // 02 の 18.5.1: two names the host registered as one choice. FILEUNIQUE counts
 // each registration on its own, so the pair is what only the host can say --
 // and having said it, the checker is the one that says where.
@@ -5857,6 +6171,7 @@ int main(void)
     test_composing_across_units();
     test_annotations();
     test_annotation_exclusion();
+    test_nested_units();
     test_annotation_near();
     test_annotation_requisite();
     test_empty_body();

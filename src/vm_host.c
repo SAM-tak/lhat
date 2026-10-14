@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include "hosted.h"
 #include "lhat/port.h"
+#include "lhat/program.h" // 05 § 5.3: which units a forgotten one holds
 #include "type.h"
 
 // ---------------------------------------------------------------------------
@@ -287,37 +288,126 @@ bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
     return true;
 }
 
-// 05 の 8.7: the same walk the unit prologue compiles to, done in C because
-// nothing is being compiled here. 02 の 8.8's rule holds: a table is made
-// where the path does not reach one, and what is there is left alone.
+// One step of 05 の 8.7's walk: the table under `segment` in `owner`, made
+// there where nothing is. 02 の 8.8's rule holds: what is there is left alone.
+// NULL where something that is not a table stands, or the write is refused.
+static LhatTable *reach_segment(Machine *m, LhatTable *owner,
+                                const char *segment, size_t length)
+{
+    // Asked by bytes: a hit -- every registration after the first of a path
+    // -- needs no key object. Only a miss makes one, to write the new table
+    // under.
+    LhatValue found = lhat_table_get_bytes(owner, segment, length);
+    LhatTable *next = vm_table_of(found);
+    if (next == NULL && lhat_is_nil(found)) {
+        LhatString *key = lhat_string_new(&m->objects, segment, length);
+        next = key != NULL ? lhat_table_new(&m->objects) : NULL;
+        bool refused = false;
+        if (next == NULL ||
+            !vm_set_key(m, owner, lhat_object((LhatObject *)key),
+                        lhat_object((LhatObject *)next), &refused) ||
+            refused) {
+            return NULL;
+        }
+    }
+    return next;
+}
+
+// 05 の 8.7: the same walk a unit's registration makes, for what the host
+// registers.
 static LhatTable *reach_table(Machine *m, LhatTable *owner, const char *path)
 {
-    for (const char *segment = path;;) {
+    for (const char *segment = path; owner != NULL;) {
         size_t length = strcspn(segment, ".");
-        // Asked by bytes: a hit -- every registration after the first of a
-        // path -- needs no key object. Only a miss makes one, to write the
-        // new table under.
-        LhatValue found = lhat_table_get_bytes(owner, segment, length);
-        LhatTable *next = vm_table_of(found);
-        if (next == NULL && lhat_is_nil(found)) {
-            LhatString *key = lhat_string_new(&m->objects, segment, length);
-            next = key != NULL ? lhat_table_new(&m->objects) : NULL;
-            bool refused = false;
-            if (next == NULL ||
-                !vm_set_key(m, owner, lhat_object((LhatObject *)key),
-                         lhat_object((LhatObject *)next), &refused) ||
-                refused) {
-                return NULL;
-            }
-        } else if (next == NULL) {
-            return NULL;  // something that is not a table is there
-        }
-        owner = next;
+        owner = reach_segment(m, owner, segment, length);
         if (segment[length] == '\0') {
-            return owner;
+            break;
         }
         segment += length + 1;
     }
+    return owner;
+}
+
+LhatValue vm_registered_unit(Machine *m, LhatValue path)
+{
+    if (!lhat_is_object_kind(path, LHAT_OBJECT_STRING) || m->modules == NULL) {
+        return lhat_nil();
+    }
+    const LhatString *name = (const LhatString *)lhat_as_object(path);
+    const LhatTable *owner = m->modules;
+    LhatValue there = lhat_nil();
+    for (const char *segment = name->text; owner != NULL;) {
+        size_t length = strcspn(segment, ".");
+        there = lhat_table_get_bytes(owner, segment, length);
+        if (segment[length] == '\0') {
+            break;
+        }
+        owner = vm_table_of(there);
+        segment += length + 1;
+    }
+    // A unit seals its table as it registers (SEAL); a table the units
+    // named under it made on the way has not been, and the unit has not run.
+    const LhatTable *table = owner != NULL ? vm_table_of(there) : NULL;
+    return table != NULL && table->sealed ? there : lhat_nil();
+}
+
+LhatRunStatus vm_register_unit(Machine *m, LhatTable *exports, LhatValue path,
+                               LhatValue *answer)
+{
+    if (!lhat_is_object_kind(path, LHAT_OBJECT_STRING) || m->modules == NULL) {
+        return LHAT_RUN_TYPE_ERROR;
+    }
+    const LhatString *name = (const LhatString *)lhat_as_object(path);
+    const char *segment = name->text;
+    size_t length = strcspn(segment, ".");
+    LhatTable *owner = m->modules;
+    // The segments on the way are made where nothing stands, and entered
+    // where a unit's table stands: a unit named under another is one of its
+    // members. That table is sealed against L^; this is the machine.
+    while (segment[length] == '.') {
+        owner = reach_segment(m, owner, segment, length);
+        if (owner == NULL) {
+            return LHAT_RUN_SEALED;
+        }
+        segment += length + 1;
+        length = strcspn(segment, ".");
+    }
+
+    // Units named under this one that came first made its table, to stand
+    // in. It is this unit's table: what it published goes in beside them and
+    // it is sealed, which is what says the unit has run.
+    LhatTable *made = vm_table_of(lhat_table_get_bytes(owner, segment, length));
+    if (made != NULL && !made->sealed) {
+        LhatWalkCursor walk;
+        memset(&walk, 0, sizeof walk);
+        walk.walking = exports;
+        LhatValue key;
+        LhatValue value;
+        while (lhat_table_walk(&walk, &key, &value)) {
+            // A unit under this one already holds the name: the program
+            // reports the clash, and the unit stays where it is.
+            bool refused = false;
+            if (lhat_is_nil(lhat_table_get(made, key)) &&
+                (!vm_set_key(m, made, key, value, &refused) || refused)) {
+                return LHAT_RUN_OUT_OF_MEMORY;
+            }
+        }
+        made->sealed = true;
+        *answer = lhat_object((LhatObject *)made);
+        return LHAT_RUN_OK;
+    }
+
+    LhatString *last = lhat_string_new(&m->objects, segment, length);
+    if (last == NULL) {
+        return LHAT_RUN_OUT_OF_MEMORY;
+    }
+    bool refused = false;
+    if (!vm_set_key(m, owner, lhat_object((LhatObject *)last),
+                    lhat_object((LhatObject *)exports), &refused)) {
+        return LHAT_RUN_OUT_OF_MEMORY;
+    }
+    *answer = lhat_object((LhatObject *)exports);
+    return refused ? LHAT_RUN_SEALED : LHAT_RUN_OK;
 }
 
 bool lhat_machine_make_hostdata(LhatMachine *machine, const LhatHostDataTag *tag,
@@ -503,6 +593,83 @@ static LhatTable *table_at(LhatTable *owner, const char *segment,
     return vm_table_of(lhat_table_get_bytes(owner, segment, length));
 }
 
+// The table the first `length` bytes of `module` name in the registry, made
+// nothing on the way; NULL where the path reaches none.
+static LhatTable *table_along(LhatTable *owner, const char *module,
+                              size_t length)
+{
+    for (size_t at = 0; owner != NULL && at < length;) {
+        size_t step = strcspn(module + at, ".");
+        if (at + step > length) {
+            step = length - at;
+        }
+        owner = table_at(owner, module + at, step);
+        at += step + 1;
+    }
+    return owner;
+}
+
+// 05 の 5.7: after `module` was forgotten, the segments above it that stand
+// empty were made only to reach what is gone. Each goes, from the nearest up,
+// until one still holds something -- or is a unit's own table, which stays
+// for as long as the unit is registered, empty or not.
+static void remove_empty_segments(Machine *m, const char *module)
+{
+    size_t end = strlen(module);
+    for (;;) {
+        while (end > 0 && module[end - 1] != '.') {
+            end--;
+        }
+        if (end == 0) {
+            return;  // L^.modules itself stays
+        }
+        size_t segment_end = end - 1;  // the segment ends before the dot
+        size_t start = segment_end;
+        while (start > 0 && module[start - 1] != '.') {
+            start--;
+        }
+        LhatTable *parent = table_along(m->modules, module,
+                                        start > 0 ? start - 1 : 0);
+        LhatTable *segment =
+            parent != NULL ? table_at(parent, module + start, segment_end - start)
+                           : NULL;
+        if (segment == NULL || segment->sealed || lhat_table_count(segment) != 0) {
+            return;
+        }
+        LhatString *key = lhat_string_new(&m->objects, module + start,
+                                          segment_end - start);
+        bool refused = false;
+        if (key == NULL ||
+            !vm_set_key(m, parent, lhat_object((LhatObject *)key), lhat_nil(),
+                        &refused) ||
+            refused) {
+            return;
+        }
+        end = start;
+    }
+}
+
+// 05 の 5.7: whether `module` is what a unit of the machine's program named
+// itself -- the one thing there is to forget. A name a unit published can
+// hold a table sealed the way a unit's is (another unit's, published again),
+// so the value alone cannot say; the program's module names can, and they
+// outlive the invalidation a forget follows. A machine holding no program
+// has only the value to go by.
+static bool names_a_unit(const LhatMachine *machine, const char *module)
+{
+    if (machine->program == NULL) {
+        return true;
+    }
+    for (const LhatUnit *unit = lhat_program_units(machine->program);
+         unit != NULL; unit = lhat_unit_next(unit)) {
+        const char *named = lhat_unit_module_name(unit);
+        if (named != NULL && strcmp(named, module) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
 {
     if (machine == NULL || machine->environment == NULL || module == NULL ||
@@ -528,18 +695,78 @@ bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
         length = strcspn(segment, ".");
     }
 
-    if (lhat_is_nil(lhat_table_get_bytes(owner, segment, length))) {
-        return false;  // nothing stood there
+    // A unit's table stands there only where the unit has run, and it is
+    // sealed (vm_registered_unit). Anything else -- nothing, a table the
+    // units named under it made, a value some unit published -- is not one.
+    LhatValue there = lhat_table_get_bytes(owner, segment, length);
+    const LhatTable *forgotten = vm_table_of(there);
+    if (forgotten == NULL || !forgotten->sealed ||
+        !names_a_unit(machine, module)) {
+        return false;
     }
     LhatString *last = lhat_string_new(&machine->objects, segment, length);
     if (last == NULL) {
         return false;
     }
     LhatValue key = lhat_object((LhatObject *)last);
+
+    // 5.3: the unit's table holds what it published and the units named
+    // under it. What it published goes -- and with it, once nothing else
+    // reaches them, what it kept to itself. The units under it are units of
+    // their own and stay, in a table of their own that this unit takes again
+    // when it registers next. Which members those are is the program's to
+    // say -- a unit may publish another's table, so a value does not -- and
+    // its module names outlive the invalidation this follows, where what it
+    // published does not. The forgotten table is left as it was: code still
+    // running may hold it.
+    LhatValue replacement = lhat_nil();
+    size_t prefix = strlen(module);
+    for (const LhatUnit *unit = machine->program != NULL
+                                    ? lhat_program_units(machine->program)
+                                    : NULL;
+         forgotten != NULL && unit != NULL; unit = lhat_unit_next(unit)) {
+        const char *under = lhat_unit_module_name(unit);
+        if (under == NULL || strncmp(under, module, prefix) != 0 ||
+            under[prefix] != '.') {
+            continue;
+        }
+        const char *name = under + prefix + 1;
+        size_t name_length = strcspn(name, ".");
+        LhatValue held = lhat_table_get_bytes(forgotten, name, name_length);
+        LhatTable *kept = vm_table_of(replacement);
+        if (lhat_is_nil(held) ||
+            (kept != NULL &&
+             !lhat_is_nil(lhat_table_get_bytes(kept, name, name_length)))) {
+            continue;
+        }
+        if (kept == NULL) {
+            kept = lhat_table_new(&machine->objects);
+            if (kept == NULL) {
+                return false;
+            }
+            replacement = lhat_object((LhatObject *)kept);
+        }
+        LhatString *member = lhat_string_new(&machine->objects, name, name_length);
+        bool refused = false;
+        if (member == NULL ||
+            !vm_set_key(machine, kept, lhat_object((LhatObject *)member), held,
+                        &refused) ||
+            refused) {
+            return false;
+        }
+    }
+
     // 04 の 11.3 spells "not there" nil^, which is exactly what 5.3's guard
-    // tests -- so storing nil^ is the whole of forgetting.
+    // tests -- so storing nil^, or a table that is not sealed, is the whole
+    // of forgetting.
     bool refused = false;
-    return vm_set_key(machine, owner, key, lhat_nil(), &refused) && !refused;
+    if (!vm_set_key(machine, owner, key, replacement, &refused) || refused) {
+        return false;
+    }
+    if (lhat_is_nil(replacement)) {
+        remove_empty_segments(machine, module);
+    }
+    return true;
 }
 
 // 05 の 8.7 の読み: the path walked without making anything. reach_table

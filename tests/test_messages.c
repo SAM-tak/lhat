@@ -92,7 +92,7 @@ static const Table TABLES[] = {
     {"lex", LHAT_ERR_INTERPOLATION_TOO_DEEP + 1, lex_id, lex_message,
      "unknown error"},
     {"run", LHAT_RUN_SUSPENDED + 1, run_id, run_message, "unknown"},
-    {"program", LHAT_PROGRAM_ERR_NO_FRONTEND + 1, program_id, program_message,
+    {"program", LHAT_PROGRAM_ERR_MODULE_COLLIDES + 1, program_id, program_message,
      "unknown error"},
     {"compile", LHAT_COMPILE_OUT_OF_MEMORY + 1, compile_id, compile_message,
      "unknown"},

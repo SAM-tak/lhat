@@ -4989,10 +4989,51 @@ static const LhatUnit *check_held(LhatProgram *program, const char *path)
     return (unit != NULL && unit->loaded) ? unit : NULL;
 }
 
+#if LHAT_WITH_FRONTEND
+// 05 § 5.3: a unit named under another is a member of that unit's table in
+// L^.modules, beside what that unit published -- so the name it would stand
+// at may not be one the other publishes. Asked of the whole program, since no
+// one check need have read both units in.
+static void report_colliding_units(LhatProgram *program)
+{
+    for (const LhatUnit *child = program->units; child != NULL;
+         child = child->next) {
+        const char *name = child->module_name;
+        const char *dot = name != NULL ? strrchr(name, '.') : NULL;
+        if (dot == NULL) {
+            continue;
+        }
+        size_t prefix = (size_t)(dot - name);
+        for (const LhatUnit *parent = program->units; parent != NULL;
+             parent = parent->next) {
+            const char *above = parent->module_name;
+            if (above == NULL || strlen(above) != prefix ||
+                strncmp(above, name, prefix) != 0 ||
+                lhat_type_find_member(parent->checked.exports, dot + 1,
+                                      strlen(dot + 1)) == NULL) {
+                continue;
+            }
+            bool said = false;
+            for (size_t i = 0; i < program->diagnostic_count && !said; i++) {
+                said = program->diagnostics[i].code ==
+                           LHAT_PROGRAM_ERR_MODULE_COLLIDES &&
+                       strcmp(program->diagnostics[i].path, child->path) == 0;
+            }
+            if (!said) {
+                report(program, LHAT_PROGRAM_ERR_MODULE_COLLIDES, child->path);
+            }
+        }
+    }
+}
+#endif
+
 const LhatUnit *lhat_program_check(LhatProgram *program, const char *path)
 {
     lhat_program_hold(program);
     const LhatUnit *unit = check_held(program, path);
+#if LHAT_WITH_FRONTEND
+    report_colliding_units(program);
+#endif
     lhat_program_release(program);
     return unit;
 }
@@ -5036,6 +5077,9 @@ static const LhatMessageEntry PROGRAM_MESSAGES[] = {
     [LHAT_PROGRAM_ERR_MIXED] = {"program.mixed",
         "a program is text or binary throughout; this unit is "
         "the other kind"},
+    [LHAT_PROGRAM_ERR_MODULE_COLLIDES] = {"program.module-collides",
+        "this unit is named under another unit, which already publishes "
+        "the name it would stand at"},
     [LHAT_PROGRAM_ERR_NO_SIGNATURE] = {"program.no-signature",
         "this build has no front end to read a signature with, "
         "and the signature table does not hold this one"},

@@ -814,6 +814,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         VM_LABEL(LHAT_BC_CHECKSTEP),
         VM_LABEL(LHAT_BC_GETMETHOD),
         VM_LABEL(LHAT_BC_ITERPREP),
+        VM_LABEL(LHAT_BC_REGISTERED),
     };
 #endif
 
@@ -1388,6 +1389,20 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
                 table->sealed = true;
+                if (cc != 0) {
+                    LhatValue answer = R(a);
+                    LhatRunStatus status =
+                        vm_register_unit(m, table, R(b), &answer);
+                    if (status != LHAT_RUN_OK) {
+                        return vm_finish(m, chunk, status, lhat_nil(), at);
+                    }
+                    SET_R(a, answer);
+                }
+                VM_NEXT();
+            }
+
+            VM_CASE(LHAT_BC_REGISTERED) {
+                SET_R(a, vm_registered_unit(m, R(b)));
                 VM_NEXT();
             }
 

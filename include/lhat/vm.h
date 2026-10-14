@@ -371,9 +371,15 @@ bool lhat_machine_register(LhatMachine *machine, const char *module,
 // nothing) and cannot do it for you.
 //
 // `module` is the dotted path the unit declared with module^, which
-// lhat_unit_module_name answers with. The tables above it stay -- other
-// modules live under them. False when nothing stood there, which is also
-// what a script (3.2) answers, since one registers nothing.
+// lhat_unit_module_name answers with. What the unit published goes; the units
+// named under it stay, in a table of their own put in its place (the table
+// taken away is left as it was, for code that still holds it). Which members
+// are units is read off the program the machine holds
+// (lhat_machine_hold_program). The segments above that are left empty go too,
+// up to L^.modules. False when nothing stood there, which is also what a
+// script (3.2) answers, since one registers nothing -- and false, with
+// nothing done, for a path that names no unit, a name some unit published
+// among them: what a unit published goes with the unit or not at all.
 bool lhat_machine_forget_unit(LhatMachine *machine, const char *module);
 
 // 05 の 8.6: a member of L^ itself. Writes through the machine rather than
