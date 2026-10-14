@@ -922,6 +922,15 @@ static void say_traceback(LhatMachine *machine)
     free(text);
 }
 
+// 04 § 11.6+: the unit a fault stopped in, which the line ran.line names is
+// a line of -- not the one that was run, when a unit it required stopped.
+// NULL where no frame was kept or the frame has no source (a prompt's input).
+static const char *stopped_in(const LhatMachine *machine)
+{
+    LhatFrameInfo frame;
+    return lhat_machine_fault_frame(machine, 0, &frame) ? frame.source : NULL;
+}
+
 static void say_run_error(const LhatProgram *program, const char *path,
                           LhatRunResult ran)
 {
@@ -1504,7 +1513,8 @@ static int check_program(const char *path, bool run, bool strict,
             }
 #endif
             if (ran.status != LHAT_RUN_OK && !debugger_stopped) {
-                say_run_error(&program, path, ran);
+                const char *where = stopped_in(machine);
+                say_run_error(&program, where != NULL ? where : path, ran);
                 say_traceback(machine);
                 failed = true;
             } else if (ran.status == LHAT_RUN_OK && !lhat_is_nil(ran.value)) {
@@ -1800,7 +1810,7 @@ static int repl(bool strict)
         LhatRunResult ran = lhat_run(machine, in->proto);
         held++;
         if (ran.status != LHAT_RUN_OK) {
-            say_run_error(&program, NULL, ran);
+            say_run_error(&program, stopped_in(machine), ran);
             say_traceback(machine);
             continue;
         }
