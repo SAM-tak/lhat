@@ -4849,6 +4849,30 @@ static const File NESTED[] = {
     {"leaf_only.lh",
      "let^l = require^\"leaf.lh\"\n"
      "return^ l.bump()\n"},
+    // 05 § 5.5: the same units required standing alone, in either order.
+    {"short_ab.lh",
+     "require^ \"a.lh\"\n"
+     "require^ \"b.lh\"\n"
+     "return^ game.first() * 10 + game.b.bump()\n"},
+    {"short_ba.lh",
+     "require^ \"b.lh\"\n"
+     "require^ \"a.lh\"\n"
+     "return^ game.first() * 10 + game.b.bump()\n"},
+    {"short_clash.lh",
+     "let^ game = 1\n"
+     "require^ \"a.lh\"\n"},
+    // A unit counting its own calls, so a run of it is told from another.
+    {"counter.lh",
+     "module^ctr\n"
+     "var^calls = 0\n"
+     "public^let^tick = p^ -> number^ {\n"
+     "    calls += 1\n"
+     "    return^calls\n"
+     "}\n"},
+    {"live.lh",
+     "require^ \"counter.lh\"\n"
+     "let^ read = p^ -> number^ { return^ ctr.tick() }\n"
+     "return^ read\n"},
     // A unit that publishes another unit's table under a name of its own.
     {"shelf.lh",
      "module^shelf\n"
@@ -5056,6 +5080,53 @@ static void test_nested_units(void)
         LHAT_CHECK(lhat_machine_forget_unit(machine, "deep.x.y"), "forgotten");
         LHAT_CHECK(!lhat_machine_registered(machine, "deep", NULL, "x", &left),
                    "and gone with it");
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_dispose(&program);
+
+    // 05 § 5.5: a require^ standing alone binds its root to the registry's
+    // table, which holds game's names and b alike.
+    LHAT_TEST("the short form takes a unit and one under it, either order");
+    LHAT_CHECK_EQ_INT(nested_answer(&program, &disk, "short_ab.lh"), 12);
+    lhat_program_dispose(&program);
+    LHAT_CHECK_EQ_INT(nested_answer(&program, &disk, "short_ba.lh"), 12);
+    lhat_program_dispose(&program);
+
+    LHAT_TEST("and its root is no name of another kind already standing");
+    {
+        program_with(&program, &disk, NESTED, sizeof NESTED / sizeof NESTED[0]);
+        const LhatUnit *root = lhat_program_check(&program, "short_clash.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_REDEFINED), "refused");
+        lhat_program_dispose(&program);
+    }
+
+    // The root is a live name, as an import^'s is: a body that reads it reads
+    // L^.modules each time. Between a forget and the run that registers the
+    // unit again it reaches nothing, and the run stops there rather than
+    // reading the old table; after it, it reaches the new one.
+    LHAT_TEST("the short form's root is read live from a body elsewhere");
+    {
+        LhatMachine *machine = NULL;
+        LhatRunResult ran = run_nested(&program, &disk, "live.lh", &machine);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_REQUIRE(machine != NULL, "the machine is there");
+        LhatValue read = ran.value;
+        LhatRunResult called = lhat_machine_call(machine, read, NULL, 0);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(called.value), 1);
+        called = lhat_machine_call(machine, read, NULL, 0);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(called.value), 2);
+
+        LHAT_CHECK(lhat_machine_forget_unit(machine, "ctr"), "forgotten");
+        called = lhat_machine_call(machine, read, NULL, 0);
+        LHAT_CHECK(called.status != LHAT_RUN_OK,
+                   "nothing is there until the unit is required again");
+
+        ran = lhat_run(machine,
+                       lhat_unit_proto(lhat_program_check(&program, "live.lh")));
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        called = lhat_machine_call(machine, read, NULL, 0);
+        LHAT_CHECK_EQ_INT(called.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(called.value), 1);
         lhat_machine_dispose(machine);
     }
     lhat_program_dispose(&program);
@@ -6099,7 +6170,10 @@ static void test_module_binding_identity(void)
     }
     lhat_program_dispose(&program);
 
-    LHAT_TEST("require on an import namespace switches subsequent reads to the lexical binding");
+    // 05 § 5.5: a require^ standing alone names the registry's table, as an
+    // import^ does, so a body elsewhere reads the root from L^.modules either
+    // way -- nothing is captured.
+    LHAT_TEST("require on an import namespace keeps reads of the root live");
     static const File mixed[] = {
         {"data.lh", "module^ lib.data\npublic^ let^ n = 42\n"},
         {"main.lh", "import^ lib.draw\nrequire^ \"data.lh\"\n"
@@ -6114,7 +6188,7 @@ static void test_module_binding_identity(void)
     if (compiled && root != NULL) {
         LHAT_CHECK_EQ_INT(root->proto->proto_count, 1);
         if (root->proto->proto_count == 1) {
-            LHAT_CHECK_EQ_INT(root->proto->protos[0]->upvalue_count, 1);
+            LHAT_CHECK_EQ_INT(root->proto->protos[0]->upvalue_count, 0);
         }
         LhatMachine *machine = lhat_machine_new();
         lhat_program_install(&program, machine);

@@ -754,8 +754,6 @@ static void compile_for_once(Compiler *c, const LhatNode *node, uint8_t into,
                              bool as_expression);
 static bool def_chain_of(Compiler *c, const LhatNode *node, DefChain *out);
 static void compile_def(Compiler *c, const LhatNode *node, uint8_t into);
-static void compile_bind_path(Compiler *c, const LhatNode *node,
-                               const char *path, uint8_t value);
 static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node);
 static const LhatNode *template_of(const LhatNode *def);
 
@@ -6035,19 +6033,24 @@ static void compile_statement(Compiler *c, const LhatNode *node)
             return;
         }
 
-        // 05 の 5.5: bring the unit in, then put it where the path it
-        // declared says. 8.8 makes the tables on the way, here as there.
+        // 05 § 5.5: bring the unit in, which registers it -- then the root
+        // the path it declared stands on names the registry's table there,
+        // as an import^'s root does. Where the root is a name of a frame
+        // around this one, it is read from L^.modules wherever it is used,
+        // so there is nothing to put there.
         case LHAT_NODE_REQUIRE_STMT: {
-            const char *module_name = node->checked_module_root != NULL
-                                          ? node->checked_module_root->path : NULL;
-            if (module_name == NULL) {
+            const LhatModuleRoot *root = node->checked_module_root;
+            if (root == NULL) {
                 fail(c, LHAT_COMPILE_UNSUPPORTED);
                 return;
             }
             uint8_t mark = c->next_register;
             uint8_t slot = reserve(c);
             compile_expression(c, node, slot);
-            compile_bind_path(c, node, module_name, slot);
+            const Local *local = local_for_binding(c, root->declaration);
+            if (local != NULL) {
+                emit_modules_read(c, NULL, root->name, root->length, local->reg);
+            }
             c->next_register = mark;
             return;
         }
@@ -6327,62 +6330,6 @@ static void compile_import_path(Compiler *c, const LhatNode *path, uint8_t into,
         load_string_bytes(c, key, name, length);
     }
     emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
-}
-
-// Puts `value` where a dotted path says, making the tables on the way. 02 の
-// 8.8 is the written form of this; here the path is a string rather than a
-// tree, since it came from what the required unit declared.
-static void compile_bind_path(Compiler *c, const LhatNode *node,
-                               const char *path, uint8_t value)
-{
-    size_t length = strcspn(path, ".");
-    const LhatModuleRoot *binding = node->checked_module_root;
-    if (binding == NULL) {
-        fail(c, LHAT_COMPILE_UNDEFINED);
-        return;
-    }
-    const Local *root = local_for_binding(c, binding->declaration);
-    size_t upvalue = root == NULL
-        ? capture_binding(c, binding->declaration, binding->name, binding->length) : SIZE_MAX;
-    if (root == NULL && upvalue == SIZE_MAX) {
-        fail(c, LHAT_COMPILE_UNDEFINED);
-        return;
-    }
-    // One segment names the place itself, so there is nothing to reach into.
-    if (path[length] == '\0') {
-        if (root != NULL) emit(c, lhat_encode_abc(LHAT_BC_MOVE, root->reg, value, 0));
-        else emit(c, lhat_encode_abc(LHAT_BC_SETUPVAL, value, (uint8_t)upvalue, 0));
-        return;
-    }
-
-    uint8_t mark = c->next_register;
-    uint8_t owner = reserve(c);
-    uint8_t key = reserve(c);
-    if (root != NULL) {
-        ensure_table(c, root->reg);
-        emit(c, lhat_encode_abc(LHAT_BC_MOVE, owner, root->reg, 0));
-    } else {
-        emit(c, lhat_encode_abc(LHAT_BC_GETUPVAL, owner, (uint8_t)upvalue, 0));
-        ensure_table(c, owner);
-        emit(c, lhat_encode_abc(LHAT_BC_SETUPVAL, owner, (uint8_t)upvalue, 0));
-    }
-
-    const char *segment = path + length + 1;
-    length = strcspn(segment, ".");
-    while (segment[length] == '.') {
-        uint8_t next = reserve(c);
-        load_string_bytes(c, key, segment, length);
-        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, next, owner, key));
-        ensure_table_at(c, next, owner, key);
-        emit(c, lhat_encode_abc(LHAT_BC_MOVE, owner, next, 0));
-        c->next_register = next;
-        segment += length + 1;
-        length = strcspn(segment, ".");
-    }
-
-    load_string_bytes(c, key, segment, length);
-    emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, owner, key, value));
-    c->next_register = mark;
 }
 
 // 05 § 5.3: a unit answers what an earlier require^ of it registered, and

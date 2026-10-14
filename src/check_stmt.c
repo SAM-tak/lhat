@@ -1002,11 +1002,11 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
     lhat_type_add_member(c->result->types, owner, name, length, module);
 }
 
-// 05 の 5.5: a require^ standing alone binds the unit under the path 3 章
-// had it declare, rather than under a name the reader picks. The segments
-// come from that text, and 8.8's rules then hold one for one: a table is
-// made where the path does not reach one, and the last segment is a name
-// being introduced.
+// 05 § 5.5: a require^ standing alone binds the unit under the path 3 章
+// had it declare, rather than under a name the reader picks. What the root
+// names is the registry's table there -- the place 5.3 put the unit in, which
+// holds what it published and the units named under it -- so 8.8's merging
+// of two paths is the registry's own.
 static void record_required_root(Checker *c, const LhatNode *node,
                                   Binding *binding, const char *module)
 {
@@ -1046,88 +1046,81 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
     }
     chk_register_module_type(c, module_name, exports);
 
-    const char *segment = module_name;
-    size_t length = strcspn(segment, ".");
-
-    // One segment binds the unit to that name directly; there is no table on
-    // the way to make, and 8.7 refuses a name this scope already holds.
-    if (segment[length] == '\0') {
-        Binding *standing = chk_scope_find_local(c->scope, segment, length);
-        if (standing != NULL) {
-            if (standing->declaration == node) {
-                standing->type = exports;
-                standing->reached = true;
-                record_required_root(c, node, standing, module_name);
-            } else {
-                chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, segment, length);
-            }
-            return;
-        }
-        Binding *only =
-            chk_scope_add(c->scope, segment, length, exports, node->offset);
-        if (only != NULL) {
-            only->reached = true;
-            record_required_root(c, node, only, module_name);
-        }
+    // The registry's type down the path, the member at each step being this
+    // check's own -- the root's above all, a segment of its own from here on,
+    // since the root is bound to that one type and later registrations have
+    // to land in it.
+    LhatType *env = chk_environment_type(c);
+    const LhatTypeMember *modules =
+        env != NULL ? member_named(env, "modules", 7) : NULL;
+    if (modules == NULL || modules->type->kind != LHAT_TYPE_TABLE) {
         return;
     }
+    const char *segment = module_name;
+    size_t length = strcspn(segment, ".");
+    LhatTypeMember *at =
+        (LhatTypeMember *)member_named(modules->type, segment, length);
+    if (at == NULL || at->type->kind != LHAT_TYPE_TABLE) {
+        return;
+    }
+    if (!at->type->v.table.registry_segment) {
+        LhatType *made = lhat_type_table(c->result->types);
+        if (made == NULL) {
+            return;
+        }
+        made->v.table.sealed = true;
+        made->v.table.is_namespace = true;
+        made->v.table.is_module = true;
+        made->v.table.registry_segment = true;
+        made->v.table.base = at->type;
+        at->type = made;
+    }
+    LhatType *registry = at->type;
+    for (const char *step = segment; at != NULL && step[length] == '.';) {
+        step += length + 1;
+        length = strcspn(step, ".");
+        const LhatType *owner = at->type;
+        at = (LhatTypeMember *)member_named(owner, step, length);
+    }
 
-    // The root of a longer path. 8.8 reaches an enclosing binding rather than
-    // shadowing it, which is what lets two units of one namespace meet. The
-    // name points into the required unit's result, and 6 章 keeps that alive
-    // as long as the program is.
-    Binding *root = chk_scope_find(c->scope, segment, length, NULL);
+    // 8.7 on the last segment: the writer's own duplicate -- one unit twice,
+    // or two units claiming one path -- is what 5.5 refuses. Told apart by
+    // the statement that claimed it, so a later walk of the same statement
+    // (03 § 3.4+2) is not one.
+    if (at != NULL) {
+        if (at->require_declaration != NULL && at->require_declaration != node) {
+            chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, segment, length);
+            return;
+        }
+        at->require_declaration = node;
+    }
+
+    // The root. A root an earlier require^ or import^ bound -- here or in a
+    // scope around this one -- is the same name for the same place, and is
+    // taken up; any other name of that spelling in this scope is 8.7's clash.
+    length = strcspn(module_name, ".");
+    Binding *root = chk_scope_find_local(c->scope, module_name, length);
     if (root == NULL) {
-        root = chk_scope_add(c->scope, segment, length,
-                             chk_module_root_table(c), node->offset);
+        Binding *outer = chk_scope_find(c->scope, module_name, length, NULL);
+        root = outer != NULL && outer->import_root ? outer : NULL;
+    }
+    if (root != NULL && !root->import_root) {
+        chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, module_name, length);
+        return;
+    }
+    if (root == NULL) {
+        root = chk_scope_add(c->scope, module_name, length, registry,
+                             node->offset);
         if (root == NULL) {
             return;
         }
-        root->reached = true;
-    } else if (root->type == NULL || root->type->kind == LHAT_TYPE_UNKNOWN ||
-               root->type->kind == LHAT_TYPE_PENDING) {
-        root->type = chk_module_root_table(c);
     }
-    // 05 の 8.7: what this puts under the root was made by running a unit and
-    // is in no registry to read back, so the root is captured like any other
-    // name from here on -- even if an import^ also landed on it.
-    root->import_root = false;
+    root->type = registry;
     root->reached = true;
+    // 05 § 8.7: the registry's table, so read rather than captured from
+    // bodies elsewhere -- the same live name an import^'s root is.
+    root->import_root = true;
     record_required_root(c, node, root, module_name);
-
-    LhatType *owner = holds_members(c, node, root->type);
-    while (owner != NULL && segment[length] == '.') {
-        segment += length + 1;
-        length = strcspn(segment, ".");
-
-        const LhatTypeMember *found = member_named(owner, segment, length);
-        if (segment[length] == '\0') {
-            // 8.7 on the last segment: two units may not claim one path.
-            if (found != NULL) {
-                if (found->require_declaration == node) {
-                    ((LhatTypeMember *)found)->type = exports;
-                } else {
-                    chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, segment, length);
-                }
-                return;
-            }
-            LhatTypeMember *member = lhat_type_add_member(
-                c->result->types, owner, segment, length, exports);
-            if (member != NULL) member->require_declaration = node;
-            return;
-        }
-        if (found != NULL) {
-            owner = holds_members(c, node, found->type);
-            continue;
-        }
-        LhatType *made = lhat_type_table(c->result->types);
-        if (made == NULL || lhat_type_add_member(c->result->types, owner,
-                                                 segment, length,
-                                                 made) == NULL) {
-            return;
-        }
-        owner = made;
-    }
 }
 
 // 15.1改: whether this initialiser makes a table rather than naming one that
