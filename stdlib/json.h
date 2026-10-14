@@ -1,9 +1,15 @@
 // L^ (lhat) -- sample standard library: std.json.
 //
-// Two calls, and a mechanical rule between them.
+// Three calls, and a mechanical rule between them.
 //
 //   std.json.encode : f^t^{} -> string^|std.json.JsonError|std.error.OutOfMemory;
+//   std.json.pretty : f^t^{}, number^ -> string^|std.json.JsonError|std.error.OutOfMemory;
 //   std.json.decode : f^string^ -> t^{}|std.json.JsonError|std.error.OutOfMemory;
+//
+// pretty writes what encode writes, laid out for a reader: a member to a
+// line, the given number of spaces a level (a whole number from 0 to 16,
+// Unsupported otherwise), and a space after each colon. An empty object
+// stays `{}`. Decoding either text answers the same table.
 //
 // 14 章 gives L^ one table that serves as both a sequence and a mapping,
 // and JSON has two shapes for that, so a rule has to say which. It is read

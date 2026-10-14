@@ -129,6 +129,8 @@ typedef struct {
     size_t capacity;
     const LhatErrorKind *failed;
     const char *why;
+    bool pretty;    // a member to a line, as std.json.pretty writes
+    size_t indent;  // spaces a level, when pretty
 } Writer;
 
 static void refuse(Writer *w, const LhatErrorKind *kind, const char *why)
@@ -164,6 +166,24 @@ static bool put(Writer *w, const char *bytes, size_t length)
 static bool put_text(Writer *w, const char *text)
 {
     return put(w, text, strlen(text));
+}
+
+// Where a member starts or a table closes: nothing in the compact text, a
+// fresh line indented `depth` levels in the pretty one.
+static bool put_break(Writer *w, size_t depth)
+{
+    if (!w->pretty) {
+        return true;
+    }
+    if (!put(w, "\n", 1)) {
+        return false;
+    }
+    for (size_t i = 0; i < depth * w->indent; i++) {
+        if (!put(w, " ", 1)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // 14.18: a JSON string is text, so the bytes have to be UTF-8. What must be
@@ -322,7 +342,7 @@ static bool write_table(Writer *w, const JsonModule *m, const LhatTable *table,
             return false;
         }
         for (size_t i = 0; i < table->array_count; i++) {
-            if (i > 0 && !put(w, ",", 1)) {
+            if ((i > 0 && !put(w, ",", 1)) || !put_break(w, depth + 1)) {
                 return false;
             }
             if (!write_value(w, m, lhat_slots_get(table->array, i),
@@ -330,7 +350,7 @@ static bool write_table(Writer *w, const JsonModule *m, const LhatTable *table,
                 return false;
             }
         }
-        return put(w, "]", 1);
+        return put_break(w, depth) && put(w, "]", 1);
     }
 
     // 02 の 14.16 answered this question once already, for the same reason:
@@ -367,15 +387,17 @@ static bool write_table(Writer *w, const JsonModule *m, const LhatTable *table,
 
     bool ok = put(w, "{", 1);
     for (size_t i = 0; ok && i < filled; i++) {
-        if (i > 0 && !put(w, ",", 1)) {
+        if ((i > 0 && !put(w, ",", 1)) || !put_break(w, depth + 1)) {
             ok = false;
             break;
         }
-        ok = write_key(w, m, members[i].key) && put(w, ":", 1) &&
+        ok = write_key(w, m, members[i].key) &&
+             put(w, ": ", w->pretty ? 2 : 1) &&
              write_value(w, m, members[i].value, depth + 1);
     }
     lhat_free(members);
-    return ok && put(w, "}", 1);
+    // An empty object stays `{}` either way: it has no member to put a line to.
+    return ok && (filled == 0 || put_break(w, depth)) && put(w, "}", 1);
 }
 
 static bool write_value(Writer *w, const JsonModule *m, LhatValue value,
@@ -408,17 +430,11 @@ static bool write_value(Writer *w, const JsonModule *m, LhatValue value,
     return false;
 }
 
-static void json_encode(LhatMachine *machine, void *context,
-                        const LhatValue *arguments, size_t count,
-                        LhatValue *answers, int *answer_count)
+static LhatValue encode_with(LhatMachine *machine, const JsonModule *m,
+                             LhatValue value, Writer w)
 {
-    (void)count;
-    const JsonModule *m = (const JsonModule *)context;
-    Writer w;
-    memset(&w, 0, sizeof w);
-
     LhatValue answer;
-    if (write_value(&w, m, arguments[0], 0)) {
+    if (write_value(&w, m, value, 0)) {
         if (!lhat_machine_make_string(machine, w.text, w.length, &answer)) {
             answer = fail_with(machine, m->out_of_memory, "out of memory");
         }
@@ -428,8 +444,44 @@ static void json_encode(LhatMachine *machine, void *context,
         answer = fail_with(machine, m->out_of_memory, "out of memory");
     }
     lhat_free(w.text);
-    answers[0] = answer;
+    return answer;
+}
+
+static void json_encode(LhatMachine *machine, void *context,
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
+{
+    (void)count;
+    Writer w;
+    memset(&w, 0, sizeof w);
+    answers[0] = encode_with(machine, (const JsonModule *)context, arguments[0], w);
     *answer_count = 1;
+}
+
+// The same text as encode, a member to a line and `indent` spaces a level.
+// The indent is a count of spaces, so a whole number from 0 to 16; 0 still
+// breaks the lines, which is what asking for a pretty text with no indent
+// means.
+static void json_pretty(LhatMachine *machine, void *context,
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
+{
+    (void)count;
+    const JsonModule *m = (const JsonModule *)context;
+    LhatReal indent = lhat_is_integer(arguments[1])
+                          ? (LhatReal)lhat_as_integer(arguments[1])
+                          : lhat_as_real(arguments[1]);
+    *answer_count = 1;
+    if (!(indent >= 0 && indent <= 16) || indent != floor(indent)) {
+        answers[0] = fail_with(machine, m->unsupported,
+                               "an indent that is not 0 to 16 spaces");
+        return;
+    }
+    Writer w;
+    memset(&w, 0, sizeof w);
+    w.pretty = true;
+    w.indent = (size_t)indent;
+    answers[0] = encode_with(machine, m, arguments[0], w);
 }
 
 // ---------------------------------------------------------------------------
@@ -918,6 +970,10 @@ bool lhatstdlib_json_register(LhatProgram *program)
                program, "std.json", "encode",
                "f^t^{} -> string^|std.json.JsonError|std.error.OutOfMemory;",
                json_encode, module) &&
+           lhat_register_func(
+               program, "std.json", "pretty",
+               "f^t^{}, number^ -> string^|std.json.JsonError|std.error.OutOfMemory;",
+               json_pretty, module) &&
            lhat_register_func(
                program, "std.json", "decode",
                "f^string^ -> t^{}|std.json.JsonError|std.error.OutOfMemory;",

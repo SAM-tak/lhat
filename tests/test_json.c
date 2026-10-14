@@ -136,6 +136,49 @@ static void test_writing(void)
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
     }
+
+    // json.h: pretty is encode's text laid out a member to a line.
+    LHAT_TEST("pretty writes a member to a line, indented a level each");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.json\n"
+            "return^ try^ std.json.pretty({ a := {1, 2}, b := {}, c := { d := \"x\" } }, 2)\n");
+        LHAT_CHECK_RAN_TEXT(ran,
+                            "{\n"
+                            "  \"a\": [\n"
+                            "    1,\n"
+                            "    2\n"
+                            "  ],\n"
+                            "  \"b\": {},\n"
+                            "  \"c\": {\n"
+                            "    \"d\": \"x\"\n"
+                            "  }\n"
+                            "}");
+        lhat_test_ran_dispose(&ran);
+
+        // 0 still breaks the lines; it only drops the indent.
+        ran = run_source("import^ std.json\n"
+                         "return^ try^ std.json.pretty({1, 2}, 0)\n");
+        LHAT_CHECK_RAN_TEXT(ran, "[\n1,\n2\n]");
+        lhat_test_ran_dispose(&ran);
+
+        // And reading it back answers what encode would have written.
+        ran = run_source(
+            "import^ std.json\n"
+            "let^ t = { a := {1, 2}, b := true^ }\n"
+            "let^ back = try^ std.json.decode(try^ std.json.pretty(t, 4))\n"
+            "return^ try^ std.json.encode(back)\n");
+        LHAT_CHECK_RAN_TEXT(ran, "{\"a\":[1,2],\"b\":true}");
+        lhat_test_ran_dispose(&ran);
+
+        ran = run_source(
+            "import^ std.json\n"
+            "let^ answered = std.json.pretty({}, 1.5)\n"
+            "if^ answered fits^ std.json.JsonError.Unsupported { return^ 1 }\n"
+            "return^ 0\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
 }
 
 static void test_reading(void)
