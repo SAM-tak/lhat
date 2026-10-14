@@ -4679,6 +4679,58 @@ static size_t fill_bodies(const LhatProto *proto, const LhatProto **out,
     return at;
 }
 
+// 5.7's question, asked outright: collect on every machine, then look for
+// anything still holding a retired body. Held anywhere -- or a cleanup still
+// waiting, whose run is code this walk cannot see into -- means the bodies
+// wait for the next pass, which is the safe side of every answer here.
+// Answers whether nothing retired is left waiting.
+static bool discard_unheld_held(LhatProgram *program,
+                                LhatMachine *const *machines,
+                                size_t machine_count)
+{
+    if (program->retired_count == 0) {
+        return true;
+    }
+    size_t bodies = 0;
+    for (size_t i = 0; i < program->retired_count; i++) {
+        bodies += count_bodies(program->retired[i]);
+    }
+    const LhatProto **flat =
+        (const LhatProto **)lhat_alloc(bodies * sizeof *flat);
+    if (flat == NULL) {
+        return false;  // no room to ask safely, so keep them
+    }
+    size_t at = 0;
+    for (size_t i = 0; i < program->retired_count; i++) {
+        at = fill_bodies(program->retired[i], flat, at);
+    }
+    bool held = false;
+    for (size_t i = 0; i < machine_count && !held; i++) {
+        lhat_machine_gc_collect(machines[i]);
+        held = lhat_machine_pending_disposals(machines[i]) > 0 ||
+               lhat_machine_holds_body(machines[i], flat, bodies);
+    }
+    lhat_free(flat);
+    if (held) {
+        return false;
+    }
+    discard_retired_held(program);
+    return true;
+}
+
+bool lhat_program_discard_unheld(LhatProgram *program,
+                                 LhatMachine *const *machines,
+                                 size_t machine_count)
+{
+    if (program == NULL) {
+        return true;
+    }
+    lhat_program_hold(program);
+    bool discarded = discard_unheld_held(program, machines, machine_count);
+    lhat_program_release(program);
+    return discarded;
+}
+
 static size_t reload_held(LhatProgram *program, const char *path,
                           LhatMachine *const *machines, size_t machine_count)
 {
@@ -4720,34 +4772,7 @@ static size_t reload_held(LhatProgram *program, const char *path,
         return retired;
     }
 
-    // 5.7's question, asked outright: collect on every machine, then look
-    // for anything still holding a retired body. Held anywhere -- or a
-    // cleanup still waiting, whose run is code this walk cannot see into --
-    // means the bodies wait for the next reload, which is the safe side of
-    // every answer here.
-    size_t bodies = 0;
-    for (size_t i = 0; i < program->retired_count; i++) {
-        bodies += count_bodies(program->retired[i]);
-    }
-    const LhatProto **flat =
-        (const LhatProto **)lhat_alloc(bodies * sizeof *flat);
-    if (flat == NULL) {
-        return retired;  // no room to ask safely, so keep them
-    }
-    size_t at = 0;
-    for (size_t i = 0; i < program->retired_count; i++) {
-        at = fill_bodies(program->retired[i], flat, at);
-    }
-    bool held = false;
-    for (size_t i = 0; i < machine_count && !held; i++) {
-        lhat_machine_gc_collect(machines[i]);
-        held = lhat_machine_pending_disposals(machines[i]) > 0 ||
-               lhat_machine_holds_body(machines[i], flat, bodies);
-    }
-    lhat_free(flat);
-    if (!held) {
-        discard_retired_held(program);
-    }
+    discard_unheld_held(program, machines, machine_count);
     return retired;
 }
 

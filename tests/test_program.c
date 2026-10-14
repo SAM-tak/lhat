@@ -5934,6 +5934,54 @@ static void test_reload_call(void)
         lhat_machine_dispose(two);
     }
     lhat_program_dispose(&program);
+
+    // 05 の 5.7 taken apart, the way lhatove takes it: the check while the
+    // old world still runs, touching no machine; the forget and the discard
+    // at a frame's end, the machines stopped. The discard asks rather than
+    // trusts, as lhat_reload's last step does.
+    LHAT_TEST("the discard is a step of its own, and still asks first");
+    {
+        live[0].text = "module^ ns.lib\n"
+                       "public^ let^ answer = f^ -> number^ { return^ 1 }\n";
+        program_with(&program, &disk, live, 2);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_compile(&program), "built");
+        LhatMachine *one = lhat_machine_new();
+        LhatValue old = lhat_run(one, lhat_unit_proto(root)).value;
+        LHAT_CHECK(lhat_machine_set_global(one, "Keep", old), "held");
+
+        live[0].text = "module^ ns.lib\n"
+                       "public^ let^ answer = f^ -> number^ { return^ 2 }\n";
+        LHAT_CHECK_EQ_INT(lhat_program_invalidate(&program, "lib.lh"), 2);
+        root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && !lhat_program_has_errors(&program) &&
+                       lhat_program_compile(&program),
+                   "rechecked and recompiled with the old world running");
+        LHAT_CHECK(!lhat_program_discard_unheld(&program, &one, 1),
+                   "L^.modules still holds the old unit");
+
+        LHAT_CHECK(lhat_machine_forget_unit(one, "ns.lib"), "forgotten");
+        LHAT_CHECK(!lhat_program_discard_unheld(&program, &one, 1),
+                   "and the host still holds an old closure");
+        LHAT_CHECK(lhat_program_retired_count(&program) > 0, "so they wait");
+        LHAT_CHECK_EQ_INT(
+            lhat_as_integer(lhat_machine_call(one, old, NULL, 0).value), 1);
+
+        LHAT_CHECK(lhat_machine_set_global(one, "Keep", lhat_nil()), "dropped");
+        LHAT_CHECK(lhat_program_discard_unheld(&program, &one, 1),
+                   "nothing holds them now");
+        LHAT_CHECK_EQ_INT(lhat_program_retired_count(&program), 0);
+        LHAT_CHECK(lhat_program_discard_unheld(&program, &one, 1),
+                   "and with nothing waiting there is nothing to keep");
+        LHAT_CHECK_EQ_INT(
+            lhat_as_integer(
+                lhat_machine_call(
+                    one, lhat_run(one, lhat_unit_proto(root)).value, NULL, 0)
+                    .value),
+            2);
+        lhat_machine_dispose(one);
+    }
+    lhat_program_dispose(&program);
 }
 
 static LhatInstantiationStatus instantiate_identity(

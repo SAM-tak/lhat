@@ -188,16 +188,26 @@ void lhat_program_discard_retired(LhatProgram *program);
 // How many are waiting, so a host can tell whether a pass is worth taking.
 size_t lhat_program_retired_count(const LhatProgram *program);
 
+// The same, asked rather than trusted: collects on each of `machines`, and
+// discards the retired bodies only when none of them still holds a closure or
+// a suspended coroutine of one (nested bodies included) and none has a cleanup
+// waiting -- the last step of lhat_reload, for a host that takes the others
+// at other times (checking inside a host function, say, and discarding at a
+// frame's end once the old world's workers have joined). A held body is kept
+// for the next pass. `machines` is every machine still standing that the
+// program was installed on, none of them running. Answers whether nothing
+// retired is left waiting.
+bool lhat_program_discard_unheld(LhatProgram *program,
+                                 LhatMachine *const *machines,
+                                 size_t machine_count);
+
 // 05 の 5.7, whole: the one call an editor's save becomes. Invalidates
 // `path`, forgets every retired unit's module on every machine handed in,
 // rechecks every retired unit (the requirers too -- a shell left staled
-// would be a NULL proto to whoever runs it) and recompiles -- and then,
-// instead of trusting anyone about
-// the old bodies, asks: after a collection on each machine, does any still
-// hold a closure or suspended coroutine of a retired body (nested ones
-// included), or a cleanup not yet run? Only when none does are the retired
-// bodies discarded. A held body is simply kept for the next reload -- the
-// same waiting a host that never discards pays, never worse.
+// would be a NULL proto to whoever runs it) and recompiles -- and then
+// lhat_program_discard_unheld: the retired bodies are discarded only when no
+// machine still holds one. A held body is simply kept for the next reload --
+// the same waiting a host that never discards pays, never worse.
 //
 // `machines` is every machine the program was installed on -- the program
 // keeps no list of its own (8.7 has registration done before anything
