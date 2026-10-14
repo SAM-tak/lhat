@@ -136,6 +136,43 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 15.16: save() answers costate^, which is what load() takes and
+    // nothing else.
+    LHAT_TEST("a coroutine carries save and load, over costate^");
+    check_text(&u,
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
+               "var^ s : costate^ = c.save()\n"
+               "c.load(s)\n"
+               "var^ k : bool^ = s fits^ costate^\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("load takes nothing but a costate^");
+    check_text(&u,
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ c = gen()\n"
+               "c.load(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 15.3改: save() only reads, so an f^ may ask it of a coroutine it was
+    // handed; load() changes what the next resume does, so it may not.
+    LHAT_TEST("an f^ may save one it was handed but not load it");
+    check_text(&u,
+               "var^ keep = f^ co:c^{ f^nil^ -> number^ -> nil^ } -> costate^ {\n"
+               "    return^ co.save()\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+    check_text(&u,
+               "var^ back = f^ co:c^{ f^nil^ -> number^ -> nil^ }, s:costate^ -> number^ {\n"
+               "    co.load(s)\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
+    unit_dispose(&u);
+
     LHAT_TEST("neither takes an argument");
     check_text(&u,
                "var^ gen = p^ { yield^ 1 }\n"

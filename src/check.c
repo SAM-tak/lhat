@@ -920,6 +920,9 @@ static LhatType *builtin_type(Checker *c, const char *name, size_t length)
     if (chk_name_is(name, length, "string^")) {
         return chk_simple(c, LHAT_TYPE_STRING);
     }
+    if (chk_name_is(name, length, "costate^")) {
+        return chk_simple(c, LHAT_TYPE_COSTATE);  // 15.16
+    }
     if (chk_name_is(name, length, "bool^")) {
         return chk_simple(c, LHAT_TYPE_BOOL);
     }
@@ -1226,6 +1229,7 @@ static bool names_a_type(const LhatType *bound)
         case LHAT_TYPE_NIL:
         case LHAT_TYPE_FUNC:
         case LHAT_TYPE_CORO:
+        case LHAT_TYPE_COSTATE:
             return false;
         default:
             return true;

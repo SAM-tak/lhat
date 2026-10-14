@@ -2201,7 +2201,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         native->kind != LHAT_NATIVE_RESUME &&
                         native->kind != LHAT_NATIVE_DISPOSE &&
                         native->kind != LHAT_NATIVE_DONE &&
-                        native->kind != LHAT_NATIVE_STARTED) {
+                        native->kind != LHAT_NATIVE_STARTED &&
+                        native->kind != LHAT_NATIVE_SAVE &&
+                        native->kind != LHAT_NATIVE_LOAD) {
                         LhatRunStatus status = vm_call_native(
                             m, native, rbase + a, rbase + first, b,
                             lhat_call_prepared(cc));
@@ -2231,6 +2233,23 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             native->kind == LHAT_NATIVE_DONE
                                 ? co->frame.state == LHAT_COROUTINE_DONE
                                 : co->frame.state != LHAT_COROUTINE_FRESH));
+                        VM_NEXT();
+                    }
+
+                    // 15.16: neither runs the body, so like the two above
+                    // they hold in every state but running.
+                    if (native->kind == LHAT_NATIVE_SAVE ||
+                        native->kind == LHAT_NATIVE_LOAD) {
+                        bool saving = native->kind == LHAT_NATIVE_SAVE;
+                        LhatValue saved = lhat_nil();
+                        LhatRunStatus status =
+                            b != (saving ? 0 : 1) ? LHAT_RUN_ARITY
+                            : saving ? vm_coroutine_save(m, co, &saved)
+                                     : vm_coroutine_load(m, co, sent);
+                        if (status != LHAT_RUN_OK) {
+                            return vm_finish(m, chunk, status, lhat_nil(), at);
+                        }
+                        SET_R(a, saved);
                         VM_NEXT();
                     }
 

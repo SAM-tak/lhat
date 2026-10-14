@@ -147,6 +147,25 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             return;
         }
 
+        // 02 § 15.16: everything a saved frame would hand back to its
+        // coroutine -- which has to outlive the save, or load() would write
+        // into one that was collected.
+        case LHAT_OBJECT_COSTATE: {
+            const LhatCostate *state = (const LhatCostate *)object;
+            for (size_t i = 0; i < state->count; i++) {
+                const LhatCostateEntry *entry = &state->entries[i];
+                reach(gray, (LhatObject *)entry->coroutine);
+                reach(gray, (LhatObject *)(void *)entry->frame.closure);
+                for (size_t r = 0; r < entry->frame.register_count; r++) {
+                    lhat_gc_reach(gray, lhat_slots_get(entry->frame.registers, r));
+                }
+                for (size_t c = 0; c < entry->capture_count; c++) {
+                    reach(gray, (LhatObject *)entry->captures[c].upvalue);
+                }
+            }
+            return;
+        }
+
         case LHAT_OBJECT_NATIVE:
             lhat_gc_reach(gray, ((const LhatNative *)object)->bound);
             return;

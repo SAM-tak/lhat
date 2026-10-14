@@ -1345,9 +1345,149 @@ static void test_multi_value_send(void)
     run_dispose(&r);
 }
 
+// 02 の 15.16: save() takes the frame out, load() puts it back. What is
+// pinned is the rollback: the body carries on from the saved place, with the
+// locals and the await^ chain it had there.
+static void test_save_load(void)
+{
+    Run r;
+
+    LHAT_TEST("load puts the body back where save found it");
+    run_text(&r,
+             "var^ log = { s := 0 }\n"
+             "var^ c = p^ {\n"
+             "  log.s := log.s * 10 + 1\n"
+             "  yield^\n"
+             "  log.s := log.s * 10 + 2\n"
+             "  yield^\n"
+             "  log.s := log.s * 10 + 3\n"
+             "  yield^\n"
+             "  log.s := log.s * 10 + 4\n"
+             "}()\n"
+             "c.start()\n"
+             "let^ s = c.save()\n"
+             "c.resume()\n"
+             "c.resume()\n"
+             "c.load(s)\n"
+             "c.resume()\n"
+             "return^ log.s\n");
+    CHECK_INTEGER(&r, 1232);
+    run_dispose(&r);
+
+    LHAT_TEST("the locals come back, and one state loads twice");
+    run_text(&r,
+             "var^ c = p^ {\n"
+             "  var^ n = 0\n"
+             "  repeat^ { n := n + 1 yield^ n }\n"
+             "}()\n"
+             "c.start()\n"
+             "let^ s = c.save()\n"
+             "c.resume()\n"
+             "c.load(s)\n"
+             "let^ a = c.resume()\n"
+             "c.resume()\n"
+             "c.load(s)\n"
+             "let^ b = c.resume()\n"
+             "return^ a * 10 + b\n");
+    CHECK_INTEGER(&r, 22);
+    run_dispose(&r);
+
+    LHAT_TEST("a fresh state makes it fresh again, a finished one lives again");
+    run_text(&r,
+             "var^ c = p^ { yield^ 1 return^ 2 }()\n"
+             "let^ fresh = c.save()\n"
+             "c.start()\n"
+             "let^ suspended = c.save()\n"
+             "c.resume()\n"
+             "let^ done = c.done()\n"
+             "c.load(suspended)\n"
+             "let^ back = c.resume()\n"
+             "c.load(fresh)\n"
+             "if^ done and^ !c.started() { return^ back * 10 + c.start() }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 21);
+    run_dispose(&r);
+
+    // 15.8: the inner one is part of where the outer one stood.
+    LHAT_TEST("the coroutine an await^ drives is put back with it");
+    run_text(&r,
+             "let^ inner = p^ {\n"
+             "  var^ n = 0\n"
+             "  repeat^ { n := n + 1 yield^ n }\n"
+             "}\n"
+             "var^ c = p^ { await^ inner() }()\n"
+             "c.start()\n"
+             "let^ s = c.save()\n"
+             "c.resume()\n"
+             "c.resume()\n"
+             "c.load(s)\n"
+             "return^ c.resume()\n");
+    CHECK_INTEGER(&r, 2);
+    run_dispose(&r);
+
+    // A capture made before the save shares the frame that comes back; one
+    // made after it keeps what it saw in the frame that was left.
+    LHAT_TEST("captures follow the frame they belong to");
+    run_text(&r,
+             "var^ early : f^ -> number^; = f^ { return^ 0 }\n"
+             "var^ late : f^ -> number^; = f^ { return^ 0 }\n"
+             "var^ c = p^ {\n"
+             "  var^ x = 1\n"
+             "  early := f^ { return^ x }\n"
+             "  yield^\n"
+             "  x := 2\n"
+             "  var^ y = 5\n"
+             "  late := f^ { return^ y }\n"
+             "  y := 6\n"
+             "  yield^\n"
+             "}()\n"
+             "c.start()\n"
+             "let^ s = c.save()\n"
+             "c.resume()\n"
+             "c.load(s)\n"
+             "return^ early() * 10 + late()\n");
+    CHECK_INTEGER(&r, 16);
+    run_dispose(&r);
+
+    // 10.7: the frame that was left owed a finally^; it goes unrun, as a
+    // fault leaves one.
+    LHAT_TEST("a finally^ the abandoned frame owed does not run");
+    run_text(&r,
+             "var^ log = { n := 0 }\n"
+             "var^ c = p^ {\n"
+             "  yield^ 0\n"
+             "  do^{\n"
+             "    yield^ 1\n"
+             "  finally^:\n"
+             "    log.n := log.n + 1\n"
+             "  }\n"
+             "}()\n"
+             "c.start()\n"
+             "let^ s = c.save()\n"
+             "c.resume()\n"
+             "c.load(s)\n"
+             "c.dispose()\n"
+             "return^ log.n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    LHAT_TEST("load refuses a state another coroutine saved");
+    run_text(&r,
+             "var^ gen = p^ { yield^ 1 }\n"
+             "var^ a = gen()\n"
+             "var^ b = gen()\n"
+             "a.start()\n"
+             "b.start()\n"
+             "b.load(a.save())\n"
+             "return^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_COSTATE);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_coroutines();
     test_multi_value_send();
+    test_save_load();
     return lhat_test_report("test_vm_coroutine");
 }

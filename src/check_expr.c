@@ -3009,9 +3009,9 @@ const char *const chk_builtin_words[] = {
     "enum", "eq", "extend", "find",
     "findall", "floor", "get", "indexof",
     "insert", "isinteger", "iterate", "join", "keys",
-    "len", "length", "message", "move",
+    "len", "length", "load", "message", "move",
     "pop", "push", "remove", "replace",
-    "resize", "resume", "reverse", "round", "self",
+    "resize", "resume", "reverse", "round", "save", "self",
     "set", "sign", "size", "slice",
     "sort", "split", "stablesort", "start",
     "started", "sub", "substr", "substring",
@@ -3329,7 +3329,8 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         if (advances && c->in_function &&
             (chk_name_is(name, length, "start") ||
              chk_name_is(name, length, "resume") ||
-             chk_name_is(name, length, "dispose")) &&
+             chk_name_is(name, length, "dispose") ||
+             chk_name_is(name, length, "load")) &&
             node != NULL &&
             !chk_receiver_is_own_coroutine(c, node->v.access.target)) {
             chk_report(c, node, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
@@ -3366,6 +3367,21 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         if (chk_name_is(name, length, "dispose")) {
             // 12.7: it answers nothing, which is what 12.5 checks for.
             return lhat_type_func(c->result->types, advances);
+        }
+        // 15.16: save() reads the frame out without running the body, so it
+        // is an f^ like done(). load() puts one back, which changes what the
+        // next resume does as much as a resume would -- so it takes the
+        // body's kind, the rule dispose() follows.
+        if (chk_name_is(name, length, "save")) {
+            LhatType *signature = lhat_type_func(c->result->types, true);
+            signature->v.func.result = chk_simple(c, LHAT_TYPE_COSTATE);
+            return signature;
+        }
+        if (chk_name_is(name, length, "load")) {
+            LhatType *signature = lhat_type_func(c->result->types, advances);
+            lhat_type_add_param(c->result->types, signature,
+                                chk_simple(c, LHAT_TYPE_COSTATE));
+            return signature;
         }
         if (builtin_named(name, length, "iterate", false)) {
             LhatType *signature = lhat_type_func(c->result->types, true);

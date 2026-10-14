@@ -1174,6 +1174,10 @@ static const LhatMessageEntry RUN_MESSAGES[] = {
         {"run.coroutine-not-started", "resume needs start() first"},
     [LHAT_RUN_COROUTINE_ALREADY_STARTED] = {"run.coroutine-already-started",
         "start() only works before the first resume"},
+    // 02 の 15.16
+    [LHAT_RUN_COSTATE] = {"run.costate",
+        "load() takes only what save() answered on this coroutine, and "
+        "neither works on a running one or a walk with no body"},
     // 04 の 11.6: a placeholder for a caller that only wants this
     // status's own name -- the actual message is what the program
     // panicked with, in LhatRunResult.value, which this cannot see.

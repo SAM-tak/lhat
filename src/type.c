@@ -2791,6 +2791,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         case LHAT_TYPE_BOOL:   put_text(sink, "bool^"); return;
         case LHAT_TYPE_NUMBER: put_text(sink, "number^"); return;
         case LHAT_TYPE_STRING: put_text(sink, "string^"); return;
+        case LHAT_TYPE_COSTATE: put_text(sink, "costate^"); return;
         // 04 の 2.7: two tops, so the writer has to say which (14.16 wants
         // what it writes to read back as the same type).
         case LHAT_TYPE_ERROR:

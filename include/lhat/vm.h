@@ -47,6 +47,9 @@ typedef enum {
                                          // been started
     LHAT_RUN_COROUTINE_ALREADY_STARTED, // 15.2: started one that already
                                          // has been
+    LHAT_RUN_COSTATE,         // 15.16: load() was handed another coroutine's
+                              // state, or save()/load() met a running one
+                              // or one with no body of its own
     LHAT_RUN_SEALED,          // 05 の 8.6: wrote into a table the
                               // machine owns -- L^, or what require^ answers
                               // with. check.c refuses the ones it can name;

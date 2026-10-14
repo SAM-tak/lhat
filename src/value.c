@@ -171,6 +171,7 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
         case LHAT_OBJECT_TABLE:      return "table";
         case LHAT_OBJECT_SUBROUTINE: return "subroutine";
         case LHAT_OBJECT_COROUTINE:  return "coroutine";
+        case LHAT_OBJECT_COSTATE:    return "costate";
         case LHAT_OBJECT_ERROR:      return "error";
         case LHAT_OBJECT_ERROR_KIND: return "error kind";
         case LHAT_OBJECT_ENUM:       return "enum";
@@ -453,6 +454,9 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
         }
         case LHAT_OBJECT_COROUTINE:
             put_text(w, "c^");
+            return;
+        case LHAT_OBJECT_COSTATE:
+            put_text(w, "costate^");
             return;
         case LHAT_OBJECT_ERROR: {
             // 04 の 2.3: a kind plus the fields the construction gave it.

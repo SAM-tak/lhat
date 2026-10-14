@@ -211,6 +211,9 @@ void vm_clear_scratch(Machine *m, size_t base, const LhatProto *proto);
 LhatCoroutine *vm_coroutine_new(Machine *m, const LhatClosure *closure,
                                 size_t registers);
 void vm_coroutine_spare(Machine *m, LhatCoroutine *co);
+// 02 の 15.16: save() and load().
+LhatRunStatus vm_coroutine_save(Machine *m, LhatCoroutine *co, LhatValue *out);
+LhatRunStatus vm_coroutine_load(Machine *m, LhatCoroutine *co, LhatValue saved);
 void vm_enter_disposal_frame(Machine *m, LhatCoroutine *co,
                                  size_t next_base, uint8_t result,
                                  Frame **frame, size_t *rbase,

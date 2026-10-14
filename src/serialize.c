@@ -32,7 +32,7 @@
 static const uint8_t MAGIC[4] = { 0x89, 'L', 'H', '^' };
 // 10.7: the signature table's, told apart from a unit's by the last byte.
 static const uint8_t TABLE_MAGIC[4] = { 0x89, 'L', 'H', 'S' };
-#define FORMAT_VERSION 8u
+#define FORMAT_VERSION 9u
 #define FLAG_DEBUG_NAMES 1u
 #define FLAG_STRICT 2u
 #define HEADER_BYTES 24u  // magic, format, flags, fingerprint, hash

@@ -150,6 +150,8 @@ static LhatRuntimeType *build_rt(RtBuild *build,
             return lhat_type_rt_new(heap, LHAT_TYPE_RT_NUMBER);
         case LHAT_TYPE_STRING:
             return lhat_type_rt_new(heap, LHAT_TYPE_RT_STRING);
+        case LHAT_TYPE_COSTATE:
+            return lhat_type_rt_new(heap, LHAT_TYPE_RT_COSTATE);
 
         // 05 の 8.9: identity is the tag, carried across whole.
         case LHAT_TYPE_HOSTVALUE: {

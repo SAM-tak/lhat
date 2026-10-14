@@ -370,6 +370,33 @@ typedef struct LhatCoroutine {
     bool owned;
 } LhatCoroutine;
 
+// 02 の 15.16: what save() answers -- the frame of the coroutine it was asked
+// of, and of each one an await^ in it was driving, innermost last. Only the
+// frames: the heap they point into is not copied, which is what lets load()
+// put a rollback's frames back without touching what the program keeps.
+//
+// `captures` are the upvalues that had a slot of the frame open at the save,
+// with which slot. load() makes the open list exactly these again, so a
+// closure made before the save and one made after both see the frame they
+// belong to.
+typedef struct LhatCostateCapture {
+    LhatUpvalue *upvalue;
+    size_t slot;
+} LhatCostateCapture;
+
+typedef struct LhatCostateEntry {
+    LhatCoroutine *coroutine;
+    LhatCoroutineFrame frame;  // its own runs, never a running frame's
+    LhatCostateCapture *captures;
+    size_t capture_count;
+} LhatCostateEntry;
+
+typedef struct LhatCostate {
+    LhatObject header;
+    LhatCostateEntry *entries;
+    size_t count;
+} LhatCostate;
+
 // 03 の 2.1 keeps a type tag on every value, which is what lets a written
 // type be asked about one while the program runs. Three decided features want
 // that: 02 の 13.11's is^, 03 の 3.3's relaxed checks, and 02 の 14.12's
@@ -384,6 +411,7 @@ typedef enum
     LHAT_TYPE_RT_TABLE,
     LHAT_TYPE_RT_SUBROUTINE,
     LHAT_TYPE_RT_COROUTINE,
+    LHAT_TYPE_RT_COSTATE,   // 02 の 15.16
     // 04 の 2.3 and 2.7: a whole family -- error^, or localerror^, which
     // `error_local` tells apart. The two are disjoint, so one of these
     // answers false for a value of the other.
@@ -535,6 +563,9 @@ typedef enum {
     // runs the body, so both answer whatever state the coroutine is in.
     LHAT_NATIVE_DONE,     // the body has run to its end
     LHAT_NATIVE_STARTED,  // start() has already run, so resume() is the way on
+    // 15.16: the frame taken out and put back. Neither runs the body.
+    LHAT_NATIVE_SAVE,
+    LHAT_NATIVE_LOAD,
     // 05 の 8.6: L^.gc itself, and what it carries. Reaching the collector by
     // hand is the one thing a program cannot arrange for itself. The members
     // are read off the one value as a coroutine's are, so a machine pays for
@@ -892,6 +923,14 @@ LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
 // wider ones cannot be had.
 bool lhat_coroutine_frame_init(LhatCoroutineFrame *frame,
                                const LhatClosure *closure, size_t registers);
+
+// Makes `into` the same frame as `from` -- registers, place, state and what
+// is left to clean up -- in runs of its own. False when they cannot be had.
+bool lhat_coroutine_frame_copy(LhatCoroutineFrame *into,
+                               const LhatCoroutineFrame *from);
+
+// 02 の 15.16: room for `count` frames, each still empty.
+LhatCostate *lhat_costate_new(LhatHeap *heap, size_t count);
 
 // 02 の 16.3: the coroutine a table answers with. It has no body; resuming it
 // reads the next key and value. 16.3改2: `part` says which half of that step

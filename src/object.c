@@ -222,6 +222,40 @@ bool lhat_coroutine_frame_init(LhatCoroutineFrame *frame,
     return true;
 }
 
+bool lhat_coroutine_frame_copy(LhatCoroutineFrame *into,
+                               const LhatCoroutineFrame *from)
+{
+    if (!lhat_coroutine_frame_init(into, from->closure, from->register_count)) {
+        return false;
+    }
+    for (size_t i = 0; i < from->register_count; i++) {
+        lhat_slots_set(into->registers, i, lhat_slots_get(from->registers, i));
+    }
+    into->state = from->state;
+    into->pc = from->pc;
+    into->sent_into = from->sent_into;
+    into->cleanup_count = from->cleanup_count;
+    memcpy(into->cleanups, from->cleanups, sizeof from->cleanups);
+    return true;
+}
+
+LhatCostate *lhat_costate_new(LhatHeap *heap, size_t count)
+{
+    LhatCostate *state = (LhatCostate *)lhat_object_alloc(
+        heap, sizeof(LhatCostate), LHAT_OBJECT_COSTATE);
+    if (state == NULL) {
+        return NULL;
+    }
+    // Zeroed entries are empty frames the collector walks as nothing, so
+    // one half-filled when memory ran out is still safe to sweep.
+    state->entries = (LhatCostateEntry *)lhat_calloc(count, sizeof *state->entries);
+    if (state->entries == NULL) {
+        return NULL;
+    }
+    state->count = count;
+    return state;
+}
+
 LhatCoroutine *lhat_table_iterator(LhatHeap *heap, const LhatTable *table,
                                    LhatWalkPart part)
 {
@@ -732,6 +766,8 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
             return lhat_is_number(value);
         case LHAT_TYPE_RT_STRING:
             return lhat_is_object_kind(value, LHAT_OBJECT_STRING);
+        case LHAT_TYPE_RT_COSTATE:
+            return lhat_is_object_kind(value, LHAT_OBJECT_COSTATE);
         case LHAT_TYPE_RT_TYPEINFO:
             return lhat_is_object_kind(value, LHAT_OBJECT_TYPE);
         case LHAT_TYPE_RT_TABLE: {
@@ -1145,6 +1181,9 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
         case LHAT_TYPE_RT_STRING:
             type_put_text(w, "string^");
             return;
+        case LHAT_TYPE_RT_COSTATE:
+            type_put_text(w, "costate^");
+            return;
         // 04 の 2.7: two tops, and 14.16 wants what it writes to read back.
         case LHAT_TYPE_RT_ERROR:
             type_put_text(w, type->error_local ? "localerror^" : "error^");
@@ -1395,6 +1434,7 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         case LHAT_TYPE_RT_BOOL:
         case LHAT_TYPE_RT_NUMBER:
         case LHAT_TYPE_RT_STRING:
+        case LHAT_TYPE_RT_COSTATE:
         // 03 の 3.4: two undecided places are the same undecided place. Not
         // equal to any^ though -- the kinds differ above, and NULL normalises
         // to any^ rather than to this, which keeps "nobody wrote one" apart
@@ -1725,6 +1765,16 @@ void lhat_object_free(LhatObject *object)
         lhat_free(((LhatCoroutine *)object)->frame.registers.values);
         lhat_free(((LhatCoroutine *)object)->frame.registers.tags);
         break;
+    case LHAT_OBJECT_COSTATE: {
+        LhatCostate *state = (LhatCostate *)object;
+        for (size_t i = 0; i < state->count; i++) {
+            lhat_free(state->entries[i].frame.registers.values);
+            lhat_free(state->entries[i].frame.registers.tags);
+            lhat_free(state->entries[i].captures);
+        }
+        lhat_free(state->entries);
+        break;
+    }
     case LHAT_OBJECT_TYPE:
         lhat_free(((LhatRuntimeType *)object)->parts);
         lhat_free(((LhatRuntimeType *)object)->members);

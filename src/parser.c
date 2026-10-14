@@ -2085,7 +2085,7 @@ static LhatNode *parse_primary(Parser *p)
                 return finish(p, node);
             }
             if ((check_hat(p, "number") && !is_op(&p->ahead, LHAT_OP_DOT)) || check_hat(p, "string") ||
-                check_hat(p, "bool") || check_hat(p, "any") || check_hat(p, "type") ||
+                check_hat(p, "costate") || check_hat(p, "bool") || check_hat(p, "any") || check_hat(p, "type") ||
                 (check_hat(p, "c") &&
                  !is_op(&p->ahead, LHAT_OP_LBRACE))) {
                 LhatToken head = p->current;

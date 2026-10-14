@@ -670,6 +670,160 @@ LhatCoroutine *vm_coroutine_new(Machine *m, const LhatClosure *closure,
     return lhat_coroutine_new(&m->objects, closure, registers);
 }
 
+// 02 の 15.16: the coroutine an await^ in this suspended body is driving, or
+// NULL. 15.8's loop is the one place a RESUME of no width is emitted
+// (compile.c), and it suspends on the YIELD four instructions after it -- so
+// a frame stopped just past such a YIELD is inside one, and the RESUME names
+// the register the inner coroutine is in.
+static LhatCoroutine *awaited_by(const LhatCoroutine *co)
+{
+    if (co->source != LHAT_COROUTINE_BODY ||
+        co->frame.state != LHAT_COROUTINE_SUSPENDED || co->frame.closure == NULL) {
+        return NULL;
+    }
+    const LhatChunk *chunk = &co->frame.closure->proto->chunk;
+    size_t pc = co->frame.pc;
+    if (pc < 5 || pc > chunk->count) {
+        return NULL;
+    }
+    LhatInstruction yield = chunk->code[pc - 1];
+    LhatInstruction resume = chunk->code[pc - 5];
+    if (lhat_op(yield) != LHAT_BC_YIELD || lhat_b(yield) != 0 ||
+        lhat_op(resume) != LHAT_BC_RESUME || lhat_c(resume) != 0 ||
+        lhat_b(resume) >= co->frame.register_count) {
+        return NULL;
+    }
+    LhatValue inner = lhat_slots_get(co->frame.registers, lhat_b(resume));
+    return lhat_is_object_kind(inner, LHAT_OBJECT_COROUTINE)
+               ? (LhatCoroutine *)lhat_as_object(inner)
+               : NULL;
+}
+
+// 02 の 15.16: a body's frame, and the frames of the await^ chain under it.
+// Only a body has a frame to keep -- a walk of a table or the host's has
+// state the machine does not own -- and a running one is on the stack, not
+// in the coroutine.
+LhatRunStatus vm_coroutine_save(Machine *m, LhatCoroutine *co, LhatValue *out)
+{
+    size_t count = 0;
+    for (const LhatCoroutine *at = co; at != NULL; at = awaited_by(at)) {
+        if (at->source != LHAT_COROUTINE_BODY ||
+            at->frame.state == LHAT_COROUTINE_RUNNING) {
+            return LHAT_RUN_COSTATE;
+        }
+        count++;
+    }
+    LhatCostate *state = lhat_costate_new(&m->objects, count);
+    if (state == NULL || state->entries == NULL) {
+        return LHAT_RUN_OUT_OF_MEMORY;
+    }
+    LhatCoroutine *at = co;
+    for (size_t i = 0; i < count; i++, at = awaited_by(at)) {
+        LhatCostateEntry *entry = &state->entries[i];
+        entry->coroutine = at;
+        if (!lhat_coroutine_frame_copy(&entry->frame, &at->frame)) {
+            return LHAT_RUN_OUT_OF_MEMORY;
+        }
+        size_t captures = 0;
+        for (const LhatUpvalue *up = at->open; up != NULL; up = up->next_open) {
+            captures++;
+        }
+        entry->captures = captures > 0 ? (LhatCostateCapture *)lhat_alloc(
+                                             captures * sizeof *entry->captures)
+                                       : NULL;
+        if (captures > 0 && entry->captures == NULL) {
+            return LHAT_RUN_OUT_OF_MEMORY;
+        }
+        // Kept in the open list's own order, ascending, so load() can hand
+        // them back without sorting.
+        for (LhatUpvalue *up = at->open; up != NULL; up = up->next_open) {
+            entry->captures[entry->capture_count].upvalue = up;
+            entry->captures[entry->capture_count].slot =
+                (size_t)(up->location.value - at->frame.registers.values);
+            entry->capture_count++;
+        }
+    }
+    *out = lhat_object((LhatObject *)state);
+    return LHAT_RUN_OK;
+}
+
+static bool captured_then(const LhatCostateEntry *entry, const LhatUpvalue *up)
+{
+    for (size_t i = 0; i < entry->capture_count; i++) {
+        if (entry->captures[i].upvalue == up) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 02 の 15.16: puts every frame `state` kept back into its own coroutine.
+// Only into the one it was saved from, and only while each still runs the
+// closure it ran then -- a for^ loop's coroutine given back to the spares and
+// made again for another body is not the one the frame belongs to.
+LhatRunStatus vm_coroutine_load(Machine *m, LhatCoroutine *co, LhatValue saved)
+{
+    if (!lhat_is_object_kind(saved, LHAT_OBJECT_COSTATE)) {
+        return LHAT_RUN_TYPE_ERROR;
+    }
+    const LhatCostate *state = (const LhatCostate *)lhat_as_object(saved);
+    if (state->count == 0 || state->entries[0].coroutine != co) {
+        return LHAT_RUN_COSTATE;
+    }
+    for (size_t i = 0; i < state->count; i++) {
+        const LhatCostateEntry *entry = &state->entries[i];
+        if (entry->coroutine->frame.closure != entry->frame.closure ||
+            entry->coroutine->frame.state == LHAT_COROUTINE_RUNNING) {
+            return LHAT_RUN_COSTATE;
+        }
+    }
+    for (size_t i = 0; i < state->count; i++) {
+        const LhatCostateEntry *entry = &state->entries[i];
+        LhatCoroutine *at = entry->coroutine;
+        // 10.7: the cleanups the abandoned frame still owed go with it,
+        // unrun -- the same as a fault leaves them.
+        if (at->frame.state == LHAT_COROUTINE_SUSPENDED &&
+            at->frame.cleanup_count > 0) {
+            m->cleanup_carriers--;
+        }
+        // A capture made after the save belongs to the frame being left, so
+        // it keeps what it saw there rather than sharing the one put back.
+        while (at->open != NULL) {
+            LhatUpvalue *up = at->open;
+            at->open = up->next_open;
+            up->next_open = NULL;
+            up->suspended_in = NULL;
+            if (!captured_then(entry, up)) {
+                close_into_cell(m, up);
+            }
+        }
+        if (!lhat_coroutine_frame_copy(&at->frame, &entry->frame)) {
+            at->frame.state = LHAT_COROUTINE_DONE;
+            return LHAT_RUN_OUT_OF_MEMORY;
+        }
+        for (size_t r = 0; r < at->frame.register_count; r++) {
+            lhat_gc_barrier_back(m, (LhatObject *)at,
+                                 lhat_slots_get(at->frame.registers, r));
+        }
+        // And one made before it shares the frame again, even where the
+        // abandoned frame had already closed it. Prepended from the top, so
+        // the list comes out ascending as reattach_upvalues expects.
+        for (size_t c = entry->capture_count; c-- > 0;) {
+            LhatUpvalue *up = entry->captures[c].upvalue;
+            up->location = lhat_slots_ref(at->frame.registers, entry->captures[c].slot);
+            up->suspended_in = at;
+            up->next_open = at->open;
+            at->open = up;
+            lhat_gc_barrier(m, (LhatObject *)up, lhat_object((LhatObject *)at));
+        }
+        if (at->frame.state == LHAT_COROUTINE_SUSPENDED &&
+            at->frame.cleanup_count > 0) {
+            m->cleanup_carriers++;
+        }
+    }
+    return LHAT_RUN_OK;
+}
+
 void vm_coroutine_spare(Machine *m, LhatCoroutine *co)
 {
     if (m->spare_count >= LHAT_SPARE_COROUTINES) {

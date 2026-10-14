@@ -49,6 +49,7 @@ typedef enum {
     LHAT_TYPE_BOOL,
     LHAT_TYPE_NUMBER,      // 14.8: one type over integers and reals
     LHAT_TYPE_STRING,
+    LHAT_TYPE_COSTATE,     // costate^: what a coroutine's save() answers (15.16)
 
     LHAT_TYPE_TABLE,       // t^{ ... }: at least these members (14.10)
     LHAT_TYPE_FUNC,        // f^ and p^ (15 章)
