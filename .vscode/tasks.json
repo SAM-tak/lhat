@@ -1,0 +1,29 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "JIT: ステンシルを更新",
+            "type": "shell",
+            "command": "python",
+            "args": ["scripts/gen_stencils.py"],
+            "windows": {
+                "command": "powershell.exe",
+                "args": [
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-File", "${workspaceFolder}/scripts/update-stencils.ps1"
+                ]
+            },
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        },
+        {
+            "label": "JIT: ステンシルが最新か確認",
+            "type": "shell",
+            "command": "python",
+            "args": ["scripts/gen_stencils.py", "--check"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        }
+    ]
+}
