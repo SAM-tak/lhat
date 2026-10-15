@@ -651,7 +651,10 @@ typedef enum {
     LHAT_NATIVE_MOVE,       // relocate one element, or copy a block
     LHAT_NATIVE_REVERSE,    // the sequence half, back to front
     LHAT_NATIVE_RESIZE,     // make the sequence a given length
-    LHAT_NATIVE_CLEAR       // empty the table, both halves
+    LHAT_NATIVE_CLEAR,      // empty the table, both halves
+    // 14.22: the one that reaches a def^ instance as well, so it stands past
+    // CLEAR -- outside the plain-table range -- and is let in on its own.
+    LHAT_NATIVE_ASSIGN      // make the contents another table's, shallow
 } LhatNativeKind;
 
 typedef struct LhatNative {

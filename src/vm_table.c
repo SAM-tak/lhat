@@ -541,6 +541,83 @@ static LhatRunStatus table_clone(Machine *m, const LhatTable *t,
     return status;
 }
 
+// 14.22: makes `to` hold what `from` holds and nothing else, shallow. The
+// keys `from` lacks go first and then every one it has is written over --
+// so two instances of one def^, which carry the same keys, are written in
+// place and nothing is allocated. Clearing and filling again would rebuild
+// the hash every time. vm_set_key does the writing, which is what puts a
+// def^'s declared field back to its seat where `from` holds nil^ (14.15).
+static LhatRunStatus table_assign(Machine *m, LhatTable *to,
+                                  const LhatTable *from)
+{
+    if (to == from) {
+        return LHAT_RUN_OK;
+    }
+    // Two instances of one def^ were both cloned from its prototype, so their
+    // keyed halves stand slot for slot alike. Then nothing has to be looked
+    // up: each value is written over where it stands, which moves no key and
+    // leaves `version` -- and every member cache -- alone.
+    if (to->entry_capacity == from->entry_capacity &&
+        to->array_count == from->array_count && !to->shared) {
+        bool alike = true;
+        for (size_t i = 0; alike && i < to->entry_capacity; i++) {
+            LhatValue a = to->entries[i].key;
+            LhatValue b = from->entries[i].key;
+            alike = a.tag == b.tag &&
+                    (lhat_is_nil(a) ||
+                     (lhat_is_object_kind(a, LHAT_OBJECT_STRING)
+                          ? lhat_string_equal((const LhatString *)lhat_as_object(a),
+                                              (const LhatString *)lhat_as_object(b))
+                          : memcmp(&a.as, &b.as, sizeof a.as) == 0));
+        }
+        if (alike) {
+            for (size_t i = 0; i < to->entry_capacity; i++) {
+                if (!lhat_is_nil(to->entries[i].key)) {
+                    to->entries[i].value = from->entries[i].value;
+                    lhat_gc_barrier_back(m, (LhatObject *)to, to->entries[i].value);
+                }
+            }
+            for (size_t i = 0; i < from->array_count; i++) {
+                LhatValue held = lhat_slots_get(from->array, i);
+                lhat_slots_set(to->array, i, held);
+                lhat_gc_barrier_back(m, (LhatObject *)to, held);
+            }
+            return LHAT_RUN_OK;
+        }
+    }
+    bool refused = false;
+    for (size_t i = 0; i < to->entry_capacity; i++) {
+        LhatValue key = to->entries[i].key;
+        if (lhat_is_nil(key) || lhat_is_nil(to->entries[i].value) ||
+            !lhat_is_nil(lhat_table_get(from, key))) {
+            continue;
+        }
+        if (!vm_set_key(m, to, key, lhat_nil(), &refused)) {
+            return LHAT_RUN_OUT_OF_MEMORY;
+        }
+    }
+    if (to->array_count > from->array_count &&
+        !lhat_table_resize(to, from->array_count, lhat_nil())) {
+        return LHAT_RUN_OUT_OF_MEMORY;
+    }
+    for (size_t i = 0; i < from->array_count; i++) {
+        if (!vm_set_key(m, to, lhat_integer((LhatInteger)i),
+                        lhat_slots_get(from->array, i), &refused)) {
+            return LHAT_RUN_OUT_OF_MEMORY;
+        }
+    }
+    for (size_t i = 0; i < from->entry_capacity; i++) {
+        const LhatTableEntry *entry = &from->entries[i];
+        if (lhat_is_nil(entry->key)) {
+            continue;  // free, or a tombstone
+        }
+        if (!vm_set_key(m, to, entry->key, entry->value, &refused)) {
+            return LHAT_RUN_OUT_OF_MEMORY;
+        }
+    }
+    return LHAT_RUN_OK;
+}
+
 // The one door for all of 14.22. `args` were copied out of the caller's
 // window, so a nested comparator call cannot disturb them; what lands over
 // the call goes through *answer.
@@ -566,7 +643,8 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
                    native->kind == LHAT_NATIVE_MOVE ||
                    native->kind == LHAT_NATIVE_REVERSE ||
                    native->kind == LHAT_NATIVE_RESIZE ||
-                   native->kind == LHAT_NATIVE_CLEAR;
+                   native->kind == LHAT_NATIVE_CLEAR ||
+                   native->kind == LHAT_NATIVE_ASSIGN;
     if (mutates && t->sealed) {
         return LHAT_RUN_SEALED;
     }
@@ -845,6 +923,16 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
             }
             t->entry_count = 0;
             return LHAT_RUN_OK;
+        }
+
+        case LHAT_NATIVE_ASSIGN: {
+            if (count != 1) {
+                return LHAT_RUN_ARITY;
+            }
+            if (!lhat_is_object_kind(args[0], LHAT_OBJECT_TABLE)) {
+                return LHAT_RUN_TYPE_ERROR;
+            }
+            return table_assign(m, t, (const LhatTable *)lhat_as_object(args[0]));
         }
 
         default:

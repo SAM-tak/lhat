@@ -932,6 +932,41 @@ static void test_builtin_operations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
+    // assign^ is the exception: it writes into the container already there,
+    // so the instance stays one. It takes the receiver's own type.
+    LHAT_TEST("but an instance carries assign^, over its own type");
+    check_text(&u,
+               "let^ D = def^{ self^{ n = 0 } }\n"
+               "var^ d = D.new()\n"
+               "d.assign^(D.new())\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+    check_text(&u,
+               "let^ D = def^{ self^{ n = 0 } }\n"
+               "var^ d = D.new()\n"
+               "d.assign^(1)\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    // 15.1改2: it writes through the receiver alone -- an f^ assigns into
+    // what it made, never into what arrived.
+    LHAT_TEST("an f^ assigns into its own table, not one it was handed");
+    check_text(&u,
+               "let^ g = f^ src:t^{ number^[] } -> t^{ number^[] } {\n"
+               "    var^ mine = src.clone^()\n"
+               "    mine.assign^(src)\n"
+               "    return^ mine\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+    check_text(&u,
+               "let^ g = f^ dst:t^{ number^[] }, src:t^{ number^[] } -> number^ {\n"
+               "    dst.assign^(src)\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MUTATES_OUTSIDE);
+    unit_dispose(&u);
+
     // 15.1改3: clone^ and slice^ answer '-> fresh^…', so what they answer
     // is the body's own -- an f^ clones what arrived and mends the copy.
     LHAT_TEST("an f^ mends its own clone of what arrived");

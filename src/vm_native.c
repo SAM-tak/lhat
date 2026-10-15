@@ -310,7 +310,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
     // sort's comparator runs nested L^ code over this frame
     // -- and the answer lands over R(a) afterwards.
     if (native->kind >= LHAT_NATIVE_JOIN &&
-        native->kind <= LHAT_NATIVE_CLEAR) {
+        native->kind <= LHAT_NATIVE_ASSIGN) {
         LhatValue held[4];
         if (b > 4) {
             return LHAT_RUN_ARITY;

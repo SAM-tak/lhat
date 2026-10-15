@@ -455,7 +455,7 @@ static void atomic(Machine *m)
 
     // The shared receiver-less built-ins likewise: kept while a call site
     // holds one, made again by the next read once none does.
-    for (size_t i = 0; i <= LHAT_NATIVE_CLEAR; i++) {
+    for (size_t i = 0; i <= LHAT_NATIVE_ASSIGN; i++) {
         if (m->unbound_natives[i] != NULL &&
             lhat_gc_is_white((const LhatObject *)m->unbound_natives[i])) {
             m->unbound_natives[i] = NULL;

@@ -359,6 +359,7 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         { "reverse", 7, LHAT_NATIVE_REVERSE, true },
         { "resize", 6, LHAT_NATIVE_RESIZE, true },
         { "clear", 5, LHAT_NATIVE_CLEAR, true },
+        { "assign", 6, LHAT_NATIVE_ASSIGN, true },
     };
     *hatted = name->length > 0 && name->text[name->length - 1] == '^';
     size_t length = name->length - (*hatted ? 1 : 0);
@@ -464,6 +465,12 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
     }
     if (!hatted && vm_plain_table(on)) {
         return false;
+    }
+    // 14.22: assign^ writes into a container that is already there, so a
+    // def^ instance keeps what makes it one -- the one table operation that
+    // reaches past a plain table, and hat-only there as well.
+    if (*out == LHAT_NATIVE_ASSIGN) {
+        return hatted && lhat_is_object_kind(on, LHAT_OBJECT_TABLE);
     }
     // 02 の 14.22: the table's own operations belong to a plain table alone
     // -- a def^'s names are the writer's, a host type's the library's. The

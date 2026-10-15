@@ -367,7 +367,7 @@ struct LhatMachine {
     // 12 の 3: a built-in member read only to be called carries no
     // receiver of its own (LhatNative.unbound), so one per kind serves every
     // such call. Made on first use and held weakly (gc.c's atomic).
-    struct LhatNative *unbound_natives[LHAT_NATIVE_CLEAR + 1];
+    struct LhatNative *unbound_natives[LHAT_NATIVE_ASSIGN + 1];
     // 16.3: coroutines a for^ loop made and ran to their end, kept to be made
     // again (vm_coroutine_new). Rooted by gc.c; none is reachable otherwise.
     struct LhatCoroutine *spare_coroutines[LHAT_SPARE_COROUTINES];

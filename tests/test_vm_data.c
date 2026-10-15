@@ -874,6 +874,40 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
+    // 14.22: the contents become the other table's -- keys it lacks go, a
+    // longer sequence is cut back -- and the values are shared, not copied.
+    LHAT_TEST("assign^ makes the contents another table's, shallow");
+    run_checked_text(&r,
+                     "var^ to : t^{} = { 1, 2, 3, x := 1, y := 2 }\n"
+                     "let^ inner = { }\n"
+                     "let^ from : t^{} = { 9, z := inner, x := 7 }\n"
+                     "to.assign^(from)\n"
+                     "if^ to[\"y\"] != nil^ or^ !(to[\"z\"] is^ inner) { return^ -1 }\n"
+                     "return^ to.length^ * 1000 + to.count^ * 100 + to[0] * 10\n"
+                     "    + to[\"x\"]\n");
+    CHECK_INTEGER(&r, 1397);
+    run_dispose(&r);
+
+    // The container stays: an instance is still one, so its methods answer,
+    // and a field the source left unset goes back to its seat (14.15).
+    LHAT_TEST("assign^ keeps a def^ instance an instance");
+    run_checked_text(&r,
+                     "var^ Foo = def^{\n"
+                     "  self^{ n := 0, label : string^|nil^ = nil^ },\n"
+                     "  sum := f^self^ { return^ self^.n * 10 },\n"
+                     "}\n"
+                     "var^ a = Foo.new()\n"
+                     "var^ b = Foo.new()\n"
+                     "a.n := 5\n"
+                     "a.label := \"a\"\n"
+                     "b.n := 3\n"
+                     "a.assign^(b)\n"
+                     "if^ a.label != nil^ { return^ -1 }\n"
+                     "a.assign^(a)\n"
+                     "return^ a.sum()\n");
+    CHECK_INTEGER(&r, 30);
+    run_dispose(&r);
+
     // 11.3 leaves the rest to the operator's own definition, which needs
     // op^. 5.1 has the instruction refuse what it cannot do.
     LHAT_TEST("joining a number to a string is refused at run time");

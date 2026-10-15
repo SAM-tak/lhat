@@ -3002,7 +3002,7 @@ static bool run_of_names(const LhatNode *node, bool allow_scope)
 // Bare, because the enumeration tries "word" and "word^" for each and keeps
 // whichever answers (01 の 2.3: the hat is part of the name).
 const char *const chk_builtin_words[] = {
-    "ReturnType", "abs", "at", "bitall",
+    "ReturnType", "abs", "assign", "at", "bitall",
     "bitany", "bitat", "cause",
     "ceil", "clamp", "clear", "clone",
     "contains", "count", "dispose", "done",
@@ -3671,6 +3671,18 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
                            name[0] == 'k' ? keys : values, NULL, false, true);
         LhatType *signature = lhat_type_func(c->result->types, true);
         signature->v.func.result = walk;
+        return signature;
+    }
+
+    // 14.22: assign^ writes into the container already there, so a def^
+    // instance stays one -- the one table operation that reaches past a
+    // plain table. Not a host type's: there is nothing of a table behind it.
+    if (target->kind == LHAT_TYPE_TABLE && !target->v.table.nominal &&
+        builtin_named(name, length, "assign", true)) {
+        target->v.table.entries_known = false;
+        LhatType *signature = mutable_method(c);
+        lhat_type_add_param(c->result->types, signature, target);
+        signature->v.func.result = target;
         return signature;
     }
 
