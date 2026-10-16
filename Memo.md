@@ -481,17 +481,17 @@ L^にとっても、これが一番きれいな着地点だと思う。
 public^let^A = def^{
     self^{
         a = 0,
-        private^{
+        _^{
             a = 0 # 格納場所が違うので名前が被って良い
         },
     },
     proc = p^self^{
-        self^.private^.a := 1 # self^.private^.a と書く必要がある
-        self^.private^.privateProc() # self^.private^.privateProc と書く必要がある
-        def^.private^.privateStaticProc() # 静的プライベートメンバーは def^.private^.*
-        var^def^.private^.privateStaticData.a = 0 # 静的プライベートメンバーは def^.private^.*
+        self_^.a := 1 # self_^.a と書く必要がある self^._^.a でも良い。
+        self_^.privateProc() # self_^.privateProc と書く必要がある
+        def_^.privateStaticProc() # 静的プライベートメンバーは def_^.*  def^._^.* でも良い
+        var^def_^.privateStaticData.a = 0 # 静的プライベートメンバーは def_^.*
     },
-    private^{
+    _^{
         privateProc = p^self^{},
         privateStatic = p^{},
         privateStaticData = {}
@@ -500,13 +500,13 @@ public^let^A = def^{
 
 public^let^B = A .. def^{
     self^{
-        private^{
+        _^{
             a = 0
         }
     },
     proc2 = p^self^{
-        private^.a := 1 # 内部的に、self^.private^[1].a := 1 のような扱いになる
-        # A の private^.a はこの場合先頭なので、self^.private^[0].a のような感じになる
+        self_^.a := 1 # 内部的に、self^._^[1].a := 1 のような扱いになる
+        # A の self_^.a はこの場合先頭なので、self^._^[0].a のような感じになる
     },
 }
 ```
@@ -517,7 +517,7 @@ public^let^B = A .. def^{
 B = {
     self^ = {
         a = 0,
-        private^ = {
+        _^ = {
             { # A の分
                 a = 0
             },
@@ -526,7 +526,7 @@ B = {
             }
         }
     },
-    private^ = {
+    _^ = {
         { # A の分
             privateProc = p^self^{},
             privateStatic = p^{},
@@ -540,11 +540,14 @@ B = {
 
 こんな感じか？
 
-Q. `a["private^"][0]` などとすればいくらでもアクセスできてしまうが、いいのか？
+Q. `a["_^"][0]` などとすればいくらでもアクセスできてしまうが、いいのか？
 A. 良い。private^ は完全なカプセル化ではなく情報の隠蔽（インテリセンスの候補に出さない）が主目的。
 Q. privateメンバーは構造比較の対象か？
 A. ~~対象外。privateメンバーにしか差がない型は、同一の型とみなされる。~~ これはうまくいかない。
 privateメンバーも構造比較の対象にするしか無い。
+
+プレイベートメンバにアクセスしている関数・手続きは特別視され、合成のたびに（インデックスが同じでなければ）複製されてプレイベートメンバへの
+アクセスインデックスを差し替えたバージョンが生成される。
 
 #### ビット演算（済）
 
