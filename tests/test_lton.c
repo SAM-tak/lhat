@@ -16,6 +16,7 @@
 // use it drive a program with a table of files behind it, the way
 // test_load.c does. The rest go through parse, which touches no file at all.
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -97,6 +98,66 @@ static void test_stringify_from_c(void)
     }
     check_stringify_failure(table, LHAT_LTON_TOO_DEEP);
     lhat_machine_dispose(machine);
+}
+
+static void test_real_output(void)
+{
+    LHAT_TEST("real output tries 15, 16 and 17 digits and round trips through the C API");
+    static const struct {
+        double value;
+        const char *text;
+    } cases[] = {
+        {0.32, "0.32,\n"},
+        {0.1, "0.1,\n"},
+        {1.234567890123456, "1.234567890123456,\n"},
+        {1.2345678901234567, "1.2345678901234567,\n"},
+        {1.0, "1.0,\n"},
+        {0.0, "0.0,\n"},
+        {-0.0, "-0.0,\n"},
+        {1e100, NULL},
+        {DBL_MAX, NULL},
+        {-DBL_MAX, NULL},
+        {DBL_MIN, NULL},
+        {DBL_TRUE_MIN, NULL},
+    };
+    // Parsing text needs a front-end program and a machine, but no module
+    // registration, loader or precompiled root unit.
+    LhatProgram *program = lhat_program_new(true, NULL, NULL);
+    LHAT_REQUIRE(program != NULL, "program created");
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        LhatMachine *machine = lhat_machine_new();
+        LHAT_REQUIRE(machine != NULL, "machine created");
+        LhatValue table;
+        LHAT_REQUIRE(lhat_machine_make_table(machine, &table), "table created");
+        bool refused;
+        LHAT_REQUIRE(lhat_machine_table_set(machine, (LhatTable *)lhat_as_object(table),
+                                          lhat_integer(0), lhat_real(cases[i].value),
+                                          &refused) && !refused, "real added");
+        char *text = NULL;
+        size_t length = 0;
+        LHAT_REQUIRE(lhatstdlib_lton_stringify(table, &text, &length) == LHAT_LTON_OK,
+                     "real serialized");
+        LHAT_CHECK(length == strlen(text), "length excludes NUL");
+        if (cases[i].text != NULL)
+            LHAT_CHECK(strcmp(text, cases[i].text) == 0, "compact real spelling: %s", text);
+        LhatValue parsed;
+        LHAT_REQUIRE(lhatstdlib_lton_parse(machine, program, "roundtrip.lton",
+                                          text, length, &parsed) == LHAT_LTON_OK,
+                     "serialized real parsed");
+        LhatValue value = lhat_table_get((const LhatTable *)lhat_as_object(parsed),
+                                        lhat_integer(0));
+        LHAT_CHECK(value.tag == LHAT_VALUE_REAL && value.as.real == cases[i].value &&
+                       !!signbit(value.as.real) == !!signbit(cases[i].value),
+                   "real type, exact value and zero sign preserved for %s", text);
+        lhat_free(text);
+        lhat_machine_dispose(machine);
+    }
+    lhat_program_free(program);
+
+    LHAT_TEST("L^ stringify uses compact real spelling");
+    LhatTestRan ran = run_source("import^std.lton\nreturn^try^std.lton.stringify({0.32})\n");
+    LHAT_CHECK_RAN_TEXT(ran, "0.32,\n");
+    lhat_test_ran_dispose(&ran);
 }
 
 static void test_text_output(void)
@@ -744,6 +805,7 @@ static void test_compiled(void)
 int main(void)
 {
     test_stringify_from_c();
+    test_real_output();
     test_text_output();
     test_what_may_be_written();
     test_what_may_not();

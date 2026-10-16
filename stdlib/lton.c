@@ -475,7 +475,12 @@ static void text_value(LtonWriter *w, LhatValue value, size_t depth)
             text_word(w, number); return;
         case LHAT_VALUE_REAL: {
             if (!isfinite(value.as.real)) break;
-            snprintf(number, sizeof number, "%.17g", value.as.real);
+            // Try shorter spellings before falling back to full double precision.
+            // Compare in the current locale before normalizing the decimal point.
+            for (int precision = 15; precision <= 17; precision++) {
+                snprintf(number, sizeof number, "%.*g", precision, value.as.real);
+                if (strtod(number, NULL) == value.as.real) break;
+            }
             // Source always uses '.', regardless of the embedding host's locale.
             const char *point = localeconv()->decimal_point;
             char *at = point != NULL && *point != '\0' ? strstr(number, point) : NULL;
