@@ -126,6 +126,63 @@ static void test_sequences(void)
     }
 }
 
+static void test_state(void)
+{
+    LHAT_TEST("saved state restores a mixed stream on another generator");
+    LhatTestRan ran = run_source(WITH_TWO("31", "4",
+        "        var^ burn = a.next()\n"
+        "        burn := a.range(-20, 20)\n"
+        "        let^ state = a.save()\n"
+        "        var^ same = 1\n"
+        "        if^ a.save() != state { same := 0 }\n"
+        "        if^ b.load(state) != nil^ { same := 0 }\n"
+        "        for^ i from^ 1 to^ 16 {\n"
+        "            if^ a.next() != b.next() { same := 0 }\n"
+        "            if^ a.range(-100, 100) != b.range(-100, 100) { same := 0 }\n"
+        "        }\n"
+        "        a.dispose()\n"
+        "        b.dispose()\n"
+        "        return^ same\n"));
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+
+    const char *const valid[] = {"1", "-1", "(-9223372036854775807 - 1)",
+                                "9223372036854775807", "8.0"};
+    for (size_t i = 0; i < sizeof valid / sizeof valid[0]; ++i) {
+        LHAT_TEST(valid[i]);
+        char source[1024];
+        snprintf(source, sizeof source, WITH_RANDOM("1",
+            "    let^ state = %s\n"
+            "    let^ result = r.load(state)\n"
+            "    let^ saved = r.save()\n"
+            "    r.dispose()\n"
+            "    if^ result = nil^ and^ saved = state { return^ 1 }\n"
+            "    return^ 0\n"), valid[i]);
+        ran = run_source(source);
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    const char *const invalid[] = {"0", "0.0", "0.5", "-1.5", "1e300",
+                                  "9223372036854775808.0"};
+    for (size_t i = 0; i < sizeof invalid / sizeof invalid[0]; ++i) {
+        LHAT_TEST("invalid state returns InvalidState without changing the stream");
+        char source[1024];
+        snprintf(source, sizeof source, WITH_RANDOM("1",
+            "    let^ state = r.save()\n"
+            "    let^ result = r.load(%s)\n"
+            "    let^ saved = r.save()\n"
+            "    r.dispose()\n"
+            "    if^ result fits^ std.random.Error.InvalidState {\n"
+            "        if^ saved = state { return^ 1 }\n"
+            "    }\n"
+            "    return^ 0\n"), invalid[i]);
+        ran = run_source(source);
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+}
+
 static void test_next(void)
 {
     LHAT_TEST("next stays inside [0, 1)");
@@ -200,6 +257,7 @@ int main(void)
 {
     test_make();
     test_sequences();
+    test_state();
     test_next();
     test_range();
     return lhat_test_report("test_random");

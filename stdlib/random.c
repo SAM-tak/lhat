@@ -26,6 +26,7 @@
 // comment for why this isn't a file-scope static instead.
 typedef struct {
     const LhatErrorKind *out_of_memory;
+    const LhatErrorKind *invalid_state;
     const LhatHostDataTag *tag;
 } RandomModule;
 
@@ -109,6 +110,42 @@ static void random_reseed(LhatMachine *machine, void *context,
     }
 }
 
+// Encode all 64 state bits as a signed integer without a real conversion.
+static void random_save(LhatMachine *machine, void *context,
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
+{
+    (void)machine;
+    (void)count;
+    const RandomModule *module = (const RandomModule *)context;
+    Random *r = (Random *)lhat_hostdata_pointer(arguments[0], module->tag);
+    uint64_t state = r != NULL ? r->state : 0;
+    LhatInteger saved = state <= INT64_MAX ? (LhatInteger)state
+                                         : -1 - (LhatInteger)(~state);
+    answers[0] = lhat_integer(saved);
+    *answer_count = 1;
+}
+
+static void random_load(LhatMachine *machine, void *context,
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
+{
+    (void)count;
+    const RandomModule *module = (const RandomModule *)context;
+    Random *r = (Random *)lhat_hostdata_pointer(arguments[0], module->tag);
+    LhatInteger state;
+    answers[0] = lhat_nil();
+    *answer_count = 1;
+    if (!lhat_number_as_whole(arguments[1], &state) || state == 0) {
+        answers[0] = fail_with(machine, module->invalid_state,
+                               "random state must be a nonzero 64-bit integer");
+        return;
+    }
+    if (r != NULL) {
+        r->state = (uint64_t)state;
+    }
+}
+
 // [0, 1). The top 53 bits are what a double's mantissa can hold exactly.
 static void random_next(LhatMachine *machine, void *context,
                         const LhatValue *arguments, size_t count,
@@ -182,6 +219,13 @@ bool lhatstdlib_random_register(LhatProgram *program)
     static RandomModule shared;
     RandomModule *module = &shared;
     module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
+    static const char *const variants[] = {"InvalidState"};
+    if (!lhat_register_error_kind(program, "std.random", "Error", variants, 1,
+                                  NULL, NULL)) {
+        return false;
+    }
+    module->invalid_state =
+        lhat_lookup_error_kind(program, "std.random", "Error", "InvalidState");
 
     module->tag = lhat_register_hostdata_type(program, "std.random", "Random");
     if (module->tag == NULL) {
@@ -194,6 +238,11 @@ bool lhatstdlib_random_register(LhatProgram *program)
                random_new, module) &&
            lhat_register_member(program, "std.random", "Random", "reseed",
                                 "p^self^, number^;", random_reseed, module) &&
+           lhat_register_member(program, "std.random", "Random", "save",
+                                "f^self^ -> number^;", random_save, module) &&
+           lhat_register_member(program, "std.random", "Random", "load",
+                                "p^self^, number^ -> nil^|std.random.Error.InvalidState;",
+                                random_load, module) &&
            lhat_register_member(program, "std.random", "Random", "next",
                                 "f^self^ -> number^;", random_next, module) &&
            lhat_register_member(program, "std.random", "Random", "range",

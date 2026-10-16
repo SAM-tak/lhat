@@ -5,7 +5,14 @@
 // a host that never calls this never sees a "random" module, the same way a
 // host that leaves port/ out never sees the default allocator.
 //
-// std.random.make answers std.random.Random|std.error.OutOfMemory -- read
+// Random.save() returns the current xorshift64* state as a signed 64-bit
+// integer without advancing it. Random.load(state) restores that state and
+// returns nil, or Error.InvalidState for zero, fractional, or out-of-range
+// values, leaving the state unchanged. Negative states are valid. Persist
+// states as integers: conversion through floating point can lose bits.
+// Saved states depend on the generator algorithm used by this version.
+//
+// std.random.new answers std.random.Random|std.error.OutOfMemory -- read
 // it with try^/catch^, or narrow with fits^ against std.random.Random or
 // std.error.OutOfMemory (05 の 8.8's hostdata path and 04 の 2.4's error
 // kind path, both supported). Naming std.error.OutOfMemory in an fits^
