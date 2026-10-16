@@ -4692,6 +4692,9 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE] = {"check.await-not-coroutine",
         "await^ waits for something that finishes, and this is not "
         "one -- what may be awaited is a coroutine (15.14)"},
+    [LHAT_CHECK_ERR_YIELD_AT_TOP] = {"check.yield-at-top",
+        "nothing could resume this top level -- only a script's may "
+        "yield^ or await^, not a module^ unit's or a prompt's"},
     [LHAT_CHECK_ERR_COROUTINE_MISMATCH] = {"check.coroutine-mismatch",
         "the coroutine this body makes is not the one written "
         "here; the yield^ sites and the c^{ … } have to agree"},

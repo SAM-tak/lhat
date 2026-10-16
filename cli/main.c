@@ -1505,6 +1505,18 @@ static int check_program(const char *path, bool run, bool strict,
                                          handed, made)
                     : (LhatRunResult){.status = LHAT_RUN_OUT_OF_MEMORY};
             free(handed);
+            // 02 の 15.2: a script that yields answers its coroutine. Nothing
+            // else runs here between resumes, so it is driven to its end and
+            // what it ends with is the run's answer; what it yields on the
+            // way has no one to go to.
+            if (ran.status == LHAT_RUN_OK &&
+                lhat_proto_yields(lhat_unit_proto(root))) {
+                LhatValue coroutine = ran.value;
+                do {
+                    ran = lhat_machine_resume(machine, coroutine, NULL, 0);
+                } while (ran.status == LHAT_RUN_OK &&
+                         !lhat_machine_coroutine_done(coroutine));
+            }
             bool debugger_stopped = false;
 #ifdef LHAT_CLI_WITH_DAP
             if (dap != NULL) {

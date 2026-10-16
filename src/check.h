@@ -191,6 +191,11 @@ typedef enum {
                                         // only a coroutine does -- which is
                                         // also the whole of what delegating
                                         // asks of it
+    LHAT_CHECK_ERR_YIELD_AT_TOP,        // 15.2 with 05 の 3.2: only a
+                                        // script's top level ('p^...') may
+                                        // suspend; a module^ unit's and a
+                                        // session's have nobody to resume
+                                        // them
     LHAT_CHECK_ERR_COROUTINE_MISMATCH,  // 13.9 with 15.2: a c^{ … } written in
                                         // the result position says what a call
                                         // answers, and the yield^ sites say it

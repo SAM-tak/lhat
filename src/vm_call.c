@@ -580,6 +580,10 @@ bool vm_call_host_fn(Machine *m, LhatHostFn call, void *context,
          &written);
     return boundary_answer(m, written, answered);
 }
+static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
+                               bool as_method, const LhatValue *arguments,
+                               size_t count);
+
 LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
                                  const LhatValue *arguments, size_t count)
 {
@@ -619,6 +623,15 @@ LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
         return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), 0);
     }
     entry->proto = proto;
+
+    // 02 の 15.2 with 15.5: a script whose top level yields is a yieldable
+    // 'p^...', so running it runs nothing -- it answers the coroutine, built
+    // and handed its '...' exactly as a host's call of a yieldable closure
+    // would be, for the host to drive with lhat_machine_resume.
+    if (proto->yields) {
+        return host_call(m, lhat_object((LhatObject *)entry), lhat_nil(), false,
+                         arguments, count);
+    }
 
     vm_push_frame(m, entry, 0, 0, 1);
 

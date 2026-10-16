@@ -6619,6 +6619,20 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
     return type;
 }
 
+// 15.2 with 05 の 3.2: a script's top level is 'p^...', and a yield^ or an
+// await^ there makes it yieldable like any other body -- running it answers
+// the coroutine. A module^ unit's top level runs once under require^, which
+// wants its exports and not a coroutine, and a session's input runs at the
+// prompt; neither has anyone to resume it, so the suspension is refused
+// here rather than left to fault at run time.
+static void refuse_top_level_suspension(Checker *c, const LhatNode *node)
+{
+    if (c->body_scope == NULL &&
+        (c->session || c->result->module_name != NULL)) {
+        chk_report(c, node, LHAT_CHECK_ERR_YIELD_AT_TOP);
+    }
+}
+
 LhatType *chk_infer(Checker *c, const LhatNode *node)
 {
     return chk_infer_with_named_type(c, node, NULL);
@@ -6984,6 +6998,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
         // themselves are looking at -- chk_infer() clears it immediately below
         // so it can never leak into node->v.jump.value.
         case LHAT_NODE_YIELD: {
+            refuse_top_level_suspension(c, node);
             enum YieldContext ctx = c->yield_context;
             LhatType *bound = c->yield_bound_type;
             c->yield_context = YIELD_CTX_NONE;
@@ -7030,6 +7045,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
         // delegate to. 15.2: whatever it yields passes through as this
         // body's own Y/R, same as a yield^ written directly here would.
         case LHAT_NODE_AWAIT: {
+            refuse_top_level_suspension(c, node);
             LhatType *inner = chk_infer(c, node->v.jump.value);
             if (inner == NULL || inner->kind == LHAT_TYPE_UNKNOWN ||
                 inner->kind == LHAT_TYPE_PENDING) {

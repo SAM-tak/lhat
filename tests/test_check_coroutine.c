@@ -696,6 +696,29 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // 15.2 with 05 の 3.2: only a script's top level is a 'p^...' that may
+    // suspend. A module^ unit's runs under require^, which wants its exports.
+    LHAT_TEST("a module^ unit's top level may not yield^");
+    check_text(&u, "module^ m\nyield^ 1\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_AT_TOP);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor await^");
+    check_text(&u,
+               "module^ m\n"
+               "let^ inner = p^ { yield^ 1 }\n"
+               "await^ inner()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_AT_TOP);
+    unit_dispose(&u);
+
+    LHAT_TEST("a script's top level may, and so may a body in a module^ unit");
+    check_text(&u, "yield^ 1\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+    check_text(&u, "module^ m\nlet^ g = p^ { yield^ 1 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // 15.14: the one spelling has the one message, and it says what await^
     // is for. NOT_COROUTINE stays the walk's (for^ in^ over something with
     // no iterate^).

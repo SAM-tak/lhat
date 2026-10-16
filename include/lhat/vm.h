@@ -645,6 +645,14 @@ const void *lhat_closure_capture_id(LhatValue closure, size_t index);
 // `arguments` is what its '...' collects -- a command line, say. A module^
 // unit takes none (LHAT_RUN_ARITY if given any). lhat_run is the same with
 // nothing handed over.
+//
+// 02 の 15.2 with 15.5: a script whose top level holds a yield^ or an await^
+// is a yieldable 'p^...' (lhat_proto_yields answers true), so running it
+// runs nothing: the answer is LHAT_RUN_OK with the coroutine, its '...'
+// already collected. The host drives it with lhat_machine_resume until
+// lhat_machine_coroutine_done -- once per frame, say -- and keeps it in
+// lhat_machine_host_root meanwhile if anything else runs on the machine
+// between resumes.
 LhatRunResult lhat_run_arguments(LhatMachine *machine, const LhatProto *proto,
                                  const LhatValue *arguments, size_t count);
 LhatRunResult lhat_run(LhatMachine *machine, const LhatProto *proto);

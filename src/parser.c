@@ -5306,6 +5306,9 @@ static void parse_unit(LhatLexer *lexer, LhatParseResult *result,
     // declaration's own are read where the declaration is.
     if (result->root != NULL) {
         result->root->v.list.annotations = unit_annotations;
+        // 15.2: the top level is a body too, and what it saw is its own --
+        // a nested definition's yield^ was set aside where that one closed.
+        result->root->v.list.yields = parser.saw_yield;
     }
 
     // 05 の 3 章: at most one, and at the top. Checked here rather than while

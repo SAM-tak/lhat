@@ -983,9 +983,35 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    LHAT_TEST("yield^ outside a coroutine is a fault");
-    run_text(&r, "yield^ 1\nreturn^ 0\n");
-    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_YIELD_OUTSIDE);
+    // 15.2 with 05 の 3.2: a script's top level is 'p^...', so a yield^ or
+    // an await^ there makes it yieldable -- running it runs nothing and
+    // answers the coroutine (15.5), which the host drives.
+    LHAT_TEST("a script that yields answers its coroutine");
+    run_text(&r,
+             "var^ log = { n := 0 }\n"
+             "log.n := 1\n"
+             "yield^ log.n\n"
+             "let^ inner = p^ { yield^ 2\n return^ 3 }\n"
+             "let^ v = await^ inner()\n"
+             "return^ v + 4\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
+    {
+        LhatValue co = r.ran.value;
+        LHAT_CHECK(!lhat_machine_coroutine_done(co), "nothing has run yet");
+        LhatRunResult step = lhat_machine_resume(r.machine, co, NULL, 0);
+        LHAT_CHECK_EQ_INT(step.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_integer(step.value) && lhat_as_integer(step.value) == 1,
+                   "the first resume runs to the first yield^");
+        step = lhat_machine_resume(r.machine, co, NULL, 0);
+        LHAT_CHECK(lhat_is_integer(step.value) && lhat_as_integer(step.value) == 2,
+                   "an await^ passes the inner yield^ out");
+        LHAT_CHECK(!lhat_machine_coroutine_done(co), "suspended inside the await^");
+        step = lhat_machine_resume(r.machine, co, NULL, 0);
+        LHAT_CHECK_EQ_INT(step.status, LHAT_RUN_OK);
+        LHAT_CHECK(lhat_is_integer(step.value) && lhat_as_integer(step.value) == 7,
+                   "the last resume answers the return^");
+        LHAT_CHECK(lhat_machine_coroutine_done(co), "and the script is over");
+    }
     run_dispose(&r);
 
     // 15.2: start and resume split the two jobs -- the machine holds that

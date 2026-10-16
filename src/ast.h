@@ -484,6 +484,10 @@ struct LhatNode {
             // 02 の 18.4: the unit's own, written at its head. Only the root
             // block of a unit ever carries these.
             LhatNode *annotations;
+            // 02 の 15.2 with 05 の 3.2: the unit's own top level holds a
+            // yield^ or an await^ -- a script's 'p^...' is then yieldable.
+            // Only the root block of a unit ever sets it.
+            bool yields;
         } list;
 
         // 16.3. `focus` is a list: bindings, destructuring targets, or one

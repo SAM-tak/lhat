@@ -6531,6 +6531,9 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         proto->parameters = 1;
         proto->parameter_slots = 1;
         proto->has_variadic = true;
+        // 02 の 15.2: and a yield^ or await^ on it makes that 'p^...'
+        // yieldable, so running it answers the coroutine (15.5).
+        proto->yields = unit->v.list.yields;
         compile_statements(&c, unit->v.list.items);
     }
     emit(&c, lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0));
