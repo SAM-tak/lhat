@@ -3,7 +3,7 @@
 // std.random.new(seed) answers a std.random.Random hostdata (05 の 8.8),
 // one xorshift64* stream per instance. No module-wide mutable state here,
 // so no lock either -- a program sharing one Random across std.thread
-// spawns is on its own for keeping next()/range()/reseed() from racing on
+// spawns is on its own for keeping next()/rangeint()/reseed() from racing on
 // it, the same way it would be on its own for racing a table it shared the
 // same way. This file only ever touches one instance's own memory.
 //
@@ -20,7 +20,14 @@
 
 #include <math.h>
 #include <stdint.h>
-#include <time.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <bcrypt.h>
+#else
+#include <errno.h>
+#include <stdio.h>
+#endif
 
 // What lhatstdlib_random_register made, threaded through as every
 // registration's `context` (05 § 8.7) -- see stdlib/io.c's IoModule
@@ -29,6 +36,7 @@ typedef struct {
     const LhatErrorKind *out_of_memory;
     const LhatErrorKind *invalid_state;
     const LhatErrorKind *invalid_argument;
+    const LhatErrorKind *seed_unavailable;
     const LhatHostDataTag *tag;
 } RandomModule;
 
@@ -67,14 +75,40 @@ static uint64_t next_raw(Random *r)
     return r->state * 0x2545F4914F6CDD1DULL;
 }
 
-// seed == 0 asks for one seeded from the clock, so a caller that does not
-// care still gets a different sequence each run without writing time(NULL)
-// itself -- std/ has no clock module of its own to reach for that.
+static bool automatic_state(uint64_t *state)
+{
+#ifdef _WIN32
+    return BCryptGenRandom(NULL, (PUCHAR)state, sizeof *state,
+                            BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
+#else
+    FILE *source = fopen("/dev/urandom", "rb");
+    if (source == NULL) {
+        return false;
+    }
+    size_t filled = 0;
+    while (filled < sizeof *state) {
+        size_t got = fread((unsigned char *)state + filled, 1,
+                            sizeof *state - filled, source);
+        filled += got;
+        if (filled == sizeof *state) {
+            break;
+        }
+        if (ferror(source) && errno == EINTR) {
+            clearerr(source);
+        } else {
+            break;
+        }
+    }
+    fclose(source);
+    return filled == sizeof *state;
+#endif
+}
+
+// The zero-argument overload uses OS entropy; every explicit seed is stable.
 static void random_new(LhatMachine *machine, void *context,
                        const LhatValue *arguments, size_t count,
                        LhatValue *answers, int *answer_count)
 {
-    (void)count;
     const RandomModule *module = (const RandomModule *)context;
 
     Random *r = (Random *)lhat_alloc(sizeof *r);
@@ -83,8 +117,20 @@ static void random_new(LhatMachine *machine, void *context,
         *answer_count = 1;
         return;
     }
-    LhatInteger seed = arg_as_integer(arguments[0]);
-    r->state = seeded_state(seed != 0 ? seed : (LhatInteger)time(NULL));
+    if (count == 0) {
+        if (!automatic_state(&r->state)) {
+            lhat_free(r);
+            answers[0] = fail_with(machine, module->seed_unavailable,
+                                   "could not obtain a random seed from the operating system");
+            *answer_count = 1;
+            return;
+        }
+        if (r->state == 0) {
+            r->state = seeded_state(0);
+        }
+    } else {
+        r->state = seeded_state(arg_as_integer(arguments[0]));
+    }
 
     LhatValue out = lhat_nil();
     if (!lhat_machine_make_hostdata(machine, module->tag, r, &out)) {
@@ -298,8 +344,9 @@ bool lhatstdlib_random_register(LhatProgram *program)
     static RandomModule shared;
     RandomModule *module = &shared;
     module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
-    static const char *const variants[] = {"InvalidState", "InvalidArgument"};
-    if (!lhat_register_error_kind(program, "std.random", "Error", variants, 2,
+    static const char *const variants[] = {"InvalidState", "InvalidArgument",
+                                           "SeedUnavailable"};
+    if (!lhat_register_error_kind(program, "std.random", "Error", variants, 3,
                                   NULL, NULL)) {
         return false;
     }
@@ -307,6 +354,8 @@ bool lhatstdlib_random_register(LhatProgram *program)
         lhat_lookup_error_kind(program, "std.random", "Error", "InvalidState");
     module->invalid_argument =
         lhat_lookup_error_kind(program, "std.random", "Error", "InvalidArgument");
+    module->seed_unavailable =
+        lhat_lookup_error_kind(program, "std.random", "Error", "SeedUnavailable");
 
     module->tag = lhat_register_hostdata_type(program, "std.random", "Random");
     if (module->tag == NULL) {
@@ -314,6 +363,10 @@ bool lhatstdlib_random_register(LhatProgram *program)
     }
 
     return lhat_register_func(
+               program, "std.random", "new",
+               "f^ -> std.random.Random|std.random.Error.SeedUnavailable|std.error.OutOfMemory;",
+               random_new, module) &&
+           lhat_register_func(
                program, "std.random", "new",
                "f^number^ -> std.random.Random|std.error.OutOfMemory;",
                random_new, module) &&

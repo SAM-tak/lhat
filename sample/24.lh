@@ -145,7 +145,7 @@ let^same = f^want, used {
 }
 
 do^{
-    with^rng = try^std.random.new(0) {
+    with^rng = try^std.random.new() {
         let^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
         var^shown = ""
         for^i from^1 to^4 {

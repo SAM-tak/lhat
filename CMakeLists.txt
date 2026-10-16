@@ -422,6 +422,9 @@ if(LHAT_BUILD_STDLIB)
         PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
                $<INSTALL_INTERFACE:include>)
     target_link_libraries(lhatstdlib PUBLIC lhat PRIVATE lhatthread)
+    if(WIN32)
+        target_link_libraries(lhatstdlib PRIVATE bcrypt)
+    endif()
     # std.net reaches the system through port/socket, as std.thread does
     # through port/thread.
     if(LHAT_WITH_NET)

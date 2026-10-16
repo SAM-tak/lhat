@@ -58,14 +58,42 @@ static void test_make(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // A seed of 0 asks for one seeded from the clock, so this is the one case
-    // whose stream cannot be asserted on at all -- only that the branch
-    // answers a Random like any other.
-    LHAT_TEST("a seed of 0 answers a Random too");
+    LHAT_TEST("an omitted seed answers a Random");
     {
-        LhatTestRan ran = run_source(WITH_RANDOM("0",
+        LhatTestRan ran = run_source(WITH_RANDOM("",
                                                  "    r.dispose()\n"
                                                  "    return^ 1\n"));
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    // Independent 64-bit OS seeds have a negligible chance of collision.
+    LHAT_TEST("automatic seeds differ even for successive constructions");
+    {
+        LhatTestRan ran = run_source(WITH_TWO("", "",
+            "        let^ first = a.save()\n"
+            "        let^ second = b.save()\n"
+            "        a.dispose()\n"
+            "        b.dispose()\n"
+            "        if^ first != 0 and^ second != 0 and^ first != second { return^ 1 }\n"
+            "        return^ 0\n"));
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("explicit zero seeds and reseed zero are reproducible");
+    {
+        LhatTestRan ran = run_source(WITH_TWO("0", "0",
+            "        let^ initial = a.save()\n"
+            "        var^ same = 1\n"
+            "        for^ i from^ 1 to^ 16 {\n"
+            "            if^ a.next() != b.next() { same := 0 }\n"
+            "        }\n"
+            "        b.reseed(0)\n"
+            "        if^ initial != b.save() { same := 0 }\n"
+            "        a.dispose()\n"
+            "        b.dispose()\n"
+            "        return^ same\n"));
         LHAT_CHECK_RAN_INTEGER(ran, 1);
         lhat_test_ran_dispose(&ran);
     }
@@ -103,9 +131,7 @@ static void test_sequences(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // reseed puts a generator back where make of that seed starts -- the two
-    // are the same call underneath for any seed but 0, which only make treats
-    // as "ask the clock".
+    // reseed puts a generator back where new of that seed starts.
     LHAT_TEST("reseed puts a stream where make of that seed would start");
     {
         LhatTestRan ran = run_source(
