@@ -16,6 +16,7 @@
 // use it drive a program with a table of files behind it, the way
 // test_load.c does. The rest go through parse, which touches no file at all.
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -29,6 +30,73 @@ static const LhatTestRegister regs[] = {lhatstdlib_lton_register};
 static LhatTestRan run_source(const char *text)
 {
     return lhat_test_run(regs, 1, text);
+}
+
+static void check_stringify_failure(LhatValue table, LhatLtonStatus expected)
+{
+    char sentinel;
+    char *text = &sentinel;
+    size_t length = 123;
+    LHAT_CHECK_EQ_INT(lhatstdlib_lton_stringify(table, &text, &length), expected);
+    LHAT_CHECK(text == NULL && length == 0, "failure clears both outputs");
+}
+
+static void test_stringify_from_c(void)
+{
+    LHAT_TEST("C stringify needs no program or registration and owns its output");
+    LhatMachine *machine = lhat_machine_new();
+    LHAT_REQUIRE(machine != NULL, "machine created");
+    LhatValue table;
+    LHAT_REQUIRE(lhat_machine_make_table(machine, &table), "table created");
+    char *text = NULL;
+    size_t length = 123;
+    LHAT_CHECK_EQ_INT(lhatstdlib_lton_stringify(table, &text, &length), LHAT_LTON_OK);
+    LHAT_CHECK(text != NULL && length == 0 && text[0] == '\0', "allocated empty string");
+    lhat_free(text);
+
+    bool refused;
+    LHAT_REQUIRE(lhat_machine_table_set(machine, (LhatTable *)lhat_as_object(table),
+                                      lhat_integer(0), lhat_integer(42), &refused) && !refused,
+                 "element added");
+    LHAT_CHECK_EQ_INT(lhatstdlib_lton_stringify(table, &text, &length), LHAT_LTON_OK);
+    lhat_machine_dispose(machine);
+    LHAT_CHECK(text != NULL && length == 4 && strcmp(text, "42,\n") == 0,
+               "NUL-terminated output survives disposal of its source");
+    lhat_free(text);
+
+    LHAT_TEST("C stringify reports unsupported roots, values, keys and cycles");
+    check_stringify_failure(lhat_nil(), LHAT_LTON_UNSUPPORTED);
+    machine = lhat_machine_new();
+    LHAT_REQUIRE(machine != NULL, "machine created");
+    LHAT_REQUIRE(lhat_machine_make_table(machine, &table), "table created");
+    LhatTable *object = (LhatTable *)lhat_as_object(table);
+    LHAT_REQUIRE(lhat_machine_table_set(machine, object, lhat_integer(0),
+                                      lhat_real(INFINITY), &refused) && !refused,
+                 "unsupported value added");
+    check_stringify_failure(table, LHAT_LTON_UNSUPPORTED);
+    LHAT_REQUIRE(lhat_machine_table_set(machine, object, lhat_integer(0),
+                                      table, &refused) && !refused, "cycle added");
+    check_stringify_failure(table, LHAT_LTON_CYCLE);
+    LHAT_REQUIRE(lhat_machine_table_set(machine, object, table,
+                                      lhat_integer(1), &refused) && !refused, "table key added");
+    check_stringify_failure(table, LHAT_LTON_UNSUPPORTED);
+
+    LHAT_TEST("C stringify accepts 96 nested tables and rejects 97");
+    LHAT_REQUIRE(lhat_machine_make_table(machine, &table), "leaf created");
+    for (size_t depth = 1; depth <= 96; depth++) {
+        LhatValue parent;
+        LHAT_REQUIRE(lhat_machine_make_table(machine, &parent), "parent created");
+        LHAT_REQUIRE(lhat_machine_table_set(machine, (LhatTable *)lhat_as_object(parent),
+                                          lhat_integer(0), table, &refused) && !refused,
+                     "child added");
+        table = parent;
+        if (depth == 95) {
+            LHAT_CHECK_EQ_INT(lhatstdlib_lton_stringify(table, &text, &length), LHAT_LTON_OK);
+            lhat_free(text);
+        }
+    }
+    check_stringify_failure(table, LHAT_LTON_TOO_DEEP);
+    lhat_machine_dispose(machine);
 }
 
 static void test_text_output(void)
@@ -675,6 +743,7 @@ static void test_compiled(void)
 
 int main(void)
 {
+    test_stringify_from_c();
     test_text_output();
     test_what_may_be_written();
     test_what_may_not();

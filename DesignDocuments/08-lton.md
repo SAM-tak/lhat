@@ -309,6 +309,19 @@ try^std.lton.save("path/to.some.lton", table)
   オープン・書き込み・クローズの失敗は `CannotWrite`。書き込み中の失敗に対する
   原子的な置換は行わない。
 
+C ホストからも、モジュール登録なしで同じテキスト化を利用できる。
+
+```c
+LhatLtonStatus lhatstdlib_lton_stringify(LhatValue table, char **text, size_t *length);
+```
+
+成功時は NUL 終端のバッファを返し、`length` は終端を含まないバイト数となる。
+空テーブルも空文字列のバッファを返す。呼び出し側が `lhat_free(*text)` で解放する。
+`text` と `length` は非 NULL が必要。失敗時はそれぞれ NULL と 0 となり、
+`LHAT_LTON_UNSUPPORTED`、`LHAT_LTON_CYCLE`、`LHAT_LTON_TOO_DEEP`、
+`LHAT_LTON_OUT_OF_MEMORY` で原因を判別できる。入力のテーブルと子要素は呼び出し中、
+有効である必要がある。返却バッファは入力の寿命から独立している。
+
 C API の `lhatstdlib_lton_write` は従来どおりソースのバイトコード化であり、
 このテキストへの直列化とは別の機能である。
 

@@ -110,7 +110,11 @@ typedef enum {
     // It was read and it ran, and it stopped -- a panic^, a division by
     // zero. lhat_machine_traceback(machine, ...) is where it stopped.
     LHAT_LTON_FAULTED,
-    LHAT_LTON_OUT_OF_MEMORY
+    LHAT_LTON_OUT_OF_MEMORY,
+    // Text serialization failures.
+    LHAT_LTON_UNSUPPORTED,
+    LHAT_LTON_CYCLE,
+    LHAT_LTON_TOO_DEEP
 } LhatLtonStatus;
 
 // A text already in hand. `name` is what diagnostics call it -- NULL for
@@ -129,6 +133,17 @@ LhatLtonStatus lhatstdlib_lton_parse(LhatMachine *machine,
 // either. Diagnostics call it by its path.
 LhatLtonStatus lhatstdlib_lton_load(LhatMachine *machine, LhatProgram *program,
                                     const char *path, LhatValue *out);
+
+// Serialize a plain data table using the same format as std.lton.stringify.
+// No program, machine or module registration is needed. The table and its
+// children must remain valid for the duration of the call.
+// `text` and `length` must be non-NULL. On OK, `text` is a NUL-terminated,
+// lhat_alloc'd buffer owned by the caller (release with lhat_free); `length`
+// excludes the terminator. An empty table returns an allocated empty string.
+// On failure they are NULL and 0. Possible failures are UNSUPPORTED (including
+// a non-table root), CYCLE, TOO_DEEP and OUT_OF_MEMORY.
+LhatLtonStatus lhatstdlib_lton_stringify(LhatValue table, char **text,
+                                        size_t *length);
 
 // 08 の 7改: the text compiled ahead -- the same wrapping and reading parse
 // makes, written out as the bytes parse and load read back without the

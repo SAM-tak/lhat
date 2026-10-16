@@ -279,21 +279,20 @@ typedef struct {
     char *text;
     size_t length, capacity;
     const LhatTable *ancestors[LTON_MAX_DEPTH];
-    const LtonModule *module;
-    const LhatErrorKind *error;
+    LhatLtonStatus status;
     const char *message;
 } LtonWriter;
 
-static void write_fail(LtonWriter *w, const LhatErrorKind *error, const char *message)
+static void write_fail(LtonWriter *w, LhatLtonStatus status, const char *message)
 {
-    if (w->error == NULL) { w->error = error; w->message = message; }
+    if (w->status == LHAT_LTON_OK) { w->status = status; w->message = message; }
 }
 
 static void text_put(LtonWriter *w, const char *text, size_t length)
 {
-    if (w->error != NULL) return;
+    if (w->status != LHAT_LTON_OK) return;
     if (length > SIZE_MAX - w->length - 1) {
-        write_fail(w, w->module->out_of_memory, "LTON text is too large");
+        write_fail(w, LHAT_LTON_OUT_OF_MEMORY, "LTON text is too large");
         return;
     }
     size_t needed = w->length + length + 1;
@@ -305,7 +304,7 @@ static void text_put(LtonWriter *w, const char *text, size_t length)
         }
         char *grown = lhat_realloc(w->text, capacity);
         if (grown == NULL) {
-            write_fail(w, w->module->out_of_memory, "out of memory");
+            write_fail(w, LHAT_LTON_OUT_OF_MEMORY, "out of memory");
             return;
         }
         w->text = grown;
@@ -340,7 +339,7 @@ static size_t text_utf8(const unsigned char *s, size_t length)
 static void text_string(LtonWriter *w, const LhatString *s)
 {
     text_word(w, "\"");
-    for (size_t i = 0; i < s->length && w->error == NULL; i++) {
+    for (size_t i = 0; i < s->length && w->status == LHAT_LTON_OK; i++) {
         unsigned char ch = (unsigned char)s->text[i];
         if (ch >= 128) {
             size_t n = text_utf8((const unsigned char *)s->text + i, s->length - i);
@@ -411,26 +410,26 @@ static void text_value(LtonWriter *w, LhatValue value, size_t depth);
 static void text_table(LtonWriter *w, const LhatTable *table, size_t depth)
 {
     if (depth >= LTON_MAX_DEPTH) {
-        write_fail(w, w->module->too_deep, "LTON nesting exceeds 96 tables"); return;
+        write_fail(w, LHAT_LTON_TOO_DEEP, "LTON nesting exceeds 96 tables"); return;
     }
     for (size_t i = 0; i < depth; i++) {
         if (w->ancestors[i] == table) {
-            write_fail(w, w->module->cycle, "cyclic table cannot be written as LTON"); return;
+            write_fail(w, LHAT_LTON_CYCLE, "cyclic table cannot be written as LTON"); return;
         }
     }
     if (table->is_definition || table->definition != NULL) {
-        write_fail(w, w->module->unsupported, "only plain data tables can be written as LTON"); return;
+        write_fail(w, LHAT_LTON_UNSUPPORTED, "only plain data tables can be written as LTON"); return;
     }
     w->ancestors[depth] = table;
     // 02 の 14.10: the sequence is written whole, nil^ positions included,
     // so it reads back the same length; the keyed half follows, sorted.
     size_t total = table->entry_count;
     if (total > SIZE_MAX / sizeof(LhatTableEntry)) {
-        write_fail(w, w->module->out_of_memory, "table is too large"); return;
+        write_fail(w, LHAT_LTON_OUT_OF_MEMORY, "table is too large"); return;
     }
     LhatTableEntry *entries = total > 0 ? lhat_alloc(total * sizeof *entries) : NULL;
     if (total > 0 && entries == NULL) {
-        write_fail(w, w->module->out_of_memory, "out of memory"); return;
+        write_fail(w, LHAT_LTON_OUT_OF_MEMORY, "out of memory"); return;
     }
     size_t count = 0;
     for (size_t i = 0; i < table->entry_capacity; i++) {
@@ -438,17 +437,17 @@ static void text_table(LtonWriter *w, const LhatTable *table, size_t depth)
     }
     for (size_t i = 0; i < count; i++) {
         if (key_rank(entries[i].key) < 0) {
-            write_fail(w, w->module->unsupported, "LTON keys must be finite numbers, booleans or strings");
+            write_fail(w, LHAT_LTON_UNSUPPORTED, "LTON keys must be finite numbers, booleans or strings");
             break;
         }
     }
-    if (w->error == NULL && count > 1) qsort(entries, count, sizeof *entries, compare_entries);
-    for (size_t i = 0; i < table->array_count && w->error == NULL; i++) {
+    if (w->status == LHAT_LTON_OK && count > 1) qsort(entries, count, sizeof *entries, compare_entries);
+    for (size_t i = 0; i < table->array_count && w->status == LHAT_LTON_OK; i++) {
         text_indent(w, depth);
         text_value(w, lhat_slots_get(table->array, i), depth + 1);
         text_word(w, ",\n");
     }
-    for (size_t i = 0; i < count && w->error == NULL; i++) {
+    for (size_t i = 0; i < count && w->status == LHAT_LTON_OK; i++) {
         LhatValue key = entries[i].key;
         text_indent(w, depth);
         const LhatString *name = arg_string(key);
@@ -463,7 +462,7 @@ static void text_table(LtonWriter *w, const LhatTable *table, size_t depth)
 
 static void text_value(LtonWriter *w, LhatValue value, size_t depth)
 {
-    if (w->error != NULL) return;
+    if (w->status != LHAT_LTON_OK) return;
     char number[96];
     switch (value.tag) {
         case LHAT_VALUE_NIL: text_word(w, "nil^"); return;
@@ -502,16 +501,39 @@ static void text_value(LtonWriter *w, LhatValue value, size_t depth)
             break;
         default: break;
     }
-    write_fail(w, w->module->unsupported, "value cannot be represented as LTON data");
+    write_fail(w, LHAT_LTON_UNSUPPORTED, "value cannot be represented as LTON data");
 }
 
 static void serialize_table(LtonWriter *w, LhatValue value)
 {
     text_word(w, "");
     if (!lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
-        write_fail(w, w->module->unsupported, "LTON requires a table at the root"); return;
+        write_fail(w, LHAT_LTON_UNSUPPORTED, "LTON requires a table at the root"); return;
     }
     text_table(w, (const LhatTable *)lhat_as_object(value), 0);
+}
+
+LhatLtonStatus lhatstdlib_lton_stringify(LhatValue table, char **text,
+                                        size_t *length)
+{
+    *text = NULL;
+    *length = 0;
+    LtonWriter w = {0};
+    serialize_table(&w, table);
+    if (w.status != LHAT_LTON_OK) lhat_free(w.text);
+    else { *text = w.text; *length = w.length; }
+    return w.status;
+}
+
+static const LhatErrorKind *output_error(const LtonModule *module,
+                                        LhatLtonStatus status)
+{
+    switch (status) {
+        case LHAT_LTON_UNSUPPORTED: return module->unsupported;
+        case LHAT_LTON_CYCLE: return module->cycle;
+        case LHAT_LTON_TOO_DEEP: return module->too_deep;
+        default: return module->out_of_memory;
+    }
 }
 
 static void lton_stringify(LhatMachine *machine, void *context,
@@ -520,11 +542,12 @@ static void lton_stringify(LhatMachine *machine, void *context,
 {
     (void)count;
     LtonWriter w = {0};
-    w.module = context;
     serialize_table(&w, arguments[0]);
-    if (w.error == NULL && !lhat_machine_make_string(machine, w.text, w.length, &answers[0]))
-        write_fail(&w, w.module->out_of_memory, "out of memory");
-    if (w.error != NULL) answers[0] = fail_with(machine, w.error, w.message);
+    LtonModule *module = context;
+    if (w.status == LHAT_LTON_OK && !lhat_machine_make_string(machine, w.text, w.length, &answers[0]))
+        write_fail(&w, LHAT_LTON_OUT_OF_MEMORY, "out of memory");
+    if (w.status != LHAT_LTON_OK)
+        answers[0] = fail_with(machine, output_error(module, w.status), w.message);
     lhat_free(w.text);
     *answer_count = 1;
 }
@@ -534,28 +557,47 @@ static void lton_save(LhatMachine *machine, void *context,
                       LhatValue *answers, int *answer_count)
 {
     (void)count;
+    LtonModule *module = context;
     LtonWriter w = {0};
-    w.module = context;
+    const LhatErrorKind *error = NULL;
+    const char *message = NULL;
     const LhatString *path = arg_string(arguments[0]);
-    if (path == NULL || memchr(path->text, '\0', path->length) != NULL)
-        write_fail(&w, w.module->cannot_write, "invalid file path");
-    if (w.error == NULL) serialize_table(&w, arguments[1]);
+    if (path == NULL || memchr(path->text, '\0', path->length) != NULL) {
+        error = module->cannot_write;
+        message = "invalid file path";
+    } else {
+        serialize_table(&w, arguments[1]);
+        if (w.status != LHAT_LTON_OK) {
+            error = output_error(module, w.status);
+            message = w.message;
+        }
+    }
     FILE *file = NULL;
-    if (w.error == NULL) {
+    if (error == NULL) {
         char *name = c_string(path);
-        if (name == NULL) write_fail(&w, w.module->out_of_memory, "out of memory");
-        else file = lhat_fopen(name, "wb");
-        lhat_free(name);
-        if (file == NULL) write_fail(&w, w.module->cannot_write, "cannot open file for writing");
+        if (name == NULL) {
+            error = module->out_of_memory;
+            message = "out of memory";
+        } else {
+            file = lhat_fopen(name, "wb");
+            lhat_free(name);
+            if (file == NULL) {
+                error = module->cannot_write;
+                message = "cannot open file for writing";
+            }
+        }
     }
     if (file != NULL) {
         bool ok = fwrite(w.text, 1, w.length, file) == w.length;
         if (fclose(file) != 0) ok = false;
-        if (!ok) write_fail(&w, w.module->cannot_write, "could not write the complete LTON file");
+        if (!ok) {
+            error = module->cannot_write;
+            message = "could not write the complete LTON file";
+        }
     }
     lhat_free(w.text);
     *answer_count = 1;
-    answers[0] = w.error != NULL ? fail_with(machine, w.error, w.message) : lhat_nil();
+    answers[0] = error != NULL ? fail_with(machine, error, message) : lhat_nil();
 }
 
 bool lhatstdlib_lton_register(LhatProgram *program)
