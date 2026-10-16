@@ -23,7 +23,7 @@
 #include <time.h>
 
 // What lhatstdlib_random_register made, threaded through as every
-// registration's `context` (05 の 8.7) -- see stdlib/io.c's IoModule
+// registration's `context` (05 § 8.7) -- see stdlib/io.c's IoModule
 // comment for why this isn't a file-scope static instead.
 typedef struct {
     const LhatErrorKind *out_of_memory;
@@ -171,33 +171,7 @@ static void random_next(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-static void random_normal(LhatMachine *machine, void *context,
-                          const LhatValue *arguments, size_t count,
-                          LhatValue *answers, int *answer_count)
-{
-    (void)count;
-    const RandomModule *module = (const RandomModule *)context;
-    Random *r = (Random *)lhat_hostdata_pointer(arguments[0], module->tag);
-    LhatReal mean = lhat_number_as_real(arguments[1]);
-    LhatReal deviation = lhat_number_as_real(arguments[2]);
-    *answer_count = 1;
-    if (!isfinite(mean) || !isfinite(deviation) || deviation < 0) {
-        answers[0] = fail_with(machine, module->invalid_argument,
-                               "normal requires a finite mean and a finite nonnegative standard deviation");
-        return;
-    }
-    if (deviation == 0 || r == NULL) {
-        answers[0] = arguments[1];
-        return;
-    }
-    // Box-Muller: (0, 1] avoids log(0). Discard the second normal sample
-    // so the generator's single integer remains its entire saved state.
-    LhatReal radius = sqrt(-2.0 * log(1.0 - next_unit(r)));
-    LhatReal angle = 6.283185307179586476925286766559 * next_unit(r);
-    answers[0] = lhat_real(mean + deviation * (radius * cos(angle)));
-}
-
-// An integer in [lo, hi], both ends inclusive -- 04 の 11.3's "no such thing
+// An integer in [lo, hi], both ends inclusive -- 04 § 11.3's "no such thing
 // as out of range" does not apply here, this is an ordinary argument.
 static void random_rangeint(LhatMachine *machine, void *context,
                          const LhatValue *arguments, size_t count,
@@ -267,7 +241,33 @@ static void random_uniform(LhatMachine *machine, void *context,
     answers[0] = lhat_real(value < lo ? lo : value);
 }
 
-// 05 の 8.8: registering this is what makes a Random the host's to hand
+static void random_normal(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
+{
+    (void)count;
+    const RandomModule *module = (const RandomModule *)context;
+    Random *r = (Random *)lhat_hostdata_pointer(arguments[0], module->tag);
+    LhatReal mean = lhat_number_as_real(arguments[1]);
+    LhatReal deviation = lhat_number_as_real(arguments[2]);
+    *answer_count = 1;
+    if (!isfinite(mean) || !isfinite(deviation) || deviation < 0) {
+        answers[0] = fail_with(machine, module->invalid_argument,
+                               "normal requires a finite mean and a finite nonnegative standard deviation");
+        return;
+    }
+    if (deviation == 0 || r == NULL) {
+        answers[0] = arguments[1];
+        return;
+    }
+    // Box-Muller: (0, 1] avoids log(0). Discard the second normal sample
+    // so the generator's single integer remains its entire saved state.
+    LhatReal radius = sqrt(-2.0 * log(1.0 - next_unit(r)));
+    LhatReal angle = 6.283185307179586476925286766559 * next_unit(r);
+    answers[0] = lhat_real(mean + deviation * (radius * cos(angle)));
+}
+
+// 05 § 8.8: registering this is what makes a Random the host's to hand
 // over and L^'s to give back.
 static void random_dispose(LhatMachine *machine, void *context,
                            const LhatValue *arguments, size_t count,
@@ -283,14 +283,14 @@ static void random_dispose(LhatMachine *machine, void *context,
 
 bool lhatstdlib_random_register(LhatProgram *program)
 {
-    // 05 の 8.7: 登録は検査より前 -- std.error.OutOfMemory を使う側(この
-    // モジュール)より前に確実に存在させる。lhatstdlib_error_register は
-    // 冪等なので、他の stdlib モジュールが先に呼んでいても構わない。
+    // 05 § 8.7: registration precedes checking -- ensure std.error.OutOfMemory
+    // exists before this module uses it. lhatstdlib_error_register is
+    // idempotent, so another stdlib module may already have called it.
     if (!lhatstdlib_error_register(program)) {
         return false;
     }
 
-    // 05 の 8.7: every field of this is an identity, and an identity
+    // 05 § 8.7: every field of this is an identity, and an identity
     // belongs to the process rather than to a program -- one declaration,
     // one tag and one error kind, however many programs declare them. So
     // one of these serves them all, and a second registration writes the
@@ -326,15 +326,15 @@ bool lhatstdlib_random_register(LhatProgram *program)
                                 random_load, module) &&
            lhat_register_member(program, "std.random", "Random", "next",
                                 "f^self^ -> number^;", random_next, module) &&
-           lhat_register_member(program, "std.random", "Random", "normal",
-                                "f^self^, number^, number^ -> number^|std.random.Error.InvalidArgument;",
-                                random_normal, module) &&
            lhat_register_member(program, "std.random", "Random", "rangeint",
                                 "f^self^, number^, number^ -> number^|std.random.Error.InvalidArgument;",
                                 random_rangeint, module) &&
            lhat_register_member(program, "std.random", "Random", "uniform",
                                 "f^self^, number^, number^ -> number^|std.random.Error.InvalidArgument;",
                                 random_uniform, module) &&
+           lhat_register_member(program, "std.random", "Random", "normal",
+                                "f^self^, number^, number^ -> number^|std.random.Error.InvalidArgument;",
+                                random_normal, module) &&
            lhat_register_member(program, "std.random", "Random", "dispose",
                                 "p^self^;", random_dispose, module);
 }
