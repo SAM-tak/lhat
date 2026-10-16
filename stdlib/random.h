@@ -12,6 +12,20 @@
 // states as integers: conversion through floating point can lose bits.
 // Saved states depend on the generator algorithm used by this version.
 //
+// Random.rangeint(lo, hi) samples integers in [lo, hi], using rejection to
+// avoid modulo bias. Bounds must be ordered, representable 64-bit integers.
+// Random.uniform(lo, hi) samples reals in [lo, hi), including after rounding.
+// Bounds must be finite and ordered. Both return Error.InvalidArgument for
+// invalid bounds without advancing, and return lo without advancing if equal.
+//
+// Random.normal(mean, standard_deviation) returns a normally distributed
+// number, or Error.InvalidArgument for nonfinite arguments or a negative
+// standard deviation. Zero deviation returns mean without consuming a draw;
+// invalid arguments also leave the stream unchanged. Box-Muller discards its
+// second sample, so save/load reproduce normal draws without extra state.
+// Extreme finite arguments can overflow the result. Math-library rounding
+// can differ between platforms, so bitwise cross-platform replay is not promised.
+//
 // std.random.new answers std.random.Random|std.error.OutOfMemory -- read
 // it with try^/catch^, or narrow with fits^ against std.random.Random or
 // std.error.OutOfMemory (05 の 8.8's hostdata path and 04 の 2.4's error

@@ -18,6 +18,7 @@
 #include "error.h"
 #include "random.h"
 
+#include <math.h>
 #include <stdint.h>
 #include <time.h>
 
@@ -27,6 +28,7 @@
 typedef struct {
     const LhatErrorKind *out_of_memory;
     const LhatErrorKind *invalid_state;
+    const LhatErrorKind *invalid_argument;
     const LhatHostDataTag *tag;
 } RandomModule;
 
@@ -147,6 +149,11 @@ static void random_load(LhatMachine *machine, void *context,
 }
 
 // [0, 1). The top 53 bits are what a double's mantissa can hold exactly.
+static LhatReal next_unit(Random *r)
+{
+    return (LhatReal)(next_raw(r) >> 11) / (LhatReal)(1ULL << 53);
+}
+
 static void random_next(LhatMachine *machine, void *context,
                         const LhatValue *arguments, size_t count,
                         LhatValue *answers, int *answer_count)
@@ -160,32 +167,104 @@ static void random_next(LhatMachine *machine, void *context,
         *answer_count = 1;
         return;
     }
-    uint64_t bits = next_raw(r) >> 11;
-    answers[0] = lhat_real((LhatReal)bits / (LhatReal)(1ULL << 53));
+    answers[0] = lhat_real(next_unit(r));
     *answer_count = 1;
+}
+
+static void random_normal(LhatMachine *machine, void *context,
+                          const LhatValue *arguments, size_t count,
+                          LhatValue *answers, int *answer_count)
+{
+    (void)count;
+    const RandomModule *module = (const RandomModule *)context;
+    Random *r = (Random *)lhat_hostdata_pointer(arguments[0], module->tag);
+    LhatReal mean = lhat_number_as_real(arguments[1]);
+    LhatReal deviation = lhat_number_as_real(arguments[2]);
+    *answer_count = 1;
+    if (!isfinite(mean) || !isfinite(deviation) || deviation < 0) {
+        answers[0] = fail_with(machine, module->invalid_argument,
+                               "normal requires a finite mean and a finite nonnegative standard deviation");
+        return;
+    }
+    if (deviation == 0 || r == NULL) {
+        answers[0] = arguments[1];
+        return;
+    }
+    // Box-Muller: (0, 1] avoids log(0). Discard the second normal sample
+    // so the generator's single integer remains its entire saved state.
+    LhatReal radius = sqrt(-2.0 * log(1.0 - next_unit(r)));
+    LhatReal angle = 6.283185307179586476925286766559 * next_unit(r);
+    answers[0] = lhat_real(mean + deviation * (radius * cos(angle)));
 }
 
 // An integer in [lo, hi], both ends inclusive -- 04 の 11.3's "no such thing
 // as out of range" does not apply here, this is an ordinary argument.
-static void random_range(LhatMachine *machine, void *context,
+static void random_rangeint(LhatMachine *machine, void *context,
                          const LhatValue *arguments, size_t count,
                          LhatValue *answers, int *answer_count)
 {
-    (void)machine;
+    (void)count;
+    const RandomModule *module = (const RandomModule *)context;
+    Random *r = (Random *)lhat_hostdata_pointer(arguments[0], module->tag);
+    LhatInteger lo, hi;
+    *answer_count = 1;
+    if (!lhat_number_as_whole(arguments[1], &lo) ||
+        !lhat_number_as_whole(arguments[2], &hi) || hi < lo) {
+        answers[0] = fail_with(machine, module->invalid_argument,
+                               "rangeint requires ordered 64-bit integer bounds");
+        return;
+    }
+    if (r == NULL || hi <= lo) {
+        answers[0] = lhat_integer(lo);
+        *answer_count = 1;
+        return;
+    }
+    // Unsigned arithmetic also handles spans crossing zero without overflow.
+    uint64_t span = (uint64_t)hi - (uint64_t)lo + 1;
+    uint64_t bits = next_raw(r);
+    if (span != 0) {
+        // Discard the short remainder so every residue has the same count.
+        uint64_t threshold = (UINT64_C(0) - span) % span;
+        while (bits < threshold) {
+            bits = next_raw(r);
+        }
+        bits %= span;
+    }
+    // A zero span denotes the full 2^64 range and needs no reduction.
+    uint64_t result = (uint64_t)lo + bits;
+    answers[0] = lhat_integer(result <= INT64_MAX ? (LhatInteger)result
+                                               : -1 - (LhatInteger)(~result));
+    *answer_count = 1;
+}
+
+static void random_uniform(LhatMachine *machine, void *context,
+                           const LhatValue *arguments, size_t count,
+                           LhatValue *answers, int *answer_count)
+{
     (void)count;
     const RandomModule *module = (const RandomModule *)context;
     Random *r = (Random *)lhat_hostdata_pointer(arguments[0], module->tag);
     LhatReal lo = lhat_number_as_real(arguments[1]);
     LhatReal hi = lhat_number_as_real(arguments[2]);
-    if (r == NULL || hi <= lo) {
-        answers[0] = lhat_integer((LhatInteger)lo);
-        *answer_count = 1;
+    *answer_count = 1;
+    if (!isfinite(lo) || !isfinite(hi) || hi < lo) {
+        answers[0] = fail_with(machine, module->invalid_argument,
+                               "uniform requires ordered finite bounds");
         return;
     }
-    uint64_t span = (uint64_t)(hi - lo) + 1;
-    uint64_t offset = next_raw(r) % span;
-    answers[0] = lhat_integer((LhatInteger)lo + (LhatInteger)offset);
-    *answer_count = 1;
+    if (lo == hi || r == NULL) {
+        answers[0] = lhat_real(lo);
+        return;
+    }
+    LhatReal u = next_unit(r);
+    // Opposite-sign bounds can overflow hi - lo even when both are finite.
+    LhatReal value = lo <= 0 && hi >= 0 ? (1.0 - u) * lo + u * hi
+                                       : lo + u * (hi - lo);
+    // Interpolation may round up to hi; enforce the half-open contract.
+    if (value >= hi) {
+        value = nextafter(hi, lo);
+    }
+    answers[0] = lhat_real(value < lo ? lo : value);
 }
 
 // 05 の 8.8: registering this is what makes a Random the host's to hand
@@ -219,13 +298,15 @@ bool lhatstdlib_random_register(LhatProgram *program)
     static RandomModule shared;
     RandomModule *module = &shared;
     module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
-    static const char *const variants[] = {"InvalidState"};
-    if (!lhat_register_error_kind(program, "std.random", "Error", variants, 1,
+    static const char *const variants[] = {"InvalidState", "InvalidArgument"};
+    if (!lhat_register_error_kind(program, "std.random", "Error", variants, 2,
                                   NULL, NULL)) {
         return false;
     }
     module->invalid_state =
         lhat_lookup_error_kind(program, "std.random", "Error", "InvalidState");
+    module->invalid_argument =
+        lhat_lookup_error_kind(program, "std.random", "Error", "InvalidArgument");
 
     module->tag = lhat_register_hostdata_type(program, "std.random", "Random");
     if (module->tag == NULL) {
@@ -245,9 +326,15 @@ bool lhatstdlib_random_register(LhatProgram *program)
                                 random_load, module) &&
            lhat_register_member(program, "std.random", "Random", "next",
                                 "f^self^ -> number^;", random_next, module) &&
-           lhat_register_member(program, "std.random", "Random", "range",
-                                "f^self^, number^, number^ -> number^;",
-                                random_range, module) &&
+           lhat_register_member(program, "std.random", "Random", "normal",
+                                "f^self^, number^, number^ -> number^|std.random.Error.InvalidArgument;",
+                                random_normal, module) &&
+           lhat_register_member(program, "std.random", "Random", "rangeint",
+                                "f^self^, number^, number^ -> number^|std.random.Error.InvalidArgument;",
+                                random_rangeint, module) &&
+           lhat_register_member(program, "std.random", "Random", "uniform",
+                                "f^self^, number^, number^ -> number^|std.random.Error.InvalidArgument;",
+                                random_uniform, module) &&
            lhat_register_member(program, "std.random", "Random", "dispose",
                                 "p^self^;", random_dispose, module);
 }

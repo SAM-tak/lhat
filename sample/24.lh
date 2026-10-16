@@ -149,10 +149,10 @@ do^{
         let^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
         var^shown = ""
         for^i from^1 to^4 {
-            let^d = rng.range(1, 9)
+            let^d = try^rng.rangeint(1, 9)
             if^1 <= d <= 9 { # narrowing the range is what removes the nil check
                 want[d - 1] += 1
-                # L^ cannot tell from rng.range(1, 9) that d is within 1..9,
+                # L^ cannot tell from rng.rangeint(1, 9) that d is within 1..9,
                 # so the if^1 <= d <= 9 {} around it is what says so.
             }
             # Without the narrowing it has to be written this way:
