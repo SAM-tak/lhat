@@ -36,6 +36,13 @@ extern "C" {
 typedef struct LhatProgram LhatProgram;
 typedef struct LhatUnit LhatUnit;
 
+// Set the loader namespace's project root before loading/checking any units.
+// require^"$src/file.lh" resolves to <root>/src/file.lh, independently of the
+// requiring file. NULL unsets the root; such paths then fail to resolve.
+// The path is copied and normalized, without accessing the filesystem.
+bool lhat_program_set_project_root(LhatProgram *program, const char *path);
+
+
 typedef enum {
     LHAT_PROGRAM_ERR_CANNOT_READ,  // no such unit
     LHAT_PROGRAM_ERR_CYCLE,        // 6.3
@@ -251,8 +258,7 @@ typedef enum {
 // the path; otherwise a buffer the caller frees with lhat_free.
 //
 // For a module that has to see a file's text before the program does, which
-// is std.lton (08): it wraps what it reads before handing it back to be
-// checked. A module that wants the text checked as it stands wants
+// is std.lton (08): it reads data with its own load options. A module that wants the text checked as it stands wants
 // lhat_program_load_file instead.
 char *lhat_program_read(LhatProgram *program, const char *path,
                         size_t *length);
@@ -267,6 +273,8 @@ typedef struct {
     // is no part of what a text read as data may name. std.lton (08) is what
     // this exists for, and it leaves them out.
     bool initial_bindings;
+    // Read an LTON preamble and table body rather than an ordinary script.
+    bool lton;
 } LhatLoadOptions;
 
 LhatLoadStatus lhat_program_load_text_with(LhatProgram *program,
@@ -328,8 +336,7 @@ size_t lhat_compile_message_write(const LhatProgram *program,
 // does not (10.1). The loaders above ask it themselves, so a script or an
 // LTON file a full build wrote out loads through the same entries as its
 // text would, front end or no (10.8); what holds something that may be
-// either and has to treat the two differently first (std.lton's wrapping)
-// asks here.
+// either can ask here before choosing how to present it.
 bool lhat_program_is_binary_unit(const char *bytes, size_t length);
 
 // The same reading lhat_program_load_text_with makes of a text, written out

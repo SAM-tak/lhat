@@ -27,6 +27,7 @@ typedef struct {
     // 'in^self^ { ... }' walks the receiver; parentheses (or any bracket)
     // restore the literal, exactly as Go reads its composite literals.
     bool brace_is_body;
+    bool lton_body;  // imports are confined to the preamble
 
     // 02 の 8.2: a bare expression is a statement at the top level of
     // interactive input and nowhere else. `depth` counts the statement lists
@@ -2514,6 +2515,7 @@ static LhatNode *parse_unary(Parser *p)
     // 05 の 5 章. Unary like try^, so '(require^ "m").f' needs the brackets
     // that say what is being reached into.
     if (check_hat(p, "require")) {
+        if (p->lton_body) report(p, &p->current, LHAT_PARSE_ERR_LTON_IMPORT);
         LhatToken at = p->current;
         advance(p);
 
@@ -2535,6 +2537,7 @@ static LhatNode *parse_unary(Parser *p)
     // the path 3 章 spells rather than a string. Only what the host
     // registered answers to it -- see 8.7 for why not what require^ brought.
     if (check_hat(p, "import")) {
+        if (p->lton_body) report(p, &p->current, LHAT_PARSE_ERR_LTON_IMPORT);
         LhatToken at = p->current;
         advance(p);
 
@@ -5117,6 +5120,7 @@ static void parser_begin(Parser *p, LhatLexer *lexer, LhatParseResult *result)
     p->panicking = false;
     p->saw_yield = false;
     p->brace_is_body = false;
+    p->lton_body = false;
     p->interactive = false;
     p->depth = 0;
     // 15.12: no body is open yet. Left unset, this read whatever the stack
@@ -5352,6 +5356,62 @@ void lhat_parse(LhatLexer *lexer, LhatParseResult *result)
     parse_unit(lexer, result, false);
 }
 
+void lhat_parse_lton(LhatLexer *lexer, LhatParseResult *result)
+{
+    Parser p;
+    parser_begin(&p, lexer, result);
+    LhatToken origin = p.current;
+    LhatNode *head = NULL, *tail = NULL;
+    while (check_hat(&p, "import") || check_hat(&p, "require") || check_hat(&p, "let")) {
+        LhatToken at = p.current;
+        LhatNode *statement = parse_statement(&p);
+        if (statement == NULL) break;
+        if (statement->kind == LHAT_NODE_DEFINE) {
+            LhatNode *target = statement->v.binding.targets;
+            LhatNode *value = statement->v.binding.values;
+            if (!statement->v.binding.immutable || target == NULL ||
+                target->kind != LHAT_NODE_IDENT || target->next != NULL ||
+                value == NULL || value->next != NULL ||
+                (value->kind != LHAT_NODE_IMPORT && value->kind != LHAT_NODE_REQUIRE))
+                report(&p, &at, LHAT_PARSE_ERR_LTON_IMPORT);
+        } else if (statement->kind != LHAT_NODE_IMPORT_STMT &&
+                   statement->kind != LHAT_NODE_REQUIRE_STMT) {
+            report(&p, &at, LHAT_PARSE_ERR_LTON_IMPORT);
+        }
+        lhat_node_append(&head, &tail, statement);
+        if (p.panicking) break;
+        while (match_op(&p, LHAT_OP_SEMICOLON)) {}
+    }
+    p.lton_body = true;
+    LhatToken body_at = p.current;
+    LhatNode *table = make(&p, LHAT_NODE_TABLE, &body_at);
+    if (table != NULL) {
+        table->v.list.items = parse_brace_entries(&p, false);
+        finish(&p, table);
+    }
+    LhatNode *answer = make(&p, LHAT_NODE_RETURN, &body_at);
+    LhatNode *body = make(&p, LHAT_NODE_BLOCK, &origin);
+    LhatNode *function = make(&p, LHAT_NODE_FUNC, &origin);
+    LhatNode *call = make(&p, LHAT_NODE_CALL, &origin);
+    LhatNode *outer_answer = make(&p, LHAT_NODE_RETURN, &origin);
+    result->root = make(&p, LHAT_NODE_BLOCK, &origin);
+    if (answer && body && function && call && outer_answer && result->root) {
+        answer->v.jump.value = table;
+        lhat_node_append(&head, &tail, finish(&p, answer));
+        body->v.list.items = head;
+        function->v.func.is_function = true;
+        function->v.func.body = finish(&p, body);
+        call->v.access.target = finish(&p, function);
+        outer_answer->v.jump.value = finish(&p, call);
+        result->root->v.list.items = finish(&p, outer_answer);
+        finish(&p, result->root);
+        result->root->offset = 0;
+        result->root->line = result->root->column = 1;
+        result->root->end = (uint32_t)lexer->source->length;
+    }
+    parser_finish(&p, lexer, result);
+}
+
 void lhat_parse_interactive(LhatLexer *lexer, LhatParseResult *result)
 {
     parse_unit(lexer, result, true);
@@ -5559,6 +5619,8 @@ static const LhatMessageEntry PARSE_MESSAGES[] = {
     [LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION] =
         {"parse.public-needs-declaration",
          "public^ marks a let^ or an errordef^"},
+    [LHAT_PARSE_ERR_LTON_IMPORT] = {"parse.lton-import",
+        "LTON permits only import^, require^ and let^ aliases of them before its table entries"},
     [LHAT_PARSE_ERR_REQUIRE_NEEDS_LITERAL] = {"parse.require-needs-literal",
         "require^ takes a written path, since the checker follows it"},
     [LHAT_PARSE_ERR_ELSE_NEEDS_COLON] = {"parse.else-needs-colon",

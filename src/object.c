@@ -508,6 +508,10 @@ static LhatRuntimeType *clone_runtime_type(LhatHeap *heap, const LhatRuntimeType
     }
     CLONE_NAME(enum_name);
     CLONE_NAME(enum_owner_name);
+    CLONE_NAME(enum_module);
+    CLONE_NAME(enum_require);
+    CLONE_NAME(enum_qualifier);
+
 #undef CLONE_NAME
     for (size_t i = 0; i < source->part_count; i++) {
         LhatRuntimeType *part = clone_runtime_type(heap, source->parts[i], &here, depth + 1);

@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-#define LHAT_EXTENSION_ABI 2u
+#define LHAT_EXTENSION_ABI 3u
 #define LHAT_EXTENSION_TYPES 0u
 #define LHAT_EXTENSION_MEMBERS 1u
 

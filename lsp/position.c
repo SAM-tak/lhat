@@ -102,27 +102,15 @@ LspPosition lsp_position_at(const char *text, size_t text_length,
     return pos;
 }
 
-// 08-lton.md: an LTON file is wrapped before the front end reads it, and the
-// prologue sits on the line the file's own first line does -- so a line is a
-// line either way, and only the first line's columns are shifted by it.
+// Native LTON parsing retains the original source coordinates.
 LspPosition lsp_unit_position_at(const LhatUnit *unit, uint32_t byte_offset)
 {
-    LspPosition at = lsp_position_at(unit->source.text, unit->source.length,
-                                     byte_offset);
-    if (at.line == 0 && lsp_lton_is_path(unit->path)) {
-        uint32_t shift = lsp_lton_prologue_length();
-        at.character = at.character > (int)shift ? at.character - (int)shift : 0;
-    }
-    return at;
+    return lsp_position_at(unit->source.text, unit->source.length, byte_offset);
 }
 
 uint32_t lsp_unit_offset_at(const LhatUnit *unit, int line, int character)
 {
-    if (line == 0 && lsp_lton_is_path(unit->path)) {
-        character += (int)lsp_lton_prologue_length();
-    }
-    return lsp_offset_at(unit->source.text, unit->source.length, line,
-                         character);
+    return lsp_offset_at(unit->source.text, unit->source.length, line, character);
 }
 
 // ---------------------------------------------------------------------------

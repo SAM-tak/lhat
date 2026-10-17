@@ -620,9 +620,8 @@ if(LHAT_BUILD_LSP)
         target_sources(lhat_lsp PRIVATE cmake/utf8.manifest)
     endif()
     target_link_libraries(lhat_lsp PRIVATE lhat cjson lhattransport lhatthread)
-    # The repository root as well: lsp/lton.c names stdlib/lton.h for the
-    # wrapper an LTON file is read inside (08-lton.md). A header and no
-    # more -- the server still does not link the sample library.
+    # The repository root makes in-tree port and transport headers visible.
+    # The server does not link the sample standard library.
     target_include_directories(lhat_lsp PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/src

@@ -95,10 +95,42 @@ static char *normalise_path(const char *path)
     return out;
 }
 
+bool lhat_program_set_project_root(LhatProgram *program, const char *path)
+{
+    if (program == NULL) return false;
+    char *root = path != NULL ? normalise_path(path) : NULL;
+    if (path != NULL && root == NULL) return false;
+    lhat_free(program->project_root);
+    program->project_root = root;
+    return true;
+}
+
+static bool absolute_path(const char *path, size_t length)
+{
+    return length > 0 && (path[0] == '/' || path[0] == '\\' ||
+                          (length > 1 && path[1] == ':'));
+}
+
 // 5.1: a require^ is relative to the unit that wrote it.
-static char *resolve_against(const char *base, const char *relative,
+static char *resolve_against(const LhatProgram *program, const char *base, const char *relative,
                              size_t relative_length)
 {
+    if (relative_length > 0 && relative[0] == '$') {
+        if (program == NULL || program->project_root == NULL) return NULL;
+        const char *root = program->project_root;
+        size_t root_length = strlen(root);
+        char *joined = lhat_alloc(root_length + relative_length + 1);
+        if (joined == NULL) return NULL;
+        memcpy(joined, root, root_length);
+        size_t at = root_length;
+        if (at > 0 && root[at - 1] != '/') joined[at++] = '/';
+        memcpy(joined + at, relative + 1, relative_length - 1);
+        joined[at + relative_length - 1] = '\0';
+        char *resolved = normalise_path(joined);
+        lhat_free(joined);
+        return resolved;
+    }
+    if (absolute_path(relative, relative_length)) base = NULL;
     size_t base_length = 0;
     for (size_t i = 0; base != NULL && base[i] != '\0'; i++) {
         if (base[i] == '/' || base[i] == '\\') {
@@ -110,7 +142,7 @@ static char *resolve_against(const char *base, const char *relative,
     if (joined == NULL) {
         return NULL;
     }
-    memcpy(joined, base, base_length);
+    if (base_length > 0) memcpy(joined, base, base_length);
     memcpy(joined + base_length, relative, relative_length);
     joined[base_length + relative_length] = '\0';
 
@@ -219,7 +251,7 @@ static LhatType *resolve_require(void *context, const char *path, size_t length,
                                  const char **unit_path)
 {
     Resolution *r = (Resolution *)context;
-    char *resolved = resolve_against(r->requiring->path, path, length);
+    char *resolved = resolve_against(r->program, r->requiring->path, path, length);
     if (resolved == NULL) {
         return NULL;
     }
@@ -384,7 +416,10 @@ static void check_parsed(LhatProgram *program, LhatUnit *unit,
                          LhatTypeArena *arena)
 {
     lhat_lexer_init(&unit->lexer, &unit->source);
-    lhat_parse(&unit->lexer, &unit->parsed);
+    size_t path_length = strlen(unit->path);
+    if (unit->lton || (program->syntax_only && path_length >= 5 && strcmp(unit->path + path_length - 5, ".lton") == 0))
+        lhat_parse_lton(&unit->lexer, &unit->parsed);
+    else lhat_parse(&unit->lexer, &unit->parsed);
     unit->loaded = true;
     unit->state = LHAT_UNIT_CHECKING;
 
@@ -440,7 +475,7 @@ static size_t resolve_unit(void *context, const char *path, size_t length,
                            const char **module_name)
 {
     Resolution *r = (Resolution *)context;
-    char *resolved = resolve_against(r->requiring->path, path, length);
+    char *resolved = resolve_against(r->program, r->requiring->path, path, length);
     if (resolved == NULL) {
         return LHAT_NO_UNIT;
     }
@@ -2665,6 +2700,11 @@ bool lhat_register_enum_valued(LhatProgram *program, const char *module,
     e->decl_rt->enum_decl = decl;
     e->decl_rt->enum_name =
         lhat_string_new(&program->host_heap, e->name, strlen(e->name));
+    e->decl_rt->enum_module = lhat_string_new(&program->host_heap, module, strlen(module));
+    if (type != NULL)
+        e->decl_rt->enum_qualifier = lhat_string_new(&program->host_heap, type, strlen(type));
+    if (e->decl_rt->enum_name == NULL || e->decl_rt->enum_module == NULL ||
+        (type != NULL && e->decl_rt->enum_qualifier == NULL)) return false;
     program->host_enum_count++;
     return true;
 }
@@ -3036,18 +3076,53 @@ static bool fill_unit_table(LhatUnit *u)
     return true;
 }
 
+#if LHAT_WITH_FRONTEND
+static char *enum_require_path(const LhatProgram *program, const char *path, bool *out_of_memory)
+{
+    const char *root = program->project_root;
+    if (root != NULL) {
+        size_t n = strlen(root);
+        const char *relative = NULL;
+        if (n == 0 && !absolute_path(path, strlen(path))) relative = path;
+        else if (n > 0 && strncmp(path, root, n) == 0 &&
+                 (root[n - 1] == '/' || path[n] == '/'))
+            relative = path + n + (root[n - 1] != '/');
+        if (relative != NULL) {
+            size_t length = strlen(relative);
+            char *out = lhat_alloc(length + 2);
+            if (out != NULL) { out[0] = '$'; memcpy(out + 1, relative, length + 1); }
+            else *out_of_memory = true;
+            return out;
+        }
+    }
+    if (!absolute_path(path, strlen(path))) return NULL;
+    char *out = duplicate(path);
+    if (out == NULL) *out_of_memory = true;
+    return out;
+}
+
 // Compiles one checked unit into u->proto. `registers` is 5.3's guard and
 // registry write for a module^ unit -- off for a loaded one (5.6), which
 // answers its table to whoever called it and enters no registry. False
 // leaves the failure where lhat_program_compile_failure reads it.
-#if LHAT_WITH_FRONTEND
 static bool compile_one(LhatProgram *program, LhatUnit *u, bool registers)
 {
     Resolution resolution;
     resolution.program = program;
     resolution.requiring = u;
 
-    LhatUnits units;
+    LhatUnits units = {0};
+    bool out_of_memory = false;
+    char *enum_path = registers && u->checked.module_name != NULL
+        ? enum_require_path(program, u->path, &out_of_memory) : NULL;
+    if (out_of_memory) {
+        program->compile_status = LHAT_COMPILE_OUT_OF_MEMORY;
+        program->compile_unit = u;
+        memset(&program->compile_result, 0, sizeof program->compile_result);
+        program->compile_result.status = LHAT_COMPILE_OUT_OF_MEMORY;
+        return false;
+    }
+    units.enum_require_path = enum_path;
     units.resolve = resolve_unit;
     units.context = &resolution;
     units.module_name = u->checked.module_name;
@@ -3065,6 +3140,7 @@ static bool compile_one(LhatProgram *program, LhatUnit *u, bool registers)
     u->referenced_capacity = 0;
     LhatCompileResult compiled =
         lhat_compile_module(&u->checked, &u->lexer, &units, &u->proto);
+    lhat_free(enum_path);
     if (compiled.status != LHAT_COMPILE_OK) {
         // Kept so the caller can say which form stopped it rather than
         // only that something did -- and which unit, since the position
@@ -4026,7 +4102,7 @@ static LhatUnit *place(LhatProgram *program, const char *name,
     if (unit == NULL) {
         return NULL;
     }
-    unit->path = normalise_path(name);
+    unit->path = resolve_against(program, NULL, name, strlen(name));
     if (unit->path == NULL) {
         lhat_free(unit);
         return NULL;
@@ -4036,6 +4112,7 @@ static LhatUnit *place(LhatProgram *program, const char *name,
     // bindings are in scope. Set before anything is checked, since that is
     // the one moment it is asked.
     unit->as_data = options != NULL && !options->initial_bindings;
+    unit->lton = options != NULL && options->lton;
     return unit;
 }
 
@@ -4053,7 +4130,11 @@ char *lhat_program_read(LhatProgram *program, const char *path,
         return NULL;
     }
     *length = 0;
-    return program->load(program->loader_context, path, length);
+    char *resolved = resolve_against(program, NULL, path, strlen(path));
+    if (resolved == NULL) return NULL;
+    char *text = program->load(program->loader_context, resolved, length);
+    lhat_free(resolved);
+    return text;
 }
 
 static LhatLoadStatus load_text_held(LhatProgram *program, const char *name,
@@ -4138,7 +4219,7 @@ LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,
                                       const char *text, size_t length,
                                       LhatProto **out)
 {
-    LhatLoadOptions options;
+    LhatLoadOptions options = {0};
     options.initial_bindings = true;  // 8.2, as it always was
     lhat_program_hold(program);
     LhatLoadStatus status =
@@ -4153,9 +4234,10 @@ LhatLoadStatus lhat_program_load_file(LhatProgram *program, const char *path,
     *out = NULL;
     lhat_free(program->load_failure);
     program->load_failure = NULL;
-    char *resolved = normalise_path(path);
+    char *resolved = resolve_against(program, NULL, path, strlen(path));
     if (resolved == NULL) {
-        return LHAT_LOAD_OUT_OF_MEMORY;
+        return path[0] == '$' && program->project_root == NULL
+                   ? LHAT_LOAD_CANNOT_READ : LHAT_LOAD_OUT_OF_MEMORY;
     }
     size_t length = 0;
     char *text = program->load != NULL
@@ -4165,7 +4247,7 @@ LhatLoadStatus lhat_program_load_file(LhatProgram *program, const char *path,
     if (text != NULL) {
         // The read is outside the lock: what it touches is the loader the
         // host gave, not the program.
-        LhatLoadOptions options;
+        LhatLoadOptions options = {0};
         options.initial_bindings = true;
         lhat_program_hold(program);
         status =
@@ -4361,6 +4443,8 @@ void lhat_program_dispose(LhatProgram *program)
     program->diagnostic_capacity = 0;
 
     lhat_type_arena_dispose(&program->types);
+    lhat_free(program->project_root);
+    program->project_root = NULL;
 }
 
 // The opaque forms a host uses (program.h): the by-value pair above wrapped
@@ -4593,7 +4677,7 @@ static size_t invalidate_held(LhatProgram *program, const char *path)
     if (program == NULL || path == NULL) {
         return SIZE_MAX;
     }
-    char *resolved = normalise_path(path);
+    char *resolved = resolve_against(program, NULL, path, strlen(path));
     if (resolved == NULL) {
         return SIZE_MAX;
     }
@@ -5006,7 +5090,7 @@ size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
 // round after round.
 static const LhatUnit *check_held(LhatProgram *program, const char *path)
 {
-    char *resolved = normalise_path(path);
+    char *resolved = resolve_against(program, NULL, path, strlen(path));
     if (resolved == NULL) {
         return NULL;
     }
@@ -5135,7 +5219,7 @@ const char *lhat_program_error_id(LhatProgramErrorCode code)
 LhatUnit *lhat_program_require_unit(LhatProgram *program, LhatUnit *from,
                                     const char *relative, size_t length)
 {
-    char *resolved = resolve_against(from->path, relative, length);
+    char *resolved = resolve_against(from->program, from->path, relative, length);
     if (resolved == NULL) {
         return NULL;
     }
@@ -5150,7 +5234,7 @@ LhatUnit *lhat_program_require_unit(LhatProgram *program, LhatUnit *from,
 char *lhat_program_resolve_path(const LhatUnit *from, const char *relative,
                                 size_t length)
 {
-    return resolve_against(from->path, relative, length);
+    return resolve_against(from->program, from->path, relative, length);
 }
 
 void lhat_program_report(LhatProgram *program, LhatProgramErrorCode code,

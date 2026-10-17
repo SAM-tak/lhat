@@ -1,7 +1,7 @@
 // L^ (lhat) -- sample standard library: std.lton.
 //
 // LTON is L^ Table Object Notation: a file that is the inside of a table
-// literal and nothing else, so that a configuration is written as data
+// literal, optionally preceded by imports, so a configuration is written as data
 // rather than as a chunk that answers data.
 //
 //   # conf.lton
@@ -13,7 +13,7 @@
 //   try^ std.lton.save("conf.lton", conf)        # p^, nil^ on success
 //
 // Output uses four-space indentation, LF and deterministic key order. Only
-// plain data tables, finite numbers, strings and booleans are representable;
+// plain data tables, finite numbers, strings, booleans and public enums are representable;
 // active cycles and nesting beyond 96 tables are errors. Shared children are
 // expanded, not preserved as shared identities. save writes the filesystem
 // directly (not the read-only program loader), after serialization completes.
@@ -33,8 +33,9 @@
 //
 // 05 の 8.2's initial bindings are not in scope either: what a host bound
 // for the units it means to run is no part of what a configuration file may
-// name. Nothing else is in scope in this first cut -- letting the caller say
-// what to import^ or require^ is DesignDocuments/08-lton.md's T1.
+// name. Imports and direct let^ aliases of imports are allowed only before
+// table entries. Output uses canonical module names and generates imports
+// from the public enum descriptors; it never preserves caller-chosen aliases.
 //
 // 04 の 11.3: a table does not hold nil^, so `a = nil^` puts no key -- the
 // same answer std.json gives, and for the same reason.
@@ -54,23 +55,8 @@
 extern "C" {
 #endif
 
-// THE WRAPPER. What the text is put inside before the front end sees it: an
-// f^ that answers a table, called at once. 05 の 3.2 makes a script's top
-// level a p^, which may call an f^ -- and inside the f^ is where 15.1 holds,
-// which is what an LTON text is held to.
-//
-// The prologue has to stay on one line. What follows it is the file's own
-// bytes laid down verbatim, so every line of the file after the first keeps
-// the number it has in the file; starting the text on a line of its own
-// would shift all of them, and a diagnostic naming the wrong line is worse
-// than one naming the wrong column of the first.
-//
-// Named here rather than kept inside lton.c because the language server
-// wraps the same way to check a .lton the editor has open (lsp/lton.c) --
-// two spellings of one convention would be two formats.
-#define LHATSTDLIB_LTON_PROLOGUE "return^ (f^ -> t^{} { return^ {"
-#define LHATSTDLIB_LTON_EPILOGUE "\n} })()\n"
-
+// The front end parses LTON directly, preserving source coordinates and
+// lowering its body to a pure function returning a table.
 bool lhatstdlib_lton_register(LhatProgram *program);
 
 // ---------------------------------------------------------------------------
@@ -87,7 +73,10 @@ bool lhatstdlib_lton_register(LhatProgram *program);
 //         readConf(machine, conf, settings);   // lhat_table_get, and done
 //     }
 //
-// Registration is not needed. These take the program rather than reaching it
+// Registration of std.lton is not needed. Imported host modules must be
+// registered and installed on the machine; require^ uses the program loader.
+// Configure the project root before loading files that use $ paths.
+// These take the program rather than reaching it
 // through a registered module, so a host that only wants to read files never
 // puts std.lton where a script can see it.
 //
@@ -145,7 +134,7 @@ LhatLtonStatus lhatstdlib_lton_load(LhatMachine *machine, LhatProgram *program,
 LhatLtonStatus lhatstdlib_lton_stringify(LhatValue table, char **text,
                                         size_t *length);
 
-// 08 の 7改: the text compiled ahead -- the same wrapping and reading parse
+// 08 の 7改: the text compiled ahead -- the same parsing and checking parse
 // makes, written out as the bytes parse and load read back without the
 // front end (05 の 10.8). What `lhat --compile conf.lton` writes. `out` is
 // lhat_alloc'd and the caller's to free; a refusal says why in

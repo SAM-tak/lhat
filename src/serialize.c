@@ -32,7 +32,7 @@
 static const uint8_t MAGIC[4] = { 0x89, 'L', 'H', '^' };
 // 10.7: the signature table's, told apart from a unit's by the last byte.
 static const uint8_t TABLE_MAGIC[4] = { 0x89, 'L', 'H', 'S' };
-#define FORMAT_VERSION 9u
+#define FORMAT_VERSION 10u
 #define FLAG_DEBUG_NAMES 1u
 #define FLAG_STRICT 2u
 #define HEADER_BYTES 24u  // magic, format, flags, fingerprint, hash
@@ -639,6 +639,9 @@ static uint32_t intern_rt(Writer *w, const LhatRuntimeType *rt)
                       rt->members[i].name->length);
         intern_rt(w, rt->members[i].type);
     }
+    if (rt->enum_module != NULL) intern_string(w, rt->enum_module->text, rt->enum_module->length);
+    if (rt->enum_require != NULL) intern_string(w, rt->enum_require->text, rt->enum_require->length);
+    if (rt->enum_qualifier != NULL) intern_string(w, rt->enum_qualifier->text, rt->enum_qualifier->length);
     if (rt->enum_name != NULL) {
         intern_string(w, rt->enum_name->text, rt->enum_name->length);
     }
@@ -760,6 +763,10 @@ static void emit_rt(Writer *w, Out *o, const LhatRuntimeType *rt)
     put_u32(o, (uint32_t)rt->enum_member_index);
     put_u32(o, lstr_ref(w, rt->enum_name));
     put_u32(o, lstr_ref(w, rt->enum_owner_name));
+    put_u32(o, lstr_ref(w, rt->enum_module));
+    put_u32(o, lstr_ref(w, rt->enum_require));
+    put_u32(o, lstr_ref(w, rt->enum_qualifier));
+
     put_u8(o, rt->error_local ? 1 : 0);
     put_u32(o, rt->hostdata_tag != NULL
                    ? find_ext(w, EXT_HOSTDATA, rt->hostdata_tag)
@@ -1704,6 +1711,10 @@ static void read_rt(Reader *r, size_t index)
     rt->enum_member_index = get_u32(in);
     rt->enum_name = lstring_at(r, get_u32(in));
     rt->enum_owner_name = lstring_at(r, get_u32(in));
+    rt->enum_module = lstring_at(r, get_u32(in));
+    rt->enum_require = lstring_at(r, get_u32(in));
+    rt->enum_qualifier = lstring_at(r, get_u32(in));
+
     rt->error_local = get_u8(in) != 0;
     uint32_t hostdata_ref = get_u32(in);
     if (hostdata_ref != 0) {

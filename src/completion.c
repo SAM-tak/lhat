@@ -685,7 +685,15 @@ static void member_items(Fill *fill, const LhatUnit *unit, uint32_t offset)
     }
     // The written ones first, so the dedupe above has them to compare with.
     lhat_check_written_members(site->receiver, offer_written, fill);
-    lhat_check_builtin_members(result, site->receiver, offer_builtin, fill);
+    if (result->types != NULL) {
+        lhat_check_builtin_members(result, site->receiver, offer_builtin, fill);
+    } else if (site->receiver->kind == LHAT_TYPE_ENUM) {
+        // Syntax-only LTON imports borrow existing declaration types. Offer
+        // their enum members without allocating a semantic arena for data.
+        for (LhatTypeList *member = site->receiver->v.error.kinds; member != NULL; member = member->next)
+            offer_builtin(fill, member->type->v.error.name,
+                          member->type->v.error.name_length, member->type);
+    }
     if (program != NULL) {
         remember(program, site->receiver, fill, seen);
     }

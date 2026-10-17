@@ -408,6 +408,60 @@ static void check_syntax_only_unit(void *context, const LhatUnit *unit)
     LHAT_CHECK_EQ_INT(unit->program->types.type_count, 0);
 }
 
+#if LHAT_WITH_RESOLUTIONS
+typedef struct {
+    const char *path;
+    uint32_t offset;
+    size_t calls;
+} EnumLocation;
+
+static void check_lton_enum_location(void *context, const LhatUnit *unit)
+{
+    EnumLocation *expected = context;
+    expected->calls++;
+    const char *member = strstr(unit->source.text, ".FOO");
+    LHAT_REQUIRE(member != NULL, "enum reference is present");
+    const LhatResolution *r = lhat_check_resolution_at(&unit->checked,
+        (uint32_t)(member - unit->source.text + 1));
+    LHAT_REQUIRE(r != NULL && r->has_definition, "imported enum resolves");
+    LHAT_CHECK(strcmp(r->definition_path, expected->path) == 0 && r->definition == expected->offset,
+               "reference points to the current declaration");
+    LHAT_CHECK(unit->checked.types == NULL, "data still has no inferred type arena");
+}
+
+static void test_lton_enum_recheck(void)
+{
+    LHAT_TEST("LTON imported-name references refresh after a source module changes");
+    char base[512], data[512], module[512];
+    LHAT_REQUIRE(make_temporary_directory(base, sizeof base), "temporary directory");
+    join(data, sizeof data, base, "settings.lton");
+    join(module, sizeof module, base, "bar.lh");
+    static const char source[] = "module^bar\npublic^enum^Mode {FOO}\n";
+    static const char text[] = "require^\"$bar.lh\"\na = bar.Mode.FOO,\n";
+    LHAT_REQUIRE(write_file(module, source), "enum source created");
+    const char *folders[] = {base};
+    LspWorkspace workspace;
+    lsp_workspace_init(&workspace, folders, 1);
+    lsp_workspace_discover_projects(&workspace);
+    size_t length;
+    char *copy = parity_load((void *)text, data, &length);
+    LHAT_REQUIRE(copy != NULL, "open data copied");
+    lsp_document_store_put(&workspace.documents, data, copy, length, 1);
+    lsp_workspace_recheck_affected(&workspace, data);
+    EnumLocation expected = {module, (uint32_t)(strstr(source, "FOO") - source), 0};
+    lsp_workspace_with_unit(&workspace, data, check_lton_enum_location, &expected);
+    LHAT_REQUIRE(write_file(module, "\nmodule^bar\npublic^enum^Mode {FOO}\n"), "enum source shifted");
+    lsp_workspace_recheck_affected(&workspace, module);
+    expected.offset++;
+    lsp_workspace_with_unit(&workspace, data, check_lton_enum_location, &expected);
+    lsp_workspace_with_fresh_unit(&workspace, data, check_lton_enum_location, &expected);
+    LHAT_CHECK_EQ_INT(expected.calls, 3);
+    lsp_workspace_dispose(&workspace);
+    remove(module);
+    remove_directory(base);
+}
+#endif
+
 static void test_lton_syntax_only_workspace(void)
 {
     LHAT_TEST("large LTON roots and fresh requests allocate no semantic types");
@@ -647,6 +701,9 @@ static void test_execution_pipeline_parity(void)
 int main(void)
 {
     test_lton_syntax_only_workspace();
+#if LHAT_WITH_RESOLUTIONS
+    test_lton_enum_recheck();
+#endif
     test_nearest_project_wins_inside_each_workspace_folder();
     test_current_unit();
     test_project_program();

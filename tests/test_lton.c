@@ -631,6 +631,199 @@ static const File conf_files[] = {
     {NULL, NULL},
 };
 
+typedef struct {
+    const char *path;
+    const uint8_t *bytes;
+    size_t length;
+} BinaryFile;
+
+static char *load_binary_file(void *context, const char *path, size_t *length)
+{
+    const BinaryFile *file = context;
+    if (strcmp(path, file->path) != 0) return NULL;
+    char *copy = lhat_alloc(file->length);
+    if (copy != NULL) { memcpy(copy, file->bytes, file->length); *length = file->length; }
+    return copy;
+}
+
+static void check_project_root_during_disposal(void *context)
+{
+    size_t length = 0;
+    char *text = lhat_program_read(context, "$src/bar.lh", &length);
+    LHAT_CHECK(text != NULL && length > 0, "project root remains available to disposal callbacks");
+    lhat_free(text);
+}
+
+static void test_enum_imports(void)
+{
+    static const File files[] = {
+        {"project/src/bar.lh", "module^game.bar\npublic^enum^Mode {FOO, OTHER}\npublic^let^run = p^{ }\n"},
+        {"project/src/facade.lh", "module^facade\nlet^b = require^\"bar.lh\"\npublic^let^Mode = b.Mode\n"},
+        {NULL, NULL},
+    };
+    static const char input[] =
+        "#[ preamble comment ]#\n"
+        "let^f = import^foo\n"
+        "let^b = require^\"$src/bar.lh\"\n"
+        "a = f.Mode.BAR, b = b.Mode.FOO, c = b.Mode.FOO,\n";
+    static const char expected[] =
+        "import^foo\nrequire^\"$src/bar.lh\"\n"
+        "a = foo.Mode.BAR,\nb = game.bar.Mode.FOO,\nc = game.bar.Mode.FOO,\n";
+    static const char *const members[] = {"BAR", "BAZ"};
+    LhatProgram *program = lhat_program_new(true, load_from, (void *)files);
+    LHAT_REQUIRE(program != NULL, "program created");
+    LHAT_REQUIRE(lhat_program_set_project_root(program, "project"), "project root set");
+    LHAT_REQUIRE(lhat_program_on_dispose(program, check_project_root_during_disposal, program), "disposal callback registered");
+    LHAT_REQUIRE(lhat_register_enum(program, "foo", NULL, "Mode", members, 2), "host enum registered");
+    LhatMachine *machine = lhat_machine_new();
+    LHAT_REQUIRE(machine != NULL && lhat_program_install(program, machine), "registrations installed");
+
+    LHAT_TEST("LTON aliases serialize to canonical imports and declared module names");
+    LhatValue table;
+    LhatLtonStatus status = lhatstdlib_lton_parse(machine, program, "project/config/in.lton",
+                                                input, sizeof input - 1, &table);
+    LHAT_REQUIRE(status == LHAT_LTON_OK, "preamble parsed: %s", lhat_program_load_failure(program));
+    char *text = NULL;
+    size_t length = 0;
+    LHAT_REQUIRE(lhatstdlib_lton_stringify(table, &text, &length) == LHAT_LTON_OK, "enum table serialized");
+    LHAT_CHECK(strcmp(text, expected) == 0, "canonical output: %s", text);
+    LhatValue original = field(machine, table, "a");
+    LHAT_REQUIRE(lhat_machine_set_global(machine, "original", original), "enum rooted across parse");
+    LhatValue parsed;
+    LHAT_REQUIRE(lhatstdlib_lton_parse(machine, program, "project/elsewhere/deeper/out.lton",
+                                      text, length, &parsed) == LHAT_LTON_OK, "canonical text parsed elsewhere");
+    LHAT_CHECK(lhat_value_equal(original, field(machine, parsed, "a")), "host enum singleton preserved");
+    char *again = NULL;
+    size_t again_length = 0;
+    LHAT_REQUIRE(lhatstdlib_lton_stringify(parsed, &again, &again_length) == LHAT_LTON_OK, "reserialized");
+    LHAT_CHECK(length == again_length && strcmp(text, again) == 0, "output is stable");
+    lhat_free(again);
+    lhat_free(text);
+
+    LHAT_TEST("compiled LTON and enum provenance survive relocation and stripped debug names");
+    const LhatUnit *bar = lhat_program_check(program, "$src/bar.lh");
+    uint8_t *bar_bytes = NULL, *data_bytes = NULL;
+    size_t bar_length = 0, data_length = 0;
+    LHAT_REQUIRE(lhat_unit_write_binary(bar, false, &bar_bytes, &bar_length) == LHAT_WRITE_OK,
+                 "enum module compiled");
+    LHAT_REQUIRE(lhatstdlib_lton_write(program, "project/config/in.lton", input, sizeof input - 1,
+                                      false, &data_bytes, &data_length) == LHAT_LTON_OK,
+                 "LTON preamble compiled");
+    BinaryFile binary = {"moved/src/bar.lh", bar_bytes, bar_length};
+    LhatProgram *binary_program = lhat_program_new(true, load_binary_file, &binary);
+    LHAT_REQUIRE(binary_program != NULL && lhat_program_set_project_root(binary_program, "moved"),
+                 "relocated program configured");
+    LHAT_REQUIRE(lhat_register_enum(binary_program, "foo", NULL, "Mode", members, 2), "binary host enum registered");
+    LhatMachine *binary_machine = lhat_machine_new();
+    LHAT_REQUIRE(binary_machine != NULL && lhat_program_install(binary_program, binary_machine), "binary registrations installed");
+    LhatValue binary_table;
+    LHAT_REQUIRE(lhatstdlib_lton_parse(binary_machine, binary_program, "moved/config/in.lton",
+                                      (const char *)data_bytes, data_length, &binary_table) == LHAT_LTON_OK,
+                 "compiled LTON loaded: %s", lhat_program_load_failure(binary_program));
+    LHAT_REQUIRE(lhatstdlib_lton_stringify(binary_table, &text, &length) == LHAT_LTON_OK,
+                 "binary enum metadata serialized");
+    LHAT_CHECK(strcmp(text, expected) == 0, "binary output retains project-relative imports: %s", text);
+    lhat_free(text);
+    lhat_machine_dispose(binary_machine);
+    lhat_program_free(binary_program);
+    lhat_free(bar_bytes);
+    lhat_free(data_bytes);
+
+    LHAT_TEST("enum keys, enum objects and nested values collect imports once");
+    static const char with_keys[] = "import^foo\na = foo.Mode, nested = {foo.Mode.BAZ}, [foo.Mode.BAR] = 42,\n";
+    LHAT_REQUIRE(lhatstdlib_lton_parse(machine, program, NULL, with_keys, sizeof with_keys - 1, &table)
+                 == LHAT_LTON_OK, "enum keys parsed");
+    LHAT_REQUIRE(lhatstdlib_lton_stringify(table, &text, &length) == LHAT_LTON_OK, "enum keys serialized");
+    LHAT_CHECK(strncmp(text, "import^foo\n", 11) == 0 && strstr(text + 11, "import^") == NULL,
+               "one import for all references");
+    LHAT_REQUIRE(lhatstdlib_lton_parse(machine, program, NULL, text, length, &parsed) == LHAT_LTON_OK,
+                 "enum keys round trip");
+    lhat_free(text);
+
+    LHAT_TEST("re-exported enum values retain their declaration's canonical import");
+    static const char facade[] = "let^f = require^\"$src/facade.lh\"\na = f.Mode.FOO,\n";
+    LHAT_REQUIRE(lhatstdlib_lton_parse(machine, program, NULL, facade, sizeof facade - 1, &table)
+                 == LHAT_LTON_OK, "facade parsed");
+    LHAT_REQUIRE(lhatstdlib_lton_stringify(table, &text, &length) == LHAT_LTON_OK, "facade value serialized");
+    LHAT_CHECK(strcmp(text, "require^\"$src/bar.lh\"\na = game.bar.Mode.FOO,\n") == 0,
+               "original declaration path retained: %s", text);
+    lhat_free(text);
+
+    LHAT_TEST("imports after the preamble and ordinary declarations are rejected");
+    static const char *const rejected[] = {
+        "a = 1,\nimport^foo\n",
+        "a = 1,\nrequire^\"$src/bar.lh\"\n",
+        "a = import^foo,\n",
+        "let^b = require^\"$src/bar.lh\"\na = b.run(),\n",
+        "let^n = 42\na = n,\n",
+        "var^f = import^foo\na = f.Mode.BAR,\n",
+        "let^f = (import^foo).Mode\na = f.BAR,\n",
+    };
+    for (size_t i = 0; i < sizeof rejected / sizeof rejected[0]; i++) {
+        LHAT_CHECK_EQ_INT(lhatstdlib_lton_parse(machine, program, "bad.lton", rejected[i],
+                                               strlen(rejected[i]), &table), LHAT_LTON_REJECTED);
+    }
+    LHAT_TEST("diagnostics after the preamble retain original lines and columns");
+    static const char bad[] = "import^foo\na = ,\n";
+    LHAT_CHECK_EQ_INT(lhatstdlib_lton_parse(machine, program, "bad.lton", bad, sizeof bad - 1, &table),
+                      LHAT_LTON_REJECTED);
+    LHAT_CHECK(strstr(lhat_program_load_failure(program), "bad.lton:2:5:") != NULL,
+               "original error location: %s", lhat_program_load_failure(program));
+    lhat_machine_dispose(machine);
+    lhat_program_free(program);
+
+    LHAT_TEST("project paths require an explicit root");
+    program = lhat_program_new(true, load_from, (void *)files);
+    machine = lhat_machine_new();
+    static const char requiring[] = "require^\"$src/bar.lh\"\na = game.bar.Mode.FOO,\n";
+    LHAT_CHECK_EQ_INT(lhatstdlib_lton_parse(machine, program, "other.lton", requiring,
+                                           sizeof requiring - 1, &table), LHAT_LTON_REJECTED);
+    lhat_machine_dispose(machine);
+    lhat_program_free(program);
+
+    LHAT_TEST("private and local enums have no serializable public path");
+    LhatTestRan ran = run_source("import^std.lton\nenum^Private {A}\n"
+        "return^if^std.lton.stringify({Private.A}) fits^std.lton.LtonError.Unsupported: 1 el^: 0;\n");
+    LHAT_CHECK_RAN_INTEGER(ran, 1);
+    lhat_test_ran_dispose(&ran);
+}
+
+static void test_save_enum_imports(void)
+{
+    LHAT_TEST("std.lton.save writes canonical imports for enum values");
+    char path[L_tmpnam];
+    LHAT_REQUIRE(tmpnam(path) != NULL, "temporary save path");
+    for (char *at = path; *at; at++) if (*at == '\\') *at = '/';
+    char source[2048];
+    snprintf(source, sizeof source,
+             "import^std.lton\nlet^b = require^\"$src/bar.lh\"\n"
+             "try^std.lton.save('%s', {a = b.Mode.FOO, b = b.Mode.FOO})\nreturn^1\n", path);
+    const File files[] = {
+        {"main.lh", source},
+        {"src/bar.lh", "module^game.bar\npublic^enum^Mode {FOO}\n"},
+        {NULL, NULL},
+    };
+    LhatProgram *program = lhat_program_new(true, load_from, (void *)files);
+    LHAT_REQUIRE(program != NULL && lhat_program_set_project_root(program, "."), "project configured");
+    LHAT_REQUIRE(lhatstdlib_lton_register(program), "LTON registered");
+    const LhatUnit *root = lhat_program_check(program, "main.lh");
+    LHAT_REQUIRE(root != NULL && lhat_unit_ok(root) && lhat_program_compile(program), "save script compiled");
+    LhatMachine *machine = lhat_machine_new();
+    LHAT_REQUIRE(machine != NULL && lhat_program_install(program, machine), "machine installed");
+    LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
+    LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+    FILE *file = fopen(path, "rb");
+    LHAT_REQUIRE(file != NULL, "saved file exists");
+    char text[256] = {0};
+    fread(text, 1, sizeof text - 1, file);
+    fclose(file);
+    remove(path);
+    LHAT_CHECK(strcmp(text, "require^\"$src/bar.lh\"\na = game.bar.Mode.FOO,\nb = game.bar.Mode.FOO,\n") == 0,
+               "saved text uses declared module and one project-relative require: %s", text);
+    lhat_machine_dispose(machine);
+    lhat_program_free(program);
+}
+
 static void test_from_c(void)
 {
     // Neither registered nor checked. The C entries take the program, so a
@@ -811,6 +1004,8 @@ int main(void)
     test_what_may_not();
     test_load();
     test_from_c();
+    test_enum_imports();
+    test_save_enum_imports();
     test_compiled();
     return lhat_test_report("test_lton");
 }

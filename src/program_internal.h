@@ -135,6 +135,7 @@ struct LhatUnit {
     // initial bindings are not in scope. Set by lhat_program_load_text_with
     // before anything is checked; false for every unit of the program.
     bool as_data;
+    bool lton;
 
     // 05 の 10 章: read from bytes rather than text. No source, no tree, no
     // check result -- `proto` is the whole of it, and the stages above are
@@ -343,6 +344,7 @@ struct LhatProgram {
 
     LhatProgramLoader load;
     void *loader_context;
+    char *project_root;  // owned, normalized loader namespace prefix
 
     LhatProgramDiagnostic *diagnostics;
     size_t diagnostic_count;

@@ -44,6 +44,8 @@ typedef struct {
     // (3.2). A unit that has one registers itself under it and answers what
     // an earlier require^ registered, which is how 5.3 loads it once.
     const char *module_name;
+    // Canonical require path for serializing public enum values.
+    const char *enum_require_path;
     // 05 の 5.3's guard and registry write, for a unit that has a module
     // name. Off for a script std.load brought in (5.6): it answers its
     // table to whoever called it and enters no registry.

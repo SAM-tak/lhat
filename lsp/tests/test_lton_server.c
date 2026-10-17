@@ -1,26 +1,20 @@
 // L^ (lhat) -- LSP server tests: a .lton file, checked as what it is.
 //
-// DesignDocuments/08-lton.md. Two things are pinned here, and they are the
-// two an editor can see: that the text is wrapped the way stdlib/lton.c
-// wraps it, and that what comes back is said in the file's own coordinates
-// rather than the wrapped text's.
+// Syntax, source coordinates, and imported-name navigation share the native parser.
 
 #include <stdlib.h>
 #include <string.h>
 
 #include "lhat/lexer.h"
+#include "lhat/port.h"
 #include "lhat/source.h"
 #include "parser.h"
 #include "check.h"
+#include "references.h"
 
 #include "lton.h"
 #include "position.h"
 #include "testutil.h"
-
-// The wrapper is the sample library's, so this is the one place the two are
-// compared -- if lton.c ever grew a spelling of its own, the format would
-// have quietly become two formats.
-#include "stdlib/lton.h"
 
 static void test_which_paths_are_lton(void)
 {
@@ -33,65 +27,20 @@ static void test_which_paths_are_lton(void)
     LHAT_CHECK(!lsp_lton_is_path(NULL), "nothing is not one either");
 }
 
-static void test_the_wrapping_is_the_librarys(void)
-{
-    LHAT_TEST("08 の 7: the text goes inside the wrapper stdlib/lton.c uses");
-    static const char *const body = "a = 1,\nb = 2,\n";
-    size_t whole = 0;
-    char *wrapped = lsp_lton_wrap(body, strlen(body), &whole);
-    LHAT_CHECK(wrapped != NULL, "it wrapped");
-    if (wrapped == NULL) {
-        return;
-    }
-    LHAT_CHECK_EQ_INT(strlen(wrapped), whole);
-
-    size_t prologue = strlen(LHATSTDLIB_LTON_PROLOGUE);
-    LHAT_CHECK(strncmp(wrapped, LHATSTDLIB_LTON_PROLOGUE, prologue) == 0,
-               "the prologue is the library's, got %.40s", wrapped);
-    LHAT_CHECK(strcmp(wrapped + whole - strlen(LHATSTDLIB_LTON_EPILOGUE),
-                      LHATSTDLIB_LTON_EPILOGUE) == 0,
-               "and so is the epilogue");
-    // The body verbatim in between: an LTON file is its own bytes and the
-    // wrapper is around them, never through them.
-    LHAT_CHECK(strncmp(wrapped + prologue, body, strlen(body)) == 0,
-               "the body is laid down as it was written");
-
-    // 08 の 7's own promise about diagnostics: the prologue takes no line of
-    // its own, so a line in the file is a line in what the checker reads.
-    LHAT_CHECK(strchr(LHATSTDLIB_LTON_PROLOGUE, '\n') == NULL,
-               "the prologue stays on one line");
-    LHAT_CHECK_EQ_INT(lsp_lton_prologue_length(), (uint32_t)prologue);
-
-    free(wrapped);
-
-    LHAT_TEST("and an empty file is an empty table");
-    whole = 0;
-    wrapped = lsp_lton_wrap("", 0, &whole);
-    LHAT_CHECK(wrapped != NULL && whole == strlen(LHATSTDLIB_LTON_PROLOGUE) +
-                                               strlen(LHATSTDLIB_LTON_EPILOGUE),
-               "nothing between the two halves");
-    free(wrapped);
-}
-
-// A unit built the way workspace.c builds one for a .lton: the wrapped text,
-// under the file's own path. What the positions have to answer in is the
-// file's, which is what makes the path matter here.
 typedef struct {
     LhatSource source;
     LhatLexer lexer;
     LhatParseResult parsed;
     LhatCheckResult checked;
     LhatUnit unit;
-    char *wrapped;
 } Checked;
 
 static void check_lton(Checked *c, const char *path, const char *body)
 {
-    size_t whole = 0;
-    c->wrapped = lsp_lton_wrap(body, strlen(body), &whole);
-    lhat_source_init_from_string(&c->source, path, c->wrapped, whole);
+    size_t whole = strlen(body);
+    lhat_source_init_from_string(&c->source, path, body, whole);
     lhat_lexer_init(&c->lexer, &c->source);
-    lhat_parse(&c->lexer, &c->parsed);
+    lhat_parse_lton(&c->lexer, &c->parsed);
     memset(&c->checked, 0, sizeof c->checked);
 
     memset(&c->unit, 0, sizeof c->unit);
@@ -105,11 +54,10 @@ static void check_lton(Checked *c, const char *path, const char *body)
 
 static void check_dispose(Checked *c)
 {
-    lhat_check_result_dispose(&c->checked);
+    lhat_check_result_dispose(&c->unit.checked);
     lhat_parse_result_dispose(&c->parsed);
     lhat_lexer_dispose(&c->lexer);
     lhat_source_dispose(&c->source);
-    free(c->wrapped);
 }
 
 static void test_positions_are_the_files(void)
@@ -120,9 +68,7 @@ static void test_positions_are_the_files(void)
     static const char *const body = "first = 1,\nsecond = 2,\n";
     check_lton(&c, "conf.lton", body);
 
-    uint32_t prologue = lsp_lton_prologue_length();
-    // `second` begins the second line of the file, and the wrapper took no
-    // line, so it is the second line of the wrapped text too.
+    // Native parsing does not insert text or shift any source coordinates.
     const char *second = strstr(c.source.text, "second");
     LHAT_CHECK(second != NULL, "expected the second line to be there");
     if (second != NULL) {
@@ -133,25 +79,22 @@ static void test_positions_are_the_files(void)
         LHAT_CHECK_EQ_INT(at.character, 0);
     }
 
-    // The first line is the one the prologue shares, so its columns are the
-    // ones that move -- and this is what takes them back.
+    // First-line columns are unchanged as well.
     const char *first = strstr(c.source.text, "first");
     LHAT_CHECK(first != NULL, "expected the first line to be there");
     if (first != NULL) {
         uint32_t offset = (uint32_t)(first - c.source.text);
-        LHAT_CHECK_EQ_INT(offset, prologue);  // right after the wrapper
+        LHAT_CHECK_EQ_INT(offset, 0);
         LspPosition at = lsp_unit_position_at(&c.unit, offset);
         LHAT_CHECK_EQ_INT(at.line, 0);
         LHAT_CHECK_EQ_INT(at.character, 0);
 
-        // And back the other way, which is what an editor's cursor arrives
-        // as: the file's line 0 column 0 is the byte after the prologue.
-        LHAT_CHECK_EQ_INT(lsp_unit_offset_at(&c.unit, 0, 0), prologue);
+        // Cursor positions map directly back to source bytes.
+        LHAT_CHECK_EQ_INT(lsp_unit_offset_at(&c.unit, 0, 0), 0);
     }
     check_dispose(&c);
 
-    // A unit is not wrapped, so nothing is taken off it. The path is the
-    // whole of what tells the two apart.
+    // Ordinary units use the same coordinate mapping.
     LHAT_TEST("and a unit's positions are left alone");
     check_lton(&c, "main.lh", body);
     {
@@ -190,10 +133,74 @@ static void test_what_may_be_written(void)
     check_dispose(&c);
 }
 
+#if LHAT_WITH_RESOLUTIONS
+static char *load_enum_module(void *context, const char *path, size_t *length)
+{
+    (void)context;
+    if (strcmp(path, "project/src/bar.lh") != 0) return NULL;
+    const char *source = "module^game.bar\npublic^enum^Mode {FOO, OTHER}\n";
+    *length = strlen(source);
+    char *copy = lhat_alloc(*length + 1);
+    if (copy != NULL) memcpy(copy, source, *length + 1);
+    return copy;
+}
+
+static void count_reference(void *context, const LhatUnit *unit, uint32_t from, uint32_t to)
+{
+    (void)unit;
+    (void)from;
+    (void)to;
+    (*(size_t *)context)++;
+}
+
+static void test_imported_names(void)
+{
+    LHAT_TEST("LTON resolves enum names for navigation and rename without inferring table types");
+    LhatProgram *program = lhat_program_new(true, load_enum_module, NULL);
+    LHAT_REQUIRE(program != NULL && lhat_program_set_project_root(program, "project"), "project configured");
+    Checked c;
+    static const char text[] = "let^b = require^\"$src/bar.lh\"\na = b.Mode.FOO,\nb = b.Mode.FOO,\n";
+    check_lton(&c, "project/settings.lton", text);
+    c.unit.program = program;
+    lsp_lton_resolve(program, &c.unit);
+    uint32_t offset = (uint32_t)(strstr(text, ".FOO") - text + 1);
+    const LhatResolution *resolution = lhat_check_resolution_at(&c.unit.checked, offset);
+    LHAT_REQUIRE(resolution != NULL && resolution->has_definition, "enum member resolves");
+    LHAT_CHECK(strcmp(resolution->definition_path, "project/src/bar.lh") == 0, "declaration is in required file");
+    LHAT_CHECK(c.unit.checked.types == NULL, "no LTON type arena allocated");
+    LhatCompletionItem items[8];
+    size_t offered = lhat_unit_completion_items(&c.unit, offset, items, 8);
+    bool foo = false, other = false;
+    for (size_t i = 0; i < offered && i < 8; i++) {
+        if (strcmp(items[i].label, "FOO") == 0) foo = true;
+        if (strcmp(items[i].label, "OTHER") == 0) other = true;
+    }
+    LHAT_CHECK(foo && other && c.unit.checked.types == NULL, "enum completion needs no data type arena");
+    LspReferenceTarget target;
+    LHAT_REQUIRE(lsp_references_target(&c.unit, offset + 1, &target), "rename target resolved");
+    size_t count = 0;
+    lsp_references_in_unit(&c.unit, &target, count_reference, &count);
+    LHAT_CHECK_EQ_INT(count, 2);
+    check_dispose(&c);
+
+    static const char bare[] = "require^\"$src/bar.lh\"\na = game.bar.Mode.FOO,\n";
+    check_lton(&c, "project/settings.lton", bare);
+    c.unit.program = program;
+    lsp_lton_resolve(program, &c.unit);
+    offset = (uint32_t)(strstr(bare, ".FOO") - bare + 1);
+    resolution = lhat_check_resolution_at(&c.unit.checked, offset);
+    LHAT_CHECK(resolution != NULL && resolution->has_definition, "bare require uses the declared qualified module");
+    check_dispose(&c);
+    lhat_program_free(program);
+}
+#endif
+
 int main(void)
 {
     test_which_paths_are_lton();
-    test_the_wrapping_is_the_librarys();
+#if LHAT_WITH_RESOLUTIONS
+    test_imported_names();
+#endif
     test_positions_are_the_files();
     test_what_may_be_written();
     return lhat_test_report("test_lton_server");

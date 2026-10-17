@@ -90,6 +90,7 @@ typedef enum {
     LHAT_PARSE_ERR_EQUALS_IS_COMPARISON,      // 8.6: 'x = 1' as a statement
     LHAT_PARSE_ERR_MODULE_MISPLACED,          // 05 の 3 章: one, and first
     LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION,  // 05 の 4 章
+    LHAT_PARSE_ERR_LTON_IMPORT,              // imports only in the LTON preamble
     LHAT_PARSE_ERR_REQUIRE_NEEDS_LITERAL,     // 05 の 5.2
     LHAT_PARSE_ERR_ELSE_NEEDS_COLON,          // 5.1: 'el^ v' where the value
                                               // was read as an else-if
@@ -171,6 +172,9 @@ typedef struct {
 // outlive the result, since string and name nodes point into its decoded
 // storage.
 void lhat_parse(LhatLexer *lexer, LhatParseResult *result);
+
+// Parse leading imports followed by unbraced table entries as a pure function.
+void lhat_parse_lton(LhatLexer *lexer, LhatParseResult *result);
 
 // The same, for one input of an interactive session. 02 の 8.2 accepts a bare
 // expression as a statement at the top level of interactive input and nowhere

@@ -52,21 +52,6 @@ cJSON *lsp_handle_document_symbol(LspServer *server, const cJSON *params)
         free(path);
         return NULL;  // not open: nothing to outline
     }
-    // 08 章: an LTON file is the inside of a table literal, read through the
-    // wrapper (lsp/lton.h). Positions come back out through
-    // lsp_unit_position_at, which knows the unit by its path.
-    if (lsp_lton_is_path(path)) {
-        size_t whole = 0;
-        char *wrapped = lsp_lton_wrap(text, length, &whole);
-        free(text);
-        if (wrapped == NULL) {
-            free(path);
-            return NULL;
-        }
-        text = wrapped;
-        length = whole;
-    }
-
     LhatUnit unit;
     memset(&unit, 0, sizeof unit);
     unit.path = path;
@@ -74,7 +59,8 @@ cJSON *lsp_handle_document_symbol(LspServer *server, const cJSON *params)
     cJSON *symbols = NULL;
     if (lhat_source_init_from_string(&unit.source, path, text, length)) {
         lhat_lexer_init(&unit.lexer, &unit.source);
-        lhat_parse(&unit.lexer, &unit.parsed);
+        if (lsp_lton_is_path(path)) lhat_parse_lton(&unit.lexer, &unit.parsed);
+        else lhat_parse(&unit.lexer, &unit.parsed);
         symbols = lsp_document_symbols_for_unit(&unit);
         lhat_parse_result_dispose(&unit.parsed);
         lhat_lexer_dispose(&unit.lexer);

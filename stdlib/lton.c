@@ -6,8 +6,8 @@
 // only wants to read its own configuration calls the C ones and never
 // registers the module.
 //
-// The text is wrapped and handed to the program's own front end rather than
-// parsed here. That is what makes the spelling L^'s -- the comments, the
+// The program's front end parses the preamble and table entries directly.
+// It lowers the body to a pure function returning a table. That is what makes the spelling L^'s -- the comments, the
 // escapes, the shapes of a number -- and what makes 02 の 15.1 do the
 // keeping: read as the body of an f^, a text that calls a p^ is refused by
 // the checker, with no rule written here for it.
@@ -37,11 +37,6 @@ typedef struct {
     const LhatErrorKind *out_of_memory;  // std.error.OutOfMemory -- error.h
 } LtonModule;
 
-// The wrapper is stdlib/lton.h's, named there rather than here so that the
-// language server wraps a .lton the same way (lsp/lton.c).
-#define LTON_PROLOGUE LHATSTDLIB_LTON_PROLOGUE
-#define LTON_EPILOGUE LHATSTDLIB_LTON_EPILOGUE
-
 static LhatValue fail_with(LhatMachine *machine, const LhatErrorKind *kind,
                            const char *message)
 {
@@ -70,22 +65,6 @@ static char *c_string(const LhatString *string)
     return copy;
 }
 
-// The text with the wrapper around it. `out_length` is the whole of it.
-static char *wrapped(const char *text, size_t length, size_t *out_length)
-{
-    size_t before = strlen(LTON_PROLOGUE);
-    size_t after = strlen(LTON_EPILOGUE);
-    char *made = (char *)lhat_alloc(before + length + after + 1);
-    if (made == NULL) {
-        return NULL;
-    }
-    memcpy(made, LTON_PROLOGUE, before);
-    memcpy(made + before, text, length);
-    memcpy(made + before + length, LTON_EPILOGUE, after + 1);
-    *out_length = before + length + after;
-    return made;
-}
-
 // ---------------------------------------------------------------------------
 // The reading itself, which is what a host names too (lton.h)
 // ---------------------------------------------------------------------------
@@ -111,12 +90,13 @@ static LhatLtonStatus status_of(LhatLoadStatus status)
 // 05 の 8.2: as data, so the host's initial bindings are not in scope.
 static LhatLoadOptions as_data(void)
 {
-    LhatLoadOptions options;
+    LhatLoadOptions options = {0};
     options.initial_bindings = false;
+    options.lton = true;
     return options;
 }
 
-// Wrap the text, have the program check and compile it as data, give the
+// Have the program parse, check and compile the text as data, give the
 // body to the machine and run it. What comes back is the table -- unlike
 // std.load, which answers the closure and leaves the running to its caller.
 LhatLtonStatus lhatstdlib_lton_parse(LhatMachine *machine,
@@ -126,22 +106,10 @@ LhatLtonStatus lhatstdlib_lton_parse(LhatMachine *machine,
 {
     *out = lhat_nil();
 
-    // 08 の 7改: bytes a full build wrote (lhatstdlib_lton_write) are the
-    // wrapping already done, and a wrapper put around them would bury the
-    // magic the loader tells them apart by. They go as they are.
-    bool binary = lhat_program_is_binary_unit(text, length);
-    size_t whole = length;
-    char *source = binary ? NULL : wrapped(text, length, &whole);
-    if (!binary && source == NULL) {
-        return LHAT_LTON_OUT_OF_MEMORY;
-    }
-
     LhatLoadOptions options = as_data();
     LhatProto *proto = NULL;
     LhatLoadStatus status = lhat_program_load_text_with(
-        program, name != NULL ? name : "(lton)", binary ? text : source,
-        whole, &options, &proto);
-    lhat_free(source);
+        program, name != NULL ? name : "(lton)", text, length, &options, &proto);
     if (status != LHAT_LOAD_OK) {
         return status_of(status);
     }
@@ -164,16 +132,10 @@ LhatLtonStatus lhatstdlib_lton_write(LhatProgram *program, const char *name,
                                      bool with_debug_names, uint8_t **out,
                                      size_t *out_length)
 {
-    size_t whole = 0;
-    char *source = wrapped(text, length, &whole);
-    if (source == NULL) {
-        return LHAT_LTON_OUT_OF_MEMORY;
-    }
     LhatLoadOptions options = as_data();
     LhatLoadStatus status = lhat_program_write_text(
-        program, name != NULL ? name : "(lton)", source, whole, &options,
+        program, name != NULL ? name : "(lton)", text, length, &options,
         with_debug_names, out, out_length);
-    lhat_free(source);
     return status_of(status);
 }
 
@@ -281,6 +243,8 @@ typedef struct {
     const LhatTable *ancestors[LTON_MAX_DEPTH];
     LhatLtonStatus status;
     const char *message;
+    const LhatRuntimeType **imports;
+    size_t import_count;
 } LtonWriter;
 
 static void write_fail(LtonWriter *w, LhatLtonStatus status, const char *message)
@@ -363,12 +327,32 @@ static void text_string(LtonWriter *w, const LhatString *s)
     text_word(w, "\"");
 }
 
+static const LhatRuntimeType *enum_type(LhatValue value)
+{
+    const LhatEnum *owner = NULL;
+    if (lhat_is_object_kind(value, LHAT_OBJECT_ENUMERATOR))
+        owner = ((const LhatEnumerator *)lhat_as_object(value))->owner;
+    else if (lhat_is_object_kind(value, LHAT_OBJECT_ENUM))
+        owner = (const LhatEnum *)lhat_as_object(value);
+    return owner != NULL ? owner->decl : NULL;
+}
+
+static int compare_string(const LhatString *a, const LhatString *b)
+{
+    if (a == NULL || b == NULL) return a != NULL ? 1 : b != NULL ? -1 : 0;
+    size_t n = a->length < b->length ? a->length : b->length;
+    int order = memcmp(a->text, b->text, n);
+    return order != 0 ? order : a->length < b->length ? -1 : a->length > b->length;
+}
+
 static int key_rank(LhatValue key)
 {
     if (key.tag == LHAT_VALUE_INTEGER ||
         (key.tag == LHAT_VALUE_REAL && isfinite(key.as.real))) return 0;
     if (key.tag == LHAT_VALUE_BOOL) return 1;
     if (arg_string(key) != NULL) return 2;
+    const LhatRuntimeType *type = enum_type(key);
+    if (type != NULL && type->enum_module != NULL) return 3;
     return -1;
 }
 
@@ -388,10 +372,21 @@ static int compare_entries(const void *a, const void *b)
         return 0;
     }
     if (rank == 1) return (int)x.as.boolean - (int)y.as.boolean;
-    const LhatString *left = arg_string(x), *right = arg_string(y);
-    size_t length = left->length < right->length ? left->length : right->length;
-    int order = memcmp(left->text, right->text, length);
-    return order != 0 ? order : left->length < right->length ? -1 : left->length > right->length;
+    if (rank == 3) {
+        const LhatRuntimeType *a_type = enum_type(x), *b_type = enum_type(y);
+        int order = compare_string(a_type->enum_module, b_type->enum_module);
+        if (order == 0) order = compare_string(a_type->enum_require, b_type->enum_require);
+        if (order == 0) order = compare_string(a_type->enum_qualifier, b_type->enum_qualifier);
+        if (order == 0) order = compare_string(a_type->enum_name, b_type->enum_name);
+        bool a_member = lhat_is_object_kind(x, LHAT_OBJECT_ENUMERATOR);
+        bool b_member = lhat_is_object_kind(y, LHAT_OBJECT_ENUMERATOR);
+        if (order == 0 && a_member != b_member) order = a_member ? 1 : -1;
+        if (order == 0 && a_member)
+            order = compare_string(((const LhatEnumerator *)lhat_as_object(x))->name,
+                                   ((const LhatEnumerator *)lhat_as_object(y))->name);
+        return order;
+    }
+    return compare_string(arg_string(x), arg_string(y));
 }
 
 static bool name_key(const LhatString *s)
@@ -403,6 +398,79 @@ static bool name_key(const LhatString *s)
               c == '_' || (i > 0 && c >= '0' && c <= '9'))) return false;
     }
     return true;
+}
+
+static void text_name(LtonWriter *w, const LhatString *name)
+{
+    if (name_key(name)) { text_put(w, name->text, name->length); return; }
+    text_word(w, "`");
+    for (size_t i = 0; i < name->length; i++) {
+        text_put(w, name->text + i, 1);
+        if (name->text[i] == '`') text_word(w, "`");
+    }
+    text_word(w, "`");
+}
+
+static void text_module(LtonWriter *w, const LhatString *module)
+{
+    // Module names are dotted paths; each segment can need name quoting.
+    size_t start = 0;
+    for (size_t i = 0; i <= module->length; i++) {
+        if (i != module->length && module->text[i] != '.') continue;
+        bool plain = i > start;
+        for (size_t j = start; j < i; j++) {
+            unsigned char ch = (unsigned char)module->text[j];
+            if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                  ch == '_' || (j > start && ch >= '0' && ch <= '9'))) plain = false;
+        }
+        if (!plain) text_word(w, "`");
+        for (size_t j = start; j < i; j++) {
+            text_put(w, module->text + j, 1);
+            if (!plain && module->text[j] == '`') text_word(w, "`");
+        }
+        if (!plain) text_word(w, "`");
+        if (i != module->length) text_word(w, ".");
+        start = i + 1;
+    }
+}
+
+static void text_enum(LtonWriter *w, LhatValue value, const LhatRuntimeType *type)
+{
+    if (type->enum_module == NULL || type->enum_name == NULL) {
+        write_fail(w, LHAT_LTON_UNSUPPORTED, "enum has no canonical public import path");
+        return;
+    }
+    size_t i = 0;
+    for (; i < w->import_count; i++) {
+        if (compare_string(w->imports[i]->enum_module, type->enum_module) != 0) continue;
+        if (compare_string(w->imports[i]->enum_require, type->enum_require) != 0)
+            write_fail(w, LHAT_LTON_UNSUPPORTED, "different imports declare the same module name");
+        break;
+    }
+    if (i == w->import_count) {
+        const LhatRuntimeType **grown = lhat_realloc(w->imports, (i + 1) * sizeof *grown);
+        if (grown == NULL) { write_fail(w, LHAT_LTON_OUT_OF_MEMORY, "out of memory"); return; }
+        w->imports = grown;
+        w->imports[w->import_count++] = type;
+    }
+    text_module(w, type->enum_module);
+    text_word(w, ".");
+    if (type->enum_qualifier != NULL) {
+        text_name(w, type->enum_qualifier);
+        text_word(w, ".");
+    }
+    text_name(w, type->enum_name);
+    if (lhat_is_object_kind(value, LHAT_OBJECT_ENUMERATOR)) {
+        text_word(w, ".");
+        text_name(w, ((const LhatEnumerator *)lhat_as_object(value))->name);
+    }
+}
+
+static int compare_imports(const void *a, const void *b)
+{
+    const LhatRuntimeType *x = *(const LhatRuntimeType *const *)a;
+    const LhatRuntimeType *y = *(const LhatRuntimeType *const *)b;
+    return compare_string(x->enum_module, y->enum_module);
 }
 
 static void text_value(LtonWriter *w, LhatValue value, size_t depth);
@@ -437,7 +505,7 @@ static void text_table(LtonWriter *w, const LhatTable *table, size_t depth)
     }
     for (size_t i = 0; i < count; i++) {
         if (key_rank(entries[i].key) < 0) {
-            write_fail(w, LHAT_LTON_UNSUPPORTED, "LTON keys must be finite numbers, booleans or strings");
+            write_fail(w, LHAT_LTON_UNSUPPORTED, "LTON keys must be finite numbers, booleans, strings or public enums");
             break;
         }
     }
@@ -494,6 +562,7 @@ static void text_value(LtonWriter *w, LhatValue value, size_t depth)
             return;
         }
         case LHAT_VALUE_OBJECT:
+            if (enum_type(value) != NULL) { text_enum(w, value, enum_type(value)); return; }
             if (arg_string(value) != NULL) { text_string(w, arg_string(value)); return; }
             if (lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
                 const LhatTable *table = (const LhatTable *)lhat_as_object(value);
@@ -516,6 +585,29 @@ static void serialize_table(LtonWriter *w, LhatValue value)
         write_fail(w, LHAT_LTON_UNSUPPORTED, "LTON requires a table at the root"); return;
     }
     text_table(w, (const LhatTable *)lhat_as_object(value), 0);
+    if (w->status == LHAT_LTON_OK && w->import_count > 0) {
+        qsort(w->imports, w->import_count, sizeof *w->imports, compare_imports);
+        char *body = w->text;
+        size_t body_length = w->length;
+        w->text = NULL;
+        w->length = w->capacity = 0;
+        for (size_t i = 0; i < w->import_count; i++) {
+            const LhatRuntimeType *type = w->imports[i];
+            if (type->enum_require != NULL) {
+                text_word(w, "require^");
+                text_string(w, type->enum_require);
+            } else {
+                text_word(w, "import^");
+                text_module(w, type->enum_module);
+            }
+            text_word(w, "\n");
+        }
+        text_put(w, body, body_length);
+        lhat_free(body);
+    }
+    lhat_free(w->imports);
+    w->imports = NULL;
+    w->import_count = 0;
 }
 
 LhatLtonStatus lhatstdlib_lton_stringify(LhatValue table, char **text,

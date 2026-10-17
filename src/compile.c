@@ -1347,6 +1347,17 @@ static void compile_enumdef(Compiler *c, const LhatNode *node)
         return;
     }
 
+    const LhatUnits *units = root_of(c)->units;
+    if (c->parent == NULL && node->v.named.exported && units != NULL &&
+        units->registers && units->module_name != NULL && units->enum_require_path != NULL) {
+        decl_rt->enum_module = lhat_string_new(owner_heap, units->module_name, strlen(units->module_name));
+        decl_rt->enum_require = lhat_string_new(owner_heap, units->enum_require_path, strlen(units->enum_require_path));
+        if (decl_rt->enum_module == NULL || decl_rt->enum_require == NULL) {
+            fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
+            return;
+        }
+    }
+
     const Local *binding = local_for_binding(c, node->v.named.name->checked_binding);
     if (binding == NULL) {
         fail(c, LHAT_COMPILE_UNDEFINED);

@@ -13,6 +13,7 @@
 #include <windows.h>
 #else
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 #include "lhat.h"
@@ -56,6 +57,8 @@
 #ifdef LHAT_CLI_WITH_DAP
 #include "adapter.h"
 #endif
+
+static const char *project_root = ".";
 
 #if LHAT_WITH_FRONTEND
 static void print_token(const LhatLexer *lexer, const LhatToken *token)
@@ -482,6 +485,7 @@ static const LhatMessageEntry CLI_MESSAGES[] = {
         "  default        check the whole program and run it\n"
         "  --run          check the whole program and run it; what follows "
         "the file is its '...'\n"
+        "  --project-root DIR  resolve $ paths from DIR (default: current directory)\n"
         "  --check        type check and report, without running\n"
         "  --ast          print the syntax tree\n"
         "  --tokens       print the token stream instead\n"
@@ -1247,6 +1251,20 @@ static bool is_lton_path(const char *path)
 
 // 08 § 7+: an LTON file compiles on its own -- nothing requires one, it is
 // read at run time -- and lands under `out_dir` by its own name.
+static char *project_output_path(const char *directory, const char *root, const char *source)
+{
+    if (root == NULL) return NULL;
+    size_t prefix = strlen(root);
+    if (strncmp(root, source, prefix) != 0 ||
+        (prefix > 0 && root[prefix - 1] != '/' && source[prefix] != '/')) return NULL;
+    const char *relative = source + prefix;
+    if (*relative == '/') relative++;
+    size_t length = strlen(directory) + strlen(relative) + 2;
+    char *out = malloc(length);
+    if (out != NULL) snprintf(out, length, "%s/%s", directory, relative);
+    return out;
+}
+
 static int compile_lton(const char *path, const char *out_dir, bool strict,
                         bool with_debug)
 {
@@ -1259,10 +1277,26 @@ static int compile_lton(const char *path, const char *out_dir, bool strict,
     }
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
+    (void)lhat_program_set_project_root(&program, project_root);
     speak(&program);
+    if (!bind_host_names(&program)) {
+        say_registration_failure(&program);
+        lhat_free(text);
+        lhat_program_dispose(&program);
+        return EXIT_FAILURE;
+    }
+    LhatUnit origin = {0};
+    origin.path = "";
+    origin.program = &program;
+    char *resolved = lhat_program_resolve_path(&origin, path, strlen(path));
+    if (resolved == NULL) {
+        lhat_free(text);
+        lhat_program_dispose(&program);
+        return EXIT_FAILURE;
+    }
     uint8_t *bytes = NULL;
     size_t size = 0;
-    LhatLtonStatus status = lhatstdlib_lton_write(&program, path, text, length,
+    LhatLtonStatus status = lhatstdlib_lton_write(&program, resolved, text, length,
                                                   with_debug, &bytes, &size);
     lhat_free(text);
     int code = EXIT_FAILURE;
@@ -1276,9 +1310,12 @@ static int compile_lton(const char *path, const char *out_dir, bool strict,
             }
         }
         size_t out_length = strlen(out_dir) + 1 + strlen(base);
-        char *out_path = (char *)malloc(out_length + 1);
+        char *out_path = program.units != NULL
+            ? project_output_path(out_dir, program.project_root, resolved)
+            : (char *)malloc(out_length + 1);
         if (out_path != NULL) {
-            snprintf(out_path, out_length + 1, "%s/%s", out_dir, base);
+            if (program.units == NULL)
+                snprintf(out_path, out_length + 1, "%s/%s", out_dir, base);
             if (write_bytes(out_path, bytes, size)) {
                 const LhatMessageArg args[] = {CLI_ARG("path", path),
                                                CLI_ARG("file", out_path)};
@@ -1288,6 +1325,18 @@ static int compile_lton(const char *path, const char *out_dir, bool strict,
         }
         free(out_path);
     }
+    // Required modules must accompany the compiled data, with the same
+    // project layout so the binary unit's relative dependency edges survive.
+    for (const LhatUnit *u = program.units; code == EXIT_SUCCESS && u != NULL; u = u->next) {
+        uint8_t *unit_bytes = NULL;
+        size_t unit_length = 0;
+        char *out_path = project_output_path(out_dir, program.project_root, u->path);
+        if (out_path == NULL || lhat_unit_write_binary(u, with_debug, &unit_bytes, &unit_length) != LHAT_WRITE_OK ||
+            !write_bytes(out_path, unit_bytes, unit_length)) code = EXIT_FAILURE;
+        free(out_path);
+        lhat_free(unit_bytes);
+    }
+    lhat_free(resolved);
     lhat_free(bytes);
     lhat_program_dispose(&program);
     return code;
@@ -1311,6 +1360,7 @@ static int compile_program(const char *path, const char *out_dir,
     }
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
+    (void)lhat_program_set_project_root(&program, project_root);
     speak(&program);
     if (!bind_host_names(&program)) {
         say_registration_failure(&program);
@@ -1427,6 +1477,7 @@ static int check_program(const char *path, bool run, bool strict,
     (void)dap_port;  // unused without LHAT_CLI_WITH_DAP
     LhatProgram program;
     lhat_program_init(&program, strict, lhat_load_file, NULL);
+    (void)lhat_program_set_project_root(&program, project_root);
     speak(&program);
     if (!read_signatures(&program) || !bind_host_names(&program)) {
         // 05 § 8.2, before checking (8.3)
@@ -1616,6 +1667,7 @@ static int dump_bytecode(const char *path)
 {
     LhatProgram program;
     lhat_program_init(&program, false, lhat_load_file, NULL);
+    (void)lhat_program_set_project_root(&program, project_root);
     speak(&program);
     if (!bind_host_names(&program)) {  // 05 § 8.2, before checking (8.3)
         say_registration_failure(&program);
@@ -1675,6 +1727,7 @@ static int repl(bool strict)
     // stdlib. It outlives both sessions, which borrow its types.
     LhatProgram program;
     lhat_program_init(&program, strict, NULL, NULL);
+    (void)lhat_program_set_project_root(&program, project_root);
     speak(&program);
     if (!bind_host_names(&program)) {  // 05 § 8.2 and 8.7
         cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
@@ -1968,6 +2021,8 @@ int main(int argc, char **argv)
             language = argv[++i];
         } else if (strcmp(argv[i], "--messages") == 0 && i + 1 < argc) {
             messages_dir = argv[++i];
+        } else if (strcmp(argv[i], "--project-root") == 0 && i + 1 < argc) {
+            project_root = argv[++i];
         } else if (strcmp(argv[i], "--signatures") == 0 && i + 1 < argc) {
             signatures_path = argv[++i];
         } else if (strcmp(argv[i], "-h") == 0 ||
@@ -1990,6 +2045,29 @@ int main(int argc, char **argv)
             arguments = &argv[i];
             argument_count = (size_t)(argc - i);
             break;
+        }
+    }
+
+    // Keep filesystem entry paths and the configured root in the same
+    // absolute namespace; the core also supports non-filesystem loaders.
+    char current_directory[32768], root_directory[32768], input_path[32768];
+#ifdef _WIN32
+    char *cwd = _getcwd(current_directory, sizeof current_directory);
+#else
+    char *cwd = getcwd(current_directory, sizeof current_directory);
+#endif
+    if (cwd != NULL) {
+        if (project_root[0] != '/' && project_root[0] != '\\' &&
+            !(strlen(project_root) > 1 && project_root[1] == ':')) {
+            int count = snprintf(root_directory, sizeof root_directory, "%s/%s", cwd, project_root);
+            if (count < 0 || (size_t)count >= sizeof root_directory) return EXIT_FAILURE;
+            project_root = root_directory;
+        }
+        if (path != NULL && path[0] != '/' && path[0] != '\\' &&
+            !(strlen(path) > 1 && path[1] == ':')) {
+            int count = snprintf(input_path, sizeof input_path, "%s/%s", cwd, path);
+            if (count < 0 || (size_t)count >= sizeof input_path) return EXIT_FAILURE;
+            path = input_path;
         }
     }
 
@@ -2037,6 +2115,7 @@ int main(int argc, char **argv)
         // "strict": false rather than always claiming strict.
         lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL,
                           NULL);
+    (void)lhat_program_set_project_root(&program, project_root);
         speak(&program);
         if (!bind_host_names(&program)) {
             cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
@@ -2079,6 +2158,7 @@ int main(int argc, char **argv)
         LhatProgram program;
         lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL,
                           NULL);
+    (void)lhat_program_set_project_root(&program, project_root);
         speak(&program);
         uint8_t *bytes = NULL;
         size_t length = 0;

@@ -28,7 +28,8 @@ static void outline_of_path(Outline *o, const char *path, const char *text,
 {
     lhat_source_init_from_string(&o->source, path, text, length);
     lhat_lexer_init(&o->lexer, &o->source);
-    lhat_parse(&o->lexer, &o->parsed);
+    if (lsp_lton_is_path(path)) lhat_parse_lton(&o->lexer, &o->parsed);
+    else lhat_parse(&o->lexer, &o->parsed);
 
     memset(&o->unit, 0, sizeof o->unit);
     o->unit.path = (char *)path;
@@ -313,9 +314,7 @@ static void test_what_is_looked_through(void)
 
     LHAT_TEST("08 章: an LTON file lists its entries, at the file's own columns");
     const char *lton = "name = \"spinner\",\nspeed = 2\n";
-    size_t whole = 0;
-    char *wrapped = lsp_lton_wrap(lton, strlen(lton), &whole);
-    outline_of_path(&o, "data.lton", wrapped, whole);
+    outline_of_path(&o, "data.lton", lton, strlen(lton));
     LHAT_CHECK(count_of(o.symbols) == 2, "expected 2 symbols, got %d",
                count_of(o.symbols));
     cJSON *name = expect(o.symbols, 0, "name", PROPERTY);
@@ -326,7 +325,6 @@ static void test_what_is_looked_through(void)
     }
     expect(o.symbols, 1, "speed", PROPERTY);
     outline_dispose(&o);
-    free(wrapped);
 
     LHAT_TEST("a unit that does not parse still has an outline of what did");
     outline_of(&o,

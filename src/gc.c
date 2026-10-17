@@ -211,6 +211,11 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             reach(gray, (LhatObject *)type->index_value);
             reach(gray, (LhatObject *)type->instance);  // 02 の 14.7改
             reach(gray, (LhatObject *)(void *)type->error_kind);
+            reach(gray, (LhatObject *)(void *)type->enum_name);
+            reach(gray, (LhatObject *)(void *)type->enum_owner_name);
+            reach(gray, (LhatObject *)(void *)type->enum_module);
+            reach(gray, (LhatObject *)(void *)type->enum_require);
+            reach(gray, (LhatObject *)(void *)type->enum_qualifier);
             return;
         }
 

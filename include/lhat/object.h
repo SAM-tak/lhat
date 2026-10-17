@@ -480,6 +480,10 @@ typedef struct LhatRuntimeType {
     size_t enum_member_index;
     const LhatString *enum_name;        // E, or the member's own name
     const LhatString *enum_owner_name;  // ENUM_MEMBER: the E of E.AAA
+    // Canonical public lookup for LTON; absent for private/local enums.
+    const LhatString *enum_module;
+    const LhatString *enum_require;  // NULL means import^, otherwise require^
+    const LhatString *enum_qualifier;  // optional enclosing registered type
 
     // ERROR only (04 の 2.7): which of the two families this stands for.
     // A kind carries its own in error_kind->local.

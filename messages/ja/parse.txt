@@ -133,3 +133,6 @@ token.scope = スコープ指定子
 token.operator = 「{operator}」
 # token.other = something else
 token.other = ほかの何か
+
+# lton-import = LTON permits only import^, require^ and let^ aliases of them before its table entries
+lton-import = LTON では、テーブル要素より前に限り import^、require^、その別名を付ける let^ を書ける

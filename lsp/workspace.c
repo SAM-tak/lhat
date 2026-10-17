@@ -185,16 +185,6 @@ static char *lsp_program_load(void *context, const char *path, size_t *length)
     if (text == NULL) {
         text = lhat_load_file(NULL, path, length);
     }
-    if (text != NULL && lsp_lton_is_path(path)) {
-        size_t whole = 0;
-        char *wrapped = lsp_lton_wrap(text, *length, &whole);
-        lhat_free(text);
-        if (wrapped == NULL) {
-            return NULL;
-        }
-        *length = whole;
-        return wrapped;
-    }
     return text;
 }
 
@@ -347,12 +337,13 @@ static void recheck_semantic_project(LspWorkspace *ws, LspProject *project)
         lhat_program_dispose(&project->program);
         project->checked = false;
     }
-    if (!project_has_roots(project, false)) {
+    if (!project_has_roots(project, false) && !project_has_roots(project, true)) {
         return;
     }
     bool strict = lsp_settings_strict(
         project->settings, lsp_host_config_strict(project->host_config, true));
     lhat_program_init(&project->program, strict, lsp_program_load, ws);
+    (void)lhat_program_set_project_root(&project->program, project->root_path);
     speak(ws, &project->program);
     bind_host_names(project, &project->program);
     project->checked = true;
@@ -379,13 +370,16 @@ static void recheck_data_project(LspWorkspace *ws, LspProject *project)
     if (!project_has_roots(project, true)) {
         return;
     }
+    if (!project->checked) recheck_semantic_project(ws, project);
     lhat_program_init(&project->data_program, true, lsp_program_load, ws);
     project->data_program.syntax_only = true;
+    (void)lhat_program_set_project_root(&project->data_program, project->root_path);
     speak(ws, &project->data_program);
     project->data_checked = true;
     for (LspRoot *root = project->roots; root != NULL; root = root->next) {
         if (lsp_lton_is_path(root->path)) {
-            (void)lhat_program_check(&project->data_program, root->path);
+            LhatUnit *unit = (LhatUnit *)lhat_program_check(&project->data_program, root->path);
+            if (unit != NULL && project->checked) lsp_lton_resolve(&project->program, unit);
         }
     }
 }
@@ -847,12 +841,9 @@ void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path)
             }
             bool semantic_changed = project->checked &&
                                     program_has_path(&project->program, path);
-            if (removed) {
+            if (semantic_changed) recheck_semantic_project(ws, project);
+            if (removed || (semantic_changed && project->data_checked))
                 recheck_data_project(ws, project);
-            }
-            if (semantic_changed) {
-                recheck_semantic_project(ws, project);
-            }
         }
         lhat_mutex_unlock(&ws->lock);
         return;
@@ -881,7 +872,7 @@ void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path)
         if (semantic_changed) {
             recheck_semantic_project(ws, project);
         }
-        if (data_changed) {
+        if (data_changed || (semantic_changed && project->data_checked)) {
             recheck_data_project(ws, project);
         }
     }
@@ -1081,10 +1072,13 @@ void lsp_workspace_with_fresh_unit(LspWorkspace *ws, const char *path,
     LhatProgram program;
     lhat_program_init(&program, true, lsp_program_load, ws);
     program.syntax_only = lsp_lton_is_path(path);
+    if (project != NULL) (void)lhat_program_set_project_root(&program, project->root_path);
     speak(ws, &program);
     if (!program.syntax_only) bind_host_names(project, &program);
     const LhatUnit *unit = lhat_program_check(&program, path);
     if (unit != NULL && unit->loaded) {
+        if (program.syntax_only && project != NULL && project->checked)
+            lsp_lton_resolve(&project->program, (LhatUnit *)unit);
         sink(context, unit);
     }
     lhat_program_dispose(&program);
