@@ -9,7 +9,7 @@
 // machine -- which is also what lets relaxed (3.5) run on this same machine,
 // and what specialisation later removes where strict settled the types.
 // Nothing here reaches the front end: a unit already compiled to bytecode
-// needs no lexer, no parser and no checker (02 の 14.17改2), and this header
+// needs no lexer, no parser and no checker (02 § 14.17+2), and this header
 // is what keeps that true at the include level.
 
 #ifndef LHAT_VM_H
@@ -34,14 +34,14 @@ typedef enum {
     LHAT_RUN_ARITY,           // 5.3: the wrong number of arguments
     LHAT_RUN_STACK_OVERFLOW,  // the frames went too deep
     LHAT_RUN_OUT_OF_MEMORY,
-    LHAT_RUN_BAD_KEY,         // 04 の 11.3: nil^ means "not there", so it
+    LHAT_RUN_BAD_KEY,         // 04 § 11.3: nil^ means "not there", so it
                               // cannot also be a key
-    LHAT_RUN_BAD_FORMAT,      // 02 の 14.17: tostring was handed a format a
+    LHAT_RUN_BAD_FORMAT,      // 02 § 14.17: tostring was handed a format a
                               // number^ cannot be written through
     LHAT_RUN_DEAD_COROUTINE,  // resumed one that has finished
-    LHAT_RUN_YIELD_OUTSIDE,   // 02 の 15.2 and 10.7: yield^ where nothing is
+    LHAT_RUN_YIELD_OUTSIDE,   // 02 § 15.2 and 10.7: yield^ where nothing is
                               // waiting to be resumed
-    LHAT_RUN_NO_CANDIDATE,    // 02 の 14.12: no signature of an overloaded
+    LHAT_RUN_NO_CANDIDATE,    // 02 § 14.12: no signature of an overloaded
                               // member takes what the call handed over
     LHAT_RUN_COROUTINE_NOT_STARTED,     // 15.2: resumed one that has never
                                          // been started
@@ -50,34 +50,34 @@ typedef enum {
     LHAT_RUN_COSTATE,         // 15.16: load() was handed another coroutine's
                               // state, or save()/load() met a running one
                               // or one with no body of its own
-    LHAT_RUN_SEALED,          // 05 の 8.6: wrote into a table the
+    LHAT_RUN_SEALED,          // 05 § 8.6: wrote into a table the
                               // machine owns -- L^, or what require^ answers
                               // with. check.c refuses the ones it can name;
                               // this is one reached through a parameter
-    LHAT_RUN_MUTABLE_DEFAULT, // 02 の 14.11: a definition's prototype took a
+    LHAT_RUN_MUTABLE_DEFAULT, // 02 § 14.11: a definition's prototype took a
                               // value nothing may share -- a coroutine, a
                               // host object -- or a default tree deeper than
                               // the machine follows. The checker refuses
                               // these where it ran; this is the same question
                               // asked where the values actually are
-    LHAT_RUN_NO_SUCH_UNIT,    // 05 の 5.3: a require^ reached for a unit the
+    LHAT_RUN_NO_SUCH_UNIT,    // 05 § 5.3: a require^ reached for a unit the
                               // machine was not given
-    LHAT_RUN_TUPLE_ARITY,     // 02 の 13.8改: a call reserved slots for one
+    LHAT_RUN_TUPLE_ARITY,     // 02 § 13.8+: a call reserved slots for one
                               // width of tuple and the callee answered
                               // another -- or answered a single value where
                               // a run was expected. Settled by the type
                               // wherever the checker ran; this is where an
-                              // unchecked compile, 03 の 4.3's session and
-                              // 05 の 5.3's separately compiled units land
-    LHAT_RUN_TUPLE_UNEXPECTED,// 02 の 13.8改: the other direction -- a tuple
+                              // unchecked compile, 03 § 4.3's session and
+                              // 05 § 5.3's separately compiled units land
+    LHAT_RUN_TUPLE_UNEXPECTED,// 02 § 13.8+: the other direction -- a tuple
                               // came back where the call site reserved one
                               // slot. Not quietly boxed into a table: a
                               // tuple and a t^{...} are different types, so
                               // converting between them is the program's
                               // word (pack^) and never the machine's
-    LHAT_RUN_PANIC,           // 04 の 11.6: panic^, written by the program
+    LHAT_RUN_PANIC,           // 04 § 11.6: panic^, written by the program
                               // itself -- `value` is what it panicked with
-    // 02 の 15.15: the slice ran out. Not a fault: the body is standing
+    // 02 § 15.15: the slice ran out. Not a fault: the body is standing
     // exactly where it was and lhat_machine_continue takes it on. Answered
     // only where a budget was set (lhat_machine_set_budget) and only by the
     // outermost run.
@@ -88,7 +88,7 @@ typedef struct {
     LhatRunStatus status;
     LhatValue value;   // what the unit returned, or nil^
 
-    // 02 の 13.8改: the several values, when the answer was a tuple. `value`
+    // 02 § 13.8+: the several values, when the answer was a tuple. `value`
     // is positions[0] then, so a host that reads only it still reads a value
     // it can use -- which is why nothing written before tuples has to change.
     // `positions` aims into the machine's own room and is good until the
@@ -98,10 +98,10 @@ typedef struct {
     size_t position_count;
 
     size_t at;         // the instruction that failed, when one did
-    // 04 の 11 章: where `at` came from, for a host to report -- 0 when
+    // 04 § 11 : where `at` came from, for a host to report -- 0 when
     // status is LHAT_RUN_OK, since nothing failed to name a line for.
     uint32_t line;
-    // 02 の 11.8: the operator `at` was, when it was one -- NULL for a
+    // 02 § 11.8: the operator `at` was, when it was one -- NULL for a
     // fault that is not about an operator (a bad call, a full stack, ...).
     const char *op_name;
     size_t op_name_length;
@@ -113,7 +113,7 @@ typedef struct {
     size_t live;
 } LhatRunResult;
 
-// 03 の 4 章: a REPL is one machine answering many inputs, so the machine is
+// 03 § 4 : a REPL is one machine answering many inputs, so the machine is
 // the caller's rather than any one run's. It holds the stack, the frames and
 // everything a program allocates, which is what lets a value one input made
 // still be there for the next.
@@ -125,7 +125,7 @@ typedef struct LhatMachine LhatMachine;
 
 LhatMachine *lhat_machine_new(void);
 
-// 03 の 4.3改: the same machine, measured by the caller. `frames` is how
+// 03 § 4.3+: the same machine, measured by the caller. `frames` is how
 // deep a call may go and `slots` how many registers the frames share; 0 for
 // either asks for what lhat_machine_new does (LHAT_MAX_FRAMES,
 // LHAT_STACK_SLOTS), and anything too small to run a single body at all is
@@ -173,7 +173,7 @@ LhatDetachStatus lhat_machine_detach_result(LhatMachine *source, LhatValue value
 LhatValue lhat_machine_adopt_result(LhatMachine *receiver, LhatDetachedValue *value);
 void lhat_detached_value_free(LhatDetachedValue *value);
 
-// 05 の 8.6: what L^.gc.collect() is, for a host that has a machine and
+// 05 § 8.6: what L^.gc.collect() is, for a host that has a machine and
 // no L^ code it wants to run to reach one. A whole cycle, now: what the
 // machine cannot reach when this is called has been freed when it answers.
 // It is the only thing that gives a pause the size of the heap, which is why
@@ -195,7 +195,7 @@ void lhat_detached_value_free(LhatDetachedValue *value);
 // unreachable by that account, and this call is exactly what takes it. Put
 // it somewhere first, or collect before making it rather than after.
 //
-// 02 の 10.7: a coroutine dropped with cleanups still pending has them run
+// 02 § 10.7: a coroutine dropped with cleanups still pending has them run
 // here, as L^.gc.collect() does -- so this runs L^ code, and a finally^
 // or a with^ of a dropped coroutine is what it runs. Only what the cycle
 // above found: a cleanup that drops another coroutine leaves that one for the
@@ -213,7 +213,7 @@ void lhat_detached_value_free(LhatDetachedValue *value);
 // lhat_machine_pending_disposals below is how a host tells.
 size_t lhat_machine_gc_collect(LhatMachine *machine);
 
-// 05 の 8.6: how the collector paces itself, per machine -- what L^.gc.settings
+// 05 § 8.6: how the collector paces itself, per machine -- what L^.gc.settings
 // answers and L^.gc.configure takes. Counted in objects, as everything the
 // collector does is.
 //
@@ -264,13 +264,13 @@ void lhat_machine_gc_pause(LhatMachine *machine, bool paused);
 bool lhat_machine_gc_step(LhatMachine *machine, size_t budget);
 void lhat_machine_gc_stats(const LhatMachine *machine, LhatGcStats *out);
 
-// 02 の 10.7: how many dropped coroutines are still waiting to have their
+// 02 § 10.7: how many dropped coroutines are still waiting to have their
 // cleanups run. Zero after an ordinary lhat_machine_gc_collect, which is
 // what a host wants to see before it frees anything those cleanups would
 // run: a waiting one still holds the closure it was suspended in.
 size_t lhat_machine_pending_disposals(const LhatMachine *machine);
 
-// 05 の 5.7: whether anything on the machine's heap still runs one of
+// 05 § 5.7: whether anything on the machine's heap still runs one of
 // `bodies` -- a closure of one, or a coroutine suspended in one. The nested
 // bodies of a unit are the caller's to include; lhat_reload flattens them.
 //
@@ -280,7 +280,7 @@ size_t lhat_machine_pending_disposals(const LhatMachine *machine);
 bool lhat_machine_holds_body(const LhatMachine *machine,
                              const LhatProto *const *bodies, size_t count);
 
-// 02 の 14.16: what typeof^ answers, asked from C. The same reading, so a
+// 02 § 14.16: what typeof^ answers, asked from C. The same reading, so a
 // host and a program never learn different things about one value.
 //
 // What this is FOR: a host that has to act on what a value's type says
@@ -293,7 +293,7 @@ bool lhat_machine_holds_body(const LhatMachine *machine,
 //
 // A subroutine answers from the types its proto carries, which were made
 // at compile time -- including a parameter nothing was written for, whose
-// type inference settled (03 の 3.4). A table answers t^ and no more: what
+// type inference settled (03 § 3.4). A table answers t^ and no more: what
 // a structure holds deeply is the checker's to say, at compile time. For
 // the declared shape of a public^ name -- a def^'s self^{...} included --
 // ask the unit instead: lhat_unit_export_type (program.h) answers the
@@ -308,7 +308,7 @@ bool lhat_machine_holds_body(const LhatMachine *machine,
 const LhatRuntimeType *lhat_value_type(LhatMachine *machine,
                                        LhatValue value);
 
-// 05 の 8.7: the three steps a host registration takes at run time. Kept here
+// 05 § 8.7: the three steps a host registration takes at run time. Kept here
 // rather than in program.c because only this file may touch the heap -- the
 // values belong to the machine and the collector has to see them.
 bool lhat_machine_make_table(LhatMachine *machine, LhatValue *out);
@@ -327,7 +327,7 @@ bool lhat_machine_make_table(LhatMachine *machine, LhatValue *out);
 // that does not need this, and using it there costs nothing either.
 //
 // `refused` says the table would not take the write: a nil^ or NaN key, or
-// a table the program shares among its machines (05 の 8.7改5 -- a
+// a table the program shares among its machines (05 § 8.7+5 -- a
 // registered module's, read through lhat_machine_registered), which nobody
 // writes. False is reserved for failing: no table, or no memory.
 bool lhat_machine_table_set(LhatMachine *machine, LhatTable *table,
@@ -337,10 +337,10 @@ bool lhat_machine_table_set(LhatMachine *machine, LhatTable *table,
 // so the registration's signature ended in '...' and a call may write more.
 // The extra arguments reach LhatHostFn as the tail of `arguments`, uncollected
 // -- there is nothing to collect them into that a C function would want.
-// 02 の 11.3改: `self_last` says the receiver is the operand written after
+// 02 § 11.3+: `self_last` says the receiver is the operand written after
 // the member, which only the two operator searches read.
 //
-// 02 の 14.12: `parameter_types` is what the search resolving an overloaded
+// 02 § 14.12: `parameter_types` is what the search resolving an overloaded
 // call asks each candidate, one entry per declared parameter (self^ is not
 // one -- 13.4). NULL leaves the candidate judged by its counts alone, which
 // is what a registration that built none gets. The array is taken over by
@@ -352,18 +352,18 @@ bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
                             LhatValue *out);
 
 // Puts `value` at L^.modules.<module>[.<type>].<name>, making the tables on
-// the way the way 02 の 8.8 does. `type` is NULL for a member of the module
+// the way the way 02 § 8.8 does. `type` is NULL for a member of the module
 // itself.
 //
 // False where the path runs into a module registered through the program
-// (lhat_register_*): 05 の 8.7改5 builds those once and shares them among
+// (lhat_register_*): 05 § 8.7+5 builds those once and shares them among
 // every machine, so nothing is written inside one, at any depth. What a host
 // wants kept alive belongs in lhat_machine_host_root instead.
 bool lhat_machine_register(LhatMachine *machine, const char *module,
                            const char *type, const char *name,
                            LhatValue value);
 
-// 05 の 5.7: takes L^.modules.<module> away again, so that running a unit
+// 05 § 5.7: takes L^.modules.<module> away again, so that running a unit
 // registered under that path registers it afresh.
 //
 // A unit loads once because its own body begins by asking the registry for
@@ -385,12 +385,12 @@ bool lhat_machine_register(LhatMachine *machine, const char *module,
 // among them: what a unit published goes with the unit or not at all.
 bool lhat_machine_forget_unit(LhatMachine *machine, const char *module);
 
-// 05 の 8.6: a member of L^ itself. Writes through the machine rather than
-// through an instruction, which is why 8.6改's seal does not refuse it.
+// 05 § 8.6: a member of L^ itself. Writes through the machine rather than
+// through an instruction, which is why 8.6+'s seal does not refuse it.
 bool lhat_machine_set_global(LhatMachine *machine, const char *name,
                              LhatValue value);
 
-// 05 の 8.8: a value standing for something the host made. `pointer` is the
+// 05 § 8.8: a value standing for something the host made. `pointer` is the
 // host's and nothing here reads it; `tag` is what a later call checks before
 // reading it as the type it expects, and comes from lhat_register_hostdata_type.
 //
@@ -399,12 +399,14 @@ bool lhat_machine_set_global(LhatMachine *machine, const char *name,
 bool lhat_machine_make_hostdata(LhatMachine *machine, const LhatHostDataTag *tag,
                             void *pointer, LhatValue *out);
 
-// 04 の 2.5 の host 版: error^kind{message:=..., cause:=...} が LHAT_BC_NEWERROR
-// と compile_error_new のフィールド既定処理でしていることを、C から直接行う。
-// `kind` は lhat_register_error_kind が返したもの(host 登録は v1 ではフィール
-// ド無し限定なので、message/cause 以外のフィールドを埋める経路はない -- 04 の
-// 2.3 が言う「どの種別も持つ」2つだけがここで書ける)。`message` は NULL なら
-// ""、`cause` は lhat_nil() なら書かれない(2.3 の既定と同じ)。
+// 04 § 2.5, host version: does directly from C what error^kind{message:=...,
+// cause:=...} does via LHAT_BC_NEWERROR and the field-default handling in
+// compile_error_new.
+// `kind` is one returned by lhat_register_error_kind (host registration is
+// limited to field-less kinds in v1, so there is no way to fill fields other
+// than message/cause -- only the two fields that 04 ยง 2.3 says "every kind has"
+// can be written here). `message` is "" if NULL; `cause` is not written if it
+// is lhat_nil() (same as the default in 2.3).
 bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
                              const char *message, LhatValue cause,
                              LhatValue *out);
@@ -414,14 +416,14 @@ bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
 // is what stops a Texture reaching the C that expects a Sound.
 void *lhat_hostdata_pointer(LhatValue value, const LhatHostDataTag *tag);
 
-// 05 の 8.9: the bytes of a host value argument, or NULL when the argument
+// 05 § 8.9: the bytes of a host value argument, or NULL when the argument
 // is not one of `tag`'s -- the same double check lhat_hostdata_pointer
 // makes, over bytes instead of a pointer. The bytes belong to the machine's
 // stack and are good for the duration of the call that handed them over;
 // writing through them changes a scratch copy and nothing the program sees.
 void *lhat_hostvalue_data(LhatValue argument, const LhatHostValueTag *tag);
 
-// 05 の 8.9: the value a host answers with -- `size` bytes (the registered
+// 05 § 8.9: the value a host answers with -- `size` bytes (the registered
 // size) copied into the machine's scratch and handed back as a value the
 // machine writes out whole the moment the call returns. Never stored: the
 // scratch has room for exactly one answer, which is all a call can make.
@@ -429,7 +431,7 @@ void *lhat_hostvalue_data(LhatValue argument, const LhatHostValueTag *tag);
 bool lhat_make_hostvalue(LhatMachine *machine, const LhatHostValueTag *tag,
                          const void *bytes, LhatValue *out);
 
-// 05 の 8.9改: the same value placed in the caller's own room instead of the
+// 05 § 8.9+: the same value placed in the caller's own room instead of the
 // machine's scratch -- the scratch holds exactly one answer, and arguments
 // may stand several at once. The room is the caller's to keep until the call
 // that takes them returns; lhat_machine_call and lhat_machine_call_member
@@ -445,13 +447,13 @@ typedef struct {
 bool lhat_place_hostvalue(const LhatHostValueTag *tag, const void *bytes,
                           LhatHostValueRoom *room, LhatValue *out);
 
-// 05 の 8.7改2: the enum a registration described, built on this machine
-// the way 02 の 19 章's declaration builds one -- the enum object, its
+// 05 § 8.7+2: the enum a registration described, built on this machine
+// the way 02 § 19 章's declaration builds one -- the enum object, its
 // sealed members table, one enumerator per name with its integer. `decl`
 // is the identity descriptor the registration made (fits^ compares it).
 // For lhat_program_install; a host wanting one machine's enum reads it
 // off L^.modules instead.
-// 05 の 8.7 の読み: what stands at L^.modules.<module>[.<type>].<name> on
+// 05 § 8.7 : what stands at L^.modules.<module>[.<type>].<name> on
 // this machine -- the read twin of lhat_machine_register. A host that
 // registered an enum reads it back through this to hand its members out
 // again: an enumerator is a singleton, so the one the machine built is the
@@ -471,10 +473,10 @@ bool lhat_machine_make_enum(LhatMachine *machine, const char *name,
                             const LhatInteger *values, size_t count,
                             LhatValue *out);
 
-// A string on `machine`'s own heap, made the way 05 の 8.7's registration
+// A string on `machine`'s own heap, made the way 05 § 8.7's registration
 // makes a table or a host -- the machine has to make it, since the value's
 // object header and its place in the collector's heap are the machine's to
-// give (05 の 8.8: "LhatValue is not widened; the machine makes it").
+// give (05 § 8.8: "LhatValue is not widened; the machine makes it").
 bool lhat_machine_make_string(LhatMachine *machine, const char *text,
                               size_t length, LhatValue *out);
 
@@ -497,7 +499,7 @@ bool lhat_machine_make_closure(LhatMachine *machine, const LhatProto *proto,
 // closed cell holding a value (its contents may be written later through
 // lhat_upvalue_closed_ref, value.h, which is how a cycle through a closure
 // is tied up), and this takes them. `count` has to be the proto's own.
-// 05 の 8.7改2: what a host function does instead of answering, when what
+// 05 § 8.7+2: what a host function does instead of answering, when what
 // it was asked is a programmer's mistake -- love.graphics.draw handed a
 // width of -1, say -- and not a failure a caller is meant to write a
 // catch^ for. Call it inside the host function and return anything (the
@@ -510,7 +512,7 @@ bool lhat_machine_make_closure(LhatMachine *machine, const LhatProto *proto,
 void lhat_machine_panic(LhatMachine *machine, LhatValue value);
 bool lhat_machine_panic_text(LhatMachine *machine, const char *text);
 
-// 05 の 5.6: a closure of a proto the machine takes ownership of -- what
+// 05 § 5.6: a closure of a proto the machine takes ownership of -- what
 // lhat_program_load_* answered. The proto (the whole tree under it) is freed
 // when the last closure of any body in it is collected; a program's own
 // units never go this way. What its constants named and that got out -- the
@@ -528,7 +530,7 @@ bool lhat_machine_make_closure_with(LhatMachine *machine,
                                     LhatValue *out);
 
 // ---------------------------------------------------------------------------
-// 05 の 8.7改5: hangs a table the PROGRAM built onto this machine's
+// 05 § 8.7+5: hangs a table the PROGRAM built onto this machine's
 // L^.modules at `path` -- the module's own name being the last segment and
 // what stands above it made where it is not there yet. What arrives is
 // sealed and belongs to the program, so the machine writes a pointer and
@@ -540,7 +542,7 @@ bool lhat_machine_make_closure_with(LhatMachine *machine,
 bool lhat_machine_attach_module(LhatMachine *machine, const char *path,
                                 struct LhatTable *table);
 
-// 05 の 8.12: what a host remembers about its own objects
+// 05 § 8.12: what a host remembers about its own objects
 // ---------------------------------------------------------------------------
 
 // What a host keeps alive: a table the machine roots and L^ has no name for
@@ -582,12 +584,12 @@ LhatTable *lhat_machine_host_root(LhatMachine *machine);
 // what makes it reachable again, which is the resurrection a cache needs.
 //
 // It is a speed feature and nothing more: a binding that makes a fresh
-// wrapper every time is correct as it stands (05 の 8.8 makes two wrappers
+// wrapper every time is correct as it stands (05 § 8.8 makes two wrappers
 // of one pointer equal with '='; only 'is^' tells them apart).
 LhatValue lhat_machine_weak_cache_get(LhatMachine *machine, const void *key);
 
 // Remembers `value` under `key`, replacing what stood there. False only
-// when there is no room. Storing nil^ removes the entry, the way 04 の 11.3
+// when there is no room. Storing nil^ removes the entry, the way 04 § 11.3
 // spells "not there" everywhere else.
 bool lhat_machine_weak_cache_put(LhatMachine *machine, const void *key,
                                  LhatValue value);
@@ -596,7 +598,7 @@ bool lhat_machine_weak_cache_put(LhatMachine *machine, const void *key,
 // the key is an address and the next allocation may be given it again.
 void lhat_machine_weak_cache_forget(LhatMachine *machine, const void *key);
 
-// 02 の 15.5 with 05 の 8.8改3: reading a coroutine that has not started, so
+// 02 § 15.5 with 05 § 8.8+3: reading a coroutine that has not started, so
 // that a copy of it can be made on another machine (stdlib/carry.c).
 //
 // A call of a yieldable body runs nothing, so what such a coroutine holds is
@@ -641,12 +643,12 @@ const void *lhat_closure_capture_id(LhatValue closure, size_t index);
 // so the answer is good until the machine is disposed or run again -- there
 // is nothing in the result to free.
 //
-// 02 の 13.7 with 05 の 3.2: a script's top level is 'p^...', and
+// 02 § 13.7 with 05 § 3.2: a script's top level is 'p^...', and
 // `arguments` is what its '...' collects -- a command line, say. A module^
 // unit takes none (LHAT_RUN_ARITY if given any). lhat_run is the same with
 // nothing handed over.
 //
-// 02 の 15.2 with 15.5: a script whose top level holds a yield^ or an await^
+// 02 § 15.2 with 15.5: a script whose top level holds a yield^ or an await^
 // is a yieldable 'p^...' (lhat_proto_yields answers true), so running it
 // runs nothing: the answer is LHAT_RUN_OK with the coroutine, its '...'
 // already collected. The host drives it with lhat_machine_resume until
@@ -659,7 +661,7 @@ LhatRunResult lhat_run(LhatMachine *machine, const LhatProto *proto);
 
 // Calls an ordinary L^ value the way an instruction would, without a proto of
 // its own to run first -- for a host that already holds a callable value
-// (05 の 8.7's `LhatHostFn` has no way to call back into L^ on its own, since
+// (05 § 8.7's `LhatHostFn` has no way to call back into L^ on its own, since
 // a call site is normally compiled). `callee` has to be a plain subroutine
 // (LHAT_OBJECT_SUBROUTINE) or a function the host registered
 // (LHAT_OBJECT_HOST) -- not an overload^ group; arity is checked the same
@@ -667,7 +669,7 @@ LhatRunResult lhat_run(LhatMachine *machine, const LhatProto *proto);
 // there is no self^ and no 'expr...' spread -- a host handing values over
 // already has them as a flat array.
 //
-// 02 の 15.15: how much of a run this machine does before handing control
+// 02 § 15.15: how much of a run this machine does before handing control
 // back -- the slice a scheduler gives it. Counted in loop turns, which is
 // where every run that does not end passes: a backward jump. Straight-line
 // code is bounded by its own length and recursion by the frame limit, so
@@ -692,7 +694,7 @@ LhatRunResult lhat_machine_continue(LhatMachine *machine);
 // Whether a run of this machine is standing suspended.
 bool lhat_machine_is_suspended(const LhatMachine *machine);
 
-// 02 の 15.5: a yieldable procedure answers its coroutine rather than
+// 02 § 15.5: a yieldable procedure answers its coroutine rather than
 // running, exactly as a compiled call does -- lua_newthread's shape at this
 // boundary. lhat_machine_resume below is what drives it.
 //
@@ -702,7 +704,7 @@ bool lhat_machine_is_suspended(const LhatMachine *machine);
 LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
                                 const LhatValue *arguments, size_t count);
 
-// 02 の 14.4: the same, for a member reached through a receiver -- what a
+// 02 § 14.4: the same, for a member reached through a receiver -- what a
 // compiled `x.m(a, b)` does, for a host that has the receiver and the name.
 // Without this a host can hold an object of the language's and call nothing
 // on it: an instance's members are shared and take self^, so there is no way
@@ -710,12 +712,12 @@ LhatRunResult lhat_machine_call(LhatMachine *machine, LhatValue callee,
 //
 // 14.7's search is the one lhat_table_get already makes, so an instance
 // reaches its definition's members here as it does anywhere. 14.12's
-// overloads are resolved the way a call site resolves them, and 11.3改's
+// overloads are resolved the way a call site resolves them, and 11.3+'s
 // self^-last op^ is handed its receiver in the slot it asked for. A member
 // that takes no self^ is a static one and is simply called, receiver unused.
 //
 // The callee may end up a plain L^ subroutine or a member the host itself
-// registered in C (LHAT_OBJECT_HOST) -- 05 の 8.8's hostdata members are all
+// registered in C (LHAT_OBJECT_HOST) -- 05 § 8.8's hostdata members are all
 // the second kind, so `packed.at(3)` works from here the way it does from a
 // compiled call. A built-in (LHAT_OBJECT_NATIVE) still answers
 // LHAT_RUN_NOT_CALLABLE -- a coroutine is driven with lhat_machine_resume
@@ -730,7 +732,7 @@ LhatRunResult lhat_machine_call_member(LhatMachine *machine,
                                        size_t count);
 
 // ---------------------------------------------------------------------------
-// Coroutines at the host boundary (05 の 8.8)
+// Coroutines at the host boundary (05 § 8.8)
 // ---------------------------------------------------------------------------
 //
 // The three calls that put a host on the same footing as a compiled body:
@@ -763,12 +765,12 @@ bool lhat_machine_make_coroutine(LhatMachine *machine, LhatHostStepFn step,
 // fresh body runs from the top, and that first send is discarded (there is
 // no yield^ awaiting it yet; none is the idiom). On a suspended body the
 // send arrives where the yield^ waits, exactly as resume(...) sends it:
-// `sent`/`sent_count` carry none, one, or 13.8改's several -- as many as
+// `sent`/`sent_count` carry none, one, or 13.8+'s several -- as many as
 // the body's R takes, a tuple R being taken apart by the yield^'s own
 // binding. NULL with 0 sends nothing.
 //
 // The answer is what the body yielded or returned -- 13.9's union(Y, T),
-// told apart with lhat_machine_coroutine_done below, the same line 15.6改
+// told apart with lhat_machine_coroutine_done below, the same line 15.6+
 // draws. A tuple crosses as `positions`, as any tuple crosses this
 // boundary. Resuming a finished or currently-running coroutine answers
 // LHAT_RUN_DEAD_COROUTINE. A walk with no body -- a table's, or
@@ -777,7 +779,7 @@ bool lhat_machine_make_coroutine(LhatMachine *machine, LhatHostStepFn step,
 LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
                                   const LhatValue *sent, size_t sent_count);
 
-// 15.6改's done(), askable from C: whether the body has run to its end.
+// 15.6+'s done(), askable from C: whether the body has run to its end.
 // False for any value that is not a coroutine.
 bool lhat_machine_coroutine_done(LhatValue coroutine);
 
@@ -800,9 +802,9 @@ const struct LhatProgram *lhat_machine_program(const LhatMachine *machine);
 void lhat_machine_hold_program(LhatMachine *machine,
                                const struct LhatProgram *program);
 
-// 04 の 11.6改: one frame of a traceback. `source` is the unit's path and
+// 04 § 11.6+: one frame of a traceback. `source` is the unit's path and
 // `name` the binding or member the body was written under -- both debug
-// labels stamped at compile time (02 の 14.9 stands: neither is part of
+// labels stamped at compile time (02 § 14.9 stands: neither is part of
 // what a proto is), and either may be NULL (a session's input, a bare f^).
 // `line` stays at 11.6's file:line granularity; 0 when unknown.
 typedef struct {
