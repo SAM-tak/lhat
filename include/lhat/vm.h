@@ -840,6 +840,18 @@ bool lhat_machine_fault_frame(const LhatMachine *machine, size_t level,
 size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
                               size_t capacity);
 
+// What `ran` -- a run on `machine` that did not end in LHAT_RUN_OK -- stopped
+// on, as one report in the language of the machine's program (10 §7.2):
+//
+//   main.lh: error: line 12: an instruction was given the wrong type (+)
+//
+// and, under it, the traceback when more than one frame was left standing.
+// The place is the unit the fault stopped in, `name` where that frame has
+// none (NULL to name none). lhat_machine_traceback's convention otherwise,
+// and read before the machine runs again for the same reason.
+size_t lhat_run_error_write(const LhatMachine *machine, LhatRunResult ran,
+                            const char *name, char *out, size_t capacity);
+
 #ifdef __cplusplus
 }
 #endif

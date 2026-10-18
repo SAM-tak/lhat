@@ -6251,7 +6251,7 @@ static void test_module_binding_identity(void)
     program_with(&program, &disk, NULL, 0);
     lhat_register_func(&program, "lib.draw", "line", "f^ -> number^;", host_one, NULL);
     TestSession *session = test_session_new();
-    lhat_program_install_checks(&program, session->checks);
+    lhat_check_session_hosted(session->checks, program.hosted, program.globals);
     Run first, second;
     compile_next_text(&first, session, "import^ lib.draw\n");
     compile_next_text(&second, session, "return^ p^ {return^ lib.draw.line()}\n");

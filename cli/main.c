@@ -17,6 +17,7 @@
 #endif
 
 #include "lhat.h"
+#include "lhat/prompt.h"
 #include "native_extensions.h"
 
 // The dump modes and the diagnostic rendering read each stage's results off
@@ -401,9 +402,6 @@ enum {
     CLI_CANNOT_WRITE,
     CLI_SAID,
     CLI_ERROR,
-    CLI_PROMPT_ERROR,
-    CLI_AT_LINE,
-    CLI_WITH_OPERATOR,
     CLI_INPUT_ENDED,
     CLI_INPUT_DROPPED,
     CLI_NO_TYPE_ERRORS,
@@ -435,9 +433,6 @@ static const LhatMessageEntry CLI_MESSAGES[] = {
     [CLI_CANNOT_WRITE] = {"cli.cannot-write", "lhat: cannot write {path}"},
     [CLI_SAID] = {"cli.said", "lhat: {message}"},
     [CLI_ERROR] = {"cli.error", "{path}: error: {message}"},
-    [CLI_PROMPT_ERROR] = {"cli.prompt-error", "error: {message}"},
-    [CLI_AT_LINE] = {"cli.at-line", "line {line}: {message}"},
-    [CLI_WITH_OPERATOR] = {"cli.with-operator", "{message} ({operator})"},
     [CLI_INPUT_ENDED] = {"cli.input-ended",
         "{path}: note: the input ended before the construct was complete"},
     [CLI_INPUT_DROPPED] = {"cli.input-dropped",
@@ -868,107 +863,19 @@ static void say_compile_error(const LhatProgram *program,
     say(program, &report, source, name);
 }
 
-// 04 § 11.6+: what the program wrote in panic^ EXPR, as text -- a plain
-// string is its own text (a message reads oddly in quotes), anything else
-// lhat_value_write's general form, made into `kept` for the caller to free.
-static LhatMessageArg panic_value(LhatValue value, char **kept)
-{
-    LhatMessageArg said = {"message", "", 0};
-    if (lhat_is_object_kind(value, LHAT_OBJECT_STRING)) {
-        const LhatString *text = (const LhatString *)lhat_as_object(value);
-        said.value = text->text;
-        said.length = text->length;
-        return said;
-    }
-    size_t needed = lhat_value_write(value, NULL, 0);
-    *kept = (char *)malloc(needed + 1);
-    if (*kept != NULL) {
-        lhat_value_write(value, *kept, needed + 1);
-        said.value = *kept;
-        said.length = needed;
-    }
-    return said;
-}
-
-// `message` inside the text `id` makes of it and one more argument, made
-// into `kept` for the caller to free -- or as it was, with no room for that.
-static LhatMessageArg wrapped(size_t id, LhatMessageArg message,
-                              LhatMessageArg other, char **kept)
-{
-    const LhatMessageArg args[] = {message, other};
-    *kept = cli_text(id, args, 2);
-    if (*kept != NULL) {
-        message.value = *kept;
-        message.length = strlen(*kept);
-    }
-    return message;
-}
-
-// 04 § 11: a runtime fault names the line it happened on and, when it was
-// one, the operator -- both from LhatRunResult, not the richer source-offset
-// diagnostics the checker/parser give (those need a source and a token; a
-// fault only ever has a line).
-// 04 § 11.6+: the frames a fault left standing, written out under the
-// one-line report. Only when there is more than one -- a single frame says
-// nothing say_run_error's line did not.
-static void say_traceback(LhatMachine *machine)
-{
-    if (lhat_machine_fault_depth(machine) < 2) {
-        return;
-    }
-    size_t needed = lhat_machine_traceback(machine, NULL, 0);
-    char *text = (char *)malloc(needed + 1);
-    if (text == NULL) {
-        return;
-    }
-    lhat_machine_traceback(machine, text, needed + 1);
-    fprintf(stderr, "%s\n", text);
-    free(text);
-}
-
-// 04 § 11.6+: the unit a fault stopped in, which the line ran.line names is
-// a line of -- not the one that was run, when a unit it required stopped.
-// NULL where no frame was kept or the frame has no source (a prompt's input).
-static const char *stopped_in(const LhatMachine *machine)
-{
-    LhatFrameInfo frame;
-    return lhat_machine_fault_frame(machine, 0, &frame) ? frame.source : NULL;
-}
-
-static void say_run_error(const LhatProgram *program, const char *path,
-                          LhatRunResult ran)
-{
-    char *kept[3] = {NULL, NULL, NULL};
-    LhatMessageArg message;
-    if (ran.status == LHAT_RUN_PANIC) {
-        message = panic_value(ran.value, &kept[0]);
-    } else {
-        const char *status =
-            lhat_program_text(program, lhat_run_status_id(ran.status),
-                              lhat_run_status_message(ran.status));
-        message = (LhatMessageArg)CLI_ARG("message", status);
-        if (ran.op_name != NULL) {
-            const LhatMessageArg op = {"operator", ran.op_name,
-                                       ran.op_name_length};
-            message = wrapped(CLI_WITH_OPERATOR, message, op, &kept[1]);
-        }
-    }
-    if (ran.line > 0) {
-        char line[16];
-        snprintf(line, sizeof line, "%u", ran.line);
-        message = wrapped(CLI_AT_LINE, message,
-                          (LhatMessageArg)CLI_ARG("line", line), &kept[2]);
-    }
-    if (path != NULL) {
-        const LhatMessageArg args[] = {CLI_ARG("path", path), message};
-        cli_say(stderr, CLI_ERROR, args, 2);
-    } else {
-        cli_say(stderr, CLI_PROMPT_ERROR, &message, 1);
-    }
-    for (size_t i = 0; i < 3; i++) {
-        free(kept[i]);
-    }
-}
+// What a writer that measures with (NULL, 0) and then fills says, as one
+// line on `stream` -- lhat_report_write's convention, which every writer
+// below the driver follows.
+#define SAY_WRITTEN(stream, write, ...)                                     \
+    do {                                                                    \
+        size_t needed_ = write(__VA_ARGS__, NULL, 0);                       \
+        char *text_ = (char *)malloc(needed_ + 1);                          \
+        if (text_ != NULL) {                                                \
+            write(__VA_ARGS__, text_, needed_ + 1);                         \
+            fprintf(stream, "%s\n", text_);                                 \
+            free(text_);                                                    \
+        }                                                                   \
+    } while (0)
 
 #if LHAT_WITH_FRONTEND
 static void say_error(const LhatProgram *program, const LhatSource *source,
@@ -1576,18 +1483,10 @@ static int check_program(const char *path, bool run, bool strict,
             }
 #endif
             if (ran.status != LHAT_RUN_OK && !debugger_stopped) {
-                const char *where = stopped_in(machine);
-                say_run_error(&program, where != NULL ? where : path, ran);
-                say_traceback(machine);
+                SAY_WRITTEN(stderr, lhat_run_error_write, machine, ran, path);
                 failed = true;
             } else if (ran.status == LHAT_RUN_OK && !lhat_is_nil(ran.value)) {
-                size_t needed = lhat_value_write(ran.value, NULL, 0);
-                char *text = (char *)malloc(needed + 1);
-                if (text != NULL) {
-                    lhat_value_write(ran.value, text, needed + 1);
-                    printf("%s\n", text);
-                    free(text);
-                }
+                SAY_WRITTEN(stdout, lhat_value_write, ran.value);
             }
             lhat_machine_dispose(machine);
         }
@@ -1707,37 +1606,26 @@ static int dump_bytecode(const char *path)
 }
 
 #if LHAT_WITH_FRONTEND
-// 03 § 4: one machine and one session of each stage, answering many
-// inputs. 4.3 keeps the names of one input for the next; 02 § 8.2 makes a
-// bare expression a statement here and nowhere else.
+// 03 § 4 is the library's (lhat/prompt.h); what is the driver's is where
+// the lines come from, the two prompts, and an empty line as the way out.
 static int repl(bool strict)
 {
-    LhatMachine *machine = lhat_machine_new();
-    LhatCheckSession *checks = lhat_check_session_new();
-    LhatCompileSession *compiles = lhat_compile_session_new();
-    if (machine == NULL || checks == NULL || compiles == NULL) {
-        cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
-        return EXIT_FAILURE;
-    }
-
     // 05 § 8.7: a prompt has no program driving it, so it is given one that
     // holds nothing but the registrations -- with no loader, since 5.3 gives a
     // require^ here nowhere to go regardless. That is what lets a prompt see
     // exactly what a file sees: the same bind_host_names, hence the same
-    // stdlib. It outlives both sessions, which borrow its types.
+    // stdlib.
     LhatProgram program;
     lhat_program_init(&program, strict, NULL, NULL);
     (void)lhat_program_set_project_root(&program, project_root);
     speak(&program);
-    if (!bind_host_names(&program)) {  // 05 § 8.2 and 8.7
+    LhatMachine *machine = lhat_machine_new();
+    LhatPrompt *prompt = NULL;
+    if (machine == NULL || !bind_host_names(&program) ||  // 05 § 8.2 and 8.7
+        !lhat_program_install(&program, machine) ||
+        (prompt = lhat_prompt_new(&program, machine, "stdin")) == NULL) {
         cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
-        lhat_program_dispose(&program);
-        return EXIT_FAILURE;
-    }
-    lhat_program_install_checks(&program, checks);
-    lhat_program_install_compiles(&program, compiles);
-    if (!lhat_program_install(&program, machine)) {
-        cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
+        lhat_machine_dispose(machine);
         lhat_program_dispose(&program);
         return EXIT_FAILURE;
     }
@@ -1745,23 +1633,8 @@ static int repl(bool strict)
     say_version();
     cli_say(stdout, CLI_GREETING, NULL, 0);
 
-    // Every input's pieces have to outlive the run -- a proto is what the
-    // machine runs, and names point into the lexer's source. The session
-    // keeps them all until it ends.
-    size_t held = 0;
-    size_t capacity = 0;
-    struct Held {
-        LhatSource source;
-        LhatLexer lexer;
-        LhatParseResult parsed;
-        LhatProto *proto;
-    } *kept = NULL;
-
     char line[4096];
-    char *input = NULL;
-    size_t input_length = 0;
     bool carrying = false;  // the input so far stopped early (02 § 3.1)
-
     for (;;) {
         printf(carrying ? ". " : "> ");
         fflush(stdout);
@@ -1775,133 +1648,25 @@ static int repl(bool strict)
             }
             // A construct being carried has no end in sight, so this is the
             // way out of one the reader will never finish.
+            lhat_prompt_drop(prompt);
             cli_say(stderr, CLI_INPUT_DROPPED, NULL, 0);
-            free(input);
-            input = NULL;
-            input_length = 0;
             carrying = false;
             continue;
         }
 
-        // 02 § 3.1 tells input that stopped early from input that is wrong,
-        // so a construct spanning lines is read by asking for more rather
-        // than by counting brackets here.
-        size_t added = strlen(line);
-        char *joined = (char *)realloc(input, input_length + added + 1);
-        if (joined == NULL) {
-            cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
-            break;
+        LhatPromptResult r = lhat_prompt_feed(prompt, line, strlen(line));
+        carrying = r.status == LHAT_PROMPT_MORE;
+        if (lhat_prompt_report(prompt, NULL, 0) > 0) {
+            SAY_WRITTEN(stderr, lhat_prompt_report, prompt);
         }
-        input = joined;
-        memcpy(input + input_length, line, added + 1);
-        input_length += added;
-
-        if (held == capacity) {
-            size_t grown = capacity ? capacity * 2 : 16;
-            void *bigger = realloc(kept, grown * sizeof *kept);
-            if (bigger == NULL) {
-                cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
-                break;
-            }
-            kept = bigger;
-            capacity = grown;
-        }
-        struct Held *in = &kept[held];
-
-        lhat_source_init_from_string(&in->source, "<stdin>", input,
-                                     input_length);
-        lhat_lexer_init(&in->lexer, &in->source);
-        lhat_parse_interactive(&in->lexer, &in->parsed);
-        in->proto = NULL;
-
-        // 3.1: input that merely stopped early is not wrong yet, so its
-        // diagnostics say nothing about what the reader will type next.
-        if (in->parsed.incomplete) {
-            lhat_parse_result_dispose(&in->parsed);
-            lhat_lexer_dispose(&in->lexer);
-            lhat_source_dispose(&in->source);
-            carrying = true;
-            continue;
-        }
-        free(input);
-        input = NULL;
-        input_length = 0;
-        carrying = false;
-
-        bool refused = in->lexer.diagnostic_count > 0;
-        for (size_t i = 0; i < in->lexer.diagnostic_count; i++) {
-            const LhatDiagnostic *d = &in->lexer.diagnostics[i];
-            say_error(&program, &in->source, "stdin", d->offset, d->line,
-                      d->column,
-                      lhat_lexer_error_message(d->code));
-        }
-        for (size_t i = 0; i < in->parsed.diagnostic_count; i++) {
-            const LhatParseDiagnostic *d = &in->parsed.diagnostics[i];
-            say_parse_error(&program, &in->source, "stdin", d);
-            refused = true;
-        }
-
-        LhatCheckResult checked = {0};
-        if (!refused) {
-            lhat_check_next(checks, in->parsed.root, &in->lexer, strict,
-                            &checked);
-            for (size_t i = 0; i < checked.diagnostic_count; i++) {
-                const LhatCheckDiagnostic *d = &checked.diagnostics[i];
-                say_check_error(&program, &in->source, "stdin", d);
-                if (strict || !d->relaxed_ok) refused = true;
-            }
-        }
-
-        if (!refused) {
-            LhatCompileResult compiled = lhat_compile_next(
-                compiles, &checked, &in->lexer, &in->proto);
-            if (compiled.status != LHAT_COMPILE_OK) {
-                say_compile_error(&program, &in->source, "stdin", &compiled);
-                refused = true;
-            }
-        }
-
-        lhat_check_result_dispose(&checked);
-        if (refused) {
-            // 4.3: a refused input added nothing to either session, so
-            // dropping its pieces here leaves the session as it was.
-            lhat_proto_free(in->proto);
-            lhat_parse_result_dispose(&in->parsed);
-            lhat_lexer_dispose(&in->lexer);
-            lhat_source_dispose(&in->source);
-            continue;
-        }
-
-        LhatRunResult ran = lhat_run(machine, in->proto);
-        held++;
-        if (ran.status != LHAT_RUN_OK) {
-            say_run_error(&program, stopped_in(machine), ran);
-            say_traceback(machine);
-            continue;
-        }
-        if (!lhat_is_nil(ran.value)) {
-            size_t needed = lhat_value_write(ran.value, NULL, 0);
-            char *text = (char *)malloc(needed + 1);
-            if (text != NULL) {
-                lhat_value_write(ran.value, text, needed + 1);
-                printf("%s\n", text);
-                free(text);
-            }
+        if (r.status == LHAT_PROMPT_RAN && !lhat_is_nil(r.value)) {
+            SAY_WRITTEN(stdout, lhat_value_write, r.value);
         }
     }
 
-    free(input);
-    for (size_t i = 0; i < held; i++) {
-        lhat_proto_free(kept[i].proto);
-        lhat_parse_result_dispose(&kept[i].parsed);
-        lhat_lexer_dispose(&kept[i].lexer);
-        lhat_source_dispose(&kept[i].source);
-    }
-    free(kept);
-    lhat_compile_session_dispose(compiles);
-    lhat_check_session_dispose(checks);
+    lhat_prompt_dispose(prompt);
     lhat_machine_dispose(machine);
-    // Last: the sessions above borrowed its types and its tags.
+    // Last: the prompt borrowed its types and its tags.
     lhat_program_dispose(&program);
     return EXIT_SUCCESS;
 }

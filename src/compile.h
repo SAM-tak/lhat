@@ -98,7 +98,7 @@ void lhat_compile_session_dispose(LhatCompileSession *session);
 // file -- the error kinds and hostdata types a host registered, so that fits^
 // against either compiles at a prompt too. Both arrays belong to whatever
 // registered them (an LhatProgram, normally) and have to outlive the session.
-// program.h's lhat_program_install_compiles is this call written out.
+// prompt.c's install_compiles is this call written out.
 //
 // import^ itself needs nothing here: it compiles to reading L^.modules, which
 // is filled by lhat_program_install once the machine exists.

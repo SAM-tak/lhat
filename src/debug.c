@@ -10,6 +10,7 @@
 #include "lhat/debug.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "compile.h"
@@ -119,13 +120,22 @@ static void trace_put(TraceText *w, const char *text)
 // `finally^` are the language's own words and are not translated, so a
 // function with no name is `in {function}` like any other, and `(finally^)`
 // is not text at all.
-enum { TRACE_HEADER, TRACE_IN, TRACE_TOP_LEVEL, TRACE_COROUTINE };
+// The run error's line above them is said the same way: what stopped, the
+// line it stopped on, and the unit that line is a line of.
+enum {
+    TRACE_HEADER, TRACE_IN, TRACE_TOP_LEVEL, TRACE_COROUTINE,
+    TRACE_ERROR, TRACE_ERROR_IN, TRACE_AT_LINE, TRACE_WITH_OPERATOR
+};
 
 static const LhatMessageEntry TRACE_PARTS[] = {
     [TRACE_HEADER] = {"trace.header", "traceback:"},
     [TRACE_IN] = {"trace.in", "in {function}"},
     [TRACE_TOP_LEVEL] = {"trace.top-level", "at the top level"},
     [TRACE_COROUTINE] = {"trace.coroutine", "(coroutine)"},
+    [TRACE_ERROR] = {"trace.error", "error: {message}"},
+    [TRACE_ERROR_IN] = {"trace.error-in", "{path}: error: {message}"},
+    [TRACE_AT_LINE] = {"trace.at-line", "line {line}: {message}"},
+    [TRACE_WITH_OPERATOR] = {"trace.with-operator", "{message} ({operator})"},
 };
 
 LHAT_MESSAGE_TABLES(lhat_trace_message_tables,
@@ -184,6 +194,106 @@ size_t lhat_machine_traceback(const LhatMachine *machine, char *out,
                 trace_put(&w, " (finally^)");
             }
         }
+    }
+    if (w.out != NULL) {
+        size_t end = w.used < w.capacity - 1 ? w.used : w.capacity - 1;
+        w.out[end] = '\0';
+    }
+    return w.used;
+}
+
+// `message` inside the text `part` makes of it and `other`, made into `kept`
+// for the caller to free -- or as it was, with no room for that.
+static LhatMessageArg trace_wrapped(const LhatMachine *machine, size_t part,
+                                    LhatMessageArg message,
+                                    LhatMessageArg other, char **kept)
+{
+    const LhatMessageArg args[] = {message, other};
+    TraceText w = {NULL, 0, 0};
+    trace_say(&w, machine, part, args, 2);
+    *kept = (char *)malloc(w.used + 1);
+    if (*kept == NULL) {
+        return message;
+    }
+    w.out = *kept;
+    w.capacity = w.used + 1;
+    w.used = 0;
+    trace_say(&w, machine, part, args, 2);
+    message.value = *kept;
+    message.length = w.used;
+    return message;
+}
+
+size_t lhat_run_error_write(const LhatMachine *machine, LhatRunResult ran,
+                            const char *name, char *out, size_t capacity)
+{
+    char *kept[3] = {NULL, NULL, NULL};
+    LhatMessageArg message = {"message", "", 0};
+    if (ran.status == LHAT_RUN_PANIC) {
+        // 04 の 11.6+: what the program wrote in panic^ EXPR -- a plain
+        // string is its own text (a message reads oddly in quotes), anything
+        // else lhat_value_write's general form.
+        if (lhat_is_object_kind(ran.value, LHAT_OBJECT_STRING)) {
+            const LhatString *text =
+                (const LhatString *)lhat_as_object(ran.value);
+            message.value = text->text;
+            message.length = text->length;
+        } else {
+            size_t needed = lhat_value_write(ran.value, NULL, 0);
+            kept[0] = (char *)malloc(needed + 1);
+            if (kept[0] != NULL) {
+                lhat_value_write(ran.value, kept[0], needed + 1);
+                message.value = kept[0];
+                message.length = needed;
+            }
+        }
+    } else {
+        message.value = lhat_program_text(lhat_machine_program(machine),
+                                          lhat_run_status_id(ran.status),
+                                          lhat_run_status_message(ran.status));
+        message.length = strlen(message.value);
+        if (ran.op_name != NULL) {
+            const LhatMessageArg op = {"operator", ran.op_name,
+                                       ran.op_name_length};
+            message = trace_wrapped(machine, TRACE_WITH_OPERATOR, message, op,
+                                    &kept[1]);
+        }
+    }
+    if (ran.line > 0) {
+        char line[16];
+        snprintf(line, sizeof line, "%u", ran.line);
+        const LhatMessageArg at = {"line", line, strlen(line)};
+        message = trace_wrapped(machine, TRACE_AT_LINE, message, at, &kept[2]);
+    }
+
+    // 04 の 11.6+: the unit the fault stopped in, which the line names a
+    // line of -- not the one that was run, when a unit it required stopped.
+    LhatFrameInfo frame;
+    const char *where = lhat_machine_fault_frame(machine, 0, &frame) &&
+                                frame.source != NULL
+                            ? frame.source
+                            : name;
+    TraceText w;
+    w.out = capacity > 0 ? out : NULL;
+    w.capacity = capacity;
+    w.used = 0;
+    if (where != NULL) {
+        const LhatMessageArg args[] = {{"path", where, strlen(where)},
+                                       message};
+        trace_say(&w, machine, TRACE_ERROR_IN, args, 2);
+    } else {
+        trace_say(&w, machine, TRACE_ERROR, &message, 1);
+    }
+    for (size_t i = 0; i < 3; i++) {
+        free(kept[i]);
+    }
+
+    // A single frame says nothing the line above did not.
+    if (lhat_machine_fault_depth(machine) >= 2) {
+        trace_put(&w, "\n");
+        bool room = w.out != NULL && w.used < w.capacity;
+        w.used += lhat_machine_traceback(machine, room ? w.out + w.used : NULL,
+                                         room ? w.capacity - w.used : 0);
     }
     if (w.out != NULL) {
         size_t end = w.used < w.capacity - 1 ? w.used : w.capacity - 1;

@@ -758,7 +758,7 @@ void lhat_check_session_bind(LhatCheckSession *session,
 // L^ members alongside it -- the LhatRequire fields a file gets from its
 // LhatProgram. A prompt has no program of its own, so a host that wants
 // import^ to answer at a prompt makes one, registers into it, and hands the
-// two over. program.h's lhat_program_install_checks is that call written out.
+// two over. prompt.c's install_checks is that call written out.
 //
 // Both types belong to whatever arena made them, so that has to outlive the
 // session -- a program registered into keeps its own and is the usual answer.

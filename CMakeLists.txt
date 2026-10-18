@@ -239,6 +239,7 @@ set(LHAT_FRONTEND_SOURCES
     src/semantic.c
     src/completion.c
     src/fix.c
+    src/prompt.c
     src/compile.c
 )
 if(LHAT_WITH_FRONTEND)

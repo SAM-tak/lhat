@@ -54,6 +54,7 @@ lhat_add_test(test_extensions core)
 # 07 §6: the fixes a diagnostic carries, applied and checked again.
 lhat_add_test(test_fixes core)
 lhat_add_test(test_completion_core core)
+lhat_add_test(test_prompt core)
 lhat_add_test(test_serialize core)
 lhat_add_test(test_leak core)
 
