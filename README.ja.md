@@ -298,6 +298,9 @@ L^ は、移植しやすく組み込みやすいという Lua の重要な長所
 - コンパイル済みバイトコードを配布し、パーサ・型検査器・コンパイラを省いた VM 専用構成で実行する。
 
 組み込みの一例は [`tests/install_smoke/host.c`](tests/install_smoke/host.c) を参照してください。
+Rust 向けには [`bindings/rust`](bindings/rust) を用意しています。`Program`・`Machine`・
+GC から保護された `Value`、Rust コールバック、`Result` によるエラー処理を提供し、
+利用側に `unsafe` は不要です。[実行例](bindings/rust/examples/embed.rs)を参照してください。
 API の登録、読み込み、ホットリロード、配布については、[ホスト API の仕様](DesignDocuments/05-modules.md)にまとめています。
 
 ## ビルドとテスト

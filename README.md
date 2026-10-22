@@ -322,6 +322,11 @@ Include [`lhat.h`](include/lhat.h) to access the embedding API. A host can:
 - Ship precompiled bytecode with a VM-only build that omits the parser,
   checker, and compiler.
 
+For Rust, [`bindings/rust`](bindings/rust) provides `Program`, `Machine` and
+GC-rooted `Value` types, Rust callbacks and `Result`-based errors. See its
+[embedding example](bindings/rust/examples/embed.rs); application code needs
+no `unsafe` blocks.
+
 For a complete embedding example, see
 [`tests/install_smoke/host.c`](tests/install_smoke/host.c). The
 [host API specification](DesignDocuments/05-modules.md) covers registration,
