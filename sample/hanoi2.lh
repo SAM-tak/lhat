@@ -2,7 +2,7 @@ import^std.task
 
 try^std.task.start(2)
 
-# 半分の問題を1つのタスクにする。要るものはすべて引数で受け取る
+# 半分の問題を1つのタスクにする。必要な情報はすべて引数で受け取る
 let^half = f^n, src, dst, aux {
     _yield^0
     let^solve = f^n, src, dst, aux {

@@ -12,8 +12,8 @@
 
 module^async
 
-import^std.async
 import^std.sys
+import^std.async
 import^std.thread
 
 #[
