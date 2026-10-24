@@ -2,9 +2,9 @@
 //
 // Three calls, and a mechanical rule between them.
 //
-//   std.json.encode : f^t^{} -> string^|std.json.JsonError|std.error.OutOfMemory;
-//   std.json.pretty : f^t^{}, number^ -> string^|std.json.JsonError|std.error.OutOfMemory;
-//   std.json.decode : f^string^ -> t^{}|std.json.JsonError|std.error.OutOfMemory;
+//   std.json.encode : f^t^{} -> string^|std.json.JsonError|std.sys.Error.OutOfMemory;
+//   std.json.pretty : f^t^{}, number^ -> string^|std.json.JsonError|std.sys.Error.OutOfMemory;
+//   std.json.decode : f^string^ -> t^{}|std.json.JsonError|std.sys.Error.OutOfMemory;
 //
 // pretty writes what encode writes, laid out for a reader: a member to a
 // line, the given number of spaces a level (a whole number from 0 to 16,

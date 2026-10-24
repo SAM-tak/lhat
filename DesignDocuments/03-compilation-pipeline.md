@@ -1400,10 +1400,10 @@ JSON から復元する機構ではない。
 
 ```lhat
 # std.channel.new / named の追加オーバーロード
-p^type^ -> std.channel.Channel<ARG0.T0>|std.channel.ChannelError.Refused|std.error.OutOfMemory;
-p^string^, type^ -> std.channel.Channel<ARG1.T0>|std.channel.ChannelError.Refused|std.error.OutOfMemory;
+p^type^ -> std.channel.Channel<ARG0.T0>|std.channel.ChannelError.Refused|std.sys.Error.OutOfMemory;
+p^string^, type^ -> std.channel.Channel<ARG1.T0>|std.channel.ChannelError.Refused|std.sys.Error.OutOfMemory;
 # Channel.push / demand
-p^self^, self^.T0 -> number^|std.channel.ChannelError.Refused|std.error.OutOfMemory;
+p^self^, self^.T0 -> number^|std.channel.ChannelError.Refused|std.sys.Error.OutOfMemory;
 p^self^ -> self^.T0|nil^;
 ```
 
@@ -1441,7 +1441,7 @@ Channel は所有する要素型を公開する。型検査は結果の到着を
 
 ```lhat
 f^any^ -> ARG0;
-p^c^{->*->*} -> std.task.Task<ARG0.ResultType>|std.task.TaskError|std.error.OutOfMemory;
+p^c^{->*->*} -> std.task.Task<ARG0.ResultType>|std.task.TaskError|std.sys.Error.OutOfMemory;
 ```
 
 `c^` は全コルーチンの上位型。コルーチン型の型属性は `ResultType`
@@ -1457,7 +1457,7 @@ p^c^{->*->*} -> std.task.Task<ARG0.ResultType>|std.task.TaskError|std.error.OutO
 さらに属性を続けることはできない。サブルーチン型の合併では各腕の答えを合併する。
 
 ```lhat
-p^(p^;)|(p^->any^;) -> std.task.Task<ARG0.ReturnType>|std.task.TaskError|std.error.OutOfMemory;
+p^(p^;)|(p^->any^;) -> std.task.Task<ARG0.ReturnType>|std.task.TaskError|std.sys.Error.OutOfMemory;
 ```
 
 型式は返り値、その合併・交差・タプル、コルーチンのスロット、公称型引数に
@@ -1474,7 +1474,7 @@ p^(p^;)|(p^->any^;) -> std.task.Task<ARG0.ReturnType>|std.task.TaskError|std.err
 第0型引数であり、`await` の署名は次のようになる。
 
 ```lhat
-p^std.task.Task -> ARG0.T0|std.task.TaskError.Taken|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;
+p^std.task.Task -> ARG0.T0|std.task.TaskError.Taken|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.sys.Error.OutOfMemory;
 ```
 
 `Task<string^|number^>` に対しては `string^|number^` と各エラー型の合併に

@@ -172,8 +172,8 @@ std.json が JSON の `null` について同じ答えを出しているのと同
 ## 7. 読み込み
 
 ```lhat
-std.lton.parse : f^string^ -> t^{}|std.lton.LtonError|std.error.OutOfMemory;
-std.lton.load  : f^string^ -> t^{}|std.lton.LtonError|std.error.OutOfMemory;
+std.lton.parse : f^string^ -> t^{}|std.lton.LtonError|std.sys.Error.OutOfMemory;
+std.lton.load  : f^string^ -> t^{}|std.lton.LtonError|std.sys.Error.OutOfMemory;
 errordef^ LtonError { CannotRead, Rejected, Unsupported, Cycle, TooDeep, CannotWrite }
 ```
 
@@ -299,8 +299,8 @@ vm.h の「WHAT A HOST IS HOLDING IS NOT A ROOT」がここでも効く。ただ
 ## 9. テキストへの書き出し
 
 ```lhat
-std.lton.stringify : f^t^{} -> string^|std.lton.LtonError|std.error.OutOfMemory;
-std.lton.save : p^string^, t^{} -> nil^|std.lton.LtonError|std.error.OutOfMemory;
+std.lton.stringify : f^t^{} -> string^|std.lton.LtonError|std.sys.Error.OutOfMemory;
+std.lton.save : p^string^, t^{} -> nil^|std.lton.LtonError|std.sys.Error.OutOfMemory;
 
 let^text = try^std.lton.stringify(table)
 try^std.lton.save("path/to.some.lton", table)

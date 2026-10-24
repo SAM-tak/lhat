@@ -10,12 +10,12 @@
 // xorshift64* (Marsaglia/Vigna): small, dependency-free, good enough for the
 // games and tools this is a sample for. Not cryptographic.
 //
-// std.random.new answers std.random.Random|std.error.OutOfMemory -- read
+// std.random.new answers std.random.Random|std.sys.Error.OutOfMemory -- read
 // it with try^/catch^, or narrow with fits^ against std.random.Random
-// (05 の 8.8's hostdata path). See error.h for why OutOfMemory lives in
-// std.error rather than a std.random.RandomError of its own.
+// (05 の 8.8's hostdata path). See sys.h for why OutOfMemory lives in
+// std.sys rather than a std.random.RandomError of its own.
 
-#include "error.h"
+#include "sys.h"
 #include "random.h"
 
 #include <math.h>
@@ -329,10 +329,10 @@ static void random_dispose(LhatMachine *machine, void *context,
 
 bool lhatstdlib_random_register(LhatProgram *program)
 {
-    // 05 § 8.7: registration precedes checking -- ensure std.error.OutOfMemory
-    // exists before this module uses it. lhatstdlib_error_register is
+    // 05 § 8.7: registration precedes checking -- ensure std.sys.Error.OutOfMemory
+    // exists before this module uses it. lhatstdlib_sys_register is
     // idempotent, so another stdlib module may already have called it.
-    if (!lhatstdlib_error_register(program)) {
+    if (!lhatstdlib_sys_register(program)) {
         return false;
     }
 
@@ -343,7 +343,7 @@ bool lhatstdlib_random_register(LhatProgram *program)
     // same answers back into it.
     static RandomModule shared;
     RandomModule *module = &shared;
-    module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
+    module->out_of_memory = lhatstdlib_sys_lookup(program, "OutOfMemory");
     static const char *const variants[] = {"InvalidState", "InvalidArgument",
                                            "SeedUnavailable"};
     if (!lhat_register_error_kind(program, "std.random", "Error", variants, 3,
@@ -364,11 +364,11 @@ bool lhatstdlib_random_register(LhatProgram *program)
 
     return lhat_register_func(
                program, "std.random", "new",
-               "f^ -> std.random.Random|std.random.Error.SeedUnavailable|std.error.OutOfMemory;",
+               "f^ -> std.random.Random|std.random.Error.SeedUnavailable|std.sys.Error.OutOfMemory;",
                random_new, module) &&
            lhat_register_func(
                program, "std.random", "new",
-               "f^number^ -> std.random.Random|std.error.OutOfMemory;",
+               "f^number^ -> std.random.Random|std.sys.Error.OutOfMemory;",
                random_new, module) &&
            lhat_register_member(program, "std.random", "Random", "reseed",
                                 "p^self^, number^;", random_reseed, module) &&

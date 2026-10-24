@@ -71,7 +71,7 @@ static void debug_traceback(LhatMachine *machine, void *context,
 
 bool lhatstdlib_debug_register(LhatProgram *program)
 {
-    // std.error にも他のどのモジュールにも依存しない -- 書き出すだけの
+    // std.sys にも他のどのモジュールにも依存しない -- 書き出すだけの
     // f^ に失敗する経路がないので、返す誤りもない。
     return lhat_register_func(program, "std.debug", "log",
                               "f^string^ -> nil^;", debug_log, NULL) &&

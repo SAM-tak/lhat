@@ -11,13 +11,13 @@
 // an ordinary value, the same shape 04 の 2.5's error^Kind{...} builds.
 //
 // std.io.open answers std.io.File|std.io.IOError.NotFound|std.io.IOError.
-// Denied|std.error.OutOfMemory -- read it with try^/catch^, or narrow with
-// fits^ against std.io.File (05 の 8.8's hostdata path). std.error.
+// Denied|std.sys.Error.OutOfMemory -- read it with try^/catch^, or narrow with
+// fits^ against std.io.File (05 の 8.8's hostdata path). std.sys.
 // OutOfMemory (rather than a std.io.IOError.OutOfMemory of its own) is
 // shared with every other stdlib module that can fail the same way --
-// see error.h.
+// see sys.h.
 
-#include "error.h"
+#include "sys.h"
 #include "io.h"
 
 #include <errno.h>
@@ -40,7 +40,7 @@ typedef struct {
     const LhatErrorKind *not_found;
     const LhatErrorKind *denied;
     const LhatErrorKind *eof;
-    const LhatErrorKind *out_of_memory;  // std.error.OutOfMemory -- error.h
+    const LhatErrorKind *out_of_memory;  // std.sys.Error.OutOfMemory -- sys.h
     const LhatHostDataTag *file_tag;
 } IoModule;
 
@@ -291,10 +291,10 @@ static void file_dispose(LhatMachine *machine, void *context,
 
 bool lhatstdlib_io_register(LhatProgram *program)
 {
-    // 05 の 8.7: 登録は検査より前 -- std.error.OutOfMemory を使う側(この
-    // モジュール)より前に確実に存在させる。lhatstdlib_error_register は
+    // 05 の 8.7: 登録は検査より前 -- std.sys.Error.OutOfMemory を使う側(この
+    // モジュール)より前に確実に存在させる。lhatstdlib_sys_register は
     // 冪等なので、他の stdlib モジュールが先に呼んでいても構わない。
-    if (!lhatstdlib_error_register(program)) {
+    if (!lhatstdlib_sys_register(program)) {
         return false;
     }
 
@@ -305,7 +305,7 @@ bool lhatstdlib_io_register(LhatProgram *program)
     // same answers back into it.
     static IoModule shared;
     IoModule *module = &shared;
-    module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
+    module->out_of_memory = lhatstdlib_sys_lookup(program, "OutOfMemory");
 
     static const char *const variants[] = {"NotFound", "Denied", "Eof"};
     const LhatErrorKind *kinds[3];
@@ -326,20 +326,20 @@ bool lhatstdlib_io_register(LhatProgram *program)
                               module) &&
            lhat_register_func(
                program, "std.io", "readLine",
-               "f^ -> string^|std.io.IOError.Eof|std.error.OutOfMemory;",
+               "f^ -> string^|std.io.IOError.Eof|std.sys.Error.OutOfMemory;",
                std_read_line, module) &&
            lhat_register_func(
                program, "std.io", "open",
                "f^string^, string^ -> std.io.File|std.io.IOError.NotFound"
-               "|std.io.IOError.Denied|std.error.OutOfMemory;",
+               "|std.io.IOError.Denied|std.sys.Error.OutOfMemory;",
                file_open, module) &&
            lhat_register_member(
                program, "std.io", "File", "readLine",
-               "f^self^ -> string^|std.io.IOError.Eof|std.error.OutOfMemory;",
+               "f^self^ -> string^|std.io.IOError.Eof|std.sys.Error.OutOfMemory;",
                file_read_line, module) &&
            lhat_register_member(
                program, "std.io", "File", "readAll",
-               "f^self^ -> string^|std.error.OutOfMemory;",
+               "f^self^ -> string^|std.sys.Error.OutOfMemory;",
                file_read_all, module) &&
            lhat_register_member(program, "std.io", "File", "write",
                                 "p^self^, string^;", file_write, module) &&

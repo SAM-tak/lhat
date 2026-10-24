@@ -139,9 +139,11 @@ static void offer(Options *out, const char *text)
 }
 
 // Only namespaces are traversed; ordinary value members are never offered as types.
+// What an imported unit published is its place's base (05 の 8.7), walked as its own.
 static void offer_names(Options *out, const LhatType *names, const char *prefix, int depth)
 {
     if (!names || names->kind != LHAT_TYPE_TABLE || depth > 8) return;
+    if (names->v.table.is_module) offer_names(out, names->v.table.base, prefix, depth + 1);
     for (const LhatTypeMember *m = names->v.table.members; m; m = m->next) {
         char text[1024];
         int length = snprintf(text, sizeof text, "%s%.*s", prefix, (int)m->name_length, m->name);

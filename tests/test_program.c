@@ -1568,12 +1568,10 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
-    // 05 の 8.7: a namespace and something under it are one registry, so
-    // importing both into one scope is importing one tree twice -- the
-    // parent's own table holds the child. Either order (a LOVE2D binding's
-    // love.getVersion beside love.graphics). And they run: the parent's table
-    // is the program's (8.7改5), so an import of the child after it has
-    // nothing to write there.
+    // 05 の 8.7: an import^ takes in one unit, so a unit and one under it are
+    // two imports into one scope, in either order (a LOVE2D binding's
+    // love.getVersion beside love.graphics). And they run: the machine's
+    // table for the parent holds the child, whichever import came first.
     LHAT_TEST("a module and one under it are imported into one scope");
     {
         static const File orders[][1] = {
@@ -1628,6 +1626,57 @@ static void test_hosting(void)
                    "version is not reachable through the stand-in");
     }
     lhat_program_dispose(&program);
+
+    // 8.7: nor the other way -- the unit under it is a unit of its own.
+    LHAT_TEST("and importing the parent alone brings none of the child");
+    {
+        static const File parent_only[] = {
+            {"main.lh",
+             "import^ lib\n"
+             "var^ a : number^ = lib.draw.line()\n"},
+        };
+        program_with(&program, &disk, parent_only, 1);
+        lhat_register_func(&program, "lib", "version", "f^ -> number^;",
+                           host_one, NULL);
+        lhat_register_func(&program, "lib.draw", "line", "f^ -> number^;",
+                           host_one, NULL);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && lhat_program_has_errors(&program),
+                   "line is not reachable without import^ lib.draw");
+    }
+    lhat_program_dispose(&program);
+
+    // 8.7: a step registered nothing is only on the way to a unit.
+    LHAT_TEST("a step with nothing registered at it is no unit to import");
+    {
+        static const File files[] = {{"main.lh", "import^ lib\n"}};
+        program_with(&program, &disk, files, 1);
+        lhat_register_func(&program, "lib.draw", "line", "f^ -> number^;",
+                           host_one, NULL);
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(has_check_error(root, LHAT_CHECK_ERR_NOT_HOSTED),
+                   "lib published nothing");
+    }
+    lhat_program_dispose(&program);
+
+    // 8.7: one name, one thing -- across what a unit published and the units
+    // named under it, in either order.
+    LHAT_TEST("a published name and a unit under it of that name collide");
+    for (int order = 0; order < 2; order++) {
+        program_with(&program, &disk, NULL, 0);
+        bool first = order == 0
+            ? lhat_register_func(&program, "lib", "draw", "f^ -> number^;",
+                                 host_one, NULL)
+            : lhat_register_func(&program, "lib.draw", "line",
+                                 "f^ -> number^;", host_one, NULL);
+        bool second = order == 0
+            ? lhat_register_func(&program, "lib.draw", "line",
+                                 "f^ -> number^;", host_one, NULL)
+            : lhat_register_func(&program, "lib", "draw", "f^ -> number^;",
+                                 host_one, NULL);
+        LHAT_CHECK(first && !second, "order %d: the second is refused", order);
+        lhat_program_dispose(&program);
+    }
 
     LHAT_TEST("a host-bound name is written without any qualification");
     {

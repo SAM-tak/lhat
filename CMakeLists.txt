@@ -391,7 +391,7 @@ if(LHAT_BUILD_STDLIB)
         stdlib/carry.c
         stdlib/channel.c
         stdlib/debug.c
-        stdlib/error.c
+        stdlib/sys.c
         stdlib/io.c
         stdlib/json.c
         # 05 の 10.8 with 08 の 7改: std.load and std.lton read text through
@@ -438,10 +438,10 @@ if(LHAT_BUILD_STDLIB)
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
-    install(FILES stdlib/async.h stdlib/binary.h stdlib/carry.h stdlib/channel.h stdlib/debug.h stdlib/error.h stdlib/io.h stdlib/json.h
+    install(FILES stdlib/async.h stdlib/binary.h stdlib/carry.h stdlib/channel.h stdlib/debug.h stdlib/io.h stdlib/json.h
              stdlib/lton.h stdlib/math.h stdlib/mathcomplex.h stdlib/mathquaternion.h
              stdlib/mathvector2.h stdlib/mathvector3.h stdlib/mathvector4.h stdlib/random.h stdlib/regex.h stdlib/load.h
-            stdlib/task.h
+            stdlib/sys.h stdlib/task.h
             stdlib/thread.h
         DESTINATION include/lhatstdlib)
 endif()
@@ -466,7 +466,7 @@ if(LHAT_BUILD_CLI)
     # stdlib is optional, always.
     if(LHAT_BUILD_STDLIB)
         target_link_libraries(lhat_cli PRIVATE lhatstdlib)
-        # The stdlib/*.h include each other flat, as "error.h", on the
+        # The stdlib/*.h include each other flat, as "sys.h", on the
         # understanding that they sit in one directory (see stdlib/io.c).
         # cli/main.c is the one that looks at them from outside, so the
         # repository root goes on its path and it writes "stdlib/foo.h".

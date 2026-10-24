@@ -2394,21 +2394,12 @@ static void keep_carrier(Checker *c, const char *name, size_t length,
     c->unit_operators |= operators;
 }
 
-// 05 の 8.7: what an import^ brought within reach. The registry is one
-// nested table, so a module holds its types beside the modules under it --
-// both are walked, since 'import^ std.math' puts std.math.vector3.Vector3
-// in reach as surely as 'import^ std.math.vector3' does.
-//
-// The depth bound is the same posture 03 の 4.2 takes elsewhere: a registry
-// deeper than this says nothing useful about an operator, and the walk has
-// to finish.
-#define CARRIER_MAX_DEPTH 8
-
-static void collect_registered_carriers(Checker *c, const LhatType *module,
-                                        unsigned depth)
+// 05 の 8.7: what an import^ brought within reach -- what the one unit it
+// names published, and nothing of the units named under it, which come in
+// by an import^ of their own.
+static void collect_registered_carriers(Checker *c, const LhatType *module)
 {
-    if (module == NULL || module->kind != LHAT_TYPE_TABLE ||
-        depth > CARRIER_MAX_DEPTH) {
+    if (module == NULL || module->kind != LHAT_TYPE_TABLE) {
         return;
     }
     for (const LhatTypeMember *m = module->v.table.members; m != NULL;
@@ -2416,11 +2407,6 @@ static void collect_registered_carriers(Checker *c, const LhatType *module,
         uint16_t written = operators_registered(c, m->type);
         if (written != 0) {
             keep_carrier(c, m->name, m->name_length, m->type, written);
-        }
-        // A segment of the registry, rather than a type registered in it.
-        if (m->type != NULL && m->type->kind == LHAT_TYPE_TABLE &&
-            m->type->v.table.is_namespace) {
-            collect_registered_carriers(c, m->type, depth + 1);
         }
     }
 }
@@ -2456,7 +2442,7 @@ void chk_collect_operator_carriers(Checker *c, const LhatNode *statements)
     for (const LhatNode *s = statements; s != NULL; s = s->next) {
         const LhatNode *path = imported_path(s);
         if (path != NULL) {
-            collect_registered_carriers(c, chk_hosted_module(c, path), 0);
+            collect_registered_carriers(c, chk_hosted_module(c, path));
             continue;
         }
         if (s->kind != LHAT_NODE_DEFINE || s->v.binding.values == NULL) {

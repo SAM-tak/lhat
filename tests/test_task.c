@@ -712,7 +712,7 @@ static void test_await_union_projection(void)
         const char *names[] = {"= raw", "= handled"};
         const char *expected_text[] = {
             "string^|number^|std.task.TaskError.Taken|std.task.TaskError.NotStarted|std.task.TaskError.Refused"
-            "|std.task.TaskError.Failed|std.error.OutOfMemory",
+            "|std.task.TaskError.Failed|std.sys.Error.OutOfMemory",
             "string^|number^"
         };
         for (size_t i = 0; i < 2; i++) {
@@ -761,7 +761,7 @@ static void test_await_inferred_type(void)
         const LhatResolution *handled = lhat_check_resolution_at(&unit->checked, handled_offset);
         const char expected_text[] =
             "number^|std.task.TaskError.Taken|std.task.TaskError.NotStarted|std.task.TaskError.Refused"
-            "|std.task.TaskError.Failed|std.error.OutOfMemory";
+            "|std.task.TaskError.Failed|std.sys.Error.OutOfMemory";
         const LhatType *expected = lhat_type_of_text(expected_text,
             strlen(expected_text), &program->types, program->hosted, NULL);
         char actual[512] = "(missing)";

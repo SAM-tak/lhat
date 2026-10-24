@@ -32,7 +32,7 @@
 
 #include "async.h"
 #include "carry.h"
-#include "error.h"
+#include "sys.h"
 #include "lhat/debug.h"
 #include "lhat/port.h"
 #include "port/thread.h"
@@ -1004,7 +1004,7 @@ static void dispose_module(void *raw)
 
 bool lhatstdlib_task_register(LhatProgram *program)
 {
-    if (!lhatstdlib_error_register(program)) {
+    if (!lhatstdlib_sys_register(program)) {
         return false;
     }
     TaskModule *module = (TaskModule *)lhat_calloc(1, sizeof *module);
@@ -1018,7 +1018,7 @@ bool lhatstdlib_task_register(LhatProgram *program)
         return false;
     }
     module->program = program;
-    module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
+    module->out_of_memory = lhatstdlib_sys_lookup(program, "OutOfMemory");
 
     static const char *const variants[] = {"NotStarted", "Refused", "Failed", "Taken"};
     const LhatErrorKind *kinds[4];
@@ -1037,12 +1037,12 @@ bool lhatstdlib_task_register(LhatProgram *program)
     }
 
     return lhat_register_func(program, "std.task", "start",
-                              "p^ -> number^|std.error.OutOfMemory;",
+                              "p^ -> number^|std.sys.Error.OutOfMemory;",
                               task_start, module) &&
            // 14.12: the two shapes of one name, the way a host writes an
            // optional argument.
            lhat_register_func(program, "std.task", "start",
-                              "p^number^ -> number^|std.error.OutOfMemory;",
+                              "p^number^ -> number^|std.sys.Error.OutOfMemory;",
                               task_start, module) &&
            lhat_register_func(program, "std.task", "stop", "p^;", task_stop,
                               module) &&

@@ -13,7 +13,7 @@
 module^async
 
 import^std.async
-import^std.error
+import^std.sys
 import^std.thread
 
 #[
@@ -37,7 +37,7 @@ public^let^joined:p^std.thread.ThreadHandle -> c^{p^-> number^ ->
         any^
         |std.thread.ThreadError.AlreadyJoined
         |std.thread.ThreadError.BadResult
-        |std.error.OutOfMemory }; = p^h {
+        |std.sys.Error.OutOfMemory }; = p^h {
     let^id = h.awaitable()
     if^id > 0 {
         yield^id

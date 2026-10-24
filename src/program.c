@@ -1545,58 +1545,72 @@ bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
 // ---------------------------------------------------------------------------
 
 
-// The table type a dotted path names inside `owner`, made where the path does
-// not reach one. The same walk 02 の 8.8 does, over text.
-static LhatType *hosted_table(LhatProgram *program, LhatType *owner,
-                              const char *path)
+// 05 の 8.6: what the host registered is the machine's record of it. Nothing
+// written in L^ adds to it or writes over it -- the host reaches it through
+// this file's own API instead.
+static LhatType *hosted_namespace(LhatProgram *program)
 {
-    for (const char *segment = path;;) {
-        size_t length = strcspn(segment, ".");
-        LhatType *next = NULL;
-        for (const LhatTypeMember *m = owner->v.table.members; m != NULL;
-             m = m->next) {
-            if (m->name_length == length &&
-                memcmp(m->name, segment, length) == 0) {
-                next = m->type;
-                break;
-            }
-        }
-        if (next == NULL) {
-            next = lhat_type_table(&program->types);
-            if (next == NULL ||
-                lhat_type_add_member(&program->types, owner, segment, length,
-                                     next) == NULL) {
-                return NULL;
-            }
-            // 05 の 8.6: what the host registered is the machine's record of
-            // it. Nothing written in L^ adds to it or writes over it -- the
-            // host reaches it through this file's own API instead.
-            next->v.table.sealed = true;
-            next->v.table.is_namespace = true;  // and named through, not held
-            next->v.table.is_module = true;
-        }
-        if (next->kind != LHAT_TYPE_TABLE) {
-            return NULL;  // something that is not a module is already there
-        }
-        owner = next;
-        if (segment[length] == '\0') {
-            return owner;
-        }
-        segment += length + 1;
+    LhatType *made = lhat_type_table(&program->types);
+    if (made != NULL) {
+        made->v.table.sealed = true;
+        made->v.table.is_namespace = true;  // and named through, not held
+        made->v.table.is_module = true;
     }
+    return made;
 }
 
 static LhatType *hosted_root(LhatProgram *program)
 {
     if (program->hosted == NULL) {
-        program->hosted = lhat_type_table(&program->types);
-        if (program->hosted != NULL) {
-            program->hosted->v.table.sealed = true;  // 05 の 8.6
-            program->hosted->v.table.is_namespace = true;
-            program->hosted->v.table.is_module = true;
-        }
+        program->hosted = hosted_namespace(program);
     }
     return program->hosted;
+}
+
+// 05 の 8.7: the table the unit at a dotted path published into, made where
+// the path does not reach one. The tree is two tables a step: the step's own
+// members are the units named under it, and what the unit there published is
+// its `base` -- so an import^ can be handed the one without the other, while
+// a walk of a whole path (lhat_check_type_named) reaches both. A step with no
+// `base` is only on the way to a unit and is none itself.
+//
+// `name`, when given, is the name about to be published there, and is
+// refused where a unit under this one already stands -- 8.7's one name, one
+// thing, across the two tables. The walk refuses the other order.
+static LhatType *hosted_unit(LhatProgram *program, const char *module,
+                             const char *name)
+{
+    LhatType *step = hosted_root(program);
+    for (const char *segment = module; step != NULL;) {
+        size_t length = strcspn(segment, ".");
+        if (lhat_type_own_member(step->v.table.base, segment, length) != NULL) {
+            return NULL;  // the unit above published this name already
+        }
+        const LhatTypeMember *found =
+            lhat_type_own_member(step, segment, length);
+        LhatType *next = found != NULL ? found->type : NULL;
+        if (next == NULL) {
+            next = hosted_namespace(program);
+            if (next == NULL ||
+                lhat_type_add_member(&program->types, step, segment, length,
+                                     next) == NULL) {
+                return NULL;
+            }
+        }
+        step = next;
+        if (segment[length] == '\0') {
+            break;
+        }
+        segment += length + 1;
+    }
+    if (step == NULL ||
+        (name != NULL && lhat_type_own_member(step, name, strlen(name)) != NULL)) {
+        return NULL;
+    }
+    if (step->v.table.base == NULL) {
+        step->v.table.base = hosted_namespace(program);
+    }
+    return step->v.table.base;
 }
 
 static const LhatTypeMember *hosted_member(const LhatType *table,
@@ -1707,11 +1721,7 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
                                                    const char *module,
                                                    const char *name)
 {
-    LhatType *root = hosted_root(program);
-    if (root == NULL) {
-        return NULL;
-    }
-    LhatType *table = hosted_table(program, root, module);
+    LhatType *table = hosted_unit(program, module, name);
     if (table == NULL || hosted_member(table, name) != NULL) {
         return NULL;  // 8.7: one name, one thing
     }
@@ -1783,7 +1793,7 @@ bool lhat_register_type(LhatProgram *program, const char *module,
 }
 
 // 05 の 8.8改: the checker's type for a registered hostdata name, which is
-// what the flatten pass moves members between. hosted_table would make a
+// what the flatten pass moves members between. hosted_unit would make a
 // module that is not there, but every type asked about here registered
 // through it already, so it only ever finds one.
 static LhatType *hosted_type_of(LhatProgram *program, const char *module,
@@ -1792,7 +1802,7 @@ static LhatType *hosted_type_of(LhatProgram *program, const char *module,
     if (program->hosted == NULL) {
         return NULL;
     }
-    LhatType *table = hosted_table(program, program->hosted, module);
+    LhatType *table = hosted_unit(program, module, NULL);
     const LhatTypeMember *member =
         table != NULL ? hosted_member(table, name) : NULL;
     return member != NULL ? member->type : NULL;
@@ -1957,7 +1967,7 @@ static void free_variant_arrays(char **variant_copies,
 }
 
 // 04 の 12.4 の host 版: errordef^ を書かずに存在する誤り種別。型側は
-// lhat_register_hostdata_type と同じ hosted_table/hosted_member を通る;
+// lhat_register_hostdata_type と同じ hosted_unit/hosted_member を通る;
 // 実行時側は check.c の check_errordef / vm.c の declare_error が unit の
 // ASTから作るのと同じ2つの呼び出し(lhat_type_error_set/error_kind、
 // lhat_error_kind_new)を、program->host_heap に対して行う。
@@ -1973,8 +1983,7 @@ static bool register_error_kind(LhatProgram *program, const char *module,
     if (program == NULL || module == NULL || name == NULL) {
         return false;
     }
-    LhatType *root = hosted_root(program);
-    LhatType *table = root != NULL ? hosted_table(program, root, module) : NULL;
+    LhatType *table = hosted_unit(program, module, name);
     if (table == NULL || hosted_member(table, name) != NULL) {
         return false;  // 8.7: one name, one thing
     }
@@ -2320,7 +2329,7 @@ bool lhat_register_member(LhatProgram *program, const char *module,
                           const char *signature, LhatHostFn call,
                           void *context)
 {
-    LhatType *table = hosted_table(program, hosted_root(program), module);
+    LhatType *table = hosted_unit(program, module, NULL);
     const LhatTypeMember *found = hosted_member(table, type);
     if (found == NULL || found->type->kind != LHAT_TYPE_TABLE) {
         return false;  // no such type registered under that module
@@ -2533,8 +2542,7 @@ bool lhat_register_func(LhatProgram *program, const char *module,
                         const char *name, const char *signature,
                         LhatHostFn call, void *context)
 {
-    return register_into(program, hosted_table(program, hosted_root(program),
-                                               module),
+    return register_into(program, hosted_unit(program, module, name),
                          module, NULL, name, signature, call, context);
 }
 
@@ -2544,7 +2552,7 @@ bool lhat_register_instantiation_check_handler(
 {
     if (program == NULL || module == NULL || name == NULL || handler == NULL) return false;
 #if LHAT_WITH_FRONTEND
-    LhatType *owner = hosted_table(program, hosted_root(program), module);
+    LhatType *owner = hosted_unit(program, module, NULL);
     if (type != NULL) {
         const LhatTypeMember *member = hosted_member(owner, type);
         owner = member != NULL ? member->type : NULL;
@@ -2583,8 +2591,7 @@ static bool register_const(LhatProgram *program, const char *module,
         (kind == LHAT_HOST_CONST_STRING && text == NULL)) {
         return false;
     }
-    LhatType *owner =
-        hosted_table(program, hosted_root(program), module);
+    LhatType *owner = hosted_unit(program, module, type == NULL ? name : NULL);
     if (type != NULL) {
         const LhatTypeMember *found = hosted_member(owner, type);
         // 8.8's nominal table or 8.9's host value type -- both carry the
@@ -2634,7 +2641,7 @@ bool lhat_register_enum_valued(LhatProgram *program, const char *module,
         members == NULL || count == 0) {
         return false;
     }
-    LhatType *owner = hosted_table(program, hosted_root(program), module);
+    LhatType *owner = hosted_unit(program, module, type == NULL ? name : NULL);
     if (type != NULL) {
         const LhatTypeMember *found = hosted_member(owner, type);
         // 8.8's nominal table or 8.9's host value type -- the same member
@@ -2775,11 +2782,7 @@ const LhatHostValueTag *lhat_register_hostvalue_type(LhatProgram *program,
         size > LHAT_HOSTVALUE_MAX_BYTES) {
         return NULL;
     }
-    LhatType *root = hosted_root(program);
-    if (root == NULL) {
-        return NULL;
-    }
-    LhatType *table = hosted_table(program, root, module);
+    LhatType *table = hosted_unit(program, module, name);
     if (table == NULL || hosted_member(table, name) != NULL) {
         return NULL;  // 8.7: one name, one thing
     }
@@ -2838,7 +2841,7 @@ bool lhat_register_hostvalue_member(LhatProgram *program, const char *module,
                                     const char *signature, LhatHostFn call,
                                     void *context)
 {
-    LhatType *table = hosted_table(program, hosted_root(program), module);
+    LhatType *table = hosted_unit(program, module, NULL);
     const LhatTypeMember *found = hosted_member(table, type);
     if (found == NULL || found->type->kind != LHAT_TYPE_HOSTVALUE) {
         return false;  // no such value type registered under that module
@@ -2877,7 +2880,7 @@ bool lhat_register_hostvalue_field(LhatProgram *program, const char *module,
 
     // The checker side has to exist and not already answer the name --
     // neither as a field nor as a registered member.
-    LhatType *table = hosted_table(program, hosted_root(program), module);
+    LhatType *table = hosted_unit(program, module, NULL);
     const LhatTypeMember *found = hosted_member(table, type);
     if (found == NULL || found->type->kind != LHAT_TYPE_HOSTVALUE ||
         hosted_member(found->type, field) != NULL) {

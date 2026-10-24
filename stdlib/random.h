@@ -32,12 +32,12 @@
 // Extreme finite arguments can overflow the result. Math-library rounding
 // can differ between platforms, so bitwise cross-platform replay is not promised.
 //
-// std.random.new answers std.random.Random|std.error.OutOfMemory -- read
+// std.random.new answers std.random.Random|std.sys.Error.OutOfMemory -- read
 // it with try^/catch^, or narrow with fits^ against std.random.Random or
-// std.error.OutOfMemory (05 の 8.8's hostdata path and 04 の 2.4's error
-// kind path, both supported). Naming std.error.OutOfMemory in an fits^
+// std.sys.Error.OutOfMemory (05 の 8.8's hostdata path and 04 の 2.4's error
+// kind path, both supported). Naming std.sys.Error.OutOfMemory in an fits^
 // (rather than just letting try^/catch^ read it) needs its own
-// `import^ std.error` -- 8.1's "the language hands out no names" applies
+// `import^ std.sys` -- 8.1's "the language hands out no names" applies
 // to a name reached through another module's registration too.
 
 #ifndef LHATSTDLIB_RANDOM_H

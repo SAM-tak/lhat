@@ -259,10 +259,8 @@ static const LhatNode *imported_path(const LhatNode *statement)
     return NULL;
 }
 
-// Whether this unit already reaches `path`. An import^ of a parent reaches
-// its children -- 05 の 8.7's registry is one nested table, so 'import^ std'
-// puts std.io within reach as well -- which is why this is a prefix test and
-// not an equality.
+// Whether this unit already imports `path`. 05 の 8.7: an import^ takes in
+// the one unit it names and none named under it, so this is an equality.
 static bool already_imports(const LhatUnit *unit, const char *path,
                             size_t length)
 {
@@ -281,10 +279,8 @@ static bool already_imports(const LhatUnit *unit, const char *path,
         if (named->end <= from || named->end > unit->source.length) {
             continue;
         }
-        size_t written = named->end - from;
-        if (written <= length &&
-            memcmp(unit->source.text + from, path, written) == 0 &&
-            (written == length || path[written] == '.')) {
+        if (named->end - from == length &&
+            memcmp(unit->source.text + from, path, length) == 0) {
             return true;
         }
     }
@@ -385,26 +381,25 @@ static void offer_hosted(cJSON *items, const LhatUnit *unit,
     if (owner == NULL || owner->kind != LHAT_TYPE_TABLE) {
         return;
     }
+    // A step's own members are the units named under it, and what the unit
+    // there published is its base -- 'std' published nothing, 'std.io'
+    // published print.
     for (const LhatTypeMember *m = owner->v.table.members; m != NULL;
          m = m->next) {
+        char deeper[512];
+        if (m->name_length > 0 &&
+            (size_t)snprintf(deeper, sizeof deeper, "%s%s%.*s", path,
+                             path[0] != '\0' ? "." : "", (int)m->name_length,
+                             m->name) < sizeof deeper) {
+            offer_hosted(items, unit, word_from, word_to, m->type, deeper);
+        }
+    }
+    const LhatType *published = owner->v.table.base;
+    for (const LhatTypeMember *m =
+             published != NULL ? published->v.table.members : NULL;
+         m != NULL; m = m->next) {
         if (m->name == NULL || m->name_length == 0) {
             continue;
-        }
-        if (m->type != NULL && m->type->kind == LHAT_TYPE_TABLE &&
-            m->type->v.table.is_module) {
-            // A module of its own, so its members are what may be reached --
-            // 'std' holds no name a writer takes, 'std.io' holds print.
-            char deeper[512];
-            if ((size_t)snprintf(deeper, sizeof deeper, "%s%s%.*s", path,
-                                 path[0] != '\0' ? "." : "",
-                                 (int)m->name_length,
-                                 m->name) < sizeof deeper) {
-                offer_hosted(items, unit, word_from, word_to, m->type, deeper);
-            }
-            continue;
-        }
-        if (path[0] == '\0') {
-            continue;  // 05 の 8.6's own members are reached through L^
         }
         char statement[512];
         const char *line = NULL;

@@ -35,7 +35,7 @@
 #include "stdlib/binary.h"
 #include "stdlib/channel.h"
 #include "stdlib/debug.h"
-#include "stdlib/error.h"
+#include "stdlib/sys.h"
 #include "stdlib/io.h"
 #include "stdlib/json.h"
 #include "stdlib/lton.h"

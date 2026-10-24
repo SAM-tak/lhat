@@ -9,7 +9,7 @@
 
 #define LHAT_TASK_ERRORS \
     "|std.task.TaskError.NotStarted|std.task.TaskError.Refused" \
-    "|std.task.TaskError.Failed|std.error.OutOfMemory;"
+    "|std.task.TaskError.Failed|std.sys.Error.OutOfMemory;"
 // Two arms of async, registered in this order: a coroutine not yet started,
 // and a subroutine called with nothing, with or without a result.
 #define LHAT_TASK_ASYNC_SIGNATURE \

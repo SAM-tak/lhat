@@ -25,14 +25,14 @@
 // ThreadError.BadArgument with carry's reason. See the registration at the
 // foot of this file for why that is a run-time answer and not a type.
 //
-// spawn/join answer a ThreadHandle or a ThreadError, or std.error.
+// spawn/join answer a ThreadHandle or a ThreadError, or std.sys.
 // OutOfMemory for the one failure this module shares with every other
-// stdlib module (see error.h) -- read the result with try^/catch^, or
+// stdlib module (see sys.h) -- read the result with try^/catch^, or
 // narrow with fits^ against std.thread.ThreadHandle (05 の 8.8's hostdata
 // path).
 
 #include "carry.h"
-#include "error.h"
+#include "sys.h"
 #include "thread.h"
 
 #include "lhat/debug.h"
@@ -70,7 +70,7 @@ typedef struct {
     const LhatErrorKind *spawn_failed;
     const LhatErrorKind *bad_result;
     const LhatErrorKind *already_joined;
-    const LhatErrorKind *out_of_memory;  // std.error.OutOfMemory -- error.h
+    const LhatErrorKind *out_of_memory;  // std.sys.Error.OutOfMemory -- sys.h
     const LhatHostDataTag *handle_tag;
 
     // 15.14改: what the host is told when a body finishes, on the worker's
@@ -784,10 +784,10 @@ static void dispose_module(void *raw)
 
 bool lhatstdlib_thread_register(LhatProgram *program)
 {
-    // 05 の 8.7: 登録は検査より前 -- std.error.OutOfMemory を使う側(この
-    // モジュール)より前に確実に存在させる。lhatstdlib_error_register は
+    // 05 の 8.7: 登録は検査より前 -- std.sys.Error.OutOfMemory を使う側(この
+    // モジュール)より前に確実に存在させる。lhatstdlib_sys_register は
     // 冪等なので、他の stdlib モジュールが先に呼んでいても構わない。
-    if (!lhatstdlib_error_register(program)) {
+    if (!lhatstdlib_sys_register(program)) {
         return false;
     }
 
@@ -803,7 +803,7 @@ bool lhatstdlib_thread_register(LhatProgram *program)
         return false;
     }
     module->program = program;
-    module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
+    module->out_of_memory = lhatstdlib_sys_lookup(program, "OutOfMemory");
 
     static const char *const variants[] = {"NotSpawnable", "BadArgument",
                                            "SpawnFailed", "BadResult",
@@ -846,7 +846,7 @@ bool lhatstdlib_thread_register(LhatProgram *program)
                "f^p^... -> any^;, ...:any^ -> "
                "std.thread.ThreadHandle|std.thread.ThreadError.NotSpawnable"
                "|std.thread.ThreadError.BadArgument"
-               "|std.thread.ThreadError.SpawnFailed|std.error.OutOfMemory;",
+               "|std.thread.ThreadError.SpawnFailed|std.sys.Error.OutOfMemory;",
                thread_spawn, module) &&
            // 13.4 keeps the name out of a signature, so what the number^ is
            // counted in is said here and in thread.h: seconds.
@@ -860,7 +860,7 @@ bool lhatstdlib_thread_register(LhatProgram *program)
                program, "std.thread", "ThreadHandle", "join",
                "f^self^ -> any^"
                "|std.thread.ThreadError.AlreadyJoined"
-               "|std.thread.ThreadError.BadResult|std.error.OutOfMemory;",
+               "|std.thread.ThreadError.BadResult|std.sys.Error.OutOfMemory;",
                thread_join, module) &&
            lhat_register_member(program, "std.thread", "ThreadHandle", "done",
                                 "f^self^ -> bool^;", thread_done, module) &&

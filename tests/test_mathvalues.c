@@ -66,7 +66,9 @@ static void test_vector_abs(void)
 {
     LHAT_TEST("vector abs returns component-wise magnitudes without changing the source");
     LhatTestRan ran = run_source(
-        "import^ std.math\n"
+        "import^ std.math.vector2\n"
+        "import^ std.math.vector3\n"
+        "import^ std.math.vector4\n"
         "let^ a = std.math.vector2.new(-2, 3)\n"
         "let^ b = std.math.vector3.new(0, -4, -5)\n"
         "let^ c = std.math.vector4.new(-6, 7, -8, -9)\n"
@@ -87,7 +89,9 @@ static void test_vector_clamp(void)
 {
     LHAT_TEST("vector clamp accepts scalar and component-wise bounds without mutation");
     LhatTestRan ran = run_source(
-        "import^ std.math\n"
+        "import^ std.math.vector2\n"
+        "import^ std.math.vector3\n"
+        "import^ std.math.vector4\n"
         "let^ a = std.math.vector2.new(-2, 3)\n"
         "let^ b = std.math.vector3.new(-2, 0.5, 3)\n"
         "let^ c = std.math.vector4.new(-2, 0, 1, 3)\n"
@@ -112,11 +116,12 @@ static void test_vector_clamp(void)
 
     LHAT_TEST("vector clamp rejects mixed scalar/vector bounds and different dimensions");
     LHAT_CHECK(!lhat_test_check_text(regs, sizeof regs / sizeof regs[0],
-        "import^ std.math\n"
+        "import^ std.math.vector2\n"
         "let^ v = std.math.vector2.zero().clamp(0, std.math.vector2.one())\n"),
         "both bounds must use the same overload");
     LHAT_CHECK(!lhat_test_check_text(regs, sizeof regs / sizeof regs[0],
-        "import^ std.math\n"
+        "import^ std.math.vector3\n"
+        "import^ std.math.vector4\n"
         "let^ v = std.math.vector3.zero().clamp(std.math.vector4.zero(), std.math.vector4.one())\n"),
         "vector bounds must match the receiver's dimension");
 }

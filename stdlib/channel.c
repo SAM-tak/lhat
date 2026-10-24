@@ -20,7 +20,7 @@
 
 #include "async.h"
 #include "carry.h"
-#include "error.h"
+#include "sys.h"
 #include "lhat/debug.h"
 #include "lhat/port.h"
 #include "port/thread.h"
@@ -975,7 +975,7 @@ static void channel_atomic(LhatMachine *machine, void *context,
 
 bool lhatstdlib_channel_register(LhatProgram *program)
 {
-    if (!lhatstdlib_error_register(program)) {
+    if (!lhatstdlib_sys_register(program)) {
         return false;
     }
     if (!names.ready) {
@@ -994,7 +994,7 @@ bool lhatstdlib_channel_register(LhatProgram *program)
         return false;
     }
     module->program = program;
-    module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
+    module->out_of_memory = lhatstdlib_sys_lookup(program, "OutOfMemory");
 
     static const char *const variants[] = {"Refused"};
     const LhatErrorKind *kinds[1];
@@ -1011,18 +1011,18 @@ bool lhatstdlib_channel_register(LhatProgram *program)
     }
 
 #define REFUSAL \
-    "|std.channel.ChannelError.Refused|std.error.OutOfMemory;"
+    "|std.channel.ChannelError.Refused|std.sys.Error.OutOfMemory;"
 
     return lhat_register_func(program, "std.channel", "new",
                               "p^ -> std.channel.Channel"
-                              "|std.error.OutOfMemory;",
+                              "|std.sys.Error.OutOfMemory;",
                               channel_make, module) &&
            lhat_register_func(program, "std.channel", "new",
                               "p^type^ -> std.channel.Channel<ARG0.T0>" REFUSAL,
                               channel_make, module) &&
            lhat_register_func(program, "std.channel", "named",
                               "p^string^ -> std.channel.Channel"
-                              "|std.error.OutOfMemory;",
+                              "|std.sys.Error.OutOfMemory;",
                               channel_named, module) &&
            lhat_register_func(program, "std.channel", "named",
                               "p^string^, type^ -> std.channel.Channel<ARG1.T0>" REFUSAL,

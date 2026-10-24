@@ -47,7 +47,7 @@ static char *disk_load(void *context, const char *path, size_t *length)
 static const char *const CONFIG =
     "{\n"
     "  \"types\": [\n"
-    "    {\"kind\": \"errordef\", \"module\": \"std\", \"name\": \"error\","
+    "    {\"kind\": \"errordef\", \"module\": \"std.sys\", \"name\": \"Error\","
     " \"variants\": [\"OutOfMemory\"]},\n"
     "    {\"kind\": \"hostdata\", \"module\": \"std.io\", \"name\": \"File\"},\n"
     // 05 の 8.8改: a type under another. What the derived one inherits is
@@ -446,16 +446,16 @@ static void test_task_checks(void)
     // await projects Task's argument through the common signature evaluator.
     static const char config_text[] =
         "{\"types\":["
-        "{\"kind\":\"errordef\",\"module\":\"std\",\"name\":\"error\","
+        "{\"kind\":\"errordef\",\"module\":\"std.sys\",\"name\":\"Error\","
         "\"variants\":[\"OutOfMemory\"]},"
         "{\"kind\":\"errordef\",\"module\":\"std.task\",\"name\":\"TaskError\","
         "\"variants\":[\"NotStarted\",\"Refused\",\"Failed\"]},"
         "{\"kind\":\"hostdata\",\"module\":\"std.task\",\"name\":\"Task\"}],"
         "\"functions\":["
         "{\"kind\":\"func\",\"module\":\"std.task\",\"name\":\"async\","
-        "\"signature\":\"p^c^{->*->*} -> std.task.Task<ARG0.ResultType>|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;\"},"
+        "\"signature\":\"p^c^{->*->*} -> std.task.Task<ARG0.ResultType>|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.sys.Error.OutOfMemory;\"},"
         "{\"kind\":\"func\",\"module\":\"std.task\",\"name\":\"await\","
-        "\"signature\":\"p^std.task.Task -> ARG0.T0|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.error.OutOfMemory;\"}]}";
+        "\"signature\":\"p^std.task.Task -> ARG0.T0|std.task.TaskError.NotStarted|std.task.TaskError.Refused|std.task.TaskError.Failed|std.sys.Error.OutOfMemory;\"}]}";
     static const char *const sources[] = {
         "import^ std.task\nlet^ job = p^ { yield^ 0 return^ 42 }\n"
         "let^ t = std.task.async(job()) catch^ panic^ it^\n"

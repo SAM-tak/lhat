@@ -12,7 +12,7 @@
 // keeping: read as the body of an f^, a text that calls a p^ is refused by
 // the checker, with no rule written here for it.
 
-#include "error.h"
+#include "sys.h"
 #include "lton.h"
 
 #include <stdio.h>
@@ -34,7 +34,7 @@ typedef struct {
     const LhatErrorKind *cycle;
     const LhatErrorKind *too_deep;
     const LhatErrorKind *cannot_write;
-    const LhatErrorKind *out_of_memory;  // std.error.OutOfMemory -- error.h
+    const LhatErrorKind *out_of_memory;  // std.sys.Error.OutOfMemory -- sys.h
 } LtonModule;
 
 static LhatValue fail_with(LhatMachine *machine, const LhatErrorKind *kind,
@@ -699,9 +699,9 @@ static void lton_save(LhatMachine *machine, void *context,
 
 bool lhatstdlib_lton_register(LhatProgram *program)
 {
-    // 05 の 8.7: registration before checking -- std.error.OutOfMemory has to
+    // 05 の 8.7: registration before checking -- std.sys.Error.OutOfMemory has to
     // exist before this module's signatures name it. The call is idempotent.
-    if (!lhatstdlib_error_register(program)) {
+    if (!lhatstdlib_sys_register(program)) {
         return false;
     }
 
@@ -716,7 +716,7 @@ bool lhatstdlib_lton_register(LhatProgram *program)
         return false;
     }
     module->program = program;
-    module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
+    module->out_of_memory = lhatstdlib_sys_lookup(program, "OutOfMemory");
 
     static const char *const variants[] = {"CannotRead", "Rejected", "Unsupported", "Cycle", "TooDeep", "CannotWrite"};
     const LhatErrorKind *kinds[6];
@@ -735,16 +735,16 @@ bool lhatstdlib_lton_register(LhatProgram *program)
     // text cannot have one either (15.1, lton.h).
     return lhat_register_func(
                program, "std.lton", "parse",
-               "f^string^ -> t^{}|std.lton.LtonError|std.error.OutOfMemory;",
+               "f^string^ -> t^{}|std.lton.LtonError|std.sys.Error.OutOfMemory;",
                lton_parse, module) &&
            lhat_register_func(
                program, "std.lton", "load",
-               "f^string^ -> t^{}|std.lton.LtonError|std.error.OutOfMemory;",
+               "f^string^ -> t^{}|std.lton.LtonError|std.sys.Error.OutOfMemory;",
                 lton_load, module) &&
            lhat_register_func(program, "std.lton", "stringify",
-                "f^t^{} -> string^|std.lton.LtonError|std.error.OutOfMemory;",
+                "f^t^{} -> string^|std.lton.LtonError|std.sys.Error.OutOfMemory;",
                 lton_stringify, module) &&
            lhat_register_func(program, "std.lton", "save",
-                "p^string^,t^{} -> nil^|std.lton.LtonError|std.error.OutOfMemory;",
+                "p^string^,t^{} -> nil^|std.lton.LtonError|std.sys.Error.OutOfMemory;",
                 lton_save, module);
 }

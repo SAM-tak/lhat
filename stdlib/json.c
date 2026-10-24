@@ -8,7 +8,7 @@
 // grammar is small enough that reading it straight into L^'s own tables
 // costs less than parsing into a second tree and copying out of it.
 
-#include "error.h"
+#include "sys.h"
 #include "json.h"
 
 #include <errno.h>
@@ -32,7 +32,7 @@ typedef struct {
     const LhatErrorKind *bad_text;
     const LhatErrorKind *unsupported;
     const LhatErrorKind *too_deep;
-    const LhatErrorKind *out_of_memory;  // std.error.OutOfMemory -- error.h
+    const LhatErrorKind *out_of_memory;  // std.sys.Error.OutOfMemory -- sys.h
 } JsonModule;
 
 static LhatValue fail_with(LhatMachine *machine, const LhatErrorKind *kind,
@@ -942,9 +942,9 @@ static void json_decode(LhatMachine *machine, void *context,
 
 bool lhatstdlib_json_register(LhatProgram *program)
 {
-    // 05 の 8.7: registration before checking -- std.error.OutOfMemory has to
+    // 05 の 8.7: registration before checking -- std.sys.Error.OutOfMemory has to
     // exist before this module's signatures name it. The call is idempotent.
-    if (!lhatstdlib_error_register(program)) {
+    if (!lhatstdlib_sys_register(program)) {
         return false;
     }
 
@@ -954,7 +954,7 @@ bool lhatstdlib_json_register(LhatProgram *program)
     // all, and a second registration writes the same answers back into it.
     static JsonModule shared;
     JsonModule *module = &shared;
-    module->out_of_memory = lhatstdlib_error_lookup(program, "OutOfMemory");
+    module->out_of_memory = lhatstdlib_sys_lookup(program, "OutOfMemory");
 
     static const char *const variants[] = {"BadText", "Unsupported", "TooDeep"};
     const LhatErrorKind *kinds[3];
@@ -968,14 +968,14 @@ bool lhatstdlib_json_register(LhatProgram *program)
 
     return lhat_register_func(
                program, "std.json", "encode",
-               "f^t^{} -> string^|std.json.JsonError|std.error.OutOfMemory;",
+               "f^t^{} -> string^|std.json.JsonError|std.sys.Error.OutOfMemory;",
                json_encode, module) &&
            lhat_register_func(
                program, "std.json", "pretty",
-               "f^t^{}, number^ -> string^|std.json.JsonError|std.error.OutOfMemory;",
+               "f^t^{}, number^ -> string^|std.json.JsonError|std.sys.Error.OutOfMemory;",
                json_pretty, module) &&
            lhat_register_func(
                program, "std.json", "decode",
-               "f^string^ -> t^{}|std.json.JsonError|std.error.OutOfMemory;",
+               "f^string^ -> t^{}|std.json.JsonError|std.sys.Error.OutOfMemory;",
                json_decode, module);
 }

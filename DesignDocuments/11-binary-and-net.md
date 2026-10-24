@@ -286,7 +286,7 @@ data = "\x67\x2B\x6F\x03"
 短ければ `Truncated` である。`at` が 0 以上の整数でないのは書き手の誤りで、panic に
 なる［補足］。
 
-メモリが尽きたときも panic である［補足］。`std.error.OutOfMemory` を答えの
+メモリが尽きたときも panic である［補足］。`std.sys.Error.OutOfMemory` を答えの
 合併に入れると、毎フレーム呼ぶ `encode` の答えをいちいち絞り込むことになる。
 `dispose` した種類・形式・`Bytes` を使うのも書き手の誤りで、panic になる。
 

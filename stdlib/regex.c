@@ -9,7 +9,7 @@
 
 #include <string.h>
 
-#include "error.h"
+#include "sys.h"
 #include "regex_engine.h"
 
 typedef struct {

@@ -186,10 +186,10 @@ static void test_a_module_not_taken_in(void)
     ask("taken in", "import^ std.io\nlet^ a = 1\nop\n", "\nop",
         expect_no_line);
 
-    // 05 の 8.7: the registry is one nested table, so the parent holds the
-    // child -- 'import^ std' puts std.io within reach as well.
-    LHAT_TEST("and neither does one whose parent was taken in");
-    ask("parent", "import^ std\nlet^ a = 1\nop\n", "\nop", expect_no_line);
+    // 05 の 8.7: an import^ takes in the one unit it names, so the parent's
+    // leaves std.io to a line of its own.
+    LHAT_TEST("while one whose parent was taken in still needs its own");
+    ask("parent", "import^ std\nlet^ a = 1\nop\n", "\nop", expect_taken_in);
 }
 
 static void expect_shadowed(const char *label, cJSON *items)
