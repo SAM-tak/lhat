@@ -472,7 +472,9 @@ static void atomic(Machine *m)
     for (size_t i = 0; i < LHAT_MEMBER_CACHE_COUNT; i++) {
         LhatMemberCache *cache = &m->member_caches[i];
         if (cache->answered != NULL &&
-            lhat_gc_is_white((const LhatObject *)cache->answered)) {
+            (lhat_gc_is_white((const LhatObject *)cache->answered) ||
+             (cache->receiver != NULL &&
+              lhat_gc_is_white((const LhatObject *)cache->receiver)))) {
             cache->answered = NULL;
         }
     }

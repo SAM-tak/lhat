@@ -169,9 +169,14 @@ typedef struct LhatWeakEntry {
 #define LHAT_MEMBER_CACHE_COUNT 64
 typedef struct {
     const LhatTable *answered;
+    // The receiver's table the answer was found from, where that is the
+    // same table every time: the answering one itself, or a host type's
+    // shared members table that found it up its base chain. NULL for an
+    // instance's, which is a fresh clone per value and found the answer on
+    // its definition.
+    const LhatTable *receiver;
     uint32_t version;
     uint32_t index;
-    bool from_definition;
 } LhatMemberCache;
 
 struct LhatMachine {

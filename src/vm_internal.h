@@ -140,7 +140,7 @@ static inline const LhatValue *vm_cached_member(Machine *m,
         return NULL;
     }
     bool same_layout =
-        remembered->from_definition
+        remembered->receiver == NULL
             // An instance is a fresh table per value, so what is compared
             // is not the table but the fact that it has never been
             // structurally written since it was cloned -- and 5.10 seals the
@@ -149,8 +149,11 @@ static inline const LhatValue *vm_cached_member(Machine *m,
             ? (start->version == 0 && start->definition == answered &&
                answered->version == remembered->version)
             // 05 の 8.8 shares one members table per host type, so for
-            // those this is the same table every time.
-            : (start == answered && start->version == remembered->version);
+            // those this is the same table every time -- and 8.7改5's shared
+            // tables are written by nobody, so neither is any base it found
+            // the member on.
+            : (start == remembered->receiver &&
+               answered->version == remembered->version);
     uint32_t index = remembered->index;
     if (!same_layout || (size_t)index >= answered->entry_capacity ||
         !lhat_value_equal(answered->entries[index].key,

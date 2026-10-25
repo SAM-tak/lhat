@@ -1079,13 +1079,16 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
         // since that is what a hit will be trusting. A delegated
         // answer reports no place (object.c), so it lands here
         // as "nothing to remember".
+        // 05 の 8.7改5: a host type's shared table and the bases it stands
+        // on are written by nobody, so what it inherits is as fixed as what
+        // it holds itself, and is remembered against the table itself.
         if (filling != NULL) {
-            if (found_in != NULL &&
-                (!inherited || table->version == 0)) {
+            bool fixed = !inherited || table->shared;
+            if (found_in != NULL && (fixed || table->version == 0)) {
                 filling->answered = found_in;
+                filling->receiver = fixed ? table : NULL;
                 filling->version = found_in->version;
                 filling->index = found_at;
-                filling->from_definition = inherited;
             } else {
                 filling->answered = NULL;
             }

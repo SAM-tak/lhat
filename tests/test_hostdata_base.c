@@ -335,6 +335,37 @@ static void test_inherited_members(void)
         LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
         lhat_program_dispose(&program);
     }
+
+    // 12 の 3: one site asked of two types in turn -- one overriding the
+    // member, one inheriting it from two steps up. What the site remembers
+    // from the one must not answer for the other.
+    LHAT_TEST("one call site keeps an override and an inherited member apart");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ scene\n"
+             "let^ s = scene.makeSprite()\n"
+             "let^ d = scene.makeNode2D()\n"
+             "let^ pick = f^ n:scene.Node -> number^ { n.id() }\n"
+             "var^ sum = 0\n"
+             "for^ i from^ 1 to^ 4 { sum += pick(s) * 10 + pick(d) }\n"
+             "return^ sum\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        LHAT_CHECK(lhat_register_member(&program, "scene", "Sprite2D", "id",
+                                        "f^self^ -> number^;", sprite_id,
+                                        NULL) &&
+                   lhat_register_func(&program, "scene", "makeNode2D",
+                                      "f^ -> scene.Node2D;", make_of,
+                                      (void *)node2d_tag),
+                   "the override registered");
+        the_node.id = 4;
+        LhatRunResult ran = run_program(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 4 * (7 * 10 + 4));
+        lhat_program_dispose(&program);
+    }
 }
 
 // ---------------------------------------------------------------------------
