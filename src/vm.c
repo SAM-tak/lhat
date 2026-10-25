@@ -1424,7 +1424,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             VM_CASE(LHAT_BC_GETMETHOD) {
                 LhatMemberCache *cache;
                 const LhatValue *hit =
-                    vm_cached_member(m, chunk, cc, R(b), &cache);
+                    vm_cached_member(m, chunk, cc, rbase + b, &cache);
                 if (hit != NULL) {
                     SET_R(a, *hit);
                     VM_NEXT();
@@ -1441,7 +1441,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             VM_CASE(LHAT_BC_CALLMEMBER) {
                 LhatMemberCache *cache;
                 const LhatValue *hit =
-                    vm_cached_member(m, chunk, cc, R(b), &cache);
+                    vm_cached_member(m, chunk, cc, rbase + b, &cache);
                 if (hit != NULL) {
                     SET_R(a, *hit);
                     at = pc;

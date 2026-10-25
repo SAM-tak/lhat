@@ -474,7 +474,9 @@ static void atomic(Machine *m)
         if (cache->answered != NULL &&
             (lhat_gc_is_white((const LhatObject *)cache->answered) ||
              (cache->receiver != NULL &&
-              lhat_gc_is_white((const LhatObject *)cache->receiver)))) {
+              lhat_gc_is_white((const LhatObject *)cache->receiver)) ||
+             (cache->lender != NULL &&
+              lhat_gc_is_white((const LhatObject *)cache->lender)))) {
             cache->answered = NULL;
         }
     }

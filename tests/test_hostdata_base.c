@@ -777,6 +777,47 @@ static void test_delegate_to_host(void)
         lhat_program_dispose(&program);
     }
 
+    // 12 の 3: one site asked of wrappers lending to two host types in turn,
+    // one overriding the member and one inheriting it -- and of a wrapper
+    // whose delegate is swapped under it. What the site remembers of a lent
+    // answer must follow what is lent to, not the wrapper.
+    LHAT_TEST("one call site keeps apart what two wrappers lend to");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ scene\n"
+             "let^ W = def^{\n"
+             "    self^{ abstract^ n : scene.Node },\n"
+             "    override^new = f^ x:scene.Node { self^{ n = x } },\n"
+             "    swap = p^ self^, x:scene.Node { self^.n := x },\n"
+             "    delegate^ self^.n\n"
+             "}\n"
+             "let^ s = W.new(scene.makeSprite())\n"
+             "let^ d = W.new(scene.makeNode2D())\n"
+             "let^ pick = f^ w:W -> number^ { w.id() }\n"
+             "var^ sum = 0\n"
+             "for^ i from^ 1 to^ 4 { sum += pick(s) * 10 + pick(d) }\n"
+             "s.swap(scene.makeNode2D())\n"
+             "for^ i from^ 1 to^ 2 { sum += pick(s) * 100 }\n"
+             "return^ sum\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        LHAT_CHECK(register_scene(&program, false), "registered");
+        LHAT_CHECK(lhat_register_member(&program, "scene", "Sprite2D", "id",
+                                        "f^self^ -> number^;", sprite_id,
+                                        NULL) &&
+                   lhat_register_func(&program, "scene", "makeNode2D",
+                                      "f^ -> scene.Node2D;", make_of,
+                                      (void *)node2d_tag),
+                   "the override registered");
+        the_node.id = 4;
+        LhatRunResult ran = run_program(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value),
+                          4 * (7 * 10 + 4) + 2 * 4 * 100);
+        lhat_program_dispose(&program);
+    }
+
     // 05 の 8.8: and the wrapper is still not one. A host type is where 11.3
     // gives way, so delegating to one lends its members and not its identity
     // -- the C behind scene.Node would otherwise be handed a table.

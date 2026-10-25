@@ -2244,16 +2244,16 @@ static LhatValue table_get_in(const LhatTable *table, LhatValue key,
                 !lhat_takes_receiver(value)) {
                 return lhat_nil();
             }
-            if (delegated) {
-                if (through != NULL) {
-                    *through = receiver;
-                }
-            } else if (entry != NULL && found_in != NULL) {
+            if (delegated && through != NULL) {
+                *through = receiver;
+            }
+            // A delegated answer reports its place too; `through` says it
+            // was lent, and what that place is worth is the caller's to say.
+            if (entry != NULL && found_in != NULL) {
                 *found_in = table;
                 *found_at = (uint32_t)(entry - table->entries);
                 *inherited_out = inherited;
             }
-            // Delegated answers deliberately report no cacheable location.
             return value;
         }
     }
@@ -2383,6 +2383,23 @@ void lhat_table_vacate(LhatTable *table, LhatValue key)
     if (!lhat_is_nil(entry->key)) {
         entry->value = lhat_nil();  // back to the seat; the key stays
     }
+}
+
+bool lhat_table_holds(const LhatTable *table, LhatValue key)
+{
+    if (table == NULL || !usable_key(key) || table->entry_capacity == 0) {
+        return false;
+    }
+    key = normalise_key(key);
+    const LhatTableEntry *entry =
+        probe(table->entries, table->entry_capacity, key, hash_key(key));
+    return !lhat_is_nil(entry->key);
+}
+
+LhatValue lhat_table_lent(const LhatTable *instance)
+{
+    const void *lent = delegate_next(instance);
+    return lent != NULL ? lhat_object((LhatObject *)(void *)lent) : lhat_nil();
 }
 
 bool lhat_table_reserved(const LhatTable *table, LhatValue key)

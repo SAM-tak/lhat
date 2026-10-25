@@ -505,6 +505,35 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
             lhat_is_object_kind(on, LHAT_OBJECT_ERROR));
 }
 
+// 12 の 3 with 14.7改2: a lent answer. The instance has not been
+// structurally written since it was cloned from the same definition, which
+// has not been either, and held no key of the name even as a seat when the
+// site was filled: so neither it nor its definition answers, and the name
+// goes on to what it lends to -- a host type's shared table, which nobody
+// writes, as fixed as the answer under it. What lent it is the receiver a
+// call passes, put where vm_get_member puts it.
+const LhatValue *vm_cached_lent(Machine *m, const LhatChunk *chunk,
+                                size_t site, size_t receiver,
+                                const LhatTable *start,
+                                const LhatMemberCache *remembered)
+{
+    const LhatTable *answered = remembered->answered;
+    if (start->version != 0 || start->definition != remembered->lender ||
+        remembered->lender->version != remembered->version) {
+        return NULL;
+    }
+    LhatValue to = lhat_table_lent(start);
+    uint32_t at = remembered->index;
+    if (vm_readable_table(to) != remembered->receiver ||
+        (size_t)at >= answered->entry_capacity ||
+        !lhat_value_equal(answered->entries[at].key,
+                          chunk->constants[chunk->member_keys[site]])) {
+        return NULL;
+    }
+    lhat_slots_set(m->slots, receiver, to);
+    return &answered->entries[at].value;
+}
+
 // Shared by calls that do not populate an inline member cache.
 LhatValue vm_lookup_member(const LhatTable *table, LhatValue key,
                            LhatValue *receiver)
@@ -1082,12 +1111,31 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
         // 05 の 8.7改5: a host type's shared table and the bases it stands
         // on are written by nobody, so what it inherits is as fixed as what
         // it holds itself, and is remembered against the table itself.
+        //
+        // 14.7改2: a lent answer is remembered on the same terms one link
+        // out -- an instance still its definition's clone and holding no
+        // seat of the name, lending to a host type's shared table.
         if (filling != NULL) {
             bool fixed = !inherited || table->shared;
-            if (found_in != NULL && (fixed || table->version == 0)) {
+            const LhatTable *to = vm_readable_table(through);
+            filling->lender = NULL;
+            if (found_in != NULL && lhat_is_nil(through) &&
+                (fixed || table->version == 0)) {
                 filling->answered = found_in;
                 filling->receiver = fixed ? table : NULL;
                 filling->version = found_in->version;
+                filling->index = found_at;
+            } else if (found_in != NULL && to != NULL && to->shared &&
+                       found_in->shared && table->version == 0 &&
+                       table->definition != NULL &&
+                       vm_readable_table(lhat_table_lent(table)) == to &&
+                       !lhat_table_holds(table, member_key)) {
+                // What lends is the definition, and what is lent to is
+                // shared, so the version kept is the definition's.
+                filling->answered = found_in;
+                filling->receiver = to;
+                filling->lender = table->definition;
+                filling->version = table->definition->version;
                 filling->index = found_at;
             } else {
                 filling->answered = NULL;

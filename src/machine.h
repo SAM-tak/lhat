@@ -166,15 +166,19 @@ typedef struct LhatWeakEntry {
 // receiver, layout version and key before using an entry. These weak table
 // references are cleared before GC can free their targets. Keep the fixed
 // cost small even for machines with only a few frames and stack slots.
-#define LHAT_MEMBER_CACHE_COUNT 64
+#define LHAT_MEMBER_CACHE_COUNT 32
 typedef struct {
     const LhatTable *answered;
     // The receiver's table the answer was found from, where that is the
     // same table every time: the answering one itself, or a host type's
-    // shared members table that found it up its base chain. NULL for an
-    // instance's, which is a fresh clone per value and found the answer on
-    // its definition.
+    // shared members table that found it up its base chain -- or, for a
+    // lent answer, the shared members table of what the instance lends to.
+    // NULL for an instance's own definition's answer, an instance being a
+    // fresh clone per value.
     const LhatTable *receiver;
+    // 14.7改2: the definition of the instances that lent the answer through
+    // their delegate^; NULL for an answer that was not lent.
+    const LhatTable *lender;
     uint32_t version;
     uint32_t index;
 } LhatMemberCache;

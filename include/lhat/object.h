@@ -1118,7 +1118,8 @@ LhatValue lhat_table_get_bytes(const LhatTable *table, const char *name,
 // What a member cache remembers, so that a site meeting the same shape again
 // reads the place instead of walking to it.
 // `through` is the actual receiver of a delegated answer, across any number
-// of delegate links, and nil^ for a direct answer. It is the held value (also
+// of delegate links, and nil^ for a direct answer. A delegated answer's
+// place is reported as well; `through` is what says the place was lent. It is the held value (also
 // for hostdata), not the members table or an intermediate wrapper. Answered rather than bound into the value: binding it would make
 // one forwarding procedure per delegated member, which is what writing them
 // out by hand already was.
@@ -1170,6 +1171,13 @@ bool lhat_table_reserve(LhatTable *table, LhatValue key);
 void lhat_table_vacate(LhatTable *table, LhatValue key);
 bool lhat_table_reserved(const LhatTable *table, LhatValue key);
 void lhat_table_prune_seats(LhatTable *proto, const LhatTable *definition);
+
+// Whether the key sits in the table's own hash part at all, value or seat.
+bool lhat_table_holds(const LhatTable *table, LhatValue key);
+
+// 14.7改2: what an instance lends the names it does not answer to -- the
+// value its definition's delegate^ names, one link out -- or nil^.
+LhatValue lhat_table_lent(const LhatTable *instance);
 
 // 02 の 14.10: the sequence's length -- positions 0 .. n-1, nil^ ones
 // included. A nil^ written inside it is held there; only an explicit

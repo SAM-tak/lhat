@@ -118,9 +118,17 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
                             size_t key_slot, LhatValue member_key,
                             LhatMemberCache *filling, bool for_call);
 
+// vm_member.c: vm_cached_member's answer where it was lent (14.7改2). Out of
+// line, so that what the run loop inlines stays the size it was.
+const LhatValue *vm_cached_lent(Machine *m, const LhatChunk *chunk,
+                                size_t site, size_t receiver,
+                                const LhatTable *start,
+                                const LhatMemberCache *remembered);
+
 // 12 の 3: the member a GETMEMBER, GETMETHOD or CALLMEMBER site found
-// last time, when it is still the answer for `receiver` -- or NULL, and
-// `*cache` is where the slow path writes what it finds.
+// last time, when it is still the answer for what stands in slot
+// `receiver` -- or NULL, and `*cache` is where the slow path writes what it
+// finds. A lent answer puts what lent it in that slot, as the slow path does.
 //
 // Cache collisions are harmless only within a machine: the receiver and the
 // layout are validated below, then the key at the remembered position.
@@ -128,16 +136,20 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
 static inline const LhatValue *vm_cached_member(Machine *m,
                                                 const LhatChunk *chunk,
                                                 size_t site,
-                                                LhatValue receiver,
+                                                size_t receiver,
                                                 LhatMemberCache **cache)
 {
     size_t slot = (((uintptr_t)chunk >> 4) + site) % LHAT_MEMBER_CACHE_COUNT;
     LhatMemberCache *remembered = &m->member_caches[slot];
     *cache = remembered;
-    const LhatTable *start = vm_readable_table(receiver);
+    const LhatTable *start =
+        vm_readable_table(lhat_slots_get(m->slots, receiver));
     const LhatTable *answered = remembered->answered;
     if (answered == NULL || start == NULL) {
         return NULL;
+    }
+    if (remembered->lender != NULL) {
+        return vm_cached_lent(m, chunk, site, receiver, start, remembered);
     }
     bool same_layout =
         remembered->receiver == NULL
