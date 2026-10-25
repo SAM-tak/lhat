@@ -1653,25 +1653,38 @@ static LhatRuntimeType *lower_type(Compiler *c, const LhatNode *node)
 // one. The same walk an import^ makes, which is what makes it the only walk
 // a body somewhere else can make: a registration is an object on the heap of
 // the machine it was installed on, so nothing here is captured.
+//
+// 12 の 3: every key is written, so every step is a site that remembers --
+// and from L^.modules down the tables are the registry's, written only when
+// a unit registers, which is what a remembered answer is checked against.
+static void emit_modules_step(Compiler *c, uint8_t into, const char *name,
+                              size_t length)
+{
+    size_t cache = member_cache_named(c, name, length);
+    if (cache != SIZE_MAX) {
+        emit(c, lhat_encode_abc(LHAT_BC_GETMEMBER, into, into, (uint8_t)cache));
+        return;
+    }
+    uint8_t mark = c->next_register;
+    uint8_t key = reserve(c);
+    load_string_bytes(c, key, name, length);
+    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+    c->next_register = mark;
+}
+
 static void emit_modules_read(Compiler *c, const char *path, const char *name,
                               size_t name_length, uint8_t into)
 {
-    uint8_t mark = c->next_register;
-    uint8_t key = reserve(c);
     emit(c, lhat_encode_abc(LHAT_BC_ENV, into, 0, 0));
-    load_string_bytes(c, key, "modules", 7);
-    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+    emit_modules_step(c, into, "modules", 7);
     for (const char *segment = path; segment != NULL;) {
         size_t length = strcspn(segment, ".");
-        load_string_bytes(c, key, segment, length);
-        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+        emit_modules_step(c, into, segment, length);
         segment = segment[length] == '.' ? segment + length + 1 : NULL;
     }
     if (name != NULL) {
-        load_string_bytes(c, key, name, name_length);
-        emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, into, key));
+        emit_modules_step(c, into, name, name_length);
     }
-    c->next_register = mark;
 }
 
 // A lexical use carries its declaration, independent of scope depth or name.
