@@ -5392,14 +5392,21 @@ void lhat_parse_lton(LhatLexer *lexer, LhatParseResult *result)
     LhatNode *answer = make(&p, LHAT_NODE_RETURN, &body_at);
     LhatNode *body = make(&p, LHAT_NODE_BLOCK, &origin);
     LhatNode *function = make(&p, LHAT_NODE_FUNC, &origin);
+    // 08 の 7: what a load answers is t^{} (std.lton.parse's own result), so
+    // that is written on the body as well. Left out, the checker infers the
+    // literal's whole structure as the answer -- which nothing reads, and
+    // which costs more than linearly in the size of the data.
+    LhatNode *answers = make(&p, LHAT_NODE_TYPE_TABLE, &origin);
     LhatNode *call = make(&p, LHAT_NODE_CALL, &origin);
     LhatNode *outer_answer = make(&p, LHAT_NODE_RETURN, &origin);
     result->root = make(&p, LHAT_NODE_BLOCK, &origin);
-    if (answer && body && function && call && outer_answer && result->root) {
+    if (answer && body && function && answers && call && outer_answer &&
+        result->root) {
         answer->v.jump.value = table;
         lhat_node_append(&head, &tail, finish(&p, answer));
         body->v.list.items = head;
         function->v.func.is_function = true;
+        function->v.func.return_type = finish(&p, answers);
         function->v.func.body = finish(&p, body);
         call->v.access.target = finish(&p, function);
         outer_answer->v.jump.value = finish(&p, call);
