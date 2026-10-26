@@ -1,0 +1,15 @@
+let^ fib = f^ n:number^ -> number^ {
+    if^ n < 2 { return^ n }
+    return^ this^(n - 1) + this^(n - 2)
+}
+return^ p^ rounds:number^, size:number^, seed:number^ -> number^ {
+    var^ total = 0
+    repeat^ rounds {
+        var^ i = 0
+        repeat^while^ i < size {
+            total += fib(seed)
+            i += 1
+        }
+    }
+    return^ total
+}

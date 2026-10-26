@@ -1,0 +1,23 @@
+return^ p^ rounds:number^, size:number^, seed:number^ -> number^ {
+    var^ total = 0
+    repeat^ rounds {
+        let^ entities:t^{[number^]:t^{x:number^, v:number^}} = {}
+        var^ i = 0
+        repeat^while^ i < size {
+            entities[i] := { x = i + seed, v = 1 }
+            i += 1
+        }
+        repeat^ 32 {
+            i := 0
+            repeat^while^ i < size {
+                let^ entity = entities[i]
+                if^ entity? {
+                    entity.x += entity.v
+                    total += entity.x
+                }
+                i += 1
+            }
+        }
+    }
+    return^ total
+}

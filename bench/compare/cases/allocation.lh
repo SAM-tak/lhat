@@ -1,0 +1,12 @@
+return^ p^ rounds:number^, size:number^, seed:number^ -> number^ {
+    var^ total = 0
+    repeat^ rounds {
+        var^ i = 0
+        repeat^while^ i < size {
+            let^ object = { x = i + seed, y = i + seed + 1 }
+            total += object.x + object.y
+            i += 1
+        }
+    }
+    return^ total
+}

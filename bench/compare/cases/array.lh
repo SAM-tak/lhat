@@ -1,0 +1,21 @@
+return^ p^ rounds:number^, size:number^, seed:number^ -> number^ {
+    var^ total = 0
+    repeat^ rounds {
+        let^ values:t^{[number^]:number^} = {}
+        var^ i = 0
+        repeat^while^ i < size {
+            values[i] := i + seed
+            i += 1
+        }
+        repeat^ 4 {
+            i := 0
+            repeat^while^ i < size {
+                let^ value = (values[i] ?? 0) + 1
+                values[i] := value
+                total += value
+                i += 1
+            }
+        }
+    }
+    return^ total
+}

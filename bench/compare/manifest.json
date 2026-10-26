@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "cases": [
+    {"id": "arithmetic", "size": 4096, "seed": 17, "oracle": "arithmetic", "abs_tolerance": 0, "rel_tolerance": 0},
+    {"id": "calls", "size": 16, "seed": 12, "oracle": "calls", "abs_tolerance": 0, "rel_tolerance": 0},
+    {"id": "array", "size": 512, "seed": 17, "oracle": "array", "abs_tolerance": 0, "rel_tolerance": 0},
+    {"id": "fields", "size": 4096, "seed": 17, "oracle": "fields", "abs_tolerance": 0, "rel_tolerance": 0},
+    {"id": "allocation", "size": 1024, "seed": 17, "oracle": "allocation", "abs_tolerance": 0, "rel_tolerance": 0},
+    {"id": "entities", "size": 256, "seed": 17, "oracle": "entities", "abs_tolerance": 0, "rel_tolerance": 0}
+  ]
+}
