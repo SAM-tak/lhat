@@ -48,12 +48,7 @@ static void reattach_upvalues(Machine *m, LhatCoroutine *co, size_t base)
 // caller laid down is below this and only the scratch is emptied.
 void vm_clear_scratch(Machine *m, size_t base, const LhatProto *proto)
 {
-    if (proto == NULL) {
-        return;
-    }
-    for (size_t r = proto->parameter_slots; r < proto->chunk.registers; r++) {
-        lhat_slots_set(m->slots, base + r, lhat_nil());
-    }
+    vm_clear_scratch_inline(m, base, proto);
 }
 
 // The frame comes back marked `disposing`, which 10.7 needs -- a yield^ from

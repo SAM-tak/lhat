@@ -2246,6 +2246,22 @@ static void test_tombstones(void)
 static void test_own_slot_paths(void)
 {
     Run r;
+    LHAT_TEST("a store snapshots its receiver before an effectful RHS");
+    run_text(&r,
+        "var^ t = { 0 }\nlet^ original = t\n"
+        "let^ change = p^ { t := { 99 } return^ 7 }\n"
+        "t[0] := change()\nreturn^ original[0] * 100 + t[0]\n");
+    CHECK_INTEGER(&r, 799);
+    run_dispose(&r);
+
+    LHAT_TEST("a store snapshots its key before an effectful RHS");
+    run_text(&r,
+        "let^ t = { 1, 2 }\nvar^ key = 0\n"
+        "let^ change = p^ { key := 1 return^ 7 }\n"
+        "t[key] := change()\nreturn^ t[0] * 10 + t[1]\n");
+    CHECK_INTEGER(&r, 72);
+    run_dispose(&r);
+
     LHAT_TEST("own field probes cross tombstones and compare string contents");
     run_text(&r,
         "let^ t = { a = 1, i = 2, q = 3 }\n"

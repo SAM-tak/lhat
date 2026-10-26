@@ -4734,15 +4734,32 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
             const Local *hv_owner = NULL;
             const Local *found = local_for_binding(c, target->v.access.target->checked_binding);
             if (found != NULL && found->width > 1) hv_owner = found;
+            // A plain store has no read-back that could lend a receiver.
+            // Reuse locals only when neither the key nor RHS can run code
+            // and change them after the place has been evaluated.
+            bool direct_store = !node->v.binding.has_compound_op &&
+                                !node->v.binding.compound_nil_safe &&
+                                runs_nothing(c, value) &&
+                                (target->kind == LHAT_NODE_MEMBER ||
+                                 runs_nothing(c, target->v.access.argument));
+            const Local *owner_home = direct_store
+                                         ? forwardable_local(c, target->v.access.target)
+                                         : NULL;
+            const Local *key_home = direct_store && target->kind == LHAT_NODE_INDEX
+                                       ? forwardable_local(c, target->v.access.argument)
+                                       : NULL;
+            if (owner_home != NULL && owner_home->width != 1) owner_home = NULL;
+            if (key_home != NULL && key_home->width != 1) key_home = NULL;
             uint8_t mark = c->next_register;
             uint8_t into = hv_owner != NULL
                                ? hv_owner->reg
+                               : owner_home != NULL ? owner_home->reg
                                : reserve_for(c, target->v.access.target);
-            uint8_t key = reserve(c);
-            if (hv_owner == NULL) {
+            uint8_t key = key_home != NULL ? key_home->reg : reserve(c);
+            if (hv_owner == NULL && owner_home == NULL) {
                 compile_expression(c, target->v.access.target, into);
             }
-            compile_key(c, target, key);
+            if (key_home == NULL) compile_key(c, target, key);
 
             // 7.4: owner and key were just evaluated once, above. A
             // compound assignment reads the current value back out through
@@ -4793,8 +4810,10 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
                                             key));
                     past = skip_when_absent(c, true, current, -1);
                 }
-                uint8_t slot = reserve(c);
-                compile_expression(c, value, slot);
+                const Local *value_home = forwardable_local(c, value);
+                if (value_home != NULL && value_home->width != 1) value_home = NULL;
+                uint8_t slot = value_home != NULL ? value_home->reg : reserve(c);
+                if (value_home == NULL) compile_expression(c, value, slot);
                 emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, slot));
                 land_here(c, past);
             }

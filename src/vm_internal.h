@@ -7,6 +7,29 @@
 #include "lhat/vm.h"
 #include "machine.h"
 #include "gc.h"
+#include <string.h>
+
+// Unwritten scratch is nil by its tag. Clearing the payloads as well adds
+// stores but cannot affect a value or the collector. Small call windows are
+// common, so keep their tag stores inline instead of calling a clearing loop.
+static inline void vm_clear_scratch_inline(Machine *m, size_t base,
+                                            const LhatProto *proto)
+{
+    if (proto == NULL || proto->chunk.registers <= proto->parameter_slots) return;
+    size_t count = (size_t)proto->chunk.registers - proto->parameter_slots;
+    uint8_t *tags = m->slots.tags + base + proto->parameter_slots;
+    switch (count) {
+        case 1: memset(tags, LHAT_VALUE_NIL, 1); break;
+        case 2: memset(tags, LHAT_VALUE_NIL, 2); break;
+        case 3: memset(tags, LHAT_VALUE_NIL, 3); break;
+        case 4: memset(tags, LHAT_VALUE_NIL, 4); break;
+        case 5: memset(tags, LHAT_VALUE_NIL, 5); break;
+        case 6: memset(tags, LHAT_VALUE_NIL, 6); break;
+        case 7: memset(tags, LHAT_VALUE_NIL, 7); break;
+        case 8: memset(tags, LHAT_VALUE_NIL, 8); break;
+        default: memset(tags, LHAT_VALUE_NIL, count); break;
+    }
+}
 
 
 // 11.3改: how one side answered the operator it was asked for.

@@ -98,7 +98,7 @@ static bool jit_get_member(LhatJitContext *context, uintptr_t a, uintptr_t b,
     const Frame *frame = &m->frames[m->frame_count - 1];
     LhatMemberCache *cache;
     const LhatValue *hit = vm_cached_member(
-        m, &frame->closure->proto->chunk, c, step_read(context, b), &cache);
+        m, &frame->closure->proto->chunk, c, step_base(context) + b, &cache);
     if (hit == NULL) {
         return false;
     }
@@ -781,7 +781,7 @@ static LhatJitOp *jit_call(LhatJitContext *context, uintptr_t unused_a,
         LhatMemberCache *cache;
         const LhatValue *hit = vm_cached_member(
             m, chunk, lhat_c(instruction),
-            lhat_slots_get(m->slots, rbase + lhat_b(instruction)), &cache);
+            rbase + lhat_b(instruction), &cache);
         if (hit == NULL || (lhat_op(paired) != LHAT_BC_CALLMETHOD &&
                             lhat_op(paired) != LHAT_BC_TAILCALLMETHOD)) {
             return NULL;

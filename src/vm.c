@@ -1978,6 +1978,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             op == LHAT_BC_TAILCALLMETHOD;
                 LHAT_GC_POLL();  // hosts, variadic tables, coroutines
 
+                // Ordinary script calls need none of the overload, host or
+                // native dispatch below. Keep all arity/window checks shared.
+                if (lhat_is_object_kind(R(a), LHAT_OBJECT_SUBROUTINE)) goto script_call;
+
                 // 14.12: at most one candidate fits, so this is a search and
                 // not a choice -- no ranking, no ambiguity to report. It ends
                 // at the first that takes what it was given.
@@ -2528,6 +2532,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (!lhat_is_object_kind(R(a), LHAT_OBJECT_SUBROUTINE)) {
                     return vm_finish(m, chunk, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
                 }
+            script_call:;
                 const LhatClosure *callee =
                     (const LhatClosure *)lhat_as_object(R(a));
                 if (callee->proto == NULL) {
@@ -2697,7 +2702,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (callee->proto->has_variadic) {
                     lhat_slots_set(m->slots, next_base + (required), collected_variadic);
                 }
-                vm_clear_scratch(m, next_base, callee->proto);
+                vm_clear_scratch_inline(m, next_base, callee->proto);
 
                 // 5.3: the window the callee is about to run in has been laid
                 // out above this frame; taking the frame over is moving it
@@ -3707,7 +3712,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // input reads. `kept` is zero everywhere else, which leaves an
             // ordinary frame closed whole the way it always was.
             const LhatProto *ran = frame->closure->proto;
-            vm_close_upvalues(m, frame->base + (ran != NULL ? ran->kept : 0));
+            if (m->open != NULL) {
+                vm_close_upvalues(m, frame->base + (ran != NULL ? ran->kept : 0));
+            }
 
             // 02 の 10.7: a coroutine dropped in the last few instructions
             // never met a collection, and without one here whether its
