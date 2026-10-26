@@ -2243,9 +2243,47 @@ static void test_tombstones(void)
     run_dispose(&r);
 }
 
+static void test_own_slot_paths(void)
+{
+    Run r;
+    LHAT_TEST("own field probes cross tombstones and compare string contents");
+    run_text(&r,
+        "let^ t = { a = 1, i = 2, q = 3 }\n"
+        "t.a := nil^\n"
+        "let^ key = \"i\" .. \"\"\n"
+        "t[key] += 3\n"
+        "return^ t.i * 10 + t.q\n");
+    CHECK_INTEGER(&r, 53);
+    run_dispose(&r);
+
+    LHAT_TEST("an array hole remains an own slot and can be filled again");
+    run_text(&r,
+        "let^ t = { 1, 2, 3 }\n"
+        "t[1] := nil^\n"
+        "if^ t[1]? { return^ 999 }\n"
+        "t[1] := 9\n"
+        "return^ t[1] * 10 + t[2]\n");
+    CHECK_INTEGER(&r, 93);
+    run_dispose(&r);
+
+    LHAT_TEST("block-local captures keep distinct values across loop iterations");
+    run_text(&r,
+        "let^ fs = {}\n"
+        "for^ i from^ 0 to^ 9 {\n"
+        "  let^ value = i * 3\n"
+        "  fs[i] := f^ { value }\n"
+        "}\n"
+        "var^ total = 0\n"
+        "for^ i from^ 0 to^ 9 { total += fs[i]() }\n"
+        "return^ total\n");
+    CHECK_INTEGER(&r, 135);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_names();
+    test_own_slot_paths();
     test_member_cache();
     test_strings();
     test_tables();

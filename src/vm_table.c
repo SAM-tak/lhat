@@ -39,8 +39,7 @@ bool vm_set_key(Machine *m, LhatTable *table, LhatValue key,
     if (!lhat_table_set(table, key, value, refused)) {
         return false;
     }
-    lhat_gc_barrier_back(m, (LhatObject *)table, key);
-    lhat_gc_barrier_back(m, (LhatObject *)table, value);
+    vm_table_write_barrier(m, table, key, value);
     return true;
 }
 

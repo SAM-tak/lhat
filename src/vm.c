@@ -1322,11 +1322,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
 
             VM_CASE(LHAT_BC_CLOSE)
-                vm_close_upvalues(m, rbase + a);
+                if (m->open != NULL) vm_close_upvalues(m, rbase + a);
                 VM_NEXT();
 
             VM_CASE(LHAT_BC_CLOSEONE)
-                vm_close_one_upvalue(m, rbase + a);
+                if (m->open != NULL) vm_close_one_upvalue(m, rbase + a);
                 VM_NEXT();
 
             // 02 の 15.10: the frame already holds it, so naming it costs a
@@ -1422,6 +1422,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // long it takes (4.2).
             VM_CASE(LHAT_BC_GETMEMBER)
             VM_CASE(LHAT_BC_GETMETHOD) {
+                LhatValue own;
+                if (vm_read_own_table(R(b), chunk->constants[chunk->member_keys[cc]], &own)) {
+                    SET_R(a, own);
+                    VM_NEXT();
+                }
                 LhatMemberCache *cache;
                 const LhatValue *hit =
                     vm_cached_member(m, chunk, cc, rbase + b, &cache);
@@ -1474,11 +1479,17 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            VM_CASE(LHAT_BC_GETINDEX)
+            VM_CASE(LHAT_BC_GETINDEX) {
+                LhatValue own;
+                if (vm_read_own_table(R(b), R(cc), &own)) {
+                    SET_R(a, own);
+                    VM_NEXT();
+                }
                 LHAT_GC_POLL();  // string cuts, written-down members
                 member_key = R(cc);
                 filling = NULL;
                 goto member_body;
+            }
 
             member_body: {
                 // GETMETHOD and CALLMEMBER read only for the call that
@@ -1619,7 +1630,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                     VM_NEXT();
                 }
-                LhatTable *table = vm_table_of(R(a));
+                LhatValue owner = R(a);
+                LhatTable *table = lhat_is_object_kind(owner, LHAT_OBJECT_TABLE)
+                                       ? (LhatTable *)lhat_as_object(owner)
+                                       : vm_table_of(owner);
                 if (table == NULL) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
@@ -1630,6 +1644,26 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // actually happens.
                 if (table->sealed) {
                     return vm_finish(m, chunk, LHAT_RUN_SEALED, lhat_nil(), at);
+                }
+                // Updating an existing own slot does not change its layout.
+                // New keys, removals and definition seats keep the general path.
+                if (!table->shared) {
+                    LhatValue key = R(b), value = R(cc);
+                    if (lhat_is_integer(key) &&
+                        (uint64_t)lhat_as_integer(key) < (uint64_t)table->array_count) {
+                        lhat_slots_set(table->array, (size_t)lhat_as_integer(key), value);
+                        vm_table_write_barrier(m, table, key, value);
+                        VM_NEXT();
+                    }
+                    if (!lhat_is_nil(value)) {
+                        LhatTableEntry *entry = vm_own_string_entry(table, key);
+                        if (entry != NULL) {
+                            entry->key = key;
+                            entry->value = value;
+                            vm_table_write_barrier(m, table, key, value);
+                            VM_NEXT();
+                        }
+                    }
                 }
                 bool refused = false;
                 if (!vm_set_key(m, table, R(b), R(cc), &refused)) {

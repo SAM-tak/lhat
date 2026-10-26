@@ -118,6 +118,54 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
                             size_t key_slot, LhatValue member_key,
                             LhatMemberCache *filling, bool for_call);
 
+// An own string field needs neither a prototype/delegation walk nor a
+// builtin lookup. Tombstones keep probing; an unfilled reserved slot is
+// returned to writers but must take the ordinary path for readers.
+static inline LhatTableEntry *vm_own_string_entry(LhatTable *table, LhatValue key)
+{
+    if (table->entry_capacity == 0 ||
+        !lhat_is_object_kind(key, LHAT_OBJECT_STRING)) return NULL;
+    const LhatString *name = (const LhatString *)lhat_as_object(key);
+    size_t mask = table->entry_capacity - 1;
+    size_t index = name->hash & mask;
+    for (;;) {
+        LhatTableEntry *entry = &table->entries[index];
+        if (lhat_is_nil(entry->key)) {
+            if (lhat_is_nil(entry->value)) return NULL;
+        } else if ((entry->key.tag == key.tag && entry->key.as.object == key.as.object) ||
+                   lhat_value_equal(entry->key, key)) {
+            return entry;
+        }
+        index = (index + 1) & mask;
+    }
+}
+
+static inline bool vm_read_own_table(LhatValue on, LhatValue key, LhatValue *out)
+{
+    if (!lhat_is_object_kind(on, LHAT_OBJECT_TABLE)) return false;
+    LhatTable *table = (LhatTable *)lhat_as_object(on);
+    if (lhat_is_integer(key) &&
+        (uint64_t)lhat_as_integer(key) < (uint64_t)table->array_count) {
+        *out = lhat_slots_get(table->array, (size_t)lhat_as_integer(key));
+        return true;
+    }
+    LhatTableEntry *entry = vm_own_string_entry(table, key);
+    if (entry == NULL || lhat_is_nil(entry->value)) return false;
+    *out = entry->value;
+    return true;
+}
+
+// Scalar writes and writes outside propagation cannot create a black-to-white
+// edge. Keep the collector's existing backward barrier for every such edge.
+static inline void vm_table_write_barrier(Machine *m, LhatTable *table,
+                                           LhatValue key, LhatValue value)
+{
+    if (m->gcstate == LHAT_GC_PROPAGATE && lhat_gc_is_black((LhatObject *)table)) {
+        if (lhat_is_object(key)) lhat_gc_barrier_back(m, (LhatObject *)table, key);
+        if (lhat_is_object(value)) lhat_gc_barrier_back(m, (LhatObject *)table, value);
+    }
+}
+
 // vm_member.c: vm_cached_member's answer where it was lent (14.7改2). Out of
 // line, so that what the run loop inlines stays the size it was.
 const LhatValue *vm_cached_lent(Machine *m, const LhatChunk *chunk,

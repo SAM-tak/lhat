@@ -1515,9 +1515,45 @@ static void test_gc_controls(void)
     run_dispose(&r);
 }
 
+static void test_existing_slot_barriers(void)
+{
+    const char *sources[] = {
+        "let^ t = { field = 0 }\n"
+        "return^ { table = t, write = p^ v { t.field := v } }\n",
+        "let^ t = { 0 }\n"
+        "return^ { table = t, write = p^ v { t[0] := v } }\n"
+    };
+    for (size_t i = 0; i < sizeof sources / sizeof sources[0]; ++i) {
+        LHAT_TEST("existing own slot writes preserve the incremental GC barrier");
+        Run r;
+        run_text(&r, sources[i]);
+        LHAT_REQUIRE(r.ran.status == LHAT_RUN_OK, "fixture runs");
+        LhatValue pair = r.ran.value;
+        LHAT_REQUIRE(lhat_machine_set_global(r.machine, "Held", pair), "root fixture");
+        LhatTable *table = (LhatTable *)lhat_as_object(member_of(pair, "table"));
+        LhatValue write = member_of(pair, "write");
+        // Pin the exact boundary: an already scanned table receives a newly
+        // allocated white object. No polling or allocation during the write.
+        r.machine->gcstate = LHAT_GC_PROPAGATE;
+        r.machine->threshold = SIZE_MAX;
+        table->header.color = LHAT_GC_BLACK;
+        LhatValue value;
+        LHAT_REQUIRE(lhat_machine_make_string(r.machine, "new white value", 15, &value), "white child");
+        LHAT_REQUIRE(lhat_gc_is_white(lhat_as_object(value)), "child starts white");
+        LhatRunResult ran = lhat_machine_call(r.machine, write, &value, 1);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK(!lhat_gc_is_black((LhatObject *)table), "table is queued for rescanning");
+        LhatValue stored = i == 0 ? member_of(lhat_object((LhatObject *)table), "field")
+                                 : lhat_table_get(table, lhat_integer(0));
+        LHAT_CHECK(lhat_value_equal(stored, value), "new value is stored");
+        run_dispose(&r);
+    }
+}
+
 int main(void)
 {
     test_member_cache_lifetime();
+    test_existing_slot_barriers();
     test_detached_results();
     test_machine();
     test_call_member();

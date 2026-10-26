@@ -67,6 +67,7 @@ typedef struct {
     // 09 の 4 章: its entry in the chunk's table of names, closed when the
     // scope is (release_locals).
     size_t table;
+    bool captured;
 } Local;
 
 typedef struct DefChain {
@@ -576,6 +577,7 @@ static Local *declare_local(Compiler *c, const char *name, size_t length,
     local->table = table;
     local->declaration = NULL;
     local->definition_chain = NULL;
+    local->captured = false;
     return local;
 }
 
@@ -622,6 +624,7 @@ static size_t capture_binding(Compiler *c, const LhatNode *binding,
         }
         source = LHAT_UPVALUE_REGISTER;
         index = local->reg;
+        c->parent->locals[local - c->parent->locals].captured = true;
     } else {
         source = LHAT_UPVALUE_OUTER;
         index = capture_binding(c->parent, binding, name, length);
@@ -4758,10 +4761,18 @@ static void compile_reassign(Compiler *c, const LhatNode *node)
                 emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, current, into, key));
                 size_t past = skip_when_absent(
                     c, node->v.binding.compound_nil_safe, current, -1);
-                uint8_t rhs = reserve(c);
-                compile_expression(c, value->v.binary.right, rhs);
-                uint8_t result = reserve(c);
-                emit(c, lhat_encode_abc(opcode, result, current, rhs));
+                uint8_t result = current;
+                size_t k = opcode >= LHAT_BC_ADD && opcode <= LHAT_BC_DIV
+                               ? literal_constant(c, value->v.binary.right, false)
+                               : SIZE_MAX;
+                if (k != SIZE_MAX && k <= UINT8_MAX) {
+                    LhatOpcode folded = (LhatOpcode)(opcode - LHAT_BC_ADD + LHAT_BC_ADDK);
+                    emit(c, lhat_encode_abc(folded, result, current, (uint8_t)k));
+                } else {
+                    uint8_t rhs = reserve(c);
+                    compile_expression(c, value->v.binary.right, rhs);
+                    emit(c, lhat_encode_abc(opcode, result, current, rhs));
+                }
                 emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, result));
                 land_here(c, past);
             } else {
@@ -4892,8 +4903,11 @@ static void end_statements(Compiler *c, size_t local_mark,
     // The slots go back to the pool, so anything sharing one has to stop
     // sharing it first -- otherwise a closure made inside the block would read
     // whatever the next block puts there.
-    if (c->local_count > local_mark) {
-        emit(c, lhat_encode_abc(LHAT_BC_CLOSE, register_mark, 0, 0));
+    for (size_t i = local_mark; i < c->local_count; ++i) {
+        if (c->locals[i].captured) {
+            emit(c, lhat_encode_abc(LHAT_BC_CLOSE, register_mark, 0, 0));
+            break;
+        }
     }
 
     release_locals(c, local_mark);

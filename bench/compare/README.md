@@ -4,6 +4,8 @@
 
 これは [比較計画](../luau-plan.md) の初期版。Release VM 比較、正解確認、複数プロセスでの測定、生データ保存、Markdown レポート生成までを実装している。PGO/JIT、Luau の型解析、VM ヒープのバイト計測、ホスト API・値型の比較は今後の拡張。
 
+最適化前の基準値は [baseline.md](baseline.md)、Lua との速度差を2倍以下にした変更と検証結果は [optimization.md](optimization.md) を参照。
+
 ## Windows x64 で実行する
 
 必要なものは Git、CMake 3.25 以上、Ninja、Python 3.10 以上、Visual Studio の C/C++ ツールチェーンと「C++ Clang tools for Windows」。以下はリポジトリのルートから PowerShell で実行する。L^ の Windows 配布版と同じ Visual Studio 付属 `clang-cl` を、3 VM すべての C/C++ コンパイラに明示する。
