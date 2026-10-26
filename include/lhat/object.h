@@ -153,6 +153,9 @@ typedef struct LhatTable {
     // it onto one machine's gray list and leave it pointing at that machine's
     // objects, which no other collector sees. vm_set_key refuses it.
     bool shared;
+    // The initial hash entries may share this object's allocation. Growth
+    // replaces them with a separately owned buffer.
+    bool inline_entries;
 } LhatTable;
 
 // 04 の 2.4: what a kind is, is where it was declared. Two errordef^ bodies
@@ -902,6 +905,7 @@ void *lhat_object_alloc(LhatHeap *heap, size_t size, LhatObjectKind kind);
 // Both link the new object into the heap. Return NULL when out of memory.
 LhatString *lhat_string_new(LhatHeap *heap, const char *text, size_t length);
 LhatTable *lhat_table_new(LhatHeap *heap);
+LhatTable *lhat_table_new_reserved(LhatHeap *heap, size_t hash_entries);
 
 // `group` is NULL to make the object standing for a whole errordef^, and the
 // group's object to make one of its kinds. 04 の 2.7's family comes from the

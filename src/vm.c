@@ -462,6 +462,56 @@ LhatRunStatus vm_make_instance(Machine *m, size_t rbase, uint8_t a, uint8_t b)
 // 2.2: the frame's registers, read and written through the machine's two
 // parallel runs. `m` and `rbase` are vm_run_frames' own locals; nothing outside
 // it may use these.
+#if !defined(LHAT_WITH_JIT) && !defined(LHAT_GC_PARANOID)
+// While the small interpreter runs, new frames expose no cleanup state to
+// a collector or host. Materialize it for every live pending frame before
+// returning to the full VM. Closure/window/result/PC are always initialized.
+#if defined(_MSC_VER)
+__declspec(noinline)
+#else
+__attribute__((noinline))
+#endif
+static size_t vm_hot_leave(Machine *m, size_t initialized_depth, size_t pc)
+{
+    for (size_t i = initialized_depth; i < m->frame_count; ++i) {
+        Frame *frame = &m->frames[i];
+        frame->cleanup_count = 0;
+        frame->returning = false;
+        frame->coroutine = NULL;
+        frame->disposing = false;
+        frame->derive = LHAT_FRAME_NO_DERIVE;
+        frame->derive_equal = false;
+        frame->drop_answer = false;
+        frame->answer = lhat_nil();
+        frame->jit_return = NULL;
+    }
+    return pc;
+}
+
+#include "vm_hot_fields.h"
+#define LHAT_HOT_FIELDS 0
+#define LHAT_HOT_FUNCTION vm_hot_loop_values
+#define LHAT_HOT_CALLS 0
+#include "vm_hot.h"
+#undef LHAT_HOT_FUNCTION
+#undef LHAT_HOT_CALLS
+#undef LHAT_HOT_FIELDS
+#define LHAT_HOT_FUNCTION vm_hot_loop_fields
+#define LHAT_HOT_CALLS 0
+#define LHAT_HOT_FIELDS 1
+#include "vm_hot.h"
+#undef LHAT_HOT_FUNCTION
+#undef LHAT_HOT_CALLS
+#undef LHAT_HOT_FIELDS
+#define LHAT_HOT_FIELDS 0
+#define LHAT_HOT_FUNCTION vm_hot_loop_calls
+#define LHAT_HOT_CALLS 1
+#include "vm_hot.h"
+#undef LHAT_HOT_FUNCTION
+#undef LHAT_HOT_CALLS
+#undef LHAT_HOT_FIELDS
+#endif
+
 #define R(i) lhat_slots_get(m->slots, rbase + (size_t)(i))
 #define SET_R(i, v) lhat_slots_set(m->slots, rbase + (size_t)(i), (v))
 
@@ -538,6 +588,26 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
     } while (0)
 #else
 #define VM_POLL_AND_JIT() LHAT_SLICE_POLL()
+#endif
+
+// Enter only at loop backedges. Calls and unsupported instructions keep the
+// full VM; debugger traps, paranoid collection and JIT keep their boundaries.
+#if !defined(LHAT_WITH_JIT) && !defined(LHAT_GC_PARANOID)
+#define VM_ENTER_HOT()                                                      \
+    do {                                                                   \
+        if (!ending) {                                                     \
+            pc = op == LHAT_BC_JUMP && a == LHAT_JUMP_HOT_CALLS             \
+                     ? vm_hot_loop_calls(m, chunk, rbase, pc)               \
+                     : op == LHAT_BC_JUMP && a == LHAT_JUMP_HOT_FIELDS      \
+                         ? vm_hot_loop_fields(m, chunk, rbase, pc)          \
+                         : vm_hot_loop_values(m, chunk, rbase, pc);         \
+            frame = &m->frames[m->frame_count - 1];                          \
+            rbase = frame->base;                                            \
+            chunk = &frame->closure->proto->chunk;                          \
+        }                                                                  \
+    } while (0)
+#else
+#define VM_ENTER_HOT() ((void)0)
 #endif
 
 // 12 の 5: how the loop gets from one instruction to the next. GCC and
@@ -663,6 +733,7 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
             if (focus_ oper lhat_as_integer(R(a + 1))) {                    \
                 pc = (size_t)((int64_t)pc + lhat_jump_offset(instruction)); \
                 VM_POLL_AND_JIT();                                          \
+                VM_ENTER_HOT();                                             \
             }                                                               \
         }                                                                   \
         /* An overflow is past any integer bound: the loop is over. */      \
@@ -929,6 +1000,22 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             VM_CASE(LHAT_BC_MOVE)
                 SET_R(a, R(b));
+#if !defined(LHAT_WITH_JIT) && !defined(LHAT_GC_PARANOID)
+                // A member receiver is commonly staged in a scratch slot.
+                // Keep that write, then perform an own-field read without
+                // another dispatch. Misses retain the ordinary instruction.
+                if (pc < chunk->count && !VM_SLOW_PATH()) {
+                    LhatInstruction next = chunk->code[pc];
+                    if (lhat_op(next) == LHAT_BC_GETMEMBER && lhat_b(next) == a) {
+                        LhatValue own;
+                        if (vm_read_own_table(R(a),
+                                chunk->constants[chunk->member_keys[lhat_c(next)]], &own)) {
+                            SET_R(lhat_a(next), own);
+                            ++pc;
+                        }
+                    }
+                }
+#endif
                 VM_NEXT();
 
             VM_CASE(LHAT_BC_CROSS)
@@ -1185,6 +1272,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         pc = (size_t)((int64_t)pc + offset);
                         if (offset < 0) {
                             VM_POLL_AND_JIT();
+                            VM_ENTER_HOT();
                         }
                     }
                 }
@@ -1212,6 +1300,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 pc = (size_t)((int64_t)pc + offset);
                 if (offset < 0) {
                     VM_POLL_AND_JIT();
+                    if (a != 0) VM_ENTER_HOT();
                 }
                 VM_NEXT();
             }
@@ -1225,6 +1314,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     pc = (size_t)((int64_t)pc + offset);
                     if (offset < 0) {
                         VM_POLL_AND_JIT();
+                        VM_ENTER_HOT();
                     }
                 }
                 VM_NEXT();
@@ -1369,7 +1459,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
 
             VM_CASE(LHAT_BC_NEWTABLE) {
                 LHAT_GC_POLL();  // this case allocates
-                LhatTable *table = lhat_table_new(&m->objects);
+                LhatTable *table = lhat_table_new_reserved(&m->objects, cc);
                 if (table == NULL) {
                     return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
@@ -1645,8 +1735,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (table->sealed) {
                     return vm_finish(m, chunk, LHAT_RUN_SEALED, lhat_nil(), at);
                 }
-                // Updating an existing own slot does not change its layout.
-                // New keys, removals and definition seats keep the general path.
+                // Reuse allocated storage. Growth, removals and definition
+                // seats restored by nil writes retain the general path.
                 if (!table->shared) {
                     LhatValue key = R(b), value = R(cc);
                     if (lhat_is_integer(key) &&
@@ -1655,8 +1745,15 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         vm_table_write_barrier(m, table, key, value);
                         VM_NEXT();
                     }
+                    if (lhat_is_integer(key) &&
+                        (uint64_t)lhat_as_integer(key) == (uint64_t)table->array_count &&
+                        table->array_count < table->array_capacity && table->entry_count == 0) {
+                        lhat_slots_set(table->array, table->array_count++, value);
+                        vm_table_write_barrier(m, table, key, value);
+                        VM_NEXT();
+                    }
                     if (!lhat_is_nil(value)) {
-                        LhatTableEntry *entry = vm_own_string_entry(table, key);
+                        LhatTableEntry *entry = vm_own_string_store_entry(table, key);
                         if (entry != NULL) {
                             entry->key = key;
                             entry->value = value;
@@ -2780,6 +2877,31 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // the drain runs everything still pending before the frame goes.
             VM_CASE(LHAT_BC_RETURN)
             VM_CASE(LHAT_BC_RETURN_NIL)
+                // An ordinary nested scalar return has nothing to drain.
+                // Keep every observable cleanup, capture, coroutine and
+                // derived/wide answer on the general path below.
+                if (m->frame_count > base_depth + 1 &&
+                    m->open == NULL && m->cleanup_carriers == 0 &&
+                    frame->cleanup_count == 0 && frame->coroutine == NULL &&
+                    frame->derive == LHAT_FRAME_NO_DERIVE &&
+                    frame->prepared <= 1 &&
+                    (op == LHAT_BC_RETURN_NIL || b == 0)) {
+                    LhatValue value = frame->drop_answer || op == LHAT_BC_RETURN_NIL
+                                          ? lhat_nil() : R(a);
+                    if (!lhat_is_hostvalue(value) && !lhat_is_run(value)) {
+                        uint8_t into = frame->result;
+                        m->frame_count--;
+                        frame = &m->frames[m->frame_count - 1];
+                        rbase = frame->base;
+                        chunk = &frame->closure->proto->chunk;
+                        pc = frame->pc;
+                        SET_R(into, value);
+#ifdef LHAT_WITH_JIT
+                        VM_ENTER_JIT();
+#endif
+                        VM_NEXT();
+                    }
+                }
                 frame->drain_target = 0;
                 frame->returning = true;
                 frame->answer = op == LHAT_BC_RETURN ? R(a) : lhat_nil();

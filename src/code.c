@@ -17,6 +17,57 @@
 #include "lhat/port.h"
 #include "message.h"
 
+bool lhat_chunk_field_fold(const LhatChunk *chunk, size_t pc, LhatFieldFold *out)
+{
+    if (pc >= chunk->count || chunk->count - pc < 5) return false;
+    const LhatInstruction *p = chunk->code + pc;
+    if (lhat_op(p[0]) != LHAT_BC_MOVE || lhat_op(p[1]) != LHAT_BC_LOADK ||
+        lhat_op(p[2]) != LHAT_BC_GETINDEX) return false;
+    unsigned owner = lhat_a(p[0]), source = lhat_b(p[0]);
+    unsigned key = lhat_a(p[1]), value = lhat_a(p[2]);
+    if (source >= owner || key != owner + 1 || value != owner + 2 ||
+        value >= chunk->registers || lhat_b(p[2]) != owner || lhat_c(p[2]) != key)
+        return false;
+    size_t k = lhat_bx(p[1]);
+    if (k >= chunk->constant_count || !lhat_is_object_kind(chunk->constants[k], LHAT_OBJECT_STRING))
+        return false;
+    LhatFieldFold fold = {0};
+    fold.source = (uint8_t)source;
+    fold.owner = (uint8_t)owner;
+    fold.key = (uint8_t)key;
+    fold.value = (uint8_t)value;
+    fold.key_value = &chunk->constants[k];
+    size_t last;
+    if (lhat_op(p[3]) == LHAT_BC_ADDK && lhat_a(p[3]) == value && lhat_b(p[3]) == value) {
+        k = lhat_c(p[3]);
+        if (k >= chunk->constant_count || !lhat_is_integer(chunk->constants[k])) return false;
+        fold.right = &chunk->constants[k];
+        fold.span = 5;
+        last = 4;
+    } else {
+        if (chunk->count - pc < 7 || owner + 4 >= chunk->registers ||
+            lhat_op(p[3]) != LHAT_BC_MOVE || lhat_b(p[3]) != source || lhat_a(p[3]) != owner + 4 ||
+            lhat_op(p[4]) != LHAT_BC_GETMEMBER || lhat_a(p[4]) != owner + 3 || lhat_b(p[4]) != owner + 4 ||
+            lhat_op(p[5]) != LHAT_BC_ADD || lhat_a(p[5]) != value ||
+            lhat_b(p[5]) != value || lhat_c(p[5]) != owner + 3)
+            return false;
+        size_t site = lhat_c(p[4]);
+        if (site >= chunk->member_cache_count) return false;
+        k = chunk->member_keys[site];
+        if (k >= chunk->constant_count || !lhat_is_object_kind(chunk->constants[k], LHAT_OBJECT_STRING))
+            return false;
+        fold.right = &chunk->constants[k];
+        fold.rhs_owner = (uint8_t)(owner + 4);
+        fold.rhs_value = (uint8_t)(owner + 3);
+        fold.span = 7;
+        last = 6;
+    }
+    if (lhat_op(p[last]) != LHAT_BC_SETINDEX || lhat_a(p[last]) != owner ||
+        lhat_b(p[last]) != key || lhat_c(p[last]) != value) return false;
+    if (out != NULL) *out = fold;
+    return true;
+}
+
 // The one thing of the compiler's a build without it still has to say
 // (05 の 10.8): what a status means, which program.c and the cli print.
 //

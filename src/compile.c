@@ -2362,7 +2362,15 @@ static void compile_interp(Compiler *c, const LhatNode *node, uint8_t into)
 // names its key; a positional one takes the next integer, counting from 0.
 static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
 {
-    emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, into, 0, 0));
+    size_t fields = 0;
+    for (const LhatNode *entry = node->v.list.items; entry != NULL; entry = entry->next) {
+        const char *name = NULL;
+        size_t length = 0;
+        if (!entry->v.entry.computed && entry->v.entry.key != NULL &&
+            node_name(c, entry->v.entry.key, &name, &length) && fields < UINT8_MAX)
+            fields++;
+    }
+    emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, into, 0, (uint8_t)fields));
 
     LhatInteger position = 0;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
@@ -6474,6 +6482,52 @@ static void compile_module_register(Compiler *c, const LhatNode *statements,
     c->next_register = mark;
 }
 
+// JUMP's A is otherwise unused. Mark suitable loop bodies so the VM
+// does not repeatedly enter its small interpreter just to leave at a call
+// or allocation. This is only a hint: the VM validates dynamic operands.
+static void mark_hot_loops(LhatProto *proto)
+{
+    lhat_proto_finalize_call_shape(proto);
+    size_t after_unsupported = 0;
+    size_t after_call = 0;
+    size_t after_field = 0;
+    for (size_t i = 0; i < proto->chunk.count; ++i) {
+        LhatInstruction instruction = proto->chunk.code[i];
+        LhatOpcode op = lhat_op(instruction);
+        if (op == LHAT_BC_CALL) after_call = i + 1;
+        if (op == LHAT_BC_MOVE && lhat_chunk_field_fold(&proto->chunk, i, NULL)) after_field = i + 1;
+        switch (op) {
+            case LHAT_BC_LOADK: case LHAT_BC_LOADNIL: case LHAT_BC_LOADBOOL:
+            case LHAT_BC_MOVE: case LHAT_BC_ISNIL: case LHAT_BC_NOT:
+            case LHAT_BC_THIS: case LHAT_BC_GETUPVAL: case LHAT_BC_CALL:
+            case LHAT_BC_RETURN: case LHAT_BC_RETURN_NIL:
+            case LHAT_BC_ADD: case LHAT_BC_SUB:
+            case LHAT_BC_ADDK: case LHAT_BC_SUBK:
+            case LHAT_BC_LT: case LHAT_BC_LE: case LHAT_BC_GT: case LHAT_BC_GE:
+            case LHAT_BC_LTK: case LHAT_BC_LEK: case LHAT_BC_GTK: case LHAT_BC_GEK:
+            case LHAT_BC_JUMP: case LHAT_BC_JUMP_FALSE:
+            case LHAT_BC_FORLOOP: case LHAT_BC_FORLOOPD:
+            case LHAT_BC_GETINDEX: case LHAT_BC_GETMEMBER: case LHAT_BC_SETINDEX:
+                break;
+            default:
+                after_unsupported = i + 1;
+                break;
+        }
+        if (op == LHAT_BC_JUMP && lhat_jump_offset(instruction) < 0) {
+            int64_t target = (int64_t)i + 1 + lhat_jump_offset(instruction);
+            if (target >= 0 && (uint64_t)target >= after_unsupported) {
+                proto->chunk.code[i] = lhat_encode_jump(LHAT_BC_JUMP,
+                                                        (uint64_t)target < after_call
+                                                            ? LHAT_JUMP_HOT_CALLS
+                                                            : (uint64_t)target < after_field
+                                                                  ? LHAT_JUMP_HOT_FIELDS : LHAT_JUMP_HOT_VALUES,
+                                                        lhat_jump_offset(instruction));
+            }
+        }
+    }
+    for (size_t i = 0; i < proto->proto_count; ++i) mark_hot_loops(proto->protos[i]);
+}
+
 static LhatCompileResult compile_unit(LhatCompileSession *session,
                                       const LhatNode *unit,
                                       const LhatLexer *lexer,
@@ -6665,6 +6719,7 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         *original_session = *session;
     }
 
+    mark_hot_loops(proto);
     *out = proto;
     return result;
 }

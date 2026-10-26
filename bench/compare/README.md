@@ -6,6 +6,7 @@
 
 最適化前の基準値は [baseline.md](baseline.md)、Lua との速度差を2倍以下にした変更と検証結果は [optimization.md](optimization.md) を参照。
 その後の3案の試行と採用結果は [optimization-followup.md](optimization-followup.md) を参照。
+全項目 Lua 比1.1以下にした変更と再測定結果は [optimization-1.1.md](optimization-1.1.md) を参照。
 
 ## Windows x64 で実行する
 
@@ -105,6 +106,21 @@ L^ のコードは strict モードで検査する。Luau は型注釈を持つ�
 1 サンプルはホストからカーネルを呼び、戻るまで。ホストとの境界を 1 回含む。ログ出力・期待値検証は区間外。Windows の時計は QueryPerformanceCounter。`--timeout` は子プロセス全体の上限（既定 120 秒）であり、1 サンプルの上限ではない。
 
 負荷の大きいアプリを避け、同じ電源設定で測る。CPU コア固定や優先度変更は自動では行わない。結果はそのマシンとビルド条件に属し、別 OS・コンパイラへ一般化しない。
+
+Windows でスケジューリング条件を揃える場合は、任意のラッパーを使える。
+通常の `run.py` と同じケース・検証・計測・集計を使い、3 VM すべてに同じ
+CPU affinity、Above Normal 優先度、実行速度の電力抑制の解除を適用する。
+以下の `0x400` は論理 CPU 10 を指定する例であり、使用する CPU に合わせて選ぶ。
+
+```powershell
+python bench/compare/run_controlled.py --affinity-mask 0x400 --lua-build-dir build/compare --output bench/compare/results/controlled
+python bench/compare/run_controlled.py --affinity-mask 0x400 --lua-build-dir build/compare --processes 15 --samples 5 --warmups 3 --target-ms 150 --order-seed 20261027 --output bench/compare/results/controlled-repeat
+```
+
+観測した優先度・affinity・電力設定の要求結果とラッパーのハッシュも記録する。
+CPU 時間・CPU cycle 数は起動とフロントエンドを含むプロセス全体の診断値であり、
+速度比には従来と同じカーネルの壁時計時間 `samples_ns` を使う。
+未コミットの変更パッチと新規ソースのコピーも出力に保存する。
 
 ## 起動・準備・メモリの読み方
 

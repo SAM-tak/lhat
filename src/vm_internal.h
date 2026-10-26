@@ -12,13 +12,10 @@
 // Unwritten scratch is nil by its tag. Clearing the payloads as well adds
 // stores but cannot affect a value or the collector. Small call windows are
 // common, so keep their tag stores inline instead of calling a clearing loop.
-static inline void vm_clear_scratch_inline(Machine *m, size_t base,
-                                            const LhatProto *proto)
+static inline void vm_clear_tags_inline(uint8_t *tags, size_t count)
 {
-    if (proto == NULL || proto->chunk.registers <= proto->parameter_slots) return;
-    size_t count = (size_t)proto->chunk.registers - proto->parameter_slots;
-    uint8_t *tags = m->slots.tags + base + proto->parameter_slots;
     switch (count) {
+        case 0: break;
         case 1: memset(tags, LHAT_VALUE_NIL, 1); break;
         case 2: memset(tags, LHAT_VALUE_NIL, 2); break;
         case 3: memset(tags, LHAT_VALUE_NIL, 3); break;
@@ -29,6 +26,14 @@ static inline void vm_clear_scratch_inline(Machine *m, size_t base,
         case 8: memset(tags, LHAT_VALUE_NIL, 8); break;
         default: memset(tags, LHAT_VALUE_NIL, count); break;
     }
+}
+
+static inline void vm_clear_scratch_inline(Machine *m, size_t base,
+                                            const LhatProto *proto)
+{
+    if (proto == NULL || proto->chunk.registers <= proto->parameter_slots) return;
+    vm_clear_tags_inline(m->slots.tags + base + proto->parameter_slots,
+                         (size_t)proto->chunk.registers - proto->parameter_slots);
 }
 
 
@@ -176,6 +181,31 @@ static inline bool vm_read_own_table(LhatValue on, LhatValue key, LhatValue *out
     if (entry == NULL || lhat_is_nil(entry->value)) return false;
     *out = entry->value;
     return true;
+}
+
+// The caller checked mutability and a non-nil value. A string is always a
+// usable key. A fresh slot can be filled without allocation when the hash
+// part has room; tombstone maintenance and growth retain the general path.
+static inline LhatTableEntry *vm_own_string_store_entry(LhatTable *table, LhatValue key)
+{
+    if (table->entry_tombs != 0) return vm_own_string_entry(table, key);
+    if (table->entry_capacity == 0 || !lhat_is_object_kind(key, LHAT_OBJECT_STRING)) return NULL;
+    const LhatString *name = (const LhatString *)lhat_as_object(key);
+    size_t mask = table->entry_capacity - 1;
+    size_t index = name->hash & mask;
+    for (;;) {
+        LhatTableEntry *entry = &table->entries[index];
+        if (lhat_is_nil(entry->key)) {
+            if (table->entry_count + 1 > table->entry_capacity - table->entry_capacity / 4)
+                return NULL;
+            table->entry_count++;
+            table->version++;
+            return entry;
+        }
+        if ((entry->key.tag == key.tag && entry->key.as.object == key.as.object) ||
+            lhat_value_equal(entry->key, key)) return entry;
+        index = (index + 1) & mask;
+    }
 }
 
 // Scalar writes and writes outside propagation cannot create a black-to-white

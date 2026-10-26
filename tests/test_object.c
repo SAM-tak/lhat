@@ -263,10 +263,49 @@ static void test_table_growth(void)
     lhat_object_free_all(&owner);
 }
 
+static void test_reserved_tables(void)
+{
+    LhatHeap owner = {0};
+    bool refused = false;
+    LHAT_TEST("a reserved table owns its initial fields in one allocation");
+    LhatTable *empty = lhat_table_new_reserved(&owner, 0);
+    LHAT_CHECK(empty != NULL && !empty->inline_entries && empty->entry_capacity == 0,
+               "zero keeps the ordinary empty layout");
+    LhatTable *small = lhat_table_new_reserved(&owner, 2);
+    LHAT_CHECK(small != NULL && small->inline_entries && small->entry_capacity >= 4,
+               "room for fields and a terminating empty slot");
+    LHAT_CHECK_EQ_INT(lhat_table_count(small), 0);
+    lhat_table_set(small, string_value(&owner, "x"), lhat_integer(7), &refused);
+    LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(small, string_value(&owner, "x"))), 7);
+
+    LHAT_TEST("inline fields grow without freeing the table's own storage");
+    LhatTable *grown = lhat_table_new_reserved(&owner, 2);
+    LhatTableEntry *initial = grown->entries;
+    for (int i = 0; i < 24; ++i) {
+        char name[16];
+        snprintf(name, sizeof name, "key%d", i);
+        LHAT_CHECK(lhat_table_set(grown, string_value(&owner, name), lhat_integer(i), &refused),
+                   "inserted a field");
+    }
+    LHAT_CHECK(!grown->inline_entries && grown->entries != initial, "growth owns a separate buffer");
+    LHAT_CHECK_EQ_INT(lhat_table_count(grown), 24);
+    for (int i = 0; i < 24; ++i) {
+        char name[16];
+        snprintf(name, sizeof name, "key%d", i);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(grown, string_value(&owner, name))), i);
+    }
+    LHAT_TEST("an impossible reservation fails before allocating an object");
+    size_t count = owner.count;
+    LHAT_CHECK(lhat_table_new_reserved(&owner, SIZE_MAX) == NULL, "size overflow refused");
+    LHAT_CHECK_EQ_INT(owner.count, count);
+    lhat_object_free_all(&owner);
+}
+
 int main(void)
 {
     test_strings();
     test_table_basics();
     test_table_growth();
+    test_reserved_tables();
     return lhat_test_report("test_object");
 }

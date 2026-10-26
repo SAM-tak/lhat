@@ -1636,6 +1636,138 @@ static void test_budget(void)
 {
     Run r;
 
+    LHAT_TEST("small slices preserve nested calls from a loop");
+    for (int budget = 2; budget <= 8; budget += 3) {
+        compile_text(&r,
+                     "let^ fib = f^ n:number^ -> number^ {\n"
+                     " if^ n < 2 { return^ n }\n"
+                     " return^ this^(n - 1) + this^(n - 2)\n"
+                     "}\n"
+                     "var^ total = 0\n"
+                     "repeat^ 12 { total += fib(6) }\n"
+                     "return^ total\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new();
+        lhat_machine_set_budget(r.machine, budget);
+        r.ran = lhat_run(r.machine, r.proto);
+        int slices = 0;
+        while (r.ran.status == LHAT_RUN_SUSPENDED && slices++ < 1000) {
+            r.ran = lhat_machine_continue(r.machine);
+        }
+        CHECK_INTEGER(&r, 96);
+        LHAT_CHECK(slices > 0 && slices < 1000, "calls resume and finish");
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("a suspending comparison does not overwrite its aliased operand twice");
+    compile_text(&r, "return^ nil^\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    lhat_chunk_dispose(&r.proto->chunk);
+    lhat_chunk_init(&r.proto->chunk);
+    r.proto->chunk.registers = 3;
+    size_t bound = lhat_chunk_constant(&r.proto->chunk, lhat_integer(3));
+    size_t focus = lhat_chunk_constant(&r.proto->chunk, lhat_integer(5));
+    lhat_chunk_emit(&r.proto->chunk, lhat_encode_abx(LHAT_BC_LOADK, 1, (uint16_t)bound), 1);
+    lhat_chunk_emit(&r.proto->chunk, lhat_encode_abx(LHAT_BC_LOADK, 0, (uint16_t)focus), 2);
+    lhat_chunk_emit(&r.proto->chunk, lhat_encode_abc(LHAT_BC_LT, 0, 0, 1), 3);
+    lhat_chunk_emit(&r.proto->chunk, lhat_encode_jump(LHAT_BC_JUMP_FALSE, 0, -3), 3);
+    r.machine = lhat_machine_new();
+    lhat_machine_set_budget(r.machine, 2);
+    r.ran = lhat_run(r.machine, r.proto);
+    for (int i = 0; i < 5; ++i) {
+        LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SUSPENDED);
+        if (r.ran.status != LHAT_RUN_SUSPENDED) break;
+        r.ran = lhat_machine_continue(r.machine);
+    }
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SUSPENDED);
+    run_dispose(&r);
+
+    LHAT_TEST("this is staged before an argument reads the same register");
+    compile_text(&r, "return^ nil^\n");
+    LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+    lhat_chunk_dispose(&r.proto->chunk);
+    lhat_chunk_init(&r.proto->chunk);
+    r.proto->chunk.registers = 2;
+    size_t original = lhat_chunk_constant(&r.proto->chunk, lhat_integer(9));
+    size_t one = lhat_chunk_constant(&r.proto->chunk, lhat_integer(1));
+    lhat_chunk_emit(&r.proto->chunk, lhat_encode_abx(LHAT_BC_LOADK, 0, (uint16_t)original), 1);
+    lhat_chunk_emit(&r.proto->chunk, lhat_encode_jump(LHAT_BC_JUMP, 0, 3), 1);
+    lhat_chunk_emit(&r.proto->chunk, lhat_encode_abc(LHAT_BC_THIS, 0, 0, 0), 2);
+    lhat_chunk_emit(&r.proto->chunk, lhat_encode_abc(LHAT_BC_SUBK, 1, 0, (uint8_t)one), 3);
+    lhat_chunk_emit(&r.proto->chunk, lhat_encode_abc(LHAT_BC_CALL, 0, 1, 0), 3);
+    lhat_chunk_emit(&r.proto->chunk, lhat_encode_jump(LHAT_BC_JUMP, LHAT_JUMP_HOT_CALLS, -4), 4);
+    r.machine = lhat_machine_new();
+    r.ran = lhat_run(r.machine, r.proto);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    LHAT_TEST("loop calls return correctly through allocation and collection");
+    run_text(&r,
+             "let^ value = f^ n:number^ -> number^ {\n"
+             " let^ t = { x = n } return^ t.x\n"
+             "}\n"
+             "var^ total = 0\nvar^ i = 0\n"
+             "repeat^while^ i < 2000 { total += value(3) i += 1 }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 6000);
+    LHAT_CHECK(r.ran.collected > 1000, "callee allocations were collected");
+    run_dispose(&r);
+
+    LHAT_TEST("a loop callee can return to an older frame before another call allocates");
+    run_text(&r,
+             "let^ make = f^ {\n"
+             " let^ id = f^ n:number^ -> number^ { n }\n"
+             " return^ f^ n:number^ -> number^ {\n"
+             "  var^ i = 0\n"
+             "  repeat^while^ i < 2 { i += id(1) }\n"
+             "  return^ n\n"
+             " }\n"
+             "}\n"
+             "let^ step = make()\n"
+             "let^ value = f^ n:number^ -> number^ {\n"
+             " let^ t = { x = n } return^ t.x\n"
+             "}\n"
+             "var^ total = 0\n"
+             "repeat^ 2000 { total += step(2) total += value(3) }\n"
+             "return^ total\n");
+    CHECK_INTEGER(&r, 10000);
+    LHAT_CHECK(r.ran.collected > 1000, "returning to the caller did not hide GC roots");
+    run_dispose(&r);
+
+    LHAT_TEST("small slices preserve increment and comparison loop tails");
+    for (int budget = 2; budget <= 8; budget += 3) {
+        compile_text(&r,
+                     "var^ i = 0\nvar^ total = 0\n"
+                     "repeat^while^ i < 200 { total += i i += 1 }\n"
+                     "return^ total * 1000 + i\n");
+        LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
+        r.machine = lhat_machine_new();
+        lhat_machine_set_budget(r.machine, budget);
+        r.ran = lhat_run(r.machine, r.proto);
+        int slices = 0;
+        while (r.ran.status == LHAT_RUN_SUSPENDED && slices++ < 1000) {
+            r.ran = lhat_machine_continue(r.machine);
+        }
+        CHECK_INTEGER(&r, 19900200);
+        LHAT_CHECK(slices > 0 && slices < 1000, "loop tails resume and finish");
+        run_dispose(&r);
+    }
+
+    LHAT_TEST("integer loop counters keep real comparison bounds");
+    run_text(&r,
+             "var^ i = 0\nvar^ total = 0\n"
+             "repeat^while^ i < 3.5 { total += i i += 1 }\n"
+             "return^ total * 10 + i\n");
+    CHECK_INTEGER(&r, 64);
+    run_dispose(&r);
+
+    LHAT_TEST("loop arithmetic hands overflow back to the general VM");
+    run_text(&r,
+             "var^ n = 9223372036854775806\n"
+             "repeat^ 4 { n += 1 }\nreturn^ n\n");
+    CHECK_REAL(&r, 9223372036854775808.0);
+    run_dispose(&r);
+
     // A loop long enough to outlast several slices, answering a total that
     // says every turn ran exactly once however many times it was put down.
     LHAT_TEST("15.15: a run in slices computes what it would have whole");

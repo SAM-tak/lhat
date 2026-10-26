@@ -84,7 +84,7 @@ typedef enum {
     // whenever they cannot answer for themselves.
     LHAT_BC_SPACESHIP,
 
-    LHAT_BC_JUMP,       // Bx    signed, relative to the next instruction
+    LHAT_BC_JUMP,       // Bx signed, relative to next; A != 0 hints a hot loop
     LHAT_BC_JUMP_FALSE, // A Bx  jump when R[A] is false
 
     // 5.3: arguments sit above the callee in the caller's frame, and one
@@ -125,7 +125,7 @@ typedef enum {
 
     // 02 の 14 章: the one data structure. 04 の 11.3 makes a missing key
     // nil^ rather than a failure, so GETINDEX cannot fail on that account.
-    LHAT_BC_NEWTABLE,   // A B   R[A] = { }. B != 0 marks it a definition
+    LHAT_BC_NEWTABLE,   // A B C R[A] = { }; B: definition, C: hash entry hint
                         //       (14.9), which is what tells a def^ apart from
                         //       a table written by hand -- the two are the
                         //       same structure otherwise, and 14.17改 asks
@@ -338,6 +338,11 @@ typedef enum {
 // through different accessors rather than stored differently.
 #define LHAT_BX_BIAS 32768
 
+// Optional JUMP A hints. They affect execution strategy, never its result.
+#define LHAT_JUMP_HOT_VALUES 1u
+#define LHAT_JUMP_HOT_CALLS 2u
+#define LHAT_JUMP_HOT_FIELDS 3u
+
 // LHAT_BC_CALL's C, which was a boolean with a whole byte to itself.
 #define LHAT_CALL_SPREAD 0x01u          // 13.7's 'expr...'
 #define LHAT_CALL_PREPARED_SHIFT 1      // 13.8改: slots reserved for the answer
@@ -449,6 +454,15 @@ typedef struct LhatChunk {
     // build so the layout does not depend on whether the JIT is in it.
     void *jit;
 } LhatChunk;
+
+// A plain own-field addition expressed by existing instructions. The VM
+// may fold it only after checking the actual receiver and both values.
+typedef struct {
+    uint8_t source, owner, key, value, rhs_owner, rhs_value, span;
+    const LhatValue *key_value;
+    const LhatValue *right;  // a constant, or a field name when span == 7
+} LhatFieldFold;
+bool lhat_chunk_field_fold(const LhatChunk *chunk, size_t pc, LhatFieldFold *out);
 
 // 5.4: how a closure gets each of the places it shares. A register of the
 // frame making it, one of that frame's own upvalues -- the second is what
@@ -583,7 +597,19 @@ struct LhatProto {
     // parameter is still one slot the calling convention reserves, only what
     // a call site owes it differs (13.7's ">=" rather than "==").
     bool has_variadic;
+    // Derived after compilation/loading. Zero keeps the general call path;
+    // otherwise low 9 bits are scalar arity + 1, upper bits register count.
+    uint32_t fast_call_shape;
 };
+
+static inline void lhat_proto_finalize_call_shape(LhatProto *proto)
+{
+    proto->fast_call_shape = !proto->has_variadic && !proto->yields &&
+                             proto->parameters == proto->parameter_slots &&
+                             proto->chunk.registers >= proto->parameter_slots
+                                 ? ((uint32_t)proto->chunk.registers << 9) |
+                                       ((uint32_t)proto->parameters + 1) : 0;
+}
 
 LhatProto *lhat_proto_new(void);
 

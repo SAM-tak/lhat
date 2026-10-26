@@ -105,6 +105,31 @@ LhatTable *lhat_table_new(LhatHeap *heap)
                                           LHAT_OBJECT_TABLE);
 }
 
+LhatTable *lhat_table_new_reserved(LhatHeap *heap, size_t hash_entries)
+{
+    if (hash_entries == 0) return lhat_table_new(heap);
+    size_t capacity = 4;
+    while (capacity - capacity / 4 < hash_entries) {
+        if (capacity > SIZE_MAX / 2) return NULL;
+        capacity *= 2;
+    }
+    if (capacity > (SIZE_MAX - sizeof(LhatTable)) / sizeof(LhatTableEntry)) return NULL;
+    _Static_assert(LHAT_VALUE_NIL == 0, "zeroed table entries must be nil");
+    _Static_assert(_Alignof(LhatTable) >= _Alignof(LhatTableEntry), "inline entry alignment");
+    LhatTable *table = (LhatTable *)lhat_object_alloc(
+        heap, sizeof(LhatTable) + capacity * sizeof(LhatTableEntry), LHAT_OBJECT_TABLE);
+    if (table == NULL) return NULL;
+    table->entries = (LhatTableEntry *)(void *)(table + 1);
+    table->entry_capacity = capacity;
+    table->inline_entries = true;
+    return table;
+}
+
+static void table_free_entries(LhatTable *table)
+{
+    if (!table->inline_entries) lhat_free(table->entries);
+}
+
 LhatErrorKind *lhat_error_kind_new(LhatHeap *heap,
                                    const LhatErrorKind *group, bool local,
                                    const LhatString *name)
@@ -1756,7 +1781,7 @@ void lhat_object_free(LhatObject *object)
         LhatTable *table = (LhatTable *)object;
         lhat_free(table->array.values);
         lhat_free(table->array.tags);
-        lhat_free(table->entries);
+        table_free_entries(table);
         break;
     }
     case LHAT_OBJECT_SUBROUTINE:
@@ -2017,8 +2042,9 @@ static bool grow_entries(LhatTable *table)
         moved++;
     }
 
-    lhat_free(table->entries);
+    table_free_entries(table);
     table->entries = entries;
+    table->inline_entries = false;
     table->entry_capacity = capacity;
     table->entry_count = moved;
     table->entry_tombs = 0;  // none survived the move

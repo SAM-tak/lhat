@@ -2246,6 +2246,42 @@ static void test_tombstones(void)
 static void test_own_slot_paths(void)
 {
     Run r;
+    LHAT_TEST("field updates recheck keys across records with colliding layouts");
+    run_text(&r,
+        "let^ records = { { x = 1, v = 2 }, { d = 100, x = 10, v = 3 },\n"
+        "    { x = 20, b = 200, v = 4 }, { x = 30, v = 5, a = 100, c = 101 },\n"
+        "    { x = 40, v = 6 } }\n"
+        "var^ total = 0\nrepeat^ 4 {\n"
+        "    var^ i = 0\nrepeat^while^ i < 5 {\n"
+        "        let^ record = records[i]\nif^ record? {\n"
+        "            record.x += record.v\ntotal += record.x\n"
+        "        }\ni += 1\n}\n}\nreturn^ total\n");
+    CHECK_INTEGER(&r, 604);
+    run_dispose(&r);
+
+    LHAT_TEST("a missing RHS field cannot reuse another record's entry");
+    run_text(&r,
+        "let^ records = { { x = 1, v = 2 }, { x = 10, v = 3 }, { x = 20, b = 300 } }\n"
+        "var^ i = 0\nrepeat^while^ i < 3 {\n"
+        "    let^ record = records[i]\nif^ record? { record.x += record.v }\n"
+        "    i += 1\n}\nreturn^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+
+    LHAT_TEST("an append drains integer keys waiting beyond the dense prefix");
+    run_text(&r,
+        "let^ t = { 1, 2, 3 }\n"
+        "t[5] := 6\nt[3] := 4\nt[4] := 5\n"
+        "return^ t.length^ * 100 + t[5]\n");
+    CHECK_INTEGER(&r, 606);
+    run_dispose(&r);
+
+    LHAT_TEST("nil appends still extend the dense sequence");
+    run_text(&r,
+        "let^ t = { 1 }\nt[1] := nil^\nt[2] := 3\n"
+        "return^ t.length^ * 100 + (t[1] ?? 0) * 10 + t[2]\n");
+    CHECK_INTEGER(&r, 303);
+    run_dispose(&r);
     LHAT_TEST("a store snapshots its receiver before an effectful RHS");
     run_text(&r,
         "var^ t = { 0 }\nlet^ original = t\n"

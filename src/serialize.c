@@ -1931,6 +1931,7 @@ static bool read_proto(Reader *r, LhatProto *proto)
             return false;
         }
     }
+    lhat_proto_finalize_call_shape(proto);
     return !in->failed;
 }
 

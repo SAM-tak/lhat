@@ -169,10 +169,9 @@ static bool jit_closure(LhatJitContext *context, uintptr_t a, uintptr_t b,
 static bool jit_new_table(LhatJitContext *context, uintptr_t a, uintptr_t b,
                           uintptr_t c, uintptr_t pc)
 {
-    (void)c;
     Machine *m = context->machine;
     step_gc_poll(m, pc);
-    LhatTable *table = lhat_table_new(&m->objects);
+    LhatTable *table = lhat_table_new_reserved(&m->objects, c);
     if (table == NULL) {
         return false;
     }
