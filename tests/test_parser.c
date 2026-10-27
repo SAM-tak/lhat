@@ -3234,6 +3234,35 @@ static void test_definitions(void)
     }
     parse_dispose(&p);
 
+    LHAT_TEST("free functions and procedures reject member markers precisely");
+    {
+        const char *sources[] = {
+            "overload^let^h = f^x { x }\nprint(1)",
+            "overload^let^h = p^x { print(x) }\nprint(1)",
+            "overload^h := f^x { x }\nprint(1)",
+            "overload^h := p^x { print(x) }\nprint(1)",
+            "override^let^h = f^x { x }\nprint(1)",
+            "override^let^h = p^x { print(x) }\nprint(1)",
+            "override^h := f^x { x }\nprint(1)",
+            "override^h := p^x { print(x) }\nprint(1)",
+            "let^a = 1\noverload^let^h = f^x { x }\nprint(1)",
+            "do^ { override^let^h = p^ { }\nprint(1) }\nprint(2)",
+        };
+        for (size_t i = 0; i < sizeof sources / sizeof sources[0]; i++) {
+            parse_text(&p, sources[i]);
+            LHAT_CHECK_EQ_INT(error_count(&p), 1);
+            LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                i < 4 || i == 8 ? LHAT_PARSE_ERR_OVERLOAD_OUTSIDE_DEF
+                                : LHAT_PARSE_ERR_OVERRIDE_OUTSIDE_DEF);
+            const char *marker = strstr(sources[i], i < 4 || i == 8
+                                                      ? "overload^" : "override^");
+            LHAT_CHECK_EQ_INT(p.result.diagnostics[0].offset, marker - sources[i]);
+            LHAT_CHECK_EQ_INT(lhat_node_list_length(p.result.root->v.list.items),
+                              i == 8 ? 3 : 2);
+            parse_dispose(&p);
+        }
+    }
+
     LHAT_TEST("override^ and overload^ mark the member that follows");
     parse_text(&p,
                "Bar := Foo .. def^{\n"

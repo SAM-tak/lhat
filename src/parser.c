@@ -1892,6 +1892,7 @@ static bool is_statement_keyword(const Parser *p)
 {
     static const char *const words[] = {
         "if", "do", "var", "let", "with", "return", "break", "panic", "yield",
+        "overload", "override",  // Diagnose member markers used as statements.
         "_yield", "await",  // 15.8 with 15.14: delegating suspends too
         // 9.11: and the three spellings of the one that goes on with the loop
         "next", "skip", "continue",
@@ -4857,6 +4858,15 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
     LhatToken start = p->current;
 
     if (start.kind == LHAT_TOKEN_HAT_IDENT) {
+        if (check_hat(p, "overload") || check_hat(p, "override")) {
+            report(p, &start, check_hat(p, "overload")
+                                  ? LHAT_PARSE_ERR_OVERLOAD_OUTSIDE_DEF
+                                  : LHAT_PARSE_ERR_OVERRIDE_OUTSIDE_DEF);
+            advance(p);
+            // Recover by reading the declaration without the invalid marker.
+            if (at_eof(p) || check_op(p, LHAT_OP_RBRACE)) return NULL;
+            return parse_statement(p);
+        }
         if (check_hat(p, "do")) {
             advance(p);
             return start_at(parse_braced_block(p, false, false), &start);
@@ -5608,6 +5618,12 @@ static const LhatMessageEntry PARSE_MESSAGES[] = {
         "a def^ declares its fields once; write one self^{ ... }"},
     [LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE] = {"parse.modifier-on-template",
         "override^ and overload^ mark a member, not the fields"},
+    [LHAT_PARSE_ERR_OVERLOAD_OUTSIDE_DEF] = {"parse.overload-outside-def",
+        "overload^ is only allowed on members inside def^; "
+        "L^ does not support overloading free functions or procedures"},
+    [LHAT_PARSE_ERR_OVERRIDE_OUTSIDE_DEF] = {"parse.override-outside-def",
+        "override^ is only allowed on members inside def^; "
+        "L^ does not support overriding free functions or procedures"},
     [LHAT_PARSE_ERR_DUPLICATE_DELEGATE] = {"parse.duplicate-delegate",
         "a def^ delegates to one thing; write one delegate^"},
     [LHAT_PARSE_ERR_DELEGATE_TARGET] = {"parse.delegate-target",
