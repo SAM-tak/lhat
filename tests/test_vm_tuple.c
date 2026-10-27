@@ -284,6 +284,16 @@ static void test_multi_value_return(void)
     CHECK_INTEGER(&r, 34);
     run_dispose(&r);
 
+    LHAT_TEST("an unparenthesised tuple body returns every computed position");
+    run_checked_text(&r,
+                     "let^ pair = f^ { 3, 4 }\n"
+                     "let^ a, b = pair()\n"
+                     "let^ ordered = f^ { a + 1, b * 2, 9 }\n"
+                     "let^ x, y, z = ordered()\n"
+                     "return^ x * 100 + y * 10 + z\n");
+    CHECK_INTEGER(&r, 489);
+    run_dispose(&r);
+
     // The fold is what makes the two spellings one node, so neither leaves a
     // MAKERUN behind -- the machine builds the head at the frame boundary.
     LHAT_TEST("and compiles to what the written return^ compiles to");

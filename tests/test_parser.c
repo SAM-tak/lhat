@@ -3790,6 +3790,37 @@ static void test_errors(void)
     }
     parse_dispose(&p);
 
+    LHAT_TEST("an unparenthesised tuple body folds into the same return");
+    parse_text(&p, "let^ f = f^ { 1, 2, 3 }");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *only = first_value(&p)->v.func.body->v.list.items;
+        LHAT_CHECK_EQ_INT(only->kind, LHAT_NODE_RETURN);
+        LHAT_CHECK(only->v.jump.implicit, "the return is implicit");
+        LHAT_CHECK_EQ_INT(only->v.jump.level, 3);
+        LHAT_CHECK_EQ_INT(lhat_node_list_length(only->v.jump.value), 3);
+    }
+    parse_dispose(&p);
+    check_spans_enclose("let^ f = f^ { 1, 2, 3 }");
+
+    LHAT_TEST("a bare tuple is confined to a function's single-expression body");
+    {
+        const char *sources[] = {
+            "let^ f = f^ { let^ v = 0\nv, 2 }",
+            "let^ f = f^ { foo(), bar()\nreturn^ 0 }",
+            "let^ f = p^ { 1, 2 }",
+            "let^ f = f^ { do^ { 1, 2 } }",
+            "1, 2",
+        };
+        for (size_t i = 0; i < sizeof sources / sizeof sources[0]; i++) {
+            parse_text(&p, sources[i]);
+            LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
+            LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
+                              LHAT_PARSE_ERR_BARE_EXPRESSION);
+            parse_dispose(&p);
+        }
+    }
+
     // 8.2 with 04 の 5.1 and 4.4: a call is still a call when it is wrapped.
     LHAT_TEST("try^ and catch^ around a call stand alone as statements");
     parse_text(&p, "try^ save(x)\nsave(y) catch^ nil^\n");

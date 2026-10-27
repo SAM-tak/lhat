@@ -5100,6 +5100,15 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
     // 8.2: at the top level of interactive input, and 15.12 in the body of a
     // function. Being unable to work out 2 + 3 at a prompt is not an option,
     // and a function whose body is one expression answers with it.
+    if (head != NULL && head->next != NULL &&
+        p->bare_depth != 0 && p->depth == p->bare_depth) {
+        // Keep the comma list as one tuple expression until answer_with_body
+        // can check that it is the entire body, just like '(a, b)'.
+        LhatNode *tuple = make(p, LHAT_NODE_TUPLE, &start);
+        if (tuple == NULL) return NULL;
+        tuple->v.list.items = head;
+        head = finish(p, tuple);
+    }
     if (head != NULL && head->next == NULL && may_stand_alone(p)) {
         return expression_as_statement(p, start, head);
     }
