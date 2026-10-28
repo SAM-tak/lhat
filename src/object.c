@@ -911,13 +911,13 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
         case LHAT_TYPE_RT_SUBROUTINE:
             return callable_satisfies(value, type, scope);
         // 15.3改: an f^ coroutine type admits only a body an f^ wrote or a
-        // built-in walk, which changes nothing. A host's walk carries no
-        // kind, so it is not taken for an f^ one.
+        // built-in walk. Host walks are p^ unless the VM marked a pure walk.
         case LHAT_TYPE_RT_COROUTINE: {
             if (!lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE)) return false;
             if (type->coroutine_top || type->kind_any || !type->is_function) return true;
             const LhatCoroutine *co = (const LhatCoroutine *)lhat_as_object(value);
             if (co->source == LHAT_COROUTINE_TABLE) return true;
+            if (co->source == LHAT_COROUTINE_HOST) return co->host_is_function;
             return co->source == LHAT_COROUTINE_BODY && co->frame.closure != NULL &&
                    co->frame.closure->proto != NULL && co->frame.closure->proto->is_function;
         }

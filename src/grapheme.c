@@ -18,6 +18,16 @@ static ptrdiff_t decode(const char *text, size_t length, size_t at,
                             codepoint);
 }
 
+size_t lhat_codepoint_next(const char *text, size_t length, size_t from,
+                           uint32_t *codepoint)
+{
+    if (from >= length) return length;
+    utf8proc_int32_t decoded;
+    ptrdiff_t width = decode(text, length, from, &decoded);
+    *codepoint = width < 0 ? 0xFFFDu : (uint32_t)decoded;
+    return from + (width < 0 ? 1 : (size_t)width);
+}
+
 size_t lhat_grapheme_next(const char *text, size_t length, size_t from)
 {
     if (from >= length) return length;

@@ -345,6 +345,7 @@ typedef struct LhatCoroutine {
     void *host_state;
     LhatHostFn host_release;
     bool host_released;
+    bool host_is_function;  // VM-owned text walks are f^ coroutines.
     LhatValue held;
 
     // 02 の 10.7: the collector is the last place a discarded coroutine's
@@ -599,6 +600,10 @@ typedef enum {
     // same ordinal. A member of its own rather than a default second argument
     // -- substring's one-ordinal form already means "to the end".
     LHAT_NATIVE_AT,
+    // Sequential text walks and an explicit byte-offset slice.
+    LHAT_NATIVE_CHARS,
+    LHAT_NATIVE_CODEPOINTS,
+    LHAT_NATIVE_SLICE_BYTES,
     // 14.19改3: the plain searches -- a literal needle, no pattern. What a
     // pattern would ask for lives in std.regex, behind a compiled object.
     LHAT_NATIVE_FIND,     // first ordinal the needle stands at, or nil^

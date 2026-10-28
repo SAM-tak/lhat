@@ -102,6 +102,9 @@ LhatRuntimeType *vm_tag_type(LhatHeap *heap, LhatValue value)
             // 15.3改: which kind of body this came from, which is what
             // decides who may advance it (15.6改).
             type->is_function = proto->is_function;
+        } else if (type != NULL) {
+            type->is_function = coroutine->source == LHAT_COROUTINE_TABLE ||
+                                coroutine->host_is_function;
         }
         return type;
     }
@@ -335,6 +338,9 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
         { "substr", 6, LHAT_NATIVE_SUBSTRING, false },
         { "sub", 3, LHAT_NATIVE_SUBSTRING, false },
         { "at", 2, LHAT_NATIVE_AT, false },
+        { "chars", 5, LHAT_NATIVE_CHARS, false },
+        { "codepoints", 10, LHAT_NATIVE_CODEPOINTS, false },
+        { "sliceBytes", 10, LHAT_NATIVE_SLICE_BYTES, false },
         { "find", 4, LHAT_NATIVE_FIND, false },
         { "findall", 7, LHAT_NATIVE_FINDALL, false },
         { "replace", 7, LHAT_NATIVE_REPLACE, false },
@@ -488,7 +494,8 @@ static bool builtin_member(LhatValue on, LhatValue key, LhatNativeKind *out)
         *out == LHAT_NATIVE_AT || *out == LHAT_NATIVE_FIND ||
         *out == LHAT_NATIVE_FINDALL || *out == LHAT_NATIVE_REPLACE ||
         *out == LHAT_NATIVE_SPLIT || *out == LHAT_NATIVE_TOUPPER ||
-        *out == LHAT_NATIVE_TOLOWER) {
+        *out == LHAT_NATIVE_TOLOWER || *out == LHAT_NATIVE_CHARS ||
+        *out == LHAT_NATIVE_CODEPOINTS || *out == LHAT_NATIVE_SLICE_BYTES) {
         return lhat_is_object_kind(on, LHAT_OBJECT_STRING);
     }
     // 14.20: and only a number^ has an error term to say anything about.
@@ -1033,6 +1040,9 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
              bare == LHAT_NATIVE_TONUMBER ||
              bare == LHAT_NATIVE_SUBSTRING ||
              bare == LHAT_NATIVE_AT ||
+             bare == LHAT_NATIVE_CHARS ||
+             bare == LHAT_NATIVE_CODEPOINTS ||
+             bare == LHAT_NATIVE_SLICE_BYTES ||
              bare == LHAT_NATIVE_FIND ||
              bare == LHAT_NATIVE_FINDALL ||
              bare == LHAT_NATIVE_REPLACE ||

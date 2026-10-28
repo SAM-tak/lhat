@@ -3138,9 +3138,9 @@ static void test_every_word_answers_somewhere(void)
     static const char *const needs_a_host[] = { "get", "set" };
 
     LHAT_TEST("14.19: every word in the list is answered by something");
-    bool answered[64];
-    memset(answered, 0, sizeof answered);
-    for (size_t i = 0; i < chk_builtin_word_count && i < 64; i++) {
+    bool *answered = calloc(chk_builtin_word_count, sizeof *answered);
+    LHAT_CHECK(answered != NULL, "allocated builtin coverage flags");
+    for (size_t i = 0; i < chk_builtin_word_count; i++) {
         for (size_t k = 0; k < sizeof needs_a_host / sizeof needs_a_host[0];
              k++) {
             if (strcmp(chk_builtin_words[i], needs_a_host[k]) == 0) {
@@ -3148,7 +3148,6 @@ static void test_every_word_answers_somewhere(void)
             }
         }
     }
-    LHAT_CHECK(chk_builtin_word_count <= 64, "the list outgrew this test");
 
     for (size_t r = 0; r < count; r++) {
         Unit u;
@@ -3156,7 +3155,7 @@ static void test_every_word_answers_somewhere(void)
         char text[512];
         snprintf(text, sizeof text, "%slet^ n = subject.\n", receivers[r]);
         builtins_of(&u, &seen, text);
-        for (size_t i = 0; i < chk_builtin_word_count && i < 64; i++) {
+        for (size_t i = 0; i < chk_builtin_word_count; i++) {
             char hatted[64];
             snprintf(hatted, sizeof hatted, "%s^", chk_builtin_words[i]);
             if (was_offered(&seen, chk_builtin_words[i]) ||
@@ -3166,11 +3165,13 @@ static void test_every_word_answers_somewhere(void)
         }
         unit_dispose(&u);
     }
-    for (size_t i = 0; i < chk_builtin_word_count && i < 64; i++) {
-        LHAT_CHECK(answered[i], "no receiver here answers \"%s\" -- either the "
-                   "cascade dropped it or this test needs another receiver",
-                   chk_builtin_words[i]);
+    const char *missing = NULL;
+    for (size_t i = 0; i < chk_builtin_word_count; i++) {
+        if (!answered[i]) { missing = chk_builtin_words[i]; break; }
     }
+    free(answered);
+    LHAT_CHECK(missing == NULL, "no receiver here answers \"%s\" -- either the "
+               "cascade dropped it or this test needs another receiver", missing);
 }
 
 // 07 の 4 章: what names may stand at a position, which is the other half of

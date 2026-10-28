@@ -2555,7 +2555,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                        frame, walk_sent, walk_sent_count,
                                        &fault);
                         if (fault != LHAT_RUN_OK) {
-                            return vm_finish(m, chunk, fault, lhat_nil(), at);
+                            return vm_finish(m, chunk, fault,
+                                             fault == LHAT_RUN_PANIC ? m->fault_value : lhat_nil(), at);
                         }
                         VM_NEXT();
                     }
@@ -3361,7 +3362,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                    frame, walk_sent, walk_sent_count,
                                    &fault);
                     if (fault != LHAT_RUN_OK) {
-                        return vm_finish(m, chunk, fault, lhat_nil(), at);
+                        return vm_finish(m, chunk, fault,
+                                         fault == LHAT_RUN_PANIC ? m->fault_value : lhat_nil(), at);
                     }
                     VM_NEXT();
                 }

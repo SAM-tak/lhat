@@ -3004,7 +3004,7 @@ static bool run_of_names(const LhatNode *node, bool allow_scope)
 const char *const chk_builtin_words[] = {
     "ReturnType", "abs", "assign", "at", "bitall",
     "bitany", "bitat", "cause",
-    "ceil", "clamp", "clear", "clone",
+    "ceil", "chars", "clamp", "clear", "clone", "codepoints",
     "contains", "count", "dispose", "done",
     "enum", "eq", "extend", "find",
     "findall", "floor", "get", "indexof",
@@ -3012,7 +3012,7 @@ const char *const chk_builtin_words[] = {
     "len", "length", "load", "message", "move",
     "pop", "push", "remove", "replace",
     "resize", "resume", "reverse", "round", "save", "self",
-    "set", "sign", "size", "slice",
+    "set", "sign", "size", "slice", "sliceBytes",
     "sort", "split", "stablesort", "start",
     "started", "sub", "substr", "substring",
     "tolower", "tonumber", "tostring", "toupper",
@@ -3473,6 +3473,20 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         // 14.19改: one character of it.
         if (target->kind == LHAT_TYPE_STRING && chk_name_is(name, length, "at")) {
             return builtin_at(c);
+        }
+        if (target->kind == LHAT_TYPE_STRING &&
+            chk_name_is(name, length, "sliceBytes")) {
+            return builtin_substring(c);
+        }
+        if (target->kind == LHAT_TYPE_STRING &&
+            (chk_name_is(name, length, "chars") ||
+             chk_name_is(name, length, "codepoints"))) {
+            LhatType *item = chk_simple(c, chk_name_is(name, length, "chars")
+                                             ? LHAT_TYPE_STRING : LHAT_TYPE_NUMBER);
+            LhatType *signature = lhat_type_func(c->result->types, true);
+            signature->v.func.result =
+                lhat_type_coro(c->result->types, NULL, item, NULL, false, true);
+            return signature;
         }
         // 14.19改3: the plain searches. What is not there answers nil^
         // (04 の 11.3) -- never a sentinel -- and the pattern vocabulary

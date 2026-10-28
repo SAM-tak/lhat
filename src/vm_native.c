@@ -146,7 +146,7 @@ static bool findall_step(struct LhatMachine *machine, void *context,
     return true;
 }
 
-static void findall_release(struct LhatMachine *machine, void *context,
+static void string_walk_release(struct LhatMachine *machine, void *context,
                             const LhatValue *arguments, size_t count,
                             LhatValue *answers, int *answer_count)
 {
@@ -156,6 +156,59 @@ static void findall_release(struct LhatMachine *machine, void *context,
     (void)answers;
     (void)answer_count;
     lhat_free(context);
+}
+
+typedef struct {
+    const LhatString *subject;  // rooted by the coroutine's held value
+    size_t next_byte;
+    bool codepoints;
+} StringWalk;
+
+static bool string_walk_step(struct LhatMachine *machine, void *context,
+                             const LhatValue *sent, size_t sent_count,
+                             LhatValue *answers, int *answer_count)
+{
+    (void)sent;
+    (void)sent_count;
+    StringWalk *walk = (StringWalk *)context;
+    size_t from = walk->next_byte;
+    if (from == walk->subject->length) return false;
+    if (walk->codepoints) {
+        uint32_t codepoint;
+        walk->next_byte = lhat_codepoint_next(walk->subject->text,
+                                             walk->subject->length, from, &codepoint);
+        answers[0] = lhat_integer((LhatInteger)codepoint);
+    } else {
+        size_t end = lhat_grapheme_next(walk->subject->text, walk->subject->length, from);
+        if (!lhat_machine_make_string(machine, walk->subject->text + from,
+                                      end - from, &answers[0])) {
+            // No allocation is needed to report failure to the host boundary.
+            lhat_machine_panic(machine, lhat_nil());
+            return false;
+        }
+        walk->next_byte = end;
+    }
+    *answer_count = 1;
+    return true;
+}
+
+// Byte offsets are exact nonnegative integers, unlike rounded character
+// ordinals. Both number^ representations may name the same offset.
+static bool byte_offset_of(LhatValue value, size_t *out)
+{
+    if (!lhat_is_number(value)) return false;
+    LhatInteger offset;
+    if (lhat_is_integer(value)) {
+        offset = lhat_as_integer(value);
+    } else {
+        LhatReal real = lhat_number_as_real(value);
+        if (!(real >= 0 && real < 9223372036854775808.0) || floor(real) != real)
+            return false;
+        offset = (LhatInteger)real;
+    }
+    if (offset < 0 || (uint64_t)offset > SIZE_MAX) return false;
+    *out = (size_t)offset;
+    return true;
 }
 
 // A fresh table of name/value pairs, for what L^.gc answers.
@@ -613,6 +666,42 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
+    if (native->kind == LHAT_NATIVE_CHARS || native->kind == LHAT_NATIVE_CODEPOINTS) {
+        if (b != 0) return LHAT_RUN_ARITY;
+        StringWalk *walk = (StringWalk *)lhat_calloc(1, sizeof *walk);
+        if (walk == NULL) return LHAT_RUN_OUT_OF_MEMORY;
+        walk->subject = (const LhatString *)lhat_as_object(native->bound);
+        walk->codepoints = native->kind == LHAT_NATIVE_CODEPOINTS;
+        LhatCoroutine *made = lhat_host_iterator(&m->objects, string_walk_step, walk,
+                                                string_walk_release, native->bound);
+        if (made == NULL) {
+            lhat_free(walk);
+            return LHAT_RUN_OUT_OF_MEMORY;
+        }
+        made->host_is_function = true;
+        lhat_slots_set(m->slots, into, lhat_object((LhatObject *)made));
+        return LHAT_RUN_OK;
+    }
+
+    if (native->kind == LHAT_NATIVE_SLICE_BYTES) {
+        if (b < 1 || b > 2) return LHAT_RUN_ARITY;
+        const LhatString *subject = (const LhatString *)lhat_as_object(native->bound);
+        size_t begin, end = subject->length;
+        if (!byte_offset_of(sent, &begin) ||
+            (b == 2 && !byte_offset_of(lhat_slots_get(m->slots, first + 1), &end))) {
+            return LHAT_RUN_TYPE_ERROR;
+        }
+        if (begin > end || end > subject->length) begin = end = 0;
+        if (begin == 0 && end == subject->length) {
+            lhat_slots_set(m->slots, into, native->bound);
+            return LHAT_RUN_OK;
+        }
+        LhatString *cut = lhat_string_new(&m->objects, subject->text + begin, end - begin);
+        if (cut == NULL) return LHAT_RUN_OUT_OF_MEMORY;
+        lhat_slots_set(m->slots, into, lhat_object((LhatObject *)cut));
+        return LHAT_RUN_OK;
+    }
+
     // 02 の 14.19: a run of the subject's characters, named
     // by ordinals that start at 0 and count from the end
     // when negative. A range that does not stand answers the
@@ -896,11 +985,12 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
                    needle->length);
             LhatCoroutine *made = lhat_host_iterator(
                 &m->objects, findall_step, walk,
-                findall_release, native->bound);
+                string_walk_release, native->bound);
             if (made == NULL) {
                 lhat_free(walk);
                 return LHAT_RUN_OUT_OF_MEMORY;
             }
+            made->host_is_function = true;
             lhat_slots_set(m->slots, into, lhat_object((LhatObject *)made));
             return LHAT_RUN_OK;
         }

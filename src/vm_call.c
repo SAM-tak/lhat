@@ -367,8 +367,15 @@ WalkStep vm_step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
     int written = 0;
     co->frame.state = LHAT_COROUTINE_RUNNING;
     m->tuple_scratch_count = 0;
+    size_t frames_before = m->frame_count;
     bool more = co->step((LhatMachine *)m, co->host_state, sent, sent_count,
                          m->tuple_scratch, &written);
+    LhatValue fault_value;
+    if (vm_host_faulted(m, frames_before, fault, &fault_value)) {
+        co->frame.state = LHAT_COROUTINE_DONE;
+        lhat_coroutine_release((LhatObject *)co, m);
+        return WALK_ENDED;
+    }
     if (!boundary_answer(m, written, &out)) {
         *fault = LHAT_RUN_TUPLE_ARITY;
         return WALK_ENDED;
@@ -1421,8 +1428,18 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
         int written = 0;
         co->frame.state = LHAT_COROUTINE_RUNNING;
         m->tuple_scratch_count = 0;
+        size_t frames_before = m->frame_count;
         bool more = co->step(machine, co->host_state, sent, sent_count,
                              m->tuple_scratch, &written);
+        LhatRunStatus fault;
+        LhatValue fault_value;
+        if (vm_host_faulted(m, frames_before, &fault, &fault_value)) {
+            co->frame.state = LHAT_COROUTINE_DONE;
+            lhat_coroutine_release((LhatObject *)co, machine);
+            LhatRunResult failed = call_fault(m, fault);
+            failed.value = fault_value;
+            return failed;
+        }
         if (!boundary_answer(m, written, &out)) {
             return call_fault(m, LHAT_RUN_TUPLE_ARITY);
         }
