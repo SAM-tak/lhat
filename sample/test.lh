@@ -7,9 +7,10 @@ if^!""?     { print("5 falsy") } # 何も出力されない
 #let^\U0061 = 1
 #print("a = ", a)
 
-let^f = f^ { (1, 2) }
+let^f = f^ { 1, 2 }
 let^g = f^x, y { x + y }
 let^h = f^x, y, z { x + y + z }
+# let^h = f^x, y, z, w { x + y + z + w } # これはR^と違って出来ない仕様
 
 print(
     for^let^x, y = f()
@@ -223,6 +224,8 @@ let^yy = p^x:number^{
 print(yy(2))
 
 let^s = "あいうえお"
+print(s.size)
+print(s.length)
 # print(s[2])
 print(s.at(0))
 print(s.at(1))
