@@ -226,6 +226,8 @@ set(LHAT_CORE_SOURCES
     src/debug.c
     src/value.c
     src/object.c
+    src/grapheme.c
+    vendor/utf8proc/utf8proc.c
 )
 set(LHAT_FRONTEND_SOURCES
     src/token.c
@@ -247,6 +249,9 @@ if(LHAT_WITH_FRONTEND)
 else()
     add_library(lhat ${LHAT_CORE_SOURCES})
 endif()
+
+target_include_directories(lhat PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor/utf8proc)
+target_compile_definitions(lhat PRIVATE UTF8PROC_STATIC)
 
 # The copy-and-patch JIT prototype (jit/jit.h). Its stencils are laid out for
 # x86-64 Windows only so far, and the runtime calls them in a convention
@@ -641,6 +646,7 @@ install(TARGETS lhat lhatport lhatthread EXPORT lhatTargets
 # that resolve those go with it. Installed as a directory, so that whoever
 # includes it still writes "port/thread.h".
 install(FILES port/thread.h DESTINATION include/port)
+install(FILES vendor/utf8proc/LICENSE.md DESTINATION share/licenses/lhat/utf8proc)
 
 # What ships is what a host may name: lhat.h and the headers under lhat/,
 # in the shape they already have here. Nothing in src/ is installed -- the

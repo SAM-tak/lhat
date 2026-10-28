@@ -298,7 +298,7 @@ static void test_read_line(void)
                        "    back.dispose()\n"
                        "    if^ all fits^ string^ {\n"
                        "        if^ rest fits^ string^ {\n"
-                       "            return^ all.length * 10 + rest.length\n"
+                       "            return^ all.size * 10 + rest.size\n"
                        "        }\n"
                        "    }\n"
                        "}\n"

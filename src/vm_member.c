@@ -385,7 +385,7 @@ static bool native_named(LhatValue key, LhatNativeKind *out, bool *hatted)
 // on one for the implementation to take.
 typedef enum {
     COUNTED_NONE,
-    COUNTED_LENGTH,  // the run: a table's dense half, a string's code points
+    COUNTED_LENGTH,  // a table's dense half, a string's grapheme clusters
     COUNTED_COUNT,   // a table altogether
     COUNTED_SIZE     // a string's bytes
 } CountedKind;
@@ -1044,8 +1044,8 @@ LhatRunStatus vm_get_member(Machine *m, size_t into, size_t receiver,
         }
         // 02 の 14.18: and a string^ answers how long it is,
         // without a call being written. Two readings of the same
-        // bytes: the code points they spell, and how many there
-        // are. 14.18改: the bare word alone, since a string^ has
+        // bytes: grapheme clusters and byte size.
+        // 14.18改: the bare word alone, since a string^ has
         // no names of its own for a hat to be keeping this off.
         bool counted_hatted = false;
         CountedKind counted = counted_named(member_key, &counted_hatted);

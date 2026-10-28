@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "number.h"
+#include "grapheme.h"
 #include "lhat/port.h"
 
 // 02 の 14.21: the whole number `toward` picks -- floor, ceil or nearbyint.
@@ -70,9 +71,8 @@ LhatInteger vm_resolve_ordinal(LhatInteger written, size_t count)
 // 02 の 14.19改3: the plain string searches
 // ---------------------------------------------------------------------------
 
-// The needle's first stand at or after `from`, byte positions both ways.
-// A well-formed UTF-8 needle begins with a lead byte and lead bytes never
-// continue anything, so a hit always lands on a character boundary.
+// Literal matches must cover complete grapheme clusters. `from` is a
+// cluster boundary, as are the returned match's start and end.
 static bool find_bytes(const char *text, size_t length, size_t from,
                        const char *needle, size_t needle_length, size_t *at)
 {
@@ -80,27 +80,28 @@ static bool find_bytes(const char *text, size_t length, size_t from,
         *at = from <= length ? from : length;
         return from <= length;
     }
-    for (size_t i = from; i + needle_length <= length; i++) {
+    if (needle_length > length) return false;
+    for (size_t i = from; i <= length - needle_length;
+         i = lhat_grapheme_next(text, length, i)) {
         if (text[i] == needle[0] &&
             memcmp(text + i, needle, needle_length) == 0) {
-            *at = i;
-            return true;
+            size_t past = i + needle_length;
+            size_t end = i;
+            while (end < past) end = lhat_grapheme_next(text, length, end);
+            if (end == past) {
+                *at = i;
+                return true;
+            }
         }
     }
     return false;
 }
 
-// How many characters begin inside [0, until) -- continuation bytes carry
-// no ordinal of their own.
+// Both ends are cluster boundaries; counting a traversed span avoids
+// rescanning the prefix on every findall result.
 static size_t characters_before(const char *text, size_t until)
 {
-    size_t count = 0;
-    for (size_t i = 0; i < until; i++) {
-        if (((unsigned char)text[i] & 0xC0) != 0x80) {
-            count++;
-        }
-    }
-    return count;
+    return lhat_grapheme_count(text, until);
 }
 
 // The walk findall answers: every non-overlapping stand of the needle, as
@@ -664,8 +665,10 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         }
         size_t at_byte =
             lhat_string_byte_at(subject, (size_t)start);
-        size_t end_byte =
-            lhat_string_byte_at(subject, (size_t)end + 1);
+        size_t end_byte = at_byte;
+        for (LhatInteger i = start; i <= end; i++) {
+            end_byte = lhat_grapheme_next(subject->text, subject->length, end_byte);
+        }
         LhatString *cut = lhat_string_new(
             &m->objects, subject->text + at_byte,
             end_byte - at_byte);
@@ -791,13 +794,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
                     if (from >= subject->length) {
                         break;
                     }
-                    end = from + 1;
-                    while (end < subject->length &&
-                           ((unsigned char)subject
-                                    ->text[end] &
-                            0xC0) == 0x80) {
-                        end++;
-                    }
+                    end = lhat_grapheme_next(subject->text, subject->length, from);
                 } else {
                     hit = find_bytes(subject->text,
                                      subject->length, from,

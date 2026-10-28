@@ -1623,7 +1623,7 @@ static void test_counting(void)
 
     // 01 の 1 章: the source is UTF-8, so the two readings of a string^ part
     // company the moment anything is not ASCII.
-    LHAT_TEST("a string answers its code points and its bytes apart");
+    LHAT_TEST("a string answers its grapheme clusters and its bytes apart");
     run_text(&r,
              "return^ \"abc\".length * 1000 + \"abc\".size * 100 +\n"
              "       \"\\u{3042}\\u{3044}\\u{3046}\".length * 10 +\n"
@@ -1644,10 +1644,8 @@ static void test_counting(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
-    // 14.18: the count is fixed when the string is made, and joining two adds
-    // the two counts -- so a string built at run time answers what a literal
-    // spelling the same bytes answers.
-    LHAT_TEST("a joined string counts what its halves counted");
+    // A runtime string and a literal spelling the same bytes agree.
+    LHAT_TEST("a joined string counts the combined text");
     run_text(&r,
              "var^ s = \"\\u{3042}\" .. \"bc\" .. \"\\u{3044}\"\n"
              "return^ s.length * 100 + s.size\n");
@@ -1665,6 +1663,56 @@ static void test_counting(void)
 // 02 の 14.19: a run of a string^'s characters. Ordinals start at 0 and count
 // from the end when negative, both ends are included, and a range that does
 // not stand answers the empty string rather than an error.
+static void test_grapheme_strings(void)
+{
+    Run r;
+    LHAT_TEST("length caches grapheme clusters while size keeps counting bytes");
+    run_checked_text(&r,
+        "let^ s = \"か\\u{3099}🇯🇵👨‍👩‍👧\"\n"
+        "return^ s.length * 100 + s.len * 10 + \"か\\u{3099}\".size\n");
+    CHECK_INTEGER(&r, 336);
+    run_dispose(&r);
+
+    LHAT_TEST("at and all substring spellings preserve complete graphemes");
+    run_checked_text(&r,
+        "let^ s = \"Aか\\u{3099}🇯🇵👨‍👩‍👧Z\"\n"
+        "return^ s.at(1) .. \"|\" .. s.at(-2) .. \"|\" .. "
+        "s.substring(1, 2) .. \"|\" .. s.substr(-2, -1) .. \"|\" .. s.sub(4)\n");
+    CHECK_STRING(&r, "か\xE3\x82\x99|👨‍👩‍👧|か\xE3\x82\x99🇯🇵|👨‍👩‍👧Z|Z");
+    run_dispose(&r);
+
+    LHAT_TEST("concatenation resegments across the boundary without normalising");
+    run_checked_text(&r,
+        "let^ s = \"か\" .. \"\\u{3099}\"\n"
+        "let^ crlf = \"\\r\" .. \"\\n\"\n"
+        "return^ s.length * 100 + s.at(0).size * 10 + crlf.length\n");
+    CHECK_INTEGER(&r, 161);
+    run_dispose(&r);
+
+    LHAT_TEST("empty-separator split returns whole graphemes");
+    run_checked_text(&r,
+        "return^ \"か\\u{3099}🇯🇵👨‍👩‍👧\".split(\"\").join^(\"|\")\n");
+    CHECK_STRING(&r, "か\xE3\x82\x99|🇯🇵|👨‍👩‍👧");
+    run_dispose(&r);
+
+    LHAT_TEST("search ordinals count graphemes and partial clusters do not match");
+    run_checked_text(&r,
+        "let^ s = \"か\\u{3099}🇯🇵X\"\n"
+        "return^ s.find(\"X\") = 2 and^ s.find(\"🇯🇵\") = 1 and^ "
+        "s.find(\"か\") = nil^ and^ s.find(\"\\u{3099}\") = nil^ and^ "
+        "s.replace(\"か\", \"!\") = s and^ s.split(\"か\").join^(\"|\") = s\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("findall retains grapheme ordinals across successive matches");
+    run_checked_text(&r,
+        "var^ total = 0\n"
+        "for^ i in^ \"か\\u{3099}X🇯🇵X\".findall(\"X\") { total += i }\n"
+        "return^ total\n");
+    CHECK_INTEGER(&r, 4);
+    run_dispose(&r);
+}
+
 static void test_substring(void)
 {
     Run r;
@@ -2344,6 +2392,7 @@ int main(void)
     test_interpolation();
     test_tostring();
     test_counting();
+    test_grapheme_strings();
     test_substring();
     test_tonumber();
     test_table_methods();

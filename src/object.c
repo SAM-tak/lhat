@@ -9,6 +9,7 @@
 #include "chain.h"
 #include "code.h"  // 14.4: a proto says whether its body takes a receiver
 #include "grow.h"
+#include "grapheme.h"
 #include "lhat/port.h"
 
 // 04 の 2.6 and 6.1: whether `value` is an error of `kind`. A kind object
@@ -45,21 +46,6 @@ uint32_t lhat_string_hash(const char *text, size_t length)
     return hash;
 }
 
-// 02 の 14.18: code points, counted by skipping the continuation bytes
-// 01 の 1 章's UTF-8 spells them with. A byte sequence that is not UTF-8 at
-// all still answers -- every stray byte counts as one -- since the count is a
-// reading of the bytes and not a judgement on them.
-static uint32_t count_characters(const char *text, size_t length)
-{
-    size_t characters = 0;
-    for (size_t i = 0; i < length; i++) {
-        if (((unsigned char)text[i] & 0xC0) != 0x80) {
-            characters++;
-        }
-    }
-    return (uint32_t)characters;
-}
-
 LhatString *lhat_string_new(LhatHeap *heap, const char *text, size_t length)
 {
     LhatString *string =
@@ -74,7 +60,7 @@ LhatString *lhat_string_new(LhatHeap *heap, const char *text, size_t length)
     string->text[length] = '\0';
     string->length = length;
     string->hash = lhat_string_hash(text, length);
-    string->characters = count_characters(text, length);
+    string->characters = (uint32_t)lhat_grapheme_count(text, length);
     return string;
 }
 
@@ -93,9 +79,8 @@ LhatString *lhat_string_concat(LhatHeap *heap, const LhatString *left,
     joined->text[length] = '\0';
     joined->length = length;
     joined->hash = lhat_string_hash(joined->text, length);
-    // Joining bytes joins code points: a continuation byte cannot begin the
-    // right half without having been one there too, so no walk is needed.
-    joined->characters = left->characters + right->characters;
+    // Clusters can join across the seam (combining marks, CRLF, emoji, ...).
+    joined->characters = (uint32_t)lhat_grapheme_count(joined->text, length);
     return joined;
 }
 
@@ -2567,7 +2552,7 @@ size_t lhat_table_count(const LhatTable *table)
 
 size_t lhat_string_characters(const LhatString *string)
 {
-    // Counted when the string was made (count_characters above), so this is
+    // Counted when the string was made, so this is
     // a read. 14.18 puts length^ beside size^ as a property of the value,
     // and a property that walked the bytes on every read would not be one.
     return string == NULL ? 0 : string->characters;
@@ -2586,14 +2571,9 @@ size_t lhat_string_byte_at(const LhatString *string, size_t character)
     if (character >= string->characters) {
         return string->length;  // one past the last, which is the end
     }
-    size_t seen = 0;
-    for (size_t i = 0; i < string->length; i++) {
-        if (((unsigned char)string->text[i] & 0xC0) != 0x80) {
-            if (seen == character) {
-                return i;
-            }
-            seen++;
-        }
+    size_t at = 0;
+    for (size_t seen = 0; seen < character; seen++) {
+        at = lhat_grapheme_next(string->text, string->length, at);
     }
-    return string->length;
+    return at;
 }

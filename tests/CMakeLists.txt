@@ -49,6 +49,8 @@ lhat_add_test(test_parser core)
 lhat_add_test(test_type core)
 lhat_add_test(test_value core)
 lhat_add_test(test_object core)
+lhat_add_test(test_grapheme core)
+target_compile_definitions(test_grapheme PRIVATE LHAT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 lhat_add_test(test_program core)
 lhat_add_test(test_extensions core)
 # 07 §6: the fixes a diagnostic carries, applied and checked again.
