@@ -51,8 +51,9 @@ static void find_site(Site *site, const LhatNode *node)
         site->found = true;
         return;
     }
-    if (node->kind == LHAT_NODE_PARAM && !node->v.param.name && node->v.param.type &&
-        site->offset == lhat_node_span_start(node->v.param.type)) {
+    if (node->kind == LHAT_NODE_PARAM && !node->v.param.name &&
+        ((node->v.param.variadic && site->offset == lhat_node_span_start(node)) ||
+         (node->v.param.type && site->offset == lhat_node_span_start(node->v.param.type)))) {
         site->annotation = node->v.param.type;
         site->found = true;
         return;

@@ -181,8 +181,35 @@ static void host_types(void)
     }
     lhat_program_dispose(&program);
 }
+static void variadic_parameters(void)
+{
+    LHAT_TEST("variadic markers offer element types with and without a written annotation");
+    static const char *sources[] = {
+        "let^Numeric=number^ let^collect=f^...{...}",
+        "let^Numeric=number^ let^collect=f^...:string^{...}",
+        "let^Numeric=number^ let^read=f^callback:(p^...;){0}",
+        "let^Numeric=number^ let^read=f^callback:(f^...:string^;){0}",
+    };
+    for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
+        Unit u;
+        check_text(&u, sources[i]);
+        LHAT_CHECK_EQ_INT(u.parsed.diagnostic_count, 0);
+        LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 0);
+        LhatUnit unit = as_unit(&u);
+        uint32_t at = (uint32_t)(strstr(u.source.text, "...") - u.source.text);
+        cJSON *reply = lsp_graph_type_options(&unit, at);
+        LHAT_CHECK(reply && has(reply, "number^") && has(reply, "string^") && has(reply, "Numeric"),
+                   "variadic element choices or scoped aliases missing");
+        cJSON_Delete(reply);
+        reply = lsp_graph_type_options(&unit, at + 1);
+        LHAT_CHECK(reply == NULL, "only the exact parameter anchor should be accepted");
+        cJSON_Delete(reply);
+        unit_dispose(&u);
+    }
+}
+
 int main(void)
 {
-    candidates(); self_annotation(); members(); signatures_and_declarations(); host_types(); multiple_results();
+    candidates(); self_annotation(); members(); signatures_and_declarations(); host_types(); multiple_results(); variadic_parameters();
     return lhat_test_report("test_graph_types");
 }
