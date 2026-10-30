@@ -942,6 +942,22 @@ static void test_patterns(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
     unit_dispose(&u);
 
+    LHAT_TEST("fits^ arms covering every member prove a union match");
+    check_text(&u,
+               "var^ say = f^ x:number^|string^|nil^ -> number^ {\n"
+               "    for^ x: when^ fits^ number^: 1 when^ fits^ string^, fits^ nil^: 2 ;\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a union member left out is not exhaustive");
+    check_text(&u,
+               "var^ say = f^ x:number^|string^|nil^ -> number^ {\n"
+               "    for^ x: when^ fits^ number^: 1 when^ fits^ string^: 2 ;\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
+    unit_dispose(&u);
+
     LHAT_TEST("value patterns over a number^ still take other^");
     check_text(&u,
                "var^ even = f^ n:number^ -> bool^ {\n"

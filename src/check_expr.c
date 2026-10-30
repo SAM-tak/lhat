@@ -7221,6 +7221,14 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 // against the subject's declaration below.
                 const LhatType *seen_members[256];
                 size_t seen_count = 0;
+                const LhatType *subject =
+                    scope.bindings != NULL ? scope.bindings->type : NULL;
+                // 17.5: the third provable case. Each `fits^` arm takes its
+                // type out of what the subject may still be, and a subject
+                // with nothing left was exhausted -- the same subtraction
+                // 13.11 does on the false side of a chain.
+                LhatType *remaining = (LhatType *)subject;
+                bool saw_fits = false;
                 for (; clause != NULL; clause = clause->next) {
                     const LhatNode *condition = clause->v.clause.condition;
                     if (condition == NULL) {
@@ -7291,13 +7299,17 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                             } else {
                                 provable = false;
                             }
+                        } else if (cond->kind == LHAT_NODE_BINARY &&
+                                   cond->v.binary.op == LHAT_OP_FITS) {
+                            remaining = chk_without(
+                                c, remaining,
+                                chk_resolve_type(c, cond->v.binary.right));
+                            saw_fits = true;
                         } else {
                             provable = false;
                         }
                     }
                 }
-                const LhatType *subject =
-                    scope.bindings != NULL ? scope.bindings->type : NULL;
                 // 19 章: every member of the subject's declaration named,
                 // each exactly one of them, and none from anywhere else.
                 bool enum_covered = false;
@@ -7316,6 +7328,8 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                     }
                 }
                 if (!defaulted && !enum_covered &&
+                    !(provable && saw_fits && subject != NULL &&
+                      remaining == NULL) &&
                     !(provable && saw_true && saw_false && subject != NULL &&
                       subject->kind == LHAT_TYPE_BOOL)) {
                     chk_report(c, node, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
