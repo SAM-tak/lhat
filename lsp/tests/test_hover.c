@@ -80,6 +80,19 @@ static void expect_contains(const char *text, const char *needle)
                needle, text != NULL ? text : "(nothing)");
 }
 
+static void test_quoted_declaration(void)
+{
+    Checked c;
+    LHAT_TEST("hover resolves every position in a quoted declaration");
+    check_text(&c, "let^`display name`=42 print(`display name`)");
+    for (uint32_t at = 4; at <= 18; at++) {
+        char *text = hover_text(&c, at);
+        expect_contains(text, "number^");
+        free(text);
+    }
+    check_dispose(&c);
+}
+
 static void test_definition(void)
 {
     Checked c;
@@ -731,6 +744,7 @@ int main(void)
     }
     test_fits();
     test_definition();
+    test_quoted_declaration();
     test_callable_summaries();
     test_member();
     test_declaration();

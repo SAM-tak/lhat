@@ -31,7 +31,7 @@
 typedef struct {
     const char *path;
     uint32_t offset;
-    // What is written there, so every edit replaces the same spelling. A
+    // The source spelling, compared after decoding quoted identifiers. A
     // record that points at a place holding some other name is not about
     // this name at all -- a require^'s does exactly that, pointing at the
     // start of a whole file -- and comparing catches it without this having

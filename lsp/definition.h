@@ -31,6 +31,9 @@ typedef struct {
 bool lsp_definition_for_unit(const LhatUnit *unit, uint32_t offset,
                              LspDefinitionSite *out);
 
+// The complete identifier under the cursor; source length when none covers it.
+uint32_t lsp_definition_name_start(const LhatSource *source, uint32_t offset);
+
 // How far the name at `offset` runs, so a range can be made of it: 01 の 3.1
 // says which bytes a name is made of, and the record keeps only where it
 // starts.

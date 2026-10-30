@@ -253,6 +253,60 @@ static void test_a_member_is_a_name_too(void)
     check_dispose(&c);
 }
 
+static void test_quoted_names_keep_their_identity_and_ranges(void)
+{
+    Checked c;
+    bool found = false;
+    LHAT_TEST("quoted names, escaped backticks and mixed spellings retain complete ranges");
+    const char *sources[] = {
+        "let^`display name`=1 print(`display name`)",
+        "let^`a``b`=1 print(`a``b`)",
+        "let^value=1 print(`value`,value)",
+        "let^`value`=1 print(value,`value`)",
+    };
+    const char *uses[] = {"`display name`", "`a``b`", "`value`", "`value`"};
+    for (size_t i = 0; i < sizeof sources / sizeof sources[0]; i++) {
+        check_text(&c, "quoted.lh", sources[i]);
+        Places places = asked_at(&c, uses[i], &found);
+        LHAT_CHECK(found, "the quoted use resolves");
+        LHAT_CHECK_EQ_INT((int)places.count, i < 2 ? 2 : 3);
+        const char *declaration = sources[i] + 4;
+        const char *end = strchr(declaration, '=');
+        if (places.count) {
+            LHAT_CHECK_EQ_INT((int)places.from[0], 4);
+            LHAT_CHECK_EQ_INT((int)places.to[0], (int)(end - sources[i]));
+        }
+        uint32_t start = past_last(&c, uses[i]) - (uint32_t)strlen(uses[i]);
+        for (uint32_t at = start; at <= start + strlen(uses[i]); at++) {
+            LspReferenceTarget target;
+            LHAT_CHECK(lsp_references_target(&c.unit, at, &target),
+                       "every cursor position in the quoted name resolves");
+        }
+        check_dispose(&c);
+    }
+    const char *members[] = {
+        "let^Item=def^{`a b`=1} print(Item.`a b`)",
+        "enum^Kind{`a b`} print(Kind.`a b`)",
+    };
+    for (size_t i = 0; i < sizeof members / sizeof members[0]; i++) {
+        check_text(&c, "member.lh", members[i]);
+        Places places = asked_at(&c, "`a b`", &found);
+        LHAT_CHECK(found, "a quoted member resolves");
+        LHAT_CHECK_EQ_INT((int)places.count, 2);
+        check_dispose(&c);
+    }
+    check_text(&c, "literal.lh", "let^value=1 print(\"value\") # value");
+    LspReferenceTarget glued;
+    LHAT_CHECK(lsp_references_target(&c.unit, 4, &glued), "the first character after a glued keyword belongs to the name");
+    LHAT_CHECK_EQ_INT((int)glued.offset, 4);
+
+    LspReferenceTarget target;
+    uint32_t literal = (uint32_t)(strstr(c.source.text, "\"value\"") - c.source.text) + 2;
+    LHAT_CHECK(!lsp_references_target(&c.unit, literal, &target), "string contents are not names");
+    LHAT_CHECK(!lsp_references_target(&c.unit, past_last(&c, "value"), &target), "comment contents are not names");
+    check_dispose(&c);
+}
+
 static void test_a_new_name_has_to_be_one(void)
 {
     LHAT_TEST("01 の 3.1: a rename refuses what the lexer would not read back");
@@ -264,6 +318,12 @@ static void test_a_new_name_has_to_be_one(void)
     LHAT_CHECK(!lsp_references_is_name("hat^", 4), "01 の 2.3: nor is a hat");
     LHAT_CHECK(!lsp_references_is_name("", 0), "nor is nothing");
     LHAT_CHECK(!lsp_references_is_name(NULL, 4), "nor is nothing at all");
+    LHAT_CHECK(lsp_references_is_name("`a b`", 5), "a quoted name may contain spaces");
+    LHAT_CHECK(lsp_references_is_name("`a``b`", 6), "two backticks encode one");
+    LHAT_CHECK(!lsp_references_is_name("``", 2), "empty quoted names are refused");
+    LHAT_CHECK(!lsp_references_is_name("`a` b", 5), "two names are refused");
+    LHAT_CHECK(!lsp_references_is_name("`a\nb`", 5), "a name cannot cross a line");
+
 }
 
 int main(void)
@@ -273,5 +333,6 @@ int main(void)
     test_what_has_nowhere_to_edit();
     test_a_member_is_a_name_too();
     test_a_new_name_has_to_be_one();
+    test_quoted_names_keep_their_identity_and_ranges();
     return lhat_test_report("test_references");
 }

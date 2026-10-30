@@ -65,6 +65,7 @@ lhat_lsp_add_test(test_hover
     ${CMAKE_SOURCE_DIR}/lsp/position.c
     ${CMAKE_SOURCE_DIR}/lsp/lton.c
     ${CMAKE_SOURCE_DIR}/lsp/resolution.c
+    ${CMAKE_SOURCE_DIR}/lsp/definition.c
     ${CMAKE_SOURCE_DIR}/lsp/util.c
 )
 lhat_lsp_add_test(test_host_config
@@ -112,6 +113,7 @@ lhat_lsp_add_test(test_completion
 lhat_lsp_add_test(test_signature
     ${CMAKE_SOURCE_DIR}/lsp/signature.c
     ${CMAKE_SOURCE_DIR}/lsp/resolution.c
+    ${CMAKE_SOURCE_DIR}/lsp/definition.c
 )
 lhat_lsp_add_test(test_document_symbol
     ${CMAKE_SOURCE_DIR}/lsp/document_symbol.c

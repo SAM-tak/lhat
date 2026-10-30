@@ -2,31 +2,29 @@
 
 #include "references.h"
 
-#include <ctype.h>
 #include <string.h>
 
 #include "check.h"
+#include "lhat/lexer.h"
 
 #include "definition.h"
 
-// 01 の 3.1: what a name is made of. The lexer takes any non-ASCII that is
-// neither space nor a reserved mark, so this does too -- the same rule
-// resolution.c and definition.c already walk by.
-static bool is_name_byte(unsigned char c)
+// Quotes are spelling, not identity: `value` and value reach the same name.
+static bool same_name(const char *left, size_t left_length,
+                      const char *right, size_t right_length)
 {
-    return isalnum(c) || c == '_' || c >= 0x80;
-}
-
-// Where the name covering `offset` begins. A declaration is recorded as one
-// offset while a cursor may stand anywhere within the name, so a position is
-// walked back to the start of what it is inside.
-static uint32_t name_start_at(const char *text, size_t length, uint32_t offset)
-{
-    uint32_t at = offset <= length ? offset : (uint32_t)length;
-    while (at > 0 && is_name_byte((unsigned char)text[at - 1])) {
-        at--;
+    bool left_quoted = left_length > 1 && left[0] == '`';
+    bool right_quoted = right_length > 1 && right[0] == '`';
+    size_t a = left_quoted ? 1 : 0, b = right_quoted ? 1 : 0;
+    size_t a_end = left_length - (left_quoted ? 1 : 0);
+    size_t b_end = right_length - (right_quoted ? 1 : 0);
+    while (a < a_end && b < b_end) {
+        char x = left[a++], y = right[b++];
+        if (left_quoted && x == '`') a++;
+        if (right_quoted && y == '`') b++;
+        if (x != y) return false;
     }
-    return at;
+    return a == a_end && b == b_end;
 }
 
 // Which unit a record's declaration lives in. NULL on the record means this
@@ -55,9 +53,9 @@ static bool name_here_is(const LhatUnit *unit, uint32_t offset,
     }
     uint32_t end = lsp_definition_name_end(unit->source.text,
                                            unit->source.length, offset);
-    return end - offset == target->name_length &&
-           memcmp(unit->source.text + offset, target->name,
-                  target->name_length) == 0;
+    if (end < unit->source.length && unit->source.text[end] == '^') return false;
+    return same_name(unit->source.text + offset, end - offset,
+                     target->name, target->name_length);
 }
 
 bool lsp_references_target(const LhatUnit *unit, uint32_t offset,
@@ -70,8 +68,7 @@ bool lsp_references_target(const LhatUnit *unit, uint32_t offset,
     // of the position rather than of a record, because a cursor sitting just
     // past a name is still on it as far as a reader is concerned -- and a
     // record spans the name itself, so looking one byte past would miss.
-    uint32_t from = name_start_at(unit->source.text, unit->source.length,
-                                  offset);
+    uint32_t from = lsp_definition_name_start(&unit->source, offset);
     uint32_t to = lsp_definition_name_end(unit->source.text,
                                           unit->source.length, from);
     if (to <= from) {
@@ -168,24 +165,26 @@ bool lsp_references_declaration_in(const LhatUnit *unit,
         return false;
     }
     *from = target->offset;
-    *to = target->offset + target->name_length;
+    *to = lsp_definition_name_end(unit->source.text, unit->source.length,
+                                   target->offset);
     return true;
 }
 
 bool lsp_references_is_name(const char *spelling, size_t length)
 {
-    // 01 の 3.1: a name does not begin with a digit, and every byte of it is
-    // one a name is made of. The hat is left out on purpose -- 2.3 makes a
-    // hatted word the language's own, and none of them is a name a writer
-    // bound (07 の 4 章's WORDS is the list of them).
-    if (spelling == NULL || length == 0 ||
-        isdigit((unsigned char)spelling[0])) {
+    // One complete IDENT token, including the quoted spelling from 01 section 3.1.
+    if (spelling == NULL || length == 0 || memchr(spelling, '\r', length) ||
+        memchr(spelling, '\n', length) || memchr(spelling, '\0', length)) {
         return false;
     }
-    for (size_t i = 0; i < length; i++) {
-        if (!is_name_byte((unsigned char)spelling[i])) {
-            return false;
-        }
-    }
-    return true;
+    LhatSource source = {0};
+    source.text = (char *)spelling;
+    source.length = length;
+    LhatLexer lexer;
+    lhat_lexer_init(&lexer, &source);
+    LhatToken token = lhat_lexer_next(&lexer);
+    bool valid = token.kind == LHAT_TOKEN_IDENT && token.offset == 0 &&
+                 token.length == length && lexer.diagnostic_count == 0;
+    lhat_lexer_dispose(&lexer);
+    return valid;
 }
