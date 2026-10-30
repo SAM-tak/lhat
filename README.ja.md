@@ -1,6 +1,6 @@
 # プログラミング言語 L^
 
-![L^ Logo](media/lhat-logo.svg)
+![L^ Logo](media/lhat-logo.png)
 
 **Modern & Better Lua with Visual Programming.**
 
