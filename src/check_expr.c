@@ -1335,6 +1335,45 @@ static LhatType *expect_bitwise(Checker *c, const LhatNode *at,
     return number;
 }
 
+// 17.5: whether what a match's arms left of its subject is nothing, once the
+// values they named are counted. A bool^ is spent by both of its literals,
+// and an enum by every member of its own declaration -- a member of another
+// enum spends nothing. Any other type left over is still a way to miss.
+static bool match_covers(const LhatType *remaining, bool bool_spent,
+                         const LhatType *const *members, size_t count)
+{
+    if (remaining == NULL) {
+        return true;
+    }
+    if (remaining->kind == LHAT_TYPE_UNION) {
+        for (const LhatTypeList *arm = remaining->v.composite.arms;
+             arm != NULL; arm = arm->next) {
+            if (!match_covers(arm->type, bool_spent, members, count)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (remaining->kind == LHAT_TYPE_BOOL) {
+        return bool_spent;
+    }
+    if (remaining->kind != LHAT_TYPE_ENUM) {
+        return false;
+    }
+    size_t total = 0;
+    size_t named = 0;
+    for (const LhatTypeList *k = remaining->v.error.kinds; k != NULL;
+         k = k->next) {
+        bool seen = false;
+        for (size_t i = 0; !seen && i < count; i++) {
+            seen = members[i] == k->type;
+        }
+        total++;
+        named += seen;
+    }
+    return named == total;
+}
+
 LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
 {
     LhatOpKind op = node->v.binary.op;
@@ -7198,13 +7237,15 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             LhatType *result = chk_infer(c, node->v.loop.body);
 
             // 17.5: without other^ the arms must provably exhaust the
-            // subject, and bool^ met both ways is the one provable case --
-            // no other type's values can all be spelled out. What is looked
-            // for is exactly what 17.9 lowered a literal pattern to:
-            // `subject = true^` / `= false^`, possibly or^-ed together.
-            // Anything else -- a range, a fits^, another literal -- proves
-            // nothing. relaxed leaves the doubt to the run, where the arm
-            // nothing fits is a panic (03 の 3.1; compile.c's tail).
+            // subject. Every arm only ever takes something out of what the
+            // subject may still be, so an arm that proves nothing (a range,
+            // another literal) is simply left out of the count. `fits^` takes
+            // its type out the way 13.11 does on the false side of a chain;
+            // `= true^` / `= false^` / `= nil^` and `= E.Member` are what
+            // 17.9 lowered a literal pattern to, possibly or^-ed together,
+            // and take a value out of the type that has only those.
+            // relaxed leaves the doubt to the run, where the arm nothing fits
+            // is a panic (03 の 3.1; compile.c's tail).
             const LhatNode *chain = node->v.loop.body;
             const LhatNode *clause =
                 chain != NULL && chain->kind == LHAT_NODE_IF_EXPR
@@ -7213,23 +7254,14 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             if (node->v.loop.kind == LHAT_FOR_WHEN &&
                 clause != NULL) {
                 bool defaulted = false;
-                bool provable = true;
                 bool saw_true = false;
                 bool saw_false = false;
-                // 02 の 19 章: an enum is the other type whose values can
-                // all be spelled out. The arms seen as members are counted
-                // against the subject's declaration below.
                 const LhatType *seen_members[256];
                 size_t seen_count = 0;
-                const LhatType *subject =
+                LhatType *remaining =
                     scope.bindings != NULL ? scope.bindings->type : NULL;
-                // 17.5: the third provable case. Each `fits^` arm takes its
-                // type out of what the subject may still be, and a subject
-                // with nothing left was exhausted -- the same subtraction
-                // 13.11 does on the false side of a chain.
-                LhatType *remaining = (LhatType *)subject;
-                bool saw_fits = false;
-                for (; clause != NULL; clause = clause->next) {
+                bool known_subject = remaining != NULL;
+                for (; clause != NULL && !defaulted; clause = clause->next) {
                     const LhatNode *condition = clause->v.clause.condition;
                     if (condition == NULL) {
                         defaulted = true;
@@ -7238,100 +7270,63 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                     const LhatNode *stack[16];
                     size_t top = 0;
                     stack[top++] = condition;
-                    while (top > 0 && provable) {
+                    while (top > 0) {
                         const LhatNode *cond = stack[--top];
-                        if (cond->kind == LHAT_NODE_BINARY &&
-                            cond->v.binary.op == LHAT_OP_OR &&
-                            top + 2 <= 16) {
+                        if (cond->kind != LHAT_NODE_BINARY) {
+                            continue;
+                        }
+                        if (cond->v.binary.op == LHAT_OP_OR && top + 2 <= 16) {
                             stack[top++] = cond->v.binary.left;
                             stack[top++] = cond->v.binary.right;
                             continue;
                         }
+                        const LhatNode *right = cond->v.binary.right;
+                        if (cond->v.binary.op == LHAT_OP_FITS) {
+                            remaining = chk_without(c, remaining,
+                                                    chk_resolve_type(c, right));
+                            continue;
+                        }
+                        if (cond->v.binary.op != LHAT_OP_EQ || right == NULL) {
+                            continue;
+                        }
                         const char *name = NULL;
                         size_t length = 0;
-                        if (cond->kind == LHAT_NODE_BINARY &&
-                            cond->v.binary.op == LHAT_OP_EQ &&
-                            chk_node_name(c, cond->v.binary.right, &name,
-                                          &length) &&
-                            (lhat_name_is(name, length, "true^") ||
-                             lhat_name_is(name, length, "false^"))) {
+                        if (chk_node_name(c, right, &name, &length)) {
+                            if (lhat_name_is(name, length, "nil^")) {
+                                remaining = chk_without(
+                                    c, remaining,
+                                    chk_simple(c, LHAT_TYPE_NIL));
+                            }
                             saw_true = saw_true ||
                                        lhat_name_is(name, length, "true^");
                             saw_false = saw_false ||
                                         lhat_name_is(name, length, "false^");
-                        } else if (cond->kind == LHAT_NODE_BINARY &&
-                                   cond->v.binary.op == LHAT_OP_EQ &&
-                                   cond->v.binary.right != NULL &&
-                                   cond->v.binary.right->kind ==
-                                       LHAT_NODE_MEMBER) {
-                            // 19 章: a pattern naming a member is provable
-                            // the way a bool literal is. Resolved from the
-                            // written path -- value position reads wide on
-                            // purpose, so the singleton is asked for here.
-                            const LhatNode *pattern = cond->v.binary.right;
+                        } else if (right->kind == LHAT_NODE_MEMBER &&
+                                   seen_count < sizeof seen_members /
+                                                    sizeof seen_members[0]) {
+                            // 19 章: resolved from the written path -- value
+                            // position reads wide on purpose, so the
+                            // singleton is asked for here.
                             LhatType *holder =
-                                chk_infer(c, pattern->v.access.target);
-                            const char *member_name = NULL;
-                            size_t member_length = 0;
+                                chk_infer(c, right->v.access.target);
                             LhatType *arm = NULL;
                             if (holder != NULL &&
                                 holder->kind == LHAT_TYPE_ENUM &&
-                                chk_node_name(c, pattern->v.access.argument,
-                                              &member_name, &member_length)) {
-                                arm = chk_kind_of_set(holder, member_name,
-                                                      member_length);
+                                chk_node_name(c, right->v.access.argument,
+                                              &name, &length)) {
+                                arm = chk_kind_of_set(holder, name, length);
                             }
                             if (arm != NULL &&
-                                arm->kind == LHAT_TYPE_ENUM_MEMBER &&
-                                seen_count <
-                                    sizeof seen_members /
-                                        sizeof seen_members[0]) {
-                                bool known = false;
-                                for (size_t i = 0; i < seen_count; i++) {
-                                    if (seen_members[i] == arm) {
-                                        known = true;
-                                        break;
-                                    }
-                                }
-                                if (!known) {
-                                    seen_members[seen_count++] = arm;
-                                }
-                            } else {
-                                provable = false;
+                                arm->kind == LHAT_TYPE_ENUM_MEMBER) {
+                                seen_members[seen_count++] = arm;
                             }
-                        } else if (cond->kind == LHAT_NODE_BINARY &&
-                                   cond->v.binary.op == LHAT_OP_FITS) {
-                            remaining = chk_without(
-                                c, remaining,
-                                chk_resolve_type(c, cond->v.binary.right));
-                            saw_fits = true;
-                        } else {
-                            provable = false;
                         }
                     }
                 }
-                // 19 章: every member of the subject's declaration named,
-                // each exactly one of them, and none from anywhere else.
-                bool enum_covered = false;
-                if (provable && !saw_true && !saw_false && seen_count > 0 &&
-                    subject != NULL && subject->kind == LHAT_TYPE_ENUM) {
-                    size_t total = 0;
-                    for (const LhatTypeList *k = subject->v.error.kinds;
-                         k != NULL; k = k->next) {
-                        total++;
-                    }
-                    enum_covered = seen_count == total;
-                    for (size_t i = 0; enum_covered && i < seen_count; i++) {
-                        if (seen_members[i]->v.error.set != subject) {
-                            enum_covered = false;
-                        }
-                    }
-                }
-                if (!defaulted && !enum_covered &&
-                    !(provable && saw_fits && subject != NULL &&
-                      remaining == NULL) &&
-                    !(provable && saw_true && saw_false && subject != NULL &&
-                      subject->kind == LHAT_TYPE_BOOL)) {
+                if (!defaulted &&
+                    !(known_subject &&
+                      match_covers(remaining, saw_true && saw_false,
+                                   seen_members, seen_count))) {
                     chk_report(c, node, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
                 }
             }

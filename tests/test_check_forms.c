@@ -958,6 +958,48 @@ static void test_patterns(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
     unit_dispose(&u);
 
+    LHAT_TEST("bool literals and fits^ together prove bool^|nil^");
+    check_text(&u,
+               "var^ say = f^ x:bool^|nil^ -> number^ {\n"
+               "    for^ x: when^ true^: 1 when^ false^: 2 when^ fits^ nil^: 3 ;\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("the nil^ literal spends nil^");
+    check_text(&u,
+               "var^ say = f^ x:bool^|nil^ -> number^ {\n"
+               "    for^ x: when^ true^, false^: 1 when^ nil^: 2 ;\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("one bool^ literal leaves bool^|nil^ open");
+    check_text(&u,
+               "var^ say = f^ x:bool^|nil^ -> number^ {\n"
+               "    for^ x: when^ true^: 1 when^ fits^ nil^: 3 ;\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
+    unit_dispose(&u);
+
+    LHAT_TEST("enum members and fits^ together prove E|nil^");
+    check_text(&u,
+               "enum^ E { AAA, BBB }\n"
+               "var^ say = f^ x:E|nil^ -> number^ {\n"
+               "    for^ x: when^ E.AAA: 1 when^ E.BBB: 2 when^ fits^ nil^: 3 ;\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a missing member leaves E|nil^ open");
+    check_text(&u,
+               "enum^ E { AAA, BBB }\n"
+               "var^ say = f^ x:E|nil^ -> number^ {\n"
+               "    for^ x: when^ E.AAA: 1 when^ fits^ nil^: 3 ;\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
+    unit_dispose(&u);
+
     LHAT_TEST("value patterns over a number^ still take other^");
     check_text(&u,
                "var^ even = f^ n:number^ -> bool^ {\n"
