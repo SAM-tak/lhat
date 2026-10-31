@@ -1307,35 +1307,6 @@ static LhatNode *parse_id(Parser *p)
     return finish(p, node);
 }
 
-// 04 の 2.5. The kind is written into the construction rather than left to a
-// member, since 2.3 makes the kind the type. The leading error^ is what lets
-// this be recognised without knowing any types: a qualified name followed by
-// '{' would otherwise read as a name and a table literal (10.7).
-static LhatNode *parse_error_new(Parser *p)
-{
-    LhatToken start = p->current;
-    advance(p);  // error^
-
-    LhatNode *node = make(p, LHAT_NODE_ERROR_NEW, &start);
-    if (node == NULL) {
-        return NULL;
-    }
-
-    if (check_op(p, LHAT_OP_LBRACE)) {
-        // 2.2 requires a kind, and 2.5 puts it in the syntax, so an error^
-        // with nothing in front of the brace has lost it rather than defaulted.
-        report(p, &p->current, LHAT_PARSE_ERR_ERROR_NEEDS_KIND);
-    } else {
-        node->v.named.name = parse_qualified_name(p);
-    }
-
-    if (expect_op(p, LHAT_OP_LBRACE)) {
-        node->v.named.members = parse_brace_entries(p, true);
-        expect_op(p, LHAT_OP_RBRACE);
-    }
-    return finish(p, node);
-}
-
 // 14 章. def^ stays an expression (14.9), so the name of a definition comes
 // from whatever it is bound to and composition reads as an ordinary '..'.
 // 14.7改2: what delegate^ names. Two spellings and no others -- 'self^.name'
@@ -2114,13 +2085,6 @@ static LhatNode *parse_primary(Parser *p)
             if (check_hat(p, "self") && is_op(&p->ahead, LHAT_OP_LBRACE) &&
                 !p->brace_is_body) {
                 return parse_self_table(p);
-            }
-            // 04 の 14.5: 'error^' followed by a name constructs; on its own
-            // it is the supertype, which only a type position may ask for.
-            if (check_hat(p, "error") &&
-                (p->ahead.kind == LHAT_TOKEN_IDENT ||
-                 is_op(&p->ahead, LHAT_OP_LBRACE))) {
-                return parse_error_new(p);
             }
             // 01 の 3.3: 'id^name' is the name's spelling as a string. The
             // name is not looked up -- what this asks for is the way it is
@@ -5695,8 +5659,6 @@ static const LhatMessageEntry PARSE_MESSAGES[] = {
         "errordef^ needs a name; an error kind has no anonymous form"},
     [LHAT_PARSE_ERR_ENUMDEF_NEEDS_NAME] = {"parse.enumdef-needs-name",
         "enum^ needs a name; an enum has no anonymous form"},
-    [LHAT_PARSE_ERR_ERROR_NEEDS_KIND] = {"parse.error-needs-kind",
-        "write the kind, as in error^IOError.NotFound{ ... }"},
     [LHAT_PARSE_ERR_LET_NEEDS_VALUE] = {"parse.let-needs-value",
         "a definition needs a value; write 'var^ x = 0'"},
     [LHAT_PARSE_ERR_FOCUS_TAKES_ONE] = {"parse.focus-takes-one",

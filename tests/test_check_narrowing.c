@@ -137,7 +137,7 @@ static void test_narrowing(void)
     // 04 の 6.1: narrowing to a kind is what makes its declared field visible.
     LHAT_TEST("a narrowed error kind shows its fields");
     check_text(&u,
-               "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
+               "errordef^ ParseError { Syntax { line : number^ = 0 }, Eof }\n"
                "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
                "var^ r = parse()\n"
                "if^ r fits^ ParseError.Syntax { var^ n : number^ = r.line }\n");
@@ -146,7 +146,7 @@ static void test_narrowing(void)
 
     LHAT_TEST("the field is not visible without narrowing");
     check_text(&u,
-               "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
+               "errordef^ ParseError { Syntax { line : number^ = 0 }, Eof }\n"
                "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
                "var^ r = parse()\n"
                "var^ n = r.line\n");
@@ -157,7 +157,7 @@ static void test_narrowing(void)
     // falls through has to leave its narrowing behind.
     LHAT_TEST("an exiting branch narrows what follows it");
     check_text(&u,
-               "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
+               "errordef^ ParseError { Syntax { line : number^ = 0 }, Eof }\n"
                "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
                "var^ use = f^ -> number^ {\n"
                "    var^ r = parse()\n"
@@ -1046,7 +1046,7 @@ static void test_tuple_positions(void)
     LHAT_TEST("catch^ supplies a replacement tuple");
     check_text(&u,
                "errordef^ E { X }\n"
-               "var^ f = f^ -> (number^, number^)|E { return^ error^E.X{} }\n"
+               "var^ f = f^ -> (number^, number^)|E { return^ E.X.new() }\n"
                "var^ q, r = f() catch^ (0, 1)\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1054,7 +1054,7 @@ static void test_tuple_positions(void)
     LHAT_TEST("but not one of the wrong width");
     check_text(&u,
                "errordef^ E { X }\n"
-               "var^ f = f^ -> (number^, number^)|E { return^ error^E.X{} }\n"
+               "var^ f = f^ -> (number^, number^)|E { return^ E.X.new() }\n"
                "var^ q, r = f() catch^ (0, 1, 2)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
     unit_dispose(&u);
@@ -1065,7 +1065,7 @@ static void test_tuple_positions(void)
     LHAT_TEST("and the panic^ arm has no width to answer for");
     check_text(&u,
                "errordef^ E { X }\n"
-               "var^ f = f^ -> (number^, number^)|E { return^ error^E.X{} }\n"
+               "var^ f = f^ -> (number^, number^)|E { return^ E.X.new() }\n"
                "var^ q, r = f() catch^ panic^ it^\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1073,7 +1073,7 @@ static void test_tuple_positions(void)
     LHAT_TEST("nor a single value");
     check_text(&u,
                "errordef^ E { X }\n"
-               "var^ f = f^ -> (number^, number^)|E { return^ error^E.X{} }\n"
+               "var^ f = f^ -> (number^, number^)|E { return^ E.X.new() }\n"
                "var^ q, r = f() catch^ 0\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
     unit_dispose(&u);
@@ -1109,7 +1109,7 @@ static void test_tuple_positions(void)
     LHAT_TEST("and the same holds through catch^");
     check_text(&u,
                "errordef^ E { X }\n"
-               "var^ f = f^ -> (number^, string^)|E { return^ error^E.X{} }\n"
+               "var^ f = f^ -> (number^, string^)|E { return^ E.X.new() }\n"
                "var^ q, r = f() catch^ (nil^, nil^)\n"
                "var^ s : string^|nil^ = r\n");
     CHECK_CLEAN(&u);
@@ -1158,8 +1158,8 @@ static void test_tuple_positions(void)
     LHAT_TEST("nor carrying an error in a position");
     check_text(&u,
                "errordef^ E { X }\n"
-               "var^ f = f^ -> (number^, number^)|E { return^ error^E.X{} }\n"
-               "var^ q, r = f() catch^ (0, error^E.X{})\n");
+               "var^ f = f^ -> (number^, number^)|E { return^ E.X.new() }\n"
+               "var^ q, r = f() catch^ (0, E.X.new())\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
     unit_dispose(&u);
 

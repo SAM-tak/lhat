@@ -2133,8 +2133,53 @@ static LhatType *effect_union_signature(LhatType *type, LhatType **pure)
     return lhat_type_equal(&comparable, procedure) ? procedure : NULL;
 }
 
+// 04 の 2.5: `Kind.new()` is the only way to a value of a kind, which is a
+// type and nothing else (2.3). The parser cannot tell it from any other call
+// -- it is a qualified name and a member call -- so it is settled here by what
+// the name before `.new` resolves to. The node is then rewritten into the
+// construction the compiler builds: the kind is its name and its type, and it
+// has no entries, since every field has a default (2.2). NULL where this is
+// an ordinary call.
+static LhatType *infer_kind_new(Checker *c, const LhatNode *node)
+{
+    const LhatNode *callee = node->v.access.target;
+    const LhatNode *holder =
+        callee != NULL && callee->kind == LHAT_NODE_MEMBER
+            ? callee->v.access.target
+            : NULL;
+    const char *name = NULL;
+    size_t length = 0;
+    if (node->v.access.argument != NULL || holder == NULL ||
+        holder->kind != LHAT_NODE_MEMBER ||
+        !chk_node_name(c, callee->v.access.argument, &name, &length) ||
+        !chk_name_is(name, length, "new")) {
+        return NULL;
+    }
+    // The set is read quietly: if this is not a kind, the ordinary path
+    // reads it again and says what is wrong with it once.
+    c->rereading++;
+    LhatType *set = chk_infer(c, holder->v.access.target);
+    c->rereading--;
+    if (set == NULL || set->kind != LHAT_TYPE_ERROR_SET ||
+        !chk_node_name(c, holder->v.access.argument, &name, &length) ||
+        chk_kind_of_set(set, name, length) == NULL) {
+        return NULL;
+    }
+    LhatNode *rewritten = (LhatNode *)node;
+    rewritten->kind = LHAT_NODE_ERROR_NEW;
+    rewritten->v.named.name = (LhatNode *)holder;
+    rewritten->v.named.members = NULL;
+    rewritten->v.named.exported = false;
+    rewritten->v.named.local = false;
+    return chk_resolve_type(c, holder);
+}
+
 LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 {
+    LhatType *made = infer_kind_new(c, node);
+    if (made != NULL) {
+        return made;
+    }
     ((LhatNode *)node)->checked_transfer_arguments = 0;
     ((LhatNode *)node)->checked_instance = NULL;
     ((LhatNode *)node)->checked_arm = 0;
@@ -7374,77 +7419,11 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             return module;
         }
 
-        case LHAT_NODE_ERROR_NEW: {
-            // 04 の 2.5: the kind is written into the construction, and 2.3
-            // makes it the type of the result.
-            LhatType *kind = chk_resolve_type(c, node->v.named.name);
-            for (const LhatNode *entry = node->v.named.members; entry != NULL;
-                 entry = entry->next) {
-                LhatType *given = chk_infer(c, entry->v.entry.value);
-                const char *name = NULL;
-                size_t length = 0;
-                if (kind == NULL || kind->kind != LHAT_TYPE_ERROR_KIND ||
-                    !chk_node_name(c, entry->v.entry.key, &name, &length)) {
-                    continue;
-                }
-                // message and cause exist on every kind without being
-                // declared (2.3); the rest have to have been.
-                if (chk_name_is(name, length, "message")) {
-                    chk_expect(c, entry, given, chk_simple(c, LHAT_TYPE_STRING),
-                               LHAT_CHECK_ERR_MISMATCH);
-                    continue;
-                }
-                if (chk_name_is(name, length, "cause")) {
-                    continue;
-                }
-                bool found = false;
-                for (const LhatTypeMember *m = kind->v.error.fields; m != NULL;
-                     m = m->next) {
-                    if (m->name_length == length &&
-                        memcmp(m->name, name, length) == 0) {
-                        chk_expect(c, entry, given, m->type, LHAT_CHECK_ERR_MISMATCH);
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    // 2.3's two are on every kind, so they are offered too.
-                    ChkNearest near;
-                    if (chk_nearest_start(c, &near, name, length)) {
-                        lhat_check_written_members(kind, chk_nearest_member,
-                                                   &near);
-                        chk_nearest_offer(&near, "message", 7);
-                        chk_nearest_offer(&near, "cause", 5);
-                    }
-                    chk_report_near(c, entry, LHAT_CHECK_ERR_NO_MEMBER, name,
-                                    length, entry->v.entry.key, &near);
-                }
-            }
-
-            // 04 の 2.5: a field without a default has to be written, since
-            // there is nothing for it to fall back to.
-            if (kind != NULL && kind->kind == LHAT_TYPE_ERROR_KIND) {
-                for (const LhatTypeMember *m = kind->v.error.fields; m != NULL;
-                     m = m->next) {
-                    if (m->optional) {
-                        continue;
-                    }
-                    bool given = false;
-                    for (const LhatNode *entry = node->v.named.members;
-                         entry != NULL && !given; entry = entry->next) {
-                        const char *name = NULL;
-                        size_t length = 0;
-                        given = chk_node_name(c, entry->v.entry.key, &name, &length) &&
-                                length == m->name_length &&
-                                memcmp(name, m->name, length) == 0;
-                    }
-                    if (!given) {
-                        chk_report(c, node, LHAT_CHECK_ERR_MISSING_FIELD);
-                    }
-                }
-            }
-            return kind;
-        }
+        // 04 の 2.5: what chk_infer_call made of `Kind.new()`. The kind is the
+        // type of the result (2.3). A body checked again for another instance
+        // arrives here already rewritten, with nothing stamped on it yet.
+        case LHAT_NODE_ERROR_NEW:
+            return chk_resolve_type(c, node->v.named.name);
 
         // 13.8改: '(a, b)' written as a value. Where the tuple came from
         // makes no difference downstream -- this is the same type a

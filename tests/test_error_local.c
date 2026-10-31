@@ -33,7 +33,7 @@
     "let^ fine = f^ -> number^|IOError { return^ 1 }\n"
 
 // How one is raised until as^ answers one for itself.
-#define RAISED "error^IOFatal.Interrupted{ }"
+#define RAISED "IOFatal.Interrupted.new()"
 
 // The regression this whole arrangement exists to prevent. If localerror^
 // were under error^, none of these would still be writable.
@@ -55,7 +55,7 @@ static void test_error_is_untouched(void)
     LHAT_TEST("cause is still there and still reachable");
     check_text(&u, DECLS
                "let^ g = p^ {\n"
-               "    let^ e = error^IOError.Denied{ }\n"
+               "    let^ e = IOError.Denied.new()\n"
                "    let^ c = e.cause\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -86,7 +86,7 @@ static void test_the_two_families_are_disjoint(void)
     LHAT_TEST("and an error^ does not fit a localerror^ one");
     check_text(&u, DECLS
                "let^ g = p^ {\n"
-               "    var^ e : localerror^ = error^IOError.Denied{ }\n"
+               "    var^ e : localerror^ = IOError.Denied.new()\n"
                "}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -198,7 +198,9 @@ static void test_the_chain_is_the_way_out(void)
     LHAT_TEST("a localerror^ may be a cause");
     check_text(&u, DECLS
                "let^ g = p^ -> number^|IOError {\n"
-               "    return^ " RAISED " catch^ error^IOError.Denied{ cause = it^ }\n"
+               "    var^ e = IOError.Denied.new()\n"
+               "    e.cause := " RAISED "\n"
+               "    return^ e\n"
                "}\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -218,7 +220,7 @@ static void test_the_chain_is_the_way_out(void)
     // written side has to refuse a field that would hide one inside it.
     LHAT_TEST("a declared field cannot be one");
     check_text(&u, DECLS
-               "errordef^ Wrapper { Held { inner : IOFatal } }\n");
+               "errordef^ Wrapper { Held { inner = IOFatal.Interrupted.new() } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN);
     unit_dispose(&u);
 }

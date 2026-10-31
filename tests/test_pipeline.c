@@ -52,7 +52,7 @@ static void test_compile_allocation_failures(void)
 {
     static const char *const sources[] = {
         "var^ x = 1\nlet^ f = f^n:number^ -> number^ {return^ x + n}\nreturn^ f(2)\n",
-        "errordef^ E { Bad }\nlet^ f = f^ {return^ error^E.Bad{}}\n"
+        "errordef^ E { Bad }\nlet^ f = f^ {return^ E.Bad.new()}\n"
         "do^{ try^ f() catch^ E.Bad: return^ 42 }\n",
         "let^ D = def^{self^{x = 42}, m = f^self^ {return^ self^.x}}\nreturn^ D.new().m()\n",
         "enum^ E { V = 42 }\nrepeat^ 2 { if^ false^ {next^} break^ }\nreturn^ E.V.value\n",
@@ -211,7 +211,7 @@ static void test_nominal_type_lowering(void)
     LHAT_TEST("nested error kinds retain their declaration identity");
     run_text(&r,
         "errordef^ E {A, B}\n"
-        "let^ a = {value = error^ E.A}\n"
+        "let^ a = {value = E.A.new()}\n"
         "if^ a fits^ t^{value:E.B} {return^ 0}\n"
         "if^ a fits^ t^{value:E.A} {return^ 1}\nreturn^ 0\n");
     CHECK_INTEGER(&r, 1);
@@ -311,16 +311,16 @@ static void test_focus_and_catch_identity(void)
         // A counted focus remains distinct from a named walking target.
         "for^ 40 to^ 40 {for^ n in^ {2} {return^ it^ + n}}\n",
         // Narrowing must preserve the catch binding's identity.
-        "errordef^ E {A {n:number^}, B}\n"
-        "let^ fail = f^ {return^ error^ E.A{n := 42}}\n"
+        "errordef^ E {A {n := 0}, B}\n"
+        "let^ fail = f^ {var^ e = E.A.new() e.n := 42 return^ e}\n"
         "return^ fail() catch^ if^ it^ fits^ E.A: it^.n el^: 0 ;\n",
         // Catch arms introduce an identity separate from the enclosing focus.
-        "errordef^ E {A}\nlet^ fail = f^ {return^ error^ E.A{}}\n"
+        "errordef^ E {A}\nlet^ fail = f^ {return^ E.A.new()}\n"
         "for^ 42 to^ 42 {do^{var^ ignored = try^ fail()\ncatch^:\n"
         "let^ read = f^ {return^ it^^}\nreturn^ read()}}\n",
         // An expression catch's error remains available to an escaping closure.
-        "errordef^ E {A {n:number^}}\n"
-        "let^ fail = f^ {return^ error^ E.A{n := 42}}\n"
+        "errordef^ E {A {n := 0}}\n"
+        "let^ fail = f^ {var^ e = E.A.new() e.n := 42 return^ e}\n"
         "let^ read = fail() catch^ (f^ {return^ it^.n})\nreturn^ read()\n",
     };
     for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
@@ -928,7 +928,7 @@ static void test_session_allocation_rollback(void)
         LHAT_CHECK_EQ_INT(lhat_compile_next(session->compiles, &units[0].checked,
                                             &units[0].lexer, &protos[0]).status, LHAT_COMPILE_OK);
         check_next_text(&units[1], session->checks,
-                        "errordef^ F { Bad }\nvar^ y = 1\nlet^ e = error^E.Bad{}\n");
+                        "errordef^ F { Bad }\nvar^ y = 1\nlet^ e = E.Bad.new()\n");
         CHECK_CLEAN(&units[1]);
         size_t baseline = live_allocations;
         allocation_count = 0;
@@ -1027,10 +1027,10 @@ static void test_error_declaration_identity(void)
         "var^ total = 0\n"
         "do^{\n"
         "  errordef^ E {K {value := 2}}\n"
-        "  var^ inner = error^ E.K\n"
+        "  var^ inner = E.K.new()\n"
         "  total := inner.value\n"
         "}\n"
-        "var^ outer = error^ E.K\nreturn^ total + outer.value\n");
+        "var^ outer = E.K.new()\nreturn^ total + outer.value\n");
     CHECK_INTEGER(&r, 42);
     LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
     run_dispose(&r);
@@ -1038,7 +1038,7 @@ static void test_error_declaration_identity(void)
     LHAT_TEST("error defaults retain the declaration's lexical binding");
     run_text(&r,
         "var^ x = 42\ndo^{errordef^ E {K {value := x}}\n"
-        "do^{var^ x = 100\nvar^ e = error^ E.K\nreturn^ e.value}}\n");
+        "do^{var^ x = 100\nvar^ e = E.K.new()\nreturn^ e.value}}\n");
     CHECK_INTEGER(&r, 42);
     LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
     run_dispose(&r);
@@ -1047,7 +1047,7 @@ static void test_error_declaration_identity(void)
     TestSession *session = test_session_new();
     Run one, two;
     compile_next_text(&one, session, "errordef^ E {K {value := 42}}\n");
-    compile_next_text(&two, session, "var^ e = error^ E.K\nreturn^ e.value\n");
+    compile_next_text(&two, session, "var^ e = E.K.new()\nreturn^ e.value\n");
     LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);
     LHAT_CHECK_EQ_INT(two.compiled, LHAT_COMPILE_OK);
     if (one.compiled == LHAT_COMPILE_OK && two.compiled == LHAT_COMPILE_OK) {

@@ -81,8 +81,6 @@ field-needs-type = フィールドには型か既定値、またはその両方�
 errordef-needs-name = errordef^ には名前が要る。誤りの種別に名前の無い形は無い
 # enumdef-needs-name = enum^ needs a name; an enum has no anonymous form
 enumdef-needs-name = enum^ には名前が要る。列挙に名前の無い形は無い
-# error-needs-kind = write the kind, as in error^IOError.NotFound{ ... }
-error-needs-kind = error^IOError.NotFound{ ... } のように種別を書く
 # let-needs-value = a definition needs a value; write 'var^ x = 0'
 let-needs-value = 定義には値が要る。'var^ x = 0' と書く
 # focus-takes-one = a for^ introduces one binding; write another for^ for the next one

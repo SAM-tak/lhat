@@ -1193,7 +1193,7 @@ static void test_statements(void)
         parse_dispose(&p);
     }
 
-    // 14.14改2: every brace introduces, so all five read '=' as well as ':='
+    // 14.14改2: every brace introduces, so all four read '=' as well as ':='
     // and the two mean the same thing. Before this they disagreed three ways.
     LHAT_TEST("every brace reads both spellings");
     parse_text(&p,
@@ -1202,9 +1202,7 @@ static void test_statements(void)
                "var^ P = def^{ self^{ w = 5 }, m = p^ { } }\n"
                "var^ Q = def^{ self^{ w := 5 }, m := p^ { } }\n"
                "errordef^ E { K { line : number^ = 0 } }\n"
-               "errordef^ F { K { line : number^ := 0 } }\n"
-               "var^ e = error^E.K{ line = 3 }\n"
-               "var^ g = error^E.K{ line := 3 }\n");
+               "errordef^ F { K { line : number^ := 0 } }\n");
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
@@ -3662,26 +3660,6 @@ static void test_errors(void)
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
                       LHAT_PARSE_ERR_ERRORDEF_NEEDS_NAME);
-    parse_dispose(&p);
-
-    LHAT_TEST("error^Kind{ ... } names the kind in the syntax");
-    parse_text(&p,
-               "e := error^ParseError.Syntax{ message := 'bad', line := 3 }");
-    LHAT_CHECK_EQ_INT(error_count(&p), 0);
-    {
-        const LhatNode *e = first_value(&p);
-        LHAT_CHECK_EQ_INT(e->kind, LHAT_NODE_ERROR_NEW);
-        LHAT_CHECK_EQ_INT(e->v.named.name->kind, LHAT_NODE_MEMBER);
-        LHAT_CHECK_EQ_INT(lhat_node_list_length(e->v.named.members), 2);
-    }
-    parse_dispose(&p);
-
-    // 04 の 2.5: without the kind there is nothing to construct.
-    LHAT_TEST("error^ without a kind is rejected");
-    parse_text(&p, "e := error^{ message := 'x' }");
-    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
-    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_ERROR_NEEDS_KIND);
     parse_dispose(&p);
 
     // 04 の 4.3: the fallback replaces the value of the operation that

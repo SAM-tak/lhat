@@ -586,8 +586,8 @@ static void test_execution_pipeline_parity(void)
         "return^ this^^(n - 1) + 1}\nreturn^ inner()}\nreturn^ count(42)\n",
         "for^ 40 to^ 40 {for^ 2 to^ 2 {"
         "let^ read = f^ {return^ it^^ + it^}\nreturn^ read()}}\n",
-        "errordef^ E {A {n:number^}, B}\n"
-        "let^ fail = f^ {return^ error^ E.A{n := 42}}\n"
+        "errordef^ E {A {n := 0}, B}\n"
+        "let^ fail = f^ {var^ e = E.A.new() e.n := 42 return^ e}\n"
         "return^ fail() catch^ if^ it^ fits^ E.A: it^.n el^: 0 ;\n",
         "import^ lib.draw\nreturn^ p^ {import^ lib.draw\nreturn^ lib.draw.line()}\n",
     };

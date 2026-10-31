@@ -277,7 +277,7 @@ static void test_every_name_is_reached(void)
     // was written for; the rest is here so the check keeps its reach.
     static const char *source =
         "module^ demo.unit\n"
-        "errordef^ E { Bad { why : string^ } }\n"
+        "errordef^ E { Bad { why = \"\" } }\n"
         "var^ table = { key := 1, other := 2 }\n"
         "let^ shout = f^ msg:string^ -> string^ { return^ msg }\n"
         "let^ pair = (1, 2)\n"
@@ -295,7 +295,7 @@ static void test_every_name_is_reached(void)
         "catch^:\n"
         "    shout(\"w\")\n"
         "}\n"
-        "let^ held : E.Bad = error^ E.Bad { why = \"no\" }\n"
+        "let^ held : E.Bad = E.Bad.new()\n"
         "let^ widened = table.key as^ number^\n"
         "with^ resource = table { shout(\"v\") }\n"
         // 14.7改: a definition with its type written out. The self^{ } section
@@ -454,7 +454,7 @@ static void test_qualified_type_name(void)
 
     static const char *source =
         "errordef^ E { Bad }\n"
-        "let^ held : E.Bad = error^ E.Bad { }\n";
+        "let^ held : E.Bad = E.Bad.new()\n";
 
     Checked c;
     check_text(&c, source);
@@ -978,7 +978,7 @@ static void test_a_type_name_is_coloured_only_where_it_names_a_type(void)
         "errordef^ E { Bad }\n"
         "let^ good = f^ n:number^ -> number^ { return^ n }\n"
         "let^ typo = f^ n:number -> number^ { return^ 1 }\n"
-        "let^ held : E.Bda = error^ E.Bad { }\n";
+        "let^ held : E.Bda = E.Bad.new()\n";
 
     Checked c;
     check_text(&c, source);
@@ -995,7 +995,7 @@ static void test_a_type_name_is_coloured_only_where_it_names_a_type(void)
     LHAT_CHECK(token_for(&tokens, source, "Bda") == NULL,
                "expected no token on a kind the set does not declare");
     // The same spelling written correctly on the same line still answers.
-    expect_token(&tokens, source, "Bad { }", "type", false);
+    expect_token(&tokens, source, "Bad.new()", "type", false);
 
     free(tokens.items);
     cJSON_Delete(data);

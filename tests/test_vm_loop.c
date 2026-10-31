@@ -1361,7 +1361,7 @@ static void test_patterns(void)
     run_text(&r,
              "errordef^ E { A, B }\n"
              "var^ x = 0\n"
-             "for^ error^E.B{ } {\n"
+             "for^ E.B.new() {\n"
              "  when^ fits^ E.A: x := 1\n"
              "  when^ fits^ E.B: x := 2\n"
              "  other^: x := 3\n"

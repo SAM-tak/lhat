@@ -2,7 +2,7 @@ errordef^MathError { DivisionByZero }
 
 let^divide = f^a, b {
     if^b = 0 {
-        return^error^MathError.DivisionByZero{}
+        return^MathError.DivisionByZero.new()
     }
     return^a / b
 }

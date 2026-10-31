@@ -803,7 +803,7 @@ static void test_escapes(void)
     LHAT_CHECK(checks("import^ std.math.vector3\n"
                       "errordef^ E { Bad }\n"
                       "let^ f = f^ -> std.math.vector3.Vector3|E.Bad {\n"
-                      "    return^ error^E.Bad{}\n"
+                      "    return^ E.Bad.new()\n"
                       "}\n"
                       "let^ v = try^ f()\n"
                       "return^ v.x\n"),

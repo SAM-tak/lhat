@@ -1684,7 +1684,7 @@ static void test_errors(void)
     LHAT_TEST("a kind and its set become types");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
-               "var^ e : IOError = error^IOError.NotFound{ }\n");
+               "var^ e : IOError = IOError.NotFound.new()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1692,11 +1692,28 @@ static void test_errors(void)
     // is a type written in the wrong place. It reads as a member access --
     // the set is a name in scope -- which is why saying "no such member"
     // would send a writer hunting for a spelling mistake instead of for the
-    // error^ 2.5 puts in front.
+    // Kind.new() 2.5 asks for.
     LHAT_TEST("2.3: a kind written as a value says which it is");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
                "var^ e = IOError.NotFound\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_KIND_AS_VALUE);
+    unit_dispose(&u);
+
+    // A body whose parameters are still being decided is checked again once
+    // they are known, and arrives at Kind.new() already rewritten.
+    LHAT_TEST("a body checked again still answers the kind it makes");
+    check_text(&u,
+               "errordef^ E { Bad }\n"
+               "var^ f = f^ a, b { if^ b = 0 { return^ E.Bad.new() } return^ a / b }\n"
+               "var^ r : number^|E.Bad = f(1, 0)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and new() on a kind takes no arguments");
+    check_text(&u,
+               "errordef^ IOError { NotFound, Denied }\n"
+               "var^ e = IOError.NotFound.new(1)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_KIND_AS_VALUE);
     unit_dispose(&u);
 
@@ -1712,7 +1729,7 @@ static void test_errors(void)
     LHAT_TEST("and message and cause are untouched");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
-               "var^ e = error^IOError.NotFound{ }\n"
+               "var^ e = IOError.NotFound.new()\n"
                "var^ s : string^ = e.message\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -1930,7 +1947,7 @@ static void test_errors(void)
     // what every arm answers is message and cause and no more.
     LHAT_TEST("but a leaf's field still wants narrowing to that leaf");
     check_text(&u,
-               "errordef^ IOError { NotFound { path : string^ } }\n"
+               "errordef^ IOError { NotFound { path : string^ = \"\" } }\n"
                "errordef^ Memory { Out }\n"
                "var^ f = f^ -> number^|IOError.NotFound|Memory.Out {\n"
                "    return^ 0\n"
@@ -2073,7 +2090,7 @@ static void test_errors(void)
     // that kind declares is visible there.
     LHAT_TEST("and it^ is narrowed to the arm's kind");
     check_text(&u,
-               "errordef^ IOError { NotFound { path : string^ }, Denied }\n"
+               "errordef^ IOError { NotFound { path : string^ = \"\" }, Denied }\n"
                "var^ open = f^ -> number^|IOError { return^ 0 }\n"
                "var^ read = f^ -> string^ {\n"
                "    do^{\n"
@@ -2217,7 +2234,7 @@ static void test_errors(void)
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
                "errordef^ UserError { NotFound }\n"
-               "var^ e : IOError = error^UserError.NotFound{ }\n");
+               "var^ e : IOError = UserError.NotFound.new()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -2226,7 +2243,7 @@ static void test_errors(void)
     LHAT_TEST("a default stands in for the type");
     check_text(&u,
                "errordef^ ParseError { Syntax { line := 0 } }\n"
-               "var^ e = error^ParseError.Syntax{ }\n"
+               "var^ e = ParseError.Syntax.new()\n"
                "var^ n : number^ = e.line\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -2234,7 +2251,7 @@ static void test_errors(void)
     LHAT_TEST("a field may carry both a type and a default");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ := 0 } }\n"
-               "var^ e = error^ParseError.Syntax{ }\n"
+               "var^ e = ParseError.Syntax.new()\n"
                "var^ n : number^ = e.line\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -2245,26 +2262,26 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 04 の 2.5: without a default there is nothing to fall back to.
-    LHAT_TEST("a field with no default has to be written");
+    // 04 の 2.2: Kind.new() takes no arguments, so nothing else could fill it.
+    LHAT_TEST("a field has to have a default");
     check_text(&u,
-               "errordef^ ParseError { Syntax { line : number^ } }\n"
-               "var^ e = error^ParseError.Syntax{ }\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISSING_FIELD);
+               "errordef^ ParseError { Syntax { line : number^ } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_NEEDS_DEFAULT);
     unit_dispose(&u);
 
-    LHAT_TEST("a default may still be overridden at the construction");
+    LHAT_TEST("a default may still be overwritten after the construction");
     check_text(&u,
                "errordef^ ParseError { Syntax { line := 0 } }\n"
-               "var^ e = error^ParseError.Syntax{ line := 3 }\n");
+               "var^ e = ParseError.Syntax.new()\n"
+               "e.line := 3\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     // 04 の 6.1: a declared field is reached through the kind.
     LHAT_TEST("a kind's declared field is visible");
     check_text(&u,
-               "errordef^ ParseError { Syntax { line : number^ } }\n"
-               "var^ e = error^ParseError.Syntax{ line := 3 }\n"
+               "errordef^ ParseError { Syntax { line : number^ = 0 } }\n"
+               "var^ e = ParseError.Syntax.new()\n"
                "var^ n : number^ = e.line\n"
                "var^ m : string^ = e.message\n");
     CHECK_CLEAN(&u);
@@ -3125,7 +3142,7 @@ static void test_every_word_answers_somewhere(void)
         "let^ Held = def^{ self^{ n = 0 } }\nlet^ subject = Held\n",
         "let^ subject = f^ -> number^ { return^ 1 }\n",
         "enum^ Mode { Idle }\nlet^ subject = Mode.Idle\n",
-        "errordef^ E { Bad }\nlet^ subject = error^E.Bad{}\n",
+        "errordef^ E { Bad }\nlet^ subject = E.Bad.new()\n",
         "let^ made = f^ -> c^{ f^ -> number^ } {\n"
         "    return^ c^{ f^ -> number^ } { yield^ 1 }\n"
         "}\nlet^ subject = made()\n",

@@ -399,8 +399,8 @@ bool lhat_machine_set_global(LhatMachine *machine, const char *name,
 bool lhat_machine_make_hostdata(LhatMachine *machine, const LhatHostDataTag *tag,
                             void *pointer, LhatValue *out);
 
-// 04 § 2.5, host version: does directly from C what error^kind{message:=...,
-// cause:=...} does via LHAT_BC_NEWERROR and the field-default handling in
+// 04 § 2.5, host version: does directly from C what Kind.new() followed by assigning
+// message and cause does via LHAT_BC_NEWERROR and the field-default handling in
 // compile_error_new.
 // `kind` is one returned by lhat_register_error_kind (host registration is
 // limited to field-less kinds in v1, so there is no way to fill fields other

@@ -8,7 +8,7 @@
 // written as an errordef^ in an L^ unit: the whole point of this file is
 // that std.io works without any .lh alongside it. A construction error
 // (open failing) is built with lhat_machine_make_error and handed back as
-// an ordinary value, the same shape 04 の 2.5's error^Kind{...} builds.
+// an ordinary value, the same shape 04 の 2.5's Kind.new() builds.
 //
 // std.io.open answers std.io.File|std.io.IOError.NotFound|std.io.IOError.
 // Denied|std.sys.Error.OutOfMemory -- read it with try^/catch^, or narrow with

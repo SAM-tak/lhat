@@ -1028,7 +1028,7 @@ static void test_patterns(void)
     // an if-chain.
     LHAT_TEST("a type pattern narrows the subject");
     check_text(&u,
-               "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
+               "errordef^ ParseError { Syntax { line : number^ = 0 }, Eof }\n"
                "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
                "for^ var^ r := parse() {\n"
                "    when^ fits^ ParseError.Syntax:\n"
@@ -1040,7 +1040,7 @@ static void test_patterns(void)
 
     LHAT_TEST("the field is not visible in another clause");
     check_text(&u,
-               "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
+               "errordef^ ParseError { Syntax { line : number^ = 0 }, Eof }\n"
                "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
                "for^ var^ r := parse() {\n"
                "    when^ fits^ ParseError.Eof:\n"

@@ -610,7 +610,8 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             walk_type(out, node->v.jump.value);
             break;
         case LHAT_NODE_ERROR_NEW:
-            // 04 の 2.5: 'error^Kind{ ... }' -- Kind is a qualified path.
+            // 04 の 2.5: `Kind.new()` as the checker rewrote it -- Kind is a
+            // qualified path.
             walk_qualified_path(out, node->v.named.name, SEM_TYPE);
             walk_table_entries(out, node->v.named.members);
             break;

@@ -319,7 +319,7 @@ static void test_modules(void)
     lib.expected_path = "lib/geometry.lh";
     check_against(&u, &lib, provider,
                   "var^ g = require^ \"lib/geometry.lh\"\n"
-                  "var^ e : g.Bad = error^g.Bad.Degenerate{ }\n");
+                  "var^ e : g.Bad = g.Bad.Degenerate.new()\n");
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
 

@@ -1151,7 +1151,7 @@ static void test_stacked_hats_compile(void)
     LHAT_TEST("catch^'s it^ shadows a loop's, and it^^ still reaches it");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ { return^ E.Bad.new() }\n"
              "var^ n = 0\n"
              "for^ 5 to^ 5 { n := fail() catch^ it^^ }\n"
              "return^ n\n");

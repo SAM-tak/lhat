@@ -1140,6 +1140,11 @@ bool chk_value_is_fresh(const Checker *c, const LhatNode *value,
         case LHAT_NODE_SELF_TABLE:
             return true;
 
+        // 04 の 2.5: Kind.new() builds the error on the spot, and the checker
+        // has read it as such by the time this is asked.
+        case LHAT_NODE_ERROR_NEW:
+            return true;
+
         case LHAT_NODE_CALL: {
             // 15.1改3: the resolved callee promised '-> fresh^T', so the
             // answer is new by the signature's own word.
@@ -2028,6 +2033,11 @@ static void check_errordef(Checker *c, const LhatNode *node)
                 declared != NULL ? declared : fallback);
             if (member != NULL) {
                 member->optional = field->v.param.fallback != NULL;
+            }
+            // Kind.new() takes no arguments, so a field without a default
+            // would be left with nothing in it.
+            if (field->v.param.fallback == NULL) {
+                chk_report(c, field, LHAT_CHECK_ERR_FIELD_NEEDS_DEFAULT);
             }
             chk_member_declared_at(c, member, field->v.param.name);
         }

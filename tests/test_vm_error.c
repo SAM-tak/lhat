@@ -22,7 +22,8 @@ static void test_errors(void)
     LHAT_TEST("an error is a value like any other");
     run_text(&r,
              "errordef^ IOError { NotFound, Denied }\n"
-             "var^ e = error^IOError.NotFound{ message := \"no such file\" }\n"
+             "var^ e = IOError.NotFound.new()\n"
+             "e.message := \"no such file\"\n"
              "return^ e.message\n");
     CHECK_STRING(&r, "no such file");
     run_dispose(&r);
@@ -31,22 +32,24 @@ static void test_errors(void)
     LHAT_TEST("message defaults to the empty string");
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
-             "return^ error^IOError.NotFound{ }.message\n");
+             "return^ IOError.NotFound.new().message\n");
     CHECK_STRING(&r, "");
     run_dispose(&r);
 
     LHAT_TEST("cause defaults to nil^");
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
-             "return^ error^IOError.NotFound{ }.cause\n");
+             "return^ IOError.NotFound.new().cause\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
     run_dispose(&r);
 
     LHAT_TEST("a declared field comes back");
     run_text(&r,
-             "errordef^ ParseError { Syntax { line : number^, column : number^ }, Eof }\n"
-             "var^ e = error^ParseError.Syntax{ line := 3, column := 12 }\n"
+             "errordef^ ParseError { Syntax { line = 0, column = 0 }, Eof }\n"
+             "var^ e = ParseError.Syntax.new()\n"
+             "e.line := 3\n"
+             "e.column := 12\n"
              "return^ e.line * 100 + e.column\n");
     CHECK_INTEGER(&r, 312);
     run_dispose(&r);
@@ -56,7 +59,8 @@ static void test_errors(void)
     LHAT_TEST("a field left out takes its default");
     run_text(&r,
              "errordef^ ParseError { Syntax { line := 0, column := 0 } }\n"
-             "var^ e = error^ParseError.Syntax{ line := 7 }\n"
+             "var^ e = ParseError.Syntax.new()\n"
+             "e.line := 7\n"
              "return^ e.line * 100 + e.column\n");
     CHECK_INTEGER(&r, 700);
     run_dispose(&r);
@@ -66,8 +70,8 @@ static void test_errors(void)
              "var^ n = 0\n"
              "var^ next = f^ { n := n + 1 return^ n }\n"
              "errordef^ E { K { seq := next() } }\n"
-             "var^ a = error^E.K{ }\n"
-             "var^ b = error^E.K{ }\n"
+             "var^ a = E.K.new()\n"
+             "var^ b = E.K.new()\n"
              "return^ b.seq\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
@@ -78,7 +82,7 @@ static void test_errors(void)
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
              "errordef^ UserError { NotFound }\n"
-             "var^ e = error^IOError.NotFound{ }\n"
+             "var^ e = IOError.NotFound.new()\n"
              "return^ e fits^ UserError.NotFound\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
@@ -87,7 +91,7 @@ static void test_errors(void)
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
              "errordef^ UserError { NotFound }\n"
-             "var^ e = error^IOError.NotFound{ }\n"
+             "var^ e = IOError.NotFound.new()\n"
              "return^ e fits^ IOError.NotFound\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
@@ -96,7 +100,7 @@ static void test_errors(void)
     LHAT_TEST("naming the declaration asks about all of its kinds");
     run_text(&r,
              "errordef^ IOError { NotFound, Denied }\n"
-             "var^ e = error^IOError.Denied{ }\n"
+             "var^ e = IOError.Denied.new()\n"
              "return^ e fits^ IOError\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
@@ -104,7 +108,7 @@ static void test_errors(void)
     LHAT_TEST("a sibling kind is not the one it is");
     run_text(&r,
              "errordef^ IOError { NotFound, Denied }\n"
-             "var^ e = error^IOError.Denied{ }\n"
+             "var^ e = IOError.Denied.new()\n"
              "return^ e fits^ IOError.NotFound\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
@@ -117,7 +121,7 @@ static void test_errors(void)
     run_dispose(&r);
 
     LHAT_TEST("a kind that was never declared does not compile");
-    run_text(&r, "return^ error^Nowhere.Missing{ }\n");
+    run_text(&r, "return^ Nowhere.Missing.new()\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
@@ -125,7 +129,7 @@ static void test_errors(void)
     LHAT_TEST("the declaration itself cannot be constructed");
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
-             "return^ error^IOError{ }\n");
+             "return^ IOError.new()\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
@@ -236,7 +240,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("catch^ replaces an error with its right side");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ { return^ E.Bad.new() }\n"
              "return^ fail() catch^ 0\n");
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
@@ -254,7 +258,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("the caught error is it^");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "var^ fail = f^ { return^ error^E.Bad{ message := \"oh\" } }\n"
+             "var^ fail = f^ { var^ e = E.Bad.new() e.message := \"oh\" return^ e }\n"
              "return^ fail() catch^ it^.message\n");
     CHECK_STRING(&r, "oh");
     run_dispose(&r);
@@ -262,7 +266,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("it^ tells the kinds apart");
     run_text(&r,
              "errordef^ E { A, B }\n"
-             "var^ fail = f^ { return^ error^E.B{ } }\n"
+             "var^ fail = f^ { return^ E.B.new() }\n"
              "return^ fail() catch^ if^ it^ fits^ E.A: 1 el^: 2 ;\n");
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
@@ -272,7 +276,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("catch^ attaches to the operation, not the sum");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ { return^ E.Bad.new() }\n"
              "return^ 10 + fail() catch^ 5\n");
     CHECK_INTEGER(&r, 15);
     run_dispose(&r);
@@ -290,7 +294,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("try^ returns the error from the procedure that wrote it");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "var^ inner = f^ { return^ error^E.Bad{ message := \"deep\" } }\n"
+             "var^ inner = f^ { var^ e = E.Bad.new() e.message := \"deep\" return^ e }\n"
              "var^ outer = f^ {\n"
              "  var^ v = try^ inner()\n"
              "  return^ v + 1\n"
@@ -314,7 +318,7 @@ static void test_catch_and_try(void)
     run_text(&r,
              "errordef^ E { Bad }\n"
              "var^ out = { n := 0 }\n"
-             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ { return^ E.Bad.new() }\n"
              "var^ go = f^ {\n"
              "  repeat^ 3 {\n"
              "    main^:\n"
@@ -334,7 +338,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("try^ stands as a statement when the value is not wanted");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "var^ fail = f^ { return^ error^E.Bad{ message := \"gone\" } }\n"
+             "var^ fail = f^ { var^ e = E.Bad.new() e.message := \"gone\" return^ e }\n"
              "var^ go = f^ { try^ fail() return^ 0 }\n"
              "return^ go().message\n");
     CHECK_STRING(&r, "gone");
@@ -345,10 +349,10 @@ static void test_catch_and_try(void)
     // runs, and it^ is narrowed to it there.
     LHAT_TEST("a catch^ arm takes the kind it names");
     run_text(&r,
-             "errordef^ E { Missing { where : string^ }, Denied }\n"
+             "errordef^ E { Missing { where = \"\" }, Denied }\n"
              "var^ fail = f^ n:number^ -> number^|E {\n"
-             "  if^ n = 1 { return^ error^E.Missing{ where = \"here\" } }\n"
-             "  if^ n = 2 { return^ error^E.Denied{ } }\n"
+             "  if^ n = 1 { var^ e = E.Missing.new() e.where := \"here\" return^ e }\n"
+             "  if^ n = 2 { return^ E.Denied.new() }\n"
              "  return^ 10\n"
              "}\n"
              "var^ pick = f^ n:number^ -> string^ {\n"
@@ -369,8 +373,8 @@ static void test_catch_and_try(void)
     // the arm made has to stop sharing it -- the call below stands there.
     LHAT_TEST("a closure an arm made keeps its own it^");
     run_text(&r,
-             "errordef^ E { A { n : number^ } }\n"
-             "let^ fail = f^ -> number^|E { return^ error^ E.A{ n := 42 } }\n"
+             "errordef^ E { A { n = 0 } }\n"
+             "let^ fail = f^ -> number^|E { var^ e = E.A.new() e.n := 42 return^ e }\n"
              "var^ read = f^ -> number^ { return^ 0 }\n"
              "var^ v = 0\n"
              "do^{\n"
@@ -388,7 +392,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("and a return^ in an arm leaves the subroutine");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ { return^ E.Bad.new() }\n"
              "var^ go = f^ -> number^ {\n"
              "  do^{\n"
              "    var^ v = try^ fail()\n"
@@ -405,7 +409,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("and what no arm takes goes on out");
     run_text(&r,
              "errordef^ E { A, B }\n"
-             "var^ fail = f^ { return^ error^E.B{ message := \"through\" } }\n"
+             "var^ fail = f^ { var^ e = E.B.new() e.message := \"through\" return^ e }\n"
              "var^ go = f^ {\n"
              "  do^{\n"
              "    var^ v = try^ fail()\n"
@@ -426,7 +430,7 @@ static void test_catch_and_try(void)
              "var^ log = { text = \"\" }\n"
              "var^ Res = def^{ self^{ },\n"
              "  dispose = p^self^ { log.text := log.text .. \"d\" } }\n"
-             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ { return^ E.Bad.new() }\n"
              "var^ go = f^ -> string^ {\n"
              "  do^{\n"
              "    with^ r = Res.new() {\n"
@@ -447,7 +451,7 @@ static void test_catch_and_try(void)
     run_text(&r,
              "errordef^ E { Bad }\n"
              "var^ fail = f^ n:number^ -> number^|E {\n"
-             "  if^ n = 2 { return^ error^E.Bad{ } }\n"
+             "  if^ n = 2 { return^ E.Bad.new() }\n"
              "  return^ n\n"
              "}\n"
              "var^ go = p^ -> string^ {\n"
@@ -472,7 +476,7 @@ static void test_catch_and_try(void)
     run_text(&r,
              "errordef^ E { Bad }\n"
              "var^ log = { text = \"\" }\n"
-             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ { return^ E.Bad.new() }\n"
              "var^ go = p^ -> string^ {\n"
              "  do^{\n"
              "    var^ mark = \"f\"\n"
@@ -494,7 +498,7 @@ static void test_catch_and_try(void)
     run_text(&r,
              "errordef^ E { Bad }\n"
              "var^ log = { text = \"\" }\n"
-             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ { return^ E.Bad.new() }\n"
              "var^ go = p^ c:bool^ -> string^ {\n"
              "  if^ c {\n"
              "    var^ v = try^ fail()\n"
@@ -517,7 +521,7 @@ static void test_catch_and_try(void)
     LHAT_TEST("a function body's arm answers with its expression");
     run_text(&r,
              "errordef^ E { Bad }\n"
-             "var^ fail = f^ -> number^|E { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ -> number^|E { return^ E.Bad.new() }\n"
              "var^ go = f^ -> number^ { try^ fail() catch^: 7 }\n"
              "return^ go()\n");
     CHECK_INTEGER(&r, 7);
@@ -531,7 +535,7 @@ static void test_catch_and_try(void)
              "var^ log = { text = \"\" }\n"
              "var^ Res = def^{ self^{ name = \"r\" },\n"
              "  dispose = p^self^ { log.text := log.text .. \"d\" } }\n"
-             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ { return^ E.Bad.new() }\n"
              "var^ go = p^ -> string^ {\n"
              "  with^ r = Res.new() {\n"
              "    var^ v = try^ fail()\n"
@@ -550,8 +554,8 @@ static void test_catch_and_try(void)
     run_text(&r,
              "errordef^ E { A, B }\n"
              "var^ fail = f^ n:number^ -> number^|E {\n"
-             "  if^ n = 1 { return^ error^E.A{ } }\n"
-             "  if^ n = 2 { return^ error^E.B{ } }\n"
+             "  if^ n = 1 { return^ E.A.new() }\n"
+             "  if^ n = 2 { return^ E.B.new() }\n"
              "  return^ n\n"
              "}\n"
              "var^ go = f^ n:number^ -> number^|E.B {\n"
@@ -825,7 +829,7 @@ static void test_cleanups(void)
     run_text(&r,
              "errordef^ E { Bad }\n"
              "var^ log = { n := 0 }\n"
-             "var^ fail = f^ { return^ error^E.Bad{ } }\n"
+             "var^ fail = f^ { return^ E.Bad.new() }\n"
              "var^ go = p^ {\n"
              "  do^{\n"
              "    var^ v = try^ fail()\n"
@@ -1021,7 +1025,7 @@ static void test_growing_catch_jumps(void)
         char source[65536];
         size_t used = (size_t)sprintf(source,
             "errordef^ E { Bad, Other }\n"
-            "let^ fail = f^ { return^ error^E.Bad{} }\n"
+            "let^ fail = f^ { return^ E.Bad.new() }\n"
             "var^ count = 0\nfor^ n from^ 1 to^ 300 { do^{\n");
         for (int i = 1; i <= 300; i++) {
             used += (size_t)sprintf(source + used,
@@ -1047,7 +1051,7 @@ static void test_growing_catch_jumps(void)
         }
         int kind = chosen == 0 ? 0 : chosen == 1 ? 64 : 129;
         used += (size_t)sprintf(source + used,
-            "}\nlet^ fail = f^ { return^ error^E.K%d{} }\n"
+            "}\nlet^ fail = f^ { return^ E.K%d.new() }\n"
             "var^ count = 0\ndo^{ try^ fail()\n", kind);
         for (int i = 0; i < 130; i++) {
             used += (size_t)sprintf(source + used,

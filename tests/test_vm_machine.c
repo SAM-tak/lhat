@@ -261,7 +261,7 @@ static void test_machine(void)
         Run one, two;
         compile_next_text(&one, s, "errordef^ E { Bad, Worse }\n");
         compile_next_text(&two, s,
-                          "var^ e = error^ E.Worse { }\n"
+                          "var^ e = E.Worse.new()\n"
                           "if^ e fits^ E.Worse { return^ 1 }\n"
                           "return^ 0\n");
         LHAT_CHECK_EQ_INT(one.compiled, LHAT_COMPILE_OK);

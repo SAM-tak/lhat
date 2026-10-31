@@ -491,7 +491,7 @@ let^ other = require^ "lib/util.lh"
   新しい名前を持ち込むことになる
 - `check.match-not-exhaustive` — `other^:` の値。どこにでも置ける
   「まだ書いていない」の式は無い（`panic^` が式になるのは `catch^` の右辺だけ、04 の 4.1改）
-- `check.missing-field` — 欄の値
+- `check.field-needs-default` — 欄の既定値
 - `check.error-dropped` の `catch^ …` と、`check.coroutine-dropped` の `let^ 名前 = …` —
   代わりの値と、束縛する名前
 

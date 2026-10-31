@@ -422,11 +422,13 @@ static void test_near(void)
               "var^ c = C.new(5)\n");
 
     LHAT_TEST("a field an error kind does not declare offers one it does");
-    near_case("errordef^ IOError { NotFound { path : string^ } }\n"
-              "var^ e = error^ IOError.NotFound { paht = \"x\" }\n",
+    near_case("errordef^ IOError { NotFound { path = \"\" } }\n"
+              "var^ e = IOError.NotFound.new()\n"
+              "e.paht := \"x\"\n",
               "check.no-member.named", "path",
-              "errordef^ IOError { NotFound { path : string^ } }\n"
-              "var^ e = error^ IOError.NotFound { path = \"x\" }\n");
+              "errordef^ IOError { NotFound { path = \"\" } }\n"
+              "var^ e = IOError.NotFound.new()\n"
+              "e.path := \"x\"\n");
 }
 
 // ---------------------------------------------------------------------------

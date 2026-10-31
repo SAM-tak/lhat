@@ -1506,7 +1506,7 @@ static void test_typeof(void)
     run_checked_text(&r,
                      "errordef^ E { Bad }\n"
                      "var^ risky = f^ -> (string^, number^)|E.Bad {\n"
-                     "    return^ error^E.Bad{}\n"
+                     "    return^ E.Bad.new()\n"
                      "}\n"
                      "return^ typeof^(risky).signature\n");
     CHECK_STRING(&r, "f^ -> (string^, number^)|E.Bad;");
@@ -1642,7 +1642,7 @@ static void test_typeof(void)
     LHAT_TEST("an error's signature is its qualified kind name");
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
-             "var^ e = error^IOError.NotFound{ }\n"
+             "var^ e = IOError.NotFound.new()\n"
              "return^ typeof^(e).signature\n");
     CHECK_STRING(&r, "IOError.NotFound");
     run_dispose(&r);

@@ -1039,26 +1039,7 @@ static void load_kind(Compiler *c, uint8_t into, const LhatErrorKind *kind)
     emit(c, lhat_encode_abx(LHAT_BC_LOADK, into, (uint16_t)k));
 }
 
-// Whether the construction named this field.
-static bool error_field_given(Compiler *c, const LhatNode *node,
-                              const char *name, size_t length)
-{
-    for (const LhatNode *entry = node->v.named.members; entry != NULL;
-         entry = entry->next) {
-        const char *written = NULL;
-        size_t written_length = 0;
-        if (entry->v.entry.key != NULL &&
-            node_name(c, entry->v.entry.key, &written, &written_length) &&
-            written_length == length &&
-            memcmp(written, name, length) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// 04 の 2.5: error^Kind{ … }. Every field without a default has to be given;
-// one with a default may be left out, and 2.2 makes that default an
+// 04 の 2.5: Kind.new(). Every field has a default (2.2) and 2.2 makes it an
 // expression evaluated at each construction -- so it is compiled here, at the
 // construction, rather than stored anywhere.
 static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
@@ -1081,27 +1062,6 @@ static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
     emit(c, lhat_encode_abc(LHAT_BC_NEWERROR, into, holder, 0));
     c->next_register = mark;
 
-    for (const LhatNode *entry = node->v.named.members; entry != NULL;
-         entry = entry->next) {
-        const char *name = NULL;
-        size_t length = 0;
-        if (entry->v.entry.key == NULL ||
-            !node_name(c, entry->v.entry.key, &name, &length)) {
-            fail(c, LHAT_COMPILE_UNSUPPORTED);
-            return;
-        }
-        uint8_t at = c->next_register;
-        uint8_t key = reserve(c);
-        uint8_t value = reserve(c);
-        load_string_bytes(c, key, name, length);
-        compile_expression(c, entry->v.entry.value, value);
-        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
-        c->next_register = at;
-    }
-
-    // The declared fields the construction left out. 2.2 makes a default an
-    // expression evaluated at each construction rather than a stored value,
-    // which is why it is compiled here and not once at the declaration.
     // kind_node is NULL for a host-registered kind --
     // v1 registers none of those with fields, so there is nothing to add.
     for (const LhatNode *field =
@@ -1109,7 +1069,7 @@ static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
          field != NULL; field = field->next) {
         const LhatNode *fallback = field->v.param.fallback;
         if (fallback == NULL) {
-            continue;  // no default; 2.5 required the construction to give it
+            continue;  // refused where the kind was declared
         }
         const char *name = NULL;
         size_t length = 0;
@@ -1117,9 +1077,6 @@ static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
                             declaring_lexer->strings, &name, &length)) {
             fail(c, LHAT_COMPILE_UNSUPPORTED);
             return;
-        }
-        if (error_field_given(c, node, name, length)) {
-            continue;
         }
         uint8_t at = c->next_register;
         uint8_t key = reserve(c);
@@ -1136,15 +1093,13 @@ static void compile_error_new(Compiler *c, const LhatNode *node, uint8_t into)
     // 2.3 gives every kind message and cause without either being declared.
     // cause defaults to nil^, which 11.3 already spells as the key not being
     // there, so only message needs writing.
-    if (!error_field_given(c, node, "message", 7)) {
-        uint8_t at = c->next_register;
-        uint8_t key = reserve(c);
-        uint8_t value = reserve(c);
-        load_string_bytes(c, key, "message", 7);
-        load_string_bytes(c, value, "", 0);
-        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
-        c->next_register = at;
-    }
+    uint8_t at = c->next_register;
+    uint8_t key = reserve(c);
+    uint8_t value = reserve(c);
+    load_string_bytes(c, key, "message", 7);
+    load_string_bytes(c, value, "", 0);
+    emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
+    c->next_register = at;
 }
 
 // 04 の 5.1: try^ hands the caller the error and keeps going otherwise. 5.6

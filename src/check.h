@@ -75,8 +75,8 @@ typedef enum {
     LHAT_CHECK_ERR_KIND_AS_VALUE,       // 04 の 2.3: a kind of the errordef^
                                         // written where a value was wanted.
                                         // The declaration makes types and no
-                                        // values, so 2.5's error^ is the only
-                                        // way to one
+                                        // values, so 2.5's `Kind.new()` is the
+                                        // only way to one
 
     LHAT_CHECK_ERR_CANNOT_FAIL,         // 04 の 4.1: catch^ on what cannot fail
     LHAT_CHECK_ERR_CANNOT_BE_NIL,       // 11.7, the same for '??'
@@ -178,7 +178,8 @@ typedef enum {
                                         // and one argument, and this is not
     LHAT_CHECK_ERR_ISA_ALWAYS_TRUE,     // 13.7: any^ holds of every value, so
                                         // asking it of one asks nothing
-    LHAT_CHECK_ERR_MISSING_FIELD,       // 04 の 2.5: no default to fall back to
+    LHAT_CHECK_ERR_FIELD_NEEDS_DEFAULT, // 04 の 2.2: Kind.new() takes no
+                                        // arguments, so nothing else can fill it
     LHAT_CHECK_ERR_REQUIRE_FAILED,      // 05 の 6 章: the unit could not be had
     LHAT_CHECK_ERR_COROUTINE_DROPPED,   // 15.8: a call that makes a coroutine
                                         // and does nothing with it

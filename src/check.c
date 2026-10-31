@@ -4655,7 +4655,7 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_NO_RESULT_TYPE] = {"check.no-result-type",
         "this signature answers no value, so it has no ReturnType"},
     [LHAT_CHECK_ERR_KIND_AS_VALUE] = {"check.kind-as-value",
-        "a kind is a type, not a value; error^Kind{ ... } is what "
+        "a kind is a type, not a value; Kind.new() is what "
         "makes one: {kind}"},
     [LHAT_CHECK_ERR_CANNOT_FAIL] = {"check.cannot-fail",
         "the left of catch^ cannot return an error"},
@@ -4711,8 +4711,8 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_COROUTINE_DROPPED] = {"check.coroutine-dropped",
         "this call makes a coroutine and runs none of the body; "
         "write await^ to delegate, or let^ to keep it"},
-    [LHAT_CHECK_ERR_MISSING_FIELD] = {"check.missing-field",
-        "this field has no default, so it has to be written"},
+    [LHAT_CHECK_ERR_FIELD_NEEDS_DEFAULT] = {"check.field-needs-default",
+        "this field needs a default, since Kind.new() takes no arguments"},
     [LHAT_CHECK_ERR_INCOMPARABLE] = {"check.incomparable",
         "these can never be equal, so the comparison is fixed already"},
     [LHAT_CHECK_ERR_NO_IDENTITY] = {"check.no-identity",
