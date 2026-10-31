@@ -50,10 +50,12 @@ The language and its tooling preserve the structure and comments needed to
 present code as a graph.
 
 > [!NOTE]
-> The visual editor is a work in progress. Displaying a program as a graph in
-> the VS Code extension is nearly complete; editing a program in the graph is
-> not finished yet. Development happens in the
-> [extension repository](https://github.com/SAM-tak/lhat-vscode-extension).
+> The visual editor is currently provided as a VS Code extension; there is no
+> standalone app.
+> It has not been given a good interface yet either: viewing and editing are
+> fully possible, but it is not yet practical.
+> See the [extension repository](https://github.com/SAM-tak/lhat-vscode-extension)
+> for details.
 
 For example, [this program](sample/factorial.lh) computes the factorial of 10
 with an anonymous function. **`this^` refers to the function itself**, so it can
