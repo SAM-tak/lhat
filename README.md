@@ -94,6 +94,46 @@ Each project has its own installation instructions and development status.
 
 Click a code example to open its source file.
 
+### No reserved words
+
+L^ syntax keywords such as `if^`, `else^`, `while^`, and `import^` always end
+with `^`. These are called hat identifiers. This may look unusual, but it means
+that L^ has **no reserved words**: any name that does not start with a digit and
+contains no whitespace or symbols can be used as a name in your program.
+
+This also gives the language designers freedom to add the most suitable keywords
+without taking names away from users. There is no need to reuse existing keywords
+with different meanings in different contexts to avoid adding reserved words.
+Frequently used keywords can even have extremely short names that other
+languages might not allow, such as `f^` (function), `p^` (procedure), `c^`
+(coroutine type), and `t^` (table type).
+
+The `^` is placed at the end rather than the beginning for two reasons. A
+leading `^`, as in `^if`, would require whitespace to separate the keyword,
+whereas a trailing `^` serves as a delimiter itself. It would also require typing
+`^` to use IntelliSense completion; with a trailing `^`, typing `i` is enough
+for `if^` to appear as a suggestion.
+
+### Improved tables in L^
+
+Like Lua, L^ has a single data structure, the table, which can serve as a
+dictionary, an array, a struct, or an object. It is also the only data structure
+that scripts can freely define. L^ tables differ from Lua tables in several ways:
+
+- Array indices start at 0 (rather than 1 in Lua).
+- Arrays can contain `nil^`: `{ 1, nil^, 3 }` has a length of 3. Lua does not
+  guarantee that length for an array with a hole.
+- The `def^` syntax defines objects directly. Lua instead enables
+  object-oriented programming through metatables and method lookup chains; it
+  has no equivalent of JavaScript's `class` syntax.
+- A table's structure, including its array length, can be expressed as a type.
+  For example, `{ 1, 2, 3 }` automatically infers the type `t^{ number^[3] }`,
+  a table with three numeric elements. Lua has no equivalent type system, and
+  Luau's array types do not encode the number of elements.
+- The array length (`len^`) and the total number of elements (`count^`) can be
+  obtained separately and directly. Lua's `#` operator gives the array length;
+  counting all elements in a table requires traversing it.
+
 ### Familiar syntax for everyday scripting
 
 L^ keeps Lua's convenient tables and lightweight scripting model, while using
