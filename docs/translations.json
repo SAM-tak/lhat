@@ -1,7 +1,18 @@
 {
+  "api/index.md": "1b3e22d95b8a5bff289f69c6fa25d774a7ba12fca39b2c1c8a697dcf15ac8fc5",
+  "api/machine.md": "bfd95aec7ddad7ce182b127c4fddbb64a77ae3d8d938d1428394e1ff5b407507",
+  "api/program.md": "037edb63daae5fccbb59d3c78f590872d59de25d3db9a3fae3479252c07f9d73",
+  "api/registration.md": "efdfcf99d99b8582856208af72d24fab86aab91fe077d892b3e9bcb2e75cb6ea",
+  "embedding/binding-examples.md": "30fc64354ad39bd63945f7091174fd330c6de6b858171ae7f21853c6365b2286",
+  "embedding/deployment.md": "1b3a0902df4c92ed096c0b32dd0984b30519b615e1891b171805875c14a3d777",
+  "embedding/getting-started.md": "acba82e10d916027a9f14cc1ab64eabd149d044ff20a379aae3a57cf35a13b15",
+  "embedding/host-api.md": "05a57d8082b4cde4e24df6f6ab2bc49df15dac7ad3b6cc1bb11f7bccbf99d2e9",
+  "embedding/index.md": "829bfee85b0dab6901957a70f3cf42f036193b50de41d20cffa2197d6b263de6",
+  "embedding/runtime.md": "7995d0cec46cd802e6233f6f891cfa2085a86ad665390abc14ec5315afc2a86f",
+  "embedding/tooling.md": "90e8efb23d5c9aa834b8e574c66a05094add5bf83b1bc04e7e4910afac605f26",
   "guide/basics.md": "e08f8ff5803742f9949fc8de26812b9486e98572923fa2061a6c7b2a0fba7826",
   "guide/first-program.md": "54c464d8b7809b02e0393f282cf353c69467e00a2640ee9d21af49d371a56088",
   "guide/installation.md": "6acc719d31688bd0b1013a037405f4c19073d8a52a4448c70e6c7d27a41d2135",
-  "index.md": "9ba63a979701431e2cf49ffc94807d7928ad8ad55a6b8401cdcc6c9aa64bb606",
+  "index.md": "599716b65f06ef2d3a1b96ad00652742fc77a5eee9f34efe81d5ad9f82e0418d",
   "tools/vscode.md": "d17c06e76dfbe32a767d4d4449d7a2a893b3b2125f372b763912fe220e2be9ba"
 }

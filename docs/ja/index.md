@@ -14,6 +14,12 @@ L^ は pre-1.0 の開発段階です。構文や API は今後変わる可能性
 
 ## このガイドでできること
 
+**自分のアプリケーションに L^ を組み込みたい場合は、[組み込みガイド](./embedding/index.md)から始めてください。**
+ビルドできるホストの例から、API の公開、GC とイベントループ、エディタ連携、配布まで説明します。
+個々の関数は [C API リファレンス](./api/index.md)で調べられます。
+
+言語そのものを CLI で試す場合は、次の順に進めます。
+
 1. [インストール](./guide/installation.md)して、`lhat` を実行できるようにする。
 2. [最初のプログラム](./guide/first-program.md)を書き、実行と型検査を試す。
 3. [言語の基本](./guide/basics.md)で、変数、テーブル、関数と手続きを学ぶ。
@@ -36,7 +42,6 @@ L^ は pre-1.0 の開発段階です。構文や API は今後変わる可能性
 | 連携先 | ドキュメント |
 | --- | --- |
 | Godot | [lhat-gdextension](https://github.com/SAM-tak/lhat-gdextension) |
-| LÖVE / LÔVE | [lhat-love](https://github.com/SAM-tak/lhat-love) |
 | Unreal Engine（実験段階） | [lhat-UE](https://github.com/SAM-tak/lhat-UE) |
 
 詳しい仕様は[設計文書](https://github.com/SAM-tak/lhat/tree/main/DesignDocuments)、

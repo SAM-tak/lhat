@@ -1,0 +1,9 @@
+module^demo
+
+let^app = import^app
+var^elapsed = 0.0
+
+public^let^update = p^dt:number^ {
+    elapsed += dt
+    app.report(elapsed)
+}

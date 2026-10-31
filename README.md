@@ -6,7 +6,9 @@
 
 **English** | [日本語](README.ja.md)
 
-**User guide:** [English](docs/en/index.md) · [日本語](docs/ja/index.md)
+**[Documentation website](https://sam-tak.github.io/lhat/)** · [English](https://sam-tak.github.io/lhat/en/) · [日本語](https://sam-tak.github.io/lhat/ja/)
+
+[Embedding guide](docs/en/embedding/index.md) · [C API reference](docs/en/api/index.md)
 
 L^ (elhat) is an embeddable scripting language for games and applications. It
 builds on Lua's strengths—lightweight embedding, flexible tables, and

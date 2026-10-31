@@ -3,9 +3,9 @@ name: docs
 on:
   push:
     branches: [main]
-    paths: ['docs/**', 'sample/**', 'scripts/docs-translations.mjs', 'package.json', 'package-lock.json', '.github/workflows/docs.yml']
+    paths: ['docs/**', 'sample/**', 'include/**', 'src/**', 'port/**', 'stdlib/**', 'cmake/**', 'CMakeLists.txt', 'scripts/docs-translations.mjs', 'package.json', 'package-lock.json', '.github/workflows/docs.yml']
   pull_request:
-    paths: ['docs/**', 'sample/**', 'scripts/docs-translations.mjs', 'package.json', 'package-lock.json', '.github/workflows/docs.yml']
+    paths: ['docs/**', 'sample/**', 'include/**', 'src/**', 'port/**', 'stdlib/**', 'cmake/**', 'CMakeLists.txt', 'scripts/docs-translations.mjs', 'package.json', 'package-lock.json', '.github/workflows/docs.yml']
   workflow_dispatch:
 
 permissions:
@@ -23,6 +23,21 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - name: Build and install the embedding SDK
+        run: |
+          cmake -S . -B build/docs-sdk-build -DCMAKE_BUILD_TYPE=Release -DLHAT_BUILD_TESTS=OFF -DLHAT_BUILD_CLI=OFF -DLHAT_BUILD_LSP=OFF -DLHAT_BUILD_DAP=OFF -DLHAT_BUILD_STDLIB=OFF
+          cmake --build build/docs-sdk-build --parallel 2
+          cmake --install build/docs-sdk-build --prefix "$PWD/build/docs-sdk"
+      - name: Build and run the documented host
+        run: |
+          cmake -S sample/embedding -B build/docs-embedding -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$PWD/build/docs-sdk"
+          cmake --build build/docs-embedding --parallel 2
+          ctest --test-dir build/docs-embedding --output-on-failure
+      - name: Verify embedding without installing an SDK
+        run: |
+          cmake -S sample/embedding -B build/docs-source-embedding -DCMAKE_BUILD_TYPE=Release -DLHAT_SOURCE_DIR="$PWD"
+          cmake --build build/docs-source-embedding --parallel 2
+          ctest --test-dir build/docs-source-embedding --output-on-failure
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

@@ -61,6 +61,15 @@ L^ の例は現時点では `text` を指定してプレーンテキストとし
 言語の規則を誤って示す他言語のハイライトは割り当てません。
 例を変更した場合は実行結果も確認し、日英両方の説明を更新してください。
 
+組み込みガイドの実行例は `sample/embedding/` にあります。
+その CMake プロジェクトはソースの同時ビルドと SDK へのリンクに対応し、CTest でフレーム呼び出しと API 情報の出力を確認します。
+`docs.yml` でも SDK のビルド・インストールからサンプルの実行まで確認します。
+ローカルの手順は [最小ホスト](ja/embedding/getting-started.md)を参照してください。
+
+バインドの実装例は `stdlib/` のコードを使います。
+`embedding/binding-examples.md` は `mathcomplex.c` を直接読み込み、共通実装からも抜粋しています。
+引用元を更新した場合は、抜粋コードと日英の説明が実装に合っていることを確認してください。
+
 ## GitHub Pages の初回設定
 
 リポジトリの **Settings → Pages → Build and deployment → Source** を **GitHub Actions** にします。

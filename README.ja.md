@@ -6,7 +6,9 @@
 
 [English](README.md) | **日本語**
 
-**ユーザーガイド:** [日本語](docs/ja/index.md) · [English](docs/en/index.md)
+**[ドキュメントサイト](https://sam-tak.github.io/lhat/)** · [日本語](https://sam-tak.github.io/lhat/ja/) · [English](https://sam-tak.github.io/lhat/en/)
+
+[アプリケーションへの組み込みガイド](docs/ja/embedding/index.md) · [C API リファレンス](docs/ja/api/index.md)
 
 L^（elhat）は、ゲームやアプリケーションに組み込んで使うスクリプト言語です。
 組み込みやすさ、柔軟なテーブル、コルーチンといった Lua の長所を受け継ぎながら、
