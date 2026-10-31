@@ -33,3 +33,9 @@ compile_commands.json
 # it rather than track it (see the extension repository's README).
 lhat-host.json
 lhat-lsp.json
+
+# Documentation site
+node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+docs/.vitepress/.temp/

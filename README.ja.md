@@ -6,6 +6,8 @@
 
 [English](README.md) | **日本語**
 
+**ユーザーガイド:** [日本語](docs/ja/index.md) · [English](docs/en/index.md)
+
 L^（elhat）は、ゲームやアプリケーションに組み込んで使うスクリプト言語です。
 組み込みやすさ、柔軟なテーブル、コルーチンといった Lua の長所を受け継ぎながら、
 型安全性と表現力を高め、ビジュアルプログラミングとの相互運用を前提に設計しています。
@@ -420,6 +422,9 @@ lhat --dump-host-api --extension ./native/first.dll --extension ./native/second.
 ゲームのスクリプトは実行しないが、DLLの入口と登録関数は実行する。終了フックはProgram・レジストリの破棄後に呼ぶ。
 
 ## ドキュメントとソース
+
+ユーザー向けの導入手順は [ユーザーガイド](docs/ja/index.md)、
+サイトの編集・公開方法は [ドキュメントの編集案内](docs/README.md)を参照してください。
 
 - [言語仕様](DesignDocuments/02-syntax.md)：構文、型、オブジェクト、関数、コルーチン、パターンマッチ。
 - [エラー処理](DesignDocuments/04-errors.md)：型付きエラーと、その扱い方。

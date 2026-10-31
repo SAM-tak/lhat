@@ -6,6 +6,8 @@
 
 **English** | [日本語](README.ja.md)
 
+**User guide:** [English](docs/en/index.md) · [日本語](docs/ja/index.md)
+
 L^ (elhat) is an embeddable scripting language for games and applications. It
 builds on Lua's strengths—lightweight embedding, flexible tables, and
 coroutines—with a language designed for type safety, expressive code, and
@@ -474,6 +476,9 @@ cleanup. No game script is executed, though native library entry points and bind
 registration callbacks do run.
 
 ## Documentation and source
+
+See the [user guide](docs/en/index.md) for getting started and the
+[documentation contributor guide](docs/README.md) (Japanese) for editing and publishing the site.
 
 - [Language specification](DesignDocuments/02-syntax.md): syntax, types, objects,
   functions, coroutines, and pattern matching.
