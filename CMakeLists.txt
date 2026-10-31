@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(lhat
-    VERSION 0.4.13
+    VERSION 0.4.14
     DESCRIPTION "L^ - a bytecode interpreted glue programming language"
     LANGUAGES C
 )
