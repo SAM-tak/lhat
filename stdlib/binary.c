@@ -13,6 +13,8 @@
 
 #include "binary.h"
 
+bool lhatstdlib_binary_data_register(LhatProgram *program);
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -1060,6 +1062,39 @@ static void binary_bytes(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
+bool lhatstdlib_binary_make_bytes(LhatMachine *machine, size_t size, LhatValue *out)
+{
+    *out = lhat_nil();
+    LhatBinaryBytes *bytes = lhat_calloc(1, sizeof *bytes);
+    if (bytes == NULL) return false;
+    if (!bytes_resize(bytes, size) ||
+        !lhat_machine_make_hostdata(machine, shared.bytes_tag, bytes, out)) {
+        lhat_free(bytes->data);
+        lhat_free(bytes);
+        return false;
+    }
+    if (size > 0) memset(bytes->data, 0, size);
+    return true;
+}
+
+static void bytes_resize_member(LhatMachine *machine, void *context,
+                                const LhatValue *arguments, size_t count,
+                                LhatValue *answers, int *answer_count)
+{
+    (void)context; (void)count; (void)answers; (void)answer_count;
+    LhatBinaryBytes *bytes = bytes_of(arguments[0]);
+    if (bytes == NULL || !lhat_is_integer(arguments[1]) ||
+        lhat_as_integer(arguments[1]) < 0 ||
+        (uint64_t)lhat_as_integer(arguments[1]) > SIZE_MAX) {
+        lhat_machine_panic_text(machine, "Bytes.resize requires live bytes and a nonnegative integer");
+        return;
+    }
+    size_t before = bytes->length;
+    size_t size = (size_t)lhat_as_integer(arguments[1]);
+    if (!bytes_resize(bytes, size)) { out_of_memory(machine); return; }
+    if (size > before) memset(bytes->data + before, 0, size - before);
+}
+
 static void bytes_size(LhatMachine *machine, void *context,
                        const LhatValue *arguments, size_t count,
                        LhatValue *answers, int *answer_count)
@@ -1176,6 +1211,8 @@ bool lhatstdlib_binary_register(LhatProgram *program)
            lhat_register_member(program, M, "Bytes", "toString", "f^self^ -> string^;",
                                 bytes_to_string, module) &&
            lhat_register_member(program, M, "Bytes", "dispose", "p^self^;", bytes_dispose, module) &&
+           lhat_register_member(program, M, "Bytes", "resize", "p^self^, number^;", bytes_resize_member, module) &&
            lhat_register_hostdata_type_arguments(program, M, "Format",
-                                                 format_type_argument, NULL);
+                                                 format_type_argument, NULL) &&
+           lhatstdlib_binary_data_register(program);
 }

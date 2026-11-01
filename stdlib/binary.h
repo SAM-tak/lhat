@@ -21,6 +21,43 @@ extern "C" {
 
 bool lhatstdlib_binary_register(LhatProgram *program);
 
+// Schema-free, framed table data. No front end is required. Callbacks consume
+// their buffers synchronously; read answers 0 bytes only at EOF. Streams stay
+// open. A failed write may have emitted an incomplete record.
+typedef enum {
+    LHAT_BINARY_DATA_OK,
+    LHAT_BINARY_DATA_TRUNCATED,
+    LHAT_BINARY_DATA_MALFORMED,
+    LHAT_BINARY_DATA_UNSUPPORTED,
+    LHAT_BINARY_DATA_CYCLE,
+    LHAT_BINARY_DATA_LIMIT,
+    LHAT_BINARY_DATA_IO,
+    LHAT_BINARY_DATA_OUT_OF_MEMORY
+} LhatBinaryDataStatus;
+
+typedef bool (*LhatBinaryWriteFn)(void *context, const uint8_t *data, size_t length);
+typedef bool (*LhatBinaryReadFn)(void *context, uint8_t *data, size_t capacity,
+                                 size_t *length);
+typedef struct {
+    size_t max_bytes;   // complete framed record, including header
+    size_t max_entries; // sum of array positions and dictionary entries
+    size_t max_depth;   // at most 96; NULL limits use 256 MiB / 1M / 96
+} LhatBinaryDataLimits;
+
+// The source must remain unchanged during serialization, including callbacks.
+// Deserialization roots partially built objects across callbacks; on failure
+// *out is nil. On success, root the answer before running the machine again.
+LhatBinaryDataStatus lhatstdlib_binary_serialize(
+    LhatMachine *machine, LhatValue table, LhatBinaryWriteFn write, void *context,
+    const LhatBinaryDataLimits *limits);
+LhatBinaryDataStatus lhatstdlib_binary_deserialize(
+    LhatMachine *machine, LhatBinaryReadFn read, void *context,
+    const LhatBinaryDataLimits *limits, LhatValue *out);
+
+// A reusable buffer for native Reader/Writer implementations. The module must
+// be registered first. Size is both initial length and minimum capacity.
+bool lhatstdlib_binary_make_bytes(LhatMachine *machine, size_t size, LhatValue *out);
+
 // What a std.binary.Bytes holds: `length` bytes at `data`, in room for
 // `capacity`. Code outside std.binary reads and writes the bytes and the
 // length, and leaves the room to `resize`.

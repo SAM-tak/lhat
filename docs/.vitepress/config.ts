@@ -7,6 +7,7 @@ const pages = {
     { text: 'インストール', link: '/ja/guide/installation' },
     { text: '最初のプログラム', link: '/ja/guide/first-program' },
     { text: '言語の基本', link: '/ja/guide/basics' },
+    { text: 'バイナリ保存とストリーム', link: '/ja/guide/binary-data' },
     { text: 'VS Code の使い方', link: '/ja/tools/vscode' }
   ],
   en: [
@@ -14,6 +15,7 @@ const pages = {
     { text: 'Installation', link: '/en/guide/installation' },
     { text: 'Your first program', link: '/en/guide/first-program' },
     { text: 'Language basics', link: '/en/guide/basics' },
+    { text: 'Binary data and streams', link: '/en/guide/binary-data' },
     { text: 'Using VS Code', link: '/en/tools/vscode' }
   ]
 }

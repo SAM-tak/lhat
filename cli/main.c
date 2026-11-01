@@ -33,6 +33,7 @@
 #ifdef LHAT_CLI_WITH_STDLIB
 #include "stdlib/async.h"
 #include "stdlib/binary.h"
+#include "stdlib/stream.h"
 #include "stdlib/channel.h"
 #include "stdlib/debug.h"
 #include "stdlib/sys.h"
@@ -990,7 +991,8 @@ static bool bind_host_names(LhatProgram *program)
         !lhatstdlib_async_register(program) ||
         !lhatstdlib_channel_register(program) ||
         !lhatstdlib_task_register(program) ||
-        !lhatstdlib_binary_register(program)) {
+        !lhatstdlib_binary_register(program) ||
+        !lhatstdlib_stream_register(program)) {
         return false;
     }
     // 05 § 10.8 with 08 § 7+: text through the front end, bytes without

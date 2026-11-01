@@ -393,6 +393,8 @@ if(LHAT_BUILD_STDLIB)
     set(LHAT_STDLIB_SOURCES
         stdlib/async.c
         stdlib/binary.c
+        stdlib/binary_data.c
+        stdlib/stream.c
         stdlib/carry.c
         stdlib/channel.c
         stdlib/debug.c
@@ -443,7 +445,7 @@ if(LHAT_BUILD_STDLIB)
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
-    install(FILES stdlib/async.h stdlib/binary.h stdlib/carry.h stdlib/channel.h stdlib/debug.h stdlib/io.h stdlib/json.h
+    install(FILES stdlib/async.h stdlib/binary.h stdlib/stream.h stdlib/carry.h stdlib/channel.h stdlib/debug.h stdlib/io.h stdlib/json.h
              stdlib/lton.h stdlib/math.h stdlib/mathcomplex.h stdlib/mathquaternion.h
              stdlib/mathvector2.h stdlib/mathvector3.h stdlib/mathvector4.h stdlib/random.h stdlib/regex.h stdlib/load.h
             stdlib/sys.h stdlib/task.h

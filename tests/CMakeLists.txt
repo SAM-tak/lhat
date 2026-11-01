@@ -126,6 +126,8 @@ if(LHAT_BUILD_STDLIB)
 
     lhat_add_test(test_binary stdlib)
     target_link_libraries(test_binary PRIVATE lhatstdlib)
+    lhat_add_test(test_binary_data stdlib)
+    target_link_libraries(test_binary_data PRIVATE lhatstdlib)
     if(LHAT_WITH_NET)
         lhat_add_test(test_net stdlib)
         target_link_libraries(test_net PRIVATE lhatstdlib)
@@ -190,6 +192,7 @@ if(LHAT_BUILD_CLI)
     set(lhat_e2e_samples
         vector.lh
         composition.lh
+        docs/binary-data.lh
         # 02 の 15.14: the async layer end to end -- the scheduler is L^
         # (sample/async.lh, required by each of these), so what these prove is
         # that await^, std.async and std.thread meet where they are supposed
