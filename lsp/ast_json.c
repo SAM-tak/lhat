@@ -443,7 +443,7 @@ static cJSON *node_to_json(const LhatNode *node, const Layer *layer)
             cJSON_AddStringToObject(out, "inferredReturnType", written);
         }
     }
-    if (node->kind == LHAT_NODE_TABLE || node->kind == LHAT_NODE_DEF ||
+    if (node->kind == LHAT_NODE_NEW || node->kind == LHAT_NODE_TABLE || node->kind == LHAT_NODE_DEF ||
         node->kind == LHAT_NODE_SELF_TABLE) inner.owner = type;
 #endif
     if (out != NULL && !fill_node(out, node, &inner)) {

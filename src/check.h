@@ -138,6 +138,8 @@ typedef enum {
                                         // shared by every instance, so it has
                                         // to be immutable -- a mutable one is
                                         // made inside new
+    LHAT_CHECK_ERR_NEW_TARGET,         // new^ needs a constructible type
+    LHAT_CHECK_ERR_NEW_CONSTRUCTOR,    // default new was overridden
     LHAT_CHECK_ERR_NEW_RETURNS,         // 14.11: construction answers the
                                         // copy, so a new body has no
                                         // return^ of its own

@@ -614,6 +614,10 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             walk_qualified_path(out, node->v.named.name, SEM_TYPE);
             walk_table_entries(out, node->v.named.members);
             break;
+        case LHAT_NODE_NEW:
+            walk_type(out, node->v.named.name);
+            walk_table_entries(out, node->v.named.members);
+            break;
         case LHAT_NODE_TRY:
         case LHAT_NODE_TYPEOF:
         case LHAT_NODE_SPREAD:

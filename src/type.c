@@ -150,6 +150,7 @@ LhatNode *lhat_type_clone_body(LhatTypeArena *arena, const LhatNode *source)
         case LHAT_NODE_TABLE_ENTRY: case LHAT_NODE_MEMBER_DECL:
             COPY(entry.key); COPY(entry.type); COPY(entry.value);
             COPY(entry.annotations); break;
+        case LHAT_NODE_NEW:
         case LHAT_NODE_ERROR_NEW: case LHAT_NODE_ERRORDEF:
         case LHAT_NODE_ERROR_KIND: case LHAT_NODE_ENUMDEF:
         case LHAT_NODE_ENUM_MEMBER: case LHAT_NODE_ANNOTATION:

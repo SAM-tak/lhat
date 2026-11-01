@@ -618,8 +618,8 @@ static void test_the_words_offered(void)
     // 14.4改: the word for a definition is def^, and class^ was not kept
     // even as another spelling of it.
     expect_offers(items, "class^", false);
-    // 15.6改: the maker is new, so new^ is a member and not a word.
-    expect_offers(items, "new^", false);
+    // new^Type{...} is a construction expression; .new(...) remains a member.
+    expect_offers(items, "new^", true);
 
     LHAT_TEST("each word once, so the editor's filter has one of each");
     LHAT_CHECK_EQ_INT(times_offered(items, "let^"), 1);

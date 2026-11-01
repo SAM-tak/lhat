@@ -45,6 +45,7 @@ typedef enum {
     LHAT_NODE_DEF,           // def^{ ... }                  (14 章)
     LHAT_NODE_SELF_TABLE,    // self^{ ... }                 (14.6, 14.11)
     LHAT_NODE_ERROR_NEW,     // error^Kind{ ... }            (04 の 2.5)
+    LHAT_NODE_NEW,           // new^Type{ ... }; named.name is a type syntax
     LHAT_NODE_TRY,           // try^ expr                    (04 の 5 章)
     LHAT_NODE_TYPEOF,        // typeof^(expr)                (14.16)
     LHAT_NODE_TYPE_VALUE,    // type^ <written type>         (13.14)
@@ -519,7 +520,8 @@ struct LhatNode {
         // ERRORDEF / ERROR_KIND / ERROR_NEW (04 の 2.2, 2.5). A name and the
         // list it introduces: kinds for a declaration, MEMBER_DECL fields for
         // a kind -- the same shape t^{ ... } already uses -- and TABLE_ENTRY
-        // values for a construction. ERROR_NEW's name is a qualified path.
+        // values for a construction. ERROR_NEW's name is a qualified path;
+        // NEW's name holds the complete type syntax.
         struct {
             LhatNode *name;
             LhatNode *members;  // NULL when a kind declares no fields

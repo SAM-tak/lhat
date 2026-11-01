@@ -70,6 +70,29 @@ for^ i, v in^ values.reverse_iterate^() {
 
 `slice^` は浅いコピーを返し、`reverse^()` は元の配列をその場で反転します。
 
+## 型を指定して生成する
+
+`new^型{ フィールド=値, ... }` で、型を指定した値を生成できます。
+
+```lhat
+let^ t = new^t^{ aaa:string^ } { aaa="aaa", bbb=42 }
+let^ Point = def^{ self^{ x=0, y=0 } }
+let^ p = new^Point { x=10 }
+
+errordef^ InputError { Invalid { line:number^ } }
+let^ e = new^InputError.Invalid { line=3, message="invalid input" }
+```
+
+構造的なテーブル型は、生成する値が満たす制約です。追加フィールドも許し、
+上の `t` は `aaa:string^` に加えて `bbb:number^` を持つ型になります。
+必須フィールドの不足や、`aaa=42` のような型の不一致はエラーです。
+
+`def^` の型では既定値を使ってインスタンスを作り、指定したフィールドを初期化します。
+上の `p.y` は `0` です。`overload^new` で既定の `new()` が残る場合も使えます。
+`override^new` で既定を置き換えた型には、`.new(...)` を使ってください。
+
+エラー生成の従来の綴り `error^InputError.Invalid{ ... }` も引き続き使えます。
+
 ## 関数と手続き
 
 <<< @/../sample/readme/functions.lh{text}

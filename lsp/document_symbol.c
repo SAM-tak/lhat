@@ -184,7 +184,7 @@ static void add_binding(Outline *o, cJSON *into, const LhatNode *whole,
         if (base != NULL) {
             text_of(o, base, &detail, &detail_length);
         }
-    } else if (held->kind == LHAT_NODE_TABLE) {
+    } else if (held->kind == LHAT_NODE_TABLE || held->kind == LHAT_NODE_NEW) {
         kind = SYMBOL_OBJECT;
     } else if (held->kind == LHAT_NODE_IMPORT || held->kind == LHAT_NODE_REQUIRE) {
         kind = SYMBOL_MODULE;
@@ -212,6 +212,10 @@ static void add_binding(Outline *o, cJSON *into, const LhatNode *whole,
             break;
         case LHAT_NODE_TABLE:
             walk_entries(o, held->v.list.items, children_of(out),
+                         SYMBOL_PROPERTY, false);
+            break;
+        case LHAT_NODE_NEW:
+            walk_entries(o, held->v.named.members, children_of(out),
                          SYMBOL_PROPERTY, false);
             break;
         default:

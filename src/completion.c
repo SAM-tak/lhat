@@ -429,6 +429,7 @@ static const Word WORDS[] = {
     {"catch^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"finally^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"errordef^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
+    {"new^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"localerrordef^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
 
     // 13 章 with 14 章: what makes a subroutine and what makes a definition.

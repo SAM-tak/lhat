@@ -1137,6 +1137,7 @@ bool chk_value_is_fresh(const Checker *c, const LhatNode *value,
     switch (value->kind) {
         // 14.1, 14.11: a literal and a self^{ … } both build one here.
         case LHAT_NODE_TABLE:
+        case LHAT_NODE_NEW:
         case LHAT_NODE_SELF_TABLE:
             return true;
 

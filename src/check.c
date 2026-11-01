@@ -4784,6 +4784,12 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "is given its own copy), or a definition (shared by "
         "design); what something else made -- a name, a call's "
         "answer -- is given inside new: {field}"},
+    [LHAT_CHECK_ERR_NEW_TARGET] = {"check.new-target",
+        "new^ requires a structural table type, a constructible definition, "
+        "or a concrete error kind"},
+    [LHAT_CHECK_ERR_NEW_CONSTRUCTOR] = {"check.new-constructor",
+        "the default new has been overridden; use .new(...) to construct "
+        "this definition"},
     [LHAT_CHECK_ERR_NEW_RETURNS] = {"check.new-returns",
         "construction answers the instance itself, so a new body "
         "has no return^; what it writes through self^ is already "

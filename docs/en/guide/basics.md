@@ -74,6 +74,30 @@ the position and does not reduce the array length.
 
 `slice^` returns a shallow copy, while `reverse^()` reverses the original array in place.
 
+## Constructing values with an explicit type
+
+Use `new^Type{ field=value, ... }` to construct a value with an explicit type.
+
+```lhat
+let^ t = new^t^{ aaa:string^ } { aaa="aaa", bbb=42 }
+let^ Point = def^{ self^{ x=0, y=0 } }
+let^ p = new^Point { x=10 }
+
+errordef^ InputError { Invalid { line:number^ } }
+let^ e = new^InputError.Invalid { line=3, message="invalid input" }
+```
+
+A structural table type constrains the constructed value. Extra fields are
+allowed and retained in the inferred type: `t` has both `aaa:string^` and
+`bbb:number^`. Missing required fields and incompatible values such as `aaa=42`
+are errors.
+
+For a `def^` type, construction uses its defaults and initializes the specified
+fields. Here, `p.y` is `0`. This also works when `overload^new` retains the
+default `new()`. If `override^new` replaces the default, use `.new(...)` instead.
+
+The legacy error construction syntax `error^InputError.Invalid{ ... }` remains supported.
+
 ## Functions and procedures
 
 <<< @/../sample/readme/functions.lh{text}

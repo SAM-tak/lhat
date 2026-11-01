@@ -2362,8 +2362,10 @@ static void compile_interp(Compiler *c, const LhatNode *node, uint8_t into)
 // names its key; a positional one takes the next integer, counting from 0.
 static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
 {
+    const LhatNode *items = node->kind == LHAT_NODE_NEW
+                                ? node->v.named.members : node->v.list.items;
     size_t fields = 0;
-    for (const LhatNode *entry = node->v.list.items; entry != NULL; entry = entry->next) {
+    for (const LhatNode *entry = items; entry != NULL; entry = entry->next) {
         const char *name = NULL;
         size_t length = 0;
         if (!entry->v.entry.computed && entry->v.entry.key != NULL &&
@@ -2373,7 +2375,7 @@ static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
     emit(c, lhat_encode_abc(LHAT_BC_NEWTABLE, into, 0, (uint8_t)fields));
 
     LhatInteger position = 0;
-    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+    for (const LhatNode *entry = items; entry != NULL;
          entry = entry->next) {
         uint8_t mark = c->next_register;
         uint8_t key = reserve(c);
@@ -2402,6 +2404,50 @@ static void compile_table(Compiler *c, const LhatNode *node, uint8_t into)
             load_constant(c, key, lhat_integer(position++));
         }
 
+        compile_expression(c, entry->v.entry.value, value);
+        emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
+        c->next_register = mark;
+    }
+}
+
+static void compile_new(Compiler *c, const LhatNode *node, uint8_t into)
+{
+    const LhatType *type = node->checked_type;
+    if (type != NULL && type->kind == LHAT_TYPE_ERROR_KIND) {
+        compile_error_new(c, node, into);
+        return;
+    }
+    if (type == NULL || type->kind != LHAT_TYPE_TABLE) {
+        fail(c, LHAT_COMPILE_UNSUPPORTED);
+        return;
+    }
+    if (!type->v.table.from_definition) {
+        compile_table(c, node, into);
+        return;
+    }
+    // The checker permits only definitions retaining their default new().
+    uint8_t mark = c->next_register;
+    uint8_t callee = reserve(c);
+    uint8_t key = reserve(c);
+    compile_expression(c, node->v.named.name, callee);
+    load_string_bytes(c, key, "new", 3);
+    emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, callee, callee, key));
+    emit(c, lhat_encode_abc(LHAT_BC_CALL, callee, 0, 0));
+    emit_move_wide(c, into, callee, 1);
+    c->next_register = mark;
+    for (const LhatNode *entry = node->v.named.members; entry != NULL;
+         entry = entry->next) {
+        const char *name = NULL;
+        size_t length = 0;
+        if (entry->v.entry.key == NULL || entry->v.entry.computed ||
+            !node_name(c, entry->v.entry.key, &name, &length)) {
+            fail(c, LHAT_COMPILE_UNSUPPORTED);
+            return;
+        }
+        mark = c->next_register;
+        key = reserve(c);
+        uint8_t value = reserve(c);
+        load_string_bytes(c, key, name, length);
         compile_expression(c, entry->v.entry.value, value);
         emit(c, lhat_encode_abc(LHAT_BC_SETINDEX, into, key, value));
         c->next_register = mark;
@@ -3408,6 +3454,10 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             compile_table(c, node, into);
             return;
 
+        case LHAT_NODE_NEW:
+            compile_new(c, node, into);
+            return;
+
         case LHAT_NODE_ERROR_NEW:
             compile_error_new(c, node, into);
             return;
@@ -3754,6 +3804,7 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
             return;
         }
 
+        case LHAT_NODE_TYPE_NAME:
         case LHAT_NODE_IDENT:
         case LHAT_NODE_FOCUS:
         case LHAT_NODE_HAT_IDENT: {

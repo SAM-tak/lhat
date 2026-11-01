@@ -91,7 +91,7 @@ static void find_site(Site *site, const LhatNode *node)
         return;
     }
     const LhatType *outer = site->owner;
-    if (node->kind == LHAT_NODE_DEF || node->kind == LHAT_NODE_TABLE)
+    if (node->kind == LHAT_NODE_NEW || node->kind == LHAT_NODE_DEF || node->kind == LHAT_NODE_TABLE)
         site->owner = node->display_type;
     else if (node->kind == LHAT_NODE_SELF_TABLE && outer && outer->kind == LHAT_TYPE_TABLE)
         site->owner = outer->v.table.is_definition ? outer->v.table.instance : outer;

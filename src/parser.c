@@ -1336,6 +1336,23 @@ static LhatNode *parse_error_new(Parser *p)
     return finish(p, node);
 }
 
+static LhatNode *parse_new(Parser *p)
+{
+    LhatToken start = p->current;
+    advance(p);  // new^
+    LhatNode *node = make(p, LHAT_NODE_NEW, &start);
+    if (node == NULL) return NULL;
+    bool header = p->brace_is_body;
+    p->brace_is_body = false;
+    node->v.named.name = parse_type(p);
+    if (expect_op(p, LHAT_OP_LBRACE)) {
+        node->v.named.members = parse_brace_entries(p, true);
+        expect_op(p, LHAT_OP_RBRACE);
+    }
+    p->brace_is_body = header;
+    return finish(p, node);
+}
+
 // 14 章. def^ stays an expression (14.9), so the name of a definition comes
 // from whatever it is bound to and composition reads as an ordinary '..'.
 // 14.7改2: what delegate^ names. Two spellings and no others -- 'self^.name'
@@ -2121,6 +2138,9 @@ static LhatNode *parse_primary(Parser *p)
                 (p->ahead.kind == LHAT_TOKEN_IDENT ||
                  is_op(&p->ahead, LHAT_OP_LBRACE))) {
                 return parse_error_new(p);
+            }
+            if (check_hat(p, "new")) {
+                return parse_new(p);
             }
             // 01 の 3.3: 'id^name' is the name's spelling as a string. The
             // name is not looked up -- what this asks for is the way it is

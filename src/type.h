@@ -288,6 +288,8 @@ struct LhatType {
             // call. Identity is still structural (11.3): this says what made
             // the structure, not what it is.
             bool is_definition;
+            // new^ may use the default constructor only while it survives.
+            bool new_overridden;
             // 14.7改: what this definition's instances carry -- the template's
             // fields and the members that take a receiver (14.4). NULL on
             // everything that is not a definition, and on a definition the

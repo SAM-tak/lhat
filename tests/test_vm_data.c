@@ -2582,6 +2582,119 @@ static void test_array_walks(void)
     run_dispose(&r);
 }
 
+static void test_typed_construction(void)
+{
+    Run r;
+    Unit u;
+    LHAT_TEST("new structural tables retain fields beyond their constraint");
+    run_checked_text(&r,
+        "let^ t = new^t^{ aaa:string^ } { aaa='aaa', bbb=42 }\n"
+        "return^ t.aaa = 'aaa' and^ t.bbb = 42 and^ t fits^t^{aaa:string^}\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("new accepts table aliases and positional constraints");
+    run_checked_text(&r,
+        "let^ Row = t^{ name:string^ }\n"
+        "let^ t = new^Row { name='a', count=2 }\n"
+        "let^ a = new^t^{number^[]} { 10, 20, 30 }\n"
+        "return^ t.count + a[2]\n");
+    CHECK_INTEGER(&r, 32);
+    run_dispose(&r);
+
+    LHAT_TEST("new definition copies defaults, initializes fields, and preserves methods");
+    run_checked_text(&r,
+        "let^ D = def^{ self^{ n=1, items={} },\n"
+        " read=f^self^ -> number^ { self^.n } }\n"
+        "let^ a = new^D { n=42 }\nlet^ b = new^D {}\n"
+        "a.items.push^(5)\n"
+        "return^ a.read() = 42 and^ b.n = 1 and^ b.items.length^ = 0\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("new uses a surviving default constructor alongside overloads");
+    run_checked_text(&r,
+        "let^ D = def^{ self^{ n=1 },\n"
+        " overload^new=f^n:number^ { self^{n=n} } }\n"
+        "return^ (new^D { n=42 }).n + D.new(5).n\n");
+    CHECK_INTEGER(&r, 47);
+    run_dispose(&r);
+
+    LHAT_TEST("new accepts qualified definitions and composed defaults");
+    run_checked_text(&r,
+        "let^ Base = def^{self^{n=1}}\nlet^ N = { D=Base }\n"
+        "let^ D = Base .. def^{self^{x=2}}\n"
+        "let^ a = new^N.D {n=3}\nlet^ b = new^D {x=4}\n"
+        "return^ a.n + b.n + b.x\n");
+    CHECK_INTEGER(&r, 8);
+    run_dispose(&r);
+
+    LHAT_TEST("typed structural literals can be copied as prototype defaults");
+    run_checked_text(&r,
+        "let^ D = def^{self^{row=new^t^{n:number^}{n=1, x=2}}}\n"
+        "let^ a = new^D {}\nlet^ b = new^D {}\na.row.n := 42\n"
+        "return^ b.row.n = 1 and^ a.row.x = 2\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("new errors share kind identity and defaults with legacy error construction");
+    run_checked_text(&r,
+        "errordef^ E { K { n:number^, label='default' } }\n"
+        "let^ old = error^E.K { n=1 }\n"
+        "let^ e = new^E.K { n=42, cause=old, message='bad' }\n"
+        "return^ e fits^E.K and^ e.label = 'default' and^ "
+        "e.n = 42 and^ e.message = 'bad' and^ e.cause is^old\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("new error construction works directly in catch expressions");
+    run_checked_text(&r,
+        "errordef^ E { A, B }\n"
+        "let^ e = (new^E.A {}) catch^new^E.B {message='wrapped'}\n"
+        "return^ e.message\n");
+    CHECK_STRING(&r, "wrapped");
+    run_dispose(&r);
+
+    LHAT_TEST("new local tables remain fresh inside a function");
+    run_checked_text(&r,
+        "let^ f = f^ { let^ t = new^t^{n:number^} {n=1}\n"
+        " t.n := 42\n return^ t.n }\nreturn^ f()\n");
+    CHECK_INTEGER(&r, 42);
+    run_dispose(&r);
+
+    LHAT_TEST("new rejects missing and incompatible structural fields");
+    check_text(&u, "let^ t = new^t^{aaa:string^} {aaa=42}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+    check_text(&u, "let^ t = new^t^{aaa:string^} {}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
+    LHAT_TEST("new rejects overridden constructors, including zero-argument ones");
+    check_text(&u, "let^ D = def^{ self^{n=0}, override^new=f^ {self^{n=1}} }\n"
+                   "let^ t = new^D {n=42}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NEW_CONSTRUCTOR);
+    unit_dispose(&u);
+    check_text(&u, "let^ D = def^{ self^{n=0}, override^new=f^n:number^ {self^{n=n}} }\n"
+                   "let^ E = D .. def^{self^{x=1}}\nlet^ t = new^E {}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NEW_CONSTRUCTOR);
+    unit_dispose(&u);
+
+    LHAT_TEST("new rejects nonconstructible types and missing error fields");
+    check_text(&u, "let^ t = new^number^ {}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NEW_TARGET);
+    unit_dispose(&u);
+    check_text(&u, "errordef^ E {K}\nlet^ t = new^E {}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NEW_TARGET);
+    unit_dispose(&u);
+    check_text(&u, "errordef^ E {K {n:number^}}\nlet^ t = new^E.K {}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISSING_FIELD);
+    unit_dispose(&u);
+    check_text(&u, "let^ D = def^{self^{n=0}}\nlet^ t = new^D {unknown=42}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
+    unit_dispose(&u);
+}
+
 int main(void)
 {
     test_names();
@@ -2590,6 +2703,7 @@ int main(void)
     test_strings();
     test_concat_alias();
     test_array_walks();
+    test_typed_construction();
     test_tables();
     test_nil_safe_compound();
     test_nil_safe_assign();

@@ -174,6 +174,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
             break;
 
         case LHAT_NODE_ERROR_NEW:
+        case LHAT_NODE_NEW:
         case LHAT_NODE_ERRORDEF:
         case LHAT_NODE_ERROR_KIND:
         case LHAT_NODE_ENUMDEF:
@@ -527,6 +528,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
         case LHAT_NODE_DEF:            return "def";
         case LHAT_NODE_SELF_TABLE:     return "self-table";
         case LHAT_NODE_ERROR_NEW:      return "error-new";
+        case LHAT_NODE_NEW:            return "new";
         case LHAT_NODE_TRY:            return "try";
         case LHAT_NODE_TYPEOF:         return "typeof";
         case LHAT_NODE_TYPE_VALUE:     return "type";

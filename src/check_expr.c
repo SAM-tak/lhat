@@ -4176,6 +4176,8 @@ static LhatType *declared_signature(Checker *c, const LhatNode *value);
 
 static LhatType *infer_table(Checker *c, const LhatNode *node)
 {
+    const LhatNode *items = node->kind == LHAT_NODE_NEW
+                                ? node->v.named.members : node->v.list.items;
     LhatType *table = lhat_type_table(c->result->types);
     table->v.table.entries_known = true;
 
@@ -4186,7 +4188,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
     // walked below can call a method declared after it. (The full fixpoint
     // stays def^'s, 14.7改: a member whose type only its body knows is not
     // seeded here, and reading it ahead is what a def^ is for.)
-    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+    for (const LhatNode *entry = items; entry != NULL;
          entry = entry->next) {
         const char *seeded = NULL;
         size_t seeded_length = 0;
@@ -4208,7 +4210,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
     // half is described by name; the sequence half by position, counted the
     // way the machine lays it out -- from zero, in the order written.
     size_t position = 0;
-    for (const LhatNode *entry = node->v.list.items; entry != NULL;
+    for (const LhatNode *entry = items; entry != NULL;
          entry = entry->next) {
         // The receiver scope, exactly as chk_infer_def pushes it: self^ is
         // the literal's own type, which is still growing but is the one
@@ -5119,9 +5121,13 @@ static bool immutable_default_type(const LhatType *type)
 static bool immutable_default_value(Checker *c, const LhatNode *node,
                                     const LhatType *type)
 {
-    if (node != NULL && node->kind == LHAT_NODE_TABLE) {
+    if (node != NULL && (node->kind == LHAT_NODE_TABLE ||
+        (node->kind == LHAT_NODE_NEW && type != NULL &&
+         type->kind == LHAT_TYPE_TABLE && !type->v.table.from_definition))) {
+        const LhatNode *items = node->kind == LHAT_NODE_NEW
+                                    ? node->v.named.members : node->v.list.items;
         size_t position = 0;
-        for (const LhatNode *entry = node->v.list.items; entry != NULL;
+        for (const LhatNode *entry = items; entry != NULL;
              entry = entry->next) {
             // A computed key is a value of its own; the names and numbers a
             // literal writes out are the keys a default takes.
@@ -5967,6 +5973,10 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
         }
     }
 
+    definition->v.table.new_overridden = left->v.table.new_overridden ||
+                                         right->v.table.new_overridden;
+    instance->v.table.new_overridden = definition->v.table.new_overridden;
+
     // 14.5 composes to make something new, so the constructor has to build
     // the composed instance. The parameters come from the right, which is the
     // more derived of the two -- every way of constructing it (14.12's
@@ -6092,6 +6102,8 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
 
     // 14.5: composition is ordered, and the derived side is written against
     // what the base already provides.
+    definition->v.table.new_overridden = base != NULL && base->v.table.new_overridden;
+    instance->v.table.new_overridden = definition->v.table.new_overridden;
     copy_members(c, definition, base);
     copy_members(c, instance, chk_instance_of(base));
     // 14.7改2: and what the base delegates to, which is a link and so
@@ -6388,6 +6400,11 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             // adjusts it -- so self^ is bound around it the way a method's
             // is, and chk_infer_func reads c->new_func to open the body as
             // one.
+            if (chk_name_is(name, length, "new") &&
+                entry->v.entry.modifier == LHAT_DEF_OVERRIDE) {
+                definition->v.table.new_overridden = true;
+                instance->v.table.new_overridden = true;
+            }
             bool constructor_entry =
                 chk_name_is(name, length, "new") &&
                 entry->v.entry.value != NULL &&
@@ -6600,6 +6617,77 @@ bool chk_is_hostvalue(const LhatType *type)
     return lhat_type_hostvalue_arm(type) != NULL;
 }
 
+static LhatType *infer_error_construction(Checker *c, const LhatNode *node,
+                                           LhatType *kind)
+{
+    for (const LhatNode *entry = node->v.named.members; entry != NULL;
+         entry = entry->next) {
+        LhatType *given = chk_infer(c, entry->v.entry.value);
+        const char *name = NULL;
+        size_t length = 0;
+        if (kind == NULL || kind->kind != LHAT_TYPE_ERROR_KIND ||
+            !chk_node_name(c, entry->v.entry.key, &name, &length)) {
+            continue;
+        }
+        // message and cause exist on every kind without being
+        // declared (2.3); the rest have to have been.
+        if (chk_name_is(name, length, "message")) {
+            chk_expect(c, entry, given, chk_simple(c, LHAT_TYPE_STRING),
+                       LHAT_CHECK_ERR_MISMATCH);
+            continue;
+        }
+        if (chk_name_is(name, length, "cause")) {
+            continue;
+        }
+        bool found = false;
+        for (const LhatTypeMember *m = kind->v.error.fields; m != NULL;
+             m = m->next) {
+            if (m->name_length == length &&
+                memcmp(m->name, name, length) == 0) {
+                chk_expect(c, entry, given, m->type, LHAT_CHECK_ERR_MISMATCH);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            // 2.3's two are on every kind, so they are offered too.
+            ChkNearest near;
+            if (chk_nearest_start(c, &near, name, length)) {
+                lhat_check_written_members(kind, chk_nearest_member,
+                                           &near);
+                chk_nearest_offer(&near, "message", 7);
+                chk_nearest_offer(&near, "cause", 5);
+            }
+            chk_report_near(c, entry, LHAT_CHECK_ERR_NO_MEMBER, name,
+                            length, entry->v.entry.key, &near);
+        }
+    }
+
+    // 04 の 2.5: a field without a default has to be written, since
+    // there is nothing for it to fall back to.
+    if (kind != NULL && kind->kind == LHAT_TYPE_ERROR_KIND) {
+        for (const LhatTypeMember *m = kind->v.error.fields; m != NULL;
+             m = m->next) {
+            if (m->optional) {
+                continue;
+            }
+            bool given = false;
+            for (const LhatNode *entry = node->v.named.members;
+                 entry != NULL && !given; entry = entry->next) {
+                const char *name = NULL;
+                size_t length = 0;
+                given = chk_node_name(c, entry->v.entry.key, &name, &length) &&
+                        length == m->name_length &&
+                        memcmp(name, m->name, length) == 0;
+            }
+            if (!given) {
+                chk_report(c, node, LHAT_CHECK_ERR_MISSING_FIELD);
+            }
+        }
+    }
+    return kind;
+}
+
 static LhatType *infer_node(Checker *c, const LhatNode *node,
                             LhatType **named_type);
 
@@ -6678,7 +6766,7 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
     // more a FUNC or a TYPEOF than HOSTVALUE is, so those stamps stay
     // untouched.
     if (node != NULL &&
-        (node->kind == LHAT_NODE_ERROR_NEW ||
+        (node->kind == LHAT_NODE_ERROR_NEW || node->kind == LHAT_NODE_NEW ||
          chk_is_hostvalue(type) || lhat_type_tuple_arm_width(type) > 0)) {
         ((LhatNode *)node)->checked_type = type;
     } else if (node != NULL && node->kind != LHAT_NODE_FUNC &&
@@ -6757,6 +6845,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             }
             return chk_simple(c, LHAT_TYPE_STRING);
 
+        case LHAT_NODE_TYPE_NAME:
         case LHAT_NODE_IDENT:
         case LHAT_NODE_HAT_IDENT:
         case LHAT_NODE_SCOPE:
@@ -7397,76 +7486,66 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             return module;
         }
 
-        case LHAT_NODE_ERROR_NEW: {
-            // 04 の 2.5: the kind is written into the construction, and 2.3
-            // makes it the type of the result.
-            LhatType *kind = chk_resolve_type(c, node->v.named.name);
+        case LHAT_NODE_ERROR_NEW:
+            return infer_error_construction(c, node,
+                chk_resolve_type(c, node->v.named.name));
+
+        case LHAT_NODE_NEW: {
+            LhatType *target = chk_resolve_type(c, node->v.named.name);
+            if (target != NULL && target->kind == LHAT_TYPE_ERROR_KIND) {
+                return infer_error_construction(c, node, target);
+            }
+            if (target == NULL || target->kind != LHAT_TYPE_TABLE ||
+                target->v.table.nominal || target->v.table.is_typeinfo ||
+                target->v.table.is_definition) {
+                chk_report(c, node, LHAT_CHECK_ERR_NEW_TARGET);
+                return chk_simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            if (!target->v.table.from_definition) {
+                LhatType *made = infer_table(c, node);
+                chk_expect(c, node, made, target, LHAT_CHECK_ERR_MISMATCH);
+                return made;
+            }
+            LhatType *owner = chk_infer(c, node->v.named.name);
+            if (owner == NULL || owner->kind != LHAT_TYPE_TABLE ||
+                !owner->v.table.is_definition) {
+                chk_report(c, node, LHAT_CHECK_ERR_NEW_TARGET);
+                return target;
+            }
+            if (owner->v.table.new_overridden) {
+                chk_report(c, node, LHAT_CHECK_ERR_NEW_CONSTRUCTOR);
+            }
+            bool field = false;
+            const LhatTypeMember *hole = chk_hole_of(owner, &field);
+            if (hole != NULL) {
+                chk_report_named_span(c, node, field ? LHAT_CHECK_ERR_FIELD_UNPROVIDED
+                                                     : LHAT_CHECK_ERR_STILL_ABSTRACT,
+                                      hole->name, hole->name_length);
+            }
             for (const LhatNode *entry = node->v.named.members; entry != NULL;
                  entry = entry->next) {
-                LhatType *given = chk_infer(c, entry->v.entry.value);
+                LhatType *given = chk_require_value(c, entry->v.entry.value,
+                                                   chk_infer(c, entry->v.entry.value));
                 const char *name = NULL;
                 size_t length = 0;
-                if (kind == NULL || kind->kind != LHAT_TYPE_ERROR_KIND ||
+                if (entry->v.entry.computed || entry->v.entry.key == NULL ||
                     !chk_node_name(c, entry->v.entry.key, &name, &length)) {
+                    chk_report(c, entry, LHAT_CHECK_ERR_NEW_TARGET);
                     continue;
                 }
-                // message and cause exist on every kind without being
-                // declared (2.3); the rest have to have been.
-                if (chk_name_is(name, length, "message")) {
-                    chk_expect(c, entry, given, chk_simple(c, LHAT_TYPE_STRING),
-                               LHAT_CHECK_ERR_MISMATCH);
+                const LhatTypeMember *held = chk_find_member(target, name, length);
+                if (held == NULL || !held->instance_field) {
+                    chk_report_named_span(c, entry->v.entry.key,
+                                          LHAT_CHECK_ERR_NO_MEMBER, name, length);
                     continue;
                 }
-                if (chk_name_is(name, length, "cause")) {
-                    continue;
+                if (chk_is_hostvalue(given)) {
+                    chk_report(c, entry->v.entry.value, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
                 }
-                bool found = false;
-                for (const LhatTypeMember *m = kind->v.error.fields; m != NULL;
-                     m = m->next) {
-                    if (m->name_length == length &&
-                        memcmp(m->name, name, length) == 0) {
-                        chk_expect(c, entry, given, m->type, LHAT_CHECK_ERR_MISMATCH);
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    // 2.3's two are on every kind, so they are offered too.
-                    ChkNearest near;
-                    if (chk_nearest_start(c, &near, name, length)) {
-                        lhat_check_written_members(kind, chk_nearest_member,
-                                                   &near);
-                        chk_nearest_offer(&near, "message", 7);
-                        chk_nearest_offer(&near, "cause", 5);
-                    }
-                    chk_report_near(c, entry, LHAT_CHECK_ERR_NO_MEMBER, name,
-                                    length, entry->v.entry.key, &near);
-                }
+                chk_expect(c, entry->v.entry.value, given, held->type,
+                           LHAT_CHECK_ERR_MISMATCH);
             }
-
-            // 04 の 2.5: a field without a default has to be written, since
-            // there is nothing for it to fall back to.
-            if (kind != NULL && kind->kind == LHAT_TYPE_ERROR_KIND) {
-                for (const LhatTypeMember *m = kind->v.error.fields; m != NULL;
-                     m = m->next) {
-                    if (m->optional) {
-                        continue;
-                    }
-                    bool given = false;
-                    for (const LhatNode *entry = node->v.named.members;
-                         entry != NULL && !given; entry = entry->next) {
-                        const char *name = NULL;
-                        size_t length = 0;
-                        given = chk_node_name(c, entry->v.entry.key, &name, &length) &&
-                                length == m->name_length &&
-                                memcmp(name, m->name, length) == 0;
-                    }
-                    if (!given) {
-                        chk_report(c, node, LHAT_CHECK_ERR_MISSING_FIELD);
-                    }
-                }
-            }
-            return kind;
+            return target;
         }
 
         // 13.8改: '(a, b)' written as a value. Where the tuple came from
