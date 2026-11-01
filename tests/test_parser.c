@@ -383,6 +383,52 @@ static void test_comments(void)
     check_comments("var^ x = 1\n# next\nvar^ y = 2\n", second_statement,
                    "# next");
 
+    LHAT_TEST("indented continuations belong to the preceding trailing comment");
+    const char *continued = "let^ n = x # first\n"
+                            "            # second\n"
+                            "           # third\n"
+                            "let^ y = 12\n";
+    check_comments(continued, first_statement, "# first|# second|# third");
+    check_comments(continued, second_statement, "");
+    check_attached_once(continued);
+
+    LHAT_TEST("dedenting ends a trailing group and cannot restart it");
+    const char *dedented = "let^ n = x # first\n"
+                           "# next\n"
+                           "           # also next\n"
+                           "let^ y = 12\n";
+    check_comments(dedented, first_statement, "# first");
+    check_comments(dedented, second_statement, "# next|# also next");
+    check_attached_once(dedented);
+
+    LHAT_TEST("a blank line ends an aligned trailing group");
+    const char *separated = "let^ n = x # first\n\n"
+                            "           # next\nlet^ y = 12\n";
+    check_comments(separated, first_statement, "# first");
+    check_comments(separated, second_statement, "# next");
+    check_attached_once(separated);
+
+    LHAT_TEST("trailing continuations survive CRLF and end of file");
+    const char *tail = "let^ n = x # first\r\n"
+                       "           # second\r\n";
+    check_comments(tail, first_statement, "# first|# second");
+    check_comments(tail, root_node, "");
+    check_attached_once(tail);
+
+    LHAT_TEST("a construct opening comment also accepts indented continuations");
+    expect_holder("if^ true^ { # first\n"
+                  "            # second\n    f()\n}\n", "# second", "block");
+    check_attached_once("if^ true^ { # first\n"
+                        "            # second\n    f()\n}\n");
+
+    LHAT_TEST("a block comment does not extend a trailing line-comment group");
+    const char *blocked = "let^ n = x # first\n"
+                          "           #[ next ]#\n"
+                          "           # also next\nlet^ y = 12\n";
+    check_comments(blocked, first_statement, "# first");
+    check_comments(blocked, second_statement, "#[ next ]#|# also next");
+    check_attached_once(blocked);
+
     LHAT_TEST("a comment inside a block stays inside it");
     {
         Parse q;

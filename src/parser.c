@@ -5224,18 +5224,45 @@ static void split_comments(CommentWalk *walk, LhatNode *parent,
                            LhatNode *previous, LhatNode *following,
                            uint32_t limit)
 {
+    LhatNode *trailing_owner = NULL;
+    const LhatComment *last_trailing = NULL;
+    uint32_t trailing_column = 0;
     while (walk->cursor < walk->count &&
            walk->comments[walk->cursor].offset < limit) {
         const LhatComment *c = &walk->comments[walk->cursor];
         LhatNode *owner = following;
-        if (previous != NULL) {
+        bool continues = trailing_owner != NULL && !c->block &&
+                         c->line == last_trailing->line + 1 &&
+                         c->column >= trailing_column;
+        if (continues) {
+            for (uint32_t at = last_trailing->end; at < c->offset; at++) {
+                char ch = walk->source->text[at];
+                if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') {
+                    continues = false;
+                    break;
+                }
+            }
+        }
+        bool trailing = false;
+        if (continues) {
+            owner = trailing_owner;
+        } else if (previous != NULL) {
             if (same_line(walk, previous->end, c->offset)) {
                 owner = previous;
+                trailing = true;
             }
         } else if (parent != NULL && parent != walk->root &&
                    same_line(walk, lhat_node_span_start(parent), c->offset)) {
             owner = parent;
+            trailing = true;
         }
+        if (trailing && !c->block) {
+            trailing_owner = owner;
+            trailing_column = c->column;
+        } else if (!continues) {
+            trailing_owner = NULL;
+        }
+        last_trailing = c;
         // One at a time: whose the next one is, is its own question.
         take_comments(walk, owner, c->offset + 1);
     }
@@ -5274,7 +5301,10 @@ static void attach_within(CommentWalk *walk, LhatNode *node)
     }
     AttachContext state = {walk, node, NULL};
     lhat_node_visit_children(node, attach_child, &state);
-    split_comments(walk, node, state.previous, node, node->end);
+    // At file end, trailing groups still belong to the last statement;
+    // standalone tail comments belong to the unit as before.
+    split_comments(walk, node, state.previous, node,
+                   node == walk->root ? UINT32_MAX : node->end);
 }
 
 static void attach_comments(LhatLexer *lexer, LhatParseResult *result)
