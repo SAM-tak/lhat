@@ -10,9 +10,9 @@ on:
   push:
     branches: [main]
     # Nothing the build or the suite reads. sample/ stays: tests load from it.
-    paths-ignore: ['**.md', 'DesignDocuments/**', 'media/**', 'LICENSE']
+    paths-ignore: ['**.md', 'DesignDocuments/**', 'media/**', 'LICENSE', 'docs/**']
   pull_request:
-    paths-ignore: ['**.md', 'DesignDocuments/**', 'media/**', 'LICENSE']
+    paths-ignore: ['**.md', 'DesignDocuments/**', 'media/**', 'LICENSE', 'docs/**']
 
 # A newer push on the same branch supersedes the run before it.
 concurrency:
