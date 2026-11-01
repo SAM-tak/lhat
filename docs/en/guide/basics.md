@@ -97,6 +97,9 @@ fields. Here, `p.y` is `0`. This also works when `overload^new` retains the
 default `new()`. If `override^new` replaces the default, use `.new(...)` instead.
 
 The legacy error construction syntax `error^InputError.Invalid{ ... }` remains supported.
+It is retained for compatibility and is planned for removal in the future; no
+removal date has been set. Use `new^InputError.Invalid{ ... }` in new code.
+The error supertype `error^` will remain available.
 
 ## Functions and procedures
 

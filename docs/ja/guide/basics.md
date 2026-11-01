@@ -92,6 +92,9 @@ let^ e = new^InputError.Invalid { line=3, message="invalid input" }
 `override^new` で既定を置き換えた型には、`.new(...)` を使ってください。
 
 エラー生成の従来の綴り `error^InputError.Invalid{ ... }` も引き続き使えます。
+ただし、互換性のための旧構文であり、将来削除予定です（時期未定）。
+新しいコードでは `new^InputError.Invalid{ ... }` を使ってください。
+頂点型としての `error^` は引き続き使えます。
 
 ## 関数と手続き
 
