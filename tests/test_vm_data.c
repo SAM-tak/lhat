@@ -2380,12 +2380,68 @@ static void test_own_slot_paths(void)
     run_dispose(&r);
 }
 
+static void test_concat_alias(void)
+{
+    Run r;
+
+    LHAT_TEST("both concat spellings can be mixed in checked code");
+    run_checked_text(&r, "return^ 'a'::'b' .. 'c' :: 'd'\n");
+    CHECK_STRING(&r, "abcd");
+    run_dispose(&r);
+
+    LHAT_TEST("double colon inside interpolation is not a format separator");
+    run_checked_text(&r, "return^ $\"{'a'::'b'}\"\n");
+    CHECK_STRING(&r, "ab");
+    run_dispose(&r);
+
+    LHAT_TEST("double colon joins plain tables");
+    run_checked_text(&r,
+                     "let^ t = {1} :: {2}\n"
+                     "return^ t[0] * 10 + t[1]\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    LHAT_TEST("double colon composes definitions");
+    run_checked_text(&r,
+                     "let^ A = def^{ self^{ a := 1 } }\n"
+                     "let^ B = A :: def^{ self^{ b := 2 } }\n"
+                     "let^ x = B.new()\n"
+                     "return^ x.a * 10 + x.b\n");
+    CHECK_INTEGER(&r, 12);
+    run_dispose(&r);
+
+    LHAT_TEST("double colon dispatches to an operator declared with dots");
+    run_checked_text(&r,
+                     "let^ A = def^{ self^{},\n"
+                     "  op^.. = f^self^, s:string^ -> string^ { 'v' :: s }\n"
+                     "}\n"
+                     "return^ A.new() :: '!'\n");
+    CHECK_STRING(&r, "v!");
+    run_dispose(&r);
+
+    LHAT_TEST("op double colon declares the canonical dot member");
+    run_checked_text(&r,
+                     "let^ A = def^{ self^{},\n"
+                     "  op^:: = f^self^, s:string^ -> string^ { 'v' .. s }\n"
+                     "}\n"
+                     "let^ a = A.new()\n"
+                     "return^ (a .. '!') :: (a :: '?')\n");
+    CHECK_STRING(&r, "v!v?");
+    run_dispose(&r);
+
+    LHAT_TEST("quoted double colon names keep their literal key");
+    run_checked_text(&r, "let^ t = { `::` = 'literal' }\nreturn^ t.`::`\n");
+    CHECK_STRING(&r, "literal");
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_names();
     test_own_slot_paths();
     test_member_cache();
     test_strings();
+    test_concat_alias();
     test_tables();
     test_nil_safe_compound();
     test_nil_safe_assign();

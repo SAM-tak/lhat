@@ -943,6 +943,7 @@ static const OperatorEntry operator_table[] = {
     { "**", 2, LHAT_OP_POW },
     { "//", 2, LHAT_OP_FLOORDIV },
     { "..", 2, LHAT_OP_CONCAT },
+    { "::", 2, LHAT_OP_CONCAT },
     { "+=", 2, LHAT_OP_ADD_ASSIGN },
     { "-=", 2, LHAT_OP_SUB_ASSIGN },
     { "*=", 2, LHAT_OP_MUL_ASSIGN },
@@ -1060,7 +1061,7 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
             return finish(lexer, hole, LHAT_TOKEN_INTERP_EXPR_END);
         }
         // A single ':' ends the expression and begins the format specifier.
-        // '::' is a return type marker and is left to the normal path.
+        // '::' is concatenation and is left to the normal path.
         if (current_byte(lexer) == ':' && byte_at(lexer, 1) != ':') {
             LhatToken token = scan_interpolation_format(lexer);
             lexer->pending_newline = false;

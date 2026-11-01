@@ -679,7 +679,8 @@ size_t lhat_node_documentation(const LhatNode *node, const char *source,
 // answers is that canonical spelling, cut from `source_text` (the text the
 // node's offsets index into). The checker looks a member up under it and
 // the compiler uses it as a key, so one definition is what keeps the two
-// agreeing byte for byte.
+// agreeing byte for byte. The operator name in op^:: is canonicalized to
+// the literal ".."; its source offsets still describe the written spelling.
 //
 // 3.1: a name written with backticks is spelled in `strings` instead -- the
 // lexer's decoded storage, since the delimiters are not part of the name.

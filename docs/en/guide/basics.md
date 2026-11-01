@@ -8,6 +8,10 @@ L^ syntax keywords end in `^`, as in `let^`, `var^`, and `for^`.
 This distinguishes them from ordinary names, so you can use names such as `if` for your own variables.
 A comment starts with `#` and continues to the end of the line.
 
+Use `..` or `::` to concatenate strings or tables.
+`"a" :: "b"` and `"a" .. "b"` mean the same thing, with the same precedence and right associativity.
+Both spellings also work for definition composition and `op^` operator declarations.
+
 ## Variables, tables, and iteration
 
 <<< @/../sample/readme/basics.lh{text}

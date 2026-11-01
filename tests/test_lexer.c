@@ -638,6 +638,19 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[14], LHAT_OP_NIL_ELSE), "expected ??");
     scan_dispose(&s);
 
+    LHAT_TEST("double colon is concat without splitting adjacent colons");
+    scan_text(&s, "1::2 : :: := -> ..");
+    LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
+    LHAT_CHECK_EQ_INT(token_count(&s), 8);
+    LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_CONCAT), "expected ::");
+    LHAT_CHECK_EQ_INT(s.tokens[1].length, 2);
+    LHAT_CHECK(is_op(&s.tokens[3], LHAT_OP_COLON), "expected :");
+    LHAT_CHECK(is_op(&s.tokens[4], LHAT_OP_CONCAT), "expected ::");
+    LHAT_CHECK(is_op(&s.tokens[5], LHAT_OP_REASSIGN), "expected :=");
+    LHAT_CHECK(is_op(&s.tokens[6], LHAT_OP_ARROW), "expected ->");
+    LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_CONCAT), "expected ..");
+    scan_dispose(&s);
+
     // 7.4: each compound spelling has to precede its plain operator, or
     // maximal munch would take the shorter one and leave a stray '='.
     LHAT_TEST("compound assignment operators");

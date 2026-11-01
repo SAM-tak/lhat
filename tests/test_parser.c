@@ -1520,6 +1520,19 @@ static void test_precedence(void)
     }
     parse_dispose(&p);
 
+    LHAT_TEST("both concat spellings share precedence and right associativity");
+    parse_text(&p, "x := a :: b .. c + d");
+    {
+        const LhatNode *e = first_value(&p);
+        LHAT_CHECK_EQ_INT(p.result.diagnostic_count, 0);
+        LHAT_CHECK(is_binary(e, LHAT_OP_CONCAT), "top should be concat");
+        const LhatNode *right = e != NULL ? e->v.binary.right : NULL;
+        LHAT_CHECK(is_binary(right, LHAT_OP_CONCAT), "concat nests on the right");
+        LHAT_CHECK(right != NULL && is_binary(right->v.binary.right, LHAT_OP_ADD),
+                   "addition binds more tightly than both concat spellings");
+    }
+    parse_dispose(&p);
+
     LHAT_TEST("addition is left associative");
     parse_text(&p, "x := a + b + c");
     {

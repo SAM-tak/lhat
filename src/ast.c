@@ -618,6 +618,12 @@ bool lhat_node_name(const LhatNode *node, const char *source_text,
                               ? node->v.name.length - node->v.name.hats
                               : node->v.name.length;
             *length = node->v.name.hats > 0 ? word + 1 : word;
+            // Both concat declaration spellings use "..". Quoted names above
+            // keep their literal spelling, including a quoted "::".
+            if (node->kind == LHAT_NODE_IDENT && *length == 2 &&
+                (*text)[0] == ':' && (*text)[1] == ':') {
+                *text = "..";
+            }
             return true;
         }
         case LHAT_NODE_FOCUS:
