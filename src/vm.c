@@ -2476,7 +2476,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         // 16.3改2: a projection yields one value, so one slot
                         // is what it wants and a run has nothing to put in
                         // the second position.
-                        if (co->cursor.part != LHAT_WALK_PAIR) {
+                        if (lhat_walk_is_projection(co->cursor.part)) {
                             if (room > 1) {
                                 return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                               lhat_nil(), at);
@@ -3313,7 +3313,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // 16.3改2: and a projection yields no pair at all, so a
                     // loop written with two names is asking the same way.
                     if (mode == WALK_AS_RUN &&
-                        (co->cursor.part != LHAT_WALK_PAIR || (size_t)cc != 3 ||
+                        (lhat_walk_is_projection(co->cursor.part) || (size_t)cc != 3 ||
                          rbase + a + 2 >= m->slot_capacity)) {
                         return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);

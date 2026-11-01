@@ -684,6 +684,41 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
             return LHAT_RUN_OK;
         }
 
+        case LHAT_NATIVE_RANGE:
+        case LHAT_NATIVE_REVERSE_RANGE:
+        case LHAT_NATIVE_RANGE_DOWNTO:
+        case LHAT_NATIVE_REVERSE_ITERATE: {
+            bool whole = native->kind == LHAT_NATIVE_REVERSE_ITERATE;
+            if ((whole && count != 0) || (!whole && (count < 1 || count > 2))) {
+                return LHAT_RUN_ARITY;
+            }
+            bool reverse = native->kind != LHAT_NATIVE_RANGE;
+            bool downto = native->kind == LHAT_NATIVE_RANGE_DOWNTO;
+            LhatInteger from = 0, to = downto ? 0 : -1;
+            if (!whole && (!vm_ordinal_of(args[0], &from) ||
+                           (count == 2 && !vm_ordinal_of(args[1], &to)))) {
+                return LHAT_RUN_TYPE_ERROR;
+            }
+            LhatInteger start = vm_resolve_ordinal(from, n);
+            LhatInteger end = vm_resolve_ordinal(to, n);
+            if (downto) {
+                LhatInteger swap = start;
+                start = end;
+                end = swap;
+            }
+            LhatCoroutine *walk = lhat_table_iterator(
+                &m->objects, t, reverse ? LHAT_WALK_REVERSE : LHAT_WALK_RANGE);
+            if (walk == NULL) return LHAT_RUN_OUT_OF_MEMORY;
+            // Normalize to lower/upper bounds once; downto alone takes
+            // start/finish instead. Retain no copied values.
+            if (start >= 0 && start <= end && end < (LhatInteger)n) {
+                walk->cursor.at_array = reverse ? (size_t)end + 1 : (size_t)start;
+                walk->cursor.at_entry = reverse ? (size_t)start : (size_t)end + 1;
+            }
+            *answer = lhat_object((LhatObject *)walk);
+            return LHAT_RUN_OK;
+        }
+
         case LHAT_NATIVE_SLICE: {
             if (count < 1 || count > 2) {
                 return LHAT_RUN_ARITY;

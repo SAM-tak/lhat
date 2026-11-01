@@ -2435,6 +2435,153 @@ static void test_concat_alias(void)
     run_dispose(&r);
 }
 
+static void test_array_walks(void)
+{
+    Run r;
+    LHAT_TEST("range yields original indices and only array values, inclusively");
+    run_checked_text(&r,
+        "let^ t = {10, 20, 30, 40, label='ignored'}\n"
+        "var^ sum = 0\n"
+        "for^ i, v in^ t.range^(1, 2) { sum += i * v }\n"
+        "return^ sum\n");
+    CHECK_INTEGER(&r, 80);
+    run_dispose(&r);
+
+    LHAT_TEST("reverse iteration removes every current element without skips");
+    run_checked_text(&r,
+        "let^ t = {10, 20, 30, 40}\nvar^ seen = 0\n"
+        "for^ i, v in^ t.reverse_iterate^() {\n"
+        "  seen := seen * 10 + i\n  t.remove^(i)\n}\n"
+        "return^ seen = 3210 and^ t.length^ = 0\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("reverse range deletes only the selected closed interval");
+    run_checked_text(&r,
+        "let^ t = {10, 20, 30, 40, 50}\nvar^ sum = 0\n"
+        "for^ i, v in^ t.reverse_range^(1, 3) {\n"
+        "  sum += v\n  t.remove^(i)\n}\n"
+        "return^ sum = 90 and^ t.length^ = 2 and^ t[0] = 10 and^ t[1] = 50\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("negative bounds and omitted upper bounds follow slice");
+    run_checked_text(&r,
+        "let^ t = {10, 20, 30, 40}\nvar^ a = 0\nvar^ b = 0\n"
+        "for^ i, v in^ t.range^(-2) { a := a * 10 + i }\n"
+        "for^ i, v in^ t.reverse_range^(-3, -1) { b := b * 10 + i }\n"
+        "return^ a = 23 and^ b = 321\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("range downto starts at the first argument and defaults to index zero");
+    run_checked_text(&r,
+        "let^ t = {10, 20, 30, 40}\nvar^ seen = 0\n"
+        "for^ i, v in^ t.range_downto^(t.length^ - 1, 1) {\n"
+        "  seen := seen * 10 + i\n  t.remove^(i)\n}\n"
+        "var^ sum = 0\n"
+        "for^ i, v in^ {10, 20, 30}.range_downto^(1) { sum += v }\n"
+        "for^ i, v in^ t.reverse_range^(0, 0) { sum += v }\n"
+        "return^ seen = 321 and^ t.length^ = 1 and^ sum = 40\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("empty and invalid intervals yield no elements");
+    run_checked_text(&r,
+        "var^ n = 0\nlet^ t = {1, 2}\n"
+        "for^ i, v in^ {}.reverse_iterate^() { n += 1 }\n"
+        "for^ i, v in^ t.range^(1, 0) { n += 1 }\n"
+        "for^ i, v in^ t.range^(0, 2) { n += 1 }\n"
+        "for^ i, v in^ t.reverse_range^(-3, -1) { n += 1 }\n"
+        "for^ i, v in^ t.reverse_range^(1, 0) { n += 1 }\n"
+        "for^ i, v in^ t.range_downto^(0, 1) { n += 1 }\n"
+        "for^ i, v in^ t.range_downto^(2, 0) { n += 1 }\n"
+        "return^ n\n");
+    CHECK_INTEGER(&r, 0);
+    run_dispose(&r);
+
+    LHAT_TEST("walks retain the source, read live values, and have fixed bounds");
+    run_checked_text(&r,
+        "let^ t = {10, 20}\nlet^ walk = t.range^(0, 1)\n"
+        "t[1] := 25\nt.push^(30)\nvar^ sum = 0\n"
+        "for^ i, v in^ walk { sum += v }\nreturn^ sum\n");
+    CHECK_INTEGER(&r, 35);
+    run_dispose(&r);
+
+    LHAT_TEST("nil array positions do not terminate range walks");
+    run_checked_text(&r,
+        "var^ t:t^{(number^|nil^)[]} = {1, nil^, 3}\n"
+        "var^ n = 0\nvar^ holes = 0\n"
+        "for^ i, v in^ t.reverse_range^(0, -1) {\n"
+        "  n += 1\n  if^v = nil^ { holes += 1 }\n}\n"
+        "return^ n = 3 and^ holes = 1\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("independent range cursors can be nested");
+    run_checked_text(&r,
+        "let^ t = {1, 2, 3}\nvar^ n = 0\n"
+        "for^ i, v in^ t.range^(1, 2) {\n"
+        "  for^ j, w in^ t.reverse_iterate^() { n += v * w }\n}\n"
+        "return^ n\n");
+    CHECK_INTEGER(&r, 30);
+    run_dispose(&r);
+
+    LHAT_TEST("range coroutine start and resume yield index/value tuples");
+    run_checked_text(&r,
+        "let^ walk = {10, 20, 30}.reverse_range^(1, 2)\n"
+        "let^ i, v = walk.start() ?? (-1, -1)\n"
+        "let^ j, w = walk.resume() ?? (-1, -1)\n"
+        "return^ i = 2 and^ v = 30 and^ j = 1 and^ w = 20\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("reverse range and range downto agree with swapped bounds");
+    run_checked_text(&r,
+        "let^ t = {10, 20, 30, 40}\nvar^ a = 0\nvar^ b = 0\n"
+        "for^ i, v in^ t.reverse_range^(1) { a := a * 10 + i }\n"
+        "for^ i, v in^ t.range_downto^(-1, -3) { b := b * 10 + i }\n"
+        "return^ a = 321 and^ a = b\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("range retains a temporary source across garbage collection");
+    run_checked_text(&r,
+        "let^ walk = {10, 20, 30}.range^(1, 2)\n"
+        "L^.gc.collect()\nvar^ sum = 0\n"
+        "for^ i, v in^ walk { sum += v }\nreturn^ sum\n");
+    CHECK_INTEGER(&r, 50);
+    run_dispose(&r);
+
+    LHAT_TEST("forward removal has documented skipping rather than cursor correction");
+    run_checked_text(&r,
+        "let^ t = {1, 2, 3, 4}\nvar^ sum = 0\n"
+        "for^ i, v in^ t.range^(0, 3) { sum += v\n t.remove^(i) }\n"
+        "return^ sum = 4 and^ t.length^ = 2 and^ t[0] = 2 and^ t[1] = 4\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
+    LHAT_TEST("array walk argument arities and types are validated at runtime");
+    run_text(&r, "return^ {1}.range^()\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+    run_text(&r, "return^ {1}.reverse_iterate^(0)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+    run_text(&r, "return^ {1}.reverse_range^(0, 0, 0)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+    run_text(&r, "return^ {1}.range^('bad', 0)\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+    run_text(&r, "return^ {1}.range_downto^()\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
+    run_dispose(&r);
+    run_text(&r, "return^ {1}.range_downto^(0, 'bad')\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_names();
@@ -2442,6 +2589,7 @@ int main(void)
     test_member_cache();
     test_strings();
     test_concat_alias();
+    test_array_walks();
     test_tables();
     test_nil_safe_compound();
     test_nil_safe_assign();

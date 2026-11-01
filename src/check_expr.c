@@ -3049,7 +3049,8 @@ const char *const chk_builtin_words[] = {
     "findall", "floor", "get", "indexof",
     "insert", "isinteger", "iterate", "join", "keys",
     "len", "length", "load", "message", "move",
-    "pop", "push", "remove", "replace",
+    "pop", "push", "range", "range_downto", "remove", "replace",
+    "reverse_iterate", "reverse_range",
     "resize", "resume", "reverse", "round", "save", "self",
     "set", "sign", "size", "slice", "sliceBytes",
     "sort", "split", "stablesort", "start",
@@ -3750,6 +3751,28 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         LhatType *elem_or_nil = lhat_type_union(
             c->result->types, element, chk_simple(c, LHAT_TYPE_NIL));
         LhatType *number = chk_simple(c, LHAT_TYPE_NUMBER);
+
+        if (builtin_named(name, length, "range", true) ||
+            builtin_named(name, length, "range_downto", true) ||
+            builtin_named(name, length, "reverse_range", true) ||
+            builtin_named(name, length, "reverse_iterate", true)) {
+            LhatType *pair = lhat_type_tuple(c->result->types);
+            lhat_type_add_position(c->result->types, pair, number);
+            lhat_type_add_position(c->result->types, pair, element);
+            LhatType *walk = lhat_type_coro(c->result->types, NULL, pair,
+                                           NULL, false, true);
+            LhatType *signature = lhat_type_func(c->result->types, true);
+            signature->v.func.result = walk;
+            if (builtin_named(name, length, "reverse_iterate", true)) {
+                return signature;
+            }
+            lhat_type_add_param(c->result->types, signature, number);
+            LhatType *bounded = lhat_type_func(c->result->types, true);
+            lhat_type_add_param(c->result->types, bounded, number);
+            lhat_type_add_param(c->result->types, bounded, number);
+            bounded->v.func.result = walk;
+            return lhat_type_intersect(c->result->types, signature, bounded);
+        }
 
         // join^ -- 11.2's word already means "one string out of pieces".
         if (builtin_named(name, length, "join", true)) {

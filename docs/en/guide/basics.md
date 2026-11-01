@@ -37,6 +37,43 @@ There are no type annotations here; the type checker infers types from how the v
 `let^` prevents reassignment of a name. Whether a table's contents can be changed depends on its type and the context in which it is used.
 :::
 
+## Array ranges and reverse iteration
+
+`range^(n, m)` walks array indices from lower bound n to upper bound m in ascending order,
+`reverse_range^(n, m)` walks the same interval in reverse, and `reverse_iterate^()` walks the
+whole array in descending order. Each returns an iterator (coroutine) yielding
+the original index and value, without copying the array. Dictionary entries are excluded.
+
+```lhat
+let^ values = {10, 20, 30, 40}
+for^ i, v in^ values.range^(1, 2) { print(i, v) }
+# 1 20, then 2 30
+
+for^ i, v in^ values.reverse_iterate^() {
+    if^ v >= 30 { values.remove^(i) }
+}
+# values is now {10, 20}
+```
+
+Bounds are zero-based and inclusive. Negative indices count from the end, with
+`-1` naming the last position. `range^` and `reverse_range^` take lower and upper
+bounds; omitting the second argument sets the upper bound to the last index.
+Alternatively, `range_downto^(start, finish)` takes the start and finish in traversal
+order, with index 0 as the default finish. `reverse_range^(1, 3)` and
+`range_downto^(3, 1)` both visit indices 3, 2, 1.
+A lower bound greater than the upper bound, or out-of-bounds endpoints, produces an empty iterator.
+Bounds are resolved at the call; values are read as iteration advances.
+These iterators do not introduce `index^`.
+
+Calling `remove^` during forward iteration can skip elements because later
+elements shift left. To delete the current element, iterate in reverse as above.
+Reverse iteration does not make deleting other positions, inserting, or sorting safe.
+Deleting existing dictionary keys with `values[k] := nil^` during traversal
+does not skip the remaining keys. Assigning `nil^` to an array position keeps
+the position and does not reduce the array length.
+
+`slice^` returns a shallow copy, while `reverse^()` reverses the original array in place.
+
 ## Functions and procedures
 
 <<< @/../sample/readme/functions.lh{text}

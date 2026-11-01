@@ -307,6 +307,24 @@ bool lhat_table_walk(LhatWalkCursor *walk, LhatValue *key, LhatValue *value)
     if (table == NULL) {
         return false;
     }
+    if (walk->part == LHAT_WALK_RANGE || walk->part == LHAT_WALK_REVERSE) {
+        size_t position;
+        if (walk->part == LHAT_WALK_REVERSE) {
+            // A shortened array has no positions past its new end.
+            if (walk->at_array > table->array_count) {
+                walk->at_array = table->array_count;
+            }
+            if (walk->at_array <= walk->at_entry) return false;
+            position = --walk->at_array;
+        } else {
+            if (walk->at_array >= walk->at_entry ||
+                walk->at_array >= table->array_count) return false;
+            position = walk->at_array++;
+        }
+        *key = lhat_integer((LhatInteger)position);
+        *value = lhat_slots_get(table->array, position);
+        return true;
+    }
     // The dense part first, in index order: 14 章 makes a table both a
     // sequence and a mapping, and the sequence half has an order worth
     // keeping. What order the rest comes in is not promised.

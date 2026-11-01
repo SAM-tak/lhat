@@ -234,8 +234,17 @@ typedef enum {
 typedef enum {
     LHAT_WALK_PAIR,    // 16.3: (K, V), what iterate^ answers
     LHAT_WALK_KEYS,    // 16.3改2: keys^
-    LHAT_WALK_VALUES   // 16.3改2: values^
+    LHAT_WALK_VALUES,  // 16.3改2: values^
+    // Array-only pairs. at_entry is the fixed exclusive end (forward),
+    // or inclusive lower bound (reverse); at_array is next / one past next.
+    LHAT_WALK_RANGE,
+    LHAT_WALK_REVERSE
 } LhatWalkPart;
+
+static inline bool lhat_walk_is_projection(LhatWalkPart part)
+{
+    return part == LHAT_WALK_KEYS || part == LHAT_WALK_VALUES;
+}
 
 struct LhatMachine;
 
@@ -294,6 +303,8 @@ typedef bool (*LhatHostStepFn)(struct LhatMachine *machine, void *context,
 // state. The dense part comes first in index order, then the rest. A loop
 // whose walk needs no coroutine keeps the same three numbers in its own
 // registers (vm.c's ITERPREP), so the two read through one routine.
+// Array range walks reuse at_entry for their bound (see LhatWalkPart),
+// retaining the same cursor size and requiring no element snapshot.
 typedef struct LhatWalkCursor {
     const LhatTable *walking;
     size_t at_array;
@@ -649,6 +660,10 @@ typedef enum {
     LHAT_NATIVE_INDEXOF,    // where a value stands, or nil^
     LHAT_NATIVE_CONTAINS,   // whether it stands anywhere
     LHAT_NATIVE_SLICE,      // a fresh table of a range, shallow
+    LHAT_NATIVE_RANGE,
+    LHAT_NATIVE_REVERSE_RANGE,
+    LHAT_NATIVE_RANGE_DOWNTO,
+    LHAT_NATIVE_REVERSE_ITERATE,
     LHAT_NATIVE_CLONE,      // a fresh table of the whole, shallow -- or each
                             // value through a written policy (14.22)
     LHAT_NATIVE_INSERT,     // put a value at a position, shifting up

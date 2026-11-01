@@ -280,7 +280,7 @@ WalkStep vm_step_walk(Machine *m, LhatWalkCursor *cursor, WalkMode mode,
     // each step, so the mode says nothing here -- there is one slot to fill
     // whichever way the caller asked. A caller that reserved a run is refused
     // above; this is only ever reached with a slot to write.
-    if (cursor->part != LHAT_WALK_PAIR) {
+    if (lhat_walk_is_projection(cursor->part)) {
         LhatValue key, value;
         if (!lhat_table_walk(cursor, &key, &value)) {
             lhat_slots_set(m->slots, at, lhat_nil());
@@ -292,6 +292,15 @@ WalkStep vm_step_walk(Machine *m, LhatWalkCursor *cursor, WalkMode mode,
     }
 
     if (mode == WALK_AS_VALUE) {
+        if (cursor->part == LHAT_WALK_RANGE || cursor->part == LHAT_WALK_REVERSE) {
+            LhatValue key, value;
+            if (!lhat_table_walk(cursor, &key, &value)) {
+                lhat_slots_set(m->slots, at, lhat_nil());
+                return WALK_ENDED;
+            }
+            lhat_slots_set(m->slots, at, value);
+            return WALK_TOOK;
+        }
         // Only the dense half, by index -- lhat_table_walk would go on into
         // the keyed half, which this form does not visit. 14.10: it ends at
         // the sequence's length, and a nil^ position is visited as nil^.
@@ -1407,7 +1416,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
         }
         co->frame.state = LHAT_COROUTINE_SUSPENDED;
         LhatRunResult made = call_fault(m, LHAT_RUN_OK);
-        if (co->cursor.part != LHAT_WALK_PAIR) {
+        if (lhat_walk_is_projection(co->cursor.part)) {
             made.value = co->cursor.part == LHAT_WALK_KEYS ? key : value;
             return made;
         }
