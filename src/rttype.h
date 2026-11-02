@@ -1,8 +1,8 @@
 // L^ (lhat) -- the bridge from the checker's types to the machine's.
 //
-// 03§1.3 keeps the two representations apart on purpose: check results
+// [pipeline.stages.diagnostics] keeps the two representations apart on purpose: check results
 // are thrown away when checking ends, and compiling reads the tree
-// independently. What crosses anyway crosses through 03§5.11+'s checked_type
+// independently. What crosses anyway crosses through [pipeline.bc.checked-answers]'s checked_type
 // stamp, and these two readings are the whole of what the compiler does
 // with one. Internal to the library -- a host sees neither type.
 
@@ -49,7 +49,7 @@ void lhat_rt_cache_dispose(LhatRtCache *cache);
 LhatRuntimeType *lhat_rt_from_checked(LhatHeap *heap, const LhatType *type,
                                       LhatRtCache *cache);
 
-// §13.13-aware: does an error hide anywhere in this checker type?
+// [syntax.type.self]-aware: does an error hide anywhere in this checker type?
 bool lhat_rt_mentions_error(const LhatType *type);
 
 #endif  // LHAT_RTTYPE_H

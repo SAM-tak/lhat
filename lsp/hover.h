@@ -1,13 +1,13 @@
 // L^ (lhat) -- LSP server: what to show when a name is hovered over.
 //
-// 07§4. What it answers with is the definition the name reaches: the
+// [lsp.hover]. What it answers with is the definition the name reaches: the
 // source that introduced it, and whatever was written about it in comments
-// (01§6.4).
+// ([lex.comment.kept]).
 //
 // In two halves, because the two may be in two units. What the checker
 // settled the name to -- its type, and where its definition is -- is read
 // off the unit the cursor is in; declaration syntax and comments come from
-// the unit that holds the definition, which 05§6.1 lets be
+// the unit that holds the definition, which [modules.deps.static] lets be
 // another file. A unit pointer must not outlive the workspace lock
 // (lsp/workspace.h), so nothing pointer-shaped crosses between the halves:
 // the first leaves strings and offsets, the second reads them.
@@ -41,7 +41,7 @@ typedef struct {
     // Owned callable slots, serialized before leaving the checked unit.
     // Parameter names are added when the declaring unit is described.
     struct LspHoverCallable *callable;
-    // §14.15: the member still left abstract, as the note shown above the
+    // [syntax.obj.abstract]: the member still left abstract, as the note shown above the
     // block; NULL when none.
     char *abstract_note;
     // Where the definition is. `definition_path` names another unit, or is
@@ -67,7 +67,7 @@ bool lsp_hover_locate(const LhatUnit *unit, uint32_t offset,
 
 // The half read off the defining unit: its declaration summary and comments.
 // Leaves the part as it
-// was when the unit holds no tree (a binary unit, 05§10).
+// was when the unit holds no tree (a binary unit, [modules.binary]).
 void lsp_hover_describe(const LhatUnit *defining, LspHoverPart *part);
 
 // The Hover the two halves make, or NULL when neither found anything to

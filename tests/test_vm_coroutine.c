@@ -2,7 +2,7 @@
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
 // prefixed. Programs are run end to end, since what is worth pinning is the
-// answer rather than the instructions chosen to reach it -- 09§5.1 expects those
+// answer rather than the instructions chosen to reach it -- [debug.dap.machines] expects those
 // to be replaced by specialised ones later.
 
 #include <math.h>
@@ -11,13 +11,13 @@
 #include "code.h"
 #include "fixture.h"
 
-// §15 and 03§5.11: a coroutine is one suspended frame, which is all
-// §15.5 leaves room for.
+// [syntax.sub] and [pipeline.bc.overload]: a coroutine is one suspended frame, which is all
+// [syntax.sub.no-contagion] leaves room for.
 static void test_coroutines(void)
 {
     Run r;
 
-    // §15.5: the call answers a coroutine and the body has not started.
+    // [syntax.sub.no-contagion]: the call answers a coroutine and the body has not started.
     LHAT_TEST("calling a yieldable procedure runs nothing");
     run_text(&r,
              "var^ log = { n := 0 }\n"
@@ -27,7 +27,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §15.5: not "up to the first yield^" -- the body starts at its top when
+    // [syntax.sub.no-contagion]: not "up to the first yield^" -- the body starts at its top when
     // start() comes, so each side of a yield^ runs on its own turn.
     LHAT_TEST("the body starts at its top, not after the first yield^");
     run_text(&r,
@@ -72,7 +72,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
-    // §15.4: bidirectional. Without this there is no await^ to build (§15.4).
+    // [syntax.sub.yield-both]: bidirectional. Without this there is no await^ to build ([syntax.sub.yield-both]).
     LHAT_TEST("yield^ answers what the resume sent");
     run_text(&r,
              "var^ gen = p^ {\n"
@@ -110,9 +110,9 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
-    // §15.6+: and nil^ when the body has no return^ to answer with. That is
+    // [syntax.sub.coroutine-members]: and nil^ when the body has no return^ to answer with. That is
     // a value the resume really receives, not a stand-in for 03's "returns
-    // nothing" -- §15.5 keeps the two apart by never letting the second one
+    // nothing" -- [syntax.sub.no-contagion] keeps the two apart by never letting the second one
     // reach a caller.
     LHAT_TEST("and nil^ when the body reached its end without one");
     run_text(&r,
@@ -135,10 +135,10 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
     run_dispose(&r);
 
-    // §8.8 の the checker walks a body whether or not it runs, so a var^
+    // [syntax.stmt.member] の the checker walks a body whether or not it runs, so a var^
     // on a path that is never taken puts a member in the type that the table
     // does not have. Written down as a test because the hole is known and
-    // left open -- 03§5.1's checks are what catches it, at the use.
+    // left open -- [pipeline.bc.generic]'s checks are what catches it, at the use.
     LHAT_TEST("a path var^ that never runs leaves the member absent");
     run_text(&r,
              "var^ t = { }\n"
@@ -157,7 +157,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
-    // 05§8.6: one table per machine, made with it and rooted by it.
+    // [modules.host.machine]: one table per machine, made with it and rooted by it.
     LHAT_TEST("L^ answers the machine's own table");
     run_text(&r,
              "var^ L^.modules.ns1.mod1 = { greet := 7 }\n"
@@ -166,7 +166,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 72);
     run_dispose(&r);
 
-    // 05§8.6: what the registry holds is reachable from the machine, so a
+    // [modules.host.machine]: what the registry holds is reachable from the machine, so a
     // collection run by hand does not take it.
     LHAT_TEST("and what it holds survives a collection");
     run_text(&r,
@@ -176,7 +176,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 05§8.6: check.c refuses what is written against L^ by name,
+    // [modules.host.machine]: check.c refuses what is written against L^ by name,
     // but a table reaches a p^ through a t^{ … } parameter, which carries no
     // mark of this -- the writer has no spelling for one. So the machine asks
     // again where the write happens. Compiled without the checker here, which
@@ -208,7 +208,7 @@ static void test_coroutines(void)
         Run two;
         compile_text(&two, "return^ L^.modules.a.n\n");
         LhatRunResult missing = lhat_run(second, two.proto);
-        // 04§11.3 makes a key that is not there nil^, and reading through
+        // [errors.runtime.index] makes a key that is not there nil^, and reading through
         // it is where the machine says so.
         LHAT_CHECK_EQ_INT(missing.status, LHAT_RUN_TYPE_ERROR);
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_run(first, two.proto).value), 1);
@@ -218,7 +218,7 @@ static void test_coroutines(void)
         compiled_dispose(&two);
     }
 
-    // §8.8: the tables on the way are made where the path does not reach one
+    // [syntax.stmt.member]: the tables on the way are made where the path does not reach one
     // yet, and left alone where it does.
     LHAT_TEST("var^ along a path makes the tables it needs");
     run_text(&r,
@@ -244,7 +244,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 45);
     run_dispose(&r);
 
-    // §5.4: the root is reached, not shadowed, so a body writing one reaches
+    // [syntax.if.bool]: the root is reached, not shadowed, so a body writing one reaches
     // the place the enclosing frame holds.
     LHAT_TEST("and a nested body reaches the root it does not own");
     run_text(&r,
@@ -255,7 +255,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // §15.11: _yield^ makes the body a coroutine's without suspending it, so
+    // [syntax.sub.phantom-yield]: _yield^ makes the body a coroutine's without suspending it, so
     // start() runs the whole thing and finishes.
     LHAT_TEST("_yield^ does not suspend");
     run_text(&r,
@@ -285,7 +285,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §15.11: a _yield^ never runs -- not the suspending and not its value
+    // [syntax.sub.phantom-yield]: a _yield^ never runs -- not the suspending and not its value
     // either. The statement compiles to nothing, so an expression written
     // there does nothing at all.
     LHAT_TEST("what it would have sent is not evaluated");
@@ -315,7 +315,7 @@ static void test_coroutines(void)
     run_dispose(&r);
 
     // Nobody resumes it, so nothing comes back. The declared type says
-    // otherwise, and 03§5.1's checks are what catches the writer whose
+    // otherwise, and [pipeline.bc.generic]'s checks are what catches the writer whose
     // "this never runs" turned out to be wrong.
     LHAT_TEST("but nothing comes back from it");
     run_text(&r,
@@ -343,7 +343,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §15.5 again: the caller of a yieldable procedure need not be yieldable,
+    // [syntax.sub.no-contagion] again: the caller of a yieldable procedure need not be yieldable,
     // so nothing has to be marked on the way up.
     LHAT_TEST("an ordinary procedure may drive a coroutine");
     run_text(&r,
@@ -356,8 +356,8 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // §10.7: a coroutine dropped while suspended still runs what is
-    // pending, and §12.6 says dispose() is how that is asked for.
+    // [syntax.finally.coroutine]: a coroutine dropped while suspended still runs what is
+    // pending, and [syntax.with.coroutine] says dispose() is how that is asked for.
     LHAT_TEST("disposing runs the finally^ the body was inside");
     run_text(&r,
              "var^ log = { n := 0 }\n"
@@ -375,7 +375,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
-    // §10.7: the same finally^ is never run twice.
+    // [syntax.finally.coroutine]: the same finally^ is never run twice.
     LHAT_TEST("a finally^ already run is not run again at disposal");
     run_text(&r,
              "var^ log = { n := 0 }\n"
@@ -422,7 +422,7 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_DEAD_COROUTINE);
     run_dispose(&r);
 
-    // §12.6: dispose() is what with^ calls, so a coroutine goes into a with^
+    // [syntax.with.coroutine]: dispose() is what with^ calls, so a coroutine goes into a with^
     // like any other resource.
     LHAT_TEST("with^ disposes a coroutine at the end of the block");
     run_text(&r,
@@ -442,7 +442,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // §10.7: there is nothing waiting to resume a coroutine being disposed.
+    // [syntax.finally.coroutine]: there is nothing waiting to resume a coroutine being disposed.
     LHAT_TEST("yield^ during disposal is a fault");
     run_text(&r,
              "var^ gen = p^ {\n"
@@ -459,7 +459,7 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_YIELD_OUTSIDE);
     run_dispose(&r);
 
-    // §10.7: dispose() is how a program asks; the collector is what
+    // [syntax.finally.coroutine]: dispose() is how a program asks; the collector is what
     // happens when it never does. Dropping a suspended coroutine has to run
     // what is pending just the same, or a finally^ becomes a promise the
     // language keeps only when it is watched.
@@ -508,7 +508,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
-    // 05§10.7 again: never twice. What the program already disposed of has
+    // [modules.binary.signatures] again: never twice. What the program already disposed of has
     // nothing left pending, so becoming unreachable afterwards is quiet.
     LHAT_TEST("one already disposed of is not run again by the collector");
     run_text(&r,
@@ -531,7 +531,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §10.7: and the collector does not run one twice either. Nothing marks
+    // [syntax.finally.coroutine]: and the collector does not run one twice either. Nothing marks
     // a coroutine as already done -- what does the work is that its count
     // of pending cleanups is 0 afterwards, so every later collection walks
     // past it. Asked with two collections after the drop.
@@ -599,7 +599,7 @@ static void test_coroutines(void)
     // The queue takes one per instruction boundary, so several dropped at
     // once all run -- innermost cleanup of each, in the order they come off
     // the list. Only the count is asserted; the order between coroutines is
-    // the collector's business and §10.7 promises nothing about it.
+    // the collector's business and [syntax.finally.coroutine] promises nothing about it.
     LHAT_TEST("several dropped at once all run");
     run_text(&r,
              "var^ log = { n := 0 }\n"
@@ -621,7 +621,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // §10.7: the cleanups run innermost first here as anywhere else -- the
+    // [syntax.finally.coroutine]: the cleanups run innermost first here as anywhere else -- the
     // collector picks when, not what.
     LHAT_TEST("a dropped one's nested cleanups run innermost first");
     run_text(&r,
@@ -647,7 +647,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
-    // §10.7: dropped too late for any collection to have noticed -- nothing
+    // [syntax.finally.coroutine]: dropped too late for any collection to have noticed -- nothing
     // here fills the heap, so without a collection at the end of the run
     // this finally^ would never run at all. No statement can watch it
     // happen, since the answer was settled before it ran, so the table the
@@ -680,7 +680,7 @@ static void test_coroutines(void)
 
     // The other side of the same rule: the run ending is not the machine
     // ending, so what the program is still holding is not garbage and its
-    // cleanups do not run. §10.7 promises a dropped coroutine, not a live one.
+    // cleanups do not run. [syntax.finally.coroutine] promises a dropped coroutine, not a live one.
     LHAT_TEST("one still held when the run ends is left alone");
     run_text(&r,
              "var^ log = { 0 }\n"
@@ -701,7 +701,7 @@ static void test_coroutines(void)
         0);
     run_dispose(&r);
 
-    // §16.3: a walk has no body to have left anything pending in, and holds
+    // [syntax.for.forms]: a walk has no body to have left anything pending in, and holds
     // neither closure nor registers -- the collector has to leave it alone.
     LHAT_TEST("a dropped walk is collected without any of this");
     run_checked_text(&r,
@@ -716,7 +716,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // §15.4 with §5.4: a capture of a coroutine's own local has to survive the
+    // [syntax.sub.yield-both] with [syntax.if.bool]: a capture of a coroutine's own local has to survive the
     // suspension. The frame's registers move into the coroutine at a yield^
     // and come back at a resume -- possibly at a different depth, where the
     // old slots belong to somebody else -- so the capture travels with them
@@ -773,7 +773,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 50);
     run_dispose(&r);
 
-    // 03§5.12: the capture keeps the coroutine reachable (suspended_in). With
+    // [pipeline.bc.gc]: the capture keeps the coroutine reachable (suspended_in). With
     // the handle dropped and the collector run, the escaped closure still
     // reads the saved slot rather than freed memory.
     LHAT_TEST("a capture keeps the suspended coroutine alive");
@@ -797,7 +797,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // §15.8: what a plain call does not do, await^ does. The inner
+    // [syntax.sub.await]: what a plain call does not do, await^ does. The inner
     // one's yields reach the outer one's resumer.
     LHAT_TEST("await^ forwards the inner one's yields");
     run_text(&r,
@@ -811,7 +811,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 123);
     run_dispose(&r);
 
-    // §15.14: await^ is that same delegation, so a request raised deep inside
+    // [syntax.sub.await-done]: await^ is that same delegation, so a request raised deep inside
     // reaches whoever is driving the outer one -- which is what makes a
     // scheduler possible without the language knowing about one. Here the
     // driving is done by hand: the request comes out of start(), and the
@@ -833,7 +833,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 7420);
     run_dispose(&r);
 
-    // §15.8 with §13.8+: what the inner body yields may be a tuple, and the
+    // [syntax.sub.await] with [syntax.type.tuple]: what the inner body yields may be a tuple, and the
     // loop cannot say its width -- a await^ has no count of names to read
     // one off, the way a for^ does. So the run travels through the frame's
     // answer room and the loop forwards it whole. Before this it was
@@ -881,7 +881,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 6);
     run_dispose(&r);
 
-    // §15.4 with §13.9: R and Y are their own seats, so a pair may go out and
+    // [syntax.sub.yield-both] with [syntax.type.coroutine]: R and Y are their own seats, so a pair may go out and
     // one value come back. Before this the compiler read a wide yield^ as a
     // statement's and loaded nil^ where the send belongs.
     LHAT_TEST("a name bound to a wide yield^ receives what the resume sent");
@@ -895,7 +895,7 @@ static void test_coroutines(void)
                      "var^ c = g()\n"
                      "var^ a, b = c.start()\n"
                      "var^ x, y = c.resume(7)\n"
-                     // §13.8+: T is one value, so the second position of the
+                     // [syntax.type.tuple]: T is one value, so the second position of the
                      // fold carries the nil^ of the round T answers in.
                      "return^ a * 1000 + (b ?? 0) * 100 + x\n");
     CHECK_INTEGER(&r, 1207);
@@ -922,7 +922,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 10000 + 2000 + 579);
     run_dispose(&r);
 
-    // §15.8: the value of the delegation is the inner one's return value, the
+    // [syntax.sub.await]: the value of the delegation is the inner one's return value, the
     // shape PEP 380 gave a generator's return.
     LHAT_TEST("the value of await^ is the inner return");
     run_text(&r,
@@ -934,7 +934,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
-    // §15.4 through a delegation: what the resume sends reaches the inner one.
+    // [syntax.sub.yield-both] through a delegation: what the resume sends reaches the inner one.
     LHAT_TEST("what the resume sends reaches the inner coroutine");
     run_text(&r,
              "var^ a = p^ {\n"
@@ -970,7 +970,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
-    // §15.8 の §15.5: the plain call is what does nothing, which is the whole
+    // [syntax.sub.await] の [syntax.sub.no-contagion]: the plain call is what does nothing, which is the whole
     // reason the delegation had to be written.
     LHAT_TEST("a plain call still only makes a coroutine");
     run_text(&r,
@@ -983,9 +983,9 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §15.2 with 05§3.2: a script's top level is 'p^...', so a yield^ or
+    // [syntax.sub.yieldable] with [modules.unit.optional]: a script's top level is 'p^...', so a yield^ or
     // an await^ there makes it yieldable -- running it runs nothing and
-    // answers the coroutine (§15.5), which the host drives.
+    // answers the coroutine ([syntax.sub.no-contagion]), which the host drives.
     LHAT_TEST("a script that yields answers its coroutine");
     run_text(&r,
              "var^ log = { n := 0 }\n"
@@ -1014,7 +1014,7 @@ static void test_coroutines(void)
     }
     run_dispose(&r);
 
-    // §15.2: start and resume split the two jobs -- the machine holds that
+    // [syntax.sub.yieldable]: start and resume split the two jobs -- the machine holds that
     // split itself (vm.h's opening comment), so each has to be called on the
     // state that makes it mean something.
     LHAT_TEST("resuming one that has never started is a fault");
@@ -1056,7 +1056,7 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
-    // §13.9 with 03§4.2: without checking there is nothing to read R off,
+    // [syntax.type.coroutine] with [pipeline.repl.no-fork]: without checking there is nothing to read R off,
     // so the machine takes a resume either way rather than choosing a count
     // the checker might have disagreed with. Where checking ran it is exact
     // (test_check_coroutine.c holds that side).
@@ -1101,7 +1101,7 @@ static void test_coroutines(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
-    // §15.6+: the two questions, which is how a consumer picks an operation
+    // [syntax.sub.coroutine-members]: the two questions, which is how a consumer picks an operation
     // rather than finding out by faulting.
     LHAT_TEST("a fresh coroutine has neither started nor finished");
     run_text(&r,
@@ -1130,7 +1130,7 @@ static void test_coroutines(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // The reason both exist: what a resume answers is Y|Ret (§13.9), and a
+    // The reason both exist: what a resume answers is Y|Ret ([syntax.type.coroutine]), and a
     // body that yields nil^ and ends without a value answers nil^ either
     // way. Nothing in the value says which one it was.
     LHAT_TEST("done() tells the end from a yield^ of the same value");
@@ -1146,7 +1146,7 @@ static void test_coroutines(void)
     CHECK_INTEGER(&r, 10);  // suspended, then finished
     run_dispose(&r);
 
-    // §10.7: disposal ends the coroutine without the body reaching its end.
+    // [syntax.finally.coroutine]: disposal ends the coroutine without the body reaching its end.
     LHAT_TEST("disposal finishes it too");
     run_text(&r,
              "var^ gen = p^ { yield^ 1 yield^ 2 }\n"
@@ -1204,7 +1204,7 @@ static void test_coroutines(void)
     run_dispose(&r);
 
     // await^ drives a freshly made coroutine on its own, with no start()
-    // written anywhere -- §15.8's whole point is that the delegation handles
+    // written anywhere -- [syntax.sub.await]'s whole point is that the delegation handles
     // this by itself.
     LHAT_TEST("await^ still starts a fresh coroutine on its own");
     run_text(&r,
@@ -1216,7 +1216,7 @@ static void test_coroutines(void)
     run_dispose(&r);
 }
 
-// §15.4 with §13.8+: a resume may send several values -- as many as the R
+// [syntax.sub.yield-both] with [syntax.type.tuple]: a resume may send several values -- as many as the R
 // tuple carries -- and the yield^'s own binding takes them apart.
 static void test_multi_value_send(void)
 {
@@ -1250,8 +1250,8 @@ static void test_multi_value_send(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
-    // §13.9: the count a resume sends is the R's, held by the machine where
-    // the checker settled it (09§5.1's stop, not a wider promise).
+    // [syntax.type.coroutine]: the count a resume sends is the R's, held by the machine where
+    // the checker settled it ([debug.dap.machines]'s stop, not a wider promise).
     LHAT_TEST("a checked body refuses the wrong count at run time");
     run_checked_text(&r,
                      "var^ gen = p^ {\n"
@@ -1264,7 +1264,7 @@ static void test_multi_value_send(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
-    // §15.8: the delegation loop forwards the send whole -- the outer
+    // [syntax.sub.await]: the delegation loop forwards the send whole -- the outer
     // resume's run reaches the inner yield^'s binding.
     LHAT_TEST("a several-send crosses a await^");
     run_checked_text(&r,
@@ -1282,11 +1282,11 @@ static void test_multi_value_send(void)
     CHECK_INTEGER(&r, 10304);  // first 10, then a=3 b=4 -> 304
     run_dispose(&r);
 
-    // §13.8+: 'yield^ (a, b)' sends the tuple from binding position -- the
+    // [syntax.type.tuple]: 'yield^ (a, b)' sends the tuple from binding position -- the
     // same fold return^ makes of its parenthesised spelling -- so one
     // yield^ sends several and receives several. And a reassignment reads
     // R off what the names already hold, no annotation written.
-    // §13.8+: the commas after a yield^ are its own, as return^'s are --
+    // [syntax.type.tuple]: the commas after a yield^ are its own, as return^'s are --
     // the bare spelling and the parenthesised one send the same pair.
     LHAT_TEST("yield^ x, y reads its commas as return^ does");
     run_checked_text(&r,
@@ -1317,7 +1317,7 @@ static void test_multi_value_send(void)
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
-    // §13.8+: a single-value T pads to the folded width -- the last resume
+    // [syntax.type.tuple]: a single-value T pads to the folded width -- the last resume
     // answers ("done", nil^) where Y was a pair, so the same take-apart
     // receives every turn.
     LHAT_TEST("a single T pads at the take-apart");
@@ -1334,7 +1334,7 @@ static void test_multi_value_send(void)
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
-    // §8.7+: the let^ shape of a drive loop -- its right side reads
+    // [syntax.stmt.old-world]: the let^ shape of a drive loop -- its right side reads
     // the names outside the loop, so every turn sends the same pair (:= is
     // what advances one). Pinned that it checks and runs.
     LHAT_TEST("a let^ in the loop reads the outer names");
@@ -1355,7 +1355,7 @@ static void test_multi_value_send(void)
     CHECK_INTEGER(&r, 201);  // sends the outer pair both turns
     run_dispose(&r);
 
-    // §13.8+: the two spellings of a tuple R name one type, so a written
+    // [syntax.type.tuple]: the two spellings of a tuple R name one type, so a written
     // c^ annotation matches a body receiving several either way.
     LHAT_TEST("a written c^ with a tuple R matches the body");
     run_checked_text(&r,
@@ -1371,7 +1371,7 @@ static void test_multi_value_send(void)
     run_dispose(&r);
 }
 
-// §15.16: save() takes the frame out, load() puts it back. What is
+// [syntax.sub.save-load]: save() takes the frame out, load() puts it back. What is
 // pinned is the rollback: the body carries on from the saved place, with the
 // locals and the await^ chain it had there.
 static void test_save_load(void)
@@ -1434,7 +1434,7 @@ static void test_save_load(void)
     CHECK_INTEGER(&r, 21);
     run_dispose(&r);
 
-    // §15.8: the inner one is part of where the outer one stood.
+    // [syntax.sub.await]: the inner one is part of where the outer one stood.
     LHAT_TEST("the coroutine an await^ drives is put back with it");
     run_text(&r,
              "let^ inner = p^ {\n"
@@ -1475,7 +1475,7 @@ static void test_save_load(void)
     CHECK_INTEGER(&r, 16);
     run_dispose(&r);
 
-    // §10.7: the frame that was left owed a finally^; it goes unrun, as a
+    // [syntax.finally.coroutine]: the frame that was left owed a finally^; it goes unrun, as a
     // fault leaves one.
     LHAT_TEST("a finally^ the abandoned frame owed does not run");
     run_text(&r,

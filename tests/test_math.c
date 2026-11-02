@@ -1,9 +1,9 @@
 // L^ (lhat) -- tests for std.math, and for what number^ itself gained
-// beside it (§14.21+'s abs/sign/clamp, §14.8+2's constants, and '**'
+// beside it ([syntax.obj.abs]'s abs/sign/clamp, [syntax.obj.number-consts]'s constants, and '**'
 // taking any exponent).
 //
 // Every case asks its question from inside L^. Reals are compared with
-// '=', which reads them with §14.8's tolerance.
+// '=', which reads them with [syntax.obj.number]'s tolerance.
 
 #include "stdlibutil.h"
 #include "testutil.h"
@@ -69,7 +69,7 @@ static void test_functions(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // §14.12: log registered twice is one name with two arms.
+    // [syntax.obj.override]: log registered twice is one name with two arms.
     LHAT_TEST("log takes a base as a second arm");
     {
         LhatTestRan ran = run_source(
@@ -92,8 +92,8 @@ static void test_functions(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // §14.8+: min and max answer the argument as it came, so integers stay
-    // integers -- and §13.7's tail takes any number of them.
+    // [syntax.obj.number-widen]: min and max answer the argument as it came, so integers stay
+    // integers -- and [syntax.type.variadic]'s tail takes any number of them.
     LHAT_TEST("min and max take one or more and keep the representation");
     {
         LhatTestRan ran = run_source(
@@ -113,7 +113,7 @@ static void test_functions(void)
 
 static void test_number_members(void)
 {
-    // §14.21+: abs, sign and clamp beside the roundings, on the value
+    // [syntax.obj.abs]: abs, sign and clamp beside the roundings, on the value
     // itself. An integer stays one.
     LHAT_TEST("abs, sign and clamp are members of number^");
     {
@@ -131,7 +131,7 @@ static void test_number_members(void)
     LHAT_TEST("clamp asks for its two bounds");
     LHAT_CHECK(!checks("return^ (5).clamp(1)\n"), "one bound is not enough");
 
-    // §14.23: the bitwise words take a number^ and nothing else, and
+    // [syntax.obj.bits]: the bitwise words take a number^ and nothing else, and
     // no op^ reaches them.
     LHAT_TEST("the bitwise words take number^ alone");
     LHAT_CHECK(checks("let^ m = 12\nreturn^ (m bitand^ 4) = 4\n"),
@@ -145,7 +145,7 @@ static void test_number_members(void)
                        "return^ V.new() bitand^ 1\n"),
                "no op^ reaches them");
 
-    // §14.8+2: the representation's constants are static members of
+    // [syntax.obj.number-consts]: the representation's constants are static members of
     // the type's own word; nothing else is.
     LHAT_TEST("number^ carries its constants");
     {
@@ -160,7 +160,7 @@ static void test_number_members(void)
     LHAT_CHECK(!checks("return^ number^.phi\n"), "no such constant");
     LHAT_CHECK(!checks("return^ number^.pi\n"), "pi is std.math's");
 
-    // §14.21+: the mathematical constants are std.math's.
+    // [syntax.obj.abs]: the mathematical constants are std.math's.
     LHAT_TEST("std.math carries pi, tau and e");
     {
         LhatTestRan ran = run_source(
@@ -174,7 +174,7 @@ static void test_number_members(void)
     }
     LHAT_CHECK(checks("return^ number^\n"), "the bare type is a type descriptor value");
 
-    // §14.8+: '**' takes any exponent now, and always answers a real.
+    // [syntax.obj.number-widen]: '**' takes any exponent now, and always answers a real.
     LHAT_TEST("** takes a fractional exponent");
     {
         LhatTestRan ran = run_source(

@@ -97,7 +97,7 @@ bool lhat_number_literal(const char *text, size_t length, bool after_dot,
     bool malformed = false;
     size_t digits = 0;
 
-    // §10.1: immediately after a '.' the digits form an integer key and
+    // [syntax.finally.block]: immediately after a '.' the digits form an integer key and
     // must not swallow a further '.', so no prefix, fraction or exponent is
     // considered here.
     if (after_dot) {
@@ -124,7 +124,7 @@ bool lhat_number_literal(const char *text, size_t length, bool after_dot,
         malformed = malformed || bad;
 
         if (base == 10) {
-            // 01§10.2: the fraction is taken only when a digit follows the
+            // [lex.ambig.dotdot]: the fraction is taken only when a digit follows the
             // '.', so "1..2" scans as INT CONCAT INT.
             if (current_byte(&r) == '.' && is_decimal_digit(byte_at(&r, 1))) {
                 r.at++;
@@ -138,7 +138,7 @@ bool lhat_number_literal(const char *text, size_t length, bool after_dot,
             if (exponent == 'e' || exponent == 'E') {
                 size_t sign = (byte_at(&r, 1) == '+' || byte_at(&r, 1) == '-') ? 1 : 0;
                 if (!is_decimal_digit(byte_at(&r, 1 + sign))) {
-                    // 01§4.5: no backtracking. 01§10.3 makes "1e^3" illegal
+                    // [lex.number.exponent]: no backtracking. [lex.ambig.number-ident] makes "1e^3" illegal
                     // anyway, so a malformed exponent is simply an error, and
                     // the 'e' stays consumed.
                     return finish(out, LHAT_NUMBER_BAD_EXPONENT, r.at + 1);
@@ -209,7 +209,7 @@ bool lhat_number_read(const char *text, size_t length, bool *is_real,
         length--;
     }
 
-    // 04§10 has no sign in it: '-1' is §11's unary minus applied
+    // [errors.chain] has no sign in it: '-1' is [syntax.op]'s unary minus applied
     // to a literal. Nothing else reads this text, so the sign is read here.
     bool negative = false;
     if (from < length && (text[from] == '-' || text[from] == '+')) {

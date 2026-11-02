@@ -36,7 +36,7 @@ static LhatTestRan run_source(const char *text)
     return lhat_test_run(regs, 1, text);
 }
 
-// 05§8.7 with async.h: any thread may push. This one is the host that
+// [modules.host.import] with async.h: any thread may push. This one is the host that
 // finished whatever the id stood for -- a loader, a signal, a worker.
 static int push_first_id(void *unused)
 {
@@ -77,7 +77,7 @@ static void test_external(void)
         registered = NULL;
     }
 
-    // §15.14's shape: nothing about an external wait says when it will be
+    // [syntax.sub.await-done]'s shape: nothing about an external wait says when it will be
     // ready, so next() -- which reads the clock -- has nothing to answer.
     LHAT_TEST("and next() says nothing about one");
     {
@@ -158,7 +158,7 @@ static void test_timers(void)
 }
 
 // ---------------------------------------------------------------------------
-// 05§8.7: a wait belongs to the machine that armed it
+// [modules.host.import]: a wait belongs to the machine that armed it
 // ---------------------------------------------------------------------------
 
 static const LhatTestRegister with_thread[] = {register_async,

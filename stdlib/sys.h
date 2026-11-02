@@ -9,7 +9,7 @@
 //
 // lhatstdlib_sys_register is idempotent: more than one stdlib module
 // depends on it, so it is called once per dependent's own registration, and
-// lhat_register_error_kind (05§8.7's "one name, one thing") answers
+// lhat_register_error_kind ([modules.host.import]'s "one name, one thing") answers
 // false on a second attempt. Checking first with lhatstdlib_sys_lookup
 // and returning early is the idiom every stdlib registration function that
 // more than one other module depends on should follow.

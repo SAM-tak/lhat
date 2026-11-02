@@ -7,7 +7,7 @@
 // again is the table it was, which is the promise the pair of calls exists
 // to make.
 //
-// The one place the trip does not close is null, and that is 04§11.3
+// The one place the trip does not close is null, and that is [errors.runtime.index]
 // rather than a gap here: JSON's null and a key that was never set are the
 // same thing in L^, so an array with a null in it comes back holed and
 // encodes as an object. Asserted rather than left to be found.
@@ -69,15 +69,15 @@ static void test_writing(void)
         LHAT_CHECK_RAN_TEXT(ran, "[true,false,7]");
         lhat_test_ran_dispose(&ran);
 
-        // §14.10: the sequence holds nil^ as a position of its own, so
+        // [syntax.obj.structure]: the sequence holds nil^ as a position of its own, so
         // the third slot stays in the dense half and is written as null.
         ran = run_source(ENCODING("{true^, false^, nil^, 7}"));
         LHAT_CHECK_RAN_TEXT(ran, "[true,false,null,7]");
         lhat_test_ran_dispose(&ran);
 
-        // §14.8's two representations: an integer keeps its shape, and a real
+        // [syntax.obj.number]'s two representations: an integer keeps its shape, and a real
         // is written so that reading it back answers the same real. %g, which
-        // §14.17 writes a number for a reader with, would not come back.
+        // [syntax.obj.tostring] writes a number for a reader with, would not come back.
         ran = run_source(ENCODING("{0.1, 1.5, -2}"));
         LHAT_CHECK_RAN_TEXT(ran, "[0.1,1.5,-2]");
         lhat_test_ran_dispose(&ran);
@@ -196,7 +196,7 @@ static void test_reading(void)
 
     LHAT_TEST("a number is an integer where JSON wrote one");
     {
-        // §14.8: no fraction and no exponent, and small enough to hold.
+        // [syntax.obj.number]: no fraction and no exponent, and small enough to hold.
         LhatTestRan ran = run_source(
             "import^ std.json\n"
             "let^ t = try^ std.json.decode(\"[3, 3.5, 3e2, -4]\")\n"
@@ -226,7 +226,7 @@ static void test_reading(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 04§11.3: null is nothing, and nothing is what an unset key holds.
+    // [errors.runtime.index]: null is nothing, and nothing is what an unset key holds.
     LHAT_TEST("null puts no key, so an array with one comes back holed");
     {
         LhatTestRan ran = run_source(
@@ -323,7 +323,7 @@ static void test_round_trip(void)
 
 static void test_signatures(void)
 {
-    // 03§3.1: encode takes a table, so what is not one is refused before
+    // [pipeline.strict.per-unit]: encode takes a table, so what is not one is refused before
     // anything runs rather than answered Unsupported while it does.
     LHAT_TEST("encode takes a table and nothing else");
     {

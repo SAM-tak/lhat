@@ -3,7 +3,7 @@
 // Section numbers refer to DesignDocuments/02-syntax.md unless prefixed with
 // "03" or "04". The cases pinned here are the ones a decision in the
 // specification produces and that would otherwise be invisible: the scope
-// rule of §8.7, the result inference of 03§3.4, and the way catch^, ?? and
+// rule of [syntax.stmt.visible], the result inference of [pipeline.infer], and the way catch^, ?? and
 // try^ each drop one arm of a union.
 
 #include <stdio.h>
@@ -12,7 +12,7 @@
 
 #include "fixture.h"
 
-// §15.5 and §15.8: what a call of a yieldable procedure answers, and the
+// [syntax.sub.no-contagion] and [syntax.sub.await]: what a call of a yieldable procedure answers, and the
 // mistake the answer makes catchable.
 static void test_coroutine_wildcards(void)
 {
@@ -69,7 +69,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.8: §15.5 makes such a call run no part of the body, so the statement
+    // [syntax.sub.await]: [syntax.sub.no-contagion] makes such a call run no part of the body, so the statement
     // has no effect at all. C#'s IEnumerator allows this silently.
     LHAT_TEST("dropping the coroutine is reported");
     check_text(&u,
@@ -102,7 +102,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 05§8.5: a coroutine carries these without anything being imported.
+    // [modules.host.coroutine-ops]: a coroutine carries these without anything being imported.
     LHAT_TEST("a coroutine carries start, resume, dispose and iterate");
     check_text(&u,
                "var^ gen = p^ { yield^ 1 }\n"
@@ -113,8 +113,8 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.6+: and the two questions, which answer bool^ whatever the three
-    // types of §13.9 turn out to be.
+    // [syntax.sub.coroutine-members]: and the two questions, which answer bool^ whatever the three
+    // types of [syntax.type.coroutine] turn out to be.
     LHAT_TEST("a coroutine carries done and started");
     check_text(&u,
                "var^ gen = p^ { yield^ 1 }\n"
@@ -136,7 +136,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.16: save() answers costate^, which is what load() takes and
+    // [syntax.sub.save-load]: save() answers costate^, which is what load() takes and
     // nothing else.
     LHAT_TEST("a coroutine carries save and load, over costate^");
     check_text(&u,
@@ -156,7 +156,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §15.3+: save() only reads, so an f^ may ask it of a coroutine it was
+    // [syntax.sub.yieldable-f]: save() only reads, so an f^ may ask it of a coroutine it was
     // handed; load() changes what the next resume does, so it may not.
     LHAT_TEST("an f^ may save one it was handed but not load it");
     check_text(&u,
@@ -189,8 +189,8 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 05§8.6: L^ is there without being imported, and is not a name -- so
-    // 12§8.1's "nothing is visible" is untouched.
+    // [modules.host.machine]: L^ is there without being imported, and is not a name -- so
+    // [spec.open.unreported]'s "nothing is visible" is untouched.
     LHAT_TEST("L^ carries the collector and the registry");
     check_text(&u,
                "L^.gc.collect()\n"
@@ -232,9 +232,9 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 05§8.6: the registry is the machine's, and 03§5.3's registration
+    // [modules.host.machine]: the registry is the machine's, and [pipeline.bc.call]'s registration
     // is what the compiler emits rather than a line anyone writes. Adding a
-    // member is refused the same way writing over one is -- 05§8.8's walk is
+    // member is refused the same way writing over one is -- [modules.hostdata]'s walk is
     // exactly what would have made the segments on the way.
     LHAT_TEST("L^ is not a root a path may be grown from");
     check_text(&u, "var^ L^.modules.ns1.mod1 = { greet := 1 }\n");
@@ -246,7 +246,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TABLE_IS_SEALED);
     unit_dispose(&u);
 
-    // §15.1+ answers the f^ side of the same question; this is the other one.
+    // [syntax.sub.table-write] answers the f^ side of the same question; this is the other one.
     LHAT_TEST("a p^ reaches it no more than the top level does");
     check_text(&u, "var^ f = p^ { L^.gc.collect := p^ { } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TABLE_IS_SEALED);
@@ -265,7 +265,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
-    // §8.8: var^ introduces a member, the way ':=' reassigns one. The tables on
+    // [syntax.stmt.member]: var^ introduces a member, the way ':=' reassigns one. The tables on
     // the way are made where the path does not reach one yet.
     LHAT_TEST("var^ introduces a member along a path");
     check_text(&u,
@@ -291,7 +291,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // The last segment is the name being introduced, so §8.7 holds for it.
+    // The last segment is the name being introduced, so [syntax.stmt.visible] holds for it.
     LHAT_TEST("but writing the last segment twice is a redefinition");
     check_text(&u,
                "var^ a.b = 1\n"
@@ -306,7 +306,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PATH_NOT_TABLE);
     unit_dispose(&u);
 
-    // §14 fixes what an instance of a def^ carries, which is the one kind
+    // [syntax.obj] fixes what an instance of a def^ carries, which is the one kind
     // of table this cannot add to.
     LHAT_TEST("and a def^ instance takes no new member");
     check_text(&u,
@@ -340,10 +340,10 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §15.11: a body that must be a coroutine but has nothing to suspend for.
+    // [syntax.sub.phantom-yield]: a body that must be a coroutine but has nothing to suspend for.
     // _yield^ says the same thing about the three types as a yield^ does, so
     // the two are the same type -- which is the whole point of it, since
-    // §13.9's三つ has to match what the consumer was written against.
+    // [syntax.type.coroutine]'s三つ has to match what the consumer was written against.
     LHAT_TEST("_yield^ gives the same coroutine type a yield^ does");
     check_text(&u,
                "var^ real = p^ -> number^ {\n"
@@ -359,7 +359,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.11: a _yield^ never runs, so a name cannot take what it would
+    // [syntax.sub.phantom-yield]: a _yield^ never runs, so a name cannot take what it would
     // have answered -- only _^ stands on the left, the annotation being
     // all the statement says.
     LHAT_TEST("a _yield^ bound to a name is refused");
@@ -400,7 +400,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // Same node, same rule: §15.8 does not care which of the two made it.
+    // Same node, same rule: [syntax.sub.await] does not care which of the two made it.
     LHAT_TEST("and dropping what it answers is reported the same way");
     check_text(&u,
                "var^ fake = p^ { _yield^ 1 }\n"
@@ -415,7 +415,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §16.3: a table answers iterate() with a walk over its keys, without
+    // [syntax.for.forms]: a table answers iterate() with a walk over its keys, without
     // anything being written. The machine has always read it that way; the
     // type of it was missing here.
     LHAT_TEST("a table carries the built-in iterate");
@@ -426,7 +426,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.8+: the walk yields the tuple (K, V), so what start() answers is
+    // [syntax.type.tuple]: the walk yields the tuple (K, V), so what start() answers is
     // '(K, V)|nil^' -- a maybe-run no name can hold. The loop is what
     // discriminates and takes one apart; hand-driving a walk in checked
     // code has nothing to bind the answer to.
@@ -437,7 +437,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 
-    // §16.3 lets a written iterate win, which is why the built-in is only
+    // [syntax.for.forms] lets a written iterate win, which is why the built-in is only
     // reached once the search for a written member has failed.
     LHAT_TEST("a written iterate wins over the built-in one");
     check_text(&u,
@@ -446,8 +446,8 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.5: and it may yield on its own rather than hand back a coroutine it
-    // made -- §16.3 asks that a coroutine arrive, not who wrote it. This is
+    // [syntax.sub.no-contagion]: and it may yield on its own rather than hand back a coroutine it
+    // made -- [syntax.for.forms] asks that a coroutine arrive, not who wrote it. This is
     // the shorter of the two spellings and the one anyone writes first.
     LHAT_TEST("and one that yields for itself is the same thing");
     check_text(&u,
@@ -456,9 +456,9 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.5 with 05§8.7: what a call answers is part of the signature, so
+    // [syntax.sub.no-contagion] with [modules.host.import]: what a call answers is part of the signature, so
     // the type of a coroutine-making subroutine can be written down -- and
-    // §14.16 writes exactly this form out.
+    // [syntax.obj.typeof] writes exactly this form out.
     LHAT_TEST("the type of a coroutine-making subroutine can be written");
     check_text(&u,
                "var^ gen = p^ n:number^ { yield^ n }\n"
@@ -466,7 +466,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.2 with §15.5: a signature answering nothing is not one that answers a
+    // [syntax.type.empty] with [syntax.sub.no-contagion]: a signature answering nothing is not one that answers a
     // coroutine. Before the answer was part of the type this went through,
     // and the call under it was typed as producing no value at all.
     LHAT_TEST("and a signature answering nothing does not take one");
@@ -476,8 +476,8 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 03§3.4+: a signature written on the binding says what the result is.
-    // §13.9's third type is what the body returns, so that is what the body is
+    // [pipeline.infer.expected]: a signature written on the binding says what the result is.
+    // [syntax.type.coroutine]'s third type is what the body returns, so that is what the body is
     // handed down -- the coroutine around it belongs to the caller.
     LHAT_TEST("a written signature hands the body the third type, not the coroutine");
     check_text(&u,
@@ -486,9 +486,9 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.5: the same statement about the same value, so the same reading --
-    // §13.9's "書く場所が違う" is about where it stands, not about a body that
-    // makes a coroutine meaning something else by it. 05§8.7 wants typeof^'s
+    // [syntax.sub.no-contagion]: the same statement about the same value, so the same reading --
+    // [syntax.type.coroutine]'s "書く場所が違う" is about where it stands, not about a body that
+    // makes a coroutine meaning something else by it. [modules.host.import] wants typeof^'s
     // answer to read back, and it reads back in both positions.
     LHAT_TEST("and the literal's own arrow takes that coroutine too");
     check_text(&u,
@@ -498,7 +498,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.9: a body reaching its end leaves the third slot empty -- §15.6+'s
+    // [syntax.type.coroutine]: a body reaching its end leaves the third slot empty -- [syntax.sub.coroutine-members]'s
     // nil^ is what the last resume is handed, so it joins Y|T there rather
     // than standing in the type.
     LHAT_TEST("a body with no return^ leaves the third slot empty");
@@ -508,9 +508,9 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.9: the three slots each have a way of saying "none", and each says
+    // [syntax.type.coroutine]: the three slots each have a way of saying "none", and each says
     // something a reader can act on. Written back as an annotation they say
-    // the same thing again, which is what 05§8.7 asks of typeof^'s answer.
+    // the same thing again, which is what [modules.host.import] asks of typeof^'s answer.
     LHAT_TEST("each of the ways a slot can be empty is its own type");
     check_text(&u,
                "var^ ends    : p^ -> c^{ p^-> number^};         ="
@@ -526,7 +526,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // An empty R is not a nil^ one: §14.12 already holds arities {0} and {1}
+    // An empty R is not a nil^ one: [syntax.obj.override] already holds arities {0} and {1}
     // disjoint, and a resume that takes nothing is not one that takes a value.
     LHAT_TEST("an empty receive is not a nil^ one");
     check_text(&u,
@@ -550,7 +550,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
     unit_dispose(&u);
 
-    // §13.9: a body that cannot end never reaches a last resume, so nothing
+    // [syntax.type.coroutine]: a body that cannot end never reaches a last resume, so nothing
     // joins Y -- putting nil^ there would have every consumer narrow away a
     // value that never arrives.
     LHAT_TEST("a coroutine that cannot end answers only what it yields");
@@ -567,14 +567,14 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // '-' reads as "none" only where §13.9 puts it. Nothing else in the type
+    // '-' reads as "none" only where [syntax.type.coroutine] puts it. Nothing else in the type
     // grammar begins with it.
     LHAT_TEST("'-' is not a type anywhere else");
     check_text(&u, "var^ x : - = 1\n");
     LHAT_CHECK(syntax_errors(&u) > 0, "expected a syntax error");
     unit_dispose(&u);
 
-    // §15.2 settles Y and R from the yield^ sites, so a written c^{ … } is a
+    // [syntax.sub.yieldable] settles Y and R from the yield^ sites, so a written c^{ … } is a
     // second statement about them and the two have to agree.
     LHAT_TEST("what it yields has to be what the signature wrote");
     check_text(&u,
@@ -583,7 +583,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
     unit_dispose(&u);
 
-    // §15.3+: and so does the kind, which decides who may advance it.
+    // [syntax.sub.yieldable-f]: and so does the kind, which decides who may advance it.
     LHAT_TEST("and so does the kind of body it came from");
     check_text(&u,
                "var^ g = p^ -> c^{ f^-> number^} { yield^ 1 }\n");
@@ -601,8 +601,8 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.5: the arguments belong to the call, which binds the parameters.
-    // §15.4's resume carries the one value a yield^ answers with, which §13.9
+    // [syntax.sub.no-contagion]: the arguments belong to the call, which binds the parameters.
+    // [syntax.sub.yield-both]'s resume carries the one value a yield^ answers with, which [syntax.type.coroutine]
     // types as the coroutine's receive type -- a different thing.
     LHAT_TEST("the arguments belong to the call");
     check_text(&u,
@@ -618,8 +618,8 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    // §13.9: what a resume answers is the union of the yield type and the
-    // return type, which the consumer tells apart. §15.2: both are now
+    // [syntax.type.coroutine]: what a resume answers is the union of the yield type and the
+    // return type, which the consumer tells apart. [syntax.sub.yieldable]: both are now
     // inferred from the body's yield^/return^ sites.
     LHAT_TEST("what a resume answers includes both the yield and the return type");
     check_text(&u,
@@ -629,7 +629,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.6+: the return type is what the last resume receives, so a body
+    // [syntax.sub.coroutine-members]: the return type is what the last resume receives, so a body
     // that reaches its end without one puts nil^ there -- that is the value
     // the machine really hands back, not 03's "returns nothing" leaking in.
     LHAT_TEST("a body with no return^ answers nil^ at the end");
@@ -654,7 +654,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.9: nor does one that cannot end at all. §16.5's endless repeat^ has
+    // [syntax.type.coroutine]: nor does one that cannot end at all. [syntax.for.repeat]'s endless repeat^ has
     // no last resume, so there is no value for the third type to be the type
     // of -- and a nil^ there would make every consumer narrow away something
     // that never arrives.
@@ -696,7 +696,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.2 with 05§3.2: only a script's top level is a 'p^...' that may
+    // [syntax.sub.yieldable] with [modules.unit.optional]: only a script's top level is a 'p^...' that may
     // suspend. A module^ unit's runs under require^, which wants its exports.
     LHAT_TEST("a module^ unit's top level may not yield^");
     check_text(&u, "module^ m\nyield^ 1\n");
@@ -719,7 +719,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.14: the one spelling has the one message, and it says what await^
+    // [syntax.sub.await-done]: the one spelling has the one message, and it says what await^
     // is for. NOT_COROUTINE stays the walk's (for^ in^ over something with
     // no iterate^).
     LHAT_TEST("await^ needs a coroutine");
@@ -729,7 +729,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE);
     unit_dispose(&u);
 
-    // §15.4 with §15.8: what stands after return^ is a value, and these three
+    // [syntax.sub.yield-both] with [syntax.sub.await]: what stands after return^ is a value, and these three
     // are expressions -- so `return^ await^ f()` answers what f answered.
     // It used to read as a return^ of nothing followed by a statement, and
     // checked clean either way (a bare await^ is a statement too), so what
@@ -748,7 +748,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // A yield^ there is read as the value too -- and so reaches §15.4's
+    // A yield^ there is read as the value too -- and so reaches [syntax.sub.yield-both]'s
     // own rule, which is what the diagnostic says: what a resume sends
     // has no type unless one is written where it is bound.
     LHAT_TEST("a yield^ after return^ is read as its value");
@@ -757,7 +757,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
     unit_dispose(&u);
 
-    // 01§10.9 still draws the line at the end of the line: what is
+    // [lex.ambig.call-line] still draws the line at the end of the line: what is
     // written on the next one is a statement, as it always was.
     LHAT_TEST("but one on the next line is a statement of its own");
     check_text(&u,
@@ -769,7 +769,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.8: the value of a delegation is the inner one's return value.
+    // [syntax.sub.await]: the value of a delegation is the inner one's return value.
     LHAT_TEST("the value of await^ is the inner return type");
     check_text(&u,
                "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
@@ -784,7 +784,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §15.14: await^ is the same delegation, so the same type comes out of it
+    // [syntax.sub.await-done]: await^ is the same delegation, so the same type comes out of it
     // -- what is awaited finishes, and its T is what the wait answers with.
     LHAT_TEST("await^ answers what the awaited one returns");
     check_text(&u,
@@ -800,9 +800,9 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE);
     unit_dispose(&u);
 
-    // §15.2 with §15.5: writing await^ is what makes the body yieldable, and
+    // [syntax.sub.yieldable] with [syntax.sub.no-contagion]: writing await^ is what makes the body yieldable, and
     // calling that body answers a coroutine rather than running it. No async
-    // marker is written anywhere -- §15.5's colouring never starts.
+    // marker is written anywhere -- [syntax.sub.no-contagion]'s colouring never starts.
     LHAT_TEST("a body that awaits is yieldable, and its caller is not");
     check_text(&u,
                "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
@@ -811,7 +811,7 @@ static void test_coroutines(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.2: start() takes nothing and answers the same union resume does --
+    // [syntax.sub.yieldable]: start() takes nothing and answers the same union resume does --
     // it is what runs a fresh coroutine from the top.
     LHAT_TEST("start() answers the same union as resume()");
     check_text(&u,
@@ -829,7 +829,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    // §13.9: nothing in this body receives a yield^, so R is empty and there is
+    // [syntax.type.coroutine]: nothing in this body receives a yield^, so R is empty and there is
     // nothing to send -- a resume of it takes no argument at all.
     LHAT_TEST("a resume of a coroutine nothing is sent to takes no argument");
     check_text(&u,
@@ -872,7 +872,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    // §13.9: every yield^ in a body has to agree on what it sends (Y) and
+    // [syntax.type.coroutine]: every yield^ in a body has to agree on what it sends (Y) and
     // what it answers (R) -- no more folding differing yields into a union.
     LHAT_TEST("two bare yield^ that agree on Y stay clean");
     check_text(&u,
@@ -895,7 +895,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH);
     unit_dispose(&u);
 
-    // §15.2: a yield^ that a var^ binds directly is the only place R can be
+    // [syntax.sub.yieldable]: a yield^ that a var^ binds directly is the only place R can be
     // written, so leaving the annotation off is reported rather than left
     // to infer to UNKNOWN.
     LHAT_TEST("a bound yield^ needs a written type");
@@ -904,7 +904,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
     unit_dispose(&u);
 
-    // §15.4: a reassigned yield^ needs no annotation -- the name already
+    // [syntax.sub.yield-both]: a reassigned yield^ needs no annotation -- the name already
     // holds its type, and that is what fixes R.
     LHAT_TEST("a reassigned yield^ reads R off what the name holds");
     check_text(&u,
@@ -931,7 +931,7 @@ static void test_coroutines(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
     unit_dispose(&u);
 
-    // §15.8: await^ passes the inner coroutine's Y/R through as this
+    // [syntax.sub.await]: await^ passes the inner coroutine's Y/R through as this
     // body's own, exactly as if a yield^ had been written here directly.
     LHAT_TEST("await^ can disagree with this body's own yield^ on R");
     check_text(&u,
@@ -944,7 +944,7 @@ static void test_coroutines(void)
     unit_dispose(&u);
 }
 
-// §15.4 with §13.8+: a tuple R -- several names binding one yield^ fix it,
+// [syntax.sub.yield-both] with [syntax.type.tuple]: a tuple R -- several names binding one yield^ fix it,
 // and resume() takes that many arguments.
 static void test_multi_value_receive(void)
 {
@@ -1002,7 +1002,7 @@ static void test_multi_value_receive(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.8: the inner R is the outer R, tuple or not.
+    // [syntax.sub.await]: the inner R is the outer R, tuple or not.
     LHAT_TEST("a await^ carries a tuple R outwards");
     check_text(&u,
                "var^ inner = p^ {\n"
@@ -1019,7 +1019,7 @@ static void test_multi_value_receive(void)
     unit_dispose(&u);
 }
 
-// §13.8+: union(Y, T) with differing widths folds, the short side padded
+// [syntax.type.tuple]: union(Y, T) with differing widths folds, the short side padded
 // with nil^ -- '(string^, number^)|string^' is '(string^, number^|nil^)',
 // a type a binding can take apart.
 static void test_folded_answer(void)
@@ -1050,7 +1050,7 @@ static void test_folded_answer(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §16.3: the walk's '(K, V)|nil^' does not fold -- nil^ is the arm the
+    // [syntax.for.forms]: the walk's '(K, V)|nil^' does not fold -- nil^ is the arm the
     // '??' discriminates, and folding it away would break the drive.
     LHAT_TEST("a walk's nil^ arm stays beside the tuple");
     check_text(&u,

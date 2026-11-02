@@ -19,7 +19,7 @@ static char *duplicate(const char *s)
     return copy;
 }
 
-// 10§5.1: why a file did not become a source.
+// [l10n.compose.holes]: why a file did not become a source.
 enum { SOURCE_CANNOT_OPEN, SOURCE_CANNOT_READ, SOURCE_OUT_OF_MEMORY };
 
 static const LhatMessageEntry SOURCE_PARTS[] = {

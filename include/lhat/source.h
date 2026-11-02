@@ -1,6 +1,6 @@
 // L^ (lhat) -- source text loading and normalisation.
 //
-// 08§1 of DesignDocuments/01-lexical-structure.md.
+// [lton.why] of DesignDocuments/01-lexical-structure.md.
 
 #ifndef LHAT_SOURCE_H
 #define LHAT_SOURCE_H

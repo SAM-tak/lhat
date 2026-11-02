@@ -2,7 +2,7 @@
 //
 // Three things this module does that nothing else in stdlib/ does: it writes
 // to the process's own stdout, it reads from its stdin, and it hands a FILE*
-// over as a std.io.File hostdata (05§8.8) for an L^ program to give back.
+// over as a std.io.File hostdata ([modules.hostdata]) for an L^ program to give back.
 // The first two are pinned by putting a file where the stream was
 // (stdlibutil.h's redirect), the third by writing a file through L^ and
 // reading it back through L^.
@@ -77,7 +77,7 @@ static LhatTestRan run_reading(const char *text, const char *bytes)
 
 // The line a case read, handed back once it is known to be one. readLine
 // answers a string^ or an error, so the string is taken by name rather than
-// by ruling the errors out -- §13.11's fits^ reaches a builtin now, and
+// by ruling the errors out -- [syntax.type.fits]'s fits^ reaches a builtin now, and
 // asking for what is wanted leaves nothing in the returned type that the
 // case did not mean. The failures answer words of their own, so a case that
 // goes wrong says which half did.
@@ -100,8 +100,8 @@ static void test_print(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // §13.7's '...': any type, as many as were given, separated by a space and
-    // closed by one newline. The reading is §14.17's tostring, so a
+    // [syntax.type.variadic]'s '...': any type, as many as were given, separated by a space and
+    // closed by one newline. The reading is [syntax.obj.tostring]'s tostring, so a
     // string^ comes out unquoted while nil^ and bool^ come out as words. No
     // arguments writes nothing at all -- not even the newline.
     LHAT_TEST("print writes its arguments on one line, space separated");
@@ -120,7 +120,7 @@ static void test_print(void)
 
     // A p^ rather than an f^, which is what keeps it out of a pure function --
     // std.debug.log is the one name registered on the other side of that
-    // (§10.6, and tests/test_debug.c).
+    // ([syntax.finally.not-in-f], and tests/test_debug.c).
     LHAT_TEST("print is a p^, so an f^ cannot call it");
     {
         LHAT_CHECK(

@@ -89,7 +89,7 @@ static const char *joined_text(Checker *c, const char *const *parts, size_t coun
 void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
                 LhatType *target, LhatCheckErrorCode code)
 {
-    // 03§3.4: a parameter whose type the body is deciding is not being
+    // [pipeline.infer]: a parameter whose type the body is deciding is not being
     // checked here -- this position is one of the things deciding it. Most of
     // what a body demands arrives through this one call.
     if (chk_param_var_for(c, value) != NULL) {
@@ -122,9 +122,9 @@ void chk_expect(Checker *c, const LhatNode *at, LhatType *value,
     }
 }
 
-// 04§11.3: a table answers nil^ for a key that is not there, so what a key
+// [errors.runtime.index]: a table answers nil^ for a key that is not there, so what a key
 // reads out of one is 'T|nil^' -- and no operator is on the nil^ side. Saying
-// §11.3+'s rule there sends the writer looking for an operator to write, when
+// [syntax.op.right]'s rule there sends the writer looking for an operator to write, when
 // what is missing is a narrowing.
 //
 // True when this is a union carrying a nil^ arm, with `bare` set to what it is
@@ -198,20 +198,20 @@ static LhatType *without_error_arms(Checker *c, LhatType *type)
     return has_error ? bare : NULL;
 }
 
-// §11.3+: the one shape every operator is judged with. The left operand is
-// asked for the member §11.8 names, §11.1 makes that a function, §14.4 puts the
+// [syntax.op.right]: the one shape every operator is judged with. The left operand is
+// asked for the member [syntax.op.define] names, [syntax.op.functions] makes that a function, [syntax.obj.self] puts the
 // left operand in its self^ -- so the right operand is its argument and the
 // expression is worth what it answers.
 //
 // NULL means nothing was decided: the operand types said too little (03 の
-// 09§3.5), or the answer was already reported. The caller says what to fall back
+// [debug.inspect.eval]), or the answer was already reported. The caller says what to fall back
 // on, since that differs by operator.
-// The arm of an operator member that takes these arguments, or NULL. §14.12
+// The arm of an operator member that takes these arguments, or NULL. [syntax.obj.override]
 // forbids overlapping signatures, so at most one ever does. `self_last` picks
-// which side the arm was written for (§11.3+): one written the other way round
+// which side the arm was written for ([syntax.op.right]): one written the other way round
 // describes the other order and is passed over.
 //
-// §11.8: `count` is 1 for a binary operator and 0 for the unary '-', which
+// [syntax.op.define]: `count` is 1 for a binary operator and 0 for the unary '-', which
 // is the whole of what tells the two apart -- chk_signature_accepts compares
 // it against the declared parameters, so a binary arm cannot answer a unary
 // use and neither can the reverse.
@@ -241,8 +241,8 @@ static const LhatType *operator_arm(const LhatType *carrier,
     return carrier;
 }
 
-// §11.9: whether one of the two carries an operator of this name taking the
-// other, which is what the comparison is read off. 03§3.5: wherever inference
+// [syntax.op.compare]: whether one of the two carries an operator of this name taking the
+// other, which is what the comparison is read off. [pipeline.strict.relaxed]: wherever inference
 // has not decided, this says nothing rather than reporting -- the machine
 // asks the same question of the actual values.
 static bool compares_by(Checker *c, LhatType *left, LhatType *right,
@@ -254,7 +254,7 @@ static bool compares_by(Checker *c, LhatType *left, LhatType *right,
                      false) != NULL) {
         return true;
     }
-    // §11.3+: or the right operand carries one written as the receiver, which
+    // [syntax.op.right]: or the right operand carries one written as the receiver, which
     // is how a value joins a comparison whose left side is a built-in.
     args[0] = left;
     return operator_arm(chk_operator_member(c, right, name, length), args, 1,
@@ -280,7 +280,7 @@ static unsigned operator_error_sides(Checker *c, LhatType *left, LhatType *right
     return (l != NULL ? 1u : 0u) | (r != NULL ? 2u : 0u);
 }
 
-// §11.9 with §11.9+: what says how these two compare. An ordering has only
+// [syntax.op.compare] with [syntax.op.equal]: what says how these two compare. An ordering has only
 // '<=>' to read; '=' and '≠' read an op^= first and fall back on '<=>',
 // which is the same order the machine looks them up in.
 static bool related_pair(Checker *c, LhatOpKind op, LhatType *left,
@@ -325,7 +325,7 @@ static bool lacks_identity(const LhatType *type)
     }
 }
 
-// §11.5 の (5) with §11.9: one link of a comparison, asked the same way whether
+// [syntax.op.precedence] の (5) with [syntax.op.compare]: one link of a comparison, asked the same way whether
 // it stands alone or in a chain. Always answers bool^ -- what may be wrong is
 // the pair, never the shape of the answer.
 static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
@@ -340,9 +340,9 @@ static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
         return chk_simple(c, LHAT_TYPE_BOOL);
     }
 
-    // 03§3.4+3: an ordering asks the pair to be related by a '<=>', so a
-    // parameter standing in one is demanded what could carry it. §11.9 leaves
-    // '=' and '≠' out: equality answers without a '<=>' at all (§14.2 gives
+    // [pipeline.infer.operators]: an ordering asks the pair to be related by a '<=>', so a
+    // parameter standing in one is demanded what could carry it. [syntax.op.compare] leaves
+    // '=' and '≠' out: equality answers without a '<=>' at all ([syntax.obj.chain] gives
     // every table its identity), so what they ask is that the two are not
     // disjoint -- and that is not a type to demand.
     if (op != LHAT_OP_EQ && op != LHAT_OP_NE && op != LHAT_OP_IS &&
@@ -350,9 +350,9 @@ static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
         return chk_simple(c, LHAT_TYPE_BOOL);
     }
 
-    // §11.9: an operator taking the two is what says how they compare, and
-    // it is asked first. One written across two types -- §11.3+ lets the
-    // right operand carry it -- relates a pair that §14.12 would otherwise
+    // [syntax.op.compare]: an operator taking the two is what says how they compare, and
+    // it is asked first. One written across two types -- [syntax.op.right] lets the
+    // right operand carry it -- relates a pair that [syntax.obj.override] would otherwise
     // call separate, so the judgement below has to come second.
     bool related = related_pair(c, op, left, right);
     if (!related && op != LHAT_OP_EQ && op != LHAT_OP_NE && op != LHAT_OP_IS &&
@@ -361,7 +361,7 @@ static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
         return chk_simple(c, LHAT_TYPE_BOOL);
     }
 
-    // §14.12's disjointness says whether any value inhabits both. If none
+    // [syntax.obj.override]'s disjointness says whether any value inhabits both. If none
     // does, and nothing says how they compare either, the answer is fixed
     // before the program runs -- a mistake rather than a comparison.
     if (!related && lhat_type_disjoint(left, right)) {
@@ -370,7 +370,7 @@ static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
     }
     // An ordering has nothing but a '<=>' to read. Equality is a different
     // matter and is left alone -- every value is the same as itself or not,
-    // whatever it is (§14.2), and an op^= or a '<=>' only refines that for a
+    // whatever it is ([syntax.obj.chain]), and an op^= or a '<=>' only refines that for a
     // type that writes one.
     if (!related && op != LHAT_OP_EQ && op != LHAT_OP_NE && op != LHAT_OP_IS) {
         // Either side may be the one carrying the nil^, so both are asked --
@@ -387,10 +387,10 @@ static LhatType *check_comparison(Checker *c, const LhatNode *at, LhatOpKind op,
     return chk_simple(c, LHAT_TYPE_BOOL);
 }
 
-// §11.3+: what the RIGHT operand answers, when it was written as the
+// [syntax.op.right]: what the RIGHT operand answers, when it was written as the
 // receiver ('op^+ = f^lhs:number^, self^'). Reached only once the left has
 // been asked and has no arm taking this right operand, which is what keeps
-// §11.3's left-first rule intact -- and is the case that matters, since a
+// [syntax.op.semantic]'s left-first rule intact -- and is the case that matters, since a
 // built-in on the left carries the arithmetic but takes only its own kind.
 //
 // `answered` tells a result of NULL (an operator answering nothing) from no
@@ -400,7 +400,7 @@ static LhatType *right_operator(Checker *c, const char *name, size_t length,
                                 bool *answered)
 {
     *answered = false;
-    // 03§3.5: nothing decided about the right operand is nothing to look a member
+    // [pipeline.strict.relaxed]: nothing decided about the right operand is nothing to look a member
     // up on. The demand the left side would have made has already been made.
     if (chk_operator_undecided(right) || chk_param_var_for(c, right) != NULL) {
         return NULL;
@@ -424,34 +424,34 @@ static LhatType *right_operator(Checker *c, const char *name, size_t length,
     return lhat_type_call_answer(arm);
 }
 
-// §11.8: what '-x' is worth when x is not a number^. The operand carries the
-// member §11.8 names, and §14.4 puts it in self^ -- with nothing else written
+// [syntax.op.define]: what '-x' is worth when x is not a number^. The operand carries the
+// member [syntax.op.define] names, and [syntax.obj.self] puts it in self^ -- with nothing else written
 // there is no argument, which is the whole difference from the binary one.
 //
 // NULL means nothing was decided, the same as infer_operator: the caller falls
-// back on §14.8's number^ and reports against that.
+// back on [syntax.obj.number]'s number^ and reports against that.
 static LhatType *infer_unary_operator(Checker *c, LhatType *operand)
 {
-    // 03§3.5: a parameter says too little to look a member up on, and §14.8
+    // [pipeline.strict.relaxed]: a parameter says too little to look a member up on, and [syntax.obj.number]
     // already demanded number^ of it before this is asked.
     if (chk_operator_undecided(operand) || chk_param_var_for(c, operand) != NULL) {
         return NULL;
     }
-    // §11.3+ is about which operand is the receiver, and a unary one has only
+    // [syntax.op.right] is about which operand is the receiver, and a unary one has only
     // the one -- so the arm is asked for the leading self^ and no other.
     const LhatType *arm =
         operator_arm(chk_operator_member(c, operand, "-", 1), NULL, 0, false);
     return lhat_type_call_answer(arm);
 }
 
-// §11.3+: the operator member this side answers with as the LEFT operand. One
+// [syntax.op.right]: the operator member this side answers with as the LEFT operand. One
 // written with its self^ last describes the other order -- it answers when its
 // owner stands on the right, so carrying it is not answering here and it reads
 // exactly as though it were absent.
-// §11.3+: the arms of a group written for this order -- the self^-last ones
+// [syntax.op.right]: the arms of a group written for this order -- the self^-last ones
 // describe the other and are never candidates here -- when there is exactly
 // one. A group may hold several signatures and still leave one choice, which
-// is what lets 03§3.4 read a demand off it.
+// is what lets [pipeline.infer] read a demand off it.
 static LhatType *sole_forward_arm(const LhatType *group)
 {
     LhatType *only = NULL;
@@ -480,7 +480,7 @@ static LhatType *left_operator_member(Checker *c, LhatType *type,
     return carrier;
 }
 
-// 03§3.4+3: what an operator of this name may be written on, here. Each
+// [pipeline.infer.operators]: what an operator of this name may be written on, here. Each
 // position's union is what a parameter standing there may be.
 typedef struct {
     LhatType *left;    // what may stand on the left
@@ -491,14 +491,14 @@ typedef struct {
 
 // What the walk knows about the operand that is not the parameter, when it
 // knows anything. An arm that could not take it is no candidate, which is
-// what keeps 'x < 1' from demanding string^ as well (§11.9 gives '<=>' to
+// what keeps 'x < 1' from demanding string^ as well ([syntax.op.compare] gives '<=>' to
 // both built-ins) -- and what makes it demand number^ alone.
 typedef struct {
     LhatType *type;   // NULL when that side is undecided too
     bool on_right;    // which side it stands on
 } Known;
 
-// One arm folded into the three unions. §11.3+: an arm written with the self^
+// One arm folded into the three unions. [syntax.op.right]: an arm written with the self^
 // last describes the other order, so its receiver is what may stand on the
 // RIGHT and its parameter what may stand on the left.
 static void fold_arm(Checker *c, Candidates *into, const Known *known,
@@ -549,16 +549,16 @@ static void fold_member(Checker *c, Candidates *into, const Known *known,
     fold_arm(c, into, known, member, receiver);
 }
 
-// 03§3.4+3: the candidates. §11.8's built-ins carry what the checker knows
+// [pipeline.infer.operators]: the candidates. [syntax.op.define]'s built-ins carry what the checker knows
 // they carry -- number^ the arithmetic, string^ the '..', both the one
-// comparison (§11.9) -- and every def^ this unit binds to a name and writes an
+// comparison ([syntax.op.compare]) -- and every def^ this unit binds to a name and writes an
 // op^ of the name on is another.
 //
 // The carriers are held by name (check.c), so the type is read through the
-// scope on every walk -- a def^'s is remade on each of them (03§3.4+2).
+// scope on every walk -- a def^'s is remade on each of them ([pipeline.infer.rounds]).
 // Reading one this walk has not settled yet asks for another round, which is
 // what lets a body written above the def^ answer as one written below it does
-// (05§8.7).
+// ([modules.host.import]).
 static Candidates operator_candidates(Checker *c, const char *name,
                                       size_t length, const Known *known)
 {
@@ -568,7 +568,7 @@ static Candidates operator_candidates(Checker *c, const char *name,
     found.answer = NULL;
     found.count = 0;
 
-    // §11.8: what the checker carries for the built-in types, asked of each so
+    // [syntax.op.define]: what the checker carries for the built-in types, asked of each so
     // that the answer is the operator's rather than one name's.
     static const LhatTypeKind builtins[] = {
         LHAT_TYPE_NUMBER, LHAT_TYPE_STRING, LHAT_TYPE_BOOL};
@@ -586,7 +586,7 @@ static Candidates operator_candidates(Checker *c, const char *name,
         if ((carrier->operators & bit) == 0) {
             continue;
         }
-        // 05§8.7: a registered type is the program's, built once and never
+        // [modules.host.import]: a registered type is the program's, built once and never
         // remade, so it is the carrier itself -- no name to look up, no
         // round to ask for, and no instance half to reach through
         // (chk_instance_of answers NULL for both a host value and a
@@ -603,7 +603,7 @@ static Candidates operator_candidates(Checker *c, const char *name,
             continue;
         }
         if (!b->reached) {
-            // 03§3.4+2: answered from the seed, so this walk read ahead of
+            // [pipeline.infer.rounds]: answered from the seed, so this walk read ahead of
             // itself and another one may answer better.
             c->read_provisional = true;
         }
@@ -618,9 +618,9 @@ static Candidates operator_candidates(Checker *c, const char *name,
     return found;
 }
 
-// 03§3.4+3: what an ordering demands of a parameter standing in it. §11.9
+// [pipeline.infer.operators]: what an ordering demands of a parameter standing in it. [syntax.op.compare]
 // makes '<=>' the one comparison a type writes, so the candidates are its --
-// which is also what keeps §11.9+'s op^=-only type out of an ordering: it
+// which is also what keeps [syntax.op.equal]'s op^=-only type out of an ordering: it
 // carries '=' and not '<=>', and the carriers are held per name.
 static bool demand_ordering(Checker *c, const LhatNode *at, LhatType *left,
                             LhatType *right)
@@ -674,22 +674,22 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
         return NULL;
     }
 
-    // 03§3.4: the left operand is the receiver (§14.4), so an operator used
+    // [pipeline.infer]: the left operand is the receiver ([syntax.obj.self]), so an operator used
     // on a parameter is a demand on it -- and what it demands is what may
     // carry the operator here. '..' is the one name that demands nothing
-    // (04§11.2 gives it composition as well as concatenation, and only one of
+    // ([errors.runtime.div-zero] gives it composition as well as concatenation, and only one of
     // the two is an op^ to count).
     //
-    // 03§3.4+: with §11.8's built-in the only candidate the demand is number^,
+    // [pipeline.infer.expected]: with [syntax.op.define]'s built-in the only candidate the demand is number^,
     // which is what it has always been. Where the unit writes an op^ of this
     // name the demand is the union, and the body below then says the operator
     // is not settled -- but the signature names the candidates, so a writer
-    // can annotate one or narrow to it (§13.11).
+    // can annotate one or narrow to it ([syntax.type.fits]).
     if (chk_param_var_for(c, left) != NULL) {
         if (name[0] == '.') {
             return NULL;
         }
-        // 03§3.4+3: the right operand narrows the field where it is settled --
+        // [pipeline.infer.operators]: the right operand narrows the field where it is settled --
         // 'x * 2' asks only for arms that take a number^.
         Known known;
         known.on_right = true;
@@ -705,7 +705,7 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
         if (found.count > 1) {
             // Several could be meant and nothing here says which. The demands
             // still go on, so the signature names them and a writer can pick
-            // one -- by annotating, or by narrowing to it in the body (§13.11)
+            // one -- by annotating, or by narrowing to it in the body ([syntax.type.fits])
             // -- and the answer is what any of them would give.
             chk_constrain(c, right, found.right);
             chk_report(c, node, LHAT_CHECK_ERR_OPERATOR_UNSETTLED);
@@ -720,7 +720,7 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
 
     LhatType *carrier = left_operator_member(c, left, name, length);
     if (carrier == NULL) {
-        // §11.3+: nothing on the left, so the right operand gets the
+        // [syntax.op.right]: nothing on the left, so the right operand gets the
         // question -- it may have been written as the receiver.
         bool answered = false;
         LhatType *result =
@@ -728,7 +728,7 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
         if (answered) {
             return result;
         }
-        // 04§11.3: a nil^ arm is why the member was not found, rather than
+        // [errors.runtime.index]: a nil^ arm is why the member was not found, rather than
         // an operator nobody wrote -- the same lookup answers without it.
         LhatType *bare = NULL;
         bool by_nil = nil_arm_apart(c, left, &bare) &&
@@ -739,17 +739,17 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
         return NULL;
     }
 
-    // §11.8 with §14.12: one type may answer an operator for several right-hand
+    // [syntax.op.define] with [syntax.obj.override]: one type may answer an operator for several right-hand
     // types, and then the member is the intersection of those signatures.
     // Which arm a use means is settled the way a call's is -- by what is
     // handed over -- and the ban on overlapping signatures leaves at most one.
-    // §14.4 puts the left operand in self^, so the right one is the single
+    // [syntax.obj.self] puts the left operand in self^, so the right one is the single
     // argument and each arm is asked the way a member call asks.
     //
-    // Answering NULL here instead would fall back on §14.8's number^ (the
+    // Answering NULL here instead would fall back on [syntax.obj.number]'s number^ (the
     // caller's), which is not what the arm says and not what the machine
     // returns -- call_operator has always searched these.
-    // 03§3.4: with nothing decided about the right operand there is nothing
+    // [pipeline.infer]: with nothing decided about the right operand there is nothing
     // to choose an arm by -- but a group may still leave only one choice, and
     // then what that arm takes is a demand on this side exactly as a lone
     // signature's is. 'f^ x:A, y { x * y }' is the case: A writes both orders,
@@ -767,7 +767,7 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
         LhatType *args[1] = { right };
         for (const LhatTypeList *arm = carrier->v.composite.arms; arm != NULL;
              arm = arm->next) {
-            // §11.3+: the self^-last arms of this same group answer the
+            // [syntax.op.right]: the self^-last arms of this same group answer the
             // other order, so they are not candidates here.
             if (arm->type != NULL && arm->type->kind == LHAT_TYPE_FUNC &&
                 arm->type->v.func.self_last) {
@@ -777,7 +777,7 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
                 return lhat_type_call_answer(arm->type);
             }
         }
-        // §11.3+: no arm here takes it, so the right operand is asked
+        // [syntax.op.right]: no arm here takes it, so the right operand is asked
         // whether it was written as the receiver instead.
         bool answered = false;
         LhatType *result =
@@ -785,7 +785,7 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
         if (answered) {
             return result;
         }
-        // 04§11.3: an arm does take it once the nil^ is off, so the
+        // [errors.runtime.index]: an arm does take it once the nil^ is off, so the
         // narrowing is what is missing rather than an arm for this type.
         LhatType *bare = NULL;
         bool by_nil = false;
@@ -804,9 +804,9 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
     if (carrier->kind != LHAT_TYPE_FUNC) {
         return NULL;
     }
-    // §11.8: a '-' written with self^ alone is the unary one, and it takes no
+    // [syntax.op.define]: a '-' written with self^ alone is the unary one, and it takes no
     // right operand at all. Asked here the same way an arm of the wrong shape
-    // is: the right side is offered to §11.3+ first, and refused after.
+    // is: the right side is offered to [syntax.op.right] first, and refused after.
     if (carrier->v.func.params == NULL) {
         bool answered = false;
         LhatType *result =
@@ -818,10 +818,10 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
         return NULL;
     }
     LhatType *wanted = carrier->v.func.params->type;
-    // §11.3+: this one does not take the right operand, so that side is
+    // [syntax.op.right]: this one does not take the right operand, so that side is
     // asked whether it was written as the receiver. Tried before expect so
     // that the answer is taken rather than reported -- and only when the left
-    // has already failed, which is §11.3's order kept intact. A built-in on
+    // has already failed, which is [syntax.op.semantic]'s order kept intact. A built-in on
     // the left lands here: number^ carries the arithmetic but takes only a
     // number^, so '1 + v' is exactly this case.
     if (wanted != NULL && !lhat_type_conforms(right, wanted)) {
@@ -832,12 +832,12 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
             return result;
         }
     }
-    // 03§3.4: a parameter on this side is undecided in the sense above, but
+    // [pipeline.infer]: a parameter on this side is undecided in the sense above, but
     // what the operator takes is a demand on it rather than a gap to wave
     // through -- expect is what tells the two apart.
     if (wanted != NULL &&
         (chk_param_var_for(c, right) != NULL || !chk_operator_undecided(right))) {
-        // 04§11.3: '1 + t[i]' reaches here, and what the operator takes is
+        // [errors.runtime.index]: '1 + t[i]' reaches here, and what the operator takes is
         // met once the nil^ is off. Decided before expect so that the one
         // report it may make is the one that says so.
         LhatType *bare = NULL;
@@ -867,7 +867,7 @@ static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,
     return answer;
 }
 
-// 05§8.2: the member of L^ a host-bound name reaches, or NULL when the
+// [modules.host.initial]: the member of L^ a host-bound name reaches, or NULL when the
 // host bound no such name. Nothing is added to any scope for these -- they
 // are asked for only where a scope answered nothing, which is what lets a
 // let^ of the same spelling shadow one without anything being removed.
@@ -895,7 +895,7 @@ void chk_nearest_in_scope(Checker *c, ChkNearest *near)
 {
     for (const Scope *s = c->scope; s != NULL; s = s->parent) {
         for (const Binding *b = s->bindings; b != NULL; b = b->next) {
-            // §8.7+: unreadable from its own initialiser, so offering it
+            // [syntax.stmt.old-world]: unreadable from its own initialiser, so offering it
             // there would offer the next diagnostic. A name that is not an
             // identifier ('...') is no one's misspelling.
             if (b->being_defined || b->name_length == 0 || b->name[0] == '.') {
@@ -913,7 +913,7 @@ void chk_nearest_in_scope(Checker *c, ChkNearest *near)
     }
 }
 
-// 07§6: a member the receiver does not hold, offered the nearest one it
+// [lsp.next]: a member the receiver does not hold, offered the nearest one it
 // does -- written or built in, the two lists a '.' completes from. A probe
 // (`node` NULL) looks for nothing, which is also what keeps the built-in
 // walk below from recursing: it asks this function's caller quietly.
@@ -932,7 +932,7 @@ static void report_no_member(Checker *c, const LhatNode *node,
                     node != NULL ? node->v.access.argument : NULL, &near);
 }
 
-// §14.11: what a template holds as a field. A method is a member of the
+// [syntax.obj.new]: what a template holds as a field. A method is a member of the
 // definition and not something a construction writes.
 static void offer_field(void *context, const LhatTypeMember *member)
 {
@@ -941,7 +941,7 @@ static void offer_field(void *context, const LhatTypeMember *member)
     }
 }
 
-// 04§5.3 with 03§3.4: an error on its way out of the body being checked --
+// [errors.try.result] with [pipeline.infer]: an error on its way out of the body being checked --
 // through a try^, or through catch^ arms that did not take it. Where the
 // result was written, this is where it is asked whether that admits it; where
 // none was, this is one of the exits the result is the union of.
@@ -950,11 +950,11 @@ void chk_error_leaves(Checker *c, const LhatNode *at, LhatType *escaping)
     if (escaping == NULL) {
         return;
     }
-    // 04§2.7+: before asking whether this subroutine's result admits the
+    // [errors.kind.local-no-propagate]: before asking whether this subroutine's result admits the
     // error, ask whether any result could. A localerror^ has to be resolved
     // in the frame that raised it, so widening the signature is not the fix
-    // it is for 03§5.3 -- 04§2.7+ refuses that spelling as well. Reported here
-    // rather than at the caller, for 03§5.3's reason: the try^ is what is
+    // it is for [pipeline.bc.call] -- [errors.kind.local-no-propagate] refuses that spelling as well. Reported here
+    // rather than at the caller, for [pipeline.bc.call]'s reason: the try^ is what is
     // trying to return it.
     //
     // This is also the inference path (below), which is where a body with no
@@ -969,8 +969,8 @@ void chk_error_leaves(Checker *c, const LhatNode *at, LhatType *escaping)
         }
         return;
     }
-    // §13.8+'s width check is the return^ side's business: a union of a tuple
-    // with an error kind is what 04§3.1 admits, so the arm added here is
+    // [syntax.type.tuple]'s width check is the return^ side's business: a union of a tuple
+    // with an error kind is what [errors.fallible.union] admits, so the arm added here is
     // not one to measure.
     c->inferred_result =
         lhat_type_union(c->result->types, c->inferred_result, escaping);
@@ -1008,7 +1008,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
-    // 01§2.3: the stacked reach. this^^ walks the chain of
+    // [lex.hat.repeat]: the stacked reach. this^^ walks the chain of
     // enclosing bodies; it^^/self^^/def^^ walk past inner bindings of the
     // same name. Retain the chosen identity so emission does not count the
     // bindings or bodies again. The parser admits no other word here.
@@ -1039,9 +1039,9 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
         return outer->type;
     }
 
-    // A few hat identifiers are values rather than names (01§2.2).
+    // A few hat identifiers are values rather than names ([lex.hat.one-use]).
     if (node->kind == LHAT_NODE_HAT_IDENT) {
-        // §13.12: '_^' is written where a name would go and binds nothing, so
+        // [syntax.type.discard]: '_^' is written where a name would go and binds nothing, so
         // reaching it as a value asks for what was thrown away. Every place
         // that may write it takes it before inference is asked; arriving here
         // means it stood in an expression.
@@ -1049,7 +1049,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
             chk_report(c, node, LHAT_CHECK_ERR_DISCARD_READ);
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
-        // 07§4: these three are the ones deliberately left unrecorded.
+        // [lsp.hover]: these three are the ones deliberately left unrecorded.
         // What a resolution feeds is a reader asking what a name means, and
         // here the spelling is already the answer -- recording it would grow
         // the array without telling anyone anything. Every other early
@@ -1061,7 +1061,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
         if (chk_name_is(name, length, "nil^")) {
             return chk_simple(c, LHAT_TYPE_NIL);
         }
-        // §15.10: this^ names the subroutine running, which is what lets a
+        // [syntax.sub.this]: this^ names the subroutine running, which is what lets a
         // body with no name recurse. Only the hatted spelling means it, so
         // an ordinary name `this` is untouched.
         if (chk_name_is(name, length, "this^")) {
@@ -1069,7 +1069,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
                 chk_report(c, node, LHAT_CHECK_ERR_THIS_OUTSIDE);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
-            // 03§3.4 counts it the same way a call by name is counted.
+            // [pipeline.infer] counts it the same way a call by name is counted.
             c->saw_self_call = true;
             ((LhatNode *)node)->checked_this_body = c->this_link->body;
 #if LHAT_WITH_RESOLUTIONS
@@ -1077,8 +1077,8 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
 #endif
             return c->this_type;
         }
-        // §14.12+: super^ is the member an override^ is replacing. Named on
-        // its own it is an ordinary value, so §14.4 applies and the receiver
+        // [syntax.obj.super]: super^ is the member an override^ is replacing. Named on
+        // its own it is an ordinary value, so [syntax.obj.self] applies and the receiver
         // is written out; called directly it is the bound form, which
         // infer_call takes.
         if (chk_name_is(name, length, "super^")) {
@@ -1092,7 +1092,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
 #endif
             return c->super_type;
         }
-        // 05§8.6: the machine's own table, there without being imported.
+        // [modules.host.machine]: the machine's own table, there without being imported.
         if (chk_name_is(name, length, "L^")) {
             LhatType *env = chk_environment_type(c);
             if (env == NULL) {
@@ -1105,7 +1105,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
         }
     }
 
-    // 01§8: a specifier says which scope to start the search in.
+    // [lex.scope]: a specifier says which scope to start the search in.
     // Without one it starts here, which is every other name.
     Scope *from = c->scope;
     if (node->kind == LHAT_NODE_SCOPE) {
@@ -1117,28 +1117,28 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
         }
     }
 
-    // Which scope answered, which three of the rules below have to know: §8.7
+    // Which scope answered, which three of the rules below have to know: [syntax.stmt.visible]
     // tells a name this body bound from one still waiting further out, and
-    // 15.13 and 05§8.9 each measure it against a boundary of their own.
+    // 15.13 and [modules.hostvalue] each measure it against a boundary of their own.
     Scope *found_in = NULL;
     Binding *b = read_binding_from(from, name, length, &found_in);
-    // §8.7+: a binding does not stand in its own initialiser -- anywhere in
+    // [syntax.stmt.old-world]: a binding does not stand in its own initialiser -- anywhere in
     // it, a deferred body included. What it holds is being worked out right
     // here, so the name still means what it meant outside; recursion by the
-    // bound name went with this (§15.10: this^ is the one spelling, and the
+    // bound name went with this ([syntax.sub.this]: this^ is the one spelling, and the
     // stronger one -- it carries the literal's own signature where the name
     // held only a seed). Where nothing outside answers, the read falls
     // through to the report below, which is the same one it always got.
     if (b == NULL) {
-        // 05§8.2: what the host bound before anything ran. Asked after
+        // [modules.host.initial]: what the host bound before anything ran. Asked after
         // every scope, so a let^ of the same spelling shadows it -- and what
-        // it reaches stays readable as L^.<member>, since 05§8.1 keeps the hat
+        // it reaches stays readable as L^.<member>, since [modules.host.nothing] keeps the hat
         // identifier out of the spellings a let^ can make.
         const LhatTypeMember *bound = initial_binding_member(c, name, length);
         if (bound != NULL) {
             ((LhatNode *)node)->checked_host_member = bound;
 #if LHAT_WITH_RESOLUTIONS
-            // 07§4: nothing here declared it -- the host did, in C --
+            // [lsp.hover]: nothing here declared it -- the host did, in C --
             // so there is no place to point at, only the type it registered.
             // Which is the whole of what a reader meeting `print` wants.
             chk_record_typed_resolution(c, node, bound->type);
@@ -1154,7 +1154,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
-    // §8.7: the name is visible throughout the scope, which is what makes
+    // [syntax.stmt.visible]: the name is visible throughout the scope, which is what makes
     // mutual recursion work, but its value only exists once its let^ has run.
     // A subroutine body does not run where it is written, so a name bound
     // outside one may still be waiting when the body reads it -- which is the
@@ -1167,14 +1167,14 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
     // what came of it was a run-time type error where the rule already said
     // there was a mistake to report.
     if (!b->reached) {
-        // §8.7+: a being-defined binding nothing outer shadows reports
+        // [syntax.stmt.old-world]: a being-defined binding nothing outer shadows reports
         // outright wherever it is read -- its own value cannot answer, and
         // the ring could never improve on that.
         if (b->being_defined || c->deferred == 0 ||
             chk_scope_within_body(c, found_in)) {
             chk_report(c, node, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
         } else {
-            // 03§3.4+2: what answered is the seed collect_bindings put
+            // [pipeline.infer.rounds]: what answered is the seed collect_bindings put
             // there, or what an earlier walk left. Either way this walk read
             // ahead of itself, so walking the statements again from what it
             // learned may answer better -- the same fact a def^ member's seed
@@ -1182,7 +1182,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
             c->read_provisional = true;
         }
     }
-    // 05§8.9: a name bound outside this body reaches the value through a
+    // [modules.hostvalue]: a name bound outside this body reaches the value through a
     // capture, and a capture outlives the frame the slots belong to. The
     // same boundary test 15.1 uses for writes, asked of a read here because
     // for a host value the read is what would build the upvalue.
@@ -1205,9 +1205,9 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
     return b->type;
 }
 
-// §11.2+: the table §14 does not reach -- a plain one, made by a
+// [syntax.op.concat-table]: the table [syntax.obj] does not reach -- a plain one, made by a
 // literal rather than a def^ and registered by no host. The kinds a
-// definition made keep §14.5's composition and §11.8's op^.. instead.
+// definition made keep [syntax.obj.compose]'s composition and [syntax.op.define]'s op^.. instead.
 static bool concatenable_table(const LhatType *type)
 {
     return type != NULL && type->kind == LHAT_TYPE_TABLE &&
@@ -1233,10 +1233,10 @@ static void join_table_entry_types(Checker *c, const LhatType *table,
     *values = lhat_type_union(c->result->types, *values, table->v.table.index_value);
 }
 
-// §11.2+: what '..' between two plain tables answers. The sequence
+// [syntax.op.concat-table]: what '..' between two plain tables answers. The sequence
 // halves in order -- the left's positions, then the right's renumbered after
 // them -- and the named keys from both sides, a name both carry reported
-// (§14.5+'s rule, without the qualified spelling that saves a method there).
+// ([syntax.obj.compose-ambiguous]'s rule, without the qualified spelling that saves a method there).
 // An unbounded left ('t^{ T[] }') leaves the right's positions nowhere to
 // be counted, so everything past it folds into one unbounded element type.
 static LhatType *concat_table_types(Checker *c, const LhatNode *node,
@@ -1320,7 +1320,7 @@ static LhatType *successful_error_result(Checker *c, LhatType *type)
     return type;
 }
 
-// §14.23: a bitwise operand is a number^ and nothing else -- no op^ reaches
+// [syntax.obj.bits]: a bitwise operand is a number^ and nothing else -- no op^ reaches
 // these. Whether it is a whole number within 64 bits is the machine's to ask.
 static LhatType *expect_bitwise(Checker *c, const LhatNode *at,
                                 LhatType *operand)
@@ -1335,7 +1335,7 @@ static LhatType *expect_bitwise(Checker *c, const LhatNode *at,
     return number;
 }
 
-// §17.5: whether what a match's arms left of its subject is nothing, once the
+// [syntax.match.other]: whether what a match's arms left of its subject is nothing, once the
 // values they named are counted. A bool^ is spent by both of its literals,
 // and an enum by every member of its own declaration -- a member of another
 // enum spends nothing. Any other type left over is still a way to miss.
@@ -1378,22 +1378,22 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
 {
     LhatOpKind op = node->v.binary.op;
 
-    // 04§4.1 and §11.7: both drop one arm and put a value in its place.
+    // [errors.catch.form] and [syntax.op.default]: both drop one arm and put a value in its place.
     if (op == LHAT_OP_CATCH || op == LHAT_OP_NIL_ELSE) {
         LhatType *left = chk_infer(c, node->v.binary.left);
-        // 04§2.7: "an error" is either family here. catch^ resolves one
+        // [errors.kind.local]: "an error" is either family here. catch^ resolves one
         // where it stands, which is exactly what a localerror^ asks for.
         LhatType *unwanted = op == LHAT_OP_CATCH ? chk_any_error(c)
                                                  : chk_simple(c, LHAT_TYPE_NIL);
 
-        // 04§4.2: catch^ names the error it^ inside its right side, so the
+        // [errors.catch.it]: catch^ names the error it^ inside its right side, so the
         // right side is inferred under a scope holding it -- typed as the
         // error half of the left, which is exactly what the machine puts in
         // that register (compile_catch). ?? has no it^: what it replaces is
         // nil^, and there is nothing in a nil^ to name.
-        // 04§4.1+: the panic^ arm answers nothing, because it does not
+        // [errors.catch.panic]: the panic^ arm answers nothing, because it does not
         // come back. Told apart here rather than in chk_infer, which would
-        // be saying panic^ is an expression -- it is not, and §12.7 stands.
+        // be saying panic^ is an expression -- it is not, and [syntax.with.no-fail] stands.
         bool panicking = op == LHAT_OP_CATCH &&
                          node->v.binary.right != NULL &&
                          node->v.binary.right->kind == LHAT_NODE_PANIC;
@@ -1435,20 +1435,20 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
         if (kept != NULL && kept->kind == LHAT_TYPE_UNKNOWN) {
             kept = chk_simple(c, LHAT_TYPE_PENDING);
         }
-        // 04§4.1+: nothing joins what the left is worth without its error
+        // [errors.catch.panic]: nothing joins what the left is worth without its error
         // arm, so the whole is exactly that. 'x as^ T catch^ panic^ it^' is
-        // T, which is what makes this the assertion. §13.8+'s width question
+        // T, which is what makes this the assertion. [syntax.type.tuple]'s width question
         // is skipped for the same reason -- there is no right-hand value to
         // measure against the left's.
         if (panicking) {
             return kept;
         }
-        // §13.8+ with 04§4.1: catch^'s right side is one expression, and
+        // [syntax.type.tuple] with [errors.catch.form]: catch^'s right side is one expression, and
         // there is no expression that is a tuple -- so a call answering
         // several values has no replacement that could stand for them. Said
         // here rather than left to the binding, which would only see that a
         // union is not a tuple and report the count. 'catch^ nil^' stays
-        // writable (04§4.4's deliberate ignoring): nil^ may stand beside
+        // writable ([errors.catch.ignore]'s deliberate ignoring): nil^ may stand beside
         // a tuple, and the result is discarded or discriminated, not bound.
         if (lhat_type_tuple_width(kept) > 0 &&
             lhat_type_tuple_width(right) != lhat_type_tuple_width(kept) &&
@@ -1460,9 +1460,9 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
 
     LhatType *left = chk_infer(c, node->v.binary.left);
 
-    // §14.5: composition is written with '..' because the order matters. The
+    // [syntax.obj.compose]: composition is written with '..' because the order matters. The
     // right side is not a value here -- it is a definition read against what
-    // the left already provides, which is what §14.12 needs to see.
+    // the left already provides, which is what [syntax.obj.override] needs to see.
     if (op == LHAT_OP_CONCAT && node->v.binary.right != NULL &&
         node->v.binary.right->kind == LHAT_NODE_DEF) {
         LhatType *result = chk_infer_def(c, node->v.binary.right, left);
@@ -1479,8 +1479,8 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
         return result;
     }
 
-    // §13.11: fits^ takes a type on the right, so the right side is not a
-    // value. 04§11.6+ moved the type-fit question here from is^, which now
+    // [syntax.type.fits]: fits^ takes a type on the right, so the right side is not a
+    // value. [errors.runtime.traceback] moved the type-fit question here from is^, which now
     // asks identity and reads an ordinary value on both sides (below, with
     // the rest of the comparisons).
     if (op == LHAT_OP_FITS) {
@@ -1489,10 +1489,10 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
         if (runtime_has_unresolved_arguments(asked, 0)) {
             chk_report(c, node->v.binary.right, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
         }
-        // §13.7: any^ is the top of every value, so this holds of whatever is
-        // on the left and the question is empty. §13.11 refuses to read the
+        // [syntax.type.variadic]: any^ is the top of every value, so this holds of whatever is
+        // on the left and the question is empty. [syntax.type.fits] refuses to read the
         // left's inferred type against the right -- that would narrow the
-        // escape hatch §13.7 exists to provide -- but this one is decided by
+        // escape hatch [syntax.type.variadic] exists to provide -- but this one is decided by
         // the right side alone, whatever the left turns out to be.
         if (asked != NULL && asked->kind == LHAT_TYPE_ANY) {
             chk_report(c, node, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
@@ -1500,13 +1500,13 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
         return chk_simple(c, LHAT_TYPE_BOOL);
     }
 
-    // §13.11: and^'s right side runs only where the left held, and or^'s only
+    // [syntax.type.fits]: and^'s right side runs only where the left held, and or^'s only
     // where it did not -- so what the left established about a path is known
     // inside the right, which is what makes 'x fits^ number^ and^ x <= 0.5'
     // read. Popped straight after: what the whole condition tells a branch is
     // the branch's own question, and chk_narrow_from answers it from the top.
     //
-    // §11.5 の (5)'s chain does not come through here -- it is its own node --
+    // [syntax.op.precedence] の (5)'s chain does not come through here -- it is its own node --
     // so "a chain does not narrow" stays as it was.
     if (op == LHAT_OP_AND || op == LHAT_OP_OR) {
         LhatType *boolean = chk_simple(c, LHAT_TYPE_BOOL);
@@ -1523,7 +1523,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
     }
 
     LhatType *right = chk_infer(c, node->v.binary.right);
-    // 12§4.1: written on every pass, so the last one is what stands.
+    // [spec.number.operands]: written on every pass, so the last one is what stands.
     // The three left out reach call_operator even between numbers.
     ((LhatNode *)node)->checked_numeric =
         op != LHAT_OP_CONCAT && op != LHAT_OP_CROSS &&
@@ -1541,8 +1541,8 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
         case LHAT_OP_FLOORDIV:
         case LHAT_OP_MOD:
         case LHAT_OP_POW: {
-            // §11.4: arithmetic asks §11.3's question the way '..' does, so a
-            // written op^ answers it. §14.8's number^ carries all seven built
+            // [syntax.op.framework]: arithmetic asks [syntax.op.semantic]'s question the way '..' does, so a
+            // written op^ answers it. [syntax.obj.number]'s number^ carries all seven built
             // in, which leaves ordinary arithmetic exactly as it was.
             LhatType *answer = infer_operator(c, node, op, left, right);
             return answer != NULL ? answer : chk_simple(c, LHAT_TYPE_NUMBER);
@@ -1555,9 +1555,9 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
             expect_bitwise(c, node->v.binary.left, left);
             return expect_bitwise(c, node->v.binary.right, right);
 
-        // §11.9: the one comparison a type writes. Asked exactly the way
+        // [syntax.op.compare]: the one comparison a type writes. Asked exactly the way
         // '..' and the arithmetic are, so an op^<=> on either side answers it
-        // (§11.3+), and number^ and string^ carry their own.
+        // ([syntax.op.right]), and number^ and string^ carry their own.
         case LHAT_OP_SPACESHIP: {
             left = chk_require_value(c, node->v.binary.left, left);
             right = chk_require_value(c, node->v.binary.right, right);
@@ -1575,14 +1575,14 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
             return check_comparison(c, node, op, left, right);
 
         case LHAT_OP_CONCAT: {
-            // §11.2: '..' is concatenation in general. §11.3 asks the left
-            // operand for it -- §14.4 makes that the receiver -- and the right
+            // [syntax.op.concat]: '..' is concatenation in general. [syntax.op.semantic] asks the left
+            // operand for it -- [syntax.obj.self] makes that the receiver -- and the right
             // one is the argument, which is what lets one type answer several
-            // right-hand types through §14.12's overload^.
+            // right-hand types through [syntax.obj.override]'s overload^.
             left = chk_require_value(c, node->v.binary.left, left);
             right = chk_require_value(c, node->v.binary.right, right);
 
-            // §14.5: between two definitions '..' composes, and never calls an
+            // [syntax.obj.compose]: between two definitions '..' composes, and never calls an
             // op^.. either of them carries. The literal form was taken above;
             // this is the one written with names.
             if (left != NULL && left->kind == LHAT_TYPE_TABLE &&
@@ -1592,7 +1592,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
                 return chk_compose_definitions(c, node, left, right);
             }
 
-            // §11.2+: two plain tables concatenate, built in the way two
+            // [syntax.op.concat-table]: two plain tables concatenate, built in the way two
             // strings are -- the machine's own answer, never an op^.. .
             if (concatenable_table(left) && concatenable_table(right)) {
                 return concat_table_types(c, node, left, right);
@@ -1608,7 +1608,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
 }
 
 // Whether a signature would take these arguments, asked without reporting.
-// §14.12 forbids overlapping signatures precisely so that at most one arm of
+// [syntax.obj.override] forbids overlapping signatures precisely so that at most one arm of
 // an overloaded member can answer yes, which makes resolution a search rather
 // than a ranking.
 bool chk_signature_accepts(const LhatType *func, LhatType *const *args,
@@ -1623,7 +1623,7 @@ bool chk_signature_accepts(const LhatType *func, LhatType *const *args,
         declared++;
     }
     if (func->v.func.takes_self && !through_member) {
-        declared++;  // written out at the call (§14.4)
+        declared++;  // written out at the call ([syntax.obj.self])
     }
     if (count < declared ||
         (count > declared && func->v.func.variadic == NULL)) {
@@ -1648,16 +1648,16 @@ bool chk_signature_accepts(const LhatType *func, LhatType *const *args,
     return true;
 }
 
-// 03§3.4+: a subroutine written where it is called. The call is part of
+// [pipeline.infer.expected]: a subroutine written where it is called. The call is part of
 // the same expression, so reading it leaves nothing. The ones elsewhere are
-// 03§3.4+4's to read -- as shapes, one walk of the body per shape, never as
+// [pipeline.infer.call-shapes]'s to read -- as shapes, one walk of the body per shape, never as
 // demands folded into one signature -- and only for a unit-local let^: a
 // published name's callers stay unread, which is what keeps a signature
-// from depending on who happens to use it (05§4.3 rests on that).
+// from depending on who happens to use it ([modules.public.types] rests on that).
 //
 // Refused for the two shapes whose arguments do not line up with the
-// parameters one for one: a receiver (§14.4) is written first and belongs to
-// no position, and a spread (§13.7) stands for any number of them.
+// parameters one for one: a receiver ([syntax.obj.self]) is written first and belongs to
+// no position, and a spread ([syntax.type.variadic]) stands for any number of them.
 static bool immediately_called(Checker *c, const LhatNode *node)
 {
     const LhatNode *literal = node->v.access.target;
@@ -1679,15 +1679,15 @@ static bool immediately_called(Checker *c, const LhatNode *node)
     return true;
 }
 
-// §15.5 with §13.9: the coroutine a call to this signature makes. The middle
-// two types are whatever the body's yield^/await^ sites agreed on (§15.2);
+// [syntax.sub.no-contagion] with [syntax.type.coroutine]: the coroutine a call to this signature makes. The middle
+// two types are whatever the body's yield^/await^ sites agreed on ([syntax.sub.yieldable]);
 // a body with no yield^ at all -- only a await^ that never ran, or none
 // reached -- leaves them NULL, which nil^ fills the same way an unwritten
 // result does.
 static LhatType *coroutine_made_by(Checker *c, const LhatType *func)
 {
-    // §13.9: the third type is what the last resume receives. Where the body
-    // ends without a value it is left empty and §15.6+'s nil^ joins Y|T at
+    // [syntax.type.coroutine]: the third type is what the last resume receives. Where the body
+    // ends without a value it is left empty and [syntax.sub.coroutine-members]'s nil^ joins Y|T at
     // the resume instead -- so the nil^ stands where it is really received
     // rather than in the coroutine's own type. A body that cannot end has no
     // last resume at all, which `endless` says: nothing joins Y there, since
@@ -1695,8 +1695,8 @@ static LhatType *coroutine_made_by(Checker *c, const LhatType *func)
     // never arrives.
     bool endless =
         func->v.func.result == NULL && !func->v.func.ends_without_value;
-    // §15.3+: the coroutine carries the kind of the body it came from, which
-    // is what decides who may advance it (§15.6+).
+    // [syntax.sub.yieldable-f]: the coroutine carries the kind of the body it came from, which
+    // is what decides who may advance it ([syntax.sub.coroutine-members]).
     //
     // R is left empty when nothing in the body received a yield^: no var^ took
     // one, so there is no value being sent in and a resume takes no argument.
@@ -1713,8 +1713,8 @@ static LhatType *coroutine_made_by(Checker *c, const LhatType *func)
     return coroutine;
 }
 
-// §13.9: what one turn of a coroutine answers -- Y|T, which done() is what
-// tells apart (§15.6+). The third slot has two ways of being empty and they
+// [syntax.type.coroutine]: what one turn of a coroutine answers -- Y|T, which done() is what
+// tells apart ([syntax.sub.coroutine-members]). The third slot has two ways of being empty and they
 // answer differently: a body that cannot end never reaches a last resume, so
 // nothing joins Y; one that ends without a value reaches it and is handed
 // nil^ there, so that is where the nil^ comes in rather than in the type.
@@ -1730,7 +1730,7 @@ static LhatType *coroutine_answer(Checker *c, const LhatType *coro)
     return lhat_type_union(c->result->types, produce, ends_with);
 }
 
-// The receiver of a call: what stands before the dot, or -- §14.4, written
+// The receiver of a call: what stands before the dot, or -- [syntax.obj.self], written
 // out -- the first argument.
 static const LhatNode *call_receiver(const LhatNode *node, const LhatType *callee)
 {
@@ -1741,11 +1741,11 @@ static const LhatNode *call_receiver(const LhatNode *node, const LhatType *calle
                ? node->v.access.argument : NULL;
 }
 
-// §15.1+2: an f^ whose receiver seat is mutable writes through it, so an f^
-// body may call one only on what it made itself -- §15.3+'s rule for a
-// coroutine, reached through a call instead of a resume. §15.1+: nothing says
+// [syntax.sub.mutable-self]: an f^ whose receiver seat is mutable writes through it, so an f^
+// body may call one only on what it made itself -- [syntax.sub.yieldable-f]'s rule for a
+// coroutine, reached through a call instead of a resume. [syntax.sub.table-write]: nothing says
 // how far below its receiver such a body writes, so all of it has to be the
-// body's -- except for §14.22's push^ and its kin, which change the receiver
+// body's -- except for [syntax.obj.table-ops]'s push^ and its kin, which change the receiver
 // itself and nothing under it.
 static void check_mutable_receiver(Checker *c, const LhatNode *node,
                                    const LhatType *callee)
@@ -1760,7 +1760,7 @@ static void check_mutable_receiver(Checker *c, const LhatNode *node,
     }
 }
 
-// §15.1+: once the arguments are read. A call counts as a table built around
+// [syntax.sub.table-write]: once the arguments are read. A call counts as a table built around
 // them -- what a new() answers holds what it was given -- and a mutable^self^
 // call may put any of them under its receiver, one level down at the least.
 static void own_after_call(Checker *c, const LhatNode *node,
@@ -1788,9 +1788,9 @@ static void own_after_call(Checker *c, const LhatNode *node,
     }
 }
 
-// 03§3.4+4: the callee whose call shapes are collected -- a name a
+// [pipeline.infer.call-shapes]: the callee whose call shapes are collected -- a name a
 // let^ bound to a literal, some parameter of which nothing was written on,
-// with no receiver seat and no variadic tail (those two are the shapes 03§3.4+
+// with no receiver seat and no variadic tail (those two are the shapes [pipeline.infer.expected]
 // already refuses to line up positionally). NULL for every other callee,
 // which keeps today's reading.
 static void retain_instance_failure(Checker *c, Instantiation *instance, size_t start)
@@ -1999,7 +1999,7 @@ static const LhatNode *instantiable_callee(Checker *c, const LhatNode *node,
     return unwritten ? literal : NULL;
 }
 
-// §14.15 with §14.7+2: whether what this definition's delegate^ lends
+// [syntax.obj.abstract] with [syntax.obj.delegate]: whether what this definition's delegate^ lends
 // carries the name. A delegate lends a name without giving it: the link hangs
 // off the instance (link_delegate), and what it reaches is the value in a
 // field, which the program may swap between one lookup and the next. So
@@ -2023,7 +2023,7 @@ static bool lent_by_delegate(const LhatType *definition, const char *name,
 
 // One parameter position of a call, filled by `actual` -- a written argument
 // or one position of a spread tuple, which are the same thing here. The
-// receiver's goes unasked (§14.4: its type is the call site's own); the rest
+// receiver's goes unasked ([syntax.obj.self]: its type is the call site's own); the rest
 // are matched against what they fill. Answers the parameter after it.
 static const LhatTypeList *fill_position(Checker *c, const LhatNode *at,
                                          const LhatType *callee,
@@ -2034,7 +2034,7 @@ static const LhatTypeList *fill_position(Checker *c, const LhatNode *at,
         (*skip)--;
         return param;
     }
-    // 05§8.9: the variadic tail collects into a table for an L^ body
+    // [modules.hostvalue]: the variadic tail collects into a table for an L^ body
     // and erases the width for a host's -- either way the seat cannot
     // say a host value's type, so one is boxed to ride it.
     if (param == NULL && chk_is_hostvalue(actual)) {
@@ -2162,10 +2162,10 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         Binding *receiver = chk_scope_find(c->scope, "self^", 5, NULL);
         ((LhatNode *)node)->checked_receiver = receiver != NULL ? receiver->declaration : NULL;
     }
-    // 03§3.4+: the arguments first where the callee is a literal, so what they
+    // [pipeline.infer.expected]: the arguments first where the callee is a literal, so what they
     // are is known before the body that takes them is read. Inferred once --
     // the loop below reads them back rather than asking again, since asking
-    // twice would report twice (the same reason §14.12's arm search keeps
+    // twice would report twice (the same reason [syntax.obj.override]'s arm search keeps
     // them).
     LhatType *given_types[LHAT_CHECK_MAX_TRACKED_ARGS];
     size_t given_count = 0;
@@ -2194,10 +2194,10 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     // Optional calls guard absence; ordinary calls retain a nil diagnostic.
     callee = access_target(c, node, callee);
 
-    // 03§3.4+4: the other place a call site is read. 03§3.4+ reads the one
+    // [pipeline.infer.call-shapes]: the other place a call site is read. [pipeline.infer.expected] reads the one
     // immediate call; this reads a call of a let^-bound literal elsewhere in
     // the unit, recording its argument types as one shape for infer_func to
-    // walk the body under. 05§4.3 still holds at the unit's edge: an
+    // walk the body under. [modules.public.types] still holds at the unit's edge: an
     // exported name's callers live in units checked after this one, so no
     // shape ever reaches them and a published signature still does not
     // depend on who uses it.
@@ -2211,7 +2211,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             for (const LhatNode *arg = node->v.access.argument; arg != NULL;
                  arg = arg->next) {
                 // A literal argument with an unwritten parameter reads its
-                // expectation off the position it is written into (03§3.4+),
+                // expectation off the position it is written into ([pipeline.infer.expected]),
                 // which a shape still being collected cannot give -- the
                 // loop below infers those as ever. One written out in full
                 // asks nothing of its position, so it rides along.
@@ -2236,7 +2236,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             seeded = true;
             given_count = count;
             // Only a whole, settled shape is worth keeping: a gap or a tuple
-            // in one is a reading of something not yet decided, and 03§3.4+2's
+            // in one is a reading of something not yet decided, and [pipeline.infer.rounds]'s
             // rounds bring this walk back once it is.
             size_t declared_here = 0;
             for (const LhatNode *p = literal->v.func.params; p != NULL;
@@ -2293,7 +2293,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
              arg = arg->next) {
             chk_infer(c, arg);
         }
-        // 03§3.1, 03§3.5、P6: a callee still pending^ (a mutually recursive
+        // [pipeline.strict.per-unit], [pipeline.strict.relaxed]、P6: a callee still pending^ (a mutually recursive
         // partner not yet checked) makes this call's result pending^ too,
         // not merely unknown^ -- strict needs to keep seeing the gap if it
         // survives to where a concrete type is wanted.
@@ -2302,7 +2302,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                               : LHAT_TYPE_UNKNOWN);
     }
 
-    // §14.15: an instance carries a value under every name its definition
+    // [syntax.obj.abstract]: an instance carries a value under every name its definition
     // holds, so one still only declared has nothing to make. Reported where
     // the construction is written, which is what the writer has to change.
     //
@@ -2320,12 +2320,12 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             bool field = false;
             const LhatTypeMember *hole = chk_hole_of(owner, &field);
             if (hole != NULL) {
-                // §14.15+3: a field has two ways to be given a value and a
+                // [syntax.obj.abstract-new]: a field has two ways to be given a value and a
                 // member has one, so the two are not told the same thing.
                 LhatCheckErrorCode code = field
                                               ? LHAT_CHECK_ERR_FIELD_UNPROVIDED
                                               : LHAT_CHECK_ERR_STILL_ABSTRACT;
-                // §14.15 and §14.15+: a member the delegate lends is missing
+                // [syntax.obj.abstract] and [syntax.obj.abstract-override]: a member the delegate lends is missing
                 // for a reason the writer cannot see from where they stand --
                 // the name is right there through the delegate -- so the
                 // reason is what they are told.
@@ -2342,14 +2342,14 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         }
     }
 
-    // §14.12: an overloaded member is the intersection of its signatures, so
+    // [syntax.obj.override]: an overloaded member is the intersection of its signatures, so
     // calling one means finding the arm that fits. Arguments are inferred
     // once here, since inferring them again would report twice.
     if (callee->kind == LHAT_TYPE_INTERSECT) {
         bool through_member =
             node->v.access.target->kind == LHAT_NODE_MEMBER;
 
-        // 03§3.4+ with §14.12: which arm is meant is settled by the arguments'
+        // [pipeline.infer.expected] with [syntax.obj.override]: which arm is meant is settled by the arguments'
         // own types, so in general there is no one position to read an
         // expectation off of. But when one arm alone takes this many
         // arguments, the count has already settled it -- and then a literal
@@ -2357,7 +2357,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         // an unoverloaded signature. The full answer is still searched for
         // below; this only decides what a literal with nothing written may
         // read.
-        // §13.8+: a spread tuple counts as its positions, which are not known
+        // [syntax.type.tuple]: a spread tuple counts as its positions, which are not known
         // until it is read -- so a call with one leaves this guess unmade.
         bool spreads = false;
         for (const LhatNode *arg = node->v.access.argument; arg != NULL;
@@ -2399,7 +2399,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         bool overflow = false;
         for (const LhatNode *arg = node->v.access.argument; arg != NULL;
              arg = arg->next) {
-            // §13.8+: a spread tuple is its positions, each an argument the
+            // [syntax.type.tuple]: a spread tuple is its positions, each an argument the
             // arm is asked about. A table spread stays the one unknown it
             // always was here.
             if (arg->kind == LHAT_NODE_SPREAD) {
@@ -2442,10 +2442,10 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         for (const LhatTypeList *arm = callee->v.composite.arms; arm != NULL;
              arm = arm->next, position++) {
             if (chk_signature_accepts(arm->type, args, tracked, through_member)) {
-                // 12§2: once every argument's type is settled this is
+                // [spec.arms]: once every argument's type is settled this is
                 // the answer, not a guess -- a call fitting no arm is the
                 // MISMATCH below. So the compiler may bake the arm in and let
-                // the run skip 03§5.11's search, under either strictness. An
+                // the run skip [pipeline.bc.overload]'s search, under either strictness. An
                 // argument that is any^, unknown or has a gap leaves nothing
                 // written, and the search decides the call at run time.
                 bool settled = true;
@@ -2458,7 +2458,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                 if (settled && position + 1 <= UINT16_MAX) {
                     ((LhatNode *)node)->checked_arm = (uint16_t)(position + 1);
                 }
-                // §15.1, §15.5: f^ may call only f^, whichever arm §14.12
+                // [syntax.sub.kinds], [syntax.sub.no-contagion]: f^ may call only f^, whichever arm [syntax.obj.override]
                 // resolved to -- except a yieldable p^, whose call alone
                 // stays referentially transparent (see the plain-call site
                 // above for why).
@@ -2466,13 +2466,13 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                     !arm->type->v.func.yields) {
                     chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
                 }
-                check_mutable_receiver(c, node, arm->type);  // §15.1+2
+                check_mutable_receiver(c, node, arm->type);  // [syntax.sub.mutable-self]
                 own_after_call(c, node, arm->type,
                                (const LhatCheckType *const *)args, tracked);
                 if (arm->type->v.func.answers_fresh) {
-                    ((LhatNode *)node)->call_answers_fresh = true;  // §15.1+3
+                    ((LhatNode *)node)->call_answers_fresh = true;  // [syntax.sub.fresh]
                 }
-                // §15.5: a yielding arm answers the coroutine it makes, the
+                // [syntax.sub.no-contagion]: a yielding arm answers the coroutine it makes, the
                 // same as the plain call below.
                 return host_call_answer(c, node, arm->type,
                                          (const LhatCheckType *const *)args, tracked);
@@ -2528,8 +2528,8 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
-    // §15.1: f^ may call only f^, never p^ -- a p^ may run side effects an f^
-    // is not allowed to. §15.5 carves out one exception: calling a yieldable
+    // [syntax.sub.kinds]: f^ may call only f^, never p^ -- a p^ may run side effects an f^
+    // is not allowed to. [syntax.sub.no-contagion] carves out one exception: calling a yieldable
     // p^ does not run its body at all, only makes a coroutine (start()
     // is what runs it, and that is p^ itself, caught the same way any other
     // p^ call is) -- so that call alone stays referentially transparent and
@@ -2540,9 +2540,9 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         !callee->v.func.yields) {
         chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     }
-    check_mutable_receiver(c, node, callee);  // §15.1+2
+    check_mutable_receiver(c, node, callee);  // [syntax.sub.mutable-self]
     if (callee->v.func.answers_fresh) {
-        ((LhatNode *)node)->call_answers_fresh = true;  // §15.1+3
+        ((LhatNode *)node)->call_answers_fresh = true;  // [syntax.sub.fresh]
     }
 
     const LhatTypeList *param = callee->v.func.params;
@@ -2552,11 +2552,11 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         declared++;
     }
 
-    // §14.4: 'x.m()' hands x to the receiver without writing it, while a
+    // [syntax.obj.self]: 'x.m()' hands x to the receiver without writing it, while a
     // method taken as a value is called with the receiver spelled out. The
     // receiver is kept out of `params`, so only the second form adjusts.
     //
-    // §14.12+: 'super^(…)' is the first of the two. What it replaces is a
+    // [syntax.obj.super]: 'super^(…)' is the first of the two. What it replaces is a
     // member of the same definition, so the receiver it wants is the one the
     // body already has -- writing it would be noise, and every use of super^
     // would carry it.
@@ -2568,7 +2568,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         skip = 1;
     }
 
-    // §13.7 with §13.8+: 'expr...' spreads. A tuple's width is its type's, so
+    // [syntax.type.variadic] with [syntax.type.tuple]: 'expr...' spreads. A tuple's width is its type's, so
     // it stands for that many arguments wherever it is written -- the fixed
     // parameters and the variadic tail alike, as if each position had been
     // written out. Anything else -- a table, or a value whose type is not
@@ -2617,15 +2617,15 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             }
             continue;
         }
-        // 03§3.4+: what this position takes, read before the argument rather
+        // [pipeline.infer.expected]: what this position takes, read before the argument rather
         // than after -- a subroutine literal written here has the callee's
         // written signature standing beside it, and takes the parameters it
         // has none written on from there. The receiver's position is not one
-        // of these (§14.4), so nothing is expected there.
+        // of these ([syntax.obj.self]), so nothing is expected there.
         LhatType *wanted =
             skip > 0 ? NULL
                      : (param != NULL ? param->type : callee->v.func.variadic);
-        // 03§3.4+: read back where the seeding above already inferred it.
+        // [pipeline.infer.expected]: read back where the seeding above already inferred it.
         LhatType *actual;
         if (seeded && taken < given_count &&
             !(wanted != NULL && wanted->kind == LHAT_TYPE_TABLE && wanted->v.table.is_typeinfo)) {
@@ -2643,8 +2643,8 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
             host_overflow = true;
         }
         filled++;
-        // §13.8+: an argument is one value. A tuple in one is what would
-        // bring back §13.7's expansion rule (Lua's truncate-except-in-tail-
+        // [syntax.type.tuple]: an argument is one value. A tuple in one is what would
+        // bring back [syntax.type.variadic]'s expansion rule (Lua's truncate-except-in-tail-
         // position), and refusing it here is what keeps that rule from
         // arising. Said by name rather than left to the mismatch below,
         // which would report the position's type against the parameter's.
@@ -2654,9 +2654,9 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         param = fill_position(c, arg, callee, param, &skip, actual);
     }
 
-    // §13.4: a written default does not make a parameter optional. What it
+    // [syntax.type.param-names]: a written default does not make a parameter optional. What it
     // fills in is a call site being written by an editor, so a call that
-    // reaches here still owes every declared argument. §13.7: a spread that
+    // reaches here still owes every declared argument. [syntax.type.variadic]: a spread that
     // is not a tuple takes any number beyond them, so only falling short is
     // wrong there -- and into a callee with no tail to continue it was
     // reported above, the count following from that. A spread tuple is said
@@ -2674,8 +2674,8 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     }
     own_after_call(c, node, callee, host_arguments, host_count);
 
-    // §15.10: when the body being checked is calling itself, its result is
-    // still being worked out, and 03§3.4 reads the NULL to mean exactly
+    // [syntax.sub.this]: when the body being checked is calling itself, its result is
+    // still being worked out, and [pipeline.infer] reads the NULL to mean exactly
     // that -- so a self-call has to keep handing the NULL back.
     if (!callee->v.func.yields && callee->v.func.result == NULL &&
         callee == c->this_type) {
@@ -2689,7 +2689,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 
 LhatType *chk_call_answer(Checker *c, const LhatType *callee)
 {
-    // §15.5: calling a yieldable procedure answers a coroutine rather than
+    // [syntax.sub.no-contagion]: calling a yieldable procedure answers a coroutine rather than
     // running it. infer_func puts that on the signature as it settles the
     // three types, and every other reader takes it from there; a signature a
     // first pass seeded has none yet, and is assembled here instead.
@@ -2697,8 +2697,8 @@ LhatType *chk_call_answer(Checker *c, const LhatType *callee)
         return callee->v.func.answers != NULL ? callee->v.func.answers
                                               : coroutine_made_by(c, callee);
     }
-    // §13.2: a signature with no result answers no value. That is not a gap in
-    // inference, so it is not spelled with a NULL -- 03§3.4 kept it apart
+    // [syntax.type.empty]: a signature with no result answers no value. That is not a gap in
+    // inference, so it is not spelled with a NULL -- [pipeline.infer] kept it apart
     // from nil^, and this is where that stays observable.
     if (callee->v.func.result == NULL) {
         return chk_simple(c, LHAT_TYPE_NONE);
@@ -2706,17 +2706,17 @@ LhatType *chk_call_answer(Checker *c, const LhatType *callee)
     return callee->v.func.result;
 }
 
-// §16.3 with §13.8+: what the built-in walk of a table yields -- the
+// [syntax.for.forms] with [syntax.type.tuple]: what the built-in walk of a table yields -- the
 // tuple (K, V), the key first and the value second. A tuple rather
 // than a table: a table would cost an allocation every step. Both halves come
-// from what the table holds: §14 makes it a sequence and a mapping at
+// from what the table holds: [syntax.obj] makes it a sequence and a mapping at
 // once, so a walk of one that is both hands over keys of either kind.
-// §16.3+2: the halves on their own, which keys^ and values^ answer with and
+// [syntax.for.keys-values]: the halves on their own, which keys^ and values^ answer with and
 // the pair below is built from. Written as one walk of the members so the
 // three readings cannot drift apart.
-// §14: the sequence half is described by members whose names are digits,
-// which 01§6 keeps a program from writing. Everything else is the keyed
-// half, reached by a name -- and by §14 that is the same door 't.a' uses.
+// [syntax.obj]: the sequence half is described by members whose names are digits,
+// which [lex.comment] keeps a program from writing. Everything else is the keyed
+// half, reached by a name -- and by [syntax.obj] that is the same door 't.a' uses.
 static bool member_is_positional(const LhatTypeMember *m)
 {
     return m != NULL && lhat_type_member_key_kind(m) == LHAT_TYPE_NUMBER;
@@ -2748,7 +2748,7 @@ LhatType *chk_table_walk_tuple(Checker *c, const LhatType *over)
     return pair;
 }
 
-// §16.3 with §13.8+: what a single name walking a table receives -- the
+// [syntax.for.forms] with [syntax.type.tuple]: what a single name walking a table receives -- the
 // values of the sequence half, in order, the keyed half not visited. The
 // same loop as 'for^ i from^ 0 to^ the length - 1 { t[i] }', so the type is the
 // union of the positional members and the unbounded tail; named members are
@@ -2778,9 +2778,9 @@ LhatType *chk_table_element_type(Checker *c, const LhatType *over)
     return values != NULL ? values : chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
 
-// §14.17: every value carries this, the way 05§8.5 gives a coroutine
+// [syntax.obj.tostring]: every value carries this, the way [modules.host.coroutine-ops] gives a coroutine
 // its operations -- a member of the value rather than a name a unit has to
-// import. An f^: writing a value down changes nothing, which is §11.1's
+// import. An f^: writing a value down changes nothing, which is [syntax.op.functions]'s
 // reason for keeping an operator pure applied to the same question.
 static LhatType *builtin_tostring(Checker *c, const LhatType *target)
 {
@@ -2790,7 +2790,7 @@ static LhatType *builtin_tostring(Checker *c, const LhatType *target)
     if (target == NULL || target->kind != LHAT_TYPE_NUMBER) {
         return plain;
     }
-    // §14.17: a number^ also takes a format. §14.12 makes the two an
+    // [syntax.obj.tostring]: a number^ also takes a format. [syntax.obj.override] makes the two an
     // intersection, and the counts they allow -- none and one -- keep them
     // from overlapping without the types being looked at.
     LhatType *formatted = lhat_type_func(c->result->types, true);
@@ -2801,7 +2801,7 @@ static LhatType *builtin_tostring(Checker *c, const LhatType *target)
     return lhat_type_intersect(c->result->types, plain, formatted);
 }
 
-// §14.20: the comparison '=' makes, with the error term written down.
+// [syntax.obj.eq]: the comparison '=' makes, with the error term written down.
 // An f^ -- comparing two numbers changes nothing. Both arguments are
 // number^: the one to compare against, and how far apart the two may be.
 static LhatType *builtin_eq(Checker *c)
@@ -2816,7 +2816,7 @@ static LhatType *builtin_eq(Checker *c)
     return signature;
 }
 
-// §14.21: the whole number below, above or nearest. One type for the
+// [syntax.obj.round]: the whole number below, above or nearest. One type for the
 // three -- which of them it is was settled by the name, so nothing is taken
 // and a number^ comes back. An f^: rounding reads a value and makes another.
 static LhatType *builtin_whole(Checker *c)
@@ -2827,7 +2827,7 @@ static LhatType *builtin_whole(Checker *c)
     return signature;
 }
 
-// §14.23: questions about the bits, answered true^ or false^. bitany,
+// [syntax.obj.bits]: questions about the bits, answered true^ or false^. bitany,
 // bitall and bitat take a number^ (a mask or a position); isinteger nothing.
 static LhatType *builtin_bits(Checker *c, bool takes_number)
 {
@@ -2841,14 +2841,14 @@ static LhatType *builtin_bits(Checker *c, bool takes_number)
     return signature;
 }
 
-// §14.17+2: tostring read backwards, carried by the one value a number^
-// can be read out of. The two signatures are shaped exactly as §14.17's and
-// made an intersection for the same reason -- §14.12 forbids them overlapping,
+// [syntax.obj.tonumber]: tostring read backwards, carried by the one value a number^
+// can be read out of. The two signatures are shaped exactly as [syntax.obj.tostring]'s and
+// made an intersection for the same reason -- [syntax.obj.override] forbids them overlapping,
 // and taking none and taking one keeps them apart without a type being asked
 // about.
 //
 // The answer carries a nil^ arm: a string^ holding no number^ is data, not a
-// mistake, so 04§11.4's narrowing or §11.7's '??' is what a caller writes. An f^
+// mistake, so [errors.runtime.nil]'s narrowing or [syntax.op.default]'s '??' is what a caller writes. An f^
 // -- reading a value changes nothing.
 static LhatType *builtin_tonumber(Checker *c)
 {
@@ -2867,8 +2867,8 @@ static LhatType *builtin_tonumber(Checker *c)
     return lhat_type_intersect(c->result->types, plain, formatted);
 }
 
-// §14.19: a run of a string^'s characters. The two forms are shaped as
-// §14.17's are and made an intersection for the same reason -- §14.12 forbids
+// [syntax.obj.substring]: a run of a string^'s characters. The two forms are shaped as
+// [syntax.obj.tostring]'s are and made an intersection for the same reason -- [syntax.obj.override] forbids
 // them overlapping, and taking one and taking two keeps them apart without a
 // type being asked about.
 //
@@ -2891,7 +2891,7 @@ static LhatType *builtin_substring(Checker *c)
     return lhat_type_intersect(c->result->types, from, between);
 }
 
-// §14.19+: one character of a string^, which is §14.19's run with both
+// [syntax.obj.at]: one character of a string^, which is [syntax.obj.substring]'s run with both
 // ends at the same ordinal. One shape rather than two, so no intersection --
 // and a string^ still, since there is no character type for it to answer.
 static LhatType *builtin_at(Checker *c)
@@ -2904,7 +2904,7 @@ static LhatType *builtin_at(Checker *c)
     return signature;
 }
 
-// §15.1+2: what the mutating half of §14.22 are -- an f^ that writes through
+// [syntax.sub.mutable-self]: what the mutating half of [syntax.obj.table-ops] are -- an f^ that writes through
 // its receiver and nothing else. A p^ calls one anywhere; an f^ only on a
 // table its own body made.
 static LhatType *mutable_method(Checker *c)
@@ -2915,7 +2915,7 @@ static LhatType *mutable_method(Checker *c)
     return signature;
 }
 
-// §14.9 with §14.17+: a table nobody made with a def^. Every name on one is
+// [syntax.obj.name] with [syntax.obj.tostring-hat]: a table nobody made with a def^. Every name on one is
 // the writer's -- vm.c's plain_table asks the same of the value, and the two
 // have to answer alike or the checker would allow what the machine refuses.
 static bool plain_table_type(const LhatType *type)
@@ -2924,8 +2924,8 @@ static bool plain_table_type(const LhatType *type)
            !type->v.table.is_definition && !type->v.table.from_definition;
 }
 
-// §14.17+: the two words that have two spellings at all (keys^ and values^ are
-// hat-only, §14.18's line).
+// [syntax.obj.tostring-hat]: the two words that have two spellings at all (keys^ and values^ are
+// hat-only, [syntax.obj.count]'s line).
 //
 // This is a fallback and not what makes the two one member -- lhat_member_held_as
 // does that, by taking the hat off at the door wherever the names are not the
@@ -2950,7 +2950,7 @@ static const char *other_spelling(const char *name, size_t length)
     return NULL;
 }
 
-// §14.17+, §16.3+: the hat spelling always reaches the built-in. The bare one
+// [syntax.obj.tostring-hat], [syntax.for.reuse]: the hat spelling always reaches the built-in. The bare one
 // does too, except where the names are the writer's -- there it is an
 // ordinary member like any other, and absent unless something was written
 // under it.
@@ -2964,13 +2964,13 @@ static bool builtin_named(const char *name, size_t length, const char *word,
     return !hatted_only && length == n && memcmp(name, word, n) == 0;
 }
 
-// 04§11.4 with 01§7.1: the '?' forms are one of the two ways to
-// reach through a T|nil^ -- the other is §13.11's narrowing. Two halves make
+// [errors.runtime.nil] with [lex.op.list]: the '?' forms are one of the two ways to
+// reach through a T|nil^ -- the other is [syntax.type.fits]'s narrowing. Two halves make
 // one: the target is read without its nil^ arm (the strips below), and what
 // comes back gains one, since a nil^ target answers nil^ rather than a
 // member, a position or a call.
 //
-// §11.7+2: the two halves are not both per link. The strip is -- it belongs
+// [syntax.op.nil-safe-chain]: the two halves are not both per link. The strip is -- it belongs
 // to the '?' that was written -- but the arm goes on once, at the end of the
 // run the parser marked, so the first '?' guards everything after it.
 //
@@ -2979,7 +2979,7 @@ static bool builtin_named(const char *name, size_t length, const char *word,
 // member's own written type ('a?.b.c' where b is C|nil^), and reaching
 // through it still wants a '?' of its own.
 //
-// A p^ call answers nothing (§13.2), and nothing unions with nil^ into
+// A p^ call answers nothing ([syntax.type.empty]), and nothing unions with nil^ into
 // something -- a nil-safe call of one produces no value either way.
 static LhatType *nil_propagated(Checker *c, const LhatNode *node,
                                 LhatType *answer)
@@ -2991,7 +2991,7 @@ static LhatType *nil_propagated(Checker *c, const LhatNode *node,
     return lhat_type_union(c->result->types, answer, chk_simple(c, LHAT_TYPE_NIL));
 }
 
-// 04§11.4: what a target offers once its nil^ arm is set aside, for the
+// [errors.runtime.nil]: what a target offers once its nil^ arm is set aside, for the
 // '?' forms and for relaxed's own stepping aside. Answers `target` unchanged
 // when there is no nil^ to remove, or when what is left is still a union of
 // real types -- one of those has no single member type to answer with.
@@ -3004,8 +3004,8 @@ LhatType *chk_without_nil_arm(Checker *c, LhatType *target)
     return bare != NULL && bare->kind != LHAT_TYPE_UNION ? bare : target;
 }
 
-// 04§2.3: a union every arm of which is an error. What such a union
-// answers is what every arm answers, and 04§2.3 gives message and cause to
+// [errors.kind.made]: a union every arm of which is an error. What such a union
+// answers is what every arm answers, and [errors.kind.made] gives message and cause to
 // every kind -- so a call that can fail two ways answers them from the union
 // its catch^ hands over, without the writer naming one of the ways first.
 //
@@ -3046,7 +3046,7 @@ static bool run_of_names(const LhatNode *node, bool allow_scope)
                             (allow_scope && node->kind == LHAT_NODE_SCOPE));
 }
 
-// §14.19 with §15.6+ and the rest: the words the cascade below answers to.
+// [syntax.obj.substring] with [syntax.sub.coroutine-members] and the rest: the words the cascade below answers to.
 //
 // Spellings to TRY, and nothing more -- no hat, no receiver, no condition.
 // Which of them a given type actually answers, and under which spelling, is
@@ -3061,7 +3061,7 @@ static bool run_of_names(const LhatNode *node, bool allow_scope)
 // Adding a built-in to the cascade means adding its bare word here.
 //
 // Bare, because the enumeration tries "word" and "word^" for each and keeps
-// whichever answers (01§2.3: the hat is part of the name).
+// whichever answers ([lex.hat.repeat]: the hat is part of the name).
 const char *const chk_builtin_words[] = {
     "ReturnType", "abs", "assign", "at", "bitall",
     "bitany", "bitat", "cause",
@@ -3086,7 +3086,7 @@ const size_t chk_builtin_word_count =
 LhatType *chk_infer_member(Checker *c, const LhatNode *node,
                            LhatType **named_type)
 {
-    // §14.8+2: number^ carries a few static members -- the constants.
+    // [syntax.obj.number-consts]: number^ carries a few static members -- the constants.
     // The parser keeps number^.inf/nan as static member accesses rather
     // than descriptor attributes, so read them before inferring the target.
     const LhatNode *on = node->v.access.target;
@@ -3098,7 +3098,7 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
         const char *constant = NULL;
         size_t constant_length = 0;
 #if LHAT_WITH_RESOLUTIONS
-        // 07§4: the dot is recorded here too, and marked as the word's
+        // [lsp.hover]: the dot is recorded here too, and marked as the word's
         // -- a tool asked what may stand after 'number^.' is owed the
         // constants, and this branch answers before any type exists to ask.
         chk_record_member_site(c, node, chk_simple(c, LHAT_TYPE_NUMBER), true);
@@ -3113,14 +3113,14 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
     }
     LhatType *target = chk_infer(c, node->v.access.target);
 #if LHAT_WITH_RESOLUTIONS
-    // 07§4: only the two answers below have a member record to point
+    // [lsp.hover]: only the two answers below have a member record to point
     // at, so what is left here when this returns is this access's member or
     // nothing. Cleared after the target rather than before: 'a.b.c' infers
     // a.b through this same function, and clearing on the way in would leave
     // b's record standing where c's was asked for.
     c->resolved_member = NULL;
     c->resolved_kind = NULL;
-    // 07§4: what stands to the left of the dot, controlled here rather
+    // [lsp.hover]: what stands to the left of the dot, controlled here rather
     // than where the answer comes back. This one is wanted exactly when the
     // name below is missing -- a dot at the end of what has been typed so
     // far -- so it is taken before that bail, and the nil^ arm is set aside
@@ -3138,7 +3138,7 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
-    // 04 section 04§11.4: analyze the non-nil receiver. Do this
+    // 04 section [errors.runtime.nil]: analyze the non-nil receiver. Do this
     // before testing for an undecided receiver: ?|nil^ becomes ?.
     // Optional access restores its nil^ arm through nil_propagated.
     if (!builtin_named(name, length, "tostring", false)) {
@@ -3147,10 +3147,10 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
 
     if (target == NULL || target->kind == LHAT_TYPE_UNKNOWN ||
         target->kind == LHAT_TYPE_PENDING) {
-        // 03§3.4: a parameter read for a member has to carry one, and
-        // §14.10's "at least these" is exactly that demand written as a type.
+        // [pipeline.infer]: a parameter read for a member has to carry one, and
+        // [syntax.obj.structure]'s "at least these" is exactly that demand written as a type.
         chk_constrain_member(c, target, name, length);
-        // 03§3.1, 03§3.5、P6: a target still pending^ makes this member's
+        // [pipeline.strict.per-unit], [pipeline.strict.relaxed]、P6: a target still pending^ makes this member's
         // type pending^ too, not merely unknown^ -- the gap has to survive
         // for strict to see it if it reaches somewhere a concrete type was
         // wanted.
@@ -3168,12 +3168,12 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
     return chk_member_of(c, target, name, length, node, named_type);
 }
 
-// §14.10 with §14.19: what `target` answers for a member of this name. Split
+// [syntax.obj.structure] with [syntax.obj.substring]: what `target` answers for a member of this name. Split
 // out of chk_infer_member so that it can be ASKED rather than only walked
 // into -- a tool listing what may stand after a '.' has a type and a spelling
 // and nothing else, and working the answer out for itself would be a second
-// reading of everything below (07§4 refuses that for the same reason it
-// refuses re-deriving 08§8's scoping).
+// reading of everything below ([lsp.hover] refuses that for the same reason it
+// refuses re-deriving [lton.host]'s scoping).
 //
 // `node` is where a diagnostic would stand, and NULL asks the question
 // quietly: chk_report already bails on a NULL position (check.c) and so does
@@ -3183,14 +3183,14 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
 //
 // What the caller must have done first, because the prologue does it and a
 // probe cannot: settled the target (this refuses UNKNOWN and PENDING above),
-// and set aside the nil^ arm under 04§11.4's rule -- which for a probe means
+// and set aside the nil^ arm under [errors.runtime.nil]'s rule -- which for a probe means
 // handing in the receiver LhatMemberSite already recorded.
 LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
                         size_t length, const LhatNode *node,
                         LhatType **named_type)
 {
-    // §13.14+: X.ReturnType -- what a call of X answers, as the
-    // descriptor a written type is (§13.14). Only a run of names may stand
+    // [syntax.type.return-type]: X.ReturnType -- what a call of X answers, as the
+    // descriptor a written type is ([syntax.type.as-expr]). Only a run of names may stand
     // for X: the compiler folds the whole access into a constant, so a call
     // written there would never run. The answer is stamped on the name the
     // access ends in, for that fold and for the let^ that binds an alias to
@@ -3222,25 +3222,25 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         return chk_typeinfo_of(c, answer);
     }
 
-    // 04§2.3: every kind carries message and cause without declaring them
+    // [errors.kind.made]: every kind carries message and cause without declaring them
     // -- so they answer however much of the kind is known: a leaf, a
     // declaration's whole set, error^ alone, or a union of any of those
-    // (10§4.2's it^ is the last one wherever a call can fail two ways). A
+    // ([l10n.id.spelling]'s it^ is the last one wherever a call can fail two ways). A
     // declared field is the leaf's own and wants the narrowing.
-    // §14.11: the prototype a definition hangs under self^ -- one canonical
+    // [syntax.obj.new]: the prototype a definition hangs under self^ -- one canonical
     // instance every construction copies, so its type is the instance type
     // itself. The definition's alone: an instance reading the name finds
-    // nothing, exactly as §14.7+ keeps a value member out of its reach.
+    // nothing, exactly as [syntax.obj.members-order] keeps a value member out of its reach.
     if (target->kind == LHAT_TYPE_TABLE && target->v.table.is_definition &&
         target->v.table.instance != NULL && chk_name_is(name, length, "self^")) {
         return target->v.table.instance;
     }
 
-    // 05§8.9: the box's two members, the language's own. get answers the
+    // [modules.hostvalue]: the box's two members, the language's own. get answers the
     // value whole -- the registered type, fields and members included, which
     // rides on the box type as `instance`. set writes one of the same tag
     // over the bytes: an effect, so it is a p^ and an f^ body cannot call it
-    // (§15.1).
+    // ([syntax.sub.kinds]).
     if (target->kind == LHAT_TYPE_HOSTVALUE_BOX) {
         LhatType *held = target->v.table.instance != NULL
                              ? target->v.table.instance
@@ -3263,9 +3263,9 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             }
             return signature;
         }
-        // 05§8.9+: a registered field reads straight off the box's
+        // [modules.hostvalue.union]: a registered field reads straight off the box's
         // bytes, as it does off a stack value's -- the read only. A write
-        // goes through set(), where the sealed box and §15.1 keep their say.
+        // goes through set(), where the sealed box and [syntax.sub.kinds] keep their say.
         const LhatTypeMember *field = chk_find_member(held, name, length);
         if (field != NULL && field->type != NULL &&
             field->type->kind != LHAT_TYPE_FUNC) {
@@ -3281,13 +3281,13 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
     }
 
     const LhatTypeMember *members = NULL;
-    // 05§8.8+: the table `members` is the head of, so a search that
+    // [modules.hostdata.base]: the table `members` is the head of, so a search that
     // runs out can go on to what this type is declared under. NULL for the
-    // lists that belong to no table -- an error kind's fields (04§2.2).
+    // lists that belong to no table -- an error kind's fields ([errors.kind.errordef]).
     const LhatType *member_table = NULL;
     if (target->kind == LHAT_TYPE_TABLE ||
         target->kind == LHAT_TYPE_HOSTVALUE) {
-        // 05§8.9: fields and registered members alike, off the shared
+        // [modules.hostvalue]: fields and registered members alike, off the shared
         // member list.
         members = target->v.table.members;
         member_table = target;
@@ -3297,7 +3297,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         if (chk_name_is(name, length, "message")) {
             return chk_simple(c, LHAT_TYPE_STRING);
         }
-        // 04§2.7: either family may be a cause. Wrapping what could not be
+        // [errors.kind.local]: either family may be a cause. Wrapping what could not be
         // returned inside one's own error IS resolving it here, and it is the
         // one sanctioned way the thing that failed survives the frame -- so
         // refusing a localerror^ a place in the chain would leave a writer
@@ -3309,11 +3309,11 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         if (target->kind == LHAT_TYPE_ERROR_KIND) {
             members = target->v.error.fields;
         }
-        // 04§2.3: the declaration makes types and no values, so a kind of
+        // [errors.kind.made]: the declaration makes types and no values, so a kind of
         // it standing here is a type written where a value was wanted. The
         // name resolves, which is why it reads as a member access at all --
         // and "no such member" would send the writer looking for a spelling
-        // mistake instead of for the error^ that 04§2.5 puts in front.
+        // mistake instead of for the error^ that [errors.kind.new] puts in front.
         if (target->kind == LHAT_TYPE_ERROR_SET &&
             chk_kind_of_set(target, name, length) != NULL) {
             chk_report_named(c, node, LHAT_CHECK_ERR_KIND_AS_VALUE, name,
@@ -3321,12 +3321,12 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
         // ERROR, ERROR_SET and a union of kinds carry no fields of their own
-        // -- 03§2.2's are the leaf's, and reaching one is what §11.4's narrowing
+        // -- [pipeline.value.layout]'s are the leaf's, and reaching one is what [syntax.op.framework]'s narrowing
         // is for. The search below finds nothing and the shared tail still
         // answers tostring.
     } else if (target->kind == LHAT_TYPE_ENUM ||
                target->kind == LHAT_TYPE_ENUM_MEMBER) {
-        // §19: in value position E.AAA answers the ENUM type, wide
+        // [syntax.enum]: in value position E.AAA answers the ENUM type, wide
         // -- a binding made of it takes any member, and two members
         // compare without the checker calling the comparison settled. The
         // member's own singleton type lives in type position
@@ -3336,7 +3336,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             LhatType *member = chk_kind_of_set(target, name, length);
             if (member != NULL) {
 #if LHAT_WITH_RESOLUTIONS
-                // 07§4: the wide type is the answer, but the member is
+                // [lsp.hover]: the wide type is the answer, but the member is
                 // what the name reached and where it was written.
                 c->resolved_kind = member;
 #endif
@@ -3374,20 +3374,20 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             }
         }
     } else if (target->kind == LHAT_TYPE_CORO) {
-        // 05§8.5: a coroutine carries these without importing anything.
-        // §12.6 spells dispose(), §15.6 puts resume beside it, and §16.3
+        // [modules.host.coroutine-ops]: a coroutine carries these without importing anything.
+        // [syntax.with.coroutine] spells dispose(), [syntax.sub.coroutine-make] puts resume beside it, and [syntax.for.forms]
         // makes iterate what `in^` asks for.
         //
-        // §15.6+: the three that run the body take the body's own kind, so
-        // §15.1's calling rule settles who may advance it -- an f^ reaching for
+        // [syntax.sub.coroutine-members]: the three that run the body take the body's own kind, so
+        // [syntax.sub.kinds]'s calling rule settles who may advance it -- an f^ reaching for
         // a p^ coroutine is an f^ calling a p^, and nothing about yield^ has
         // to be said again. The three that do not run it (done, started,
         // iterate) read state or hand the coroutine back, so they are f^
         // whatever the body is.
         bool advances = target->v.coroutine.is_function;
-        // §15.3+: the kind alone would let a body advance one it was handed,
+        // [syntax.sub.yieldable-f]: the kind alone would let a body advance one it was handed,
         // whose progress the caller can see afterwards. What a body made is
-        // its own, exactly as §15.1+ reads it for a table.
+        // its own, exactly as [syntax.sub.table-write] reads it for a table.
         if (advances && c->in_function &&
             (chk_name_is(name, length, "start") ||
              chk_name_is(name, length, "resume") ||
@@ -3398,7 +3398,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             chk_report(c, node, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
         }
         if (chk_name_is(name, length, "start")) {
-            // §15.2: runs the body from the top, for a coroutine that has
+            // [syntax.sub.yieldable]: runs the body from the top, for a coroutine that has
             // never been resumed. Takes nothing, since nothing has been
             // yield^ed yet to send a value to. Answers what one turn answers.
             LhatType *signature = lhat_type_func(c->result->types, advances);
@@ -3406,11 +3406,11 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             return signature;
         }
         if (chk_name_is(name, length, "resume")) {
-            // §13.9: one resume sends R in and answers Y|T. Where R is empty
+            // [syntax.type.coroutine]: one resume sends R in and answers Y|T. Where R is empty
             // there is nothing to send, so it takes no argument at all --
-            // §13.2's empty argument side, and a caller writing nil^ there is
+            // [syntax.type.empty]'s empty argument side, and a caller writing nil^ there is
             // passing an argument the coroutine has no parameter for.
-            // §13.8+: a tuple R is sent as that many arguments --
+            // [syntax.type.tuple]: a tuple R is sent as that many arguments --
             // resume(a, b) -- and the yield^'s binding takes them apart.
             LhatType *signature = lhat_type_func(c->result->types, advances);
             LhatType *receive = target->v.coroutine.receive;
@@ -3427,10 +3427,10 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             return signature;
         }
         if (chk_name_is(name, length, "dispose")) {
-            // §12.7: it answers nothing, which is what §12.5 checks for.
+            // [syntax.with.no-fail]: it answers nothing, which is what [syntax.with.checked] checks for.
             return lhat_type_func(c->result->types, advances);
         }
-        // §15.16: save() reads the frame out without running the body, so it
+        // [syntax.sub.save-load]: save() reads the frame out without running the body, so it
         // is an f^ like done(). load() puts one back, which changes what the
         // next resume does as much as a resume would -- so it takes the
         // body's kind, the rule dispose() follows.
@@ -3447,10 +3447,10 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         }
         if (builtin_named(name, length, "iterate", false)) {
             LhatType *signature = lhat_type_func(c->result->types, true);
-            signature->v.func.result = target;  // §16.3: itself
+            signature->v.func.result = target;  // [syntax.for.forms]: itself
             return signature;
         }
-        // §15.6+: what a resume answers is a union of Y and the result, and
+        // [syntax.sub.coroutine-members]: what a resume answers is a union of Y and the result, and
         // nothing keeps those two apart -- a body that yields nil^ and one
         // that has ended answer the same value. So the state is asked for
         // rather than read out of the value.
@@ -3468,32 +3468,32 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             return signature;
         }
         if (builtin_named(name, length, "tostring", false)) {
-            return builtin_tostring(c, target);  // §14.17
+            return builtin_tostring(c, target);  // [syntax.obj.tostring]
         }
         report_no_member(c, node, target, name, length);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     } else {
-        // §14.17: nil^, bool^, number^, string^ and the rest hold no members
+        // [syntax.obj.tostring]: nil^, bool^, number^, string^ and the rest hold no members
         // of their own, and this is the one every value answers.
         if (builtin_named(name, length, "tostring", false)) {
             return builtin_tostring(c, target);
         }
-        // §14.17+2: and this is the one only a string^ answers. The bare word
-        // alone -- §14.18+: a string^ is not a value a writer can add a name
+        // [syntax.obj.tonumber]: and this is the one only a string^ answers. The bare word
+        // alone -- [syntax.obj.count-hat]: a string^ is not a value a writer can add a name
         // to, so there is nothing here for a hat to keep a built-in off, and
         // a second spelling of one member is all it would be.
         if (target->kind == LHAT_TYPE_STRING &&
             chk_name_is(name, length, "tonumber")) {
             return builtin_tonumber(c);
         }
-        // §14.20: and this is the one only a number^ answers. The bare word
-        // alone, for §14.18+'s reason -- nothing can be written on a number^.
+        // [syntax.obj.eq]: and this is the one only a number^ answers. The bare word
+        // alone, for [syntax.obj.count-hat]'s reason -- nothing can be written on a number^.
         if (target->kind == LHAT_TYPE_NUMBER &&
             chk_name_is(name, length, "eq")) {
             return builtin_eq(c);
         }
-        // §14.21: and so are these three, for the same reason.
-        // §14.21+: abs and sign have the same shape; clamp takes its bounds.
+        // [syntax.obj.round]: and so are these three, for the same reason.
+        // [syntax.obj.abs]: abs and sign have the same shape; clamp takes its bounds.
         if (target->kind == LHAT_TYPE_NUMBER &&
             (chk_name_is(name, length, "floor") ||
              chk_name_is(name, length, "ceil") ||
@@ -3518,21 +3518,21 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
                                 chk_simple(c, LHAT_TYPE_NUMBER));
             return signature;
         }
-        // §14.18: how long it is, and how many bytes that is.
+        // [syntax.obj.count]: how long it is, and how many bytes that is.
         if (target->kind == LHAT_TYPE_STRING &&
             (chk_name_is(name, length, "length") ||
              chk_name_is(name, length, "len") ||
              chk_name_is(name, length, "size"))) {
             return chk_simple(c, LHAT_TYPE_NUMBER);
         }
-        // §14.19: a run of its characters, under any of its three names.
+        // [syntax.obj.substring]: a run of its characters, under any of its three names.
         if (target->kind == LHAT_TYPE_STRING &&
             (chk_name_is(name, length, "substring") ||
              chk_name_is(name, length, "substr") ||
              chk_name_is(name, length, "sub"))) {
             return builtin_substring(c);
         }
-        // §14.19+: one character of it.
+        // [syntax.obj.at]: one character of it.
         if (target->kind == LHAT_TYPE_STRING && chk_name_is(name, length, "at")) {
             return builtin_at(c);
         }
@@ -3550,8 +3550,8 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
                 lhat_type_coro(c->result->types, NULL, item, NULL, false, true);
             return signature;
         }
-        // §14.19+3: the plain searches. What is not there answers nil^
-        // (04§11.3) -- never a sentinel -- and the pattern vocabulary
+        // [syntax.obj.find]: the plain searches. What is not there answers nil^
+        // ([errors.runtime.index]) -- never a sentinel -- and the pattern vocabulary
         // lives in std.regex.
         if (target->kind == LHAT_TYPE_STRING &&
             chk_name_is(name, length, "find")) {
@@ -3572,7 +3572,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         }
         if (target->kind == LHAT_TYPE_STRING &&
             chk_name_is(name, length, "findall")) {
-            // §15.3+: reading a string changes nothing, so the walk is an
+            // [syntax.sub.yieldable-f]: reading a string changes nothing, so the walk is an
             // f^ coroutine, exactly as a table's keys^ is.
             LhatType *walk = lhat_type_coro(
                 c->result->types, NULL, chk_simple(c, LHAT_TYPE_NUMBER),
@@ -3583,7 +3583,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             signature->v.func.result = walk;
             return signature;
         }
-        // §14.19+3: join^'s inverse (with the separator) and the words
+        // [syntax.obj.find]: join^'s inverse (with the separator) and the words
         // reading (without). A fresh answer either way -- the caller splits
         // and then mends its own pieces.
         if (target->kind == LHAT_TYPE_STRING &&
@@ -3600,7 +3600,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             by_sep->v.func.answers_fresh = true;
             return lhat_type_intersect(c->result->types, words, by_sep);
         }
-        // §14.19+3: the ASCII case swaps.
+        // [syntax.obj.find]: the ASCII case swaps.
         if (target->kind == LHAT_TYPE_STRING &&
             (chk_name_is(name, length, "toupper") ||
              chk_name_is(name, length, "tolower"))) {
@@ -3635,16 +3635,16 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
                                    chk_simple(c, LHAT_TYPE_NIL));
         }
     }
-    // §14.17+: everywhere but a plain table the two spellings of tostring
+    // [syntax.obj.tostring-hat]: everywhere but a plain table the two spellings of tostring
     // and iterate are one member, so where the written one misses, the other
     // spelling is searched before any built-in answers -- what was written
     // wins under either spelling.
     const char *look = name;
     size_t look_length = length;
     for (int pass = 0; pass < 2; pass++) {
-        // The links go through the one search (05§8.8+, §14.7+2); the
+        // The links go through the one search ([modules.hostdata.base], [syntax.obj.delegate]); the
         // bare list is for what has no table behind it -- an error kind's
-        // fields (04§2.2) and a coroutine's built-ins.
+        // fields ([errors.kind.errordef]) and a coroutine's built-ins.
         const LhatTypeMember *found =
             member_table != NULL
                 ? lhat_type_find_member(member_table, look, look_length)
@@ -3652,15 +3652,15 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         {
             const LhatTypeMember *m = found;
             if (m != NULL) {
-                // §14.5+: carried by both sides of a composition, so reading
-                // it here would be picking one of two for the writer. §14.4's
+                // [syntax.obj.compose-ambiguous]: carried by both sides of a composition, so reading
+                // it here would be picking one of two for the writer. [syntax.obj.self]'s
                 // 'let^ f = A.m' is how the side is named.
                 if (m->ambiguous) {
                     chk_report_named(c, node, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER,
                                      name, length);
                     return chk_simple(c, LHAT_TYPE_UNKNOWN);
                 }
-                // §14.7+2: what answered is a seed, not an inferred type --
+                // [syntax.obj.delegate]: what answered is a seed, not an inferred type --
                 // the body it belongs to has not been walked yet.
                 // chk_infer_def walks the entries again when this happened,
                 // and the walk after it finds a better one here.
@@ -3688,21 +3688,21 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         look_length = strlen(second);
     }
 
-    // §16.3: `in^ e` asks e for the coroutine to walk, and a table answers
+    // [syntax.for.forms]: `in^ e` asks e for the coroutine to walk, and a table answers
     // with one over its keys without anything being written. This comes
-    // after the search, not before it, because §16.3 lets a written iterate
-    // win -- the same order the machine reads it in. A host type (05§8.8)
+    // after the search, not before it, because [syntax.for.forms] lets a written iterate
+    // win -- the same order the machine reads it in. A host type ([modules.hostdata])
     // is a table only in how its members are reached -- there is nothing of
     // a table's own behind it to walk, so with none registered there is no
     // built-in to fall back on either.
     if (!(target->kind == LHAT_TYPE_TABLE && target->v.table.nominal) &&
         builtin_named(name, length, "iterate", plain_table_type(target))) {
-        // §13.8+: the pair is the tuple (K, V). The walk sends nothing in
-        // and ends without a value, which 04§11.3 spells nil^ -- so what
-        // resume() answers is (K, V)|nil^, the union §13.8+ admits beside
+        // [syntax.type.tuple]: the pair is the tuple (K, V). The walk sends nothing in
+        // and ends without a value, which [errors.runtime.index] spells nil^ -- so what
+        // resume() answers is (K, V)|nil^, the union [syntax.type.tuple] admits beside
         // an error's, since nil^ is discriminable off the head slot too.
         //
-        // §15.3+: the built-in walk changes nothing, so it is an f^ coroutine
+        // [syntax.sub.yieldable-f]: the built-in walk changes nothing, so it is an f^ coroutine
         // -- which is what lets 'for^ k, v in^ t' stand inside an f^ body.
         LhatType *walk =
             lhat_type_coro(c->result->types, NULL,
@@ -3712,15 +3712,15 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         return signature;
     }
 
-    // §14.17, the same order and for the same reason: a written tostring is
+    // [syntax.obj.tostring], the same order and for the same reason: a written tostring is
     // the one that answers, and this is what a table falls back to.
     if (builtin_named(name, length, "tostring", plain_table_type(target))) {
         return builtin_tostring(c, target);
     }
 
-    // §14.18: how long the run is, and how much the table holds altogether.
-    // The hat is not optional here even where §14.17+ would let the bare word
-    // through: §14 reserves new, tostring and dispose on a def^ and these
+    // [syntax.obj.count]: how long the run is, and how much the table holds altogether.
+    // The hat is not optional here even where [syntax.obj.tostring-hat] would let the bare word
+    // through: [syntax.obj] reserves new, tostring and dispose on a def^ and these
     // are not among them, so on a table the bare words stay the writer's
     // whatever kind of table it is.
     if (target->kind == LHAT_TYPE_TABLE &&
@@ -3730,12 +3730,12 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         return chk_simple(c, LHAT_TYPE_NUMBER);
     }
 
-    // §16.3+2: the two projections of the same walk. Calls, as iterate^ is
+    // [syntax.for.keys-values]: the two projections of the same walk. Calls, as iterate^ is
     // and for its reason -- each answers a coroutine of its own, so the
     // parentheses are where one is made rather than a name that quietly
-    // makes one every time it is read. §15.3+ makes them f^ coroutines
+    // makes one every time it is read. [syntax.sub.yieldable-f] makes them f^ coroutines
     // because reading a table changes nothing. The hat is not optional, as
-    // in §14.18 just above.
+    // in [syntax.obj.count] just above.
     if (target->kind == LHAT_TYPE_TABLE &&
         (builtin_named(name, length, "keys", true) ||
          builtin_named(name, length, "values", true))) {
@@ -3750,7 +3750,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         return signature;
     }
 
-    // §14.22: assign^ writes into the container already there, so a def^
+    // [syntax.obj.table-ops]: assign^ writes into the container already there, so a def^
     // instance stays one -- the one table operation that reaches past a
     // plain table. Not a host type's: there is nothing of a table behind it.
     if (target->kind == LHAT_TYPE_TABLE && !target->v.table.nominal &&
@@ -3762,11 +3762,11 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
         return signature;
     }
 
-    // §14.22: the table's own operations, on a plain table alone -- a def^'s
+    // [syntax.obj.table-ops]: the table's own operations, on a plain table alone -- a def^'s
     // names are the writer's and a host type's are the library's. The hat is
-    // not optional, as in §14.18. E is the sequence half's element type
+    // not optional, as in [syntax.obj.count]. E is the sequence half's element type
     // (chk_table_element_type), which is what makes 't.sort^(f^ a, b { … })'
-    // read its parameters off the receiver through 03§3.4+'s expectation.
+    // read its parameters off the receiver through [pipeline.infer.expected]'s expectation.
     if (plain_table_type(target) && !target->v.table.nominal) {
         LhatType *element = chk_table_element_type(c, target);
         LhatType *self_type = target;
@@ -3796,7 +3796,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             return lhat_type_intersect(c->result->types, signature, bounded);
         }
 
-        // join^ -- §11.2's word already means "one string out of pieces".
+        // join^ -- [syntax.op.concat]'s word already means "one string out of pieces".
         if (builtin_named(name, length, "join", true)) {
             LhatType *bare = lhat_type_func(c->result->types, true);
             bare->v.func.result = chk_simple(c, LHAT_TYPE_STRING);
@@ -3820,14 +3820,14 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             return signature;
         }
         // slice^ answers a fresh run of the same elements; the count is the
-        // range's, which the type does not say (§14.10's unbounded tail).
+        // range's, which the type does not say ([syntax.obj.structure]'s unbounded tail).
         if (builtin_named(name, length, "slice", true)) {
             LhatType *cut = lhat_type_table(c->result->types);
             cut->v.table.variadic = element;
             LhatType *from = lhat_type_func(c->result->types, true);
             lhat_type_add_param(c->result->types, from, number);
             from->v.func.result = cut;
-            from->v.func.answers_fresh = true;  // §15.1+3
+            from->v.func.answers_fresh = true;  // [syntax.sub.fresh]
             LhatType *range = lhat_type_func(c->result->types, true);
             lhat_type_add_param(c->result->types, range, number);
             lhat_type_add_param(c->result->types, range, number);
@@ -3836,13 +3836,13 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             return lhat_type_intersect(c->result->types, from, range);
         }
         // clone^ -- the shallow copy by name, or each value through a
-        // written policy (§14.22). The policy is f^any^ -> any^; on purpose,
+        // written policy ([syntax.obj.table-ops]). The policy is f^any^ -> any^; on purpose,
         // not f^V -> V;: it decides the depth itself, and the V one level
         // down is not the V up here -- 'x.clone^(this^)' has to fit its own
         // signature at every level, which without generics only any^ can
-        // say. Inside, §13.11's narrowing is how a policy tells its cases
+        // say. Inside, [syntax.type.fits]'s narrowing is how a policy tells its cases
         // apart, which is what a policy is. Both arms promise a fresh
-        // answer (§15.1+3) -- an f^ clones what arrived, then mends its own
+        // answer ([syntax.sub.fresh]) -- an f^ clones what arrived, then mends its own
         // copy.
         if (builtin_named(name, length, "clone", true)) {
             LhatType *any = chk_simple(c, LHAT_TYPE_ANY);
@@ -3863,7 +3863,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             with_policy->v.func.answers_fresh = true;
             return lhat_type_intersect(c->result->types, bare, with_policy);
         }
-        // §15.1+2: the mutating half write through the receiver alone, so
+        // [syntax.sub.mutable-self]: the mutating half write through the receiver alone, so
         // they are f^mutable^self^ -- an f^ body calls them on what it made
         // itself, a p^ anywhere.
         if (builtin_named(name, length, "push", true) ||
@@ -3909,7 +3909,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             signature->v.func.result = elem_or_nil;
             return signature;
         }
-        // §14.22: resize^(n, fill) for any element. resize^(n) fills with
+        // [syntax.obj.table-ops]: resize^(n, fill) for any element. resize^(n) fills with
         // nil^, so it is there only where the element admits nil^.
         if (builtin_named(name, length, "resize", true)) {
             LhatType *filled = mutable_method(c);
@@ -3924,7 +3924,7 @@ LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
             bare->v.func.result = self_type;
             return lhat_type_intersect(c->result->types, bare, filled);
         }
-        // §11.9's three-way answer is the comparison's shape here too.
+        // [syntax.op.compare]'s three-way answer is the comparison's shape here too.
         if (builtin_named(name, length, "sort", true) ||
             builtin_named(name, length, "stablesort", true)) {
             LhatType *bare = mutable_method(c);
@@ -4013,7 +4013,7 @@ static LhatType *reachable_by_key(Checker *c, const LhatType *over,
             reachable = lhat_type_union(c->result->types, reachable, m->type);
         }
     }
-    // §13.7: an unbounded tail is more positions beyond any listed, so a key
+    // [syntax.type.variadic]: an unbounded tail is more positions beyond any listed, so a key
     // that could name a position could name one of those.
     if (by_position && over->v.table.variadic != NULL) {
         reachable =
@@ -4022,7 +4022,7 @@ static LhatType *reachable_by_key(Checker *c, const LhatType *over,
     return reachable;
 }
 
-// §13.11+ with §14.10: what the type answers for every position a bounded key
+// [syntax.type.fits-range] with [syntax.obj.structure]: what the type answers for every position a bounded key
 // could name, or NULL where the key is not bounded or could leave them. The
 // positions have to run from zero without a gap -- a value fitting the type
 // has each one it declares, and nothing is promised past the first it does
@@ -4093,7 +4093,7 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
     LhatType *over = chk_infer(c, node->v.access.target);
     LhatType *asked = chk_require_value(c, node->v.access.argument,
                                         chk_infer(c, node->v.access.argument));
-    // 05§8.9+: a box's key hash is its bytes, and only a sealed box
+    // [modules.hostvalue.union]: a box's key hash is its bytes, and only a sealed box
     // keeps them still -- so storing a key asks for constbox^. A lookup may
     // ask with a live box, or with the bare value itself: both read the
     // bytes of the moment, and everything the table holds is sealed. Only
@@ -4107,14 +4107,14 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
         chk_report(c, node->v.access.argument,
                    LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
     }
-    // 04§11.4: as in infer_member -- relaxed steps past a nil^
+    // [errors.runtime.nil]: as in infer_member -- relaxed steps past a nil^
     // arm, and '?[' steps past it under strict as well.
     over = access_target(c, node, over);
     LhatType *dictionary = dictionary_index_type(c, node, over, asked);
     if (dictionary != NULL && over->kind != LHAT_TYPE_TABLE) {
         return dictionary;
     }
-    // 04§11.3: only a table holds keys. A settled type that is not one
+    // [errors.runtime.index]: only a table holds keys. A settled type that is not one
     // answers a key with nothing -- the machine refuses it, so the checker
     // says so first. Unions and undecided types stay with the machine.
     if (over != NULL) {
@@ -4141,9 +4141,9 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
         }
     }
     // A key written out names one position or one member, so the
-    // table says what is there. 04§11.3: a key that is not there
+    // table says what is there. [errors.runtime.index]: a key that is not there
     // answers nil^ -- but a written one that the type does not
-    // mention says nothing, since §14.10 lets a table carry more than
+    // mention says nothing, since [syntax.obj.structure] lets a table carry more than
     // it declares.
     const LhatNode *key = node->v.access.argument;
     if (over != NULL && over->kind == LHAT_TYPE_TABLE && c->writing_to == node) {
@@ -4165,21 +4165,21 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
     if (dictionary != NULL) {
         return dictionary;
     }
-    // §13.11+: a key the branch bounded, standing where the type declares
-    // every position it could reach. §14.10 makes a table type "at least
+    // [syntax.type.fits-range]: a key the branch bounded, standing where the type declares
+    // every position it could reach. [syntax.obj.structure] makes a table type "at least
     // these", so a declared position is one a fitting value has -- and a key
     // that cannot leave them cannot find nothing. This is the static half of
-    // §11.3 arrived at by another road, so the answer carries no nil^.
+    // [syntax.op.semantic] arrived at by another road, so the answer carries no nil^.
     if (over != NULL && over->kind == LHAT_TYPE_TABLE) {
         LhatType *within = within_declared_positions(c, over, key);
         if (within != NULL) {
             return within;
         }
     }
-    // 04§11.3: a key that did not resolve to one member still has an
+    // [errors.runtime.index]: a key that did not resolve to one member still has an
     // answer -- what the type says a key of this kind reaches, and nil^ for
     // the keys it says nothing about, since absence is an ordinary result
-    // rather than a failure. That union is what 04§11.3's 'T|nil^' names.
+    // rather than a failure. That union is what [errors.runtime.index]'s 'T|nil^' names.
     if (over != NULL && over->kind == LHAT_TYPE_TABLE) {
         LhatType *reachable = reachable_by_key(c, over, asked);
         if (reachable != NULL) {
@@ -4188,8 +4188,8 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
         }
     }
     // Nothing the type says is reachable this way, so there is no T to make
-    // 'T|nil^' out of -- §14.10 leaves what an undeclared table holds unsaid,
-    // and 03§3.5 leaves that to the machine.
+    // 'T|nil^' out of -- [syntax.obj.structure] leaves what an undeclared table holds unsaid,
+    // and [pipeline.strict.relaxed] leaves that to the machine.
     return chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
 
@@ -4203,12 +4203,12 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
     LhatType *table = lhat_type_table(c->result->types);
     table->v.table.entries_known = true;
 
-    // §14.4: a method written in the literal reaches the table through its
-    // self^ receiver, the same receiver a def^'s method takes -- §8.7+ took
+    // [syntax.obj.self]: a method written in the literal reaches the table through its
+    // self^ receiver, the same receiver a def^'s method takes -- [syntax.stmt.old-world] took
     // the bound name out of the initialiser, and this is the door that
     // stays. The named signatures go in first, annotations only, so a body
     // walked below can call a method declared after it. (The full fixpoint
-    // stays def^'s, §14.7+: a member whose type only its body knows is not
+    // stays def^'s, [syntax.obj.members-order]: a member whose type only its body knows is not
     // seeded here, and reading it ahead is what a def^ is for.)
     for (const LhatNode *entry = items; entry != NULL;
          entry = entry->next) {
@@ -4228,11 +4228,11 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
         }
     }
 
-    // §14 makes a table a sequence as well as a mapping. The keyed
+    // [syntax.obj] makes a table a sequence as well as a mapping. The keyed
     // half is described by name; the sequence half by position, counted the
     // way the machine lays it out -- from zero, in the order written.
     size_t position = 0;
-    // §15.1+: how much of what the entries hold was made here as well.
+    // [syntax.sub.table-write]: how much of what the entries hold was made here as well.
     uint8_t made = LHAT_OWN_DEEP;
     for (const LhatNode *entry = items; entry != NULL;
          entry = entry->next) {
@@ -4273,38 +4273,38 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
             chk_scope_close(c, &receiver);
         }
 
-        // 05§8.9: a table lives on the heap and a host value does not
+        // [modules.hostvalue]: a table lives on the heap and a host value does not
         // leave the stack, so no member of one is ever a host value.
         if (chk_is_hostvalue(value)) {
             chk_report(c, entry->v.entry.value, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
         }
-        // §13.8+: nor a tuple, for the same reason said of slots -- a member
+        // [syntax.type.tuple]: nor a tuple, for the same reason said of slots -- a member
         // is one value, and a run is several. pack^ is what puts one in a
         // table, and it makes the table itself.
         if (lhat_type_tuple_width(value) > 0) {
             chk_report(c, entry->v.entry.value, LHAT_CHECK_ERR_TUPLE_MISPLACED);
         }
 
-        // §14.14+: a computed key is an expression, checked like any other.
+        // [syntax.obj.keys-equals]: a computed key is an expression, checked like any other.
         // What it names is only known when it is written out -- an integer
         // reaches the sequence half, a string the keyed one, and anything
-        // else lands somewhere §14.10 lets the type stay quiet about.
+        // else lands somewhere [syntax.obj.structure] lets the type stay quiet about.
         if (entry->v.entry.computed) {
             const LhatNode *key = entry->v.entry.key;
             LhatType *asked = chk_require_value(c, key, chk_infer(c, key));
             uint8_t keyed = chk_made_depth(c, key, asked);
             made = keyed < made ? keyed : made;
-            // 04§11.3: nil^ is how "not there" is spelled, so it cannot
+            // [errors.runtime.index]: nil^ is how "not there" is spelled, so it cannot
             // also be a key. The machine reports one that turns out to be
             // nil^; a key that can only ever be one is decided here. A NaN
             // is the other refusal, and stays the machine's -- nothing in
-            // §14.8's one number type tells them apart.
+            // [syntax.obj.number]'s one number type tells them apart.
             if (asked != NULL && asked->kind != LHAT_TYPE_UNKNOWN &&
                 asked->kind != LHAT_TYPE_PENDING &&
                 lhat_type_conforms(asked, chk_simple(c, LHAT_TYPE_NIL))) {
                 chk_report(c, key, LHAT_CHECK_ERR_BAD_KEY);
             }
-            // 05§8.9+: a literal's key is stored, so only a sealed box
+            // [modules.hostvalue.union]: a literal's key is stored, so only a sealed box
             // holds its hash still -- and a bare host value does not fit a
             // key's one slot at all.
             if (asked != NULL && asked->kind == LHAT_TYPE_HOSTVALUE_BOX &&
@@ -4365,19 +4365,19 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
     return table;
 }
 
-// §15.2: folds one more yield^/await^ site into the body's running Y or R.
+// [syntax.sub.yieldable]: folds one more yield^/await^ site into the body's running Y or R.
 // The first site fixes it; every later one has to agree, or the body is
-// mixing yields the way §13.9 does not allow.
+// mixing yields the way [syntax.type.coroutine] does not allow.
 void chk_unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
                      LhatType *candidate)
 {
     if (candidate == NULL || candidate->kind == LHAT_TYPE_UNKNOWN ||
         candidate->kind == LHAT_TYPE_PENDING) {
-        // §13.11: UNKNOWN carries no information, so there is nothing here to
+        // [syntax.type.fits]: UNKNOWN carries no information, so there is nothing here to
         // agree or disagree with.
         return;
     }
-    // 05§8.9+: a host value rides a yield^ whole -- one seat, its full
+    // [modules.hostvalue.union]: a host value rides a yield^ whole -- one seat, its full
     // width, never mixed into a run (the tuple-position rule keeps that).
     // The machine carries it through the frame's answer room the way a
     // wide return^ travels, so nothing is refused here any more.
@@ -4390,14 +4390,14 @@ void chk_unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
     }
 }
 
-// 03§3.4: the result type is inferred from return^ unless it is written,
+// [pipeline.infer]: the result type is inferred from return^ unless it is written,
 // and a subroutine that calls itself has to write it.
-// §14.15+: the shape a subroutine literal declares, read off its annotations
+// [syntax.obj.abstract-override]: the shape a subroutine literal declares, read off its annotations
 // alone. What super^ stands for inside a pending override^ has to be known
 // before the body is walked, and the body is what infer_func would walk.
 //
 // Answers NULL for anything that is not a subroutine literal, and leaves the
-// result NULL when none was written -- §13.2 makes an f^ declare one, so what
+// result NULL when none was written -- [syntax.type.empty] makes an f^ declare one, so what
 // is missing here belongs to a p^, which answers with nothing anyway.
 static LhatType *declared_signature(Checker *c, const LhatNode *node)
 {
@@ -4406,14 +4406,14 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
     }
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
     func->v.func.yields = node->v.func.yields;
-    func->v.func.answers_fresh = node->v.func.answers_fresh;  // §15.1+3
+    func->v.func.answers_fresh = node->v.func.answers_fresh;  // [syntax.sub.fresh]
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
         int marker = chk_self_marker_at(c, node->v.func.params, param);
         if (marker != 0) {
             func->v.func.takes_self = true;
             func->v.func.self_last = marker == 2;
-            // §15.1+2: the marker travels with the seat. On a p^ it says
+            // [syntax.sub.mutable-self]: the marker travels with the seat. On a p^ it says
             // nothing a p^ could not already do, so it is not recorded.
             if (param->v.param.mutable_receiver && func->v.func.is_function) {
                 func->v.func.mutable_self = true;
@@ -4424,7 +4424,7 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
                              ? chk_resolve_type(c, param->v.param.type)
                              : chk_simple(c, LHAT_TYPE_PENDING);
         if (param->v.param.variadic) {
-            // 05§8.9: the tail is collected into a table (§13.7), and a
+            // [modules.hostvalue]: the tail is collected into a table ([syntax.type.variadic]), and a
             // table member is never a host value.
             if (chk_is_hostvalue(type)) {
                 chk_report(c, param, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
@@ -4436,10 +4436,10 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
         lhat_type_add_param(c->result->types, func, type);
     }
     if (node->v.func.return_type != NULL) {
-        c->tuple_allowed = true;  // §13.8+, as above
+        c->tuple_allowed = true;  // [syntax.type.tuple], as above
         func->v.func.result = chk_resolve_type(c, node->v.func.return_type);
     }
-    // §15.5: a yieldable's call answers a coroutine, and the seed says so
+    // [syntax.sub.no-contagion]: a yieldable's call answers a coroutine, and the seed says so
     // too -- a walk written against a member seeded here asks no more.
     // What it yields only the body knows, so with nothing written the
     // answer is a coroutine of unknowns.
@@ -4455,11 +4455,11 @@ static LhatType *declared_signature(Checker *c, const LhatNode *node)
     return func;
 }
 
-// 03§3.4+4: a literal whose call shapes were recorded is walked once
+// [pipeline.infer.call-shapes]: a literal whose call shapes were recorded is walked once
 // per shape -- each walk reads the literal again with the shape standing
-// where an annotation would (03§3.4+'s expectation path), so none of them
+// where an annotation would ([pipeline.infer.expected]'s expectation path), so none of them
 // collects demands or reports a parameter undecided. What a walk under one
-// shape reported is rolled back the way a round's walk is (03§3.4+2): the
+// shape reported is rolled back the way a round's walk is ([pipeline.infer.rounds]): the
 // call that handed the shape in reads `failed` and says so at its own
 // position. The walk that stays -- the stamp the compiler reads, the type
 // the binding holds -- is over the join of the shapes the body took, so the
@@ -4539,13 +4539,13 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     if (!chk_instantiations_exist(c, node)) {
         ((LhatNode *)node)->checked_instances = NULL;
     }
-    // 03§3.4+: what expects this literal, taken here and cleared at once
+    // [pipeline.infer.expected]: what expects this literal, taken here and cleared at once
     // -- a body written inside this one is expected by nothing, and reading
     // an outer expectation there would put a type on a parameter no one was
     // talking about.
     LhatType *expected_func = c->expected_func;
     c->expected_func = NULL;
-    // 03§3.4+: a seat written 'f^…;|nil^' -- or gsub's 'string^|f^…;' -- still
+    // [pipeline.infer.expected]: a seat written 'f^…;|nil^' -- or gsub's 'string^|f^…;' -- still
     // says which signature a literal there is expected to have. The one
     // func arm is the expectation; the other arms are other values' to fill.
     if (expected_func != NULL && expected_func->kind == LHAT_TYPE_UNION) {
@@ -4570,7 +4570,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     const LhatTypeList *expected_param =
         expected_func != NULL ? expected_func->v.func.params : NULL;
 
-    // 03§3.4+4: call shapes were recorded for this literal, and nothing
+    // [pipeline.infer.call-shapes]: call shapes were recorded for this literal, and nothing
     // else expects it here -- the shape walks are what read the body now.
     if (expected_func == NULL && c->instantiating != node &&
         chk_instantiations_exist(c, node)) {
@@ -4578,15 +4578,15 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     }
 
     LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
-    // §15.2: whether the body suspends is read off the body, not written.
+    // [syntax.sub.yieldable]: whether the body suspends is read off the body, not written.
     if (func != NULL) func->source_body = node;
     func->v.func.yields = node->v.func.yields;
     // 15.13: and whether it promises to capture nothing is written, not read
     // -- what a caller may rely on is what the writer said.
-    // §15.1+3: as is whether the answer is promised new.
+    // [syntax.sub.fresh]: as is whether the answer is promised new.
     func->v.func.answers_fresh = node->v.func.answers_fresh;
 
-    // 03§3.4: where this body's own parameters begin. A body nested in
+    // [pipeline.infer]: where this body's own parameters begin. A body nested in
     // another leaves the enclosing one's in place behind this mark -- a demand
     // written in here still reaches them, since the value it names came from
     // out there.
@@ -4597,24 +4597,24 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
 
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {
-        // §14.4: the receiver is not an ordinary parameter. Leaving it unbound
+        // [syntax.obj.self]: the receiver is not an ordinary parameter. Leaving it unbound
         // lets the self^ that infer_def put in scope show through, which is
         // what the body is actually talking about.
         int marker = chk_self_marker_at(c, node->v.func.params, param);
         if (marker != 0) {
             func->v.func.takes_self = true;
             func->v.func.self_last = marker == 2;
-            // §15.1+2: the marker travels with the seat. On a p^ it says
+            // [syntax.sub.mutable-self]: the marker travels with the seat. On a p^ it says
             // nothing a p^ could not already do, so it is not recorded.
             if (param->v.param.mutable_receiver && func->v.func.is_function) {
                 func->v.func.mutable_self = true;
             }
             continue;
         }
-        // 03§3.4+: what the position is expected to take, which stands
+        // [pipeline.infer.expected]: what the position is expected to take, which stands
         // where a written annotation would. The variadic one is expected by
         // the signature's own tail; the rest walk in step, since neither
-        // list counts the receiver (§14.4).
+        // list counts the receiver ([syntax.obj.self]).
         LhatType *expected = NULL;
         if (expected_func != NULL) {
             if (param->v.param.variadic) {
@@ -4633,17 +4633,17 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
 #if LHAT_WITH_RESOLUTIONS
         ((LhatNode *)param)->display_type = type;
 #endif
-        // §13.4: a default is what completion and the visual editor write into
+        // [syntax.type.param-names]: a default is what completion and the visual editor write into
         // a call site, so it has to fit the position it will be written into.
         // Read out here, before c->scope becomes the body below -- the
         // expression stands at the call, where none of these parameters is in
         // scope, so it may not name them.
         //
         // Only against a written type. With nothing written the slot is still
-        // pending^, and 03§3.4 leaves what settles it to the body's demands;
+        // pending^, and [pipeline.infer] leaves what settles it to the body's demands;
         // a default is not one of them (it is a value the call carries, not a
         // use the body makes).
-        // 03§3.4+: the written type stands beside the default the same way it
+        // [pipeline.infer.expected]: the written type stands beside the default the same way it
         // stands beside an argument, so a literal default takes it too.
         LhatType *outer_expected = c->expected_func;
         c->expected_func = param->v.param.type != NULL ? type : NULL;
@@ -4657,7 +4657,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
             LhatType *element =
                 param->v.param.type != NULL ? type : chk_simple(c, LHAT_TYPE_ANY);
             func->v.func.variadic = element;
-            // §13.7: '...' inside the body names what was collected. §14.10's
+            // [syntax.type.variadic]: '...' inside the body names what was collected. [syntax.obj.structure]'s
             // form for that is a table whose sequence is unbounded, one
             // element type throughout -- the same shape a written
             // 't^{ T[] }' names, since both describe the same thing.
@@ -4673,7 +4673,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
             continue;
         }
         lhat_type_add_param(c->result->types, func, type);
-        // 03§3.4: with nothing written, the body is what decides. The
+        // [pipeline.infer]: with nothing written, the body is what decides. The
         // binding below and the signature above hold this same object, so
         // settling it once at the end writes through to both. A position an
         // expectation filled is decided already and collects no demands --
@@ -4701,10 +4701,10 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
 
     LhatType *declared = NULL;
     if (node->v.func.return_type != NULL) {
-        c->tuple_allowed = true;  // §13.8+, as in resolve_func_type
+        c->tuple_allowed = true;  // [syntax.type.tuple], as in resolve_func_type
         declared = chk_resolve_type(c, node->v.func.return_type);
     }
-    // 03§3.4+: a signature written on the binding says what the result is
+    // [pipeline.infer.expected]: a signature written on the binding says what the result is
     // as plainly as one written here does. The parameters above are filled
     // from it for that reason, and the result is not a different question --
     // leaving it out would have the body infer a result that the very
@@ -4712,13 +4712,13 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     if (declared == NULL && expected_func != NULL) {
         declared = expected_func->v.func.result;
     }
-    // §15.5 with §13.9: what a call to a yielding body answers is the coroutine,
+    // [syntax.sub.no-contagion] with [syntax.type.coroutine]: what a call to a yielding body answers is the coroutine,
     // and what the body itself returns is the third of its three types. So a
     // c^{ … } in the result position is unwrapped and the body handed that
     // third type -- the coroutine around it belongs to the caller. Written on
     // the literal or on the binding is the same statement about the same
     // value, so both spellings are read the same way here. Y and R stay
-    // §15.2's to settle from the yield^ sites; what was written of them is
+    // [syntax.sub.yieldable]'s to settle from the yield^ sites; what was written of them is
     // checked against those below rather than handed down.
     LhatType *written_coroutine = NULL;
     if (node->v.func.yields && declared != NULL &&
@@ -4741,23 +4741,23 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     LhatType *outer_yield_bound_type = c->yield_bound_type;
     bool outer_in_function = c->in_function;
     Scope *outer_body_scope = c->body_scope;
-    // 04§4.5: a try^ written in this body belongs to this body, whatever
+    // [errors.catch.clause]: a try^ written in this body belongs to this body, whatever
     // block the literal itself was written inside.
     struct CatchFrame *outer_catch_frame = c->catch_frame;
     c->catch_frame = NULL;
 
-    // §14.11: whether this literal is the written new being walked. Only
+    // [syntax.obj.new]: whether this literal is the written new being walked. Only
     // its own statements are a constructor's -- a literal nested inside it is
     // an ordinary body again, which the save/restore below arranges.
     bool constructor = node == c->new_func;
     bool outer_in_new_body = c->in_new_body;
     c->in_new_body = constructor;
-    // §15.1+2: whether this body's own receiver seat is mutable.
+    // [syntax.sub.mutable-self]: whether this body's own receiver seat is mutable.
     bool outer_receiver_mutable = c->receiver_mutable;
     c->receiver_mutable = func->v.func.mutable_self;
     ChkOwnership outer_self_owned = c->self_owned;
     c->self_owned = (ChkOwnership){LHAT_OWN_DEEP, 0};
-    // §15.1+3: whether every exit of this body owes something new.
+    // [syntax.sub.fresh]: whether every exit of this body owes something new.
     bool outer_must_answer_fresh = c->must_answer_fresh;
     c->must_answer_fresh = func->v.func.answers_fresh;
 
@@ -4768,21 +4768,21 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     c->recursive_return = false;
     c->valueless_return = false;
     c->this_type = func;
-    // §15.10: the chain this^^ walks. Lives here on the C stack, exactly
+    // [syntax.sub.this]: the chain this^^ walks. Lives here on the C stack, exactly
     // as long as the body is being checked.
     struct ThisLink this_link = { func, c->this_link, node };
     c->this_link = &this_link;
     c->in_function = node->v.func.is_function;
     c->body_scope = &body;
     c->deferred++;
-    // §15.2: a nested p^{...} starts collecting its own Y/R from scratch, so
+    // [syntax.sub.yieldable]: a nested p^{...} starts collecting its own Y/R from scratch, so
     // its yield^ sites never unify with the ones out here.
     c->coroutine_produce = NULL;
     c->coroutine_receive = NULL;
     c->yield_context = YIELD_CTX_NONE;
     c->yield_bound_type = NULL;
 
-    // 01§8: the body's '{' is the scope its parameters are already in
+    // [lex.scope]: the body's '{' is the scope its parameters are already in
     // (made just above), so the statements go straight into it rather than
     // opening a second one a '$^' would have to count.
     if (node->v.func.body != NULL &&
@@ -4792,7 +4792,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         chk_check_statement(c, node->v.func.body);
     }
 
-    // 03§3.4: every demand this body makes is in. Settled before the result
+    // [pipeline.infer]: every demand this body makes is in. Settled before the result
     // is put together, since a return^ of a parameter carries this very object
     // into it.
     chk_settle_param_vars(c, param_mark);
@@ -4804,46 +4804,46 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
 
     // Reaching the end of the body is an exit that produces no value, and a
     // bare return^ is the same exit written down. Both hand nil^ back at run
-    // time, so 03§3.4 counts them together. What that means depends on
+    // time, so [pipeline.infer] counts them together. What that means depends on
     // what the subroutine promised.
     bool falls_through = !chk_always_exits(node->v.func.body);
     bool leaves_without_value = falls_through || c->valueless_return;
     func->v.func.ends_without_value = leaves_without_value;
 
-    // §13.2: a function always has a result. So an f^ with a path that
+    // [syntax.type.empty]: a function always has a result. So an f^ with a path that
     // answers nothing has one
     // with nothing to answer with, and no result type would make it right.
     //
-    // §15.3+ with §15.5: a yieldable one answers a coroutine, and it answers
+    // [syntax.sub.yieldable-f] with [syntax.sub.no-contagion]: a yieldable one answers a coroutine, and it answers
     // one whatever the body goes on to do. Reaching the end of the body ends
-    // the coroutine (§13.9 puts that in the third type); it is not the
-    // function failing to answer. So §13.2 is already satisfied here.
+    // the coroutine ([syntax.type.coroutine] puts that in the third type); it is not the
+    // function failing to answer. So [syntax.type.empty] is already satisfied here.
     if (leaves_without_value && node->v.func.is_function &&
         !node->v.func.yields && !constructor) {
-        // §14.11: a new body is exempt -- it never answers for itself, so
+        // [syntax.obj.new]: a new body is exempt -- it never answers for itself, so
         // reaching its end is the ordinary way out.
         chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     } else if (leaves_without_value && declared != NULL &&
                !lhat_type_conforms(chk_simple(c, LHAT_TYPE_NIL), declared)) {
         // A p^ may leave without a value, but then its result has to admit
-        // one. 04§11.3 spells that nil^.
+        // one. [errors.runtime.index] spells that nil^.
         chk_report(c, node, LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT);
     }
 
     if (declared == NULL) {
-        // 03§3.4: the result is what the exits that do not go through the
+        // [pipeline.infer]: the result is what the exits that do not go through the
         // subroutine itself agree on. Leaving without a value is one of
-        // those exits, and 04§11.3 already spells "no value" nil^.
+        // those exits, and [errors.runtime.index] already spells "no value" nil^.
         //
-        // §13.2 keeps that apart from a body that returns nothing at
+        // [syntax.type.empty] keeps that apart from a body that returns nothing at
         // all: there the writer never asked for a value, and the signature
         // has a form for it. nil^ joins in only when some other exit does
         // produce one.
         if (leaves_without_value &&
             (c->inferred_result != NULL || c->recursive_return)) {
-            // §13.8+: there is no union of a tuple with nil^ to fall into, so
+            // [syntax.type.tuple]: there is no union of a tuple with nil^ to fall into, so
             // every exit of a body answering several values has to carry
-            // them. §13.2 asks this of an f^ already; the width is what a
+            // them. [syntax.type.empty] asks this of an f^ already; the width is what a
             // caller reserves slots by, so it reaches p^ too.
             if (lhat_type_tuple_width(c->inferred_result) > 0) {
                 chk_report(c, node, LHAT_CHECK_ERR_TUPLE_UNION);
@@ -4855,37 +4855,37 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         }
 
         // Every way out goes through the subroutine itself, so no call of it
-        // ever produces a value. §12.8 and 03§5.6 leave no other way
+        // ever produces a value. [syntax.with.errors] and [pipeline.bc.no-unwind] leave no other way
         // out -- no exceptions, no unwinding -- so this is decidable here.
         if (c->recursive_return && c->inferred_result == NULL) {
             chk_report(c, node, LHAT_CHECK_ERR_NEVER_RETURNS);
         }
         func->v.func.result = c->inferred_result;
 
-        // 03§3.1: what the body did not decide is reported here rather
+        // [pipeline.strict.per-unit]: what the body did not decide is reported here rather
         // than left in the signature. A result type is a promise to every
         // caller, so a gap in one hands the gap out at every call -- and
         // where there is no call yet, nobody would ever have asked. The
         // parameters are not read this way (a gap there is a constraint
         // nobody wrote, which is what any^ already means), and relaxed
-        // forgives all of it (03§3.5).
+        // forgives all of it ([pipeline.strict.relaxed]).
         //
-        // A result 03§3.4+'s expectation gave is written rather than inferred,
+        // A result [pipeline.infer.expected]'s expectation gave is written rather than inferred,
         // so this branch is not where it lands at all.
         if (lhat_type_has_gap(func->v.func.result)) {
             chk_report(c, node, LHAT_CHECK_ERR_RESULT_UNDECIDED);
         }
     }
 
-    // §15.5: what a call to this answers, settled here because this is where
-    // the three types §13.9 needs are all known. Everything that asks what a
+    // [syntax.sub.no-contagion]: what a call to this answers, settled here because this is where
+    // the three types [syntax.type.coroutine] needs are all known. Everything that asks what a
     // call is worth reads it from the signature rather than assembling its
     // own -- the writers and conformance among them, which is what lets the
     // written-out form ('p^number^ -> c^{ p^nil^ -> number^ -> nil^ };') be
-    // read back as the annotation it looks like (05§8.7).
+    // read back as the annotation it looks like ([modules.host.import]).
     if (node->v.func.yields) {
         func->v.func.answers = coroutine_made_by(c, func);
-        // §13.9 with §15.2: R and Y are read off the yield^ sites. Where the
+        // [syntax.type.coroutine] with [syntax.sub.yieldable]: R and Y are read off the yield^ sites. Where the
         // writer put them down as well, the two have to be the same
         // coroutine -- a signature saying something else is not a signature,
         // and one of the two has to move. A signature written on the binding
@@ -4898,25 +4898,25 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         }
     }
 
-    // §14.11: whatever the body does, the member answers the copy the machine
+    // [syntax.obj.new]: whatever the body does, the member answers the copy the machine
     // made -- so the signature says so, whichever branch above wrote it.
     if (constructor) {
         func->v.func.result = c->self_link != NULL ? c->self_link->type : NULL;
         func->v.func.ends_without_value = false;
     }
 
-    // §15.3+: an f^ coroutine may not leave the body that made it. Reaching
+    // [syntax.sub.yieldable-f]: an f^ coroutine may not leave the body that made it. Reaching
     // the outside is what would make advancing it observable from there, and
     // it reaches out through a table member or a nested signature as readily
     // as through the result itself -- so the whole result type is read rather
     // than its outermost shape. A p^ coroutine needs nothing here: advancing
-    // one is a p^ call, which §15.1 already refuses inside an f^.
+    // one is a p^ call, which [syntax.sub.kinds] already refuses inside an f^.
     if (node->v.func.is_function &&
         chk_mentions_function_coroutine(func->v.func.result, 0)) {
         chk_report(c, node, LHAT_CHECK_ERR_COROUTINE_ESCAPES);
     }
 
-    // 04§2.7+, and the same shape of rule as the one above: a localerror^
+    // [errors.kind.local-no-propagate], and the same shape of rule as the one above: a localerror^
     // may not be what a caller receives. Reading the whole settled signature
     // rather than its outermost shape catches it inside a table or a nested
     // one, and reaches a coroutine's Y as well as its T (chk_type_touches_local
@@ -4958,14 +4958,14 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     return func;
 }
 
-// §14. A definition produces two structures, and §14.7 is what ties them:
+// [syntax.obj]. A definition produces two structures, and [syntax.obj.instance] is what ties them:
 // an instance can reach the definition's members, so its type contains them
 // as well as the fields the template declares.
 //
-//   definition : the members, plus a new if none was written (§14.11)
+//   definition : the members, plus a new if none was written ([syntax.obj.new])
 //   instance   : those members, plus the template's fields
 //
-// §14.9 keeps the name out of it. Both are ordinary structures, so §11.3's
+// [syntax.obj.name] keeps the name out of it. Both are ordinary structures, so [syntax.op.semantic]'s
 // structural identity applies unchanged and nothing here has to be interned.
 // The one walk of a member list, under both of the searches below.
 const LhatTypeMember *chk_members_search(const LhatTypeMember *members,
@@ -4983,14 +4983,14 @@ const LhatTypeMember *chk_members_search(const LhatTypeMember *members,
 const LhatTypeMember *chk_find_member(const LhatType *table,
                                       const char *name, size_t length)
 {
-    // 05§8.9: a host value type keeps its registered members in the same
+    // [modules.hostvalue]: a host value type keeps its registered members in the same
     // list a table keeps its own, so the one search serves both -- and the
     // links it may hang off are type.c's to follow, since the machine and
     // the relations read them through the same walk.
     return lhat_type_find_member(table, name, length);
 }
 
-// §14.12's overload^ puts several signatures under one name, and §14.11's new
+// [syntax.obj.override]'s overload^ puts several signatures under one name, and [syntax.obj.new]'s new
 // is a name like any other -- so what a definition holds there is one
 // signature or an intersection of them. Both readings below take that as
 // given: every arm answers with the same instance, since every arm is a way
@@ -5012,28 +5012,28 @@ static const LhatType *constructor_arm(const LhatType *held)
     return held->kind == LHAT_TYPE_FUNC ? held : NULL;
 }
 
-// §14.11 makes new return an instance, so a definition's own structure is
+// [syntax.obj.new] makes new return an instance, so a definition's own structure is
 // where its instance type can be found again. Composition needs it, to carry
 // the base's fields into the derived instance.
 LhatType *chk_instance_of(const LhatType *definition)
 {
-    // 05§8.8: a registered host type is its own written type -- it has
+    // [modules.hostdata]: a registered host type is its own written type -- it has
     // no instance half, and a member the host happened to call "new"
     // (std.math.Vector3.new, say) is an ordinary constructor function, not
-    // §14.11's mechanism. Without this, writing the type's name answered
+    // [syntax.obj.new]'s mechanism. Without this, writing the type's name answered
     // with that member's result instead of the type.
     if (definition != NULL && definition->kind == LHAT_TYPE_TABLE &&
         definition->v.table.nominal) {
         return NULL;
     }
-    // §14.7+: a def^ says outright what its instances carry. Read before new
+    // [syntax.obj.members-order]: a def^ says outright what its instances carry. Read before new
     // is asked, since the two must not drift -- what new answers is built
     // from this very structure.
     if (definition != NULL && definition->kind == LHAT_TYPE_TABLE &&
         definition->v.table.instance != NULL) {
         return definition->v.table.instance;
     }
-    // §14.11 is a def^'s mechanism and no one else's. A module -- hosted, or
+    // [syntax.obj.new] is a def^'s mechanism and no one else's. A module -- hosted, or
     // what require^ answers -- may carry an ordinary function under the
     // name (std.regex.new, say), and reading its result as "the instance
     // type" here made the module's own name unresolvable as a path.
@@ -5047,12 +5047,12 @@ LhatType *chk_instance_of(const LhatType *definition)
     return arm != NULL ? arm->v.func.result : NULL;
 }
 
-// §14.11 with §14.5: the new a definition gets before anything is written into
+// [syntax.obj.new] with [syntax.obj.compose]: the new a definition gets before anything is written into
 // it. The parameters come from the base -- a derived definition is built the
 // way the base was -- but the result has to be the derived instance, since
-// §14.5 composes to make something new and a constructor answering with the
+// [syntax.obj.compose] composes to make something new and a constructor answering with the
 // base would defeat that. With no base, or a base that carries no signature
-// here, it is the one §14.11 gives every definition: no arguments, and the
+// here, it is the one [syntax.obj.new] gives every definition: no arguments, and the
 // template fixes every field.
 //
 // An overloaded new is rebuilt arm by arm, since each arm is one way of
@@ -5098,7 +5098,7 @@ static LhatType *constructor_for(Checker *c, const LhatType *base,
                             instance);
 }
 
-// §14.11: the leaves a template initialiser may leave on the prototype
+// [syntax.obj.new]: the leaves a template initialiser may leave on the prototype
 // by type alone. Construction copies the prototype, so a value anything
 // could write through -- a coroutine, a host object -- would be one place
 // shared by all of them. Immutable values pass: a subroutine's captured
@@ -5126,7 +5126,7 @@ static bool immutable_default_type(const LhatType *type)
             return true;
         case LHAT_TYPE_TABLE:
             return type->v.table.is_definition;
-        // 05§8.9: a box is a copyable node -- bake and construction copy
+        // [modules.hostvalue]: a box is a copyable node -- bake and construction copy
         // its bytes, so a default shares nothing.
         case LHAT_TYPE_HOSTVALUE_BOX:
             return true;
@@ -5144,7 +5144,7 @@ static bool immutable_default_type(const LhatType *type)
     }
 }
 
-// §14.11: whether this initialiser may sit on the prototype. A table
+// [syntax.obj.new]: whether this initialiser may sit on the prototype. A table
 // only as a literal tree -- table literals nested in table literals, each
 // level born fresh at this very expression, so the copies construction hands
 // out share nothing and cycle nowhere, and the whole of what every instance
@@ -5189,7 +5189,7 @@ static bool immutable_default_value(Checker *c, const LhatNode *node,
     return immutable_default_type(type);
 }
 
-// §14.12+ with §14.11: what super^ names inside a written new -- the
+// [syntax.obj.super] with [syntax.obj.new]: what super^ names inside a written new -- the
 // hook of the new standing before it, run against the same receiver. It
 // takes what that new took and answers nothing: the instance is already in
 // the caller's hands, so there is nothing for the chain to pass back.
@@ -5223,20 +5223,20 @@ static LhatType *hook_signature(Checker *c, const LhatType *from)
 }
 
 // Overwrites rather than appending, so a member the base already had ends up
-// replaced by §14.12's override^ instead of shadowed by position.
+// replaced by [syntax.obj.override]'s override^ instead of shadowed by position.
 //
-// §14.15: `abstract` travels with the type, so writing over a declaration with
+// [syntax.obj.abstract]: `abstract` travels with the type, so writing over a declaration with
 // a real one is what fills the hole -- and writing a declaration over a
 // declaration leaves it open.
 // Answers the member it settled -- the one already there, or the one it
 // added -- so that a caller holding the key it was written under can say
-// where that key stands (07§4, chk_member_declared_at).
+// where that key stands ([lsp.hover], chk_member_declared_at).
 static LhatTypeMember *set_member_marked(Checker *c, LhatType *table,
                                          const char *name, size_t length,
                                          LhatType *type, bool abstract,
                                          bool pending)
 {
-    // The table's own, and no link followed: 05§8.8+'s base and §14.7+2's
+    // The table's own, and no link followed: [modules.hostdata.base]'s base and [syntax.obj.delegate]'s
     // delegate lend a name without giving it, and writing through either
     // would put a member on somebody else's type.
     LhatTypeMember *m =
@@ -5245,7 +5245,7 @@ static LhatTypeMember *set_member_marked(Checker *c, LhatType *table,
         m->type = type;
         m->abstract = abstract;
         m->pending = pending;
-        // §14.7+: whatever the first pass put here, this is the real one.
+        // [syntax.obj.members-order]: whatever the first pass put here, this is the real one.
         m->provisional = false;
         return m;
     }
@@ -5258,7 +5258,7 @@ static LhatTypeMember *set_member_marked(Checker *c, LhatType *table,
     return added;
 }
 
-// §14.7+: the first pass's seed. Puts the name there with the signature
+// [syntax.obj.members-order]: the first pass's seed. Puts the name there with the signature
 // it was written with, so a body checked before it can reach it -- and leaves
 // alone anything already there, which is the base's or an earlier entry's and
 // is the real thing rather than a seed.
@@ -5280,9 +5280,9 @@ static LhatTypeMember *set_member_provisional(Checker *c, LhatType *table,
     return added;
 }
 
-// §14.7+2: the next walk's seed. What the last walk inferred stays --
+// [syntax.obj.delegate]: the next walk's seed. What the last walk inferred stays --
 // that is what it learned -- and the mark says it is still not the answer, so
-// a body reading it is known to have read ahead again, and §14.12's "a second
+// a body reading it is known to have read ahead again, and [syntax.obj.override]'s "a second
 // member of this name wants a marker" does not fire on this def^'s own
 // entries the way it would against a member that is really there.
 static void mark_provisional(LhatType *table, const char *name, size_t length)
@@ -5308,12 +5308,12 @@ static LhatTypeMember *set_member(Checker *c, LhatType *table,
     return set_member_marked(c, table, name, length, type, false, false);
 }
 
-// §14.15: whether the definition is still waiting on a composition. §14.11's
+// [syntax.obj.abstract]: whether the definition is still waiting on a composition. [syntax.obj.new]'s
 // new is what this stands in the way of -- an abstract^ would leave a name
-// with nothing under it, and §14.15+'s pending override^ would leave a super^
+// with nothing under it, and [syntax.obj.abstract-override]'s pending override^ would leave a super^
 // pointing at nothing.
 //
-// `field` answers which of the two lists the hole is in, since §14.15+3 gives
+// `field` answers which of the two lists the hole is in, since [syntax.obj.abstract-new] gives
 // the two different ways out: a member is a composition's to provide, and a
 // field is that or a written new's to write.
 const LhatTypeMember *chk_hole_of(const LhatType *definition, bool *field)
@@ -5338,7 +5338,7 @@ const LhatTypeMember *chk_hole_of(const LhatType *definition, bool *field)
          m = m->next) {
         if (m->abstract || m->pending) {
             if (field != NULL) {
-                *field = !m->pending;  // a wait is §14.15+'s, not a field's
+                *field = !m->pending;  // a wait is [syntax.obj.abstract-override]'s, not a field's
             }
             return m;
         }
@@ -5378,12 +5378,12 @@ static void copy_members(Checker *c, LhatType *into, const LhatType *from)
     }
 }
 
-// §14.7+2: does this member take a receiver? That is §14.7's whole rule for
+// [syntax.obj.delegate]: does this member take a receiver? That is [syntax.obj.instance]'s whole rule for
 // what an instance sees, and delegation does not widen it -- a static member
 // of the delegate is the delegate's, the way a static member of a definition
 // is the definition's.
 //
-// §14.12's groups answer yes when any arm does: the call picks an arm, and one
+// [syntax.obj.override]'s groups answer yes when any arm does: the call picks an arm, and one
 // that takes a receiver is reachable through the dot.
 static bool member_takes_receiver(const LhatType *type)
 {
@@ -5405,9 +5405,9 @@ static bool member_takes_receiver(const LhatType *type)
 }
 
 // What this def^ delegates to, as it was written. NULL when it declares
-// none. §14.3's two spellings: 'self^.x' reads the receiver's field, a bare
+// none. [syntax.obj.methods]'s two spellings: 'self^.x' reads the receiver's field, a bare
 // 'x' the definition's member, and `through_self` is which was written --
-// they are not one form with an optional prefix, since §14.3 declares fields
+// they are not one form with an optional prefix, since [syntax.obj.methods] declares fields
 // and members apart and a name may be both. The same split decides where
 // the answer is looked for at run time.
 static const LhatNode *delegate_of(const LhatNode *node, bool *through_self)
@@ -5426,15 +5426,15 @@ static const LhatNode *delegate_of(const LhatNode *node, bool *through_self)
     return NULL;
 }
 
-// §14.7+2: hangs what this definition delegates to off the section its
+// [syntax.obj.delegate]: hangs what this definition delegates to off the section its
 // instances carry, as a link. Nothing is copied: chk_find_member follows it
-// where a name is not the wrapper's own, which is §14.7's order, and the
+// where a name is not the wrapper's own, which is [syntax.obj.instance]'s order, and the
 // machine answers the same name by growing a leg on the same walk
 // (object.c). One shape, asked twice.
 //
 // Answers whether it settled. A delegate naming a member whose type only its
 // own body knows cannot settle before that body is walked, so this is asked
-// once per round of the walk (03§3.4+2) and reports only on the last --
+// once per round of the walk ([pipeline.infer.rounds]) and reports only on the last --
 // `report` is what tells the two apart, and a walk that did not settle says
 // so through read_provisional, which is what buys the next round.
 static bool link_delegate(Checker *c, const LhatNode *node,
@@ -5459,7 +5459,7 @@ static bool link_delegate(Checker *c, const LhatNode *node,
         lhat_type_own_member(through_self ? instance : definition, name, length);
     LhatType *from = held != NULL ? held->type : NULL;
     if (from == NULL || from->kind != LHAT_TYPE_TABLE) {
-        // §14.13 gives a member no way to carry a written type, so a static
+        // [syntax.obj.def-form] gives a member no way to carry a written type, so a static
         // one holding what a call answered is known only once that entry has
         // been walked. Saying it was read ahead is what asks for the round
         // that walks it; on the last round `report` is set and this is the
@@ -5475,13 +5475,13 @@ static bool link_delegate(Checker *c, const LhatNode *node,
         }
         return true;
     }
-    // §14.7: an instance sees what the delegate's own instances would see. A
-    // host type (05§8.8) has no instance section of its own -- its members
+    // [syntax.obj.instance]: an instance sees what the delegate's own instances would see. A
+    // host type ([modules.hostdata]) has no instance section of its own -- its members
     // ARE what one reaches -- so the type itself is what is linked, and its
     // base link carries the rest of the chain.
 #if LHAT_WITH_RESOLUTIONS
-    // 07§4: what the spelling named is a member, found here and nowhere
-    // else -- §14.7+2's target is not walked as an expression, so nothing
+    // [lsp.hover]: what the spelling named is a member, found here and nowhere
+    // else -- [syntax.obj.delegate]'s target is not walked as an expression, so nothing
     // else records it and a reader standing on it was told nothing. What was
     // found is the member itself, so where it was written comes with it.
     chk_record_member_resolution(c, spelt, from, held, false);
@@ -5491,9 +5491,9 @@ static bool link_delegate(Checker *c, const LhatNode *node,
     return true;
 }
 
-// §14.15+3: which fields a written new gives a value to.
+// [syntax.obj.abstract-new]: which fields a written new gives a value to.
 //
-// §14.11 builds an instance with `self^{ … }`, and §14.15's declaration on a
+// [syntax.obj.new] builds an instance with `self^{ … }`, and [syntax.obj.abstract]'s declaration on a
 // template field is a field with no initialiser -- so a new that writes one is
 // what an instance of that definition gets it from. Reading which names it
 // writes is what tells the hole from the filled field, and the tree is where
@@ -5582,7 +5582,7 @@ static void collect_written_fields(WrittenFields *w, const LhatNode *node)
     lhat_node_visit_children(node, written_fields_child, w);
 }
 
-// 07§6: §14.12's marker leads the member it applies to, and the parser starts
+// [lsp.next]: [syntax.obj.override]'s marker leads the member it applies to, and the parser starts
 // the entry at it -- so the marker is the stretch between the entry's start
 // and its key, the space after the word included. Empty length when no marker
 // was written, which is how a fix knows there is nothing to take off.
@@ -5617,11 +5617,11 @@ static size_t marker_choices(const LhatNode *entry, LhatFixSlot *out)
     return sizeof WORDS / sizeof WORDS[0];
 }
 
-// §14.12's overlap test, applied to two signatures: is there an argument count
+// [syntax.obj.override]'s overlap test, applied to two signatures: is there an argument count
 // admissible by both at which no position is separate? A separate position is
 // enough to keep them apart, since a call has to satisfy every one.
 //
-// §13.4 keeps defaults out of a type, so a signature admits one count, or a
+// [syntax.type.param-names] keeps defaults out of a type, so a signature admits one count, or a
 // range once it has a '...'. Checking the smallest count they share settles
 // it: beyond that at least one side is variadic, and its element type does
 // not change with position.
@@ -5632,10 +5632,10 @@ static bool signatures_overlap(const LhatType *a, const LhatType *b)
         return true;  // nothing here can tell them apart
     }
 
-    // §11.3+: which side the receiver stands on is a position too, and the
+    // [syntax.op.right]: which side the receiver stands on is a position too, and the
     // one a call fixes first. An operator written 'f^self^, rhs' answers a
     // use with its owner on the left and 'f^lhs, self^' one with it on the
-    // right; §11.3+'s order asks the left operand first and only then the
+    // right; [syntax.op.right]'s order asks the left operand first and only then the
     // right, so no use ever reaches both. The two are different types
     // (type.h) and operator_arm already picks between them by this alone.
     if (a->v.func.self_last != b->v.func.self_last) {
@@ -5675,14 +5675,14 @@ static bool signatures_overlap(const LhatType *a, const LhatType *b)
     return true;
 }
 
-// §14.12. A member of a name the base already uses is an error unless it says
+// [syntax.obj.override]. A member of a name the base already uses is an error unless it says
 // which of the two things it means, and each says something checkable.
-// §14.12: an override^ replaces the one candidate its signature overlaps.
+// [syntax.obj.override]: an override^ replaces the one candidate its signature overlaps.
 // What a name carries is a single signature or an intersection of them
-// (§14.12+), so this walks the arms, checks substitutability against the one
+// ([syntax.obj.super]), so this walks the arms, checks substitutability against the one
 // that overlaps, and answers the intersection with that arm swapped out.
 //
-// Refuses two overlaps -- §14.12 says which one was meant is then undecidable
+// Refuses two overlaps -- [syntax.obj.override] says which one was meant is then undecidable
 // -- and none, since there was nothing at that name to replace.
 static LhatType *override_one(Checker *c, const LhatNode *entry,
                               LhatType *inherited, LhatType *replacement)
@@ -5690,7 +5690,7 @@ static LhatType *override_one(Checker *c, const LhatNode *entry,
     if (inherited == NULL || inherited->kind != LHAT_TYPE_INTERSECT) {
         // One candidate, so it is the one: ordinary conformance, arguments
         // wider and result narrower. The receiver is not in the parameter
-        // list (§14.4), so §14.12's exemption of self^ needs nothing of its own.
+        // list ([syntax.obj.self]), so [syntax.obj.override]'s exemption of self^ needs nothing of its own.
         if (!lhat_type_conforms(replacement, inherited)) {
             chk_report(c, entry, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
         }
@@ -5717,7 +5717,7 @@ static LhatType *override_one(Checker *c, const LhatNode *entry,
         return replacement;
     }
     if (overlaps > 1) {
-        // §14.12: widening the arguments may reach two of them, and then
+        // [syntax.obj.override]: widening the arguments may reach two of them, and then
         // which is being replaced is not decidable. Reported as the overlap
         // it is, since that is what the writer has to take apart.
         chk_report(c, entry, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
@@ -5728,11 +5728,11 @@ static LhatType *override_one(Checker *c, const LhatNode *entry,
         return replacement;
     }
 
-    // 12§2: which arm this is settles the shape of the group the run
+    // [spec.arms]: which arm this is settles the shape of the group the run
     // builds, so the compiler is told rather than left to put the replacement
     // in front of a group that keeps the arm it replaced. Not a strict-only
-    // matter: 03§4.2 asks that what runs be the same either way, and the
-    // arms a name carries are read by typeof^ (§14.16) whichever it is.
+    // matter: [pipeline.repl.no-fork] asks that what runs be the same either way, and the
+    // arms a name carries are read by typeof^ ([syntax.obj.typeof]) whichever it is.
     if (at + 1 <= UINT16_MAX) {
         ((LhatNode *)entry)->checked_arm = (uint16_t)(at + 1);
     }
@@ -5749,10 +5749,10 @@ static LhatType *override_one(Checker *c, const LhatNode *entry,
     return rebuilt != NULL ? rebuilt : replacement;
 }
 
-// `constructor` says this entry is §14.11's new, which §14.12+2 exempts from
+// `constructor` says this entry is [syntax.obj.new]'s new, which [syntax.obj.override-new] exempts from
 // the substitutability an override^ otherwise owes. Nothing can be written
-// that takes a definition where another definition is expected -- 05§2.2
-// and §14.7 make a definition's name mean its instance -- so a new that
+// that takes a definition where another definition is expected -- [modules.env.one]
+// and [syntax.obj.instance] make a definition's name mean its instance -- so a new that
 // narrows what it accepts leaves no caller behind. A method is the other way
 // round: an instance does stand where the base's instance is written, and
 // there the rule is holding something up. So an override^ new replaces what
@@ -5764,10 +5764,10 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
     LhatDefModifier modifier = entry->v.entry.modifier;
 
     if (inherited == NULL) {
-        // §14.15+: an override^ with nothing yet under the name is a mixin
+        // [syntax.obj.abstract-override]: an override^ with nothing yet under the name is a mixin
         // written against a base it has not met. It is not an error -- it
         // says what the composition has to bring, and the member stays
-        // pending until something does. §14.11's new is what it stands in
+        // pending until something does. [syntax.obj.new]'s new is what it stands in
         // the way of; overload^ has no such reading, since adding a way to
         // call something that is not there says nothing.
         if (modifier == LHAT_DEF_OVERLOAD) {
@@ -5783,8 +5783,8 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
         return replacement;
     }
 
-    // §14.15: a declaration is not a definition of the member, so filling it
-    // in is not the collision §14.12 is about -- no marker is wanted. What the
+    // [syntax.obj.abstract]: a declaration is not a definition of the member, so filling it
+    // in is not the collision [syntax.obj.override] is about -- no marker is wanted. What the
     // declaration does ask is that the value fit the type it wrote.
     if (inherited->abstract) {
         if (modifier != LHAT_DEF_PLAIN) {
@@ -5806,12 +5806,12 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
         }
 
         case LHAT_DEF_OVERRIDE:
-            // §14.12+2: the exemption above. The whole member goes, so there
+            // [syntax.obj.override-new]: the exemption above. The whole member goes, so there
             // is no arm to name and nothing to compare against.
             if (constructor) {
                 return replacement;
             }
-            // §14.12: what is replaced is the one existing candidate the new
+            // [syntax.obj.override]: what is replaced is the one existing candidate the new
             // signature overlaps. A name that was overloaded carries several,
             // and comparing against all of them at once would refuse every
             // replacement -- no one signature is usable where an intersection
@@ -5819,7 +5819,7 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
             return override_one(c, entry, inherited->type, replacement);
 
         case LHAT_DEF_OVERLOAD: {
-            // §14.12: the ban is on one signature overlapping another, so a
+            // [syntax.obj.override]: the ban is on one signature overlapping another, so a
             // name already overloaded is asked arm by arm -- the same reason
             // override^ above walks them. An intersection is not a signature,
             // and signatures_overlap answers "cannot tell them apart" for
@@ -5839,14 +5839,14 @@ static LhatType *check_same_name(Checker *c, const LhatNode *entry,
                 chk_report(c, entry, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
                 return replacement;
             }
-            // §14.12: an overloaded member is callable both ways, which is
-            // what '&' means (§14.5).
+            // [syntax.obj.override]: an overloaded member is callable both ways, which is
+            // what '&' means ([syntax.obj.compose]).
             return lhat_type_intersect(c->result->types, inherited->type,
                                        replacement);
         }
 
-        // §14.15's declaration and §14.7+2's delegate^ define no member, so
-        // §14.12 has nothing to ask of either.
+        // [syntax.obj.abstract]'s declaration and [syntax.obj.delegate]'s delegate^ define no member, so
+        // [syntax.obj.override] has nothing to ask of either.
         case LHAT_DEF_ABSTRACT:
         case LHAT_DEF_DELEGATE:
             break;
@@ -5923,7 +5923,7 @@ static void compose_member(Checker *c, const LhatNode *node, LhatType *into,
         chk_report_named(c, node, LHAT_CHECK_ERR_COMPOSE_COLLIDES,
                          right->name, right->name_length);
     } else {
-        // §14.5+: carried by both sides, so it reaches no one answer. Marked
+        // [syntax.obj.compose-ambiguous]: carried by both sides, so it reaches no one answer. Marked
         // rather than dropped, so an access can say what went wrong rather
         // than that the name is not there -- and a requirement either side
         // had met is open again, as above.
@@ -5935,7 +5935,7 @@ static void compose_member(Checker *c, const LhatNode *node, LhatType *into,
     }
 }
 
-// §14.5: a name on the right brings its type and any pending requirements.
+// [syntax.obj.compose]: a name on the right brings its type and any pending requirements.
 // Unlike a literal, it was not written against this left side. The compiler
 // flattens the same parts, so the type must preserve every unresolved name.
 LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
@@ -5954,13 +5954,13 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
     LhatType *definition = lhat_type_table(c->result->types);
     LhatType *instance = lhat_type_table(c->result->types);
     definition->v.table.is_definition = true;
-    definition->v.table.instance = instance;  // §14.7
+    definition->v.table.instance = instance;  // [syntax.obj.instance]
     definition->v.table.from_definition = true;
     instance->v.table.from_definition = true;
 
     copy_members(c, definition, left);
     copy_members(c, instance, chk_instance_of(left));
-    // §14.7+2: and what the parts delegate to, which is a link and so carries
+    // [syntax.obj.delegate]: and what the parts delegate to, which is a link and so carries
     // over whole. The last part to declare one wins, the way a member written
     // later does -- which is how the compiler reads a composition (it walks
     // every part of the chain for a delegate^), and how the literal form of
@@ -6011,9 +6011,9 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
                                          right->v.table.new_overridden;
     instance->v.table.new_overridden = definition->v.table.new_overridden;
 
-    // §14.5 composes to make something new, so the constructor has to build
+    // [syntax.obj.compose] composes to make something new, so the constructor has to build
     // the composed instance. The parameters come from the right, which is the
-    // more derived of the two -- every way of constructing it (§14.12's
+    // more derived of the two -- every way of constructing it ([syntax.obj.override]'s
     // overload^ may have put several there) rebuilt to answer with what this
     // composition makes.
     const LhatTypeMember *inherited = chk_find_member(right, "new", 3);
@@ -6026,7 +6026,7 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
     return definition;
 }
 
-// §14.15+2: whether this def^ also writes a value under the name, which
+// [syntax.obj.abstract-same]: whether this def^ also writes a value under the name, which
 // is what makes a declaration of it pointless. Read off the entries rather
 // than kept as a mark, since the question is asked only where an abstract^
 // stands and the list is a handful of members long.
@@ -6050,7 +6050,7 @@ static bool defined_in_def(Checker *c, const LhatNode *node, const char *name,
     return false;
 }
 
-// §14.4: whether this member is a method -- one that wrote self^ among
+// [syntax.obj.self]: whether this member is a method -- one that wrote self^ among
 // its parameters, and so is handed a receiver. A member without it is
 // static, and the name self^ means nothing inside one.
 static bool declares_self(Checker *c, const LhatNode *value)
@@ -6067,12 +6067,12 @@ static bool declares_self(Checker *c, const LhatNode *value)
     return false;
 }
 
-// §14.7+ with §14.4: whether an instance carries this member. What may be
+// [syntax.obj.members-order] with [syntax.obj.self]: whether an instance carries this member. What may be
 // reached through one is what is handed a receiver, and a signature says so --
-// §11.3+'s operator form writes self^ second, which takes_self covers either
+// [syntax.op.right]'s operator form writes self^ second, which takes_self covers either
 // way. Everything else (new, a static member, a value) is the definition's.
 //
-// §14.12's overloaded name is carried when any arm takes a receiver: which arm
+// [syntax.obj.override]'s overloaded name is carried when any arm takes a receiver: which arm
 // a call means is settled at the call, and an arm that takes none is not
 // reachable through an instance whatever the type says here.
 bool chk_takes_receiver(const LhatType *type)
@@ -6092,18 +6092,18 @@ bool chk_takes_receiver(const LhatType *type)
     return type->kind == LHAT_TYPE_FUNC && type->v.func.takes_self;
 }
 
-// §14.7+2: what one entry of a def^ left behind, kept from one walk of
+// [syntax.obj.delegate]: what one entry of a def^ left behind, kept from one walk of
 // the entries to the next.
 //
 // `found` and `member` are what the first walk found under the entry's own
-// name. A later walk asks §14.12 the same question, but by then the answer has
+// name. A later walk asks [syntax.obj.override] the same question, but by then the answer has
 // been written over -- by the walk itself, and by the re-seeding that hands
 // the next walk what the last one learned -- so it is kept here rather than
 // looked up again. A copy: the member it was taken from is the one being
 // written over.
 //
 // `inferred` is the type the last walk gave the entry, which is how 03 の
-// 03§3.4+2 tells a walk that learned something from one that only said the same
+// [pipeline.infer.rounds] tells a walk that learned something from one that only said the same
 // again.
 typedef struct {
     bool found;
@@ -6122,25 +6122,25 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     ((LhatNode *)node)->checked_definition = origin;
     LhatType *definition = lhat_type_table(c->result->types);
     LhatType *instance = lhat_type_table(c->result->types);
-    // §14.5: '..' between two definitions is composition, never a call of an
+    // [syntax.obj.compose]: '..' between two definitions is composition, never a call of an
     // op^.. one of them carries -- this is what tells a definition from an
     // instance of it.
     definition->v.table.is_definition = true;
-    // §14.7+: and this is what its instances carry. Held on the definition so
-    // that §13.13's Self^ and the writer's self^{ … } section both read one
+    // [syntax.obj.members-order]: and this is what its instances carry. Held on the definition so
+    // that [syntax.type.self]'s Self^ and the writer's self^{ … } section both read one
     // place, rather than going through what new answers.
     definition->v.table.instance = instance;
-    // §8.8: and both sides are closed to a member being added afterwards.
+    // [syntax.stmt.member]: and both sides are closed to a member being added afterwards.
     definition->v.table.from_definition = true;
     instance->v.table.from_definition = true;
 
-    // §14.5: composition is ordered, and the derived side is written against
+    // [syntax.obj.compose]: composition is ordered, and the derived side is written against
     // what the base already provides.
     definition->v.table.new_overridden = base != NULL && base->v.table.new_overridden;
     instance->v.table.new_overridden = definition->v.table.new_overridden;
     copy_members(c, definition, base);
     copy_members(c, instance, chk_instance_of(base));
-    // §14.7+2: and what the base delegates to, which is a link and so
+    // [syntax.obj.delegate]: and what the base delegates to, which is a link and so
     // carries over whole. A part declaring its own writes over it below
     // -- that is the "last part wins" rule, and with one link to hold it
     // there is nothing of an earlier part's to undo.
@@ -6149,21 +6149,21 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         instance->v.table.delegate = base_instance->v.table.delegate;
     }
 
-    // §14.11+: the new every definition has is put here, before anything is
-    // written -- so a written one is a second member of that name and §14.12
+    // [syntax.obj.new-default]: the new every definition has is put here, before anything is
+    // written -- so a written one is a second member of that name and [syntax.obj.override]
     // asks for its marker. It also replaces the base's, which answered with
     // the base's instance. What it is at run time has not changed: the
     // compiler has always written a real closure under this name.
     set_member(c, definition, "new", 3, constructor_for(c, base, instance));
 
-    // §13.13 with §14.7: writing the name of a definition asks for an instance
+    // [syntax.type.self] with [syntax.obj.instance]: writing the name of a definition asks for an instance
     // of it, so Self^ inside one names the instance as well -- the same object
     // self^ is bound to below. A definition written with no binding to take a
-    // name from (§14.9) has this and nothing else to say its own type with.
+    // name from ([syntax.obj.name]) has this and nothing else to say its own type with.
     struct SelfLink self_here = { instance, c->self_link };
     c->self_link = &self_here;
 
-    // §14.9: and the name this one is landing in, if check_define found one,
+    // [syntax.obj.name]: and the name this one is landing in, if check_define found one,
     // means the same instance from here on.
     if (c->def_link != NULL && c->def_link->node == node) {
         c->def_link->instance = instance;
@@ -6172,7 +6172,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     const LhatNode *template = NULL;
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
-        // §14.7+2: the delegate entry carries no key either, so what marks
+        // [syntax.obj.delegate]: the delegate entry carries no key either, so what marks
         // the template is the absence of both.
         if (entry->v.entry.key == NULL &&
             entry->v.entry.modifier != LHAT_DEF_DELEGATE) {
@@ -6180,7 +6180,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         }
     }
 
-    // §14.4: def^ names the definition, and every member reaches it -- a
+    // [syntax.obj.self]: def^ names the definition, and every member reaches it -- a
     // static one included, since what it names is there before any instance
     // is. self^ is the other way round and is bound per member below: only
     // one that wrote it among its parameters is handed a receiver, so only
@@ -6196,18 +6196,18 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     Scope *outer = c->scope;
     c->scope = &members;
 
-    // §14.7+: the names first, so the members can reach each other however
+    // [syntax.obj.members-order]: the names first, so the members can reach each other however
     // they are ordered -- 'expr calls term calls factor calls expr' is a ring
     // and no ordering unties it. What can be put down here is what can be
     // read without walking a body: a declaration's written type, and a
     // subroutine's written signature. A member whose type only its value
-    // knows is not seeded, which is 03§3.4's line -- what is read before
+    // knows is not seeded, which is [pipeline.infer]'s line -- what is read before
     // it is inferred has to have been written.
     for (const LhatNode *entry = node->v.list.items; entry != NULL;
          entry = entry->next) {
         const char *name = NULL;
         size_t length = 0;
-        // §18.4: a member of a def^ takes one.
+        // [syntax.annot.where]: a member of a def^ takes one.
         chk_check_annotations(c, entry->v.entry.annotations,
                               LHAT_ANNOTATION_MEMBER);
         chk_refuse_hat_name(c, entry->v.entry.key, true);
@@ -6230,8 +6230,8 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             set_member_provisional(c, definition, name, length, seed,
                                    entry->v.entry.declared),
             entry->v.entry.key);
-        // §14.7+: an instance carries what may be reached through one, which
-        // the signature says. A declaration (§14.15) is read the same way --
+        // [syntax.obj.members-order]: an instance carries what may be reached through one, which
+        // the signature says. A declaration ([syntax.obj.abstract]) is read the same way --
         // what fills it in is held to the type written here.
         if (chk_takes_receiver(seed)) {
             chk_member_declared_at(
@@ -6243,7 +6243,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     }
 
     // The fields next, so a member body sees them through self^. Inside the
-    // members scope: §14.11 evaluates an initialiser once, as the definition
+    // members scope: [syntax.obj.new] evaluates an initialiser once, as the definition
     // is built, where def^ and every member are in place -- self^ is not,
     // since no instance exists yet, and the scope holds no such name.
     if (template != NULL) {
@@ -6251,7 +6251,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
              field = field->next) {
             const char *name = NULL;
             size_t length = 0;
-            // §18.4: a field of a self^{ … } takes one, which is where
+            // [syntax.annot.where]: a field of a self^{ … } takes one, which is where
             // an @export-shaped annotation goes.
             chk_check_annotations(c, field->v.entry.annotations,
                                   LHAT_ANNOTATION_FIELD);
@@ -6266,7 +6266,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                                  name, length);
                 continue;
             }
-            // §14.15: a field the composition has to provide carries its type
+            // [syntax.obj.abstract]: a field the composition has to provide carries its type
             // and no value -- and so no key on the prototype.
             if (field->v.entry.declared) {
                 LhatType *declared =
@@ -6282,9 +6282,9 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 chk_member_declared_at(c, added, field->v.entry.key);
                 continue;
             }
-            // §14.6: a type written alongside the value is what the field
+            // [syntax.obj.template]: a type written alongside the value is what the field
             // holds, and the value is measured against it -- the same reading
-            // 05§8.6's 'let^ x : T = v' has, and for the same reason: what a
+            // [modules.host.machine]'s 'let^ x : T = v' has, and for the same reason: what a
             // reader may rely on is what was written, not what the first
             // value happened to be.
             LhatType *written = chk_resolve_type(c, field->v.entry.type);
@@ -6300,7 +6300,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 chk_expect(c, field, written != NULL ? written : actual,
                            required->type, LHAT_CHECK_ERR_MISMATCH);
             }
-            // §14.11: the value goes on the prototype and every instance
+            // [syntax.obj.new]: the value goes on the prototype and every instance
             // starts as a copy of it, so it has to be a leaf nothing can
             // write through or a literal tree the copy owns. The value's own
             // type and spelling are what is judged -- 'slot : any^ = 1'
@@ -6320,7 +6320,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         }
     }
 
-    // 03§3.4+2: the walk below is one iteration of a least fixpoint. A
+    // [pipeline.infer.rounds]: the walk below is one iteration of a least fixpoint. A
     // member read before its own body was walked answers with a seed, and a
     // ring of them -- expr calls term calls factor calls expr -- has at least
     // one such read whatever the order. Walking the entries again from what
@@ -6338,7 +6338,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     chk_rounds_begin(c, &rounds, seen != NULL ? entry_count : 0);
 
     do {
-        // §14.7+2: before the bodies, so a member reaches through self^ what
+        // [syntax.obj.delegate]: before the bodies, so a member reaches through self^ what
         // this definition delegates to -- the whole point of writing one is
         // that the name is the wrapper's own, and that has to hold inside it
         // as much as outside. Silent here: the round it settles in is not
@@ -6356,7 +6356,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 !chk_node_name(c, entry->v.entry.key, &name, &length)) {
                 continue;
             }
-            // §14.12 asks what was already under this name, and a seed from
+            // [syntax.obj.override] asks what was already under this name, and a seed from
             // the pass above was not -- it is this very entry, read ahead.
             const LhatTypeMember *hidden = NULL;
             if (round == 0) {
@@ -6371,15 +6371,15 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                     }
                 }
             } else if (seen != NULL && seen[index].found) {
-                // §14.7+2: asking again would answer with what this very walk
+                // [syntax.obj.delegate]: asking again would answer with what this very walk
                 // wrote over the name, so the first walk's answer is kept
                 // above and handed back here.
                 hidden = &seen[index].member;
             }
 
-            // §14.15: a declaration carries a type and no value, and says the
+            // [syntax.obj.abstract]: a declaration carries a type and no value, and says the
             // composition has to provide the member. It is not a definition
-            // of it, so §14.12 has nothing to check here.
+            // of it, so [syntax.obj.override] has nothing to check here.
             if (entry->v.entry.declared) {
                 const LhatTypeMember *seeded =
                     chk_find_member(definition, name, length);
@@ -6395,7 +6395,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                                      name, length);
                     continue;
                 }
-                // §11.1: an op^ is a member with an operator for a name, and
+                // [syntax.op.functions]: an op^ is a member with an operator for a name, and
                 // declaring one asks the same shape of it that giving one does.
                 if (chk_is_operator_name(name, length)) {
                     chk_check_operator_shape(c, entry, declared, name, length);
@@ -6411,9 +6411,9 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                     declared = lhat_type_intersect(c->result->types,
                                                   hidden->type, declared);
                 }
-                // §14.15+2: and the composition is where it is provided.
+                // [syntax.obj.abstract-same]: and the composition is where it is provided.
                 // Writing the value here as well leaves the declaration
-                // saying nothing -- §14.7+ already lets the members reach
+                // saying nothing -- [syntax.obj.members-order] already lets the members reach
                 // each other whatever the order, so there is no forward
                 // reference left to declare for.
                 if (defined_in_def(c, node, name, length)) {
@@ -6423,7 +6423,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                     c,
                     set_member_as(c, definition, name, length, declared, true),
                     entry->v.entry.key);
-                if (chk_takes_receiver(declared)) {  // §14.7+, as above
+                if (chk_takes_receiver(declared)) {  // [syntax.obj.members-order], as above
                     chk_member_declared_at(
                         c,
                         set_member_as(c, instance, name, length, declared,
@@ -6433,7 +6433,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 continue;
             }
 
-            // §14.11: a member spelled new and written as a body is the
+            // [syntax.obj.new]: a member spelled new and written as a body is the
             // constructor. The machine makes the instance and the body only
             // adjusts it -- so self^ is bound around it the way a method's
             // is, and chk_infer_func reads c->new_func to open the body as
@@ -6448,17 +6448,17 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 entry->v.entry.value != NULL &&
                 entry->v.entry.value->kind == LHAT_NODE_FUNC;
 
-            // §14.12+: super^ is a name only inside an override^, and what it
+            // [syntax.obj.super]: super^ is a name only inside an override^, and what it
             // names is everything that was under this name -- the whole
-            // intersection when §14.12's overload^ put several there, since
+            // intersection when [syntax.obj.override]'s overload^ put several there, since
             // the write replaces the member as a whole.
             LhatType *outer_super = c->super_type;
             const LhatNode *outer_super_binding = c->super_binding;
             c->super_type = NULL;
             c->super_binding = NULL;
             if (entry->v.entry.modifier == LHAT_DEF_OVERRIDE) {
-                // §14.15+: with nothing under the name yet, the shape super^
-                // will have is the one written here. §14.12 has the
+                // [syntax.obj.abstract-override]: with nothing under the name yet, the shape super^
+                // will have is the one written here. [syntax.obj.override] has the
                 // replacement usable where the original was -- arguments
                 // wider, result narrower -- so what is written is admissible
                 // wherever the original is, and taking it for super^ cannot
@@ -6468,16 +6468,16 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                     hidden != NULL
                         ? hidden->type
                         : declared_signature(c, entry->v.entry.value);
-                // §14.11: inside a new the name means the hook of the new
+                // [syntax.obj.new]: inside a new the name means the hook of the new
                 // before it -- the same arguments run against the same
                 // receiver, with nothing to answer.
                 if (constructor_entry) {
                     c->super_type = hook_signature(c, c->super_type);
                 }
             }
-            // §14.4: the receiver is this member's, so it is bound around this
+            // [syntax.obj.self]: the receiver is this member's, so it is bound around this
             // body and nowhere else. A subroutine written inside the body
-            // still reaches it, the way any name in scope is reached (§5.4's
+            // still reaches it, the way any name in scope is reached ([syntax.if.bool]'s
             // capture).
             Scope receiver;
             bool method = declares_self(c, entry->v.entry.value) ||
@@ -6520,7 +6520,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                                  name, length);
                 continue;
             }
-            // §14.12: two members of one name in a single def^ need a marker
+            // [syntax.obj.override]: two members of one name in a single def^ need a marker
             // too, so what is already there has to include this def^'s
             // earlier entries and not only what the base brought.
             // `definition` is both -- it was copied from the base above and
@@ -6533,13 +6533,13 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 chk_refuse_self_last(c, entry, type);
             }
             chk_check_tostring_shape(c, entry, type, name, length, true);
-            // §14.15+: an override^ that found nothing waits for a
+            // [syntax.obj.abstract-override]: an override^ that found nothing waits for a
             // composition to bring what it replaces. Until then super^ inside
-            // it points at nothing, so §14.11's new has to stay out of reach.
+            // it points at nothing, so [syntax.obj.new]'s new has to stay out of reach.
             // Landing on another one that is waiting settles neither.
             bool pending = entry->v.entry.modifier == LHAT_DEF_OVERRIDE &&
                            (hidden == NULL || hidden->pending);
-            // §14.15: what answers an abstract^ keeps saying so, for the
+            // [syntax.obj.abstract]: what answers an abstract^ keeps saying so, for the
             // composition that might make the name ambiguous later.
             bool demanded =
                 hidden != NULL && (hidden->abstract || hidden->demanded);
@@ -6549,7 +6549,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 written->demanded = written->demanded || demanded;
             }
             chk_member_declared_at(c, written, entry->v.entry.key);
-            // §14.7+: only what is handed a receiver is reachable through an
+            // [syntax.obj.members-order]: only what is handed a receiver is reachable through an
             // instance. new and a static member stay the definition's.
             if (chk_takes_receiver(type)) {
                 LhatTypeMember *mirrored = set_member_marked(
@@ -6592,8 +6592,8 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     c->scope = outer;
     chk_scope_close(c, &members);
 
-    // §14.15+3: a template field the written new gives a value to is provided,
-    // the same as one a composition fills. §14.12+2 makes an override^ new
+    // [syntax.obj.abstract-new]: a template field the written new gives a value to is provided,
+    // the same as one a composition fills. [syntax.obj.override-new] makes an override^ new
     // replace the default whole, so that new is the only way to build one and
     // what it writes is what every instance has. An overload^ leaves the
     // default arm standing, and that one writes nothing -- so it settles
@@ -6633,10 +6633,10 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 }
             }
         }
-        break;  // §14.12 allows one entry of the name, so there is one to read
+        break;  // [syntax.obj.override] allows one entry of the name, so there is one to read
     }
 
-    // §14.7+2: and again once every round is over, which is where a delegate
+    // [syntax.obj.delegate]: and again once every round is over, which is where a delegate
     // that never settled is reported. Writing the same link twice is
     // writing it once.
     link_delegate(c, node, definition, instance, true);
@@ -6645,7 +6645,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     return definition;
 }
 
-// 05§8.9: the one question every escape rule asks. 05§8.9+: through a
+// [modules.hostvalue]: the one question every escape rule asks. [modules.hostvalue.union]: through a
 // union's arms as well -- every one of those rules is about the width a
 // place has room for, and 'Vector3|nil^' is as wide as the Vector3 in it
 // whichever arm is live. The narrower question (is this type itself a host
@@ -6669,7 +6669,7 @@ static LhatType *infer_error_construction(Checker *c, const LhatNode *node,
             continue;
         }
         // message and cause exist on every kind without being
-        // declared (04§2.3); the rest have to have been.
+        // declared ([errors.kind.made]); the rest have to have been.
         if (chk_name_is(name, length, "message")) {
             chk_expect(c, entry, given, chk_simple(c, LHAT_TYPE_STRING),
                        LHAT_CHECK_ERR_MISMATCH);
@@ -6689,7 +6689,7 @@ static LhatType *infer_error_construction(Checker *c, const LhatNode *node,
             }
         }
         if (!found) {
-            // §2.3's two are on every kind, so they are offered too.
+            // [syntax.juxta.when]'s two are on every kind, so they are offered too.
             ChkNearest near;
             if (chk_nearest_start(c, &near, name, length)) {
                 lhat_check_written_members(kind, chk_nearest_member,
@@ -6702,7 +6702,7 @@ static LhatType *infer_error_construction(Checker *c, const LhatNode *node,
         }
     }
 
-    // 04§2.5: a field without a default has to be written, since
+    // [errors.kind.new]: a field without a default has to be written, since
     // there is nothing for it to fall back to.
     if (kind != NULL && kind->kind == LHAT_TYPE_ERROR_KIND) {
         for (const LhatTypeMember *m = kind->v.error.fields; m != NULL;
@@ -6730,8 +6730,8 @@ static LhatType *infer_error_construction(Checker *c, const LhatNode *node,
 static LhatType *infer_node(Checker *c, const LhatNode *node,
                             LhatType **named_type);
 
-// The one door every expression's type leaves through. 05§8.9 with 03 の
-// 03§5.11+: the compiler is otherwise type-blind, and a host value changes what
+// The one door every expression's type leaves through. [modules.hostvalue] with 03 の
+// [pipeline.bc.checked-answers]: the compiler is otherwise type-blind, and a host value changes what
 // it has to emit -- how many slots to reserve, how wide a move is -- so every
 // expression whose type is one gets that type stamped on its node, the same
 // checked_type channel infer_func already uses for a signature. Stamping only
@@ -6786,7 +6786,7 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
 #if LHAT_WITH_RESOLUTIONS
     if (node != NULL) ((LhatNode *)node)->display_type = type;
 #endif
-    // §8.6.4: the place a '?op=' reads answers what is there. 04§11.3 puts
+    // [syntax.stmt.nil-assign]: the place a '?op=' reads answers what is there. [errors.runtime.index] puts
     // a nil^ arm on everything a key reaches, and the '?' spelling is how a
     // writer says the write is skipped rather than that the arm is gone --
     // so the operator above this is asked of the rest, and the compiler emits
@@ -6794,12 +6794,12 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
     if (node != NULL && node == c->nil_safe_place) {
         type = chk_without_nil_arm(c, type);
     }
-    // §13.8+: a tuple is the other type the compiler has to size slots by --
+    // [syntax.type.tuple]: a tuple is the other type the compiler has to size slots by --
     // a call answering one writes a run rather than a slot -- so it is
     // stamped for exactly the reason a host value is. A union carrying a
     // tuple arm ('(K, V)|nil^', a walk's resume) is stamped too: even a
     // discarded call has to reserve the arm's width for the run to land in.
-    // 05§8.9+: and a union carrying a host value arm for the same reason --
+    // [modules.hostvalue.union]: and a union carrying a host value arm for the same reason --
     // 'Vector3|nil^' takes the Vector3's slots whichever arm turns up, since
     // the room has to be there before anyone knows which did. Its kind is no
     // more a FUNC or a TYPEOF than HOSTVALUE is, so those stamps stay
@@ -6822,7 +6822,7 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
     return type;
 }
 
-// §15.2 with 05§3.2: a script's top level is 'p^...', and a yield^ or an
+// [syntax.sub.yieldable] with [modules.unit.optional]: a script's top level is 'p^...', and a yield^ or an
 // await^ there makes it yieldable like any other body -- running it answers
 // the coroutine. A module^ unit's top level runs once under require^, which
 // wants its exports and not a coroutine, and a session's input runs at the
@@ -6858,22 +6858,22 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             return chk_simple(c, LHAT_TYPE_STRING);
 
         case LHAT_NODE_INTERP:
-            // 01§5.4: a hole holds an ordinary expression, and lands in a
+            // [lex.string.interp]: a hole holds an ordinary expression, and lands in a
             // string whatever it turns out to be -- which is why the answer
             // here says nothing about it. What goes wrong inside one is still
             // wrong, so each is checked on its own.
             for (const LhatNode *part = node->v.list.items; part != NULL;
                  part = part->next) {
                 if (part->kind == LHAT_NODE_INTERP_HOLE) {
-                    // 05§8.9: a host value stands here like any other.
+                    // [modules.hostvalue]: a host value stands here like any other.
                     // The hole reads it and keeps nothing, which is what
-                    // every other place §8.9 refuses does -- and §14.17's
+                    // every other place [syntax.stmt.let] refuses does -- and [syntax.obj.tostring]'s
                     // tostring reaches one the same as it reaches a number^:
                     // the library's registered one, or the built-in writing
                     // the type's name where none was registered.
                     LhatType *held = chk_require_value(
                         c, part->v.hole.value, chk_infer(c, part->v.hole.value));
-                    // §13.8+: a hole is one value, as an argument is. A
+                    // [syntax.type.tuple]: a hole is one value, as an argument is. A
                     // tuple here has nowhere to put its positions, and the
                     // machine would only refuse it as it ran.
                     if (lhat_type_tuple_width(held) > 0) {
@@ -6889,7 +6889,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
         case LHAT_NODE_HAT_IDENT:
         case LHAT_NODE_SCOPE:
         case LHAT_NODE_FOCUS: {
-            // §13.11: a branch may know more about this path than the binding.
+            // [syntax.type.fits]: a branch may know more about this path than the binding.
             LhatType *narrowed = chk_narrowed_type(c, node);
             if (narrowed != NULL &&
                 (node->kind == LHAT_NODE_HAT_IDENT || node->kind == LHAT_NODE_FOCUS)) {
@@ -6924,7 +6924,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             // The binding is looked up rather than reported on: an
             // undefined name has no narrowing to reach this with, since
             // what put one here read the name first. A spelling with no
-            // binding to find -- §8.2's $^, §16.3's focus -- keeps the type
+            // binding to find -- [syntax.stmt.no-bare-expr]'s $^, [syntax.for.forms]'s focus -- keeps the type
             // and nothing else, which is what a member already does.
             const char *name = NULL;
             size_t length = 0;
@@ -6961,11 +6961,11 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             return chk_infer_def(c, node, NULL);
 
         case LHAT_NODE_SELF_TABLE: {
-            // §14.11: reached as an expression this is the construction
+            // [syntax.obj.new]: reached as an expression this is the construction
             // notation, and construction is a written new's alone -- the
             // machine has just made the copy and nothing else holds it yet.
             // A method that wants to change its receiver writes the fields
-            // one at a time, where §14.4's rules can see each write.
+            // one at a time, where [syntax.obj.self]'s rules can see each write.
             if (!c->in_new_body) {
                 chk_report(c, node, LHAT_CHECK_ERR_SELF_TABLE_OUTSIDE_NEW);
             }
@@ -6984,17 +6984,17 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 LhatType *value = chk_infer(c, field->v.entry.value);
                 uint8_t brought = chk_made_depth(c, field->v.entry.value, value);
                 made = brought < made ? brought : made;
-                // 05§8.9: an instance is a table, so its fields refuse a
+                // [modules.hostvalue]: an instance is a table, so its fields refuse a
                 // host value the way any table member does.
                 if (chk_is_hostvalue(value)) {
                     chk_report(c, field->v.entry.value,
                                LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
                 }
-                // §14.11: the template says what a field holds, so what is
+                // [syntax.obj.new]: the template says what a field holds, so what is
                 // written here is held to it -- which is also where 03 の
-                // §3.4 reads the type of an unannotated parameter handed
+                // [syntax.repl.same] reads the type of an unannotated parameter handed
                 // straight into a field. A name the template does not have
-                // is not a field at all: §14.7 closes an instance to members
+                // is not a field at all: [syntax.obj.instance] closes an instance to members
                 // added afterwards.
                 const char *name = NULL;
                 size_t length = 0;
@@ -7018,7 +7018,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 chk_expect(c, field->v.entry.value, value, held->type,
                            LHAT_CHECK_ERR_MISMATCH);
             }
-            // §15.1+: the fields land in self^ itself.
+            // [syntax.sub.table-write]: the fields land in self^ itself.
             ((LhatNode *)node)->checked_own =
                 made == LHAT_OWN_DEEP ? made : (uint8_t)(made + 1);
             chk_store_into_self(c, node, made);
@@ -7028,10 +7028,10 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
 
         case LHAT_NODE_UNARY: {
             LhatType *operand = chk_infer(c, node->v.unary.operand);
-            // §11.7+2: 'x?' is '!(x fits^ nil^)' written short, so it
+            // [syntax.op.present]: 'x?' is '!(x fits^ nil^)' written short, so it
             // asks nothing of its operand -- every value either is nil^ or
             // is not. A type with no nil^ arm answers true^ always, which is
-            // let through rather than reported: §11.7+ takes the same posture
+            // let through rather than reported: [syntax.op.nil-safe] takes the same posture
             // for a '?.' that cannot find an absent target.
             if (node->v.unary.op == LHAT_OP_PRESENT) {
                 chk_require_value(c, node->v.unary.operand, operand);
@@ -7045,7 +7045,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             if (node->v.unary.op == LHAT_OP_BITNOT) {
                 return expect_bitwise(c, node->v.unary.operand, operand);
             }
-            // §11.8: §14.8 gives number^ the negation, and a type that wrote
+            // [syntax.op.define]: [syntax.obj.number] gives number^ the negation, and a type that wrote
             // its own is asked only where that does not reach -- the order the
             // machine takes, where NEG handles its own type and comes to the
             // member for everything else.
@@ -7065,7 +7065,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                     return own;
                 }
             }
-            // 04§11.3: '-t[i]' is the same mistake the binary ones make,
+            // [errors.runtime.index]: '-t[i]' is the same mistake the binary ones make,
             // and "arithmetic needs number^" says as little about it.
             LhatType *bare = NULL;
             bool by_nil = nil_arm_apart(c, operand, &bare) &&
@@ -7079,11 +7079,11 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
         case LHAT_NODE_BINARY:
             return chk_infer_binary(c, node);
 
-        // §11.5 の (5): 'a < b < c' is '(a < b) and^ (b < c)', so every link
+        // [syntax.op.precedence] の (5): 'a < b < c' is '(a < b) and^ (b < c)', so every link
         // is asked what a comparison written on its own is asked. The operand
         // two links share is inferred once, the way it is evaluated once.
         //
-        // §13.11: an fits^ link takes a type on the right, and what it tests is
+        // [syntax.type.fits]: an fits^ link takes a type on the right, and what it tests is
         // the operand standing to its left -- a type is not a value the next
         // link could compare against, so it does not take that place. 'a < b
         // fits^ number^ < c' asks about b three times over.
@@ -7115,11 +7115,11 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             return chk_simple(c, LHAT_TYPE_BOOL);
         }
 
-        // 04§11.4: the second half of the '?' forms. Each of the
+        // [errors.runtime.nil]: the second half of the '?' forms. Each of the
         // three reads its target with the nil^ arm set aside; what comes back
         // gains one here, since an absent target answers nil^ rather than a
         // member, a position or a call. A narrowed path never reaches
-        // nil_propagated: §13.11's `narrowable` refuses a '?.' path outright.
+        // nil_propagated: [syntax.type.fits]'s `narrowable` refuses a '?.' path outright.
         case LHAT_NODE_CALL:
             return nil_propagated(c, node, chk_infer_call(c, node));
 
@@ -7131,17 +7131,17 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             LhatType *held = chk_infer_member(c, node, named_type);
             LhatType *answer = narrowed != NULL ? narrowed : nil_propagated(c, node, held);
 #if LHAT_WITH_RESOLUTIONS
-            // 07§4: recorded here rather than inside chk_infer_member,
+            // [lsp.hover]: recorded here rather than inside chk_infer_member,
             // which answers from a dozen places -- the built-in members of a
-            // coroutine (§15.6+), an error's own two (04§2.3), a
+            // coroutine ([syntax.sub.coroutine-members]), an error's own two ([errors.kind.made]), a
             // definition's, a table's. What every one of them has in common
             // is that it came back through here.
             const LhatTypeMember *found = c->resolved_member;
-            // §19: an enum's member read in value position answers
+            // [syntax.enum]: an enum's member read in value position answers
             // the wide type, and what the name reached is left the same way
             // a member is -- the place a reader is sent to is the member's.
             const LhatType *kind = c->resolved_kind;
-            // §14.19, §14.17+, §15.6+: an answer with no member record behind
+            // [syntax.obj.substring], [syntax.obj.tostring-hat], [syntax.sub.coroutine-members]: an answer with no member record behind
             // it is the language's own -- a host registration leaves a real
             // member (with nothing written for declared_in), and a def^ or a
             // t^{ … } leaves one that says where it stands. A miss answers
@@ -7163,7 +7163,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
         case LHAT_NODE_INDEX:
             return nil_propagated(c, node, infer_index(c, node));
 
-        // 04§11.6: sound rather than a bare relabelling -- §14.12's
+        // [errors.runtime.panic]: sound rather than a bare relabelling -- [syntax.obj.override]'s
         // disjointness rules out what could never succeed at compile time
         // (a mistake, the same reasoning EQ/NE/... already use just above),
         // and compile_expression checks what disjointness cannot rule out
@@ -7178,22 +7178,22 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 chk_report(c, node->v.ascription.type, LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME);
             }
             if (lhat_type_disjoint(actual, wanted)) {
-                // §11.6+3: a pair no value inhabits both of is settled at the
-                // type level, not a narrowing §13.11 keeps out of the
+                // [syntax.op.as-error]: a pair no value inhabits both of is settled at the
+                // type level, not a narrowing [syntax.type.fits] keeps out of the
                 // checker's reach -- so the cast could only ever fail, and
                 // saying so beats handing back a union whose value arm is
                 // unreachable.
                 chk_report(c, node, LHAT_CHECK_ERR_AS_IMPOSSIBLE);
             }
-            // §11.6+3: the failure arm is added always, rather than only
+            // [syntax.op.as-error]: the failure arm is added always, rather than only
             // where the cast could fail. A rule that read the left's
             // inferred type would move the answer's type with how much
             // inference happened to settle.
             //
-            // 04§2.7+ is what makes this affordable: the arm cannot be
+            // [errors.kind.local-no-propagate] is what makes this affordable: the arm cannot be
             // let past with try^, so the union stops at whoever wrote the
             // as^ instead of spreading into every signature above it --
-            // which is the contamination 04§11.2 withdrew a design over.
+            // which is the contamination [errors.runtime.div-zero] withdrew a design over.
             return lhat_type_union(c->result->types, wanted,
                                    chk_cast_failure_type(c));
         }
@@ -7201,7 +7201,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
         case LHAT_NODE_FUNC:
             return chk_infer_func(c, node);
 
-        // §15.2: what a yield^ answers (R) has to be fixed by whatever binds
+        // [syntax.sub.yieldable]: what a yield^ answers (R) has to be fixed by whatever binds
         // it directly, since the value it carries out (Y) is only half of
         // what the expression is. check_define and the bare-statement case
         // in check_statement are the only two places that set yield_context
@@ -7215,9 +7215,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             c->yield_context = YIELD_CTX_NONE;
             c->yield_bound_type = NULL;
 
-            // §13.8+: 'yield^ a, b' answers a tuple, exactly as a return^ of
+            // [syntax.type.tuple]: 'yield^ a, b' answers a tuple, exactly as a return^ of
             // several values does. What comes back is R, sized on its own
-            // (§13.9 seats R and Y apart), so the binding below reads it the
+            // ([syntax.type.coroutine] seats R and Y apart), so the binding below reads it the
             // same way it reads a one-value yield^'s.
             LhatType *produced;
             if (node->v.jump.level > 1) {
@@ -7251,16 +7251,16 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
 
-        // §15.8: the value is the inner coroutine's return value, and the
+        // [syntax.sub.await]: the value is the inner coroutine's return value, and the
         // right side has to be a coroutine -- there is nothing else to
-        // delegate to. §15.2: whatever it yields passes through as this
+        // delegate to. [syntax.sub.yieldable]: whatever it yields passes through as this
         // body's own Y/R, same as a yield^ written directly here would.
         case LHAT_NODE_AWAIT: {
             refuse_top_level_suspension(c, node);
             LhatType *inner = chk_infer(c, node->v.jump.value);
             if (inner == NULL || inner->kind == LHAT_TYPE_UNKNOWN ||
                 inner->kind == LHAT_TYPE_PENDING) {
-                // 03§3.1, 03§3.5、P6: delegating to a still-pending^ inner
+                // [pipeline.strict.per-unit], [pipeline.strict.relaxed]、P6: delegating to a still-pending^ inner
                 // expression makes this await^ pending^ too.
                 return chk_simple(c, inner != NULL &&
                                           inner->kind == LHAT_TYPE_PENDING
@@ -7271,10 +7271,10 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 chk_report(c, node, LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
-            // §15.8 with §15.3+: delegating runs the inner body -- that is what
+            // [syntax.sub.await] with [syntax.sub.yieldable-f]: delegating runs the inner body -- that is what
             // makes its yield^ reach out here -- so it advances the coroutine
             // as surely as resume() does, and the same two questions apply.
-            // Asked here rather than left to §15.1, since no call of start()
+            // Asked here rather than left to [syntax.sub.kinds], since no call of start()
             // or resume() is written for the rule to catch.
             if (c->in_function && !inner->v.coroutine.is_function) {
                 chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
@@ -7284,7 +7284,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             }
             chk_unify_yield(c, node, &c->coroutine_produce, inner->v.coroutine.produce);
             chk_unify_yield(c, node, &c->coroutine_receive, inner->v.coroutine.receive);
-            // §13.9: a coroutine that cannot end never reaches a last resume,
+            // [syntax.type.coroutine]: a coroutine that cannot end never reaches a last resume,
             // so a delegation to one never produces a value either. One that
             // ends without a value does reach it, and is handed nil^ there --
             // the same nil^ a resume of it would read.
@@ -7297,19 +7297,19 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
         }
 
         case LHAT_NODE_TRY: {
-            // 04§5.3: the errors this lets through have to be ones the
+            // [errors.try.result]: the errors this lets through have to be ones the
             // enclosing subroutine may return, and the report belongs here
             // rather than at the caller.
             LhatType *value = chk_infer(c, node->v.jump.value);
-            // 04§2.7: either family is an error to try^. Telling them apart is
+            // [errors.kind.local]: either family is an error to try^. Telling them apart is
             // chk_error_leaves's job, and only to refuse one.
             LhatType *error = chk_any_error(c);
             if (!chk_can_be(value, error)) {
                 // try^ is an identity on an expression that cannot fail.
                 return value;
             } else if (c->catch_frame != NULL) {
-                // 04§4.5: catch^ arms stand between this and the
-                // caller. What leaves here reaches them, and 04§5.3 is asked of
+                // [errors.catch.clause]: catch^ arms stand between this and the
+                // caller. What leaves here reaches them, and [errors.try.result] is asked of
                 // whatever they do not take, where they are.
                 LhatType *escaping = chk_only(c, value, error);
                 if (escaping != NULL) {
@@ -7324,7 +7324,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             return successful_error_result(c, kept);
         }
 
-        // §14.16: preserve the checked type in both the descriptor value
+        // [syntax.obj.typeof]: preserve the checked type in both the descriptor value
         // and type^<T>. Match the compiler's error/tag fallback: those answers
         // have erased type^, since their exact descriptor is known only at run.
         case LHAT_NODE_TYPEOF: {
@@ -7335,7 +7335,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             return chk_typeinfo_type(c);
         }
 
-        // §13.14: the spelling resolved, stamped for the compiler to
+        // [syntax.type.as-expr]: the spelling resolved, stamped for the compiler to
         // fold into a descriptor constant -- and the expression itself is
         // worth a typeinfo to the program, exactly what typeof^ answers.
         case LHAT_NODE_TYPE_VALUE: {
@@ -7356,7 +7356,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
         case LHAT_NODE_IF_EXPR: {
             // The same shape as the statement form: each clause sees what the
             // earlier conditions ruled out, which is what makes a chain over
-            // a union exhaustive (04§7).
+            // a union exhaustive ([errors.exhaustive]).
             Narrowing *outer = c->narrowings;
             LhatType *result = NULL;
             for (const LhatNode *clause = node->v.list.items; clause != NULL;
@@ -7383,9 +7383,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
         }
 
         case LHAT_NODE_FOR: {
-            // §17.2: the expression form of a match. The subject is a binding
-            // like any other focus, so it needs the scope §16.1 implies, and
-            // the body is already the if-chain of §17.9.
+            // [syntax.match.form]: the expression form of a match. The subject is a binding
+            // like any other focus, so it needs the scope [syntax.for.not-loop] implies, and
+            // the body is already the if-chain of [syntax.match.expand].
             Scope scope;
             chk_scope_open(&scope, c->scope, node, false);
 
@@ -7394,16 +7394,16 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             chk_check_statements(c, node->v.loop.focus);
             LhatType *result = chk_infer(c, node->v.loop.body);
 
-            // §17.5: without other^ the arms must provably exhaust the
+            // [syntax.match.other]: without other^ the arms must provably exhaust the
             // subject. Every arm only ever takes something out of what the
             // subject may still be, so an arm that proves nothing (a range,
             // another literal) is simply left out of the count. `fits^` takes
-            // its type out the way §13.11 does on the false side of a chain;
+            // its type out the way [syntax.type.fits] does on the false side of a chain;
             // `= true^` / `= false^` / `= nil^` and `= E.Member` are what
-            // §17.9 lowered a literal pattern to, possibly or^-ed together,
+            // [syntax.match.expand] lowered a literal pattern to, possibly or^-ed together,
             // and take a value out of the type that has only those.
             // relaxed leaves the doubt to the run, where the arm nothing fits
-            // is a panic (03§3.1; compile.c's tail).
+            // is a panic ([pipeline.strict.per-unit]; compile.c's tail).
             const LhatNode *chain = node->v.loop.body;
             const LhatNode *clause =
                 chain != NULL && chain->kind == LHAT_NODE_IF_EXPR
@@ -7462,7 +7462,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                         } else if (right->kind == LHAT_NODE_MEMBER &&
                                    seen_count < sizeof seen_members /
                                                     sizeof seen_members[0]) {
-                            // §19: resolved from the written path -- value
+                            // [syntax.enum]: resolved from the written path -- value
                             // position reads wide on purpose, so the
                             // singleton is asked for here.
                             LhatType *holder =
@@ -7495,7 +7495,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
         }
 
         case LHAT_NODE_REQUIRE: {
-            // 05§6.1: the checker follows this. 10§5.2 already had the parser
+            // [modules.deps.static]: the checker follows this. [l10n.compose.hole-kinds] already had the parser
             // insist the path be written out, so there is text here to hand
             // the resolver rather than an expression to evaluate.
             const LhatNode *path = node->v.jump.value;
@@ -7515,17 +7515,17 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
 #if LHAT_WITH_RESOLUTIONS
-            // 07§4: the written path names a unit the way a name names
+            // [lsp.hover]: the written path names a unit the way a name names
             // a binding, and the resolver has just found it.
             chk_record_unit_resolution(c, path, exports, unit_path);
 #endif
-            // §5.3: running the unit is what registers it, and this is where
+            // [syntax.if.spellings]: running the unit is what registers it, and this is where
             // it runs -- so L^.modules can be said to hold it from here on.
             chk_register_module_type(c, module_name, exports);
             return exports;
         }
 
-        // 05§8.7: names a module the host registered, rather than a file.
+        // [modules.host.import]: names a module the host registered, rather than a file.
         case LHAT_NODE_IMPORT: {
             LhatType *module = chk_hosted_module(c, node->v.jump.value);
             if (module == NULL) {
@@ -7597,7 +7597,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             return target;
         }
 
-        // §13.8+: '(a, b)' written as a value. Where the tuple came from
+        // [syntax.type.tuple]: '(a, b)' written as a value. Where the tuple came from
         // makes no difference downstream -- this is the same type a
         // 'return^ a, b' builds, so every rule about where a tuple may
         // stand applies to a literal without being restated. The parser
@@ -7616,8 +7616,8 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             return tuple;
         }
 
-        // §13.8+: pack^ turns the several values a call answered with into a
-        // table a name can hold -- §14.10's positional members, numbered from
+        // [syntax.type.tuple]: pack^ turns the several values a call answered with into a
+        // table a name can hold -- [syntax.obj.structure]'s positional members, numbered from
         // 0, which is what 't[0]' and a destructuring both read.
         case LHAT_NODE_PACK: {
             LhatType *source = chk_infer(c, node->v.jump.value);
@@ -7636,12 +7636,12 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             return packed;
         }
 
-        // 05§8.9: box^ puts a host value in the box the heap can hold.
+        // [modules.hostvalue]: box^ puts a host value in the box the heap can hold.
         // What it takes is exactly a host value -- everything else already
         // lives on the heap and needs no box.
         case LHAT_NODE_BOX: {
             LhatType *held = chk_infer(c, node->v.jump.value);
-            // 05§8.9: 'constbox^' off a box of either kind is a sealed
+            // [modules.hostvalue]: 'constbox^' off a box of either kind is a sealed
             // copy -- the way a keyable box is made from a live one.
             if (node->v.jump.sealing && held != NULL &&
                 held->kind == LHAT_TYPE_HOSTVALUE_BOX) {

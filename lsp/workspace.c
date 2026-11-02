@@ -200,9 +200,9 @@ static void lsp_stub_host_fn(LhatMachine *machine, void *context,
     (void)answer_count;
 }
 
-// 10§7.4: the language the editor reads, into a program about to check for
+// [l10n.choose.tools]: the language the editor reads, into a program about to check for
 // it. The catalogs are files under the directory the editor named, one per
-// source (10§6.1); a source with no file there stays in English.
+// source ([l10n.catalog.format]); a source with no file there stays in English.
 static void speak(const LspWorkspace *ws, LhatProgram *program)
 {
     if (ws->language == NULL || ws->messages_path == NULL) {

@@ -20,9 +20,9 @@
 #include <string.h>
 
 #include "ast.h"
-#include "check.h"  // 07§4: what each name resolved to, for refine_by_type
+#include "check.h"  // [lsp.hover]: what each name resolved to, for refine_by_type
 #include "lhat/lexer.h"
-#include "lhat/object.h"  // 05§8.8/05§8.9: the tags a host type is named by
+#include "lhat/object.h"  // [modules.hostdata]/[modules.hostvalue]: the tags a host type is named by
 #include "parser.h"
 #include "program_internal.h"  // LhatUnit's parsed tree and checked result
 #include "type.h"
@@ -32,7 +32,7 @@
 enum {
     SEM_NAMESPACE = LHAT_SEMANTIC_NAMESPACE,
     SEM_TYPE = LHAT_SEMANTIC_TYPE,
-    SEM_CLASS = LHAT_SEMANTIC_CLASS,  // §14.1: what a def^ made
+    SEM_CLASS = LHAT_SEMANTIC_CLASS,  // [syntax.obj.def]: what a def^ made
     SEM_PARAMETER = LHAT_SEMANTIC_PARAMETER,
     SEM_VARIABLE = LHAT_SEMANTIC_VARIABLE,
     SEM_FUNCTION = LHAT_SEMANTIC_FUNCTION,
@@ -42,7 +42,7 @@ enum {
 enum {
     SEM_MOD_DECLARATION = 1u << 0,
     SEM_MOD_READONLY = 1u << 1,
-    // §14.19, §14.17+, §15.6+: the language answered this name itself.
+    // [syntax.obj.substring], [syntax.obj.tostring-hat], [syntax.sub.coroutine-members]: the language answered this name itself.
     SEM_MOD_BUILTIN = 1u << 2,
 };
 
@@ -76,7 +76,7 @@ static void collector_dispose(SemCollector *c)
 }
 
 #if LHAT_WITH_RESOLUTIONS
-// 05§8.6: a table names are reached through rather than one that holds a
+// [modules.host.machine]: a table names are reached through rather than one that holds a
 // value. The checker says so itself (type.h's is_module) -- the flag beside
 // it, `sealed`, answers a different question and would be wrong here: the
 // root of an import^ path is a namespace and is not sealed, because the
@@ -86,7 +86,7 @@ static bool names_a_namespace(const LhatType *type)
     return type->kind == LHAT_TYPE_TABLE && type->v.table.is_module;
 }
 
-// 05§8.8: a host type's name is a value like any other -- it is what
+// [modules.hostdata]: a host type's name is a value like any other -- it is what
 // carries the receiverless members, the way a def^'s name carries new -- and
 // unlike a def^ there is one table for the type and for everything of it. So
 // what the checker hands back for `godot.Object` and for a name holding one
@@ -122,7 +122,7 @@ static bool names_its_own_type(const SemCollector *c, uint32_t offset,
 // place a name stands does not say what it is; every other classification
 // was read off the form it was written in, and stands.
 //
-// `modifiers` is added to rather than replaced: §8.9's readonly is a fact
+// `modifiers` is added to rather than replaced: [syntax.stmt.let]'s readonly is a fact
 // about the binding, not about which of the classifications above it got,
 // so it stands beside whatever the name turned out to be.
 static void refine_from_resolution(const SemCollector *c, uint32_t offset,
@@ -142,7 +142,7 @@ static void refine_from_resolution(const SemCollector *c, uint32_t offset,
         *modifiers |= SEM_MOD_READONLY;
     }
     // Beside whatever it turned out to be, for the same reason readonly is:
-    // §14.19's `length` is a property and §14.17+'s `tostring` a function, and
+    // [syntax.obj.substring]'s `length` is a property and [syntax.obj.tostring-hat]'s `tostring` a function, and
     // what this adds is that neither is the program's own.
     if (resolved->builtin) {
         *modifiers |= SEM_MOD_BUILTIN;
@@ -151,7 +151,7 @@ static void refine_from_resolution(const SemCollector *c, uint32_t offset,
         return;  // the form already said what this is
     }
 
-    // §13.1 before the type: a parameter holding a def^ is still a parameter
+    // [syntax.type.signature] before the type: a parameter holding a def^ is still a parameter
     // -- what declared the name is the more particular answer about it than
     // what the name happens to hold.
     if (resolved->is_parameter) {
@@ -163,14 +163,14 @@ static void refine_from_resolution(const SemCollector *c, uint32_t offset,
         return;
     }
 
-    // 05§8.8's own name before any of the shape questions: a host type is
+    // [modules.hostdata]'s own name before any of the shape questions: a host type is
     // a table, and asking the shape first would read it as one.
     if (names_its_own_type(c, offset, length, settled)) {
         *type = SEM_TYPE;
         return;
     }
-    // A definition first: it is the more particular answer, and §14.1's
-    // is_definition and §8.6's sealed never stand together.
+    // A definition first: it is the more particular answer, and [syntax.obj.def]'s
+    // is_definition and [syntax.stmt.define]'s sealed never stand together.
     if (settled->kind == LHAT_TYPE_TABLE && settled->v.table.is_definition) {
         *type = SEM_CLASS;
     } else if (names_a_namespace(settled)) {
@@ -181,8 +181,8 @@ static void refine_from_resolution(const SemCollector *c, uint32_t offset,
                settled->kind == LHAT_TYPE_ERROR_KIND ||
                settled->kind == LHAT_TYPE_ENUM ||
                settled->kind == LHAT_TYPE_ENUM_MEMBER) {
-        // 04§2.2: what an errordef^ declared, and one kind within it --
-        // and §19's enum, the same two tiers.
+        // [errors.kind.errordef]: what an errordef^ declared, and one kind within it --
+        // and [syntax.enum]'s enum, the same two tiers.
         *type = SEM_TYPE;
     }
 }
@@ -213,7 +213,7 @@ static void collector_add(SemCollector *c, uint32_t offset, uint32_t length,
     c->count++;
 }
 
-// §13: a name standing where a type is written names a type only if there
+// [syntax.type]: a name standing where a type is written names a type only if there
 // is one. The place says nothing about that -- the parser reads `n : number`
 // into exactly the node `n : number^` gives it, and the hat is the whole
 // difference -- so a walk that reads the form alone paints a misspelling in
@@ -258,7 +258,7 @@ static void emit_name(SemCollector *out, const LhatNode *node, uint8_t type,
     collector_add(out, node->v.name.offset, length, type, modifiers);
 }
 
-// §14.17+: a member may be written with a hat -- the spelling that always
+// [syntax.obj.tostring-hat]: a member may be written with a hat -- the spelling that always
 // reaches a built-in, where the bare one reaches what a plain table wrote.
 // Both are the same member, so both are named here; emit_name puts the token
 // on the word and leaves the hat to the grammar, as every hat word is drawn.
@@ -278,7 +278,7 @@ static void walk_list(SemCollector *out, const LhatNode *list)
     }
 }
 
-// 04§4.5: a block's or an if^'s catch^ arms. Each is an IF_CLAUSE that
+// [errors.catch.clause]: a block's or an if^'s catch^ arms. Each is an IF_CLAUSE that
 // holds **a written type** where an if^'s clause would hold a condition
 // (parse_catch_arms, parser.c). That is why these cannot go through
 // walk_value's IF_CLAUSE case, which reads the condition as a value: it
@@ -324,8 +324,8 @@ static void walk_qualified_path(SemCollector *out, const LhatNode *node,
     }
 }
 
-// §14.14+: a TABLE_ENTRY/MEMBER_DECL key is a property name unless `computed`
-// (written '[ expr ]', §14.14+), in which case it is an ordinary expression.
+// [syntax.obj.keys-equals]: a TABLE_ENTRY/MEMBER_DECL key is a property name unless `computed`
+// (written '[ expr ]', [syntax.obj.keys-equals]), in which case it is an ordinary expression.
 static void walk_table_entries(SemCollector *out, const LhatNode *entries)
 {
     for (const LhatNode *e = entries; e != NULL; e = e->next) {
@@ -341,17 +341,17 @@ static void walk_table_entries(SemCollector *out, const LhatNode *entries)
                 emit_name(out, e->v.entry.key, SEM_PROPERTY, 0);
             }
         }
-        // §14.15's 'abstract^ name : type' stands in a def^ or its self^{ … }
+        // [syntax.obj.abstract]'s 'abstract^ name : type' stands in a def^ or its self^{ … }
         // section, where every other entry is a value -- so the parser builds
         // it as a TABLE_ENTRY like the rest and says which it is with
         // `declared` (ast.h). Walking it as a value walks a written type as
         // an expression, and a qualified one is rooted at a TYPE_NAME, which
         // walk_value has no case for: the root of 'godot.Object' came back
         // with no token at all and the segment after it as a property.
-        // §14.6: a template field may write both, in which case each half is
+        // [syntax.obj.template]: a template field may write both, in which case each half is
         // walked as what it is.
         walk_type(out, e->v.entry.type);
-        // §14.7+2: a delegate^ entry has no key, and what stands where a
+        // [syntax.obj.delegate]: a delegate^ entry has no key, and what stands where a
         // value would is the name it delegates to -- 'self^.field' for one of
         // the template's, a bare name for one of the definition's own. Either
         // way it names a member rather than a value, so the bare one reads as
@@ -373,10 +373,10 @@ static void walk_table_entries(SemCollector *out, const LhatNode *entries)
     }
 }
 
-// 04§2.2: the fields a kind declares. parse_error_fields (parser.c)
+// [errors.kind.errordef]: the fields a kind declares. parse_error_fields (parser.c)
 // builds them as PARAM nodes rather than the MEMBER_DECL a t^{ ... } uses,
-// since 09§2.2 lets a field carry a default -- so walk_table_entries would
-// pass them over. What they name is read back off the error once 07§6.1 has
+// since [debug.hook.cost] lets a field carry a default -- so walk_table_entries would
+// pass them over. What they name is read back off the error once [lsp.next.fixes] has
 // narrowed to the kind, which makes each a property rather than a
 // parameter.
 static void walk_error_fields(SemCollector *out, const LhatNode *fields)
@@ -438,7 +438,7 @@ static void walk_type(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_TYPE_TABLE:
             walk_table_entries(out, node->v.list.items);
             break;
-        // §14.7+: the self^{ … } section of a written-out definition. Its
+        // [syntax.obj.members-order]: the self^{ … } section of a written-out definition. Its
         // items are the same MEMBER_DECLs the t^{ … } around it holds -- what
         // an instance carries rather than what the definition does -- so they
         // read the same way. Without this case the section falls to `default`
@@ -447,7 +447,7 @@ static void walk_type(SemCollector *out, const LhatNode *node)
             walk_table_entries(out, node->v.list.items);
             break;
         case LHAT_NODE_TYPE_TUPLE:
-            // §13.8+: the positions are bare types, not member declarations,
+            // [syntax.type.tuple]: the positions are bare types, not member declarations,
             // so they walk as types rather than through walk_table_entries.
             for (const LhatNode *item = node->v.list.items; item != NULL;
                  item = item->next) {
@@ -471,20 +471,20 @@ static void walk_type(SemCollector *out, const LhatNode *node)
 
 // DEFINE/REASSIGN's targets. `is_declaration` is true only for DEFINE
 // (let^/with^) -- REASSIGN's ':=' writes to a binding that already exists,
-// so its targets are references, not declarations (§13.10's destructuring,
-// and 05§8.8+'s path targets, share this same target-list shape).
+// so its targets are references, not declarations ([syntax.type.destructure]'s destructuring,
+// and [modules.hostdata.base]'s path targets, share this same target-list shape).
 //
-// §16.3's for^ focus reads through parse_let_target too, so it arrives here
-// as well -- with the difference that §17.2's expression form puts an
+// [syntax.for.forms]'s for^ focus reads through parse_let_target too, so it arrives here
+// as well -- with the difference that [syntax.match.form]'s expression form puts an
 // ordinary expression where a binding would be. That is what `default`
 // answers: a position that binds nothing is still worth colouring.
-// §14.1: 'let^ Reader = def^{ … }' declares a type, and the name it declares
+// [syntax.obj.def]: 'let^ Reader = def^{ … }' declares a type, and the name it declares
 // should read as one. The checker records nothing against a declaration --
 // it binds a name rather than resolving one -- so refine_by_type has
 // nothing to say here, and the answer comes off the tree instead: what the
-// target is being given. §13.10 pairs targets with values by position, which
+// target is being given. [syntax.type.destructure] pairs targets with values by position, which
 // is what walking the two lists together follows.
-// §14.13: 'Base..def^{ … }' declares a class as surely as a bare def^ does,
+// [syntax.obj.def-form]: 'Base..def^{ … }' declares a class as surely as a bare def^ does,
 // and the tree spells the inheritance as the '..' operator with the def^ on
 // its right. So the value is read through however many stand there.
 //
@@ -501,10 +501,10 @@ static uint8_t declared_as(const LhatNode *value, uint8_t fallback)
 }
 
 // `mod` is what the form already said about these names: whether they are
-// being declared here, and -- §8.9 -- whether the word that declared them
+// being declared here, and -- [syntax.stmt.let] -- whether the word that declared them
 // was a let^. A use of the same name gets the second from the checker
 // instead (refine_from_resolution), and the two agree because both read
-// what §8.9 decided.
+// what [syntax.stmt.let] decided.
 static void walk_targets(SemCollector *out, const LhatNode *targets,
                          const LhatNode *values, uint8_t mod)
 {
@@ -528,7 +528,7 @@ static void walk_targets(SemCollector *out, const LhatNode *targets,
                 walk_value(out, t->v.param.fallback);
                 break;
             case LHAT_NODE_MEMBER:
-                // A path target ('let^ a.b = v', §8.8): not a fresh
+                // A path target ('let^ a.b = v', [syntax.stmt.member]): not a fresh
                 // declaration -- b is a property of the existing table a.
                 walk_value(out, t->v.access.target);
                 if (names_a_member(t->v.access.argument)) {
@@ -539,7 +539,7 @@ static void walk_targets(SemCollector *out, const LhatNode *targets,
                 walk_value(out, t->v.access.target);
                 walk_value(out, t->v.access.argument);
                 break;
-            // §8.2: '$^x := 9' writes an existing outer binding, never a
+            // [syntax.stmt.no-bare-expr]: '$^x := 9' writes an existing outer binding, never a
             // fresh one -- always a reference, declaration or not. Which is
             // what `default` makes of anything else standing here: it binds
             // no name, so it is walked as the expression it is.
@@ -596,11 +596,11 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_SELF_TABLE:
             walk_table_entries(out, node->v.list.items);
             break;
-        // §13.8+: a tuple holds plain values, not table entries.
+        // [syntax.type.tuple]: a tuple holds plain values, not table entries.
         case LHAT_NODE_TUPLE:
             walk_list(out, node->v.list.items);
             break;
-        // §13.14: a type written where a value stands -- 'let^ Store =
+        // [syntax.type.as-expr]: a type written where a value stands -- 'let^ Store =
         // t^{ … }' -- is wrapped so typeof^ has something to answer, and what
         // is inside the wrap is a type like any in an annotation. The checker
         // resolves it the same way (chk_resolve_type records each name), so
@@ -610,7 +610,7 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             walk_type(out, node->v.jump.value);
             break;
         case LHAT_NODE_ERROR_NEW:
-            // 04§2.5: 'error^Kind{ ... }' -- Kind is a qualified path.
+            // [errors.kind.new]: 'error^Kind{ ... }' -- Kind is a qualified path.
             walk_qualified_path(out, node->v.named.name, SEM_TYPE);
             walk_table_entries(out, node->v.named.members);
             break;
@@ -625,8 +625,8 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_PACK:
         case LHAT_NODE_BOX:
         case LHAT_NODE_AWAIT:
-        // §9.8 and §9.11: what these carry is the level, except where the
-        // brackets held §9.8's label form instead -- an expression, and the
+        // [syntax.loop.exit] and [syntax.loop.next]: what these carry is the level, except where the
+        // brackets held [syntax.loop.exit]'s label form instead -- an expression, and the
         // only thing here worth a token.
         case LHAT_NODE_BREAK:
         case LHAT_NODE_NEXT:
@@ -634,7 +634,7 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_CALL_STMT:
             walk_value(out, node->v.jump.value);
             break;
-        // §13.8+: return^ may carry several values, and one is a list of one.
+        // [syntax.type.tuple]: return^ may carry several values, and one is a list of one.
         case LHAT_NODE_RETURN:
         case LHAT_NODE_YIELD:
             for (const LhatNode *value = node->v.jump.value; value != NULL;
@@ -651,9 +651,9 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             break;
         case LHAT_NODE_BINARY:
             walk_value(out, node->v.binary.left);
-            // §13.11: fits^ asks whether the left may stand where the right is
+            // [syntax.type.fits]: fits^ asks whether the left may stand where the right is
             // written, so what stands there is a type -- parse_binary reads
-            // it with parse_type (parser.c). §17.4's 'when^ fits^ T:' lowers to
+            // it with parse_type (parser.c). [syntax.match.fits]'s 'when^ fits^ T:' lowers to
             // this same node, so naming it once here covers both.
             if (node->v.binary.op == LHAT_OP_FITS) {
                 walk_type(out, node->v.binary.right);
@@ -661,7 +661,7 @@ static void walk_value(SemCollector *out, const LhatNode *node)
                 walk_value(out, node->v.binary.right);
             }
             break;
-        // §11.5 の (5) with §13.11: a chain may hold an fits^ among the
+        // [syntax.op.precedence] の (5) with [syntax.type.fits]: a chain may hold an fits^ among the
         // comparisons ('a < b fits^ number^ < c'), and the type it asks about
         // does not stand where a value would. So the operands are paired
         // with the operators rather than walked alike -- the same pairing
@@ -714,7 +714,7 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_IF_STMT:
             walk_list(out, node->v.list.items);
             walk_arms(out, node->v.list.arms);
-            walk_list(out, node->v.list.extra);  // §10.1's finally^
+            walk_list(out, node->v.list.extra);  // [syntax.finally.block]'s finally^
             break;
         case LHAT_NODE_IF_CLAUSE:
             walk_value(out, node->v.clause.condition);
@@ -729,7 +729,7 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_REASSIGN:
             // ':=' writes a name that already exists, so its targets declare
             // nothing -- and a name it may be written to is not a readonly
-            // one, which §8.9 is what refuses.
+            // one, which [syntax.stmt.let] is what refuses.
             walk_targets(out, node->v.binding.targets, node->v.binding.values,
                          0);
             walk_list(out, node->v.binding.values);
@@ -737,7 +737,7 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_BLOCK:
             walk_list(out, node->v.list.items);
             walk_arms(out, node->v.list.arms);
-            walk_list(out, node->v.list.extra);  // §9's clauses
+            walk_list(out, node->v.list.extra);  // [syntax.loop]'s clauses
             break;
         case LHAT_NODE_LOOP_CLAUSE:
             walk_list(out, node->v.loop_clause.body);
@@ -747,13 +747,13 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             walk_value(out, node->v.list.extra);  // body block
             break;
         case LHAT_NODE_FOR:
-            // §16.3: parse_for_focus reads the focus through parse_let_target
+            // [syntax.for.forms]: parse_for_focus reads the focus through parse_let_target
             // (parser.c), so it takes every shape a let^ target does -- a
             // bare name, 'i:number^', a '.member' path, an index. The same
             // walk a define's targets get, then. A focus is given its value
             // by the clause after it rather than by a list beside it, so
             // there is nothing to pair here; and where the focus is itself a
-            // DEFINE (the let^/var^ forms), that node says whether §8.9 made
+            // DEFINE (the let^/var^ forms), that node says whether [syntax.stmt.let] made
             // it readonly when the walk reaches it.
             if (node->v.loop.kind == LHAT_FOR_IN &&
                 node->v.loop.focus != NULL &&
@@ -795,10 +795,10 @@ static void walk_value(SemCollector *out, const LhatNode *node)
             // walk_table_entries, not here), REQUIRE (its jump.value is a
             // STRING, nothing to name), ERROR: nothing to emit.
             //
-            // §18's annotation hangs off the declaration it was written
+            // [syntax.annot]'s annotation hangs off the declaration it was written
             // over rather than standing among the statements, so it is not
             // reached from here at all -- and is left that way on purpose.
-            // §18.2's name is the host's registration and §18.3 carries a name
+            // [syntax.annot.spelling]'s name is the host's registration and [syntax.annot.literal-args] carries a name
             // argument by its spelling without ever resolving it, so the
             // checker settled nothing about either. The grammar file colours
             // them, which is where a spelling with no meaning behind it
@@ -849,7 +849,7 @@ size_t lhat_unit_semantic_names(const LhatUnit *unit, LhatSemanticName *into,
         const SemToken *token = &collector.tokens[i];
 
         // One name written once answers once, even where the tree holds it
-        // twice: 01§7.4 expands 'a[i] += 1' into the reassignment and the
+        // twice: [lex.op.compound] expands 'a[i] += 1' into the reassignment and the
         // 'a[i] + 1' it stands for, both carrying the same spans, while
         // saying the target is read exactly once. Two names can never start
         // at one offset, so a repeat here is always that -- the tree

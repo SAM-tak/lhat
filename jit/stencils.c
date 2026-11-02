@@ -8,7 +8,7 @@
 // from. A stencil answers its own pc before it has written anything, so the
 // interpreter runs that instruction whole -- which is how every case a
 // stencil was not written for is handled: by the code that already handles
-// it (12§7).
+// it ([spec.jit]).
 //
 // The holes are the addresses of symbols nothing defines, compiled for the
 // small code model without position independence: each is a 32-bit field in
@@ -54,7 +54,7 @@ extern char _JIT_K_LO[], _JIT_K_HI[], _JIT_KTAG[], _JIT_PC[];
 #define JUMP() __attribute__((musttail)) return _JIT_TARGET(v, t, p)
 #define LEAVE() return HOLE(PC)
 
-// §15.15 at a jump back: a slice about to run out, or anything the
+// [syntax.sub.split-run] at a jump back: a slice about to run out, or anything the
 // traps word stands for, is the interpreter's to handle -- it reruns the
 // jump and polls for itself. Asked before the instruction does anything.
 #define POLL_OR_LEAVE()                                                     \
@@ -98,7 +98,7 @@ STENCIL(move)
     NEXT();
 }
 
-// §14.8: two integers stay integers unless the answer does not fit,
+// [syntax.obj.number]: two integers stay integers unless the answer does not fit,
 // two reals are reals, and anything else -- a mixed pair, an overflow that
 // widens, an operator a type carries -- is the interpreter's.
 #define ARITH_RR(name, overflows, oper)                                     \
@@ -163,13 +163,13 @@ ARITH_R_REAL(addk_real, +, KREAL)
 ARITH_R_REAL(subk_real, -, KREAL)
 ARITH_R_REAL(mulk_real, *, KREAL)
 ARITH_R_REAL(divk_real, /, KREAL)
-// 04§11.2: '/' is real division whatever it is given, so two reals are
+// [errors.runtime.div-zero]: '/' is real division whatever it is given, so two reals are
 // the only pair this takes; integers go to the interpreter to be widened.
 ARITH_R_REAL(div, /, RREAL)
 
-// §14.8: two integers order exactly. A real orders with tolerance,
+// [syntax.obj.number]: two integers order exactly. A real orders with tolerance,
 // which is the interpreter's. `fused` is the JUMP_FALSE after it that reads
-// the answer (12§4.3), taken here: the target when it is false.
+// the answer ([spec.number.compare-jump]), taken here: the target when it is false.
 #define ORDER(name, oper, right)                                            \
     STENCIL(name)                                                           \
     {                                                                       \
@@ -243,7 +243,7 @@ STENCIL(jump_false_back)
     NEXT();
 }
 
-// 12§4.2: integers all three, the loop counts in integers, and an
+// [spec.number.pairs]: integers all three, the loop counts in integers, and an
 // overflow is past any integer bound -- the loop is over.
 #define FORLOOP(name, overflows, oper)                                      \
     STENCIL(name)                                                           \
@@ -267,7 +267,7 @@ STENCIL(jump_false_back)
 FORLOOP(forloop, __builtin_add_overflow, <=)
 FORLOOP(forloopd, __builtin_sub_overflow, >=)
 
-// 01§5.4: the place a closure shares with the frame that made it, open or
+// [lex.string.interp]: the place a closure shares with the frame that made it, open or
 // closed alike -- the location aims at whichever holds the value now.
 STENCIL(getupval)
 {
@@ -279,7 +279,7 @@ STENCIL(getupval)
     NEXT();
 }
 
-// 03§5.8: a table's dense half, read at an integer it holds a value at.
+// [pipeline.bc.table]: a table's dense half, read at an integer it holds a value at.
 // Anything else -- a hash key, a hole, a definition or a delegate to ask,
 // a value that is not a table -- is the lookup the interpreter makes.
 STENCIL(getindex)
@@ -302,7 +302,7 @@ STENCIL(getindex)
     NEXT();
 }
 
-// 05§8.6: one table per machine, so naming it is a move.
+// [modules.host.machine]: one table per machine, so naming it is a move.
 STENCIL(env)
 {
     V(A).object = (LhatObject *)(uintptr_t)p->environment;
@@ -318,7 +318,7 @@ STENCIL(isnil)
     NEXT();
 }
 
-// §5.4: only a bool is a truth value; anything else is the
+// [syntax.if.bool]: only a bool is a truth value; anything else is the
 // interpreter's to refuse.
 STENCIL(not)
 {
@@ -331,7 +331,7 @@ STENCIL(not)
     NEXT();
 }
 
-// §11.9 with §14.8: of the values that answer '=' for themselves, nil^,
+// [syntax.op.compare] with [syntax.obj.number]: of the values that answer '=' for themselves, nil^,
 // bool^ and an integer name themselves exactly, so two of them are equal
 // when their tags and payloads are. A real (tolerance), a string, and
 // anything that may carry an op^= are the interpreter's. `same` is what
@@ -391,7 +391,7 @@ STENCIL(step)
     NEXT();
 }
 
-// §15.10: the subroutine running, which the context keeps beside the
+// [syntax.sub.this]: the subroutine running, which the context keeps beside the
 // frame it is running in.
 STENCIL(this)
 {
@@ -400,7 +400,7 @@ STENCIL(this)
     NEXT();
 }
 
-// 03§5.3: a call and a return are the machine's frames moving, which is C's
+// [pipeline.bc.call]: a call and a return are the machine's frames moving, which is C's
 // to do (jit.c). Done, the helper names the code of the frame now on top,
 // and the stencil goes there with that frame's slots; anything it would
 // not do is left where it stands.

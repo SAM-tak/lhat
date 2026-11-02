@@ -61,7 +61,7 @@ typedef struct {
     // a document never obtains a config from above its longest matching one.
     char **workspace_paths;
     size_t workspace_count;
-    // 10§7.4: what the editor reads, and where the catalogs for it are --
+    // [l10n.choose.tools]: what the editor reads, and where the catalogs for it are --
     // the editor says both at initialize, since the language it shows is
     // its own and not this process's. NULL for the English.
     char *language;
@@ -81,7 +81,7 @@ void lsp_workspace_init(LspWorkspace *ws,
                         size_t workspace_count);
 void lsp_workspace_dispose(LspWorkspace *ws);
 
-// 10§7.4: what language to draw diagnostics in, and the directory holding
+// [l10n.choose.tools]: what language to draw diagnostics in, and the directory holding
 // `<language tag>/<source>.txt`. Both from the editor at initialize -- the
 // language it shows is its own, not this process's. NULL for either leaves
 // the English, which every build holds.
@@ -105,7 +105,7 @@ bool lsp_workspace_is_config_path(const LspWorkspace *ws, const char *path);
 // editor happens to open) from being registered as a root and read as L^.
 bool lsp_workspace_is_unit_path(const char *path);
 
-// 05§10: whether the file at `path` holds a compiled unit rather than
+// [modules.binary]: whether the file at `path` holds a compiled unit rather than
 // text. `lhat --compile` writes a unit out under the name it had, so a
 // binary unit is a *.lh like any other and only its bytes say which it is.
 // Read from disk, because that is the only place they survive: what an
@@ -124,7 +124,7 @@ void lsp_workspace_recheck_affected(LspWorkspace *ws, const char *path);
 void lsp_workspace_recheck_all(LspWorkspace *ws);
 
 // Calls `sink` once per distinct absolute path currently held by any root,
-// with a cJSON Diagnostic[] array (03§1.1's three stages, one shape --
+// with a cJSON Diagnostic[] array ([pipeline.stages.tree]'s three stages, one shape --
 // see diagnostics.h). Ownership of the array passes to the sink.
 typedef void (*LspDiagnosticsSink)(void *context, const char *path,
                                    cJSON *diagnostics);
@@ -145,7 +145,7 @@ void lsp_workspace_with_unit(LspWorkspace *ws, const char *path,
 // The worker checks after the edits settle, so between an edit and its check
 // the unit above is the text before the edit: an answer that only reads it
 // is a little behind, but an edit made against it lands in the wrong place.
-// A request that rewrites the source (07§6's fixes) asks through this, and
+// A request that rewrites the source ([lsp.next]'s fixes) asks through this, and
 // is handed nothing until the check has caught up -- the client asks again
 // once it has.
 void lsp_workspace_with_current_unit(LspWorkspace *ws, const char *path,
@@ -178,11 +178,11 @@ char **lsp_workspace_copy_module_names(LspWorkspace *ws, const char *path,
                                        size_t *count);
 void lsp_workspace_free_strings(char **strings, size_t count);
 
-// 05§5.5: a unit of this workspace that declared a module^, with what
+// [modules.require.short]: a unit of this workspace that declared a module^, with what
 // it publishes. What a completion offers to take in with a bare require^,
 // which binds the unit under the path it declared for itself.
 //
-// A unit that declared none is left out. 05§5.5 refuses the short form for
+// A unit that declared none is left out. [modules.require.short] refuses the short form for
 // one, and the long form picks a name -- which is the writer's to pick,
 // not the server's.
 //

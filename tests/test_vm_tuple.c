@@ -2,7 +2,7 @@
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
 // prefixed. Programs are run end to end, since what is worth pinning is the
-// answer rather than the instructions chosen to reach it -- 09§5.1 expects those
+// answer rather than the instructions chosen to reach it -- [debug.dap.machines] expects those
 // to be replaced by specialised ones later.
 
 #include <math.h>
@@ -32,7 +32,7 @@ static bool chunk_has_op_deep(const LhatProto *proto, LhatOpcode op)
     return false;
 }
 
-// §13.8+: several values, on the stack, with no table between them.
+// [syntax.type.tuple]: several values, on the stack, with no table between them.
 static void test_multi_value_return(void)
 {
     Run r;
@@ -106,7 +106,7 @@ static void test_multi_value_return(void)
     LHAT_CHECK(r.ran.collected > 1000, "the table path still makes tables");
     run_dispose(&r);
 
-    // §13.8+: the two forms are told apart by what is written, so a table is
+    // [syntax.type.tuple]: the two forms are told apart by what is written, so a table is
     // still a table and needs no escape analysis to stay one.
     LHAT_TEST("'return^ { a, b }' still answers a table");
     run_checked_text(&r,
@@ -117,7 +117,7 @@ static void test_multi_value_return(void)
     CHECK_INTEGER(&r, 34);
     run_dispose(&r);
 
-    // 05§8.6: ':=' reaches existing names, and §8.6+3's read-then-write holds
+    // [modules.host.machine]: ':=' reaches existing names, and [syntax.stmt.multi-assign]'s read-then-write holds
     // here: there is one read.
     LHAT_TEST("existing names take them too");
     run_checked_text(&r,
@@ -130,8 +130,8 @@ static void test_multi_value_return(void)
     CHECK_INTEGER(&r, 49);
     run_dispose(&r);
 
-    // §13.8+: the one bridge. A tuple is not a value a name can hold; this
-    // makes one that is, with §14.10's positions numbered from 0.
+    // [syntax.type.tuple]: the one bridge. A tuple is not a value a name can hold; this
+    // makes one that is, with [syntax.obj.structure]'s positions numbered from 0.
     LHAT_TEST("pack^ makes a table of them");
     run_checked_text(&r,
                      "var^ both = f^ -> (number^, string^) {\n"
@@ -141,7 +141,7 @@ static void test_multi_value_return(void)
     CHECK_STRING(&r, "5b");
     run_dispose(&r);
 
-    // 04§3.1 with §13.8+: the error goes around the values. One run is
+    // [errors.fallible.union] with [syntax.type.tuple]: the error goes around the values. One run is
     // reserved and the head slot's tag tells the two arms apart, so ISERROR
     // reads what it always read and nothing is allocated on either path.
     LHAT_TEST("try^ lets a tuple through and returns the error");
@@ -172,9 +172,9 @@ static void test_multi_value_return(void)
     CHECK_INTEGER(&r, -1);
     run_dispose(&r);
 
-    // §13.8+ (S48): the literal. Both arms of the catch^ write the same run,
+    // [syntax.type.tuple] (S48): the literal. Both arms of the catch^ write the same run,
     // so the error arm's replacement lands where the values would have.
-    // §11.7 with §13.8+: '??' is the same shape as catch^, asking about nil^
+    // [syntax.op.default] with [syntax.type.tuple]: '??' is the same shape as catch^, asking about nil^
     // instead -- so it takes a replacement tuple the same way. ISNIL reads
     // the head slot, and a run's head is not nil^.
     LHAT_TEST("?? replaces an absent tuple with a literal");
@@ -273,8 +273,8 @@ static void test_multi_value_return(void)
     LHAT_CHECK_EQ_INT(r.ran.collected, 0);
     run_dispose(&r);
 
-    // §15.12: the body's one expression is what the function answers with,
-    // and §13.8+ folds a literal written there into the very node
+    // [syntax.sub.expr-body]: the body's one expression is what the function answers with,
+    // and [syntax.type.tuple] folds a literal written there into the very node
     // 'return^ 0, 1' makes -- so this needs no rule of its own.
     LHAT_TEST("an implicit return answers a tuple");
     run_checked_text(&r,
@@ -319,11 +319,11 @@ static void test_multi_value_return(void)
                "the literal built its own head");
     run_dispose(&r);
 
-    // §13.9 with §13.8+: Y is a result, so a coroutine may yield several
+    // [syntax.type.coroutine] with [syntax.type.tuple]: Y is a result, so a coroutine may yield several
     // values. R is an input and stays one -- a resume sends one value.
-    // What a resume answers is §13.9's union of Y and T, so taking it apart
+    // What a resume answers is [syntax.type.coroutine]'s union of Y and T, so taking it apart
     // without asking isDone first needs the two to agree -- then the union
-    // collapses to that one tuple. §13.9's uniformity is what makes this the
+    // collapses to that one tuple. [syntax.type.coroutine]'s uniformity is what makes this the
     // natural shape rather than a restriction added here.
     LHAT_TEST("a coroutine yields several values");
     run_checked_text(&r,
@@ -349,8 +349,8 @@ static void test_multi_value_return(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TUPLE_UNEXPECTED);
     run_dispose(&r);
 
-    // §13.8+ (widened fold): a narrower run pads with nil^ where the
-    // binding takes it apart -- the missing positions are 04§11.3's
+    // [syntax.type.tuple] (widened fold): a narrower run pads with nil^ where the
+    // binding takes it apart -- the missing positions are [errors.runtime.index]'s
     // absence, which is what the folded type says of them. The checker
     // still reports the annotation's lie; the machine no longer refuses a
     // meaning the type system now has.
@@ -364,7 +364,7 @@ static void test_multi_value_return(void)
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
-    // §13.8+: a body answering two widths folds them -- '(A, B)|C' is
+    // [syntax.type.tuple]: a body answering two widths folds them -- '(A, B)|C' is
     // '(A|C, B|nil^)', the short side really nil^ at run time.
     LHAT_TEST("a body returning two widths folds and pads");
     run_checked_text(&r,
@@ -379,7 +379,7 @@ static void test_multi_value_return(void)
     run_dispose(&r);
 }
 
-// §16.3 with §13.8+: a walk's pair is the tuple (K, V), and a single
+// [syntax.for.forms] with [syntax.type.tuple]: a walk's pair is the tuple (K, V), and a single
 // name takes the sequence half's values -- neither shape allocates, which is
 // what keeps a walk free of per-step heap traffic.
 static void test_walk_shapes(void)
@@ -403,7 +403,7 @@ static void test_walk_shapes(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §13.7: the variadic collector is a table, so its walk changes shape the
+    // [syntax.type.variadic]: the variadic collector is a table, so its walk changes shape the
     // same way -- one name takes the elements themselves now.
     LHAT_TEST("one name over ... takes the elements");
     run_text(&r,
@@ -494,7 +494,7 @@ static void test_walk_shapes(void)
     CHECK_INTEGER(&r, 33);
     run_dispose(&r);
 
-    // §16.3's other guarantees, over the new shapes.
+    // [syntax.for.forms]'s other guarantees, over the new shapes.
     LHAT_TEST("break^ leaves a two-name walk cleanly");
     run_text(&r,
              "var^ total = 0\n"
@@ -514,7 +514,7 @@ static void test_walk_shapes(void)
     run_dispose(&r);
 }
 
-// §13.7: the spread that forwards a collected tail forwards a tuple too. The
+// [syntax.type.variadic]: the spread that forwards a collected tail forwards a tuple too. The
 // positions are already a run on the stack, so the table 'pack^' used to
 // interpose is the whole of what this saves.
 static void test_tuple_spread(void)
@@ -603,7 +603,7 @@ static void test_tuple_spread(void)
     run_dispose(&r);
 
     // What the work is for. Both loops pay for the callee's collector, which
-    // §13.7 defines as an ordinary table; only the spread through a tuple is
+    // [syntax.type.variadic] defines as an ordinary table; only the spread through a tuple is
     // spared the second table 'pack^' would build to carry the same values.
     LHAT_TEST("and no table is built to carry the positions there");
     run_checked_text(&r,

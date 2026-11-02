@@ -3,7 +3,7 @@
 // Section numbers refer to DesignDocuments/02-syntax.md unless prefixed with
 // "03" or "04". The cases pinned here are the ones a decision in the
 // specification produces and that would otherwise be invisible: the scope
-// rule of §8.7, the result inference of 03§3.4, and the way catch^, ?? and
+// rule of [syntax.stmt.visible], the result inference of [pipeline.infer], and the way catch^, ?? and
 // try^ each drop one arm of a union.
 
 #include <stdio.h>
@@ -12,12 +12,12 @@
 
 #include "fixture.h"
 
-// §14 and §12.5.
+// [syntax.obj] and [syntax.with.checked].
 static void test_definitions(void)
 {
     Unit u;
 
-    // §14.7: an instance reaches the definition's members, so its type holds
+    // [syntax.obj.instance]: an instance reaches the definition's members, so its type holds
     // both those and the template's fields.
     LHAT_TEST("an instance has the fields and the members");
     check_text(&u,
@@ -32,7 +32,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.7+ with §14.4: an instance carries what takes a receiver, and §14.11's
+    // [syntax.obj.members-order] with [syntax.obj.self]: an instance carries what takes a receiver, and [syntax.obj.new]'s
     // new takes none -- it is the definition's, and an instance is not another
     // way to make one.
     LHAT_TEST("an instance does not reach new");
@@ -64,7 +64,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.9: and def^ inside a member is the definition, so a static member
+    // [syntax.obj.name]: and def^ inside a member is the definition, so a static member
     // is reached from there the way it is from the name.
     LHAT_TEST("and def^ reaches a static member from inside");
     check_text(&u,
@@ -77,7 +77,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.4+: what tells the literal from the name is the brace after it --
+    // [syntax.obj.def-word]: what tells the literal from the name is the brace after it --
     // the same lookahead that divides self^{ from self^. Both are written in
     // one body here, so what is being asked is the lookahead and not two
     // readings that never meet.
@@ -109,7 +109,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 01§2.3: a second hat counts levels outward, which is how a body
+    // [lex.hat.repeat]: a second hat counts levels outward, which is how a body
     // inside a nested def^ still reaches the one it was written in.
     LHAT_TEST("def^^ walks out of a nested definition");
     check_text(&u,
@@ -126,7 +126,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.4+: the word is gone rather than aliased. Nothing declares class^,
+    // [syntax.obj.def-word]: the word is gone rather than aliased. Nothing declares class^,
     // so it is a name like any other that nobody bound.
     LHAT_TEST("class^ is not a name any more");
     check_text(&u,
@@ -138,8 +138,8 @@ static void test_definitions(void)
     LHAT_CHECK(u.checked.diagnostic_count > 0, "class^ reaches nothing");
     unit_dispose(&u);
 
-    // §14.16 with 05§8.7: what §14.16 writes out reads back as a type. The
-    // definition's carries the self^{ … } section, and §13.13's Self^ inside
+    // [syntax.obj.typeof] with [modules.host.import]: what [syntax.obj.typeof] writes out reads back as a type. The
+    // definition's carries the self^{ … } section, and [syntax.type.self]'s Self^ inside
     // it is the instance -- the two annotations here are the two signatures
     // typeof^ answers with, written by hand.
     LHAT_TEST("a written definition type says what a def^ builds");
@@ -167,7 +167,7 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14.7+: the members reach each other whatever the order they are
+    // [syntax.obj.members-order]: the members reach each other whatever the order they are
     // written in. A ring of them is what makes this more than a convenience:
     // no ordering unties expr -> term -> factor -> expr.
     LHAT_TEST("a member reaches one written after it");
@@ -193,7 +193,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 03§3.4+2: nor a result type. The first walk reads the ring before
+    // [pipeline.infer.rounds]: nor a result type. The first walk reads the ring before
     // the bodies it runs through were looked at; the second starts from what
     // the first inferred, and that is where the ring closes.
     LHAT_TEST("nor a result type on any of them");
@@ -225,10 +225,10 @@ static void test_definitions(void)
     LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 1);
     unit_dispose(&u);
 
-    // 03§3.4+2: the walks stop when one of them answers what the last one
+    // [pipeline.infer.rounds]: the walks stop when one of them answers what the last one
     // did. A member whose result is only ever its own answers the same thing
     // from the first walk on, and no number of them settles it -- which is
-    // where 10§3.1 has always left it: the type is written down.
+    // where [l10n.scope.shown] has always left it: the type is written down.
     LHAT_TEST("but a result that is only its own still has to be written");
     check_text(&u,
                "var^ R = def^{\n"
@@ -249,10 +249,10 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.7+ with 03§3.4: what the first pass can put down is what can be
+    // [syntax.obj.members-order] with [pipeline.infer]: what the first pass can put down is what can be
     // read without walking a body. A member whose type only its value knows
     // is not among them, so reaching one before it is written still finds
-    // nothing -- the same line 03§3.4 draws for a subroutine that calls itself.
+    // nothing -- the same line [pipeline.infer] draws for a subroutine that calls itself.
     LHAT_TEST("but a value member is not reachable before it is written");
     check_text(&u,
                "var^ A = def^{\n"
@@ -263,7 +263,7 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // §14.12's question is what was already under the name, and a member read
+    // [syntax.obj.override]'s question is what was already under the name, and a member read
     // ahead by the first pass was not -- writing it once is not writing it
     // twice.
     LHAT_TEST("reading ahead does not make every member a second one");
@@ -286,14 +286,14 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
     unit_dispose(&u);
 
-    // §14.11: a definition without one still offers a new taking nothing.
+    // [syntax.obj.new]: a definition without one still offers a new taking nothing.
     LHAT_TEST("new exists without being written");
     check_text(&u, "var^ C = def^{ self^{ v := 1 } }\nvar^ c = C.new()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.11+: and it is a member like any other, so writing one is §14.12's
-    // second member of that name. Unmarked, that is the collision §14.12 is
+    // [syntax.obj.new-default]: and it is a member like any other, so writing one is [syntax.obj.override]'s
+    // second member of that name. Unmarked, that is the collision [syntax.obj.override] is
     // about -- which is what keeps 'adding new(a, b)' from silently taking
     // new() away.
     LHAT_TEST("a written new wants a marker");
@@ -305,7 +305,7 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
     unit_dispose(&u);
 
-    // §14.12+2: an override^ new replaces the default whole, whatever it
+    // [syntax.obj.override-new]: an override^ new replaces the default whole, whatever it
     // takes -- the exemption from substitutability. This is how a definition
     // says construction needs arguments.
     LHAT_TEST("an override^ new may ask for arguments the default did not");
@@ -328,7 +328,7 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    // §14.12: the other half. An overload^ adds a way to call it and leaves
+    // [syntax.obj.override]: the other half. An overload^ adds a way to call it and leaves
     // what was there, so both spellings construct.
     LHAT_TEST("an overload^ new keeps the default beside it");
     check_text(&u,
@@ -342,7 +342,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.7 with §14.12: the instance type is read off what new answers, and an
+    // [syntax.obj.instance] with [syntax.obj.override]: the instance type is read off what new answers, and an
     // overloaded new answers it from every arm. Without that reading the
     // definition's name would name nothing writable.
     LHAT_TEST("an overloaded new still names an instance type");
@@ -356,13 +356,13 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.11: self^{ … } inside new is the construction notation, and what it
-    // names is the instance of the def^ it stands in. §14.4 hands a receiver
+    // [syntax.obj.new]: self^{ … } inside new is the construction notation, and what it
+    // names is the instance of the def^ it stands in. [syntax.obj.self] hands a receiver
     // only to a member that wrote self^ among its parameters, and new does
     // not -- that is a different question from what this notation means.
-    // §14.11: and only a written new runs it. A method has a receiver, but
+    // [syntax.obj.new]: and only a written new runs it. A method has a receiver, but
     // someone else already holds that table -- it adjusts it one field at a
-    // time, through self^.name, where §14.4's rules see each write.
+    // time, through self^.name, where [syntax.obj.self]'s rules see each write.
     LHAT_TEST("a method body does not take the construction notation");
     check_text(&u,
                "var^ C = def^{\n"
@@ -391,7 +391,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 03§3.4: a field is held to what the template says it holds, so a
+    // [pipeline.infer]: a field is held to what the template says it holds, so a
     // parameter handed straight into one is decided by that.
     LHAT_TEST("a field decides the type of the parameter written into it");
     check_text(&u,
@@ -422,7 +422,7 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14.7: an instance is closed to a member added afterwards, so a name the
+    // [syntax.obj.instance]: an instance is closed to a member added afterwards, so a name the
     // template does not declare is not a field to fill in.
     LHAT_TEST("a field the template does not declare is not one");
     check_text(&u,
@@ -441,7 +441,7 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // §14.4: self^ reaches the instance from inside a method.
+    // [syntax.obj.self]: self^ reaches the instance from inside a method.
     LHAT_TEST("self^ reaches the fields");
     check_text(&u,
                "var^ C = def^{\n"
@@ -464,7 +464,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.4: a member that did not write self^ is static and is handed no
+    // [syntax.obj.self]: a member that did not write self^ is static and is handed no
     // receiver, so the name means nothing inside it. Writing p^ where
     // p^self^ was meant is the everyday way to arrive here, and it used to
     // read as a name in scope and fall over at compile time with nowhere to
@@ -478,7 +478,7 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
-    // §5.4: what a body may reach, a body written inside it may reach too.
+    // [syntax.if.bool]: what a body may reach, a body written inside it may reach too.
     LHAT_TEST("but a subroutine inside a method still captures it");
     check_text(&u,
                "var^ C = def^{\n"
@@ -491,7 +491,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.4: the receiver is not written at the call, so it is not counted.
+    // [syntax.obj.self]: the receiver is not written at the call, so it is not counted.
     LHAT_TEST("a method call does not pass the receiver");
     check_text(&u,
                "var^ C = def^{\n"
@@ -525,7 +525,7 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    // §14.4: taking the method out from under the dot is what spells the
+    // [syntax.obj.self]: taking the method out from under the dot is what spells the
     // receiver out, and then it is counted like any other argument.
     LHAT_TEST("a method taken as a value is passed the receiver");
     check_text(&u,
@@ -539,7 +539,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.4: the form is what decides, and a parenthesis does not change it.
+    // [syntax.obj.self]: the form is what decides, and a parenthesis does not change it.
     // JavaScript reads '(obj.m)()' the same way.
     LHAT_TEST("parentheses do not take the receiver off");
     check_text(&u,
@@ -566,8 +566,8 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §12.5 with §12.7: with^ wants a dispose(), and one that returns nothing,
-    // because §12.7 made cleanup unable to fail.
+    // [syntax.with.checked] with [syntax.with.no-fail]: with^ wants a dispose(), and one that returns nothing,
+    // because [syntax.with.no-fail] made cleanup unable to fail.
     LHAT_TEST("with^ accepts a value that has dispose()");
     check_text(&u,
                "var^ C = def^{ self^{ v := 1 }, dispose := p^self^ { } }\n"
@@ -592,7 +592,7 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_DISPOSABLE);
     unit_dispose(&u);
 
-    // §12.5 writes the condition as 'dispose()', parentheses and all: with^
+    // [syntax.with.checked] writes the condition as 'dispose()', parentheses and all: with^
     // hands nothing over, so one asking for an argument could never be called.
     LHAT_TEST("with^ refuses a dispose() that asks for an argument");
     check_text(&u,
@@ -604,7 +604,7 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_DISPOSABLE);
     unit_dispose(&u);
 
-    // §13.4 keeps self^ out of the parameter list, so §14.4's ordinary shape
+    // [syntax.type.param-names] keeps self^ out of the parameter list, so [syntax.obj.self]'s ordinary shape
     // has an empty one and is accepted -- which the case above must not have
     // taken with it.
     LHAT_TEST("and accepts one written without a self^ as well");
@@ -614,7 +614,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.10: the structural form is what §12.5 is really asking for, so it
+    // [syntax.obj.structure]: the structural form is what [syntax.with.checked] is really asking for, so it
     // has to resolve on its own.
     LHAT_TEST("the structural form of a disposable resolves");
     check_text(&u,
@@ -624,7 +624,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 05§2.2: one environment for names, which is what §14.9 needs -- it
+    // [modules.env.one]: one environment for names, which is what [syntax.obj.name] needs -- it
     // says a definition takes its name from its binding, so that name has to
     // be reachable where a type is written.
     LHAT_TEST("a definition's name works as a type");
@@ -634,7 +634,7 @@ static void test_definitions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.7: writing the name asks for the whole structure, and that is what
+    // [syntax.obj.instance]: writing the name asks for the whole structure, and that is what
     // an instance carries -- so as a type the name means an instance.
     LHAT_TEST("as a type the name means an instance");
     check_text(&u,
@@ -651,7 +651,7 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 05§2.2: an errordef^ name lives in the same place, so a value of the
+    // [modules.env.one]: an errordef^ name lives in the same place, so a value of the
     // same name collides rather than shadowing quietly.
     LHAT_TEST("a type and a value of one name collide");
     check_text(&u,
@@ -660,7 +660,7 @@ static void test_definitions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
     unit_dispose(&u);
 
-    // §14.9: the name is a label, so two definitions of the same shape are one
+    // [syntax.obj.name]: the name is a label, so two definitions of the same shape are one
     // type and nothing has to be shared for that to hold.
     LHAT_TEST("identity stays structural");
     check_text(&u,
@@ -673,7 +673,7 @@ static void test_definitions(void)
     unit_dispose(&u);
 }
 
-// §14.5 and §14.12.
+// [syntax.obj.compose] and [syntax.obj.override].
 static void test_composition(void)
 {
     Unit u;
@@ -685,7 +685,7 @@ static void test_composition(void)
         "    bar := p^self^ { },\n"
         "}\n";
 
-    // §14.5: the derived definition carries both sides, and §14.7 means an
+    // [syntax.obj.compose]: the derived definition carries both sides, and [syntax.obj.instance] means an
     // instance of it reaches the base's fields as well as its own.
     LHAT_TEST("composition carries the base's fields and members");
     {
@@ -702,7 +702,7 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.12: without a marker, a name the base already uses is a mistake.
+    // [syntax.obj.override]: without a marker, a name the base already uses is a mistake.
     LHAT_TEST("a same-named member needs a marker");
     {
         char text[1024];
@@ -713,7 +713,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
     unit_dispose(&u);
 
-    // §14.12: arguments may widen, which is what makes the replacement usable
+    // [syntax.obj.override]: arguments may widen, which is what makes the replacement usable
     // wherever the original was.
     LHAT_TEST("override^ may widen its arguments");
     {
@@ -741,7 +741,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
     unit_dispose(&u);
 
-    // §14.12: overloading is only allowed where no call could fit both.
+    // [syntax.obj.override]: overloading is only allowed where no call could fit both.
     LHAT_TEST("overload^ needs a signature that stays apart");
     {
         char text[1024];
@@ -755,7 +755,7 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.12: what a new arm has to stay apart from is each arm already under
+    // [syntax.obj.override]: what a new arm has to stay apart from is each arm already under
     // the name, one at a time. Asking the intersection as though it were one
     // signature answers "cannot be told apart" for every one of them, which
     // would refuse a third arm however plainly it differed.
@@ -800,7 +800,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
     unit_dispose(&u);
 
-    // §14.15+: an override^ over nothing is not a mistake -- it says the
+    // [syntax.obj.abstract-override]: an override^ over nothing is not a mistake -- it says the
     // composition has to bring what it replaces. What it costs is that the
     // definition can no longer be instantiated on its own.
     LHAT_TEST("a marker with nothing under it waits for a composition");
@@ -824,7 +824,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
     unit_dispose(&u);
 
-    // §14.12: overload^ has no such reading. Adding a way to call something
+    // [syntax.obj.override]: overload^ has no such reading. Adding a way to call something
     // that is not there says nothing.
     LHAT_TEST("overload^ over nothing is still reported");
     {
@@ -836,7 +836,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
     unit_dispose(&u);
 
-    // §14.12: an overloaded member is callable both ways, which is what '&'
+    // [syntax.obj.override]: an overloaded member is callable both ways, which is what '&'
     // means, so the intersection is what the member ends up being.
     LHAT_TEST("an overloaded member accepts either signature");
     {
@@ -854,7 +854,7 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.12: once a name is overloaded it carries an intersection, and an
+    // [syntax.obj.override]: once a name is overloaded it carries an intersection, and an
     // override^ replaces the one arm it overlaps. Comparing the replacement
     // against the whole intersection would refuse it, since no single
     // signature is usable where all of them were.
@@ -897,7 +897,7 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.12: override^ may widen its arguments, and a widening can reach two
+    // [syntax.obj.override]: override^ may widen its arguments, and a widening can reach two
     // of the arms at once. Which one was meant is then not decidable.
     LHAT_TEST("an override^ over two overloaded arms is reported");
     {
@@ -936,7 +936,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE);
     unit_dispose(&u);
 
-    // §14.5 composes to make something new, so a constructor inherited from
+    // [syntax.obj.compose] composes to make something new, so a constructor inherited from
     // the base still has to build the derived instance.
     LHAT_TEST("new builds the derived instance");
     {
@@ -949,8 +949,8 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.5: the right side of '..' may be a name rather than a def^ literal.
-    // The compiler flattens that chain through its own registry (§14.2), so
+    // [syntax.obj.compose]: the right side of '..' may be a name rather than a def^ literal.
+    // The compiler flattens that chain through its own registry ([syntax.obj.chain]), so
     // the type has to carry both sides: answering with the right one alone
     // would lose everything the left brought.
     static const char *const parts =
@@ -982,7 +982,7 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // A chain mixing both forms is what §14.2 lets the compiler settle, so the
+    // A chain mixing both forms is what [syntax.obj.chain] lets the compiler settle, so the
     // checker has to reach the same answer.
     LHAT_TEST("a chain of names ending in a literal carries all of them");
     {
@@ -1000,7 +1000,7 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.5+: neither side of a composition by name was written against the
+    // [syntax.obj.compose-ambiguous]: neither side of a composition by name was written against the
     // other, so neither is the answer under a name they share. The
     // composition stands -- what it costs is that the name is no longer
     // reachable through it.
@@ -1021,7 +1021,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER);
     unit_dispose(&u);
 
-    // §14.4 is the way out, and it wanted nothing added: a method taken from
+    // [syntax.obj.self] is the way out, and it wanted nothing added: a method taken from
     // the side that wrote it applies to whatever fits it structurally.
     LHAT_TEST("but naming the side reaches either one");
     check_text(&u,
@@ -1046,7 +1046,7 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.5+: a field is the one that stays an error at the '..'. A method is
+    // [syntax.obj.compose-ambiguous]: a field is the one that stays an error at the '..'. A method is
     // shared, so either side's is still reachable through it; a field is
     // per-instance and the flattened table holds one, so there is no
     // qualified form to fall back to.
@@ -1058,7 +1058,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COMPOSE_COLLIDES);
     unit_dispose(&u);
 
-    // §14.15 is the way to write a mixin that does not own the field it uses,
+    // [syntax.obj.abstract] is the way to write a mixin that does not own the field it uses,
     // and two of them compose without ever colliding.
     LHAT_TEST("and two mixins that declare rather than own do not collide");
     check_text(&u,
@@ -1072,7 +1072,7 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.12+: super^ names what an override^ is writing over, so it is a
+    // [syntax.obj.super]: super^ names what an override^ is writing over, so it is a
     // name only there. Nothing else in a def^ hid anything.
     LHAT_TEST("super^ is a name inside an override^");
     check_text(&u,
@@ -1093,7 +1093,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SUPER_OUTSIDE);
     unit_dispose(&u);
 
-    // §14.4: super^(…) is the bound form, so the receiver is not written; taken
+    // [syntax.obj.self]: super^(…) is the bound form, so the receiver is not written; taken
     // as a value it is spelled out, the way a method taken from under the dot
     // is.
     LHAT_TEST("super^ called directly takes the receiver on its own");
@@ -1117,7 +1117,7 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.15: abstract^ declares a member and leaves it for the composition,
+    // [syntax.obj.abstract]: abstract^ declares a member and leaves it for the composition,
     // which is what lets a mixin call something it does not itself provide.
     LHAT_TEST("abstract^ is filled in by a composition");
     check_text(&u,
@@ -1134,7 +1134,7 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.11: an instance carries a value under every name, so one still only
+    // [syntax.obj.new]: an instance carries a value under every name, so one still only
     // declared has nothing to make.
     LHAT_TEST("and a definition still holding one cannot be instantiated");
     check_text(&u,
@@ -1143,8 +1143,8 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
     unit_dispose(&u);
 
-    // §14.15+2: what an abstract^ asks for is what this def^ does not have.
-    // Writing the value here as well leaves it saying nothing -- and §14.7+
+    // [syntax.obj.abstract-same]: what an abstract^ asks for is what this def^ does not have.
+    // Writing the value here as well leaves it saying nothing -- and [syntax.obj.members-order]
     // took away the other reason anyone wrote one, which was to put the name
     // in front of a body that reaches it.
     LHAT_TEST("an abstract^ this def^ also provides is refused");
@@ -1166,7 +1166,7 @@ static void test_composition(void)
     unit_dispose(&u);
 
     // A declaration is not a definition of the member, so filling it in is
-    // not §14.12's collision and wants no marker.
+    // not [syntax.obj.override]'s collision and wants no marker.
     LHAT_TEST("filling an abstract^ in needs no marker");
     check_text(&u,
                "var^ A = def^{ self^{}, abstract^ m : f^ -> number^; }\n"
@@ -1200,7 +1200,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ALREADY_PROVIDED);
     unit_dispose(&u);
 
-    // §11.8: an operator is a member named by the operator, so it is declared
+    // [syntax.op.define]: an operator is a member named by the operator, so it is declared
     // the way any member is -- and a mixin may use one it does not provide.
     LHAT_TEST("an operator is declared the same way");
     check_text(&u,
@@ -1239,7 +1239,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
-    // §14.15: the form has no value, for an operator as for a name.
+    // [syntax.obj.abstract]: the form has no value, for an operator as for a name.
     LHAT_TEST("and an abstract^ operator with a value is not the form");
     check_text(&u,
                "var^ A = def^{ self^{},\n"
@@ -1247,7 +1247,7 @@ static void test_composition(void)
     LHAT_CHECK(syntax_errors(&u) > 0, "refused as it is written");
     unit_dispose(&u);
 
-    // §14.6: the template takes one too, which is what lets a mixin reach a
+    // [syntax.obj.template]: the template takes one too, which is what lets a mixin reach a
     // field through self^ without owning it.
     LHAT_TEST("a template field may be abstract^ as well");
     check_text(&u,
@@ -1260,7 +1260,7 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.15+3 names a field's own way out, so it is told apart from a
+    // [syntax.obj.abstract-new] names a field's own way out, so it is told apart from a
     // member's -- a written new could have given it a value, and none was.
     LHAT_TEST("and one left unfilled stops the construction too");
     check_text(&u,
@@ -1269,7 +1269,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_UNPROVIDED);
     unit_dispose(&u);
 
-    // §14.5: the two sides of a composition by name pair up the same way --
+    // [syntax.obj.compose]: the two sides of a composition by name pair up the same way --
     // one declaring what the other provides is the point, not a collision.
     LHAT_TEST("a declaration and a definition compose by name");
     check_text(&u,
@@ -1280,7 +1280,7 @@ static void test_composition(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.15+: with the two together, a mixin written against no base at all
+    // [syntax.obj.abstract-override]: with the two together, a mixin written against no base at all
     // can replace a member and call what it replaced. abstract^ says what the
     // host must hold, the pending override^ says what it must provide.
     LHAT_TEST("a mixin written against no base composes onto one");
@@ -1320,7 +1320,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
     unit_dispose(&u);
 
-    // §14.12's check is the one the def^ would have had. It runs where the
+    // [syntax.obj.override]'s check is the one the def^ would have had. It runs where the
     // two finally meet instead.
     LHAT_TEST("substitutability is checked where the two meet");
     check_text(&u,
@@ -1331,7 +1331,7 @@ static void test_composition(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
     unit_dispose(&u);
 
-    // §14.11 gives every definition a new whether or not one was written, so
+    // [syntax.obj.new] gives every definition a new whether or not one was written, so
     // the two always carry that name. It is rebuilt rather than collided.
     LHAT_TEST("the synthesised new is not a collision");
     {
@@ -1343,9 +1343,9 @@ static void test_composition(void)
     unit_dispose(&u);
 }
 
-// §14.12+: typeof^'s own static type is a fixed nominal carrier
+// [syntax.obj.super]: typeof^'s own static type is a fixed nominal carrier
 // (TypeInfo) regardless of the operand -- the descriptive payload is a
-// runtime concern (03§4.2), so the checker's job is only to give
+// runtime concern ([pipeline.repl.no-fork]), so the checker's job is only to give
 // '.signature' somewhere to resolve and to still check the operand.
 static void test_typeof(void)
 {
@@ -1373,10 +1373,10 @@ static void test_typeof(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 05§8.8: a nominal type carries what made it, and nothing written in
+    // [modules.hostdata]: a nominal type carries what made it, and nothing written in
     // L^ replaces that. The same mark is what a registered host type carries
     // (program.c), so both are refused by this one rule -- adding a member is
-    // already refused by §8.8's own mark, and this is the other half.
+    // already refused by [syntax.stmt.member]'s own mark, and this is the other half.
     LHAT_TEST("what a nominal type carries cannot be written over");
     check_text(&u,
                "var^ t = typeof^(5)\n"
@@ -1384,7 +1384,7 @@ static void test_typeof(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PATH_IS_OPAQUE);
     unit_dispose(&u);
 
-    // §14's fields are what a def^ instance is for, and it is not nominal.
+    // [syntax.obj]'s fields are what a def^ instance is for, and it is not nominal.
     LHAT_TEST("but a def^ instance's fields still are");
     check_text(&u,
                "var^ P = def^{ self^{ x := 0 } }\n"
@@ -1393,7 +1393,7 @@ static void test_typeof(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // Session-scoped the way L^'s environment is (05§8.6), so a typeof^
+    // Session-scoped the way L^'s environment is ([modules.host.machine]), so a typeof^
     // bound in one input is still the same nominal type in the next.
     LHAT_TEST("the TypeInfo type is the same across a session's inputs");
     {
@@ -1409,7 +1409,7 @@ static void test_typeof(void)
 }
 
 
-// §14.6 with 05§8.6: a template field may write its type as well as its value.
+// [syntax.obj.template] with [modules.host.machine]: a template field may write its type as well as its value.
 // What it holds is then what was written -- the same reading a let^ target
 // has, and the reason is the same: a reader relies on what was written, not
 // on what the first value happened to be.
@@ -1456,7 +1456,7 @@ static void test_field_types(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14.15 is the other half: a type and no value at all, which says the
+    // [syntax.obj.abstract] is the other half: a type and no value at all, which says the
     // composition owes one rather than saying what this one holds.
     LHAT_TEST("abstract^ is still the form with no value");
     check_text(&u,
@@ -1468,9 +1468,9 @@ static void test_field_types(void)
     unit_dispose(&u);
 }
 
-// §14.15+3: a template field is one an instance holds, and §14.11 builds an
+// [syntax.obj.abstract-new]: a template field is one an instance holds, and [syntax.obj.new] builds an
 // instance in a written new -- so a new that writes the field gives it a
-// value, exactly as a composition's initialiser would. §14.12+2 leaves an
+// value, exactly as a composition's initialiser would. [syntax.obj.override-new] leaves an
 // override^ new the only way to build one, which is what makes reading it
 // enough.
 static void test_new_fills_fields(void)
@@ -1514,7 +1514,7 @@ static void test_new_fills_fields(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_UNPROVIDED);
     unit_dispose(&u);
 
-    // §14.12+2 exempts only override^. An overload^ keeps the default new()
+    // [syntax.obj.override-new] exempts only override^. An overload^ keeps the default new()
     // beside the written one, and that arm writes nothing.
     LHAT_TEST("and an overload^ leaves the default arm to leave it too");
     check_text(&u,
@@ -1526,7 +1526,7 @@ static void test_new_fills_fields(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FIELD_UNPROVIDED);
     unit_dispose(&u);
 
-    // §14.15's own case is untouched: new cannot define a member, so only a
+    // [syntax.obj.abstract]'s own case is untouched: new cannot define a member, so only a
     // composition settles one.
     LHAT_TEST("a member's declaration is still a composition's to fill");
     check_text(&u,
@@ -1539,7 +1539,7 @@ static void test_new_fills_fields(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_STILL_ABSTRACT);
     unit_dispose(&u);
 
-    // §14.15+'s wait is for super^'s other half, not for a value.
+    // [syntax.obj.abstract-override]'s wait is for super^'s other half, not for a value.
     LHAT_TEST("nor does it settle an override^ with nothing to replace");
     check_text(&u,
                "let^ D = def^{\n"
@@ -1585,7 +1585,7 @@ static void test_new_fills_fields(void)
     unit_dispose(&u);
 }
 
-// §14.11: the prototype is a value -- the table a definition hangs under
+// [syntax.obj.new]: the prototype is a value -- the table a definition hangs under
 // self^, holding every field's default, evaluated once as the definition is
 // built. Construction copies it shallowly, which is what the rules here
 // protect: only immutable defaults may sit on it, nothing writes through it,
@@ -1691,7 +1691,7 @@ static void test_prototype(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PROTOTYPE_SEALED);
     unit_dispose(&u);
 
-    // §14.7+: the member is the definition's own; what it answers is the
+    // [syntax.obj.members-order]: the member is the definition's own; what it answers is the
     // instance type, since the prototype is one canonical instance.
     LHAT_TEST("reading it is reading an instance");
     check_text(&u,
@@ -1700,7 +1700,7 @@ static void test_prototype(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.1's exception: the copy is the body's own -- nothing outside holds
+    // [syntax.sub.kinds]'s exception: the copy is the body's own -- nothing outside holds
     // it yet -- so an f^ new writes it directly as well as through the
     // batch form.
     LHAT_TEST("a new body writes self^ from inside an f^");
@@ -1716,8 +1716,8 @@ static void test_prototype(void)
     unit_dispose(&u);
 }
 
-// §14.7+2: the type side of delegate^. The delegated members join the
-// section an instance carries (§14.7), so a wrapper satisfies a structure
+// [syntax.obj.delegate]: the type side of delegate^. The delegated members join the
+// section an instance carries ([syntax.obj.instance]), so a wrapper satisfies a structure
 // written for what it delegates to -- which is the whole point of writing
 // one rather than a hundred forwarding members.
 static void test_delegate(void)
@@ -1736,7 +1736,7 @@ static void test_delegate(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.10: and so a structure written for the delegate's shape takes the
+    // [syntax.obj.structure]: and so a structure written for the delegate's shape takes the
     // wrapper. This is what the feature is for.
     LHAT_TEST("a wrapper satisfies a structure written for the delegate");
     check_text(&u,
@@ -1765,7 +1765,7 @@ static void test_delegate(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // THE REASON THERE ARE TWO SPELLINGS. §14.3 declares fields and members
+    // THE REASON THERE ARE TWO SPELLINGS. [syntax.obj.methods] declares fields and members
     // apart, so one name may be both -- and then 'self^.store' and 'store'
     // reach different values with different members.
     LHAT_TEST("self^.name and a bare name reach different things");
@@ -1839,10 +1839,10 @@ static void test_delegate(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.13 gives a member no way to carry a written type, so a static one
+    // [syntax.obj.def-form] gives a member no way to carry a written type, so a static one
     // holding what a call answered is known only once its own entry has
     // been walked -- a round later than the body that reads through it.
-    // 03§3.4+2's loop is what closes that, the way it closes a ring of
+    // [pipeline.infer.rounds]'s loop is what closes that, the way it closes a ring of
     // members reading each other.
     LHAT_TEST("and reaches one held by a static member, whose type waits");
     check_text(&u,
@@ -1858,7 +1858,7 @@ static void test_delegate(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.7's order does not move when the reading does. The member written
+    // [syntax.obj.instance]'s order does not move when the reading does. The member written
     // here wins from inside as well -- and it wins even though its own type
     // is not down yet when the delegate is first asked, which is why what
     // this def^ WROTE is what the order reads, not what has landed so far.
@@ -1876,11 +1876,11 @@ static void test_delegate(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.5 with §14.7+2: a composition keeps ONE delegate, the last part to
+    // [syntax.obj.compose] with [syntax.obj.delegate]: a composition keeps ONE delegate, the last part to
     // declare one -- that is what the machine holds, a single key on the
     // definition. So a part that declares its own undoes what the base's
     // lent: the type here has to say the same, or a name reaches one answer
-    // when checked and another when run (03§4.2).
+    // when checked and another when run ([pipeline.repl.no-fork]).
     LHAT_TEST("the last part's delegate is the one, in the type too");
     check_text(&u,
                "var^ P = def^{ which = f^self^ -> number^ { 1 } }\n"
@@ -1916,7 +1916,7 @@ static void test_delegate(void)
     unit_dispose(&u);
 
     // What the base WROTE is not a loan. A later delegate does not undo it,
-    // and §14.7's order still puts it in front.
+    // and [syntax.obj.instance]'s order still puts it in front.
     LHAT_TEST("what the base wrote outlives a later delegate");
     check_text(&u,
                "var^ Q = def^{ which = f^self^ -> string^ { \"two\" } }\n"
@@ -1930,12 +1930,12 @@ static void test_delegate(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §11.3: between two def^ the identity is the shape, so a wrapper that
+    // [syntax.op.semantic]: between two def^ the identity is the shape, so a wrapper that
     // delegates everything the other declares stands where it is asked for.
     // That is not delegation being special -- it is what structural typing
     // says once the members are there.
     //
-    // A host type is the one place that gives way (05§8.8), and a wrapper
+    // A host type is the one place that gives way ([modules.hostdata]), and a wrapper
     // does NOT stand where one of those is asked. That case belongs where
     // there is a host type to ask with: test_hostdata_base.c.
     LHAT_TEST("between def^ the wrapper conforms, because the shape does");
@@ -2136,9 +2136,9 @@ static void test_composition_requirements(void)
 }
 
 
-// §14.17+: on anything but a plain table the two spellings of tostring
+// [syntax.obj.tostring-hat]: on anything but a plain table the two spellings of tostring
 // and iterate are ONE member. So every rule that compares names sees one --
-// §14.12's "already a member" here, §14.5+'s collision at '..' below.
+// [syntax.obj.override]'s "already a member" here, [syntax.obj.compose-ambiguous]'s collision at '..' below.
 static void test_two_spellings_are_one_member(void)
 {
     Unit u;
@@ -2159,7 +2159,7 @@ static void test_two_spellings_are_one_member(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MEMBER_EXISTS);
     unit_dispose(&u);
 
-    // §14.5+: two parts carrying one name leave it reaching no one answer.
+    // [syntax.obj.compose-ambiguous]: two parts carrying one name leave it reaching no one answer.
     // The spellings must not let a composition slip past that.
     LHAT_TEST("one spelling on each side of a '..' still collides");
     check_text(&u,
@@ -2183,7 +2183,7 @@ static void test_two_spellings_are_one_member(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_AMBIGUOUS_MEMBER);
     unit_dispose(&u);
 
-    // §14.17+ keeps the two apart on a plain table, where the bare name is
+    // [syntax.obj.tostring-hat] keeps the two apart on a plain table, where the bare name is
     // the writer's -- that is the whole reason the hat spelling exists.
     LHAT_TEST("a plain table still holds the two apart");
     check_text(&u,
@@ -2194,9 +2194,9 @@ static void test_two_spellings_are_one_member(void)
 }
 
 
-// §14.15 with §14.5+: an ambiguous name provides nothing, and that holds
+// [syntax.obj.abstract] with [syntax.obj.compose-ambiguous]: an ambiguous name provides nothing, and that holds
 // whenever the ambiguity arrives -- including after the declaration was met.
-// `..` is right-associative (§11.5 の (1)), so written without brackets the
+// `..` is right-associative ([syntax.op.precedence] の (1)), so written without brackets the
 // declaration meets its provider first; every grouping is asked here.
 static void test_requirement_survives_ambiguity(void)
 {
@@ -2240,7 +2240,7 @@ static void test_requirement_survives_ambiguity(void)
     unit_dispose(&u);
 }
 
-// §14.15 and §14.12, asked of a field: a method written under a field's
+// [syntax.obj.abstract] and [syntax.obj.override], asked of a field: a method written under a field's
 // name. Only the instance holds a field, and both forms of '..' used to look
 // for the name on the definition alone -- so the method was written over the
 // field with nothing compared, and strict passed a program the machine then
@@ -2387,7 +2387,7 @@ static void test_field_method_origins(void)
     unit_dispose(&u);
 }
 
-// §14.15 and §14.15+ with §14.7+2: a delegate^ lends a name and does not
+// [syntax.obj.abstract] and [syntax.obj.abstract-override] with [syntax.obj.delegate]: a delegate^ lends a name and does not
 // give it, so what it lends neither answers an abstract^ nor stands under a
 // waiting override^. new is refused where it was, and says that is why.
 static void test_lent_names(void)
@@ -2420,7 +2420,7 @@ static void test_lent_names(void)
 
     // Writing the two together is not itself the mistake: a later
     // composition provides the member, and what it provides wins over what
-    // the delegate lends (§14.7).
+    // the delegate lends ([syntax.obj.instance]).
     LHAT_TEST("a declaration beside a delegate^ is composition material");
     check_text(&u,
                "let^ Inner = def^{ self^{}, override^new = f^ { self^{} },\n"
@@ -2445,7 +2445,7 @@ static void test_lent_names(void)
 }
 
 
-// §14.7+2 with §14.5: a composition keeps what its parts delegate to --
+// [syntax.obj.delegate] with [syntax.obj.compose]: a composition keeps what its parts delegate to --
 // the last part to declare one wins -- in the name form as in the literal
 // one. The compiler has always read it so; the name form's type dropped the
 // link, and called missing a member the machine would lend.

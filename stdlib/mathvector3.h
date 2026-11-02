@@ -1,14 +1,14 @@
 // L^ (lhat) -- sample standard library: std.math.vector3.
 //
 // One function a host calls once, before lhat_program_check, the same as any
-// of program.h's own registrations (05§8.7). Nothing here is required --
+// of program.h's own registrations ([modules.host.import]). Nothing here is required --
 // a host that never calls this never sees a "math.vector3" module. The scalar
-// functions are std.math (math.h); this is its proving ground for §8.9,
+// functions are std.math (math.h); this is its proving ground for [syntax.stmt.let],
 // kept as a module of its own under it.
 //
-// One type, on 05§8.9's value side:
+// One type, on [modules.hostvalue]'s value side:
 //
-// - std.math.vector3.Vector3 -- a host value (§8.9), made by
+// - std.math.vector3.Vector3 -- a host value ([syntax.stmt.let]), made by
 //   std.math.vector3.new(x, y, z). Three f32 components in stack slots, no
 //   heap, no lifetime. Fields x/y/z read and write directly;
 //   +, -, * (by number^ or a Vector3 for component-wise multiplication),

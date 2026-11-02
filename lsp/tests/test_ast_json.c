@@ -268,7 +268,7 @@ static void check_kind(cJSON *node, const char *expected)
     LHAT_CHECK_EQ_STR(kind_of(node), strlen(kind_of(node)), expected);
 }
 
-// 01§6.5: code switched off with '#[~ ... ]#' is listed where it stands
+// [lex.comment.disabled]: code switched off with '#[~ ... ]#' is listed where it stands
 // among statements, holding the statements it would be.
 static void test_disabled_code(void)
 {

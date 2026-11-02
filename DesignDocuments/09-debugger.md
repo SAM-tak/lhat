@@ -4,13 +4,13 @@
 そのフックの中でフレームと束縛を読む公開 API、そしてそれを使う二つの利用者
 ——`lhat --dap` のデバッグアダプタと、Godot エディタのデバッガ——を扱う。
 
-節番号のない参照（`02§14.9` など）は [02-syntax.md](02-syntax.md) を指す。
+節番号のない参照（`[syntax.obj.name]` など）は [02-syntax.md](02-syntax.md) を指す。
 
-## 1. 位置づけ
+## 1. 位置づけ [debug.role]
 
 処理系本体の仕様ではなく、処理系を利用するツールの土台。言語の意味論には
 影響しない。デバッグ情報（行・名前）は proto に載るが、型にも同一性にも
-参加しない（02§14.9）。
+参加しない（[syntax.obj.name]）。
 
 利用者は二つある。どちらも C 側にいる。
 
@@ -23,10 +23,10 @@
 Lua は `debug` ライブラリとして同じことをスクリプトから操作できるようにして
 いるが、`L^` は踏襲しない。あれはデバッガを Lua で書くための窓口であり、
 `L^` のデバッガはホスト (C) にいて、その窓口はこの章の公開 API である。
-`setlocal` に当たるものは静的型を壊し、`sethook` に当たるものは 05§10.6 の
+`setlocal` に当たるものは静的型を壊し、`sethook` に当たるものは [modules.binary.reflect] の
 純粋性に穴を開ける。`std.debug`（log と traceback）は現状のままとする。
 
-## 2. 機械のフック
+## 2. 機械のフック [debug.hook]
 
 機械はデバッガのフックを一つ持つ（machine ごと。proto ではない——一つの
 proto は `std.thread` で複数の機械に共有されうる）。フックが立っている間、
@@ -41,7 +41,7 @@ typedef void (*LhatDebugHook)(LhatMachine *, void *context,
 void lhat_machine_set_debug_hook(LhatMachine *, LhatDebugHook, void *context);
 ```
 
-### 2.1 行イベント
+### 2.1 行イベント [debug.hook.line]
 
 フックは命令の実行直前、GC ステップと同じ境界で呼ばれる——すべての生きた値が
 レジスタ・フレーム・open list のいずれかにある唯一の安全点である。呼ばれる
@@ -92,7 +92,7 @@ LhatValue     lhat_machine_fault_value(const LhatMachine *);
 フレーム深さの変化で区別でき、末尾呼び出し・コルーチン・cleanup に別のイベント
 意味論を持ち込む利益がない。
 
-### 2.2 費用
+### 2.2 費用 [debug.hook.cost]
 
 フックが立っている間、命令ごとに払うのは判定一つ。立っていない間は、通らない
 分岐一つ（実質ゼロ）。空のフックを立てて空ループを回した実測で、一周あたり
@@ -100,23 +100,23 @@ LhatValue     lhat_machine_fault_value(const LhatMachine *);
 呼び出しの合計であって、判定だけの値ではない。
 
 デバッグ情報の表（行、レジスタの名前）は、検査が走ったかどうかに関わらず
-常に残す。03§4.2 のとおり、実行するものは検査したかどうかに依らない。
+常に残す。[pipeline.repl.no-fork] のとおり、実行するものは検査したかどうかに依らない。
 
 出荷ビルドはその分岐一つも払わない。`LHAT_WITH_DEBUGGER`（CMake option、
-既定 ON）を OFF にすると、フック・監視者（§3.4.1）・内観と評価（12§3）が
+既定 ON）を OFF にすると、フック・監視者（[debug.inspect.write.birth]）・内観と評価（[spec.member-cache]）が
 前処理で消え、実行ループの判定ごと無くなる——GDScript のリリースビルドが
-検査を消すのと同じ形である。フォルトのトレースバック（04§11.6+の3 API）は
+検査を消すのと同じ形である。フォルトのトレースバック（[errors.runtime.traceback]の3 API）は
 デバッガではないので残る。ノブは LhatMachine の形を変えるため、生成ヘッダ
 （version.h）に載る。`LHAT_BUILD_DAP` はこのノブを要求する。
 
-### 2.3 フックの性質
+### 2.3 フックの性質 [debug.hook.nature]
 
 フックは機械自身のスレッドの上で、命令の合間に呼ばれ、機械はフックが返るまで
 待つ。プログラムを止めたいデバッガはここで止める（ブロッキング）。Lua の
 `lua_sethook`、Godot の `script_debug` と同じ形である。DAP のように run から
 抜けて後で再開する仕組み（Luau の `LUA_BREAK`）は要らない。
 
-### 2.4 再入とフォルト
+### 2.4 再入とフォルト [debug.hook.reentry]
 
 フックの中からフックは、`lhat_machine_call` などで L^ を呼び戻せる。その呼び
 戻しの中の行はフックに知らされない（フックが走っている間、機械の内側のフラグ
@@ -124,27 +124,27 @@ LhatValue     lhat_machine_fault_value(const LhatMachine *);
 ときと同じに、フックが割り込んだ run をそのフォルトで終える。`lhat_machine_panic`
 をフックから呼べば run を止められる——アダプタは切断でこれを使う。
 
-### 2.5 コルーチン・末尾呼び出し・cleanup
+### 2.5 コルーチン・末尾呼び出し・cleanup [debug.hook.coroutine]
 
-これらはすべて §2.1 の深さ比較で自然に扱われ、専用の分岐はない。
+これらはすべて [debug.hook.line] の深さ比較で自然に扱われ、専用の分岐はない。
 
-- **末尾呼び出し**（03§5.3）——被呼び出し側の本体が同じ深さで始まるので、
+- **末尾呼び出し**（[pipeline.bc.call]）——被呼び出し側の本体が同じ深さで始まるので、
   その先頭行がその深さで鳴る。
 - **コルーチン**——`yield^` の両側はそれぞれ自分の番に鳴る。再開は行が違えば
   鳴る。
-- **`finally^` / `with^` の後始末**（02§10.7）——後始末の本体の行で鳴り、戻り先で
+- **`finally^` / `with^` の後始末**（[syntax.finally.coroutine]）——後始末の本体の行で鳴り、戻り先で
   必ず鳴る。
 
-### 2.6 ［補足］境界の前でフレームの行を書く
+### 2.6 ［補足］境界の前でフレームの行を書く [debug.hook.frame-line]
 
-フックが読む最内フレームの行は、そのフレームの保存された `pc` から引く（04§11.6）。
+フックが読む最内フレームの行は、そのフレームの保存された `pc` から引く（[errors.runtime.panic]）。
 ホスト関数の呼び出しは機械が制御を外へ渡す唯一の地点で、そこでは `pc` が
 保存されていなかった——だから `std.debug.traceback` をホストから読むと最内行が
 一つ前の呼び出しの行にずれていた。フックがこの `pc` を要にするので、ホスト境界を
 またぐ前に必ず書くようにした。同じ理由で、入れ子の run が `run_base` を戻し、
 run の開始で前の run のフォルト記録を消す。
 
-### 2.7 ホストの協調停止点（D3）
+### 2.7 ホストの協調停止点（D3） [debug.hook.yield-point]
 
 ```c
 bool lhat_machine_debug_pause_point(LhatMachine *);
@@ -171,9 +171,9 @@ bool lhat_machine_debug_pause_point(LhatMachine *);
 呼び出しを即時には止められない。セッションは安全性のため従来どおりその return
 を待ち、timeout や detach はしない。
 
-## 3. 内観
+## 3. 内観 [debug.inspect]
 
-### 3.1 フレーム
+### 3.1 フレーム [debug.inspect.frame]
 
 フックの中では、既存のフレーム歩き API がそのまま使える。フォルトの記録が
 無いときは**いま立っているフレーム**を歩く——機械は二つの命令の間にいて、
@@ -188,9 +188,9 @@ LhatValue     lhat_machine_fault_value(const LhatMachine *);
 ```
 
 名前に `fault` と付くのは、これがフォルトの巻き戻さないフレームを読むために
-先に入ったからで（04§11.6）、フックの中でも同じフレームを読む。
+先に入ったからで（[errors.runtime.panic]）、フックの中でも同じフレームを読む。
 
-### 3.2 束縛
+### 3.2 束縛 [debug.inspect.binding]
 
 ```c
 typedef struct { const char *name; LhatValue value; } LhatBindingInfo;
@@ -204,16 +204,16 @@ bool   lhat_frame_upvalue(const LhatMachine *, size_t level, size_t index, LhatB
 （`self^` `it^` `def^` `super^` `...` `this^`）も返す——選別は利用者の側で
 する（Godot の members は `self^` を探す）。同じ名前の影は両方返し、後のものが
 内側である。`let^` が宣言する名前はそのブロックの先頭から生きていて、実行前は
-`nil^` を持つ（02§8.7）。捕捉（upvalue）は名前と値で読める。ホスト値は幅に関わらず
-ポインタ形（05§8.9）で返る。
+`nil^` を持つ（[syntax.stmt.visible]）。捕捉（upvalue）は名前と値で読める。ホスト値は幅に関わらず
+ポインタ形（[modules.hostvalue]）で返る。
 
-### 3.3 値の展開
+### 3.3 値の展開 [debug.inspect.expand]
 
 型は `lhat_value_type` と `lhat_runtime_type_write`、文字列化は
 `lhat_value_text`、テーブルの展開は公開の `LhatTable`（配列部・エントリ部・
 `definition`）で足りる。新しい値の API は要らない。
 
-### 3.4 束縛の書き換え
+### 3.4 束縛の書き換え [debug.inspect.write]
 
 ```c
 bool lhat_frame_set_local(LhatMachine *, size_t level, size_t index, LhatValue);
@@ -223,19 +223,19 @@ bool lhat_frame_set_upvalue(LhatMachine *, size_t level, size_t index, LhatValue
 読みと同じ番号で、その束縛へ値を書く。**検査器が約束したことの外にある、
 デバッガの特権**である——機械はどの普通の値を書かれてもメモリ安全のまま
 （レジスタはタグ付きの値なら何でも持てる）だが、本体の書いた型が予期しない
-値は、後でそのとおりの実行時型エラーとして現れうる。これは 03§4.2 の安全性の
+値は、後でそのとおりの実行時型エラーとして現れうる。これは [pipeline.repl.no-fork] の安全性の
 線——SEGV は不可、型エラーでの停止は許容——の内側にある。
 
 拒否される（false、何も書かれない）のは、level や index が何も指さないとき、
 そして**束縛か値がホスト値のとき**。ホスト値は登録された幅の生スロット
-（05§8.9）で、そのレイアウトをまたいで書くことだけが安全でない。
+（[modules.hostvalue]）で、そのレイアウトをまたいで書くことだけが安全でない。
 
 GC との折り合い: レジスタへの書きにバリアは要らない（収集器は掃引の前に
 ルートを読み直す——gc.c の atomic）。捕捉への書きは `SETUPVAL` 命令と同じ
 バリアを敷く。テーブルのメンバへの書きは既存の `lhat_machine_table_set`
 （バリア込み）で行う。
 
-### 3.4.1 machine の誕生を観る
+### 3.4.1 machine の誕生を観る [debug.inspect.write.birth]
 
 ```c
 typedef struct {
@@ -252,7 +252,7 @@ void lhat_debug_watch_machines(const LhatMachineWatcher *watcher);
 どの machine も作られていない間、外すのは自分の machine が全部去った後——
 デバッグセッションの begin/end がそのまま自然な窓になる。
 
-### 3.5 式の評価
+### 3.5 式の評価 [debug.inspect.eval]
 
 ```c
 bool lhat_machine_evaluate(LhatMachine *, size_t level,
@@ -260,15 +260,15 @@ bool lhat_machine_evaluate(LhatMachine *, size_t level,
                            char *error, size_t error_capacity);
 ```
 
-一つの入力——05§8.2 の対話形、裸の式は答え——を、フレームの名前が見える状態で
+一つの入力——[modules.host.initial] の対話形、裸の式は答え——を、フレームの名前が見える状態で
 コンパイルし、機械の上の自分のフレームで走らせる。
 
 - **名前は写し**である。捕捉、次に生きているローカル（内側が影）を評価
   フレームの先頭レジスタへ写し、その位置に種を蒔いたセッション
-  （03§4.3 の REPL と同じ機構）で**無検査**コンパイルする——03§4.2 の
+  （[pipeline.machine] の REPL と同じ機構）で**無検査**コンパイルする——[pipeline.repl.no-fork] の
   とおり、検査せず走らせることは支えられた実行のかたちで、型の齟齬は
   実行時の誤りとして現れ、それがそのまま error に返る
-- 入力の中の `:=` は**写しに書く**。フレームへ書き戻すのは §3.4 の仕事
+- 入力の中の `:=` は**写しに書く**。フレームへ書き戻すのは [debug.inspect.write] の仕事
 - 失敗（構文・コンパイル・実行のどれでも）は error に文で返り、機械は
   評価の前の姿に戻る——評価のフレームは畳まれ、フォルトの記録も残らない
 - **行フックは評価の間鳴らない**。フックの中から呼ばれるのが普通の形で、
@@ -277,7 +277,7 @@ bool lhat_machine_evaluate(LhatMachine *, size_t level,
   結ばれていない裸のホスト名（`print` など）は見えない——`L^.modules` を
   辿る綴りは通る
 
-## 4. コンパイラが残す表
+## 4. コンパイラが残す表 [debug.table]
 
 `LhatProto` は行の表（命令ごとの行）に加えて、レジスタの名前の表を持つ。
 一つのエントリは `{ 名前, from, to, reg, width }` で、`from` はその名前が
@@ -290,7 +290,7 @@ bool lhat_machine_evaluate(LhatMachine *, size_t level,
 名前を空の `nil^` に落とす前置きは、行 0 ではなく本体の最初の行に属す——
 そうしないとデバッガが宣言の行を二度歩くことになる。
 
-### 4.1 実行できる次の行
+### 4.1 実行できる次の行 [debug.table.next-line]
 
 ```c
 uint32_t lhat_proto_next_instruction_line(const LhatProto *,
@@ -301,12 +301,12 @@ uint32_t lhat_proto_next_instruction_line(const LhatProto *,
 命令が無ければ 0。バイトコードを公開せずに、DAP がコメントや空行に置かれた
 ブレークポイントを次の実行可能行へ寄せるための問いである。
 
-## 5. デバッグアダプタ（`lhat --dap=PORT`）
+## 5. デバッグアダプタ（`lhat --dap=PORT`） [debug.dap]
 
 `lhat --dap=PORT` は 127.0.0.1 のそのポートで待ち、一つのデバッガを受けて
 プログラムを走らせる。VSCode 拡張が空きポートを選んで `lhat` を起動し、
 インライン中継で繋ぐ。中継はスクリプトの標準出力・標準エラーもプロセスから
-捕まえ、セッション固有の `output` イベントにする（§7.2）。
+捕まえ、セッション固有の `output` イベントにする（[debug.vscode.output]）。
 
 構成:
 
@@ -323,13 +323,13 @@ uint32_t lhat_proto_next_instruction_line(const LhatProto *,
 アダプタはソケット、試験はメモリバッファ。中身の綴りは違う: DAP は request /
 response / event の三種で、`lsp/rpc.c` の固定した `jsonrpc` ではない。
 
-### 5.1 すべての machine を追う
+### 5.1 すべての machine を追う [debug.dap.machines]
 
 **DAP の「スレッド」は machine である。** OS スレッドではない——ホストが
 どのスレッド機構（std.thread・自前・無し）で machine を走らせるかに依らず、
 machine が一つならスレッドは一つ。
 
-セッションは machine の誕生を観る（§5.1 の `lhat_debug_watch_machines`）。
+セッションは machine の誕生を観る（[debug.dap.machines] の `lhat_debug_watch_machines`）。
 生まれた machine にはその場でフックが立ち、デバッガへ `thread` イベント
 （started）が出る。死ぬときに外れて exited。**ホストの配線はゼロ**——
 `std.thread` のワーカーも、ホスト自作スレッドの machine も、作られただけで
@@ -365,7 +365,7 @@ machine が一つならスレッドは一つ。
   フレーム・Locals・evaluate が通常の停止と同じように使え、continue はその
   フォルトを返して run を終える。
 - **中断（pause）**——受信スレッドが旗を立て、各 machine は次の行イベントまたは
-  §2.7 の協調停止点で止まる。後者も `stopped(reason: "pause")` を出し、既に
+  [debug.hook.yield-point] の協調停止点で止まる。後者も `stopped(reason: "pause")` を出し、既に
   全台停止なら黙って駐機する。協調点の無いホスト呼び出しでは停止は pending のまま。
 - **変数の参照**——frameId は `threadId * 1000 + level`。scopes はフレーム
   ごとに Locals と Captures、テーブルは停止ごとの handle 配列（値と machine
@@ -375,7 +375,7 @@ machine が一つならスレッドは一つ。
   `lhat_machine_panic_text` で止める。cli はデバッガが止めた run のフォルトを
   自分のエラーとして出さない。
 
-### 5.2 パスの照合はホストの言葉で
+### 5.2 パスの照合はホストの言葉で [debug.dap.paths]
 
 デバッガが送るのはエディタのファイルパス、machine が報告するのは単位の綴り
 （`LhatFrameInfo.source`）で、両者は同じものとは限らない——アーカイブや仮想
@@ -425,7 +425,7 @@ exited。
   `true^` / `false^` / 数 / 引用符の文字列。式は evaluate の側）。行き先は
   名前で引き、影があれば内側——読みがパネルに並べたのと同じ規則。テーブルの
   メンバは数だけの名前を列の鍵、それ以外を文字列の鍵として書き戻す。
-- **evaluate**——§3.5 をそのまま。ホバーにも答える
+- **evaluate**——[debug.inspect.eval] をそのまま。ホバーにも答える
   （`supportsEvaluateForHovers`）。答えは描画した文字列だけで、展開の
   参照は配らない——評価の答えはフレームが畳まれた後は何にも根を張られて
   おらず、後から読む参照は腐りうる。
@@ -438,13 +438,13 @@ exited。
 
 `dap/` は `src/` の何も名指ししない——デバッガは `lhat.h` の公開面だけで動く。
 
-### 5.3 停止位置の列
+### 5.3 停止位置の列 [debug.dap.columns]
 
 `stackTrace` が返す列は、**アダプタが単位の本文から読む** ——
 停止した行の最初の非空白がその列である（`dap_column_of_line`）。
-命令ごとの列の表は持たない。04§11.6 の「列は持たない」は動かない。
+命令ごとの列の表は持たない。[errors.runtime.panic] の「列は持たない」は動かない。
 
-**列は停止の粒度になり得ない。** 行イベントの同一行抑止（§2.1）を
+**列は停止の粒度になり得ない。** 行イベントの同一行抑止（[debug.hook.line]）を
 `(行, 列)` に広げると、`a(); b()` で `next` が一行に何度も止まる。
 行でしか止まらない以上、列は**どこで止まったかの札**にしかならず、
 だから行内ブレークポイントも来ない——`SourceBreakpoint.column` は受け取っても
@@ -460,7 +460,7 @@ exited。
 
 数え方は字句解析器のものと自然に一致する。跨ぐのは `' '` と `'\t'` だけで
 どちらも1バイトなので、答えの手前は必ず ASCII であり、バイト・コードポイント・
-UTF-16 単位が同じ数になる。本文は `LhatSource` が LF に正規化済み（01§3）。
+UTF-16 単位が同じ数になる。本文は `LhatSource` が LF に正規化済み（[lex.ident]）。
 
 列 1 に落ちるのは、源の名前が無い・その名前の単位が無い（対話入力）・
 単位に本文が無い（バイナリから読んだ）・行が末尾を越えている・行が空か
@@ -469,7 +469,7 @@ UTF-16 単位が同じ数になる。本文は `LhatSource` が LF に正規化�
 走査は本文一回分をフレームごとに払う。**人が「今どこか」を訊いたときにしか
 走らない**（命令ごとには決して走らない）ので、覚え書きは置かない。
 
-### 5.4 再起動をまたぐセッション
+### 5.4 再起動をまたぐセッション [debug.dap.restart]
 
 ホストが自分を起動し直す（ゲームエンジンの `love.event.restart`）とき、
 デバッガは繋がったままでよい。run が終わるたびに `dap_session_end` すると
@@ -491,7 +491,7 @@ UTF-16 単位が同じ数になる。本文は `LhatSource` が LF に正規化�
 ブレークポイントは単位の綴り（写像があれば）か正規化したパスと行で
 持っているので、同じ単位を読み直した次の run にもそのまま効く。
 
-## 6. Godot
+## 6. Godot [debug.godot]
 
 Godot 側は DAP を喋らない。行フックを据え、`where` の行と源を
 `EngineDebugger::is_breakpoint(line, source)` に問い、当たれば
@@ -499,7 +499,7 @@ Godot 側は DAP を喋らない。行フックを据え、`where` の行と源�
 止まっている間、`_debug_get_stack_level_locals` / `_members` はこの章の束縛
 API で埋まる。詳細は別リポジトリの godot バインディングにある。
 
-## 7. VSCode 拡張
+## 7. VSCode 拡張 [debug.vscode]
 
 `contributes.debuggers` に `{ type: "lhat", languages: ["lhat"] }` を持ち、
 `DebugAdapterDescriptorFactory`（拡張リポジトリの `src/debug.ts`）が
@@ -512,7 +512,7 @@ API で埋まる。詳細は別リポジトリの godot バインディングに
 `launch.json` を書かなくても F5 で開いている `.lh` が走る
 （`DebugConfigurationProvider` が `program` を埋める）。
 
-### 7.1 いつ繋いでよいかを実行時が言う
+### 7.1 いつ繋いでよいかを実行時が言う [debug.vscode.ready]
 
 **接続の合図が要る。** ソケットが上がるのはプログラムを読み終えて検査した後で、
 その時間はプログラムの大きさ次第。しかも型に誤りがあればそこまで辿り着かない。
@@ -533,7 +533,7 @@ lhat: dap listening on 51234
 行の照合は改行まで含める。数字の途中でチャンクが割れると、その時点の桁だけで
 一致してしまう。
 
-### 7.2 出力はデバッグコンソールへ
+### 7.2 出力はデバッグコンソールへ [debug.vscode.output]
 
 プログラム自身の標準出力・標準エラーは実行時の `output` イベントではなく、
 **起動したプロセスの管**である。拡張のインライン中継が両方を汲み、`stdout` /
@@ -545,7 +545,7 @@ lhat: dap listening on 51234
 `std.debug.log` は各行を `fflush(stdout)` する。止まった行までの出力を、終了時まで
 待たずに読めるようにするためである。
 
-## 8. 未決事項一覧
+## 8. 未決事項一覧 [debug.open]
 
 無し。D1 から D8 まで閉じた——経緯は改定履歴に。
 
@@ -557,12 +557,12 @@ lhat: dap listening on 51234
 ## 改定履歴（要約）
 
 - 新設。行フック・束縛の内観・コンパイラの名前の表・DAP アダプタ・Godot 連携。
-- 束縛の書き換え（§3.4）と `setVariable` を追加。D1 は式の評価だけ残る。
-- 式の評価（§3.5）と `evaluate` を追加。D1 閉鎖——評価は写しの上で走り、
+- 束縛の書き換え（[debug.inspect.write]）と `setVariable` を追加。D1 は式の評価だけ残る。
+- 式の評価（[debug.inspect.eval]）と `evaluate` を追加。D1 閉鎖——評価は写しの上で走り、
   書き戻しは setVariable。
-- 全 machine 対応（§5.1）。machine の誕生の観測・全台停止・受信スレッド。
+- 全 machine 対応（[debug.dap.machines]）。machine の誕生の観測・全台停止・受信スレッド。
   D7 閉鎖、pause の覗き見は受信スレッドに置き換え。
-- パスの写像（§5.2、`DapPathMap`）。仮想ファイルシステムのホスト（lhatove）
+- パスの写像（[debug.dap.paths]、`DapPathMap`）。仮想ファイルシステムのホスト（lhatove）
   のための editor↔unit の両方向解決。
 - `LHAT_WITH_DEBUGGER`（2026-08-31）。出荷ビルドがデバッガを前処理で消す
   ノブ。トレースバックは残る——フォルト報告はデバッガではない。
@@ -577,12 +577,12 @@ lhat: dap listening on 51234
 - D3 閉鎖。長時間のホスト関数は協調停止点を呼べ、DAP の pause・全台停止・
   terminate をそこで処理する。同期 I/O と中断不能な後始末は pending のまま
   即時停止を保証しない。
-- D4 閉鎖。列はアダプタが本文から読む（§5.3）——停止した行の最初の非空白。
+- D4 閉鎖。列はアダプタが本文から読む（[debug.dap.columns]）——停止した行の最初の非空白。
   命令ごとの表は採らない: 行でしか止まらない以上、列は札にしかならず、
-  命令の列は行の途中を指すので札としても悪い。04§11.6 は動かない。
-- D6 閉鎖。写像なしの正規化がリンクを踏み抜く（§5.2）。Windows は
+  命令の列は行の途中を指すので札としても悪い。[errors.runtime.panic] は動かない。
+- D6 閉鎖。写像なしの正規化がリンクを踏み抜く（[debug.dap.paths]）。Windows は
   `GetFinalPathNameByHandle`（昇格不要）、POSIX は元から `realpath`。
   正規化は照合の側だけで、フレームは貰った綴りのまま報告する。ハードリンクや
   bind マウントは届かないままで、そこは写像の領分。
-- 再起動をまたぐセッション（§5.4）。`dap_session_detach` / `dap_session_rebind`:
+- 再起動をまたぐセッション（[debug.dap.restart]）。`dap_session_detach` / `dap_session_rebind`:
   接続とブレークポイントを保ったまま、次の run の machine・program へ付け直す。

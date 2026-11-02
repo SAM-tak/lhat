@@ -2,7 +2,7 @@
 //
 // A pool of worker machines. One function a host calls once, before
 // lhat_program_check, the same as any of program.h's own registrations
-// (05§8.7). Needs an OS thread implementation: port/thread.h. A host
+// ([modules.host.import]). Needs an OS thread implementation: port/thread.h. A host
 // linking this must also link lhatthread.
 //
 // std.thread starts a machine per call, which costs a machine and an OS
@@ -31,7 +31,7 @@
 //
 // await() stops the machine that calls it. A caller with a loop of its own
 // asks `t.done()`, or parks a scheduler on `t.awaitable()` -- the same push
-// std.thread's handle answers with (§15.14).
+// std.thread's handle answers with ([syntax.sub.await-done]).
 // Completion is claimed exactly once, including failure or refusal. A later
 // await, even on another machine, answers TaskError.Taken. There is no take
 // member. Successful reference results transfer ownership, never copy.
@@ -41,7 +41,7 @@
 // An unclaimed result is freed with the Task. Claiming it removes the Task's
 // ownership, so disposing the Task cannot destroy the received result.
 //
-// A Task may cross machines (05§8.8+2), so a job may be handed the Task
+// A Task may cross machines ([modules.hostdata.sharing]), so a job may be handed the Task
 // of another job, and a Task may be pushed into a std.channel.
 //
 // The signature preserves the final result T as Task<T>, also writable in

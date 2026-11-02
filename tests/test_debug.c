@@ -1,11 +1,11 @@
 // L^ (lhat) -- tests for std.debug.
 //
 // One name and one property. std.debug.log is registered as an 'f^' that
-// writes (§10.6 の脱法関数): std.io.print is a 'p^' and so cannot be
+// writes ([syntax.finally.not-in-f] の脱法関数): std.io.print is a 'p^' and so cannot be
 // called from inside a pure function, which is exactly where a print is
 // wanted while debugging. So what is pinned here is not that a string reaches
 // stdout -- any host function could do that -- but that it reaches stdout
-// from inside an 'f^', and that the call still answers nil^ so §13.2's "an f^
+// from inside an 'f^', and that the call still answers nil^ so [syntax.type.empty]'s "an f^
 // answers along every path" holds.
 //
 // Asserting on what was written means putting a file where stdout is, which
@@ -79,7 +79,7 @@ static void test_log_writes(void)
     }
 }
 
-// The whole reason this module exists: §10.6 says nothing done inside an 'f^'
+// The whole reason this module exists: [syntax.finally.not-in-f] says nothing done inside an 'f^'
 // can be observed from outside it, and std.io.print being a 'p^' is what
 // keeps that true. std.debug.log is the one name registered to sit on the
 // other side of that, so a pure function calling it has to check and has to
@@ -119,7 +119,7 @@ static void test_log_inside_a_pure_function(void)
     }
 }
 
-// §13.2 asks an f^ to answer along every path, and 04§11.3's nil^ is the
+// [syntax.type.empty] asks an f^ to answer along every path, and [errors.runtime.index]'s nil^ is the
 // value for "there is nothing here" -- so the registration says nil^ and the
 // checker is what pins it, no run needed.
 static void test_log_answers_nil(void)
@@ -141,7 +141,7 @@ static void test_log_answers_nil(void)
                    "the checker refuses a number before anything runs");
     }
 
-    // 03§3.4+2: a ring of names makes the checker walk these statements
+    // [pipeline.infer.rounds]: a ring of names makes the checker walk these statements
     // again, and an import^ binds as well as answering. What its own first
     // walk put there is not a second import of the name.
     LHAT_TEST("an import^ survives the statements being walked again");

@@ -9,7 +9,7 @@
 // lhat_node_visit_children names each child and says whether its place holds
 // a list, which is enough to write the whole tree out generically. What it
 // cannot say is which lists hold statements -- where code switched off with
-// '#[~ ... ]#' is listed (01§6.5) -- and disabled_code.h answers that.
+// '#[~ ... ]#' is listed ([lex.comment.disabled]) -- and disabled_code.h answers that.
 
 #include "ast_json.h"
 
@@ -255,9 +255,9 @@ static void add_child(void *context, const char *field, bool in_list,
 }
 
 #if LHAT_WITH_COMMENTS
-// 01§6.5: which disabled code between this node's children stands among
+// [lex.comment.disabled]: which disabled code between this node's children stands among
 // its statements. Decided before anything of the node is written, because
-// the comment is attached (01§6.4) to this node or to a child of it, and
+// the comment is attached ([lex.comment.kept]) to this node or to a child of it, and
 // whichever holds it must leave it out of its comments.
 typedef struct {
     const Layer *layer;
@@ -268,7 +268,7 @@ typedef struct {
 
 static void mark_listed_before(ListedWalk *walk, uint32_t limit)
 {
-    // Past one of 01§9's clauses, what follows is that clause's -- and the
+    // Past one of [lex.space]'s clauses, what follows is that clause's -- and the
     // clause ends where its last statement does, so neither can list it in
     // the right place. It stays the comment it lexes as.
     bool among = walk->previous == NULL ||
@@ -308,7 +308,7 @@ static const char *mark_listed(const LhatNode *node, const Layer *layer)
     return statements;
 }
 
-// 01§6.4. Spans only: the text is a slice of the source, which the reply
+// [lex.comment.kept]. Spans only: the text is a slice of the source, which the reply
 // carries once.
 static bool add_comments(cJSON *out, const LhatNode *node, const Layer *layer)
 {

@@ -28,7 +28,7 @@ static cJSON *make_diagnostic(const LhatUnit *unit, uint32_t offset,
     cJSON_AddItemToObject(diag, "range", range);
     cJSON_AddNumberToObject(diag, "severity", severity);
     cJSON_AddStringToObject(diag, "source", "lhat");
-    // 10§4.1: the ID is what a reader searches by and what a translation is
+    // [l10n.id.stable]: the ID is what a reader searches by and what a translation is
     // written against, so it is what `code` says.
     if (id != NULL) {
         cJSON_AddStringToObject(diag, "code", id);
@@ -64,7 +64,7 @@ cJSON *lsp_diagnostics_for_unit(const LhatUnit *unit, bool project_relaxed)
         }
 
         LhatUnitDiagnostic d = lhat_unit_diagnostic(unit, i);
-        // 03§3.1: a relaxed host would not have stopped on the three
+        // [pipeline.strict.per-unit]: a relaxed host would not have stopped on the three
         // strict-only gap diagnostics -- advisory there, fatal everywhere
         // else, and fatal everywhere when the host is not declared relaxed.
         int severity = project_relaxed && lhat_unit_diagnostic_relaxed_ok(unit, i)

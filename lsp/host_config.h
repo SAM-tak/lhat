@@ -1,7 +1,7 @@
 // L^ (lhat) -- LSP server: lhat-host.json, what a host's C would register.
 //
 // This server type-checks workspaces written against embeddings it cannot
-// run: the host's registrations (05§8.7) live in C the server never
+// run: the host's registrations ([modules.host.import]) live in C the server never
 // links. lhat-host.json carries them as text -- the very JSON
 // `lhat --dump-host-api` (lhat_program_dump_host_api) writes, or any other
 // host's equivalent -- and applying it re-plays the registrations against
@@ -32,7 +32,7 @@ LspHostConfig *lsp_host_config_parse(const char *text, size_t length);
 
 void lsp_host_config_free(LspHostConfig *config);
 
-// 03-compilation-pipeline.md の 03§3.1: the "strict" lhat_program_dump_host_api
+// 03-compilation-pipeline.md の [pipeline.strict.per-unit]: the "strict" lhat_program_dump_host_api
 // wrote, or `fallback` when there is no config (NULL) or the file predates
 // the field. lhatls checks strict regardless of this -- what it changes is
 // how the diagnostics it finds should be shown.
@@ -52,7 +52,7 @@ void lsp_host_config_counts(const LspHostConfig *config, size_t *types,
                             size_t *functions, size_t *annotations);
 
 // Every distinct module the file names, once each, in the order it names
-// them -- what 05§8.7's import^ may reach. Owned copies (the strings in
+// them -- what [modules.host.import]'s import^ may reach. Owned copies (the strings in
 // the parsed file go when the config does); the caller frees the array and
 // each entry. NULL with a zero count when there are none.
 char **lsp_host_config_modules(const LspHostConfig *config, size_t *count);

@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "lhat/object.h"  // 05§8.9: LhatHostValueTag, for naming a host value
+#include "lhat/object.h"  // [modules.hostvalue]: LhatHostValueTag, for naming a host value
 #include "lhat/port.h"
 #include "lhat/config.h"
 
@@ -645,7 +645,7 @@ LhatType *lhat_type_hostvalue(LhatTypeArena *arena,
 {
     LhatType *type = new_type(arena, LHAT_TYPE_HOSTVALUE);
     if (type != NULL) {
-        // 05§8.9: the payload shares v.table so member registration and
+        // [modules.hostvalue]: the payload shares v.table so member registration and
         // lookup read it unchanged; nominal is set for the readers that key
         // off it rather than off the kind.
         type->v.table.nominal = true;
@@ -660,7 +660,7 @@ LhatType *lhat_type_hostvalue_box(LhatTypeArena *arena, LhatType *held,
 {
     LhatType *type = new_type(arena, LHAT_TYPE_HOSTVALUE_BOX);
     if (type != NULL && held != NULL) {
-        // 05§8.9: the same payload arrangement as the value it holds --
+        // [modules.hostvalue]: the same payload arrangement as the value it holds --
         // identity is the tag either way. The value type rides along under
         // `instance` so get() answers the registered type whole, fields and
         // members included, rather than a bare tag. `sealed` is ConstBox^:
@@ -691,7 +691,7 @@ LhatType *lhat_type_coro(LhatTypeArena *arena, LhatType *receive,
     if (type != NULL) {
         type->v.coroutine.receive = receive;
         type->v.coroutine.produce = produce;
-        // §13.9: an empty third slot already says the last resume receives
+        // [syntax.type.coroutine]: an empty third slot already says the last resume receives
         // nil^ -- coroutine_answer puts it into Y|T. Writing that nil^ out as
         // well would be a second spelling of one type, and two types that
         // differ nowhere a program can see. Folded here, at the one place a
@@ -737,7 +737,7 @@ LhatType *lhat_type_error_set(LhatTypeArena *arena, const char *name,
     return type;
 }
 
-// §19: the enum declaration and its members, in errordef^'s shape.
+// [syntax.enum]: the enum declaration and its members, in errordef^'s shape.
 LhatType *lhat_type_enum_decl(LhatTypeArena *arena, const char *name,
                               size_t name_length)
 {
@@ -786,7 +786,7 @@ LhatType *lhat_type_error_kind(LhatTypeArena *arena, LhatType *set,
     type->v.error.set = set;
     type->v.error.name = name;
     type->v.error.name_length = name_length;
-    // 04§2.7: a kind is of the family its declaration is. Reading it here
+    // [errors.kind.local]: a kind is of the family its declaration is. Reading it here
     // rather than through the set keeps every asker one dereference away.
     type->v.error.local = set != NULL && set->v.error.local;
 
@@ -808,7 +808,7 @@ LhatType *lhat_type_error_kind(LhatTypeArena *arena, LhatType *set,
 // The member index
 //
 // A table type keeps its members as a list, in the order they were written
-// or registered: that order is the data (§14.16 writes it out, and §14.10
+// or registered: that order is the data ([syntax.obj.typeof] writes it out, and [syntax.obj.structure]
 // counts positions along it). Finding one by name in that list is a walk,
 // and a host registering a class per engine class asks for one on every
 // member it registers -- a walk inside a walk, which is what made loading a
@@ -915,10 +915,10 @@ static void index_added(LhatTypeArena *arena, LhatType *owner,
     index_put(index, member);
 }
 
-// §14.17+: the writer's namespace is the plain table and nothing else.
-// §14 reserves names on a def^, and 05§8.8/05§8.9 make every name on a host
+// [syntax.obj.tostring-hat]: the writer's namespace is the plain table and nothing else.
+// [syntax.obj] reserves names on a def^, and [modules.hostdata]/[modules.hostvalue] make every name on a host
 // type or host value the library's -- vm_member.c's vm_plain_table asks the
-// same of the value, and the two have to answer alike (03§4.2).
+// same of the value, and the two have to answer alike ([pipeline.repl.no-fork]).
 static bool writers_namespace(const LhatType *table)
 {
     return table->kind == LHAT_TYPE_TABLE &&
@@ -928,11 +928,11 @@ static bool writers_namespace(const LhatType *table)
 
 // The name a member is held under here.
 //
-// §14.17+: `tostring` and `iterate` are the only two words with two spellings
+// [syntax.obj.tostring-hat]: `tostring` and `iterate` are the only two words with two spellings
 // at all, and everywhere but a plain table the two spell ONE member rather
 // than two. So the hat comes off at the door -- once, on the way in and on
 // the way out -- and every comparison downstream is an ordinary comparison of
-// names: §14.12's "already a member", §14.5+'s collision at `..`, §14.7's
+// names: [syntax.obj.override]'s "already a member", [syntax.obj.compose-ambiguous]'s collision at `..`, [syntax.obj.instance]'s
 // written-beats-delegated, conformance, and what a reader is shown.
 //
 // Reading the spelling instead, at the point of asking, is what this replaces.
@@ -1028,7 +1028,7 @@ LhatTypeMember *lhat_type_add_member(LhatTypeArena *arena, LhatType *owner,
     member->name_length = name_length;
     member->type = type;
 
-    // 04§2.2: an error kind's fields are a handful and have no table
+    // [errors.kind.errordef]: an error kind's fields are a handful and have no table
     // to hang a tail or an index off, so they keep the walk.
     if (owner->kind == LHAT_TYPE_ERROR_KIND) {
         while (*slot != NULL) {
@@ -1179,7 +1179,7 @@ size_t lhat_type_tuple_arm_width(const LhatType *type)
         return lhat_type_tuple_width(type);
     }
     if (type->kind == LHAT_TYPE_UNION) {
-        // §13.8+: at most one arm can be a tuple -- two could not be
+        // [syntax.type.tuple]: at most one arm can be a tuple -- two could not be
         // told apart by the head slot -- so the first found is the answer.
         for (const LhatTypeList *p = type->v.composite.arms; p != NULL;
              p = p->next) {
@@ -1201,7 +1201,7 @@ const LhatType *lhat_type_hostvalue_arm(const LhatType *type)
         return type;
     }
     if (type->kind == LHAT_TYPE_UNION) {
-        // 05§8.9+: at most one arm is a host value -- two wide arms could
+        // [modules.hostvalue.union]: at most one arm is a host value -- two wide arms could
         // not be told apart by the head slot -- so the first found is the
         // answer, exactly as the tuple's arm is read above.
         for (const LhatTypeList *p = type->v.composite.arms; p != NULL;
@@ -1227,7 +1227,7 @@ LhatType *lhat_type_tuple_at(const LhatType *type, size_t index)
     return p != NULL ? p->type : NULL;
 }
 
-// §15.5: a call does not run a yielding body -- it makes the coroutine §13.9
+// [syntax.sub.no-contagion]: a call does not run a yielding body -- it makes the coroutine [syntax.type.coroutine]
 // describes, and that is what the caller is handed. Assembled by infer_func,
 // where the three slots settle; NULL until then and on every signature that
 // does not yield, where the written result is the whole answer.
@@ -1241,14 +1241,14 @@ LhatType *lhat_type_call_answer(const LhatType *type)
 }
 
 // ---------------------------------------------------------------------------
-// Conformance (§13.11)
+// Conformance ([syntax.type.fits])
 // ---------------------------------------------------------------------------
 
-// §14.7+2: whether a member is one an instance may reach. §14.7 is the
+// [syntax.obj.delegate]: whether a member is one an instance may reach. [syntax.obj.instance] is the
 // whole rule -- a static member of the delegate stays the delegate's, the
 // way a static member of a definition stays the definition's.
 //
-// §14.12's groups answer yes when any arm does: the call picks an arm, and
+// [syntax.obj.override]'s groups answer yes when any arm does: the call picks an arm, and
 // one that takes a receiver is reachable through the dot.
 bool lhat_type_takes_receiver(const LhatType *type)
 {
@@ -1277,7 +1277,7 @@ static const void *type_next(const void *node)
         return NULL;
     }
     // Base links belong to registered host types and to one check's segment
-    // of L^.modules standing in for a unit (05§5.3), delegation to
+    // of L^.modules standing in for a unit ([modules.require.once]), delegation to
     // wrappers.
     return type->v.table.base != NULL ? type->v.table.base
                                       : type->v.table.delegate;
@@ -1373,8 +1373,8 @@ static const LhatType *enum_decl_of(const LhatType *type)
     return type->kind == LHAT_TYPE_ENUM_MEMBER ? type->v.error.set : type;
 }
 
-// 05§8.8+: is `value` the same host type as `target`, or declared under it? Both sides
-// have to be registered ones -- 05§8.8's relation is between declarations, and
+// [modules.hostdata.base]: is `value` the same host type as `target`, or declared under it? Both sides
+// have to be registered ones -- [modules.hostdata]'s relation is between declarations, and
 // a written shape is not one. The chain is finite: the registry refuses a
 // base that would close a cycle.
 //
@@ -1396,7 +1396,7 @@ static bool nominal_is_a(const LhatType *value, const LhatType *target)
     return false;
 }
 
-// §13.13: a written Self^ makes a type hold itself, so a walk over two of them
+// [syntax.type.self]: a written Self^ makes a type hold itself, so a walk over two of them
 // has to be given a way to end. The pairs already being asked about are kept
 // on the C stack, and meeting one again answers yes.
 //
@@ -1411,7 +1411,7 @@ typedef struct Assumed {
     const struct Assumed *outer;
 } Assumed;
 
-// 05§8.9+ with §13.8+: whether a union may carry something wide. Only one
+// [modules.hostvalue.union] with [syntax.type.tuple]: whether a union may carry something wide. Only one
 // arm may be, and every other arm has to be a single slot the head's tag
 // tells apart -- nil^ and the error kinds, which '??' and 'try^' are the
 // constructs for. Anything else (any^, a second wide arm, a plain value with
@@ -1469,30 +1469,30 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
 static bool conforms_func(const LhatType *value, const LhatType *target,
                           const Assumed *seen)
 {
-    // §14.12 already states the rule for override^, and it is the ordinary one
+    // [syntax.obj.override] already states the rule for override^, and it is the ordinary one
     // for functions: arguments may be wider, results may be narrower.
     // A procedure contract permits effects; a function needs none of them.
     if (target->v.func.is_function && !value->v.func.is_function) {
         return false;
     }
-    // §14.4: an instance method and a plain subroutine are called differently,
+    // [syntax.obj.self]: an instance method and a plain subroutine are called differently,
     // so one cannot stand where the other is written.
     if (value->v.func.takes_self != target->v.func.takes_self) {
         return false;
     }
-    // §11.3+: and which operand the receiver is decides which way round
+    // [syntax.op.right]: and which operand the receiver is decides which way round
     // the operator may be written, so the two are not each other.
     if (value->v.func.self_last != target->v.func.self_last) {
         return false;
     }
-    // §15.1+2: a permission, so it goes the other way round. A body that
+    // [syntax.sub.mutable-self]: a permission, so it goes the other way round. A body that
     // never writes its receiver stands where writing was allowed for; one
     // that writes, standing where none was, would mutate through a seat
     // that promised not to.
     if (value->v.func.mutable_self && !target->v.func.mutable_self) {
         return false;
     }
-    // §15.1+3: a promise, so it goes only one way. One that answers something
+    // [syntax.sub.fresh]: a promise, so it goes only one way. One that answers something
     // new stands wherever; where newness was promised, one that promised
     // nothing may not stand.
     if (target->v.func.answers_fresh && !value->v.func.answers_fresh) {
@@ -1512,7 +1512,7 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
         return false;
     }
 
-    // §13.7: a trailing '...' is part of how the signature may be called, so
+    // [syntax.type.variadic]: a trailing '...' is part of how the signature may be called, so
     // one that has it cannot stand for one that does not, or the other way.
     if ((value->v.func.variadic == NULL) != (target->v.func.variadic == NULL)) {
         return false;
@@ -1522,10 +1522,10 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
         return false;
     }
 
-    // §13.2: no result at all is not the same as returning something.
+    // [syntax.type.empty]: no result at all is not the same as returning something.
     //
-    // §15.5: and what a call answers is the coroutine where the body yields
-    // (§13.9), not §13.9's T -- so a signature written 'p^number^;' does not
+    // [syntax.sub.no-contagion]: and what a call answers is the coroutine where the body yields
+    // ([syntax.type.coroutine]), not [syntax.type.coroutine]'s T -- so a signature written 'p^number^;' does not
     // take one that makes a coroutine, and one written with the c^{ … } does.
     // Reading `result` here would compare the two on what their bodies return,
     // which is not what either caller receives.
@@ -1565,7 +1565,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
         return true;  // nothing was inferred here; do not cascade
     }
 
-    // §13.13: this pair is already open further up the walk, so a Self^ has
+    // [syntax.type.self]: this pair is already open further up the walk, so a Self^ has
     // brought the question back to itself.
     for (const Assumed *s = seen; s != NULL; s = s->outer) {
         if (s->value == value && s->target == target) {
@@ -1587,7 +1587,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
     if (target->kind == LHAT_TYPE_ARGUMENT) return false;
 
     // A gap in inference is not a mismatch. Under relaxed it becomes a runtime
-    // check (03§3.5); under strict, lhat_type_conforms_strict is the one
+    // check ([pipeline.strict.relaxed]); under strict, lhat_type_conforms_strict is the one
     // that refuses pending^ -- this function stays lenient for every caller
     // that has not asked for that.
     if (value->kind == LHAT_TYPE_UNKNOWN || target->kind == LHAT_TYPE_UNKNOWN ||
@@ -1602,8 +1602,8 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                value->template_definition == target->template_definition;
     }
 
-    // §13.2: nothing inhabits "no value", so it fits nowhere a value is wanted
-    // -- not even any^, which is the top of every *value* (§13.7). And nothing
+    // [syntax.type.empty]: nothing inhabits "no value", so it fits nowhere a value is wanted
+    // -- not even any^, which is the top of every *value* ([syntax.type.variadic]). And nothing
     // fits where no value is wanted either.
     if (value->kind == LHAT_TYPE_NONE || target->kind == LHAT_TYPE_NONE) {
         return value->kind == target->kind;
@@ -1632,17 +1632,17 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
         return a == NULL && b == NULL;
     }
 
-    // 05§8.9: a host value fits exactly its own type and nothing wider.
+    // [modules.hostvalue]: a host value fits exactly its own type and nothing wider.
     // Checked before any^'s shortcut on purpose: any^ is the top of every
     // value that can live anywhere a value lives, and a host value cannot
     // leave its frame -- letting it under any^ would be the first step of
     // every escape the kind exists to refuse. Identity is the tag, for
-    // 05§8.8's reason sharpened by value semantics.
+    // [modules.hostdata]'s reason sharpened by value semantics.
     //
-    // 05§8.9+: a union is the exception, and only when its other arms are the
+    // [modules.hostvalue.union]: a union is the exception, and only when its other arms are the
     // ones the head slot's tag tells apart -- 'Vector3|nil^' is a Vector3's
     // slots with the head saying which arm turned up, which is the very
-    // reading §13.8+ gives a tuple standing beside a nil^. The union arm
+    // reading [syntax.type.tuple] gives a tuple standing beside a nil^. The union arm
     // below is what admits it; everything else still stops here.
     if (value->kind == LHAT_TYPE_HOSTVALUE &&
         target->kind == LHAT_TYPE_UNION && admits_a_wide_arm(target)) {
@@ -1653,24 +1653,24 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                value->v.table.hostvalue_tag == target->v.table.hostvalue_tag;
     }
 
-    // §13.7: any^ is the top of every value, not just of tables.
+    // [syntax.type.variadic]: any^ is the top of every value, not just of tables.
     if (target->kind == LHAT_TYPE_ANY) {
-        // §13.8+: except a tuple. any^ is the top of every value a name can
+        // [syntax.type.tuple]: except a tuple. any^ is the top of every value a name can
         // hold, and a tuple is not one -- it lives in the slots a caller
         // reserved and is taken apart there. Refusing it here is what confines
         // it to a result position, the same way the HOSTVALUE arm above
         // confines a host value to its frame. The one place a tuple still
-        // reaches past itself is a union with an error kind (04§3.1),
+        // reaches past itself is a union with an error kind ([errors.fallible.union]),
         // which the UNION arms below take, since this only refuses any^.
         return value->kind != LHAT_TYPE_TUPLE;
     }
 
     // Every arm has to fit, since the value may be any of them. This is what
-    // makes 04§8.1 work: a number^|error^ cannot stand where number^ is.
+    // makes [errors.dropped.no-new] work: a number^|error^ cannot stand where number^ is.
     if (value->kind == LHAT_TYPE_UNION) {
         for (const LhatTypeList *arm = value->v.composite.arms; arm != NULL;
              arm = arm->next) {
-            // 03§7、P6: an arm left pending^ here is not the gap the
+            // [pipeline.open]、P6: an arm left pending^ here is not the gap the
             // leniency above forgives -- it is a mutually recursive call
             // whose own inference had not run yet, so this union was never
             // actually checked against anything. Letting it through the way
@@ -1724,9 +1724,9 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
         return false;  // the fall-through above found nothing
     }
 
-    // 04§2.3: every kind is below error^, and a kind is below its set.
+    // [errors.kind.made]: every kind is below error^, and a kind is below its set.
     if (is_error_type(value) && is_error_type(target)) {
-        // 04§2.7: two tops, and they are disjoint. Nothing under localerror^
+        // [errors.kind.local]: two tops, and they are disjoint. Nothing under localerror^
         // reaches error^ or the other way round, which is what keeps
         // 'p^ … -> T|error^' writable after a family that cannot be
         // returned exists at all.
@@ -1742,11 +1742,11 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
         if (target->kind == LHAT_TYPE_ERROR_SET) {
             return error_set_of(value) == target;
         }
-        return value == target;  // §2.4: identity is the declaration
+        return value == target;  // [syntax.juxta.call-binds]: identity is the declaration
     }
 
-    // §19: a member is below its enum; members meet only as
-    // themselves. Identity is the declaration, as 04§2.4 has it for errors.
+    // [syntax.enum]: a member is below its enum; members meet only as
+    // themselves. Identity is the declaration, as [errors.kind.nominal] has it for errors.
     if (is_enum_type(value) && is_enum_type(target)) {
         if (target->kind == LHAT_TYPE_ENUM) {
             return enum_decl_of(value) == target;
@@ -1762,7 +1762,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
     }
 
     switch (target->kind) {
-        // 05§8.9: a box fits exactly its own type -- identity is the tag,
+        // [modules.hostvalue]: a box fits exactly its own type -- identity is the tag,
         // as it is for the value it holds. Unlike that value it is an
         // ordinary heap object, so the union and any^ arms above have
         // already had their say. ConstBox^ is the get-only reading, so a
@@ -1775,12 +1775,12 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                    (!value->v.table.sealed || target->v.table.sealed);
 
         case LHAT_TYPE_TABLE:
-            // 05§8.8: a host type is the one thing §11.3 does not judge by
+            // [modules.hostdata]: a host type is the one thing [syntax.op.semantic] does not judge by
             // shape. Asked for one, only that one -- or something declared
             // under it -- will do; there is nothing to compare structurally,
             // and being wrong means a pointer read as something it is not.
             //
-            // 05§8.8+: what a host declared to be under another is the one
+            // [modules.hostdata.base]: what a host declared to be under another is the one
             // exception, and it is not a loosening -- the host said the
             // pointer may be read as the base's, which is the whole of what
             // this refusal was protecting.
@@ -1788,7 +1788,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                 if (target->v.table.is_typeinfo && value->v.table.is_typeinfo) return true;
                 return value == target || nominal_is_a(value, target);
             }
-            // §14.7+: what a definition's instances carry is part of what the
+            // [syntax.obj.members-order]: what a definition's instances carry is part of what the
             // definition is, so a written self^{ … } is asked of them the way
             // the members are -- and only a definition has any to ask.
             if (target->v.table.instance != NULL &&
@@ -1797,7 +1797,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                               target->v.table.instance, seen))) {
                 return false;
             }
-            // §14.10: at least the listed members. Extra members are fine,
+            // [syntax.obj.structure]: at least the listed members. Extra members are fine,
             // which is what lets a value with many members satisfy a small
             // structure at all.
             LhatChain requirements = lhat_type_chain(target);
@@ -1863,11 +1863,11 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                     }
                 }
             }
-            // §13.7, §14.10: an unbounded tail, checked by walking the
-            // positions after the named ones the way §14.10 counts them --
+            // [syntax.type.variadic], [syntax.obj.structure]: an unbounded tail, checked by walking the
+            // positions after the named ones the way [syntax.obj.structure] counts them --
             // from 0, since a variadic type here is not written mixed with
             // fixed positions in practice. Stops at the first position
-            // value does not have; §13.7 asks for zero or more, not a count.
+            // value does not have; [syntax.type.variadic] asks for zero or more, not a count.
             if (target->v.table.variadic != NULL) {
                 if (value->v.table.variadic != NULL &&
                     !conforms_in(value->v.table.variadic,
@@ -1902,7 +1902,7 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
             return true;
 
         case LHAT_TYPE_TUPLE: {
-            // §13.8+: the width is exact. §14.10's width subtyping is a rule
+            // [syntax.type.tuple]: the width is exact. [syntax.obj.structure]'s width subtyping is a rule
             // about tables and does not reach here -- every position of a
             // tuple is a slot the caller reserved, so one more or one fewer
             // is a different call, not a wider value.
@@ -1924,8 +1924,8 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
         case LHAT_TYPE_CORO:
             if (target->coroutine_top) return true;
             if (value->coroutine_top) return false;
-            // §15.3+: advancing one runs its body, so start()/resume() carry
-            // the body's kind (§15.6+). A p^ coroutine cannot stand where an
+            // [syntax.sub.yieldable-f]: advancing one runs its body, so start()/resume() carry
+            // the body's kind ([syntax.sub.coroutine-members]). A p^ coroutine cannot stand where an
             // f^ one is written -- an f^ holding it could not advance it. The
             // other way is the subroutines' rule: advancing through a p^ type
             // is a p^ call, which an f^ body permits.
@@ -1933,10 +1933,10 @@ static bool conforms_in(const LhatType *value, const LhatType *target,
                 (target->v.coroutine.is_function && !value->v.coroutine.is_function))) {
                 return false;
             }
-            // §13.9: an empty slot is a statement, not a gap, so it stands
+            // [syntax.type.coroutine]: an empty slot is a statement, not a gap, so it stands
             // apart from every type rather than conforming to all of them the
             // way conforms_in reads a NULL. A resume that takes nothing is
-            // not one that takes nil^ -- §14.12 already holds arities {0} and
+            // not one that takes nil^ -- [syntax.obj.override] already holds arities {0} and
             // {1} disjoint -- and a body that cannot end answers Y where one
             // ending without a value answers Y|nil^.
             if ((!target->receive_any && (value->receive_any ||
@@ -1966,7 +1966,7 @@ bool lhat_type_conforms(const LhatType *value, const LhatType *target)
     return conforms_in(value, target, NULL);
 }
 
-// 03§3.1: how deep to look for a gap. A type built out of unions and
+// [pipeline.strict.per-unit]: how deep to look for a gap. A type built out of unions and
 // tuples this far down is past anything a diagnostic could point at usefully,
 // and the bound is what keeps a type holding itself from being walked forever
 // -- the same depth chk_mentions_function_coroutine stops at.
@@ -2047,14 +2047,14 @@ bool lhat_type_conforms_strict(const LhatType *value, const LhatType *target)
     if (value == NULL || target == NULL) {
         return true;
     }
-    // §13.2: NONE is judged by kind alone -- neither any^ nor a gap forgives
+    // [syntax.type.empty]: NONE is judged by kind alone -- neither any^ nor a gap forgives
     // it, so it has to be settled before either check below runs.
     if (value->kind == LHAT_TYPE_NONE || target->kind == LHAT_TYPE_NONE) {
         return lhat_type_conforms(value, target);
     }
-    // §13.7: any^ is the top of every value, pending^ included -- a value
+    // [syntax.type.variadic]: any^ is the top of every value, pending^ included -- a value
     // whose own type is still unresolved still fits where anything does.
-    // 03§3.1, 03§3.5: a *target* left pending^ is a constraint that was
+    // [pipeline.strict.per-unit], [pipeline.strict.relaxed]: a *target* left pending^ is a constraint that was
     // never written -- an omitted parameter or return annotation, a
     // binding a multiple-assignment left short -- not a gap strict has any
     // business closing. That is a different question from whether the
@@ -2062,7 +2062,7 @@ bool lhat_type_conforms_strict(const LhatType *value, const LhatType *target)
     if (target->kind == LHAT_TYPE_ANY || target->kind == LHAT_TYPE_PENDING) {
         return true;
     }
-    // 03§3.1, 03§3.5、P6: a value with a gap in it -- inference that had
+    // [pipeline.strict.per-unit], [pipeline.strict.relaxed]、P6: a value with a gap in it -- inference that had
     // somewhere left to run but did not -- is exactly what strict exists to
     // report, unlike unknown^ (lhat_type_conforms's leniency for that one
     // stands even here). Buried in a union as readily as on its own: what a
@@ -2081,7 +2081,7 @@ bool lhat_type_equal(const LhatType *a, const LhatType *b)
         ((a->v.table.index_key == NULL) != (b->v.table.index_key == NULL))) {
         return false;
     }
-    // 03§7、P6: lhat_type_conforms treats unknown^ and pending^ as
+    // [pipeline.open]、P6: lhat_type_conforms treats unknown^ and pending^ as
     // fitting anywhere -- a gap in inference, not a claim about sameness.
     // Two-way conforms would call either one "equal" to whatever it is
     // compared against, which is what let append_arms (build_composite)
@@ -2106,7 +2106,7 @@ bool lhat_type_equal(const LhatType *a, const LhatType *b)
 }
 
 // ---------------------------------------------------------------------------
-// Disjointness (§14.12)
+// Disjointness ([syntax.obj.override])
 // ---------------------------------------------------------------------------
 
 static bool only_errors(const LhatType *type)
@@ -2129,7 +2129,7 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         return false;
     }
 
-    // §13.13: the question has come back to itself through a Self^. Nothing on
+    // [syntax.type.self]: the question has come back to itself through a Self^. Nothing on
     // this path tells the two apart, which is what false says here -- the
     // dual of the assumption conforms_in makes, and for the same reason: only
     // a finite path can be a witness, and one would already have been walked.
@@ -2151,8 +2151,8 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         return false;
     }
 
-    // §13.2: nothing inhabits "no value", so nothing inhabits it and something
-    // else either. This is what makes §11.7's `??` and 04§4.1's catch^
+    // [syntax.type.empty]: nothing inhabits "no value", so nothing inhabits it and something
+    // else either. This is what makes [syntax.op.default]'s `??` and [errors.catch.form]'s catch^
     // report on a call that produces nothing.
     if (a->kind == LHAT_TYPE_NONE || b->kind == LHAT_TYPE_NONE) {
         return true;
@@ -2187,15 +2187,15 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         return disjoint_in(b, a, seen);
     }
 
-    // 04§2.6: an error is separate from everything that is not one. Within
+    // [errors.kind.disjoint]: an error is separate from everything that is not one. Within
     // errors, error^ overlaps them all and two kinds overlap only if they are
     // the same declaration.
     if (is_error_type(a) || is_error_type(b)) {
         if (!is_error_type(a) || !is_error_type(b)) {
             return true;
         }
-        // 04§2.7: the two families never meet, so a top overlaps only what is
-        // under it. This is the row 04§2.6's table gains.
+        // [errors.kind.local]: the two families never meet, so a top overlaps only what is
+        // under it. This is the row [errors.kind.disjoint]'s table gains.
         if (a->v.error.local != b->v.error.local) {
             return true;
         }
@@ -2208,7 +2208,7 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         return a != b;
     }
 
-    // §19: within one declaration an enum overlaps its members and
+    // [syntax.enum]: within one declaration an enum overlaps its members and
     // two members overlap only as the same one. Against everything else the
     // generic kind test below already keeps them apart.
     if (is_enum_type(a) && is_enum_type(b)) {
@@ -2228,20 +2228,20 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         return disjoint_in(lhat_check_type_base(a), lhat_check_type_base(b), seen);
     }
 
-    // 05§8.9: identity is the tag, so two host value types overlap exactly
+    // [modules.hostvalue]: identity is the tag, so two host value types overlap exactly
     // when they are the same registration. There is no structure to combine
     // the way two tables below might.
     if (a->kind == LHAT_TYPE_HOSTVALUE) {
         return a->v.table.hostvalue_tag != b->v.table.hostvalue_tag;
     }
 
-    // 05§8.9: and the box around one is told apart the same way -- '=' on
+    // [modules.hostvalue]: and the box around one is told apart the same way -- '=' on
     // boxes of two registrations is settled already, whatever the bytes.
     if (a->kind == LHAT_TYPE_HOSTVALUE_BOX) {
         return a->v.table.hostvalue_tag != b->v.table.hostvalue_tag;
     }
 
-    // §13.8+: two tuples overlap only if they have the same positions and
+    // [syntax.type.tuple]: two tuples overlap only if they have the same positions and
     // something inhabits every pair of them. Differing widths leave nothing in
     // both, unlike two tables, which may always carry each other's members.
     if (a->kind == LHAT_TYPE_TUPLE) {
@@ -2258,7 +2258,7 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
     }
 
     if (a->kind == LHAT_TYPE_TABLE) {
-        // 05§8.8: a registered type is judged by its declaration and not
+        // [modules.hostdata]: a registered type is judged by its declaration and not
         // by its shape -- conforms_in asks a nominal target for the type
         // itself -- so nothing inhabits two of them. The dual of that rule,
         // and what lets one registration take a File where another takes a
@@ -2267,8 +2267,8 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         if (a->v.table.nominal || b->v.table.nominal) {
             if (a->v.table.nominal && b->v.table.nominal) {
                 if (a->v.table.is_typeinfo && b->v.table.is_typeinfo) return false;
-                // 05§8.8+: unless one was declared under the other, in which
-                // case a value of the derived one inhabits both. §14.12 reads
+                // [modules.hostdata.base]: unless one was declared under the other, in which
+                // case a value of the derived one inhabits both. [syntax.obj.override] reads
                 // this, so two registrations taking a base and a derived
                 // type are overlapping and may not be overloaded -- there is
                 // no specificity rule here to pick between them.
@@ -2281,7 +2281,7 @@ static bool disjoint_in(const LhatType *a, const LhatType *b,
         // Two structures are separate only when a name they share is declared
         // with types that nothing satisfies at once. Sharing no name at all
         // leaves them overlapping, since a value may carry both sets of
-        // members -- which is why §14.12 forbids overloading on shape.
+        // members -- which is why [syntax.obj.override] forbids overloading on shape.
         LhatChain members = lhat_type_chain(a);
         const LhatType *up;
         while ((up = lhat_chain_next(&members)) != NULL) {
@@ -2368,7 +2368,7 @@ static LhatType *build_composite(LhatTypeArena *arena, LhatTypeKind kind,
         return a;
     }
 
-    // §13.7: any^ admits every value, so a union with it is it. An
+    // [syntax.type.variadic]: any^ admits every value, so a union with it is it. An
     // intersection with it adds no requirement, so it is the other side.
     if ((a->kind == LHAT_TYPE_ANY && !a->excludes_error) ||
         (b->kind == LHAT_TYPE_ANY && !b->excludes_error)) {
@@ -2394,7 +2394,7 @@ static LhatType *build_composite(LhatTypeArena *arena, LhatTypeKind kind,
     return node;
 }
 
-// §13.8+: whether this arm stands beside a tuple as itself rather than
+// [syntax.type.tuple]: whether this arm stands beside a tuple as itself rather than
 // folding into its positions. nil^ and the error kinds are the arms a
 // construct discriminates off the head slot (?? / ISNIL, try^ / ISERROR);
 // the opaque kinds carry nothing to fold. Everything else -- a plain value,
@@ -2424,7 +2424,7 @@ static bool stands_beside_tuple(const LhatType *type)
 
 // The type at position `i` of one side of a widened fold: a tuple answers
 // its position, a single value is a tuple of one, and past either end the
-// position was never written -- 04§11.3's absence, nil^.
+// position was never written -- [errors.runtime.index]'s absence, nil^.
 static LhatType *fold_side_at(LhatTypeArena *arena, LhatType *side,
                               size_t width, size_t i)
 {
@@ -2437,7 +2437,7 @@ static LhatType *fold_side_at(LhatTypeArena *arena, LhatType *side,
 
 LhatType *lhat_type_union(LhatTypeArena *arena, LhatType *a, LhatType *b)
 {
-    // §13.8+: two tuples of the same width fold position by position --
+    // [syntax.type.tuple]: two tuples of the same width fold position by position --
     // '(A, B)|(C, D)' is '(A|C, B|D)'. The answer is two values either way,
     // and each position is one side's or the other's; leaving the union
     // outside would say the answer is a run OR a run, which is not a shape
@@ -2461,7 +2461,7 @@ LhatType *lhat_type_union(LhatTypeArena *arena, LhatType *a, LhatType *b)
         return folded;
     }
 
-    // §13.8+: and widths that differ fold too, the short side padded with
+    // [syntax.type.tuple]: and widths that differ fold too, the short side padded with
     // nil^ -- '(A, B)|C' is '(A|C, B|nil^)', with a single value standing
     // as a tuple of one. This is what a coroutine's union(Y, T) and a
     // body returning different widths become: one shape, every position a
@@ -2496,13 +2496,13 @@ LhatType *lhat_type_intersect(LhatTypeArena *arena, LhatType *a, LhatType *b)
 }
 
 // ---------------------------------------------------------------------------
-// Writing a type out (07§4)
+// Writing a type out ([lsp.hover])
 // ---------------------------------------------------------------------------
 
 // Keeps writing past the end of the buffer without touching it, so the caller
 // learns how long the whole thing was -- and so nothing has to check the room
 // left at every step.
-// §13.13: the structures this walk is already inside, innermost first. A type
+// [syntax.type.self]: the structures this walk is already inside, innermost first. A type
 // that holds itself is reached again through one of them, and what stands
 // there in the source is a Self^ -- so that is what is written, with a second
 // hat for each further one out, the way the annotation counts them.
@@ -2517,14 +2517,14 @@ typedef struct {
     size_t written;
     // Pushed and popped around a structure as write_type descends into it.
     const WriteSeen *seen;
-    // 07§4: how much of a type to write before eliding the rest. On
+    // [lsp.hover]: how much of a type to write before eliding the rest. On
     // the sink rather than threaded through the recursion, since every
     // writer below already has one. A caller wanting the whole thing passes
     // INT_MAX, which no depth or count reaches, so the tests below stay as
     // they are and there is no "unlimited" case to write twice.
     //
-    // Neither limit is what stops the walk: §14 lets a table hold itself,
-    // and `seen` is what answers that -- with §13.13's Self^, the spelling
+    // Neither limit is what stops the walk: [syntax.obj] lets a table hold itself,
+    // and `seen` is what answers that -- with [syntax.type.self]'s Self^, the spelling
     // the source would use in the same place.
     int max_depth;
     int max_items;
@@ -2549,7 +2549,7 @@ static void put_text(TypeSink *sink, const char *text)
 static void write_type(TypeSink *sink, const LhatType *type, int depth);
 static void write_result(TypeSink *sink, const LhatType *type, int depth);
 
-// §14.10: an entry with no name is the type of the next position, counted from
+// [syntax.obj.structure]: an entry with no name is the type of the next position, counted from
 // zero in written order with the named ones taking no place in the sequence.
 // lhat_type_add_index_member holds a position as a member whose name is its
 // digits, so this is that rule read backwards: a member standing where the
@@ -2570,14 +2570,14 @@ static bool is_next_position(const LhatTypeMember *m, size_t position)
 }
 
 // The rule above, exported: a walk elsewhere carrying its own count asks it
-// of each member in order (§14.10 makes the count part of the meaning, so a
+// of each member in order ([syntax.obj.structure] makes the count part of the meaning, so a
 // name lookup cannot stand in for this).
 bool lhat_type_member_position(const LhatTypeMember *m, size_t position)
 {
     return is_next_position(m, position);
 }
 
-// §14.10+: how many positions from here on carry this same type. One run of
+// [syntax.obj.structure-repeat]: how many positions from here on carry this same type. One run of
 // them is written 'type[n]', and that is the canonical spelling -- a run
 // written out, and one written with the count, are the same type, so what is
 // read back says it the one way.
@@ -2599,8 +2599,8 @@ static size_t run_of_positions(const LhatTypeMember *m, size_t position)
     return run;
 }
 
-// §14.7+2 with 05§8.8+: what the links lend, written after what the
-// type holds itself -- §14.7's order, on the page as in a lookup. Only a
+// [syntax.obj.delegate] with [modules.hostdata.base]: what the links lend, written after what the
+// type holds itself -- [syntax.obj.instance]'s order, on the page as in a lookup. Only a
 // member taking a receiver is lent, and one the type declares itself is
 // already above, so neither is written twice.
 static void write_lent_members(TypeSink *sink, const LhatType *table,
@@ -2677,7 +2677,7 @@ static void write_lent_members(TypeSink *sink, const LhatType *table,
 }
 
 // A definition's own members: the ones the self^{ … } section did not already
-// show. An instance's member is reachable through the definition too (§14.4's
+// show. An instance's member is reachable through the definition too ([syntax.obj.self]'s
 // `let^ f = A.m`), so writing it twice would only say the same thing again.
 // Each is written after a ", " of its own, since a section came before.
 static void write_own_members(TypeSink *sink, const LhatType *definition,
@@ -2703,7 +2703,7 @@ static void write_own_members(TypeSink *sink, const LhatType *definition,
 }
 
 // `paren_union` is for the one separator that binds tighter than what an arm
-// may be: §11.5 makes '&' tighter than '|', so a union arm of an intersection
+// may be: [syntax.op.precedence] makes '&' tighter than '|', so a union arm of an intersection
 // needs the grouping parentheses back or the text reads as '(A & B) | C'.
 static void write_list(TypeSink *sink, const LhatTypeList *list, int depth,
                        const char *separator, bool paren_union)
@@ -2731,7 +2731,7 @@ static void write_list(TypeSink *sink, const LhatTypeList *list, int depth,
     }
 }
 
-// §13.8+2: a result position takes a tuple bare -- the parentheses say
+// [syntax.type.tuple-parens]: a result position takes a tuple bare -- the parentheses say
 // "the union covers the whole of this", and nothing else. Everywhere a
 // tuple cannot stand bare (a union's arm, and the top level, where the
 // text may be read back as an annotation) write_type keeps them.
@@ -2750,7 +2750,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         put_text(sink, "?");
         return;
     }
-    // §14 lets a table hold itself, so the walk needs a floor of its own.
+    // [syntax.obj] lets a table hold itself, so the walk needs a floor of its own.
     if (depth > sink->max_depth) {
         put_text(sink, "…");
         return;
@@ -2784,7 +2784,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             put_text(sink, "?");
             return;
         case LHAT_TYPE_NONE:
-            // §13.2: nothing is produced, which is not nil^ (03§3.4).
+            // [syntax.type.empty]: nothing is produced, which is not nil^ ([pipeline.infer]).
             put_text(sink, "no value");
             return;
         case LHAT_TYPE_ANY:    put_text(sink, "any^"); return;
@@ -2793,7 +2793,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         case LHAT_TYPE_NUMBER: put_text(sink, "number^"); return;
         case LHAT_TYPE_STRING: put_text(sink, "string^"); return;
         case LHAT_TYPE_COSTATE: put_text(sink, "costate^"); return;
-        // 04§2.7: two tops, so the writer has to say which (§14.16 wants
+        // [errors.kind.local]: two tops, so the writer has to say which ([syntax.obj.typeof] wants
         // what it writes to read back as the same type).
         case LHAT_TYPE_ERROR:
             put_text(sink, type->v.error.local ? "localerror^" : "error^");
@@ -2801,7 +2801,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
 
         case LHAT_TYPE_TABLE: {
             if (type->v.table.is_typeinfo) { put_text(sink, "type^"); return; }
-            // 05§8.8: a host type is named the way it was registered, the
+            // [modules.hostdata]: a host type is named the way it was registered, the
             // same as a host value below and as the machine's own writer
             // already does (object.c). Its members are reachable like any
             // table's, but they are not what it is -- written out they make a
@@ -2815,7 +2815,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 put_text(sink, type->v.table.hostdata_tag->name);
                 return;
             }
-            // §13.13: already inside this one, so the source said Self^ here.
+            // [syntax.type.self]: already inside this one, so the source said Self^ here.
             unsigned level = 1;
             for (const WriteSeen *s = sink->seen; s != NULL; s = s->outer) {
                 if (s->type == type) {
@@ -2828,7 +2828,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 level++;
             }
 
-            // §14.10: the members come with the word, and the top of tables
+            // [syntax.obj.structure]: the members come with the word, and the top of tables
             // asks for none.
             if (type->v.table.members == NULL &&
                 type->v.table.variadic == NULL &&
@@ -2840,7 +2840,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             }
             WriteSeen here = { type, sink->seen };
             sink->seen = &here;
-            // §13.13: inside a definition Self^ is the instance, so that is
+            // [syntax.type.self]: inside a definition Self^ is the instance, so that is
             // what the innermost link names here -- and the definition itself
             // becomes Self^^, one structure further out.
             WriteSeen within = { type->v.table.instance, sink->seen };
@@ -2848,17 +2848,17 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 sink->seen = &within;
             }
             put_text(sink, "t^{ ");
-            // §14.7+: a definition says what its instances carry in the same
+            // [syntax.obj.members-order]: a definition says what its instances carry in the same
             // self^{ … } section it was written with. Its own members follow
             // -- new and the static ones. What the section already showed is
             // not written twice: an instance's member is reachable through
-            // the definition (§14.4's 'let^ f = A.m'), which is what the
+            // the definition ([syntax.obj.self]'s 'let^ f = A.m'), which is what the
             // section is saying.
             if (type->v.table.instance != NULL) {
                 const LhatType *held = type->v.table.instance;
                 put_text(sink, "self^{ ");
                 write_members(sink, held->v.table.members, depth + 1);
-                // §14.7+2: what a delegate lends is not in that list --
+                // [syntax.obj.delegate]: what a delegate lends is not in that list --
                 // it is a link, the way the machine holds it. Written
                 // out all the same, since what this section says is
                 // what an instance may be asked for, and that is what
@@ -2874,7 +2874,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 write_lent_members(sink, type, depth);
             }
             if (type->v.table.variadic != NULL) {
-                // §14.10: the sequence half, unbounded -- 'T[]', with the
+                // [syntax.obj.structure]: the sequence half, unbounded -- 'T[]', with the
                 // parentheses a union needs to stay one element type.
                 if (type->v.table.members != NULL) {
                     put_text(sink, ", ");
@@ -2903,7 +2903,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
         }
 
         case LHAT_TYPE_HOSTVALUE:
-            // 05§8.9: named the way the host registered it. The members
+            // [modules.hostvalue]: named the way the host registered it. The members
             // are not written out -- like a hostdata type, what it is is the
             // declaration, not the shape.
             if (type->v.table.hostvalue_tag != NULL) {
@@ -2916,7 +2916,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             return;
 
         case LHAT_TYPE_HOSTVALUE_BOX:
-            // 05§8.9: the box under that name.
+            // [modules.hostvalue]: the box under that name.
             if (type->v.table.hostvalue_tag != NULL) {
                 put_text(sink, type->v.table.hostvalue_tag->module);
                 put_text(sink, ".");
@@ -2928,9 +2928,9 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             return;
 
         case LHAT_TYPE_TUPLE:
-            // §13.8+: '(A, B)'. The grouping parentheses §13.1's grammar
+            // [syntax.type.tuple]: '(A, B)'. The grouping parentheses [syntax.type.signature]'s grammar
             // already had are what leave a one-position form unwritable, so
-            // there is no '(T,)' to spell here. §13.8+2: reached here the
+            // there is no '(T,)' to spell here. [syntax.type.tuple-parens]: reached here the
             // tuple is somewhere a bare ',' would be read as something
             // else's -- a result position goes through write_result.
             put_text(sink, "(");
@@ -2939,11 +2939,11 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             return;
 
         case LHAT_TYPE_FUNC: {
-            // §13.1's form. §13.2 writes '->' only when something is returned.
+            // [syntax.type.signature]'s form. [syntax.type.empty] writes '->' only when something is returned.
             put_text(sink, type->v.func.is_function ? "f^" : "p^");
-            // §14.4: in a type the receiver is a parameter, written as the
+            // [syntax.obj.self]: in a type the receiver is a parameter, written as the
             // word itself. Saying so is what tells a member apart from a
-            // plain subroutine of the same shape -- and §11.3+ has it trail
+            // plain subroutine of the same shape -- and [syntax.op.right] has it trail
             // on a binary operator, where it is the right operand.
             bool others = type->v.func.params != NULL ||
                           type->v.func.variadic != NULL;
@@ -2969,15 +2969,15 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 put_text(sink, type->v.func.mutable_self ? "mutable^self^"
                                                          : "self^");
             }
-            // §15.5: what a call answers, which for a yielding body is the
-            // coroutine it makes (§13.9) rather than what the body returns.
-            // 05§8.7 has this read back as a type expression, and a caller
+            // [syntax.sub.no-contagion]: what a call answers, which for a yielding body is the
+            // coroutine it makes ([syntax.type.coroutine]) rather than what the body returns.
+            // [modules.host.import] has this read back as a type expression, and a caller
             // reading it wants to know what arrives.
             LhatType *answer = lhat_type_call_answer(type);
             if (answer != NULL && answer->kind != LHAT_TYPE_NONE) {
                 put_text(sink, " -> ");
                 if (type->v.func.answers_fresh) {
-                    put_text(sink, "fresh^");  // §15.1+3
+                    put_text(sink, "fresh^");  // [syntax.sub.fresh]
                 }
                 write_result(sink, answer, depth + 1);
             }
@@ -2990,7 +2990,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
                 put_text(sink, "c^");
                 return;
             }
-            // §13.9+: 'c^{ f^R -> Y -> T }', the three slots in the order a
+            // [syntax.type.coroutine-arrows]: 'c^{ f^R -> Y -> T }', the three slots in the order a
             // coroutine lives them. An empty slot is written by leaving it
             // out, and how many arrows are written is how many slots were --
             // so a third slot that is there at all needs the second arrow,
@@ -3031,7 +3031,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
 
         case LHAT_TYPE_ENUM_MEMBER:
         case LHAT_TYPE_ERROR_KIND:
-            // 04§2.4: a kind is named through the set that declared it.
+            // [errors.kind.nominal]: a kind is named through the set that declared it.
             if (type->v.error.set != NULL) {
                 put(sink, type->v.error.set->v.error.name,
                     type->v.error.set->v.error.name_length);
@@ -3096,7 +3096,7 @@ size_t lhat_type_write_full(const LhatType *type, char *buffer, size_t size)
 {
     // INT_MAX rather than a flag: no depth or member count reaches it, so
     // the elisions simply never fire and there is no second path through
-    // the writers. What still ends the walk is `seen` -- §14's table that
-    // holds itself comes back as §13.13's Self^.
+    // the writers. What still ends the walk is `seen` -- [syntax.obj]'s table that
+    // holds itself comes back as [syntax.type.self]'s Self^.
     return write_with_limits(type, buffer, size, INT_MAX, INT_MAX);
 }

@@ -3,14 +3,14 @@
 // Section numbers refer to DesignDocuments/02-syntax.md unless prefixed with
 // "04". The cases worth pinning are the ones where a decision in the
 // specification would otherwise be invisible: that a structure asks for at
-// least its members (§14.10), that two structures overlap unless a shared name
-// conflicts (§14.12), and that an error kind's identity is its declaration
-// rather than its shape (04§2.4).
+// least its members ([syntax.obj.structure]), that two structures overlap unless a shared name
+// conflicts ([syntax.obj.override]), and that an error kind's identity is its declaration
+// rather than its shape ([errors.kind.nominal]).
 
 #include <stdlib.h>
 #include <string.h>
 
-#include "lhat/object.h"  // 05§8.8's tag, which a host type is written as
+#include "lhat/object.h"  // [modules.hostdata]'s tag, which a host type is written as
 #include "rttype.h"
 #include "testutil.h"
 #include "type.h"
@@ -103,7 +103,7 @@ static void test_primitives(void)
                    "the same primitive is not separate from itself");
     }
 
-    // §13.7: any^ is the top of every value, not only of tables. Identifying it
+    // [syntax.type.variadic]: any^ is the top of every value, not only of tables. Identifying it
     // with t^{} would have left number^ outside it.
     LHAT_TEST("any^ admits every value");
     {
@@ -131,7 +131,7 @@ static void test_primitives(void)
                    "a number does not fit t^{}");
     }
 
-    // 03§3.5: a gap in inference is not a mismatch, so it never cascades.
+    // [pipeline.strict.relaxed]: a gap in inference is not a mismatch, so it never cascades.
     LHAT_TEST("unknown does not report against anything");
     {
         LhatType *unknown = simple(&t, LHAT_TYPE_UNKNOWN);
@@ -143,9 +143,9 @@ static void test_primitives(void)
                    "unknown rules nothing out");
     }
 
-    // §13.2: "no value" is the other half of that pair -- nothing is known
+    // [syntax.type.empty]: "no value" is the other half of that pair -- nothing is known
     // there, versus nothing is there. It has to behave the opposite way, or
-    // 03§3.4's refusal to spell it nil^ would not be observable.
+    // [pipeline.infer]'s refusal to spell it nil^ would not be observable.
     LHAT_TEST("no value fits nowhere and nothing fits it");
     {
         LhatType *none = simple(&t, LHAT_TYPE_NONE);
@@ -165,7 +165,7 @@ static void test_primitives(void)
     types_dispose(&t);
 }
 
-// §14.10.
+// [syntax.obj.structure].
 static void test_structures(void)
 {
     Types t;
@@ -187,7 +187,7 @@ static void test_structures(void)
         LHAT_CHECK(!lhat_type_conforms(wrong, want), "a is the wrong type");
     }
 
-    // §11.3 and §14.9: identity is the shape, so nothing has to be shared for
+    // [syntax.op.semantic] and [syntax.obj.name]: identity is the shape, so nothing has to be shared for
     // two independently built structures to be the same type.
     LHAT_TEST("identity is structural");
     {
@@ -197,7 +197,7 @@ static void test_structures(void)
         LHAT_CHECK(lhat_type_equal(a, b), "and one type");
     }
 
-    // §14.12: this is why overloading on shape is refused. A value can carry
+    // [syntax.obj.override]: this is why overloading on shape is refused. A value can carry
     // both sets of members, so neither signature is the more specific one.
     LHAT_TEST("structures sharing no name are not separate");
     {
@@ -222,8 +222,8 @@ static void test_structures(void)
                    "a table is not a number");
     }
 
-    // §13.13: a written Self^ makes a structure hold itself, so both
-    // relations walk a cycle. Neither may run off the stack, and §11.3 still
+    // [syntax.type.self]: a written Self^ makes a structure hold itself, so both
+    // relations walk a cycle. Neither may run off the stack, and [syntax.op.semantic] still
     // has to say that two of them written apart are one type.
     LHAT_TEST("a structure that holds itself is comparable");
     {
@@ -246,7 +246,7 @@ static void test_structures(void)
         LHAT_CHECK(lhat_type_disjoint(a, b), "and nothing inhabits both");
     }
 
-    // §13's notation for one: the back edge is written the way the source
+    // [syntax.type]'s notation for one: the back edge is written the way the source
     // wrote it, since there is no name to put there.
     LHAT_TEST("and writes itself as Self^");
     {
@@ -267,8 +267,8 @@ static void test_structures(void)
         LHAT_CHECK_EQ_STR(buffer, written, "t^{ a : t^{ b : Self^^ } }");
     }
 
-    // §14.7+: a definition writes what its instances carry as the section a
-    // def^ writes it as, and §13.13's Self^ inside a definition is the
+    // [syntax.obj.members-order]: a definition writes what its instances carry as the section a
+    // def^ writes it as, and [syntax.type.self]'s Self^ inside a definition is the
     // instance -- new answers one, and so does the member that takes it.
     LHAT_TEST("a definition writes its instances as a self^{ } section");
     {
@@ -283,7 +283,7 @@ static void test_structures(void)
                           "t^{ self^{ a : number^ }, new : f^ -> Self^; }");
     }
 
-    // §14.4: a member is on both, and the section is where it is written --
+    // [syntax.obj.self]: a member is on both, and the section is where it is written --
     // saying it twice would say the same thing twice.
     LHAT_TEST("and a member it shares with them only once");
     {
@@ -303,13 +303,13 @@ static void test_structures(void)
     types_dispose(&t);
 }
 
-// §13.5 and §14.5.
+// [syntax.type.union] and [syntax.obj.compose].
 static void test_composites(void)
 {
     Types t;
     types_init(&t);
 
-    // 04§8.1: this is the whole detection mechanism for an unhandled
+    // [errors.dropped.no-new]: this is the whole detection mechanism for an unhandled
     // error. A union has to fit as a whole, so one bad arm is enough.
     LHAT_TEST("every arm of a union has to fit");
     {
@@ -329,7 +329,7 @@ static void test_composites(void)
         LHAT_CHECK_EQ_INT(once->kind, LHAT_TYPE_NUMBER);
     }
 
-    // 03§7、P6: unknown^ is not "equal to" number^ just because both
+    // [pipeline.open]、P6: unknown^ is not "equal to" number^ just because both
     // conform to each other under the gap-forgiving rule above -- if it
     // were, append_arms would mistake an unknown^ arm for a duplicate of an
     // arm already present and silently drop it, and a mutually recursive
@@ -355,7 +355,7 @@ static void test_composites(void)
     // against anything -- letting it through the way a bare unknown^ passes
     // everything would hide a real mismatch (a mutually recursive call
     // whose type had not been inferred yet). any^ still admits it, since
-    // §13.7 makes any^ the top of every value regardless of how unresolved
+    // [syntax.type.variadic] makes any^ the top of every value regardless of how unresolved
     // it is -- that check runs before a union's arms are ever looked at.
     LHAT_TEST("a union with a pending^ arm fits nothing but any^");
     {
@@ -367,7 +367,7 @@ static void test_composites(void)
                    "any^ is decided before a union's arms are examined");
     }
 
-    // §13.7: any^ admits everything, so a union with it is it.
+    // [syntax.type.variadic]: any^ admits everything, so a union with it is it.
     LHAT_TEST("a union with any^ is any^");
     {
         LhatType *u = lhat_type_union(&t.arena, simple(&t, LHAT_TYPE_NUMBER),
@@ -399,7 +399,7 @@ static void test_composites(void)
                    "bool^ is none of them");
     }
 
-    // §14.5: an intersection has every structure, which is how §14.12 writes an
+    // [syntax.obj.compose]: an intersection has every structure, which is how [syntax.obj.override] writes an
     // overloaded member.
     LHAT_TEST("an intersection has to satisfy every arm");
     {
@@ -416,7 +416,7 @@ static void test_composites(void)
     types_dispose(&t);
 }
 
-// §15 and §14.12.
+// [syntax.sub] and [syntax.obj.override].
 static void test_functions(void)
 {
     Types t;
@@ -442,7 +442,7 @@ static void test_functions(void)
         LHAT_CHECK(!lhat_type_conforms(narrow, wide), "the other way does not");
     }
 
-    // §11.3+: which operand the receiver is decides which way round the
+    // [syntax.op.right]: which operand the receiver is decides which way round the
     // operator may be written, so the two spellings are not each other.
     LHAT_TEST("a left receiver and a right one are different types");
     {
@@ -462,7 +462,7 @@ static void test_functions(void)
         LHAT_CHECK(!lhat_type_conforms(on_right, on_left), "the other on the right");
     }
 
-    // §15: f^ and p^ are different kinds of subroutine, not two spellings.
+    // [syntax.sub]: f^ and p^ are different kinds of subroutine, not two spellings.
     LHAT_TEST("f^ substitutes for p^, but not the reverse");
     {
         LhatType *fn = lhat_type_func(&t.arena, true);
@@ -472,7 +472,7 @@ static void test_functions(void)
         LHAT_CHECK(!lhat_type_equal(fn, proc), "the two types remain distinct");
     }
 
-    // §13.2: returning nothing is not the same as returning something.
+    // [syntax.type.empty]: returning nothing is not the same as returning something.
     LHAT_TEST("a missing result is not a result");
     {
         LhatType *silent = lhat_type_func(&t.arena, false);
@@ -482,7 +482,7 @@ static void test_functions(void)
         LHAT_CHECK(!lhat_type_conforms(speaking, silent), "the other returns");
     }
 
-    // §12.5 と §14.10: the structural test with^ needs is exactly this.
+    // [syntax.with.checked] と [syntax.obj.structure]: the structural test with^ needs is exactly this.
     LHAT_TEST("with^ asks for a dispose() that returns nothing");
     {
         LhatType *dispose = lhat_type_func(&t.arena, false);  // p^self^;
@@ -502,10 +502,10 @@ static void test_functions(void)
     types_dispose(&t);
 }
 
-// 04§2.3, 04§2.4, 04§2.6.
-// §13.8+2: the writer parenthesises a tuple only where a bare ',' would be
+// [errors.kind.made], [errors.kind.nominal], [errors.kind.disjoint].
+// [syntax.type.tuple-parens]: the writer parenthesises a tuple only where a bare ',' would be
 // read as something else's -- so a result stands bare, and a union covering
-// the whole tuple keeps the parentheses that say so. 04§11.5's '&' binds
+// the whole tuple keeps the parentheses that say so. [errors.runtime.cost]'s '&' binds
 // tighter than '|', which is the other place the grouping has to come back.
 static void test_writing_parentheses(void)
 {
@@ -530,7 +530,7 @@ static void test_writing_parentheses(void)
         lhat_type_add_position(&t.arena, pair, simple(&t, LHAT_TYPE_STRING));
         lhat_type_add_position(&t.arena, pair, simple(&t, LHAT_TYPE_NUMBER));
         // An opaque arm stands beside a tuple rather than folding into its
-        // positions (§13.8+), which is the shape the parentheses are for.
+        // positions ([syntax.type.tuple]), which is the shape the parentheses are for.
         LhatType *either =
             lhat_type_union(&t.arena, pair, simple(&t, LHAT_TYPE_ERROR));
         LhatType *answers = lhat_type_func(&t.arena, true);
@@ -565,7 +565,7 @@ static void test_errors(void)
     LhatType *not_found = lhat_type_error_kind(&t.arena, io, "NotFound", 8);
     LhatType *denied = lhat_type_error_kind(&t.arena, io, "Denied", 6);
 
-    // §2.4: two declarations written the same way are different types. This is
+    // [syntax.juxta.call-binds]: two declarations written the same way are different types. This is
     // the one place identity is not structural.
     LhatType *user = lhat_type_error_set(&t.arena, "UserError", 9, false);
     LhatType *user_not_found = lhat_type_error_kind(&t.arena, user, "NotFound", 8);
@@ -593,7 +593,7 @@ static void test_errors(void)
                    "they are separate");
     }
 
-    // 04§2.6: this is what makes T|error^ always tellable apart, which is the
+    // [errors.kind.disjoint]: this is what makes T|error^ always tellable apart, which is the
     // whole reason a kind is a declared type rather than a table.
     LHAT_TEST("an error is separate from everything that is not one");
     {
@@ -609,7 +609,7 @@ static void test_errors(void)
                    "two kinds of one set are separate");
     }
 
-    // §7 of 04: exhaustiveness is union narrowing, so it needs nothing more
+    // [syntax.open] of 04: exhaustiveness is union narrowing, so it needs nothing more
     // than the relations above.
     LHAT_TEST("a signature's error set is an ordinary union");
     {
@@ -623,7 +623,7 @@ static void test_errors(void)
                    "a kind from another declaration does not fit");
     }
 
-    // §2.5 with 07§6.1: narrowing is what makes a declared field visible.
+    // [syntax.juxta.hat-start] with [lsp.next.fixes]: narrowing is what makes a declared field visible.
     LHAT_TEST("a kind may declare fields");
     {
         LhatType *parse = lhat_type_error_set(&t.arena, "ParseError", 10, false);
@@ -639,7 +639,7 @@ static void test_errors(void)
     types_dispose(&t);
 }
 
-// 07§4: the two ways of writing a type out. What a hover shows is
+// [lsp.hover]: the two ways of writing a type out. What a hover shows is
 // elided so a reader is not made to wade; what a copy takes has to be the
 // whole thing, since it is being kept rather than read once.
 static void test_writing_whole(void)
@@ -686,8 +686,8 @@ static void test_writing_whole(void)
                    "expected the last member, got %s", buffer);
     }
 
-    // Neither limit is what makes the walk finish: §14 lets a table hold
-    // itself, and `seen` answers that with §13.13's Self^. Without it,
+    // Neither limit is what makes the walk finish: [syntax.obj] lets a table hold
+    // itself, and `seen` answers that with [syntax.type.self]'s Self^. Without it,
     // writing this with no limits would not return.
     LHAT_TEST("a table that holds itself still ends, without either limit");
     {
@@ -734,7 +734,7 @@ static void test_writing_whole(void)
                    "a cut type reads as cut, got %s", small);
     }
 
-    // §14.10: what a table literal's own positions are written as. They are
+    // [syntax.obj.structure]: what a table literal's own positions are written as. They are
     // held as members named by their digits (lhat_type_add_index_member), and
     // a number is not a name the grammar takes where a member's is written --
     // 't^{ 1 : number^ }' does not parse, so writing the digits puts down
@@ -751,7 +751,7 @@ static void test_writing_whole(void)
         LHAT_CHECK_EQ_STR(buffer, written, "t^{ number^, number^ }");
     }
 
-    // §14.10+: a run of one type is 'type[n]', which is the same type written
+    // [syntax.obj.structure-repeat]: a run of one type is 'type[n]', which is the same type written
     // the shorter way. Two are left as they stand -- the count is no shorter
     // than the pair, and the pair reads more directly.
     LHAT_TEST("14.10改: three of a type are written with the count");
@@ -848,10 +848,10 @@ static void test_writing_whole(void)
                           "t^{ number^, seen : bool^, string^ }");
     }
 
-    // 05§8.8: identity is the declaration, not the shape. Written out, the
+    // [modules.hostdata]: identity is the declaration, not the shape. Written out, the
     // members make a wider type -- anything carrying the same names satisfies
     // it, which is exactly what `nominal` refuses -- so the name is what says
-    // which type this is. §8.9's host value already wrote itself this way and
+    // which type this is. [syntax.stmt.let]'s host value already wrote itself this way and
     // so does the machine's own writer (object.c); this is the third.
     LHAT_TEST("05 の 8.8: a host type is written as the name it registered");
     {

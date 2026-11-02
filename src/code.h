@@ -3,11 +3,11 @@
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
 // prefixed.
 //
-// 10§5.2: a register machine with one 32-bit word per instruction. Decoding is a
+// [l10n.compose.hole-kinds]: a register machine with one 32-bit word per instruction. Decoding is a
 // shift and a mask, and a jump target is an instruction count rather than a
 // byte offset, because every instruction is the same size.
 //
-// 10§5.1: every instruction here starts generic, checking the types of what it
+// [l10n.compose.holes]: every instruction here starts generic, checking the types of what it
 // is given so a wrong value stops the run rather than corrupting the
 // machine. Safety is strict's static checking; the specialised forms that
 // skip the check come later, replacing these where strict settled the types.
@@ -38,13 +38,13 @@ typedef enum {
     LHAT_BC_ADD,        // A B C R[A] = R[B] + R[C]
     LHAT_BC_SUB,
     LHAT_BC_MUL,
-    LHAT_BC_DIV,        // 04§11.2: real division, so this cannot fail
-    LHAT_BC_IDIV,       // 04§11.2: fails on zero
+    LHAT_BC_DIV,        // [errors.runtime.div-zero]: real division, so this cannot fail
+    LHAT_BC_IDIV,       // [errors.runtime.div-zero]: fails on zero
     LHAT_BC_MOD,        // the same
     LHAT_BC_POW,
     LHAT_BC_CROSS,       // A B C: overloaded cross product
     LHAT_BC_DOT_PRODUCT, // A B C: overloaded dot product
-    // 12§4.1, measured first: the four common ones again with the right
+    // [spec.number.operands], measured first: the four common ones again with the right
     // operand a constant. A loop's `i + 1` was a LOADK re-run every turn,
     // and these fold it into the instruction. The block stays contiguous
     // and in ADD's order, so compile.c maps by offset.
@@ -52,16 +52,16 @@ typedef enum {
     LHAT_BC_SUBK,
     LHAT_BC_MULK,
     LHAT_BC_DIVK,
-    LHAT_BC_CONCAT,     // A B C R[A] = R[B] .. R[C]  (§11.2)
+    LHAT_BC_CONCAT,     // A B C R[A] = R[B] .. R[C]  ([syntax.op.concat])
     LHAT_BC_NEG,        // A B   R[A] = -R[B]
     LHAT_BC_NOT,        // A B   R[A] = !R[B]
-    // §14.23: over 64-bit integers, stopping on anything not one.
+    // [syntax.obj.bits]: over 64-bit integers, stopping on anything not one.
     LHAT_BC_BNOT,       // A B   R[A] = bitnot^ R[B]
     LHAT_BC_BAND,       // A B C R[A] = R[B] bitand^ R[C]
     LHAT_BC_BOR,
     LHAT_BC_BXOR,
     LHAT_BC_BSHIFT,     // logical; a negative count shifts right
-    LHAT_BC_TYPEOF,     // A B   R[A] = typeof^(R[B])  (§14.16)
+    LHAT_BC_TYPEOF,     // A B   R[A] = typeof^(R[B])  ([syntax.obj.typeof])
 
     LHAT_BC_EQ,         // A B C R[A] = R[B] = R[C]
     LHAT_BC_SAME,       // A B C R[A] = R[B] and R[C] are the same instance
@@ -70,7 +70,7 @@ typedef enum {
     LHAT_BC_LE,
     LHAT_BC_GT,
     LHAT_BC_GE,
-    // 12§4.1: the four again with the right operand a constant, as
+    // [spec.number.operands]: the four again with the right operand a constant, as
     // ADDK's block is to ADD's -- same order, so compile.c maps by offset.
     LHAT_BC_LTK,        // A B C R[A] = R[B] < K[C]
     LHAT_BC_LEK,
@@ -79,7 +79,7 @@ typedef enum {
     // And '=' and '≠', whose constant may be a string too.
     LHAT_BC_EQK,        // A B C R[A] = R[B] = K[C]
     LHAT_BC_NEK,
-    // §11.9: A B C R[A] = R[B] <=> R[C], a number^ saying which of
+    // [syntax.op.compare]: A B C R[A] = R[B] <=> R[C], a number^ saying which of
     // the two comes first. The four above read their answer off this one
     // whenever they cannot answer for themselves.
     LHAT_BC_SPACESHIP,
@@ -87,25 +87,25 @@ typedef enum {
     LHAT_BC_JUMP,       // Bx signed, relative to next; A != 0 hints a hot loop
     LHAT_BC_JUMP_FALSE, // A Bx  jump when R[A] is false
 
-    // 03§5.3: arguments sit above the callee in the caller's frame, and one
-    // value comes back -- §13.8+ lets that value be a tuple, which
+    // [pipeline.bc.call]: arguments sit above the callee in the caller's frame, and one
+    // value comes back -- [syntax.type.tuple] lets that value be a tuple, which
     // arrives as a run of slots rather than one, and the count is settled by
     // the type either way. Lua's calling convention is complicated because
     // the count is settled at run time; that reconciliation still does not
     // exist here.
     LHAT_BC_CLOSURE,    // A Bx  R[A] = closure of protos[Bx]
     LHAT_BC_CALL,       // A B C R[A] = R[A](R[A+1] .. R[A+B]).
-                        //       C bit 0: §13.7's 'expr...' -- R[A+B] is a
+                        //       C bit 0: [syntax.type.variadic]'s 'expr...' -- R[A+B] is a
                         //         table whose positions are unpacked as
                         //         further arguments, in place of being the
                         //         last argument itself.
-                        //       C bits 1-7 (§13.8+): how many consecutive
+                        //       C bits 1-7 ([syntax.type.tuple]): how many consecutive
                         //         slots the call site reserved at R[A] for
                         //         the answer. 0 and 1 both mean one, which is
                         //         every call written before tuples existed.
                         //         The byte was a boolean and had the room.
-    // 12§2: strict settled which candidate of an overloaded member
-    // (§14.12) the call ahead means, so the search 03§5.11 runs is not
+    // [spec.arms]: strict settled which candidate of an overloaded member
+    // ([syntax.obj.override]) the call ahead means, so the search [pipeline.bc.overload] runs is not
     // run. Anything but a group in R[A] is left alone -- a value that got
     // here another way is still called the ordinary way.
     LHAT_BC_PICKARM,    // A Bx  R[A] = candidate Bx of the group R[A]
@@ -113,34 +113,34 @@ typedef enum {
     LHAT_BC_SETUPVAL,   // A B   *upvalue[B] = R[A]
     LHAT_BC_CLOSE,      // A     the places at R[A] and above stop being shared
     LHAT_BC_CLOSEONE,   // A     the place at R[A] alone stops being shared.
-                        //       03§4.3: a session's top level reuses one
+                        //       [pipeline.machine]: a session's top level reuses one
                         //       slot for every let^ of a name, so severing
                         //       that binding must not reach the names above
                         //       it, which are other bindings still live
-    LHAT_BC_THIS,       // A     R[A] = the subroutine running (§15.10)
-    LHAT_BC_ENV,        // A     R[A] = L^, the machine's own table (05§8.6)
-    LHAT_BC_UNIT,       // A Bx  R[A] = a closure of the unit Bx (05§5.3).
+    LHAT_BC_THIS,       // A     R[A] = the subroutine running ([syntax.sub.this])
+    LHAT_BC_ENV,        // A     R[A] = L^, the machine's own table ([modules.host.machine])
+    LHAT_BC_UNIT,       // A Bx  R[A] = a closure of the unit Bx ([modules.require.once]).
                         //       Calling it answers what that unit publishes,
                         //       running its body only the first time.
 
-    // §14: the one data structure. 04§11.3 makes a missing key
+    // [syntax.obj]: the one data structure. [errors.runtime.index] makes a missing key
     // nil^ rather than a failure, so GETINDEX cannot fail on that account.
     LHAT_BC_NEWTABLE,   // A B C R[A] = { }; B: definition, C: hash entry hint
-                        //       (§14.9), which is what tells a def^ apart from
+                        //       ([syntax.obj.name]), which is what tells a def^ apart from
                         //       a table written by hand -- the two are the
-                        //       same structure otherwise, and §14.17+ asks
+                        //       same structure otherwise, and [syntax.obj.tostring-hat] asks
                         //       which one it is
     LHAT_BC_RESERVE,    // A B   table A gains key B's seat -- the key with
-                        //       no value (§14.15's declaration)
+                        //       no value ([syntax.obj.abstract]'s declaration)
     LHAT_BC_GETINDEX,   // A B C R[A] = R[B][R[C]]
-    // 12§3: the same read where the key was written rather than
+    // [spec.member-cache]: the same read where the key was written rather than
     // computed -- 'x.m', never 'x[k]'. C names a member_keys entry; the
     // machine caches its lookup, so a hit needs validation instead of
     // a walk of the definition chain and a probe with a full key equality
     // in it. A miss does exactly what GETINDEX does and fills the cache.
     //
-    // 10§5.1: this is a specialisation and nothing else -- the answer is the
-    // one GETINDEX would give, so strictness plays no part (10§4.2) and the
+    // [l10n.compose.holes]: this is a specialisation and nothing else -- the answer is the
+    // one GETINDEX would give, so strictness plays no part ([l10n.id.spelling]) and the
     // instruction is emitted whether or not anything was checked.
     //
     // C is one byte, so a body reads at most 256 members this way and the
@@ -148,64 +148,64 @@ typedef enum {
     LHAT_BC_GETMEMBER,  // A B C R[A] = R[B].<cache[C]>
 
     LHAT_BC_SETINDEX,   // A B C R[A][R[B]] = R[C]
-    // §13.8+: the checker settles the width where it ran, so this is
+    // [syntax.type.tuple]: the checker settles the width where it ran, so this is
     // what relaxed and an unchecked compile fall to -- and it is what stands
     // between an error arriving where a run was expected and a register being
     // read as a position.
     LHAT_BC_CHECKRUN,   // A B   R[A] is the head of a run of B positions
-    // §13.8+: pack^ -- the one bridge from a tuple to a table. A tuple
+    // [syntax.type.tuple]: pack^ -- the one bridge from a tuple to a table. A tuple
     // is not a value a name can hold; this makes one that is.
     LHAT_BC_PACK,       // A B   R[A] = t^{...} of the run of B at R[A]
-    // §13.8+: a tuple written as a value (.(a, b).). The positions are
+    // [syntax.type.tuple]: a tuple written as a value (.(a, b).). The positions are
     // already in the slots above; this puts the head down over them. The one
     // place a run is built without crossing a frame boundary -- RETURN, YIELD
     // and a table.s walk all have the machine make the head instead.
     LHAT_BC_MAKERUN,    // A B   R[A] = the head of the B positions at R[A+1]
     LHAT_BC_ADDOVERLOAD,// A B C R[A][R[B]] gains R[C] as another way to call it
     LHAT_BC_OVERRIDEINDEX, // A B C R[A][R[B]] := R[C], ahead of any overload
-    // 12§2: the same write, once the checker has said which arm is
+    // [spec.arms]: the same write, once the checker has said which arm is
     // being replaced. The group then keeps its shape -- the arm goes in the
     // place of the one it replaces instead of in front of it, and that one is
     // dropped rather than left shadowed, so the arms a call can reach are the
     // arms the checker's type says the name carries. super^ still reaches the
-    // old group: the GETINDEX binding it ran before this write (§14.12+).
+    // old group: the GETINDEX binding it ran before this write ([syntax.obj.super]).
     //
     // The value is at R[B+1] rather than in an operand of its own, since C is
     // spent on the arm. compile_def lays the key and the value out as one run
-    // the way 03§5.3 lays out a call, and falls back to OVERRIDEINDEX if ever
+    // the way [pipeline.bc.call] lays out a call, and falls back to OVERRIDEINDEX if ever
     // they are not adjacent.
     LHAT_BC_OVERRIDEARM,// A B C R[A][R[B]] := R[B+1], replacing arm C
 
     // 04. An error carries its kind and a table of fields, and the tests are
-    // instructions because 09§5.1 keeps the machine independent of the checker.
+    // instructions because [debug.dap.machines] keeps the machine independent of the checker.
     LHAT_BC_NEWERROR,   // A B   R[A] = an error of the kind in R[B]
     LHAT_BC_ISERROR,    // A B   R[A] = R[B] is an error of any kind
-    // §13.11: the one question fits^ asks, whatever is written on its
+    // [syntax.type.fits]: the one question fits^ asks, whatever is written on its
     // right. R[C] carries the type: either an LhatRuntimeType the compiler
     // lowered the annotation into -- the same object as^ hands ASCAST -- or,
-    // where the name reaches something only the run knows (a def^, §14.9),
+    // where the name reaches something only the run knows (a def^, [syntax.obj.name]),
     // the definition itself, tested structurally. An error kind and a host
     // type are both the first case, so this replaced ISKIND/ISHOSTDATA.
     LHAT_BC_FITS,        // A B C R[A] = R[B] fits^ R[C]
-    LHAT_BC_ISNIL,      // A B   R[A] = R[B] is nil^   (§11.7)
+    LHAT_BC_ISNIL,      // A B   R[A] = R[B] is nil^   ([syntax.op.default])
 
-    // §14. A definition is a table of shared members plus the
-    // prototype its self^ member holds (§14.11); an instance is a copy of
+    // [syntax.obj]. A definition is a table of shared members plus the
+    // prototype its self^ member holds ([syntax.obj.new]); an instance is a copy of
     // that prototype -- a table in a field copied as its own tree, a
     // definition among the values shared -- reading the shared members
-    // through a link fixed when it was made (§14.2).
+    // through a link fixed when it was made ([syntax.obj.chain]).
     LHAT_BC_NEWINSTANCE,  // A B   R[A] = an instance of the definition R[B]
-    // §14.11: hangs R[B] under R[A]'s self^ as the prototype construction
+    // [syntax.obj.new]: hangs R[B] under R[A]'s self^ as the prototype construction
     // copies, sealing it and linking it to the definition first. Refuses a
     // value nothing may share (LHAT_RUN_MUTABLE_DEFAULT) -- a coroutine, a
     // host object. Emitted once per def^, after the members.
     LHAT_BC_SETPROTO,     // A B   R[A].self^ = R[B], sealed
-    // §14.7+2: what the definition at R[A] delegates to. R[B] holds the name;
+    // [syntax.obj.delegate]: what the definition at R[A] delegates to. R[B] holds the name;
     // C != 0 is the 'self^.x' spelling, which says to read it off the
     // receiver's own table rather than off the definition. Emitted once per
     // def^ that wrote delegate^, just before SETPROTO.
     LHAT_BC_SETDELEGATE,  // A B C
-    // 05§8.9: box^ -- the host value whose head sits at R[B], put in the
+    // [modules.hostvalue]: box^ -- the host value whose head sits at R[B], put in the
     // box the heap can hold. The width travels with the head slot's tag, so
     // one operand names the whole run.
     LHAT_BC_BOX,          // A B C R[A] = a box holding the value at R[B..];
@@ -213,9 +213,9 @@ typedef enum {
                           //       R[B] as a box to copy
     LHAT_BC_CALLMETHOD,   // A B C R[A] = R[A](R[A+1] .. R[A+B]), where R[A+1]
                           //       is the receiver and is passed only when the
-                          //       callee takes self^ (§14.4). C as LHAT_BC_CALL.
+                          //       callee takes self^ ([syntax.obj.self]). C as LHAT_BC_CALL.
 
-    // 03§5.3: the same two calls, written where the caller has nothing left to do
+    // [pipeline.bc.call]: the same two calls, written where the caller has nothing left to do
     // with its frame -- 'return^ f(x)', and a bare call standing last in a
     // body. Operands mean what they mean above; what these add is permission
     // to run the callee in this frame rather than one on top of it. The
@@ -226,20 +226,20 @@ typedef enum {
     LHAT_BC_TAILCALL,
     LHAT_BC_TAILCALLMETHOD,
 
-    // 03§5.5: the frame holds the cleanups it has not run, and every exit drains
+    // [pipeline.bc.finally]: the frame holds the cleanups it has not run, and every exit drains
     // them. One instruction pushes, one drains, one ends a cleanup body -- so
     // a finally^ and a with^ are the same thing to the machine.
     LHAT_BC_PUSHCLEANUP,  // Bx  remember the body at Bx (an instruction index)
     LHAT_BC_POPCLEANUP,   // A   run the cleanups above depth A, innermost first
     LHAT_BC_ENDCLEANUP,   //     the end of a cleanup body
 
-    // §15.4: bidirectional. The value goes out and what the resume
-    // supplies comes back starting at the same register. §13.8+: B != 0
+    // [syntax.sub.yield-both]: bidirectional. The value goes out and what the resume
+    // supplies comes back starting at the same register. [syntax.type.tuple]: B != 0
     // means what goes out is a tuple -- R[A] is its head and B positions
     // follow. What comes back is one value in R[A], or, when the resume
     // sent several, a run -- R[A] its head and the positions after it; the
     // yield^'s own binding reserved the width and takes it apart.
-// 05§8.9: the B that says a yield carries one host value laid out whole
+// [modules.hostvalue]: the B that says a yield carries one host value laid out whole
 // rather than B run positions. Out of every run width (LHAT_MAX_TUPLE is 31).
 #define LHAT_YIELD_HOSTVALUE 0xFF
 // And RESUME's C for the one-name loop whose focus is a host value: the low
@@ -249,39 +249,39 @@ typedef enum {
 
     LHAT_BC_YIELD,      // A B   yield R[A]; R[A..] = what the resume sent.
                         //       B = LHAT_YIELD_HOSTVALUE: R[A..] is one host
-                        //       value laid out whole (05§8.9)
+                        //       value laid out whole ([modules.hostvalue])
 
-    // §15.8: delegation, which compiles to the loop 03§5.7 writes out.
+    // [syntax.sub.await]: delegation, which compiles to the loop [pipeline.bc.coroutine] writes out.
     // A run sitting in R[A] (a several-send arriving through this frame's
     // own suspension) is forwarded whole, positions and all.
     LHAT_BC_RESUME,     // A B   R[A] = resume the coroutine R[B], sending R[A]
     LHAT_BC_ISDONE,     // A B   R[A] = the coroutine R[B] has finished
 
-    // §13.8+: B != 0 means the answer is a tuple of B positions, sitting in
+    // [syntax.type.tuple]: B != 0 means the answer is a tuple of B positions, sitting in
     // R[A] .. R[A+B-1]. No head slot here -- the head is the machine's, put
     // down in the caller's frame where the width has to be readable off the
     // value itself (a union with an error tells its arms apart by that tag).
     LHAT_BC_RETURN,     // A B   return R[A], or the B positions from R[A]
     LHAT_BC_RETURN_NIL,
 
-    LHAT_BC_PANIC,      // A     panic^ R[A]  (04§11.6)
-    // 05§8.6: mark R[A] as the machine's own, so that no later
+    LHAT_BC_PANIC,      // A     panic^ R[A]  ([errors.runtime.panic])
+    // [modules.host.machine]: mark R[A] as the machine's own, so that no later
     // instruction may write into it. Emitted where a unit builds what
     // require^ answers with -- what a table holds is written before this,
     // and nothing writes into it afterwards.
-    // 10§5.3: C != 0 also registers it as the unit the module path in the
+    // [l10n.compose.no-plurals]: C != 0 also registers it as the unit the module path in the
     // string R[B] names. The machine writes the registry, not an instruction,
     // so a parent's sealed table takes the units named under it; and where
     // such a unit came first, its table is this unit's, and R[A] becomes it.
     LHAT_BC_SEAL,       // A B C R[A] sealed; and registered at R[B]
-    // §11.6+3: R[A] is unchanged where it satisfies the type in R[B] -- as^
+    // [syntax.op.as-error]: R[A] is unchanged where it satisfies the type in R[B] -- as^
     // narrows what the checker tracks, not the value. Where it does not,
     // R[A] becomes a localerror^.CastFailure, which is the other arm of
     // what as^ answers. C is unused.
     LHAT_BC_ASCAST,     // A B   R[A] = R[A], or a CastFailure
 
 
-    // 12§3.1: GETMEMBER fused with the call it feeds. Operands are
+    // [spec.member-cache.call-pair]: GETMEMBER fused with the call it feeds. Operands are
     // GETMEMBER's own (A the callee slot, B the receiver, C the cache);
     // the paired CALLMETHOD/TAILCALLMETHOD sits right after it, and a
     // cache hit reads that instruction's counts and enters the call
@@ -290,7 +290,7 @@ typedef enum {
     // instructions stay in the chunk and only the dispatch is saved.
     LHAT_BC_CALLMEMBER, // A B C as GETMEMBER; pairs with the next instruction
 
-    // 12§4.4 with §16.4: the counted loop's turn as one
+    // [spec.number.counted-loop] with [syntax.for.direction]: the counted loop's turn as one
     // instruction. A, A+1, A+2 are the focus, the bound and the step^,
     // laid consecutively by the compiler -- which falls back to the
     // spelled-out compare/jump/add form when the shape does not allow it
@@ -298,7 +298,7 @@ typedef enum {
     // three are numbers and jumps past the loop when the first turn is
     // already refused; FORLOOP advances, tests and jumps back. The D pair
     // is downto^: the direction is syntax, so it stays static.
-    // §19: enum^'s two builders. NEWENUM reads the RT_ENUM
+    // [syntax.enum]: enum^'s two builders. NEWENUM reads the RT_ENUM
     // descriptor constant K[Bx]; NEWENUMERATOR appends R[B] (the name) with
     // R[C] (the value) to the enum in R[A], numbering it by position.
     LHAT_BC_NEWENUM,        // A Bx  R[A] = a fresh enum of K[Bx]
@@ -319,7 +319,7 @@ typedef enum {
     // same of its own A.
     LHAT_BC_GETMETHOD,  // A B C as GETMEMBER; R[A] feeds only a method call
 
-    // §16.3: a for^ loop's head. Reads the member named by cache[C] off R[B]
+    // [syntax.for.forms]: a for^ loop's head. Reads the member named by cache[C] off R[B]
     // (= A + 1) as GETMETHOD does. Where that is the built-in walk of a table
     // (iterate^, keys^, values^), the walk is laid in R[A..A+3] -- the table,
     // the part, and the two positions of an LhatWalkCursor -- and the JUMP
@@ -327,14 +327,14 @@ typedef enum {
     // the call that follows makes the walk as before. RESUME and ISDONE
     // read a table in R[B] as such a walk.
     LHAT_BC_ITERPREP,   // A B C R[A] = R[B].<cache[C]>, or a walk laid inline
-    // 05§5.3: a unit's guard. The table of the unit the string R[B] names
+    // [modules.require.once]: a unit's guard. The table of the unit the string R[B] names
     // where that unit has run -- sealed -- and nil^ otherwise, including where
     // only the units named under it have made its table.
     LHAT_BC_REGISTERED, // A B   R[A] = the unit R[B] names, or nil^
     LHAT_BC_COUNT
 } LhatOpcode;
 
-// 10§5.2. Bx is signed for a jump and unsigned everywhere else; the two are read
+// [l10n.compose.hole-kinds]. Bx is signed for a jump and unsigned everywhere else; the two are read
 // through different accessors rather than stored differently.
 #define LHAT_BX_BIAS 32768
 
@@ -344,16 +344,16 @@ typedef enum {
 #define LHAT_JUMP_HOT_FIELDS 3u
 
 // LHAT_BC_CALL's C, which was a boolean with a whole byte to itself.
-#define LHAT_CALL_SPREAD 0x01u          // §13.7's 'expr...'
-#define LHAT_CALL_PREPARED_SHIFT 1      // §13.8+: slots reserved for the answer
-// Six bits, which is more than the room a frame's answer can take: §13.8+'s
+#define LHAT_CALL_SPREAD 0x01u          // [syntax.type.variadic]'s 'expr...'
+#define LHAT_CALL_PREPARED_SHIFT 1      // [syntax.type.tuple]: slots reserved for the answer
+// Six bits, which is more than the room a frame's answer can take: [syntax.type.tuple]'s
 // head plus LHAT_MAX_TUPLE positions is 32. The top bit is the drop below.
 #define LHAT_CALL_PREPARED_MAX 0x3Fu
-// 03§5.3: a tail call whose answer is thrown away -- a bare call standing last in
+// [pipeline.bc.call]: a tail call whose answer is thrown away -- a bare call standing last in
 // a body, where what the frame answers is the nil^ of falling off the end.
 // Meaningless on the plain calls, which never discard what they answer.
 #define LHAT_CALL_DROP 0x80u
-// §16.3: the same bit on a CALL or CALLMETHOD, which never drops: the answer
+// [syntax.for.forms]: the same bit on a CALL or CALLMETHOD, which never drops: the answer
 // is a for^ loop's walk and nothing else reads it. A coroutine the call makes
 // is then the loop's alone (LhatCoroutine.owned).
 #define LHAT_CALL_WALK 0x80u
@@ -400,7 +400,7 @@ static inline int32_t lhat_jump_offset(LhatInstruction i)
     return (int32_t)lhat_bx(i) - LHAT_BX_BIAS;
 }
 
-// 09§4: one name a body declared -- a written binding, a parameter, or
+// [debug.table]: one name a body declared -- a written binding, a parameter, or
 // one the language binds (self^, it^, def^, super^, ...). `from` is the first
 // instruction it is live at and `to` one past the last; UINT32_MAX while
 // nothing closed its scope, which a parameter's never is.
@@ -409,23 +409,23 @@ typedef struct {
     uint32_t from;
     uint32_t to;
     uint8_t reg;
-    uint8_t width;  // 05§8.9: a host value holds this many slots
+    uint8_t width;  // [modules.hostvalue]: a host value holds this many slots
 } LhatLocalDesc;
 
 // One compiled body: its instructions, the constants they name, and how many
-// registers a frame needs. 10§5.2 fixes the frame size at compile time.
+// registers a frame needs. [l10n.compose.hole-kinds] fixes the frame size at compile time.
 typedef struct LhatChunk {
     LhatInstruction *code;
-    // 04§11: the source line each instruction came from, one entry per
+    // [errors.runtime]: the source line each instruction came from, one entry per
     // instruction (parallel to `code`, same count/capacity). A runtime
-    // fault names where it happened; strictness (03§4.2) never depends
+    // fault names where it happened; strictness ([pipeline.repl.no-fork]) never depends
     // on this, so it costs nothing but the memory.
     uint32_t *lines;
     size_t count;
     size_t capacity;
 
-    // 09§4: what the registers were called, for a debugger to read
-    // them by. Debug only, like `lines` -- §14.9 stands, and nothing
+    // [debug.table]: what the registers were called, for a debugger to read
+    // them by. Debug only, like `lines` -- [syntax.obj.name] stands, and nothing
     // runs on it. Declaration order, so of two entries live at once under
     // one name the later is the inner.
     LhatLocalDesc *locals;
@@ -464,10 +464,10 @@ typedef struct {
 } LhatFieldFold;
 bool lhat_chunk_field_fold(const LhatChunk *chunk, size_t pc, LhatFieldFold *out);
 
-// 05§5.4: how a closure gets each of the places it shares. A register of the
+// [modules.require.no-spill]: how a closure gets each of the places it shares. A register of the
 // frame making it, one of that frame's own upvalues -- the second is what
 // carries a name down through more than one level of nesting -- or, for
-// §15.10's this^^, the maker's own closure: no register ever holds it, so
+// [syntax.sub.this]'s this^^, the maker's own closure: no register ever holds it, so
 // at CLOSURE time it is boxed closed on the spot.
 typedef enum {
     LHAT_UPVALUE_REGISTER,
@@ -478,16 +478,16 @@ typedef enum {
 typedef struct {
     LhatUpvalueSource source;
     uint8_t index;  // unused for LHAT_UPVALUE_THIS
-    // 09§4: the name it was captured under, owned. Debug only, as
+    // [debug.table]: the name it was captured under, owned. Debug only, as
     // LhatLocalDesc's is.
     char *name;
 } LhatUpvalueDesc;
 
 // One compiled subroutine: its own code, the bodies written inside it, and
-// what it captures. §14.9 keeps the name out of this; a proto is the
+// what it captures. [syntax.obj.name] keeps the name out of this; a proto is the
 // shape of a body, not a named thing. Declared in lhat/module.h, where a
 // host meets it as a handle; completed here.
-// 05§5.3: what a unit's require^s reach, by the number the compiler
+// [modules.require.once]: what a unit's require^s reach, by the number the compiler
 // wrote into each UNIT instruction. One table per unit, owned by the unit's
 // own proto and pointed at by every body written inside it -- so a machine
 // carries no list of units, and a program may grow (lhat_program_compile
@@ -504,7 +504,7 @@ struct LhatProto {
     // See LhatUnitTable. NULL for a body no program compiled (lhat_compile,
     // a session's input), where a require^ has nowhere to go anyway.
     const LhatUnitTable *units;
-    // 05§5.6: the heap object that owns this tree, when a machine does
+    // [modules.require.load]: the heap object that owns this tree, when a machine does
     // (lhat_machine_adopt_script) rather than a program. NULL otherwise.
     // Set on every proto of the tree, since a closure of any of them is
     // what keeps the whole alive.
@@ -513,37 +513,37 @@ struct LhatProto {
     // calls "the top level".
     bool is_unit;
 
-    // 04§11.6+: what a traceback prints for a frame of this body. Debug
-    // labels only -- §14.9 stands: neither takes any part in typing or in
+    // [errors.runtime.traceback]: what a traceback prints for a frame of this body. Debug
+    // labels only -- [syntax.obj.name] stands: neither takes any part in typing or in
     // identity. `debug_name` is the binding or member the body was written
     // under (NULL for a bare f^), `source_name` the unit's path (NULL for a
     // session's input). Each proto owns its copies.
     char *debug_name;
     char *source_name;
 
-    // 03§4.3: how many registers already hold values when this unit
+    // [pipeline.machine]: how many registers already hold values when this unit
     // starts. Zero everywhere but the second and later inputs of a REPL,
     // where the top-level names of the earlier ones are still in them.
     uint8_t reserved;
 
     // And how many it leaves behind for the inputs after it. Those slots
-    // outlive the run, so 09§5.4's shared places pointing into them must not be
+    // outlive the run, so [debug.dap.restart]'s shared places pointing into them must not be
     // closed when the frame goes -- see the drain in vm.c. Zero outside a
     // session, where the frame really does take its whole width with it.
     uint8_t kept;
 
     uint8_t parameters;
-    // 05§8.9: how many slots those parameters occupy, which is not the
+    // [modules.hostvalue]: how many slots those parameters occupy, which is not the
     // count -- a host value parameter is one parameter and as many slots as
     // its type is wide. What the caller lays down ends here, so this is where
     // the frame's scratch begins (vm_call.c's vm_clear_scratch).
     uint8_t parameter_slots;
-    bool is_function;  // f^ rather than p^ (§15)
-    bool yields;       // §15.2: the body contains yield^, so calling it
-                       // answers a coroutine rather than running it (§15.5)
-    bool takes_self;   // §14.4: the first parameter is written self^,
+    bool is_function;  // f^ rather than p^ ([syntax.sub])
+    bool yields;       // [syntax.sub.yieldable]: the body contains yield^, so calling it
+                       // answers a coroutine rather than running it ([syntax.sub.no-contagion])
+    bool takes_self;   // [syntax.obj.self]: the first parameter is written self^,
                        // which is what makes it an instance method
-    bool self_last;    // §11.3+: the self^ was written last
+    bool self_last;    // [syntax.op.right]: the self^ was written last
                        // instead, which only an op^ may do -- it says the
                        // RIGHT operand is the receiver, so '1 + v' reaches it.
                        // The receiver still occupies a parameter slot; this
@@ -557,45 +557,45 @@ struct LhatProto {
     size_t upvalue_count;
     size_t upvalue_capacity;
 
-    // §14.12: what each parameter was declared to take, kept so that an
+    // [syntax.obj.override]: what each parameter was declared to take, kept so that an
     // overloaded call can find the candidate that fits. NULL where nothing
     // was written, which asks nothing.
     struct LhatRuntimeType **parameter_types;
 
-    // §14.16: what typeof^ reconstructs a subroutine value's signature
-    // from. NULL when nothing was written -- §13.2 makes an f^ declare one, so
+    // [syntax.obj.typeof]: what typeof^ reconstructs a subroutine value's signature
+    // from. NULL when nothing was written -- [syntax.type.empty] makes an f^ declare one, so
     // its absence here belongs to a p^.
     struct LhatRuntimeType *result_type;
     struct LhatRuntimeType *signature; // shared by all closures of this body
 
-    // §15.2, §13.9. What a yielding body's yield^ sites agreed on --
+    // [syntax.sub.yieldable], [syntax.type.coroutine]. What a yielding body's yield^ sites agreed on --
     // there is no written form for either, so these come only from 03 の
-    // 03§5.11+'s checked_type; NULL when yields is false or the checker never
+    // [pipeline.bc.checked-answers]'s checked_type; NULL when yields is false or the checker never
     // settled one.
     struct LhatRuntimeType *yield_produce_type;  // Y
     struct LhatRuntimeType *yield_receive_type;  // R
-    // §13.9 with §13.8+: how many arguments a resume of this body sends --
+    // [syntax.type.coroutine] with [syntax.type.tuple]: how many arguments a resume of this body sends --
     // 0 when R is empty, 1 for a single R, and the tuple's width when the
     // yield^'s binding takes several apart. Kept apart from the type above
     // because a NULL there means two things -- an empty slot, and a proto
     // the checker never reached.
     //
     // Only `yield_receives_known` protos say which; without checking there
-    // is nothing to read R off, and 03§4.2 keeps the run the same either
+    // is nothing to read R off, and [pipeline.repl.no-fork] keeps the run the same either
     // way, so the machine takes a resume of an unknown one with any count a
     // tuple could carry rather than picking one the checker might disagree
     // with.
     bool yield_receives_known;
     uint8_t yield_receive_count;
-    // §13.9: the body cannot end, so `result_type` being NULL here says "no
+    // [syntax.type.coroutine]: the body cannot end, so `result_type` being NULL here says "no
     // last resume" rather than "ends without a value". typeof^ writes it '-'.
     bool yield_endless;
 
-    // §13.7: the last parameter collects the rest into a table rather than
+    // [syntax.type.variadic]: the last parameter collects the rest into a table rather than
     // taking one argument for itself. Its element type is
     // parameter_types[parameters - 1] -- the same array, since a variadic
     // parameter is still one slot the calling convention reserves, only what
-    // a call site owes it differs (§13.7's ">=" rather than "==").
+    // a call site owes it differs ([syntax.type.variadic]'s ">=" rather than "==").
     bool has_variadic;
     // Derived after compilation/loading. Zero keeps the general call path;
     // otherwise low 9 bits are scalar arity + 1, upper bits register count.
@@ -615,7 +615,7 @@ LhatProto *lhat_proto_new(void);
 
 // Returns the index of the nested body, or SIZE_MAX when out of memory.
 size_t lhat_proto_add(LhatProto *parent, LhatProto *child);
-// `name` is what the body captured it as (09§4); an entry already
+// `name` is what the body captured it as ([debug.table]); an entry already
 // there for the same place keeps the name it was first added under.
 size_t lhat_proto_add_upvalue(LhatProto *proto, LhatUpvalueSource source,
                               uint8_t index, const char *name, size_t length);
@@ -627,7 +627,7 @@ size_t lhat_proto_add_upvalue(LhatProto *proto, LhatUpvalueSource source,
 bool lhat_proto_give_units(LhatProto *unit, const LhatProto **protos,
                            size_t count);
 
-// 05§5.7: hands every object the bodies of this tree hold over to `into`,
+// [modules.require.reload]: hands every object the bodies of this tree hold over to `into`,
 // leaving their chunks with nothing to free.
 //
 // A chunk's objects are born black because they were meant to outlive every
@@ -649,7 +649,7 @@ void lhat_chunk_dispose(LhatChunk *chunk);
 size_t lhat_chunk_emit(LhatChunk *chunk, LhatInstruction instruction,
                        uint32_t line);
 
-// 09§4: records that `reg` is called `name` from the next instruction
+// [debug.table]: records that `reg` is called `name` from the next instruction
 // on. Answers the entry's index, for the caller to close it later, or
 // SIZE_MAX when out of memory.
 size_t lhat_chunk_add_local(LhatChunk *chunk, const char *name, size_t length,
@@ -658,14 +658,14 @@ size_t lhat_chunk_add_local(LhatChunk *chunk, const char *name, size_t length,
 // Adds a constant, reusing an equal one rather than storing it twice.
 // Returns the index, or SIZE_MAX when the pool is full or out of memory.
 size_t lhat_chunk_constant(LhatChunk *chunk, LhatValue value);
-// 05§10: the same without the reuse -- a reader putting a pool back
+// [modules.binary]: the same without the reuse -- a reader putting a pool back
 // as it was written wants every index where it stood.
 size_t lhat_chunk_constant_raw(LhatChunk *chunk, LhatValue value);
 
 // The same for a string literal: the bytes are copied into a string the chunk
 // owns. Two literals spelling the same thing share one constant, which is
 // what makes t.foo and t["foo"] one key.
-// 12§3: a fresh cache for one written member read, answering its Bx.
+// [spec.member-cache]: a fresh cache for one written member read, answering its Bx.
 // `key` is the constant that names the member. SIZE_MAX when there is no
 // memory or the chunk already holds 65536 of them -- the caller then emits
 // the unspecialised read, which answers the same thing.

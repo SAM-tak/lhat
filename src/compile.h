@@ -1,10 +1,10 @@
 // L^ (lhat) -- compiling a tree to bytecode.
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
-// prefixed. This is the fourth stage of §1.1; running what it emits is vm.h,
+// prefixed. This is the fourth stage of [syntax.input.free]; running what it emits is vm.h,
 // which needs nothing from the front end -- keeping the two headers apart is
 // what lets a bytecode-only build carry no lexer, no parser and no checker
-// (§14.17+2).
+// ([syntax.obj.tonumber]).
 
 #ifndef LHAT_COMPILE_H
 #define LHAT_COMPILE_H
@@ -24,15 +24,15 @@
 int lhat_compile_fits_answer(const LhatLexer *lexer, const LhatNode *asked,
                              const struct LhatType *actual);
 
-// 05§5. The compile-time twin of check.h's LhatRequireResolver: asked
+// [modules.require]. The compile-time twin of check.h's LhatRequireResolver: asked
 // for the unit at `path`, it answers where that unit sits in what the machine
 // will be given, or LHAT_NO_UNIT when there is none. The checker has already
 // refused a path that cannot be had, so a miss here means the caller compiled
 // without the program that resolved it.
 #define LHAT_NO_UNIT SIZE_MAX
 
-// `module_name` is filled with the path 05§3 had that unit declare, the way
-// check.h's resolver fills it -- 05§5.5's short form needs it to know where
+// `module_name` is filled with the path [modules.unit] had that unit declare, the way
+// check.h's resolver fills it -- [modules.require.short]'s short form needs it to know where
 // the unit it brought in goes.
 typedef size_t (*LhatUnitResolver)(void *context, const char *path,
                                    size_t length, const char **module_name);
@@ -40,14 +40,14 @@ typedef size_t (*LhatUnitResolver)(void *context, const char *path,
 typedef struct {
     LhatUnitResolver resolve;
     void *context;
-    // 05§3: the path this unit declared, or NULL when it declared none
-    // (11§3.2). A unit that has one registers itself under it and answers what
-    // an earlier require^ registered, which is how 05§5.3 loads it once.
+    // [modules.unit]: the path this unit declared, or NULL when it declared none
+    // ([binary.codec.kinds]). A unit that has one registers itself under it and answers what
+    // an earlier require^ registered, which is how [modules.require.once] loads it once.
     const char *module_name;
     // Canonical require path for serializing public enum values.
     const char *enum_require_path;
-    // 05§5.3's guard and registry write, for a unit that has a module
-    // name. Off for a script std.load brought in (05§5.6): it answers its
+    // [modules.require.once]'s guard and registry write, for a unit that has a module
+    // name. Off for a script std.load brought in ([modules.require.load]): it answers its
     // table to whoever called it and enters no registry.
     bool registers;
 
@@ -58,12 +58,12 @@ typedef struct {
     size_t host_error_count;
 
     // What the program's lhat_register_hostdata_type calls registered, so
-    // that fits^ against a hostdata type (05§8.8) can be compiled. NULL/0
+    // that fits^ against a hostdata type ([modules.hostdata]) can be compiled. NULL/0
     // when the host registered none.
     const LhatHostTypeEntry *host_types;
     size_t host_type_count;
 
-    // 05§8.9: the host value types, the same way. NULL/0 when the host
+    // [modules.hostvalue]: the host value types, the same way. NULL/0 when the host
     // registered none.
     const LhatHostValueTypeEntry *hostvalue_types;
     size_t hostvalue_type_count;
@@ -85,7 +85,7 @@ LhatCompileResult lhat_compile_module(const LhatCheckResult *checked,
                                       const LhatLexer *lexer,
                                       const LhatUnits *units, LhatProto **out);
 
-// 03§4.3: a REPL compiles many inputs into one running machine, so the
+// [pipeline.machine]: a REPL compiles many inputs into one running machine, so the
 // top-level names of one input have to still be there for the next. The
 // session carries them -- their slots, and the names themselves, copied,
 // since each input's lexer goes when the input does.
@@ -94,7 +94,7 @@ typedef struct LhatCompileSession LhatCompileSession;
 LhatCompileSession *lhat_compile_session_new(void);
 void lhat_compile_session_dispose(LhatCompileSession *session);
 
-// 04§12.4 and 05§8.8: the other half of what LhatUnits carries for a
+// [errors.grammar.types] and [modules.hostdata]: the other half of what LhatUnits carries for a
 // file -- the error kinds and hostdata types a host registered, so that fits^
 // against either compiles at a prompt too. Both arrays belong to whatever
 // registered them (an LhatProgram, normally) and have to outlive the session.
@@ -108,7 +108,7 @@ void lhat_compile_session_hosted(LhatCompileSession *session,
                                  const LhatHostTypeEntry *types,
                                  size_t type_count);
 
-// 09§3.5: tells the session a name that already holds a register, the way
+// [debug.inspect.eval]: tells the session a name that already holds a register, the way
 // an earlier input's top-level let^ would have. A debugger's evaluation is
 // the caller: it copies a stopped frame's values into a fresh frame's first
 // registers and seeds their names here, then compiles one input against

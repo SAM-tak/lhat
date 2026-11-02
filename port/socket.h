@@ -2,7 +2,7 @@
 //
 // The core asks for none of this, and neither does the language: this is for
 // what is built beside it. The debug adapter (dap/) listens for one debugger
-// over TCP on the loopback, because DAP travels that way; std.net (01§11)
+// over TCP on the loopback, because DAP travels that way; std.net ([lex.open])
 // sends and receives UDP datagrams. So it lives in port/ beside thread.h and
 // is a target of its own that `lhat` does not link.
 

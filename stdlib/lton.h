@@ -18,26 +18,26 @@
 // expanded, not preserved as shared identities. save writes the filesystem
 // directly (not the read-only program loader), after serialization completes.
 //
-// The elements are §14.14's three forms as they stand -- positional,
+// The elements are [syntax.obj.keys]'s three forms as they stand -- positional,
 // `name = value`, `[value] = value` -- separated by `,`, and a trailing one
 // is allowed. The spelling is L^'s throughout: the comments, the string
 // escapes and the shapes of a number are the language's because the same
 // lexer reads them, not because they were made to look alike.
 //
-// WHAT MAY BE WRITTEN. The text is read as the body of an f^, and §15.1
+// WHAT MAY BE WRITTEN. The text is read as the body of an f^, and [syntax.sub.kinds]
 // says an f^ may call only an f^. So arithmetic, comparison, concatenation
 // and nested tables all go through, and **a p^ call is an error**. Since
 // everything with an effect is a p^, an LTON file cannot have one. That is
 // the whole of what makes reading one safe, and it is a rule the language
 // already had rather than a new check written for this.
 //
-// 05§8.2's initial bindings are not in scope either: what a host bound
+// [modules.host.initial]'s initial bindings are not in scope either: what a host bound
 // for the units it means to run is no part of what a configuration file may
 // name. Imports and direct let^ aliases of imports are allowed only before
 // table entries. Output uses canonical module names and generates imports
 // from the public enum descriptors; it never preserves caller-chosen aliases.
 //
-// 04§11.3: a table does not hold nil^, so `a = nil^` puts no key -- the
+// [errors.runtime.index]: a table does not hold nil^, so `a = nil^` puts no key -- the
 // same answer std.json gives, and for the same reason.
 //
 // See DesignDocuments/08-lton.md.
@@ -118,7 +118,7 @@ LhatLtonStatus lhatstdlib_lton_parse(LhatMachine *machine,
                                      LhatValue *out);
 
 // The text at `path`, read through the program's loader and through nothing
-// else (05§8.9) -- so a host that handed none over reads nothing here
+// else ([modules.hostvalue]) -- so a host that handed none over reads nothing here
 // either. Diagnostics call it by its path.
 LhatLtonStatus lhatstdlib_lton_load(LhatMachine *machine, LhatProgram *program,
                                     const char *path, LhatValue *out);
@@ -134,9 +134,9 @@ LhatLtonStatus lhatstdlib_lton_load(LhatMachine *machine, LhatProgram *program,
 LhatLtonStatus lhatstdlib_lton_stringify(LhatValue table, char **text,
                                         size_t *length);
 
-// 08§7+: the text compiled ahead -- the same parsing and checking parse
+// [lton.load.compiled]: the text compiled ahead -- the same parsing and checking parse
 // makes, written out as the bytes parse and load read back without the
-// front end (05§10.8). What `lhat --compile conf.lton` writes. `out` is
+// front end ([modules.binary.vm-only]). What `lhat --compile conf.lton` writes. `out` is
 // lhat_alloc'd and the caller's to free; a refusal says why in
 // lhat_program_load_failure, as parse's does.
 LhatLtonStatus lhatstdlib_lton_write(LhatProgram *program, const char *name,

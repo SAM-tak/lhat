@@ -1,10 +1,10 @@
-// L^ (lhat) -- tests for 04§2.7 and 04§2.7+: the family of errors a
+// L^ (lhat) -- tests for [errors.kind.local] and [errors.kind.local-no-propagate]: the family of errors a
 // subroutine may not return.
 //
 // localerrordef^ declares under localerror^, which is disjoint from error^
 // rather than under it. That disjointness is the whole design: putting the
 // new family below error^ would have made 'p^ … -> T|error^' admit one, and
-// then error^ itself could no longer be written in a result -- 04§2.3's `cause`
+// then error^ itself could no longer be written in a result -- [errors.kind.made]'s `cause`
 // with it. So the first thing pinned here is that error^ still behaves
 // exactly as it did.
 //
@@ -12,7 +12,7 @@
 // touch localerror^: not a written result, not an inferred one, not one
 // nested inside a table. What is left is resolving it where it was raised --
 // catch^, or a catch^ arm -- and one way for the thing that failed to
-// survive: 04§10's chain, which 04§2.3 widened `cause` for.
+// survive: [errors.chain]'s chain, which [errors.kind.made] widened `cause` for.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,7 +25,7 @@
 //
 // THERE IS NO `bad()` HERE, and that is the rule working: a subroutine whose
 // result touches localerror^ cannot be written at all, so nothing raises one
-// across a call. What raises one is 04§2.5's construction, written where it is
+// across a call. What raises one is [errors.kind.new]'s construction, written where it is
 // caught -- which is the only place such an error ever comes to be.
 #define DECLS                                           \
     "errordef^ IOError { NotFound, Denied }\n"          \
@@ -48,10 +48,10 @@ static void test_error_is_untouched(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§2.3: every kind has one, and 04§2.7 widened it to take either family.
+    // [errors.kind.made]: every kind has one, and [errors.kind.local] widened it to take either family.
     // Read off a constructed one rather than off a caught one -- catch^ has
     // already removed the error arm by the time its left is bound, which is
-    // 11§4.1 working and not something to assert around.
+    // [binary.net.api] working and not something to assert around.
     LHAT_TEST("cause is still there and still reachable");
     check_text(&u, DECLS
                "let^ g = p^ {\n"
@@ -62,7 +62,7 @@ static void test_error_is_untouched(void)
     unit_dispose(&u);
 }
 
-// 04§2.7: the two tops are disjoint, which is the row 04§2.6's table gains.
+// [errors.kind.local]: the two tops are disjoint, which is the row [errors.kind.disjoint]'s table gains.
 static void test_the_two_families_are_disjoint(void)
 {
     Unit u;
@@ -92,7 +92,7 @@ static void test_the_two_families_are_disjoint(void)
     unit_dispose(&u);
 }
 
-// 04§2.7+, through 04§5.3's existing enforcement point.
+// [errors.kind.local-no-propagate], through [errors.try.result]'s existing enforcement point.
 static void test_it_cannot_leave_the_frame(void)
 {
     Unit u;
@@ -103,7 +103,7 @@ static void test_it_cannot_leave_the_frame(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES);
     unit_dispose(&u);
 
-    // The point of the family. Widening the signature is 04§5.3's answer and is
+    // The point of the family. Widening the signature is [errors.try.result]'s answer and is
     // not this one's -- there is no result that admits it.
     LHAT_TEST("widening the result does not help; the result itself is refused");
     check_text(&u, DECLS
@@ -111,7 +111,7 @@ static void test_it_cannot_leave_the_frame(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN);
     unit_dispose(&u);
 
-    // 04§5.3's "返り値型を書いていないとき": inference would otherwise take
+    // [errors.try.result]'s "返り値型を書いていないとき": inference would otherwise take
     // whatever a try^ let past and quietly make it part of the result.
     LHAT_TEST("a body with no written result cannot launder it either");
     check_text(&u, DECLS
@@ -147,7 +147,7 @@ static void test_resolving_it_here(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 05§4.5: the arm is what keeps it from reaching 05§5.3 at all.
+    // [modules.public.host]: the arm is what keeps it from reaching [modules.require.once] at all.
     LHAT_TEST("a catch^ arm that names the kind takes it");
     check_text(&u, DECLS
                "let^ g = p^ -> number^ {\n"
@@ -174,7 +174,7 @@ static void test_resolving_it_here(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§4.5: what no arm takes goes out, which is where 04§2.7+ catches it.
+    // [errors.catch.clause]: what no arm takes goes out, which is where [errors.kind.local-no-propagate] catches it.
     LHAT_TEST("an arm for another family does not take it");
     check_text(&u, DECLS
                "let^ g = p^ -> number^ {\n"
@@ -189,7 +189,7 @@ static void test_resolving_it_here(void)
     unit_dispose(&u);
 }
 
-// 04§10 with §2.3: wrapping what failed inside one's own error IS resolving
+// [errors.chain] with [syntax.juxta.when]: wrapping what failed inside one's own error IS resolving
 // it here, and it is the one way the thing that failed outlives the frame.
 static void test_the_chain_is_the_way_out(void)
 {
@@ -223,7 +223,7 @@ static void test_the_chain_is_the_way_out(void)
     unit_dispose(&u);
 }
 
-// 04§2.7 with §11.6+3: under localerror^ is where the language keeps the kinds
+// [errors.kind.local] with [syntax.op.as-error]: under localerror^ is where the language keeps the kinds
 // it declares for itself. Nothing registers CastFailure and no unit declares
 // it, so it is writable with no import^ and in a program with no host at all.
 static void test_the_builtin_kind(void)
@@ -262,7 +262,7 @@ static void test_the_builtin_kind(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
     unit_dispose(&u);
 
-    // 04§2.4: identity is the declaration, so two mentions of the name in one
+    // [errors.kind.nominal]: identity is the declaration, so two mentions of the name in one
     // unit have to reach the same one. They do not if it is built afresh.
     LHAT_TEST("two mentions of it are the same type");
     check_text(&u,

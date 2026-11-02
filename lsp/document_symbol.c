@@ -112,7 +112,7 @@ static cJSON *children_of(cJSON *parent)
     return children;
 }
 
-// §14.13: 'Base..def^{ … }' is the '..' operator with the def^ on its right,
+// [syntax.obj.def-form]: 'Base..def^{ … }' is the '..' operator with the def^ on its right,
 // so a value is read through however many stand there (semantic.c's
 // declared_as makes the same walk). `base` is what stood on the left of the
 // last one -- what the class was made from -- or NULL.
@@ -230,12 +230,12 @@ static void walk_entries(Outline *o, const LhatNode *entries, cJSON *into,
         if (e->kind != LHAT_NODE_TABLE_ENTRY) {
             continue;
         }
-        // §14.7+2: a delegate^ entry is not a member, and names nothing new.
+        // [syntax.obj.delegate]: a delegate^ entry is not a member, and names nothing new.
         if (e->v.entry.modifier == LHAT_DEF_DELEGATE) {
             continue;
         }
         if (e->v.entry.key == NULL) {
-            // §14.6: the self^{ … } template of a def^ carries no key, and
+            // [syntax.obj.template]: the self^{ … } template of a def^ carries no key, and
             // what it holds are the instance's fields. A positional entry
             // has no key either, and no name to list.
             if (in_class && e->v.entry.value != NULL &&
@@ -245,7 +245,7 @@ static void walk_entries(Outline *o, const LhatNode *entries, cJSON *into,
             }
             continue;
         }
-        // §14.14+: '[expr] = v' is keyed by a value nobody can read off the
+        // [syntax.obj.keys-equals]: '[expr] = v' is keyed by a value nobody can read off the
         // tree.
         if (e->v.entry.computed) {
             continue;
@@ -255,7 +255,7 @@ static void walk_entries(Outline *o, const LhatNode *entries, cJSON *into,
         if (!name_of(o, e->v.entry.key, &name, &name_length)) {
             continue;
         }
-        // §14.15: 'abstract^ name : type' -- declared, and given nothing.
+        // [syntax.obj.abstract]: 'abstract^ name : type' -- declared, and given nothing.
         // What stands in `value` is the type, so it says what kind of member
         // this will be without being one to walk into.
         if (e->v.entry.declared) {
@@ -277,7 +277,7 @@ static void walk_entries(Outline *o, const LhatNode *entries, cJSON *into,
     }
 }
 
-// 04§2.2: the fields a kind declares, built as PARAM nodes (parser.c).
+// [errors.kind.errordef]: the fields a kind declares, built as PARAM nodes (parser.c).
 static void walk_error_fields(Outline *o, const LhatNode *fields, cJSON *into)
 {
     for (const LhatNode *f = fields; f != NULL && !o->failed; f = f->next) {
@@ -298,7 +298,7 @@ static void walk_error_fields(Outline *o, const LhatNode *fields, cJSON *into)
 }
 
 // The table a unit answers with, when it does: 'return^ { … }' -- or the
-// same inside the wrapper an LTON file is read through (lsp/lton.h, 08§):
+// same inside the wrapper an LTON file is read through (lsp/lton.h, [lton]):
 // 'return^ (f^ -> t^{} { return^ { … } })()'. One level of that and no more.
 static const LhatNode *returned_table(const LhatNode *value, bool unwrap)
 {
@@ -343,7 +343,7 @@ static void walk_statement(Outline *o, const LhatNode *node, cJSON *into,
 {
     switch (node->kind) {
         case LHAT_NODE_DEFINE: {
-            // §13.10 pairs targets with values by position, the way
+            // [syntax.type.destructure] pairs targets with values by position, the way
             // semantic.c's walk_targets does; a target past the values is a
             // name with nothing to read a kind off.
             const LhatNode *value = node->v.binding.values;
@@ -356,7 +356,7 @@ static void walk_statement(Outline *o, const LhatNode *node, cJSON *into,
                 size_t name_length = 0;
                 int kind = plain_kind;
                 if (name_node != NULL && name_node->kind == LHAT_NODE_MEMBER) {
-                    // 05§8.8: 'let^ a.b = v' adds b to the table a holds. Not
+                    // [modules.hostdata]: 'let^ a.b = v' adds b to the table a holds. Not
                     // a name of this scope, so it is listed as the member
                     // it is, under the path that reaches it.
                     text_of(o, name_node, &name, &name_length);
@@ -451,8 +451,8 @@ static void walk_statement(Outline *o, const LhatNode *node, cJSON *into,
         }
         // The forms that hold statements without naming anything themselves
         // are looked through, so a let^ inside an if^ is still listed.
-        // 04§4.5: a catch^ arm is a clause like an if^'s, and 02 の
-        // §10.1's finally^ on an if^ one like a block's.
+        // [errors.catch.clause]: a catch^ arm is a clause like an if^'s, and 02 の
+        // [syntax.finally.block]'s finally^ on an if^ one like a block's.
         case LHAT_NODE_BLOCK:
         case LHAT_NODE_IF_STMT:
             if (node->kind == LHAT_NODE_BLOCK) {

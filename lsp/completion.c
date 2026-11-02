@@ -200,11 +200,11 @@ static uint32_t line_after(const char *text, size_t length, uint32_t at)
 
 // Where a new import^ or require^ line goes.
 //
-// 05§3 puts module^ first and the parser refuses a second one
+// [modules.unit] puts module^ first and the parser refuses a second one
 // (parser.c's MODULE_MISPLACED), so nothing may be written above it -- an
 // insertion there would not merely look wrong, it would stop the file
 // parsing. And a comment block at the head of a file belongs to whatever
-// follows it (01§6.4; 07§4 makes module^'s the unit's own
+// follows it ([lex.comment.kept]; [lsp.hover] makes module^'s the unit's own
 // description), so inserting into the middle of that hands the block to the
 // new line instead.
 //
@@ -259,7 +259,7 @@ static const LhatNode *imported_path(const LhatNode *statement)
     return NULL;
 }
 
-// Whether this unit already imports `path`. 05§8.7: an import^ takes in
+// Whether this unit already imports `path`. [modules.host.import]: an import^ takes in
 // the one unit it names and none named under it, so this is an equality.
 static bool already_imports(const LhatUnit *unit, const char *path,
                             size_t length)
@@ -303,7 +303,7 @@ static cJSON *text_edit(const LhatUnit *unit, uint32_t from, uint32_t to,
 //
 // The label is the word they typed toward (`print`), because that is what
 // they are thinking of; what gets written is the whole path (`std.io.print`),
-// because 05§5.5 and 05§8.7 both bind a root and leave the rest as members.
+// because [modules.require.short] and [modules.host.import] both bind a root and leave the rest as members.
 // Neither form invents a name -- the path is the one the module or the unit
 // declared for itself.
 //
@@ -370,7 +370,7 @@ static void offer_taking_in(cJSON *items, const LhatUnit *unit,
     }
 }
 
-// 05§8.7: every member of every module the host registered, whether or
+// [modules.host.import]: every member of every module the host registered, whether or
 // not this unit wrote the import^ that would reach it. `hosted` is the one
 // nested table import^ resolves against, keyed by path segment, so walking
 // it is walking the paths.
@@ -415,7 +415,7 @@ static void offer_hosted(cJSON *items, const LhatUnit *unit,
 
 // Whether this unit already requires the file `written` names. Unlike an
 // import^ there is no parent to subsume it, and unlike an import^ a second
-// one is an error (05§5.5 through 05§8.8's last-segment rule), so this has
+// one is an error ([modules.require.short] through [modules.hostdata]'s last-segment rule), so this has
 // to be right rather than merely tidy.
 static bool already_requires(const LhatUnit *unit, const char *written)
 {
@@ -447,7 +447,7 @@ static bool already_requires(const LhatUnit *unit, const char *written)
     return false;
 }
 
-// 05§5.5: what another unit of this workspace publishes, offered with the
+// [modules.require.short]: what another unit of this workspace publishes, offered with the
 // bare require^ that would reach it. The name is the one that unit declared
 // with module^ -- nothing here picks one.
 static void offer_workspace(cJSON *items, const LhatUnit *unit,
@@ -458,9 +458,9 @@ static void offer_workspace(cJSON *items, const LhatUnit *unit,
         const LspUnitExports *other = &units[i];
         if (other->path == NULL || other->module_name == NULL ||
             (unit->path != NULL && strcmp(other->path, unit->path) == 0)) {
-            continue;  // 05§5.1: a unit does not require^ itself
+            continue;  // [modules.require.path]: a unit does not require^ itself
         }
-        // 05§5.1: the path is written from the unit that writes it.
+        // [modules.require.path]: the path is written from the unit that writes it.
         char *written = lsp_completion_relative_path(unit->path, other->path);
         if (written == NULL) {
             continue;
@@ -566,7 +566,7 @@ char *lsp_completion_relative_path(const char *from, const char *target)
     if (from == NULL || target == NULL) {
         return NULL;
     }
-    // The directory the requiring unit stands in, which is what 05§5
+    // The directory the requiring unit stands in, which is what [modules.require]
     // resolves a written path against (program.c's resolve_against).
     const char *slash = strrchr(from, '/');
     size_t base_length = slash != NULL ? (size_t)(slash - from) + 1 : 0;
@@ -608,7 +608,7 @@ cJSON *lsp_completion_path_items(const char *unit_path,
     }
     for (size_t i = 0; i < count; i++) {
         if (candidates[i] == NULL || strcmp(candidates[i], unit_path) == 0) {
-            continue;  // 05§6.3: a unit does not require^ itself
+            continue;  // [modules.deps.cycle]: a unit does not require^ itself
         }
         char *written = lsp_completion_relative_path(unit_path, candidates[i]);
         if (written == NULL) {

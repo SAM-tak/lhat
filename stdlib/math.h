@@ -1,15 +1,15 @@
 // L^ (lhat) -- sample standard library: std.math.
 //
 // The scalar functions -- what a number^ cannot answer about itself alone
-// (§14.21+ gives it abs, sign and clamp beside the three roundings,
-// and §14.8+2 the constants number^.inf / nan). This is the rest: two
+// ([syntax.obj.abs] gives it abs, sign and clamp beside the three roundings,
+// and [syntax.obj.number-consts] the constants number^.inf / nan). This is the rest: two
 // numbers or more, the transcendental functions, and the mathematical
 // constants they are written with. Not Lua's math table copied over: what
 // std.random owns is not here, and what number^ carries is not here either.
 //
 // Angles are radians throughout, as Lua's math and C's <math.h> -- sin of
 // pi / 2 is 1, and asin(1) is pi / 2. The answers are libm's as they stand,
-// so cos(pi / 2) is 6e-17 rather than 0; '=' reads a real with §14.8's
+// so cos(pi / 2) is 6e-17 rather than 0; '=' reads a real with [syntax.obj.number]'s
 // tolerance, which is the comparison that wants. A written angle in degrees
 // converts with rad, and deg turns an answer back.
 //
@@ -29,7 +29,7 @@
 //                        an integer answers as an integer
 //   lerp                 f^number^, number^, number^ -> number^;   (a, b, t)
 //
-// '**' already takes any exponent (§14.8+), so there is no pow here.
+// '**' already takes any exponent ([syntax.obj.number-widen]), so there is no pow here.
 // std.math.vector2 (mathvector2.h) and std.math.vector3 (mathvector3.h) are
 // modules of their own under this one.
 

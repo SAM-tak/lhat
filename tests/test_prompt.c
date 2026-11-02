@@ -1,4 +1,4 @@
-// lhat/prompt.h: 03§4's loop as a host drives it, through the public
+// lhat/prompt.h: [pipeline.repl]'s loop as a host drives it, through the public
 // headers alone -- which is what the prompt is for.
 
 #include <stdbool.h>

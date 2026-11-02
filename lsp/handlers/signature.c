@@ -1,4 +1,4 @@
-// L^ (lhat) -- LSP server: lhat/signature (07§4).
+// L^ (lhat) -- LSP server: lhat/signature ([lsp.hover]).
 
 #include "signature.h"
 

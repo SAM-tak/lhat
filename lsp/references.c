@@ -74,7 +74,7 @@ bool lsp_references_target(const LhatUnit *unit, uint32_t offset,
     if (to <= from) {
         return false;  // not standing on a name at all
     }
-    // 01§2.3: the hat is part of the name, and a hatted word is the
+    // [lex.hat.repeat]: the hat is part of the name, and a hatted word is the
     // language's own -- f^, let^, self^. None of them was declared anywhere
     // a rename could edit.
     if (to < unit->source.length && unit->source.text[to] == '^') {
@@ -144,7 +144,7 @@ void lsp_references_in_unit(const LhatUnit *unit,
             !same_place(owner_of(unit, entry), target->path)) {
             continue;
         }
-        // 01§2.3: the hat is part of a name, and a use written with one
+        // [lex.hat.repeat]: the hat is part of a name, and a use written with one
         // is a different name from the same word without. Comparing the
         // spelling keeps them apart, and keeps a record that points at some
         // other name out of the answer at the same time.
@@ -172,7 +172,7 @@ bool lsp_references_declaration_in(const LhatUnit *unit,
 
 bool lsp_references_is_name(const char *spelling, size_t length)
 {
-    // One complete IDENT token, including the quoted spelling from 01 section 01§3.1.
+    // One complete IDENT token, including the quoted spelling from 01 section [lex.ident.chars].
     if (spelling == NULL || length == 0 || memchr(spelling, '\r', length) ||
         memchr(spelling, '\n', length) || memchr(spelling, '\0', length)) {
         return false;

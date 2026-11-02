@@ -1,4 +1,4 @@
-// L^ (lhat) -- tests for the debugger's line hook and frame reading (09§).
+// L^ (lhat) -- tests for the debugger's line hook and frame reading ([debug]).
 //
 // The hook records (line, depth) at every event, so a case can assert the
 // exact sequence a program produces -- that a new line sounds and the same
@@ -61,7 +61,7 @@ static void hook(LhatMachine *machine, void *context, LhatDebugEvent event,
         t->count++;
     }
     if (t->call_back && !lhat_is_nil(t->callee)) {
-        // 09§2.4: a call the hook makes is not itself hooked.
+        // [debug.hook.reentry]: a call the hook makes is not itself hooked.
         lhat_machine_call(machine, t->callee, NULL, 0);
     }
     if (!t->stopped && where->line == t->stop_line) {
@@ -905,7 +905,7 @@ static void test_host_pause_point(void)
     }
 }
 
-// 09§5.1: a watcher hears of every machine made and disposed while it
+// [debug.dap.machines]: a watcher hears of every machine made and disposed while it
 // stands, and of none after it is taken away.
 static void count_born(void *context, LhatMachine *machine)
 {

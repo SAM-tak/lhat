@@ -1,4 +1,4 @@
-// L^ (lhat) -- tests for 05§10: a compiled unit as bytes.
+// L^ (lhat) -- tests for [modules.binary]: a compiled unit as bytes.
 //
 // A unit is checked and compiled from text, written out, and read back by
 // a second program that never sees the text -- through the same loader and
@@ -382,7 +382,7 @@ static void test_units(void)
         lhat_program_dispose(&program);
     }
 
-    // 05§10: a binary unit's require^ reaches a binary unit, and the
+    // [modules.binary]: a binary unit's require^ reaches a binary unit, and the
     // enum declared in one is the identity the other's fits^ compares.
     LHAT_TEST("binary units require each other, and an enum keeps its identity");
     {
@@ -499,7 +499,7 @@ static void test_traceback(void)
                           false, &bytes, &length, &answer),
                "a panicking unit wrote");
 
-    // 04§11.6+: the lines and the labels stay in the bytes, with or
+    // [errors.runtime.traceback]: the lines and the labels stay in the bytes, with or
     // without the debug names -- a traceback from a binary unit reads the
     // same as from the text.
     LHAT_TEST("a traceback out of a binary unit names the line");
@@ -612,7 +612,7 @@ static void test_host_references(void)
         lhat_program_dispose(&program);
     }
 
-    // §8.9: the width is checked too, but not here -- the registry is the
+    // [syntax.stmt.let]: the width is checked too, but not here -- the registry is the
     // process's (registry.h), so one name has one size for as long as
     // the process runs, and a second registration of k.V at another size
     // is refused before any binary could meet it. The check matters
@@ -639,7 +639,7 @@ static void test_exports(void)
         lhat_program_dispose(&program);
     }
 
-    // 05§8.7: what a host asks of a unit's exports is answered off the
+    // [modules.host.import]: what a host asks of a unit's exports is answered off the
     // descriptors the bytes carried.
     LHAT_TEST("a binary unit answers its export descriptors");
     {
@@ -672,7 +672,7 @@ static void test_exports(void)
     lhat_free(lib_bytes);
 }
 
-// 05§10.7: the signature table. What a full build writes for a registration
+// [modules.binary.signatures]: the signature table. What a full build writes for a registration
 // is what install builds for it -- the parameters as parts, the receiver
 // and variadic marks -- and a program of any build reads it back.
 static void host_noop(LhatMachine *machine, void *context,
@@ -818,7 +818,7 @@ static void test_signatures(void)
     lhat_free(bytes);
 }
 
-// 05§10.6: what a host asks of the declarations (§18) is answered off the
+// [modules.binary.reflect]: what a host asks of the declarations ([syntax.annot]) is answered off the
 // records the bytes carried -- the same answers the tree gave when the unit
 // was written. The specimen puts something at every address: the unit's
 // head, a plain binding, a definition with template fields and members of
@@ -1015,7 +1015,7 @@ static void test_reflection(void)
     lhat_free(bytes);
 }
 
-// 05§8.8+: a wrapper over a wide host type. The export descriptor names
+// [modules.hostdata.base]: a wrapper over a wide host type. The export descriptor names
 // the host type by its tag rather than copying its members, so the bytes do
 // not grow with the host's API -- which is what took a 1.4KB unit to 160KB.
 static void test_host_wrapper_size(void)
@@ -1073,7 +1073,7 @@ static void test_host_wrapper_size(void)
     }
 }
 
-// 05§10 with 08§7+: a script compiled ahead loads back through the
+// [modules.binary] with [lton.load.compiled]: a script compiled ahead loads back through the
 // same entry its text would, which is what a host does for a script it
 // ships to a build without the front end.
 static void test_scripts(void)

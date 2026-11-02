@@ -9,16 +9,16 @@
 に分けてある。
 本文書はその土台にあたる部分を扱う。
 
-節番号のない参照（`02§14.17` など）は [02-syntax.md](02-syntax.md) を指す。
+節番号のない参照（`[syntax.obj.tostring]` など）は [02-syntax.md](02-syntax.md) を指す。
 
-## 1. 位置づけ
+## 1. 位置づけ [lsp.role]
 
 処理系本体の仕様ではなく、処理系を利用するツールの仕様。言語の意味論には影響しない。
 
 ただし本文書が要求する情報のうち、字句解析器や構文木が持っていないものがある。
 それらは本体側の設計文書に未決事項として起票し、そちらで決める。
 
-## 2. 構成
+## 2. 構成 [lsp.layout]
 
 ```text
   VSCode
@@ -34,19 +34,19 @@
 デバッグは別で、`lhat --dap` が担う（[09-debugger.md](09-debugger.md)）——`lhatls` とは別の
 プロセスで、枠（Content-Length）だけを共有する。
 
-## 3. 実装済みの機能
+## 3. 実装済みの機能 [lsp.features]
 
 | 機能 | 方法 | 実装 |
 | --- | --- | --- |
 | 診断 | `textDocument/publishDiagnostics` | `lsp/diagnostics.c`、`lsp/worker.c` |
 | 意味的な構文強調 | `textDocument/semanticTokens/full` | `lsp/handlers/semantic_tokens.c` |
 | 文書の同期 | `textDocument/didOpen` / `didChange` / `didClose` | `lsp/handlers/text_document_sync.c` |
-| ホバー | `textDocument/hover` | §4。`lsp/hover.c` |
-| 定義へ移動 | `textDocument/definition` | §4の `LhatResolution` がそのまま答える。`lsp/definition.c` |
+| ホバー | `textDocument/hover` | [lsp.hover]。`lsp/hover.c` |
+| 定義へ移動 | `textDocument/definition` | [lsp.hover]の `LhatResolution` がそのまま答える。`lsp/definition.c` |
 | 文書シンボル | `textDocument/documentSymbol` | 構文木だけから作る。`lsp/document_symbol.c` |
-| 参照の検索 | `textDocument/references` | 09§5。解決の記録を定義位置で引く。`lsp/references.c` |
+| 参照の検索 | `textDocument/references` | [debug.dap]。解決の記録を定義位置で引く。`lsp/references.c` |
 | 名前の変更 | `textDocument/rename`（`prepareRename` 付き） | 同じ答えをファイルごとに束ねる。`lsp/handlers/references.c` |
-| 補完 | `textDocument/completion` | §4の「点の記録」「言語の語と、スコープにある名前」「まだ取り込んでいない名前」。答えは `lhat/completion.h`、整形と取り込み行は `lsp/completion.c` |
+| 補完 | `textDocument/completion` | [lsp.hover]の「点の記録」「言語の語と、スコープにある名前」「まだ取り込んでいない名前」。答えは `lhat/completion.h`、整形と取り込み行は `lsp/completion.c` |
 
 検査はワーカースレッドで動く。プロジェクト内の `*.lh` はそれぞれが独立した根であり、
 1つの編集は「その根」と「最後の検査でその文書を通過した根」だけを検査し直す
@@ -58,14 +58,14 @@
 **文書シンボル（アウトライン）は検査を待たない。**列挙するのは `let^` / `var^` の束縛、
 `def^` のメンバー（`self^{ }` 欄の項目はフィールド、関数値はメソッド）、テーブルリテラルの
 名前付き項目、`errordef^` とその種類、`module^`、そして単位が `return^` で答えるテーブルの
-項目 — LTON はこの最後の形（08§）。いずれも名前は構文木に書かれていて、検査器の答えを
+項目 — LTON はこの最後の形（[lton]）。いずれも名前は構文木に書かれていて、検査器の答えを
 要しない。エディタはファイルを開いた瞬間にアウトラインを求めるので、受け口
 （`lsp/handlers/document_symbol.c`）はワークスペースの検査済み単位を引かず、
 文書ストアが持つその時点のテキストをその場で構文解析して答える。
 ループの焦点・引数に渡したコールバックの中身は載せない。アウトラインはファイルの形であって、
 名前の全列挙ではない。
 
-## 4. ホバー
+## 4. ホバー [lsp.hover]
 
 名前にホバーすると、**その名前が届いた定義**を示す（`textDocument/hover`、
 `lsp/hover.c`）。関数・手続きは、引数名と推論型を統合した宣言要約と説明文を示す。
@@ -87,16 +87,16 @@ let^ twice = f^n:number^ -> number^;
 1. **定義の1行目** — その名前を導入した構文を、最初の改行まで。
    本体が何ページあっても1行に収まる
 2. **推論された型** — 検査器が落ち着いた型（`lhat_type_write`）
-3. **説明文** — その定義に結び付いたコメント（01§6.4）。`#` や `#[ ]#` は外す
+3. **説明文** — その定義に結び付いたコメント（[lex.comment.kept]）。`#` や `#[ ]#` は外す
 
 関数・手続きの要約では型をもう一度別行に表示しない。
 その他の宣言では、書かれたものと推論型を併記する。
 
-型は 04§13の記法で書き出す（`lhat_type_write`、`src/type.c`）。
+型は [errors.open]の記法で書き出す（`lhat_type_write`、`src/type.c`）。
 `number^`、`t^{ sku : string^ }`、`f^number^ -> string^;` のように読める。
 表示のための道具であって、往復できる表現ではない。
 
-02§14はテーブルが自分自身を含むことを許すので、**深さと要素数で打ち切る**
+[syntax.obj]はテーブルが自分自身を含むことを許すので、**深さと要素数で打ち切る**
 （`LHAT_TYPE_WRITE_MAX_DEPTH`、`LHAT_TYPE_WRITE_MAX_ITEMS`）。
 省略箇所を `…` にする。出力長を測ってから領域を確保し、固定バイト数による
 途中切断はしない。関数要約では引数型ごとに構造を省略し、引数名・戻り値・終端を残す。
@@ -107,11 +107,11 @@ let^ twice = f^n:number^ -> number^;
 （`check.h` の `LhatResolution` と `lhat_check_resolution_at`）。
 `scope_find` が答えを出すその場所で、使用位置・定義位置・型を記録する。
 
-§8のスコープ規則をホバー側で解き直す道は採らない。
+[lsp.vscode]のスコープ規則をホバー側で解き直す道は採らない。
 実装が二つになれば歩調を合わせ続ける必要が生じ、しかも**規則が難しい場所でこそ食い違う**。
 
 記録は使用位置の順に並ぶので、位置からの検索は二分探索で済む。
-この表は定義へ移動・参照の検索（09§5）の土台でもある。
+この表は定義へ移動・参照の検索（[debug.dap]）の土台でもある。
 
 ### 点の記録 — メンバの補完が読むもの
 
@@ -119,11 +119,11 @@ let^ twice = f^n:number^ -> number^;
 （`check.h` の `LhatMemberSite`、`src/completion.c`）。
 
 構文解析器は末尾の `.` に**中身の無いメンバ**を残す（`parse_postfix`）。
-05§8.2 が文の位置で拒む「裸の式」からもこの形だけは除いてある — 点は既に報せて
+[modules.host.initial] が文の位置で拒む「裸の式」からもこの形だけは除いてある — 点は既に報せて
 あり、節点こそが問いの対象だからである。
 検査器はレシーバを推論した直後に、その点の位置と型を控える。
 
-**拒んだ文でも木は捨てない。** 一打鍵後の `r.pe` は 05§8.2 が拒む — そこは
+**拒んだ文でも木は捨てない。** 一打鍵後の `r.pe` は [modules.host.initial] が拒む — そこは
 変えない — が、拒否は診断であって木の始末とは別の話である。`parser.c` の
 `refused` は `LHAT_NODE_ERROR` の下に読み終えた走りを残し、検査器はそれを
 **静かに歩く**（`chk_check_statement` の ERROR 腕、`c->rereading` を上げる）。
@@ -139,17 +139,17 @@ let^ twice = f^n:number^ -> number^;
 
 **サーバ側で式の型を出し直さない。** 解決の記録は名前で引く表なので、
 `f().` なら「呼び出しは返り値を答える」を、`a[i].` なら添字の規則を、と
-サーバに書き足していくことになる。それは §4が hover で既に拒否した
+サーバに書き足していくことになる。それは [lsp.hover]が hover で既に拒否した
 「二つ目の実装」であり、`(a + b).` に至っては直前の名前 `b` の型を引いて
 **黙って間違う**。点に控えれば、どの形のレシーバも一つの機構で答える。
 
 列挙の規則は**一つだけ**: その名前で `lhat_type_find_member` を引いて
-同じメンバが返るものだけを出す。02§14.5 の合成で隠れたもの、02§14.7+2 の委譲が
+同じメンバが返るものだけを出す。[syntax.obj.compose] の合成で隠れたもの、[syntax.obj.delegate] の委譲が
 貸さないもの（受け手を取らないもの）は、それだけで落ちる。**出す候補と
 検査器が受ける候補が一致する**ことが、この一行で保証される。
 
 **候補は二つの源から来る。** 型が持つメンバー一覧と、**検査器への問い合わせ**。
-02§14.19 や 02§15.6+ の組み込みメンバー（`"text".length`、`t.push^`、コルーチンの `resume`）は
+[syntax.obj.substring] や [syntax.sub.coroutine-members] の組み込みメンバー（`"text".length`、`t.push^`、コルーチンの `resume`）は
 どの一覧にも載っていない —— 検査器が答えるものだからである。だから訊く:
 `chk_infer_member` の連鎖を `chk_member_of` に切り出し、診断の立つ場所を NULL にすると
 何も報せず何も控えずに答えだけ返る。補完は「試す綴り」の平坦な一覧を投げ、
@@ -196,7 +196,7 @@ size_t lhat_program_completion_modules(program, prefix, length, into, capacity);
 - `ask_text` は単位を要らない。木を訊く価値の無い二つ（書きかけのモジュール経路は
   何にも解決せず、閉じていない文字列は末尾まで走る一つの誤りトークン）を、
   検査を1回払う前に答えられる
-- **`import^` の経路は語のすぐ後ろから始まってよい。** 01§2.3 でハットは名前の
+- **`import^` の経路は語のすぐ後ろから始まってよい。** [lex.hat.repeat] でハットは名前の
   一部なので、カーソルから名前の字を遡ると `import^godot` は一続きに読める——
   これはこのリポジトリ自身の書き方である。語は綴りが決まっているので、遡った
   一続きがその語で始まっていれば経路はその直後から始まる
@@ -230,7 +230,7 @@ size_t lhat_program_completion_modules(program, prefix, length, into, capacity);
 登録済みの型を押し出さない。
 
 **捨てるのは登録が増えたときだけ。** レシーバの答えを変えるのはそれだけである——
-ホスト型へのメンバ登録は、鍵にしているその型そのものに書き込む。05§8.7 の共有
+ホスト型へのメンバ登録は、鍵にしているその型そのものに書き込む。[modules.host.import] の共有
 モジュールが登録件数を見るのと同じ読み方で、3つの数を控えて比べる。
 
 ### 言語の語と、スコープにある名前
@@ -242,7 +242,7 @@ size_t lhat_program_completion_modules(program, prefix, length, into, capacity);
 `.` なら（メンバの問いのものなので）答えず、行頭から見て註釈や文字列の中なら
 答えない（`lhat_completion_ask_text`）。答えは二つの源から来る。
 
-一覧は `src/completion.c` の `WORDS[]` に置き、`lhat_completion_words` で渡す。01§2.1 のとおり**字句層は
+一覧は `src/completion.c` の `WORDS[]` に置き、`lhat_completion_words` で渡す。[lex.hat.no-reserved] のとおり**字句層は
 キーワード表を持たない** — ハットの付いた語は全て一つの字種で、どれが何かは
 構文解析器が決める（`parser.c` の `is_statement_keyword` が、同じ理由で自分の
 分の知識を抱えている）。だから読める一覧はどこにも無く、これが一覧である。
@@ -253,14 +253,14 @@ size_t lhat_program_completion_modules(program, prefix, length, into, capacity);
 同じ取引である。
 
 **スコープにある名前は、スコープ自身が閉じるときに控える**
-（`check.h` の `LhatBindingSite`、`chk_scope_close`）。08§8のスコープ規則をサーバ側で
+（`check.h` の `LhatBindingSite`、`chk_scope_close`）。[lton.host]のスコープ規則をサーバ側で
 解き直さないのは、ホバーが解決の記録を読むのと同じ理由である。控えるのは
-スコープが覆った範囲と、閉じる時点でそれが持っていた束縛の全て — 05§8.7 が名前を
+スコープが覆った範囲と、閉じる時点でそれが持っていた束縛の全て — [modules.host.import] が名前を
 スコープ全体で見えるものとするので、範囲は `let^` より後ではなくスコープそのもの。
 
 **並び順が唯一の仕組みである。** スコープは自分を囲むスコープより先に閉じるので、
 記録は自然に内側から並ぶ。ある位置を含むものを順に流せば、**最初に来るのが
-08§8の探索が見つけるはずのもの**で、以降は全て隠されたもの。だから
+[lton.host]の探索が見つけるはずのもの**で、以降は全て隠されたもの。だから
 `lhat_check_bindings_at` は走査1つで済み、綴りごとに最初の1件を採るサーバ側も
 シャドウイングを1行も書かない。
 
@@ -277,7 +277,7 @@ size_t lhat_program_completion_modules(program, prefix, length, into, capacity);
 三つ目の源がある。**この単位がまだ取り込んでいない名前**を、それを届かせる
 `import^` / `require^` の行と一緒に出す（LSP の `additionalTextEdits`）。
 
-**束縛名を発明しない。** これが成り立つのは 05§5.5 のおかげである。
+**束縛名を発明しない。** これが成り立つのは [modules.require.short] のおかげである。
 `let^`/`var^` を書かない `require^` は、その単位が `module^` で名乗ったパスの
 下に入る —— `import^` が根を束ねて残りをメンバにするのと同じ形。だから
 どちらも「名乗られたパス」を書くだけで済む。
@@ -287,7 +287,7 @@ size_t lhat_program_completion_modules(program, prefix, length, into, capacity);
 | `print` | `import^ std.io` | `std.io.print` |
 | `publicProc` | `require^ "lib/m1.lh"` | `namespace1.module1.publicProc` |
 
-**`module^` を名乗っていない単位は候補にしない。** 05§5.5 が省略形をその場合に
+**`module^` を名乗っていない単位は候補にしない。** [modules.require.short] が省略形をその場合に
 誤りとしており、`let^ name = require^ ...` を書くなら名前を選ぶことになる。
 それは書き手の選択であってサーバの領分ではない。
 
@@ -305,11 +305,11 @@ size_t lhat_program_completion_modules(program, prefix, length, into, capacity);
 
 ここが一番尖っている。
 
-- **`module^` の上には入れられない。** 05§3がそれを先頭に置き、
+- **`module^` の上には入れられない。** [modules.unit]がそれを先頭に置き、
   構文解析器が2つ目を拒む。上に書けば見た目が悪いのではなく、**ファイルが
   構文解析を通らなくなる**
-- **先頭のコメント塊の中にも入れられない。** 01§6.4 では塊は直後に来る
-  ものに属し、§4はその塊を単位自身の説明としている。間に割り込めば
+- **先頭のコメント塊の中にも入れられない。** [lex.comment.kept] では塊は直後に来る
+  ものに属し、[lsp.hover]はその塊を単位自身の説明としている。間に割り込めば
   説明文が新しい行のものになる
 
 だから: `module^` があればその次の行、無ければ先頭のコメント塊の後、それも
@@ -317,9 +317,9 @@ size_t lhat_program_completion_modules(program, prefix, length, into, capacity);
 本文を見て「`#` で始まる行」を数えるだけでは足りない。
 
 **既に届いているなら行を足さない。** 届いているのは綴りが一致するときだけである。
-`import^` は1つの単位しか導入しない（05§8.7）ので、親を取り込んでいても
+`import^` は1つの単位しか導入しない（[modules.host.import]）ので、親を取り込んでいても
 子の行は要る。`require^` も綴りの一致で判定するが、こちらは**二重に書けば誤りになる**
-（05§5.5 と 05§8.8 の末尾の規則）ので、正しさが要る。名前自体は届いていても
+（[modules.require.short] と [modules.hostdata] の末尾の規則）ので、正しさが要る。名前自体は届いていても
 出す価値があるので、落とすのは行だけである。
 
 ### 定義の文を見つける
@@ -333,7 +333,7 @@ size_t lhat_program_completion_modules(program, prefix, length, into, capacity);
 位置から直に探して答える。
 
 **別の単位から来た名前は、モジュール名が見える。**追加の仕組みは要らない。
-05§では他の単位の名前に触れる道が `require^` と `import^` しかなく、
+[modules]では他の単位の名前に触れる道が `require^` と `import^` しかなく、
 束縛の定義行に必ずモジュール名が現れるためである。
 
 ```text
@@ -351,18 +351,18 @@ let^ other = require^ "lib/util.lh"
 先頭がコメントで始まる単位の 0 には何も立たないので、hover は最初の文（`module^`）を示す。
 
 ［未決］ **L5** — 説明文の中で返り値や引数への説明を書き分ける記法（`@Return` など）。
-01§6.4 が後回しとしたもので、決めるときは 01 側に番号を起票する。
+[lex.comment.kept] が後回しとしたもので、決めるときは 01 側に番号を起票する。
 それまで説明文は一塊として扱う。
 
-なお言語サーバは `LHAT_WITH_COMMENTS` を定義したビルドを使う（01§6.4）。
+なお言語サーバは `LHAT_WITH_COMMENTS` を定義したビルドを使う（[lex.comment.kept]）。
 外れた構成では 2 が空になり、1 だけが出る。
 ビジュアルエディタもノードのコメントとして同じものを使う（06§5.4）。
 
-## 5. 参照の検索と名前の変更
+## 5. 参照の検索と名前の変更 [lsp.references]
 
 **名前とは、それが宣言された場所である。** 綴りではない。二つのスコープの
 `count` は二つの名前であり、三つのファイルから届く一つの名前は一つである。
-これが、サーバが §8のスコープ規則を一行も読まずに安全な改名を出せる理由。
+これが、サーバが [lsp.vscode]のスコープ規則を一行も読まずに安全な改名を出せる理由。
 
 解決の記録（`check.h` の `LhatResolution`）を**逆から読む**だけである。定義へ
 移動は一つの記録が指す先を読む。参照の検索は全部の記録を読んで、同じ場所を
@@ -376,19 +376,19 @@ let^ other = require^ "lib/util.lh"
   他のファイルからだけ使われる `public^` の名前がこれ）
 
 **記録があって宣言位置が無いものは、何も答えない。** ホストが登録した名前
-（05§8.7）、言語自身が答える組み込み（02§14.19）、素のテーブルリテラルの
+（[modules.host.import]）、言語自身が答える組み込み（[syntax.obj.substring]）、素のテーブルリテラルの
 メンバー —— どれも編集できる場所を持たない。ここを「自分自身が宣言」と
 扱うと、**改名がその一箇所だけを書き換えて残りを置き去りにする**。
 だから記録の有無と宣言位置の有無を分けて見る。
 
 ほかに三つ拒む。
 
-- **ハット付きの語** — 名前の直後が `^` なら拒む。01§2.3 でハットは名前の
+- **ハット付きの語** — 名前の直後が `^` なら拒む。[lex.hat.repeat] でハットは名前の
   一部であり、そういう語は言語のもので、書き手が束ねた名前は決してそうならない
 - **名前でないもの** — 数値は名前と同じ字で出来ているが、先頭が数字である
-  （01§3.1）
+  （[lex.ident.chars]）
 - **新しい名前が名前でないとき** — 同じ規則で見る。空いているかどうかは見ない。
-  05§8.7 の衝突は検査器が、起きた場所で一度だけ報せる
+  [modules.host.import] の衝突は検査器が、起きた場所で一度だけ報せる
 
 **綴りの一致も要る。** 記録が指す先にその名前が書かれていなければ、その記録は
 この名前の話ではない —— `require^` の記録はファイルの先頭（0）を指し、そこには
@@ -402,7 +402,7 @@ let^ other = require^ "lib/util.lh"
 `prepareRename` は同じ問いを最初の一歩で止めたもので、**書き手が新しい名前を
 打つ前に断る**ためにある。
 
-## 6. これから足す標準の機能
+## 6. これから足す標準の機能 [lsp.next]
 
 いずれも構文木と検査結果から作れる。
 
@@ -410,11 +410,11 @@ let^ other = require^ "lib/util.lh"
 | --- | --- | --- |
 | 呼び出し階層 | `callHierarchy/*` | 参照の検索を呼び出しの位置だけに絞る |
 
-### 6.1 修正案（quick fix）
+### 6.1 修正案（quick fix） [lsp.next.fixes]
 
 > **修正案はライブラリが作る。道具はそれを編集に変換するだけである。**
 
-拒んだ段が、何が正しかったかを知っている。サーバで作り直せば §4と同じ理由で
+拒んだ段が、何が正しかったかを知っている。サーバで作り直せば [lsp.hover]と同じ理由で
 スコープ規則の2つ目の実装になり、難しい場合にだけ食い違う。診断が自分の修正案を持ち、
 `lhat_unit_diagnostic_fix`（`lhat/program.h`）がそれを答える。
 
@@ -423,7 +423,7 @@ let^ other = require^ "lib/util.lh"
 - **確度を2値で持つ。** 機械適用可（`LHAT_FIX_MACHINE`）は読まずに当ててよい物、
   要確認（`LHAT_FIX_SUGGESTED`）は何のつもりだったかの推測である。一括適用と、
   エディタが最初に出す1件（`isPreferred`）はこれで決まる
-- **題名は人に見せる文** なので ID を持ち、訳せる（10§4）。出どころは `fix`。
+- **題名は人に見せる文** なので ID を持ち、訳せる（[l10n.id]）。出どころは `fix`。
   題名は最初の編集が書く文字列を `{text}` として描く
 - 言語サーバは `textDocument/codeAction` で `quickfix` として返す（一括適用は
   `source.fixAll`、下の「一括適用」）。
@@ -443,7 +443,7 @@ let^ other = require^ "lib/util.lh"
 | `parse.expected-token` / `.expected-found` | `fix.write-token` | 要ったトークンを、あった物の先頭に書く |
 | `check.assign-to-let` | `fix.let-to-var` | 束縛している `let^` を `var^` に |
 | `check.public-is-immutable` | `fix.var-to-let` | その `var^` を `let^` に |
-| `check.member-exists` | `fix.write-override` / `fix.write-overload` | メンバの前に 02§14.12 の印を置く（2案） |
+| `check.member-exists` | `fix.write-override` / `fix.write-overload` | メンバの前に [syntax.obj.override] の印を置く（2案） |
 | `check.nothing-to-override` | `fix.remove-marker` | その印を外す |
 | `check.bare-table-type` | `fix.table-members` | `t^` の直後に `{}` |
 | `check.scope-on-define` | `fix.remove-scope` | 名前の前のスコープ指定子を外す |
@@ -459,7 +459,7 @@ let^ other = require^ "lib/util.lh"
 もう一方の出口を編集では言えない。印の2案はどちらを意味したかが書き手のものである。
 
 語が書かれていなければ書き換える場所も無いので、そのとき修正案は0件になる。
-`with^` と数える `for^` の焦点は構文が束縛するので（02§8.9）`check.assign-to-form` に
+`with^` と数える `for^` の焦点は構文が束縛するので（[syntax.stmt.let]）`check.assign-to-form` に
 修正案は付かず、これは診断文が `var^` を勧めないのと同じ理由である。
 
 #### 近い名前
@@ -470,11 +470,11 @@ let^ other = require^ "lib/util.lh"
   ASCII の大小は数えない。許すのは書かれた名前の長さの3分の1まで、少なくとも1。
   同じ近さなら先に差し出された方を取る
 - **候補は、その場で読めて検査器が拒まない名前だけ**である。名前はスコープを内側から
-  （02§8.7+で自分の初期化式から読めない物は除く）、次にホストが束縛した物（05§8.2）。
-  メンバは受け手が書いて持つ物と組み込みの物（02§14.19）で、これは `.` の補完と
+  （[syntax.stmt.old-world]で自分の初期化式から読めない物は除く）、次にホストが束縛した物（[modules.host.initial]）。
+  メンバは受け手が書いて持つ物と組み込みの物（[syntax.obj.substring]）で、これは `.` の補完と
   **同じ走査**（`lhat_check_written_members`・`lhat_check_builtin_members`）を通る。
   構築の欄は雛形の欄だけ（メソッドは構築が書く物ではない）、誤りの欄は種別の欄に
-  04§2.3 の `message` と `cause`、注釈はそこに書く対象で登録された物だけである
+  [errors.kind.made] の `message` と `cause`、注釈はそこに書く対象で登録された物だけである
 - 候補は報告のその場で、生きているスコープから数える。補完が読む記録はスコープが
   閉じるときに書かれる物なので、元は同じである
 - 名前は検査結果が持つ文字列に写してから指す（`LhatCheckResult` の `fix_texts`）。
@@ -484,19 +484,19 @@ let^ other = require^ "lib/util.lh"
 
 次の診断には修正案を付けない。どれも書き直しに、**機械が知り得ない値か名前**が要る。
 
-- `check.ambiguous-member` — 02§14.5+ の逃げ道は 02§14.4 の取り出しで、
+- `check.ambiguous-member` — [syntax.obj.compose-ambiguous] の逃げ道は [syntax.obj.self] の取り出しで、
   `let^ drawReset = Draw.reset` と**別の文**で取り出してから `drawReset(o)` と呼ぶ。
   `Draw.reset(o)` も `(Draw.reset)(o)` も、`X.m(…)` の形である限り X を暗黙の
   受け手として渡すので、1つの式では書けない。修正案は文を1つ足し、スコープに
   新しい名前を持ち込むことになる
 - `check.match-not-exhaustive` — `other^:` の値。どこにでも置ける
-  「まだ書いていない」の式は無い（`panic^` が式になるのは `catch^` の右辺だけ、04§4.1+）
+  「まだ書いていない」の式は無い（`panic^` が式になるのは `catch^` の右辺だけ、[errors.catch.panic]）
 - `check.missing-field` — 欄の値
 - `check.error-dropped` の `catch^ …` と、`check.coroutine-dropped` の `let^ 名前 = …` —
   代わりの値と、束縛する名前
 
 型の既定値（`0`・`""`・`nil^`）で埋めれば検査は通るが、足りない場合を黙って
-埋めることになる。`catch^ nil^` が本物の誤りを隠すのと同じ罠なので採らない（04§8.3）。
+埋めることになる。`catch^ nil^` が本物の誤りを隠すのと同じ罠なので採らない（[errors.dropped.answer]）。
 
 #### 一括適用
 
@@ -517,17 +517,17 @@ let^ other = require^ "lib/util.lh"
 （`synchronize`）のままでよい — 失敗した文は木に残り、後続の文も読まれ、検査器は
 構文エラーの有無に関わらず走る。足したのは二点で、**末尾の `.` に引数の無い
 メンバを残す**ことと、**文の位置で拒んだ式を `LHAT_NODE_ERROR` の下に残す**こと。
-どちらも診断は変えず、木を捨てないだけである（§4の「点の記録」）。
+どちらも診断は変えず、木を捨てないだけである（[lsp.hover]の「点の記録」）。
 型の路（`parse_type`）と修飾名（`parse_qualified_name`）は変えない:
 後者を変えると `module^ a.` が単位の名前を `"a."` にしてしまい、
-それは 05§5.5 が短い `require^` を束ねる名前である。
+それは [modules.require.short] が短い `require^` を束ねる名前である。
 
-## 7. 独自拡張
+## 7. 独自拡張 [lsp.extensions]
 
 | 要求 | 用途 | 定義 | 実装 |
 | --- | --- | --- | --- |
 | `lhat/ast` | ビジュアルエディタに構文木を渡す | 06§4 | `lsp/ast_json.c`、`lsp/handlers/ast.c` |
-| `lhat/toggleDisabledCode` | 選択を文の単位に広げて `#[~ … ]#` で囲む・外す | 01§6.5 | `lsp/disabled_code.c`、`lsp/handlers/disabled_code.c` |
+| `lhat/toggleDisabledCode` | 選択を文の単位に広げて `#[~ … ]#` で囲む・外す | [lex.comment.disabled] | `lsp/disabled_code.c`、`lsp/handlers/disabled_code.c` |
 
 独自拡張は `lhat/` を接頭辞とする。
 
@@ -537,7 +537,7 @@ let^ other = require^ "lib/util.lh"
 `{ type, name?, default? }`、出力 `outputs` は型文字列の配列、`signature` は解決した完全な関数型とする。
 オーバーロードは検査器が選んだ腕を使い、暗黙の receiver は固定入力に重ねて載せない。
 名前と既定値は解決した宣言から取得できる場合だけ載せる。既定値は括弧を保ったソースであり、
-実行時に引数を省略できるという意味ではない（02§13.4）。可変の関数束縛や関数型しか分からない引数では名前を推測しない。
+実行時に引数を省略できるという意味ではない（[syntax.type.param-names]）。可変の関数束縛や関数型しか分からない引数では名前を推測しない。
 出力は呼び出しの実際の結果から得る。タプルを各位置に分け、無値は空配列、コルーチンは1出力とする。
 位置・方向・グループ表示はクライアントの責務である。
 
@@ -548,7 +548,7 @@ let^ other = require^ "lib/util.lh"
 このモードでは行単位に広げず、同じ行の兄弟文や外側の定義を巻き込まない。
 成功応答には `exact: true` も含め、古いサーバーがオプションを無視した応答と区別する。
 
-## 8. VSCode 拡張
+## 8. VSCode 拡張 [lsp.vscode]
 
 `contributes` は `languages` / `grammars` / `configuration` / `configurationDefaults` に加え、
 ビジュアルエディタのために次を持つ。
@@ -562,13 +562,13 @@ let^ other = require^ "lib/util.lh"
 **webview は言語サーバに直接触らない。拡張本体が代行する。**
 webview には言語クライアントも接続先も無いため、これは選択ではなく前提である。
 webview → 拡張本体は `postMessage`、拡張本体 → `lhatls` は `sendRequest("lhat/ast", …)`。
-往復は一段増えるが、01§6.5 の測定からしてレイアウトの方が桁違いに重く、問題にならない。
+往復は一段増えるが、[lex.comment.disabled] の測定からしてレイアウトの方が桁違いに重く、問題にならない。
 
 **カスタムエディタは既定にしない**（`"priority": "option"`）。
 `*.lh` を開けばテキストエディタが出る。グラフは `L^: Open Graph View` で横に開く。
 第1段階（06§3）が読み取り専用である以上、グラフだけが出る状態は行き止まりになる。
 
-### 8.1 二つの半分と、その作り分け
+### 8.1 二つの半分と、その作り分け [lsp.vscode.halves]
 
 拡張は性質の違う二つの半分でできている。
 
@@ -582,7 +582,7 @@ esbuild は型を見ないので、型検査は `tsconfig.rf.json`（`npm run ch
 写像（`src/webview/map.ts`）は描画層に依存しない。これは意図してそう書いたもので、
 描画層を差し替えても写像は動いたことが 06§8.4 の検証で確かめられている。
 
-## 9. 設定 — 二つのファイル
+## 9. 設定 — 二つのファイル [lsp.config]
 
 `*.lh` ごとに、その親ディレクトリから親へ探して最初に見つかった設定ディレクトリ
 から読む。探索には、そのファイルを含む LSP の workspace folder を含めるが、そこより
@@ -591,7 +591,7 @@ esbuild は型を見ないので、型検査は `tsconfig.rf.json`（`npm run ch
 
 | ファイル | 書き手 | 中身 |
 | --- | --- | --- |
-| `lhat-host.json` | 機械（`lhat --dump-host-api`） | ホストが登録するもの（05§8.7）。`strict` |
+| `lhat-host.json` | 機械（`lhat --dump-host-api`） | ホストが登録するもの（[modules.host.import]）。`strict` |
 | `lhat-lsp.json` | 人（リポジトリに入れる） | この企画を道具がどう扱うか。`exclude`・`force_include_files`・`strict` |
 
 ダンプはファイルを丸ごと置き換えるので、手で書いたものはそこに置けない。
@@ -612,9 +612,9 @@ esbuild は型を見ないので、型検査は `tsconfig.rf.json`（`npm run ch
 `.gitignore` も採らない。追跡するかどうかと検査するかどうかは別の問いで、
 入れ子・否定・`.git/info/exclude` まで背負うことになる。
 
-### 9.1 `exclude` — 何を根にしないか
+### 9.1 `exclude` — 何を根にしないか [lsp.config.exclude]
 
-§3のとおり、プロジェクト内の `*.lh` はそれぞれが独立した根になる。
+[lsp.features]のとおり、プロジェクト内の `*.lh` はそれぞれが独立した根になる。
 `exclude` はその**根の集合**を決める。パターンはプロジェクトルートからの相対
 パスに `/` 区切りで照合する。
 
@@ -658,11 +658,11 @@ excluded."* と断っている。git がこの但し書きを持つのは性能�
   取り除かれる道が無いので、「開いている間だけ根」にすると一度開いたファイルの
   赤が閉じた後も残る — 元の苦情がそのまま戻る
 - **根にならないだけである。**他の根が `require^` した先は今までどおり読まれ、
-  そこにある誤りは報告される。05§5の辿りは言語のもので、サーバが検査器に
+  そこにある誤りは報告される。[modules.require]の辿りは言語のもので、サーバが検査器に
   「そのファイルは無い」と嘘をつく話ではない。`exclude` は根の集合を決める
   道具であって、診断を黙らせる道具ではない
 
-### 9.2 `force_include_files` — 除外の中の、名指しした数本
+### 9.2 `force_include_files` — 除外の中の、名指しした数本 [lsp.config.force-include]
 
 除外したディレクトリの中に本物のソースが混ざることはある。`force_include_files`
 がそれを戻す。
@@ -702,7 +702,7 @@ rename の通知を受けると読み直し、根の集合を作り直し、全�
 （`lsp/worker.c`）。サーバーの再起動は要らない。
 消えた根の古い診断は空の配列で消える（既存の `published_paths`）。
 
-## 10. 未決事項一覧
+## 10. 未決事項一覧 [lsp.open]
 
 | 番号 | 内容 |
 | --- | --- |
@@ -718,7 +718,7 @@ rename の通知を受けると読み直し、根の集合を作り直し、全�
   210 µs → 実質 0（release）
 
 - **`import^` の綴りと、モジュールの持ち主（4.x改）。** Godot バインディングからの
-  2件。`import^godot` は語と経路の間に何も無く、ハットが名前の一部（01§2.3）なので
+  2件。`import^godot` は語と経路の間に何も無く、ハットが名前の一部（[lex.hat.repeat]）なので
   カーソルから名前の字を遡ると一続きに読める——語で始まっていれば経路はその直後から
   始まる、とした。そしてモジュールの一覧はコアに入れた（`lhat_program_completion_modules`）。
   登録したのはプログラムなので、ホストが一覧を別に抱える理由が無い。答えるのは
@@ -735,12 +735,12 @@ rename の通知を受けると読み直し、根の集合を作り直し、全�
   べき**で、空のバッファにはそれしか出せないこと
 
 - L2（補完に必要な誤り回復の水準。文の水準は現状のまま、末尾の `.` にだけ
-  節点を残す）は決定済み。09§5に取り込み欠番
+  節点を残す）は決定済み。[debug.dap]に取り込み欠番
 - L1（`module^` のコメントは単位の説明）・L3（webview は拡張本体経由）・
   L4（カスタムエディタは既定にしない）・L6（定義行と推論型を両方出す）・
   L7（モジュール名は定義行に出る）・L8（メンバーも解決の記録に載せ、ホバーと
   定義へ移動が答える。型が書かれた場所を持つ）は決定済み。本文に取り込み欠番
-- 参照の検索と名前の変更（09§5）。解決の記録を定義位置で引き、検査済みの根が
+- 参照の検索と名前の変更（[debug.dap]）。解決の記録を定義位置で引き、検査済みの根が
   抱える全単位を歩く。宣言された場所が名前の同一性であり、宣言位置を持たない
   ものは何も答えない —— そこを自分自身の宣言と扱うと、改名が一箇所だけを
-  書き換えて残りを置き去りにする。09§5が独立し、以降の章は1つずつ繰り下がった
+  書き換えて残りを置き去りにする。[debug.dap]が独立し、以降の章は1つずつ繰り下がった

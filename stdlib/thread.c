@@ -3,7 +3,7 @@
 // spawn(fn, ...) starts fn -- p^... -> (number^|bool^|string^|nil^); with no
 // upvalues -- on a fresh LhatMachine of its own, on a new OS thread, and hands
 // it whatever else was written. join() blocks for the result and dispose()
-// (05§8.8) blocks the same way if the caller never joined -- see
+// ([modules.hostdata]) blocks the same way if the caller never joined -- see
 // thread_dispose's comment for why letting an unjoined thread run past its
 // ThreadHandle's disposal is not safe here.
 //
@@ -18,7 +18,7 @@
 // What that copy can carry is what carry.h says -- the primitives, tables
 // (cycles kept), and closures as their shared proto plus a snapshot of what
 // they closed over. It is still the whole of why fn is written 'p^...'
-// rather than with parameters of its own: §13.7's collector is any^
+// rather than with parameters of its own: [syntax.type.variadic]'s collector is any^
 // underneath, which is the one shape every carried value conforms to
 // without a written parameter having to name it. What crosses is checked as
 // the call is made, not before it: an argument carry refuses answers
@@ -28,7 +28,7 @@
 // spawn/join answer a ThreadHandle or a ThreadError, or std.sys.
 // OutOfMemory for the one failure this module shares with every other
 // stdlib module (see sys.h) -- read the result with try^/catch^, or
-// narrow with fits^ against std.thread.ThreadHandle (05§8.8's hostdata
+// narrow with fits^ against std.thread.ThreadHandle ([modules.hostdata]'s hostdata
 // path).
 
 #include "carry.h"
@@ -48,10 +48,10 @@
 #define HOST_PAUSE_MS 20
 
 // What lhatstdlib_thread_register made, threaded through as every registration's
-// `context` (05§8.7) rather than kept in file-scope statics -- a second
+// `context` ([modules.host.import]) rather than kept in file-scope statics -- a second
 // LhatProgram registering this module gets its own kinds/tag instead of
 // silently overwriting the first program's, which would hand its already-
-// checked code a different (04§2.4: identity-by-declaration) kind object
+// checked code a different ([errors.kind.nominal]: identity-by-declaration) kind object
 // than the one its signatures were checked against.
 //
 // Allocated once per lhatstdlib_thread_register call and never freed -- program.h
@@ -61,7 +61,7 @@
 // sample's whole use case; stdlib/random.c's module-wide state makes the same
 // trade for the same reason.
 typedef struct {
-    // 05§8.7: what the host registered, so that a machine started here can
+    // [modules.host.import]: what the host registered, so that a machine started here can
     // be given its own copies. Borrowed -- a program outlives every thread
     // started from it (join_and_free's comment says why that is not a hope).
     const LhatProgram *program;
@@ -73,7 +73,7 @@ typedef struct {
     const LhatErrorKind *out_of_memory;  // std.sys.Error.OutOfMemory -- sys.h
     const LhatHostDataTag *handle_tag;
 
-    // §15.14: what the host is told when a body finishes, on the worker's
+    // [syntax.sub.await-done]: what the host is told when a body finishes, on the worker's
     // own thread (thread.h). NULL until one is set.
     LhatStdlibThreadFinished on_finish;
     void *finish_context;
@@ -95,7 +95,7 @@ typedef struct {
     LhatCarried *fn;
     const LhatProgram *program;  // borrowed; lives as long as the program
                                  // does. What thread_main installs
-    // §13.7's collector, still in the form that crossed. Owned by this, and
+    // [syntax.type.variadic]'s collector, still in the form that crossed. Owned by this, and
     // given back by thread_main as soon as the new machine has its own copy.
     LhatCarried **arguments;
     size_t argument_count;
@@ -113,23 +113,23 @@ typedef struct ThreadHandle {
     bool joined;
     LhatRunStatus status;
     LhatCarried *result;  // NULL until the body answered
-    // 04§11.6+: the worker's frames, rendered before its machine went
+    // [errors.runtime.traceback]: the worker's frames, rendered before its machine went
     // -- the joiner's error message carries them. NULL when the run was
     // clean or nothing was standing. Owned here, freed with the handle.
     char *traceback;
-    // 04§11.6+: what the body failed WITH and WHERE. Both belong to the
+    // [errors.runtime.traceback]: what the body failed WITH and WHERE. Both belong to the
     // machine that ran it, so both are read there (thread_main) rather than
     // here: the value is one of that machine's objects and the line is on
     // the result, and neither outlives the dispose.
     char *fault_text;
     uint32_t fault_line;
-    // §15.14: what a scheduler asks instead of waiting -- has the body
+    // [syntax.sub.await-done]: what a scheduler asks instead of waiting -- has the body
     // finished. This one *is* read while the thread may still be running, so
     // unlike the fields above it is not covered by the join's ordering and
     // takes a lock of its own. The lock is held for a bool and nothing else.
     LhatMutex done_lock;
     bool finished;
-    // §15.14: the wait a scheduler parks on, armed by awaitable() and
+    // [syntax.sub.await-done]: the wait a scheduler parks on, armed by awaitable() and
     // pushed when the body finishes -- what replaces asking done() over and
     // over. 0 until it is asked for. Under `done_lock` because the two ends
     // of it are two threads.
@@ -202,7 +202,7 @@ static bool has_finished(ThreadHandle *handle)
     return finished;
 }
 
-// 04§11.6+: what a failure reads as. The status names the kind of it,
+// [errors.runtime.traceback]: what a failure reads as. The status names the kind of it,
 // and the three things beside it are what a reader actually needs: WHAT was
 // panicked with, WHERE it happened, and the frames it was standing in.
 //
@@ -291,7 +291,7 @@ static int thread_main(void *raw)
         lhat_machine_gc_configure(machine, &start->gc);
         LhatValue fn = lhat_nil();
         LhatValue *arguments = NULL;
-        // 05§8.7: a registration becomes an object on the heap of the
+        // [modules.host.import]: a registration becomes an object on the heap of the
         // machine it is installed on, so L^ and L^.modules are empty here
         // until this runs -- and the body was compiled against them. Reading
         // the program is all this does; several threads may be installing at
@@ -304,7 +304,7 @@ static int thread_main(void *raw)
             !rebuild_arguments(machine, start, &arguments)) {
             handle->status = LHAT_RUN_OUT_OF_MEMORY;
         } else {
-            // §13.7: fn takes one variadic slot, so lhat_machine_call is what
+            // [syntax.type.variadic]: fn takes one variadic slot, so lhat_machine_call is what
             // collects these into the table the body reads as '...'.
             LhatRunResult ran = lhat_machine_call(machine, fn, arguments,
                                                   start->argument_count);
@@ -313,7 +313,7 @@ static int thread_main(void *raw)
                 !lhat_carry(ran.value, &handle->result, NULL)) {
                 handle->status = LHAT_RUN_TYPE_ERROR;  // 表現できない戻り値
             }
-            // 04§11.6+: what it failed with, read here because the
+            // [errors.runtime.traceback]: what it failed with, read here because the
             // value is this machine's and the machine is about to go.
             if (ran.status != LHAT_RUN_OK) {
                 handle->fault_line = ran.line;
@@ -345,7 +345,7 @@ static int thread_main(void *raw)
     free_carried_values(start->arguments, start->argument_count);
     lhat_carried_free(start->fn);
     lhat_free(start);
-    // §15.14: the host hears about it here, on this thread, with the
+    // [syntax.sub.await-done]: the host hears about it here, on this thread, with the
     // machine already gone -- so a fault reaches a loop that never joins.
     if (handle->module != NULL && handle->module->on_finish != NULL) {
         char *said = failure_text(handle);
@@ -382,7 +382,7 @@ static void join_and_free(ThreadHandle *handle)
     lhat_free(handle);
 }
 
-// §13.7: the tail reaches an LhatHostFn uncollected (see LhatHost), so what
+// [syntax.type.variadic]: the tail reaches an LhatHostFn uncollected (see LhatHost), so what
 // spawn was written past fn is arguments[1..count) and nothing else. NULL out
 // with a count of 0 when there was none.
 //
@@ -431,7 +431,7 @@ static void thread_spawn(LhatMachine *machine, void *context,
         return;
     }
     const LhatProto *proto = lhat_closure_proto(arguments[0]);
-    // §13.7: one variadic slot and nothing else. A parameter of its own would
+    // [syntax.type.variadic]: one variadic slot and nothing else. A parameter of its own would
     // have a type spawn cannot promise to fill -- what carry.h carries is
     // a snapshot of the value, and '...' is the one shape whose element
     // type (any^) every one of them conforms to. What fn closes over
@@ -559,7 +559,7 @@ static void thread_join(LhatMachine *machine, void *context,
     handle->joined = true;
 
     if (handle->status != LHAT_RUN_OK) {
-        // 04§11.6+: the worker's own frames ride the message -- the one
+        // [errors.runtime.traceback]: the worker's own frames ride the message -- the one
         // channel that crosses machines here.
         char *said = failure_text(handle);
         answers[0] = fail_with(
@@ -596,7 +596,7 @@ static void thread_sleep(LhatMachine *machine, void *context,
                          ? (LhatReal)lhat_as_integer(arguments[0])
                          : lhat_as_real(arguments[0]);
     // Compared the way round that answers for a NaN as well: nothing to wait
-    // for is not an error, the same line §14.19 draws for a range that does
+    // for is not an error, the same line [syntax.obj.substring] draws for a range that does
     // not hold. The ceiling is what an int carries -- about 24 days.
     LhatReal milliseconds = seconds * 1000.0;
     int wait = 0;
@@ -617,7 +617,7 @@ static void thread_sleep(LhatMachine *machine, void *context,
     } while (wait > 0);
 }
 
-// §15.14: the question a scheduler asks in place of waiting. join()
+// [syntax.sub.await-done]: the question a scheduler asks in place of waiting. join()
 // blocks, which is the one thing a loop with other tasks to run may not do --
 // so this answers whether the join would return at once, and a task awaiting
 // a thread is written as "ask, and if not, await a short delay".
@@ -641,7 +641,7 @@ static void thread_done(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-// §15.14: the same question asked once instead of over and over. The wait
+// [syntax.sub.await-done]: the same question asked once instead of over and over. The wait
 // this arms is completed when the body finishes (mark_finished), so a
 // scheduler yields the id and is woken rather than asking again every few
 // milliseconds -- sample/async.lh's joined is written on it.
@@ -733,7 +733,7 @@ void lhatstdlib_thread_join_all(LhatProgram *program)
     lhat_mutex_unlock(&module->live_lock);
 }
 
-// 05§8.8: registering this is what makes a ThreadHandle the host's to
+// [modules.hostdata]: registering this is what makes a ThreadHandle the host's to
 // hand over and L^'s to give back. A caller that already called join()
 // leaves nothing more to wait for; one that never did makes dispose() do
 // what join() would have (see join_and_free's comment for why detaching
@@ -746,7 +746,7 @@ static void thread_dispose(LhatMachine *machine, void *context,
     (void)count;
     (void)answers;
     (void)answer_count;
-    // 05§8.8: registered with the tag itself as its context rather than
+    // [modules.hostdata]: registered with the tag itself as its context rather than
     // with the module. The tag belongs to the process while this module
     // belongs to a program, and a type has one way of handing a value back
     // however many programs declared it -- so what a dispose^ is handed has
@@ -784,7 +784,7 @@ static void dispose_module(void *raw)
 
 bool lhatstdlib_thread_register(LhatProgram *program)
 {
-    // 05§8.7: 登録は検査より前 -- std.sys.Error.OutOfMemory を使う側(この
+    // [modules.host.import]: 登録は検査より前 -- std.sys.Error.OutOfMemory を使う側(この
     // モジュール)より前に確実に存在させる。lhatstdlib_sys_register は
     // 冪等なので、他の stdlib モジュールが先に呼んでいても構わない。
     if (!lhatstdlib_sys_register(program)) {
@@ -796,7 +796,7 @@ bool lhatstdlib_thread_register(LhatProgram *program)
         return false;
     }
     lhat_mutex_init(&module->live_lock);
-    // 05§8.7: the program gives this back when it goes -- a register
+    // [modules.host.import]: the program gives this back when it goes -- a register
     // that answers bool hands its caller no handle to free it with.
     if (!lhat_program_on_dispose(program, dispose_module, module)) {
         dispose_module(module);
@@ -825,7 +825,7 @@ bool lhatstdlib_thread_register(LhatProgram *program)
         return false;
     }
 
-    // §13.7: fn's own '...' takes any^ underneath, so a 'p^ ... { }' is the
+    // [syntax.type.variadic]: fn's own '...' takes any^ underneath, so a 'p^ ... { }' is the
     // closure this signature asks for (conformance on a variadic element is
     // contravariant, the same as an ordinary parameter's). What it closes
     // over crosses with it as a snapshot (carry.h).
@@ -834,7 +834,7 @@ bool lhatstdlib_thread_register(LhatProgram *program)
     // Naming the four carryable kinds here would read better, and would also
     // make the one call this feature exists for -- forwarding a caller's own
     // collector, 'spawn(fn, ...)' -- impossible: that collector is any^ and
-    // any^ conforms to no narrower type (§13.7). So the boundary is stated at
+    // any^ conforms to no narrower type ([syntax.type.variadic]). So the boundary is stated at
     // run time instead, by ThreadError.BadArgument, and the signature asks
     // only what it can ask without shutting the door on a spread.
     //
@@ -848,12 +848,12 @@ bool lhatstdlib_thread_register(LhatProgram *program)
                "|std.thread.ThreadError.BadArgument"
                "|std.thread.ThreadError.SpawnFailed|std.sys.Error.OutOfMemory;",
                thread_spawn, module) &&
-           // §13.4 keeps the name out of a signature, so what the number^ is
+           // [syntax.type.param-names] keeps the name out of a signature, so what the number^ is
            // counted in is said here and in thread.h: seconds.
            lhat_register_func(program, "std.thread", "sleep", "p^number^;",
                               thread_sleep, NULL) &&
            // What the body answered is what carry carries, which since
-           // 05§8.8+2 is a table, a closure or a host's own object as well --
+           // [modules.hostdata.sharing] is a table, a closure or a host's own object as well --
            // so the answer is any^ and the caller narrows it, rather than a
            // list of scalars a table already came through by ignoring.
            lhat_register_member(

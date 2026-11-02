@@ -140,7 +140,7 @@ static void offer(Options *out, const char *text)
 }
 
 // Only namespaces are traversed; ordinary value members are never offered as types.
-// What an imported unit published is its place's base (05§8.7), walked as its own.
+// What an imported unit published is its place's base ([modules.host.import]), walked as its own.
 static void offer_names(Options *out, const LhatType *names, const char *prefix, int depth)
 {
     if (!names || names->kind != LHAT_TYPE_TABLE || depth > 8) return;

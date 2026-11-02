@@ -1,7 +1,7 @@
 // L^ (lhat) -- sample standard library: std.regex.
 //
 // Compiled regular expressions as hostdata, the Python/Go shape: the plain
-// searches live on string^ itself (§14.19+3), and everything a pattern
+// searches live on string^ itself ([syntax.obj.find]), and everything a pattern
 // asks for lives here, behind an object the writer compiles once and keeps.
 //
 //   std.regex.new(p)            -> std.regex.Regex | std.regex.Error.BadPattern

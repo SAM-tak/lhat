@@ -1,6 +1,6 @@
-// L^ (lhat) -- the column a stack frame reports (09§5.3).
+// L^ (lhat) -- the column a stack frame reports ([debug.dap.columns]).
 //
-// The debugger keeps no column per instruction: 04§11.6 decided against
+// The debugger keeps no column per instruction: [errors.runtime.panic] decided against
 // that table, and a line event is line-granular anyway, so a column can only
 // ever be a label on where a stop already is. The label the adapter puts
 // there is where the line's own text begins -- which is what this pins.

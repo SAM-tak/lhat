@@ -20,8 +20,8 @@ typedef struct {
     LhatToken ahead;
     LhatParseResult *result;
     bool panicking;   // suppress the cascade after a reported error
-    bool saw_yield;   // §15.2: set while parsing a body that contains yield^
-    // §14.11 with §16.1: set while reading a header expression -- one whose
+    bool saw_yield;   // [syntax.sub.yieldable]: set while parsing a body that contains yield^
+    // [syntax.obj.new] with [syntax.for.not-loop]: set while reading a header expression -- one whose
     // own '{' is the body that follows (a for^'s bound, an if^'s
     // condition). A bare self^-table is not read there, so
     // 'in^self^ { ... }' walks the receiver; parentheses (or any bracket)
@@ -29,15 +29,15 @@ typedef struct {
     bool brace_is_body;
     bool lton_body;  // imports are confined to the preamble
 
-    // §8.2: a bare expression is a statement at the top level of
+    // [syntax.stmt.no-bare-expr]: a bare expression is a statement at the top level of
     // interactive input and nowhere else. `depth` counts the statement lists
     // being parsed, so the unit's own is 1 and anything nested is more.
     bool interactive;
     size_t depth;
 
-    // §15.12: the depth of the statement list a subroutine body owns, where a
+    // [syntax.sub.expr-body]: the depth of the statement list a subroutine body owns, where a
     // bare expression is read and the last one becomes the answer. Zero
-    // outside any body -- §8.2's rule holds everywhere else, nested blocks of
+    // outside any body -- [syntax.stmt.no-bare-expr]'s rule holds everywhere else, nested blocks of
     // the body included.
     size_t bare_depth;
 
@@ -46,24 +46,24 @@ typedef struct {
     // inside an expression.
     size_t expr_depth;
 
-    // 04§4.5: the level of the expression that ends the statement being
+    // [errors.catch.clause]: the level of the expression that ends the statement being
     // read -- a let^'s value, a call standing alone, what a return^ answers
     // -- and zero while none is. A catch^ met at that level and shaped like
     // an arm ('catch^:', 'catch^ Kind:') opens the arm rather than joining
     // the expression: nothing in the statement follows its last expression
-    // with a ':', so 11§4.1's operator is not a reading there. A header -- an
+    // with a ':', so [binary.net.api]'s operator is not a reading there. A header -- an
     // if^'s condition, a for^'s bound -- is followed by one, and never sets
     // this.
     size_t tail_expr_depth;
 } Parser;
 
-// Levels of §11.6, weakest first. A larger value binds tighter.
+// Levels of [syntax.op.table], weakest first. A larger value binds tighter.
 enum {
     PREC_NONE = 0,
     PREC_OR,
     PREC_AND,
     PREC_COMPARE,
-    // §11.9: tighter than the comparisons it is read for, so
+    // [syntax.op.compare]: tighter than the comparisons it is read for, so
     // 'a <=> b < 0' asks about the answer rather than chaining. C++ places
     // its own at the same remove from the relational operators.
     PREC_SPACESHIP,
@@ -74,18 +74,18 @@ enum {
 
 static LhatNode *parse_expression(Parser *p);
 static LhatNode *parse_type(Parser *p);
-// 04§4.1+: the one statement catch^ takes on its right side. `tail` when
+// [errors.catch.panic]: the one statement catch^ takes on its right side. `tail` when
 // it ends a statement, where an arm may follow it (tail_expr_depth).
 static LhatNode *parse_panic(Parser *p, bool tail);
 static LhatNode *parse_statement(Parser *p);
 static LhatNode *parse_statement_after_annotations(Parser *p);
 static LhatNode *parse_annotations(Parser *p);
-// §13.8+: '(a, b)' written as a jump's value becomes the same node the
-// comma-separated spelling makes. Used by parse_jump and by §15.12's
+// [syntax.type.tuple]: '(a, b)' written as a jump's value becomes the same node the
+// comma-separated spelling makes. Used by parse_jump and by [syntax.sub.expr-body]'s
 // answer_with_body, which is what lets 'f^ { (0, 1) }' work.
 static void fold_tuple_answer(LhatNode *jump);
 static LhatNode *parse_block_body(Parser *p, const LhatToken *at);
-static LhatNode *parse_catch_arms(Parser *p);  // 04§4.5
+static LhatNode *parse_catch_arms(Parser *p);  // [errors.catch.clause]
 static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
                                    bool walks);
 static LhatNode *access_node(Parser *p, LhatNodeKind kind, const LhatToken *at,
@@ -99,7 +99,7 @@ static LhatNode *parse_for(Parser *p);
 static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
                                const LhatToken *at, LhatNode *targets);
 static bool is_binary_op(const LhatNode *node, LhatOpKind op);
-static bool is_call_statement(const LhatNode *node);  // §8.2
+static bool is_call_statement(const LhatNode *node);  // [syntax.stmt.no-bare-expr]
 static bool ends_in_truncated_member(const LhatNode *node);
 static bool starts_expression(const LhatToken *token);
 static bool is_statement_keyword(const Parser *p);
@@ -167,7 +167,7 @@ static bool match_op(Parser *p, LhatOpKind op)
 }
 
 // Compares a hat identifier's word, whatever its hat count. Only for the
-// spellings that stack (01§2.3): break^^^ reads its count as how many
+// spellings that stack ([lex.hat.repeat]): break^^^ reads its count as how many
 // loops to leave, so its keyword check must not insist on one hat.
 static bool token_is_hat_stacked(const Parser *p, const LhatToken *token,
                                  const char *word)
@@ -183,7 +183,7 @@ static bool token_is_hat_stacked(const Parser *p, const LhatToken *token,
     return memcmp(p->lexer->source->text + token->offset, word, wanted) == 0;
 }
 
-// Compares a hat identifier against a word. 01§2.3: one hat is the
+// Compares a hat identifier against a word. [lex.hat.repeat]: one hat is the
 // identifier itself and further hats count levels, so a keyword -- which
 // counts nothing -- is only itself with exactly one. 'if^^' is not a
 // misspelt if^; it falls through to being read as a name, where the count
@@ -193,7 +193,7 @@ static bool token_is_hat(const Parser *p, const LhatToken *token, const char *wo
     return token_is_hat_stacked(p, token, word) && token->v.hats == 1;
 }
 
-// §13.12: '_^' stands where a name would and binds nothing. Every place that
+// [syntax.type.discard]: '_^' stands where a name would and binds nothing. Every place that
 // reads a name has to admit it, since the whole point is to be written where
 // a name is expected -- the checker is what refuses it everywhere else.
 static bool at_discard(const Parser *p)
@@ -205,8 +205,8 @@ static void refuse_extra_hats(Parser *p, const LhatToken *token);
 static bool compound_assign_op(LhatOpKind token_op, LhatOpKind *base_op,
                                bool *nil_safe);
 
-// §11.9: the comparisons a type answers through '<=>' rather than one by
-// one. '=' is not among them any more -- §11.9+ lets a type write that one
+// [syntax.op.compare]: the comparisons a type answers through '<=>' rather than one by
+// one. '=' is not among them any more -- [syntax.op.equal] lets a type write that one
 // on its own, since knowing what equals what does not mean knowing what
 // comes first. '≠' stays derived, from whichever of the two answered.
 // is^ and fits^ are not among them either -- one asks identity and the other
@@ -237,7 +237,7 @@ static bool match_hat(Parser *p, const char *word)
 
 static void report(Parser *p, const LhatToken *at, LhatParseErrorCode code)
 {
-    // §3.1: running out of input is not the same as a syntax error.
+    // [syntax.repl.incomplete]: running out of input is not the same as a syntax error.
     if (at->kind == LHAT_TOKEN_EOF) {
         p->result->incomplete = true;
     }
@@ -259,7 +259,7 @@ static void report(Parser *p, const LhatToken *at, LhatParseErrorCode code)
     d->has_expected = false;
     d->expected = LHAT_OP_LPAREN;  // read only when has_expected says so
     for (size_t i = 0; i < LHAT_FIX_SLOTS; i++) {
-        d->fixes[i].title = NULL;  // 07§6: no fix until one is worked out
+        d->fixes[i].title = NULL;  // [lsp.next]: no fix until one is worked out
     }
     d->found = at->kind;
     d->found_op = at->kind == LHAT_TOKEN_OP ? at->v.op : LHAT_OP_LPAREN;
@@ -279,7 +279,7 @@ static void report_expected(Parser *p, const LhatToken *at, LhatOpKind op)
         &p->result->diagnostics[p->result->diagnostic_count - 1];
     d->has_expected = true;
     d->expected = op;
-    // 07§6: what would have been right is the token itself, written where
+    // [lsp.next]: what would have been right is the token itself, written where
     // the one that was there begins. Suggested rather than machine: the
     // parser noticed it here, and what was left out may belong further back.
     d->fixes[0] = lhat_fix_slot(LHAT_FIX_WRITE_TOKEN, LHAT_FIX_SUGGESTED,
@@ -320,9 +320,9 @@ static LhatNode *finish_at(LhatNode *node, const LhatNode *last)
 }
 
 // `finish`, for a body closed by whatever follows it rather than by a brace
-// of its own -- an if^ clause's, a catch^ arm's, one of 04§9's clauses. Its
+// of its own -- an if^ clause's, a catch^ arm's, one of [errors.cleanup]'s clauses. Its
 // last token is its last statement's, so a comment written under that
-// statement would fall outside it and 01§6.4 would give the comment to the
+// statement would fall outside it and [lex.comment.kept] would give the comment to the
 // next clause. It ends where what is written in it does, comments included.
 static LhatNode *finish_body(Parser *p, LhatNode *node)
 {
@@ -348,7 +348,7 @@ static LhatNode *finish_body(Parser *p, LhatNode *node)
 // An expression a statement position turned down. The diagnostic has been
 // reported already; all this settles is what becomes of the tree.
 //
-// 07§4: the run stays under the ERROR rather than being thrown away.
+// [lsp.hover]: the run stays under the ERROR rather than being thrown away.
 // Nothing downstream reads it for meaning -- the checker walks it with its
 // reports silenced, and the compiler refuses an ERROR whatever hangs below
 // it -- but a writer half through 'r.peek()' has a statement the tools can
@@ -393,15 +393,15 @@ static bool expect_op(Parser *p, LhatOpKind op)
     return false;
 }
 
-// §14.14+: what a brace introduces takes either spelling, and they mean the
-// same thing. '=' is §8.6's word for a definition and the recommended form;
+// [syntax.obj.keys-equals]: what a brace introduces takes either spelling, and they mean the
+// same thing. '=' is [syntax.stmt.define]'s word for a definition and the recommended form;
 // ':=' is the older one and still reads. Neither is ambiguous here -- a name
 // is what stands to the left of both, so there is no expression for '=' to be
-// read as a comparison of, which is the one thing §8.6 had to protect.
+// read as a comparison of, which is the one thing [syntax.stmt.define] had to protect.
 //
 // This is every brace the language has: a table literal and the self^{ … }
-// template (§14.14+), a def^ member (§14.13), and the fields an errordef^
-// declares (04§2.2). They agreed on nothing before; they agree here.
+// template ([syntax.obj.keys-equals]), a def^ member ([syntax.obj.def-form]), and the fields an errordef^
+// declares ([errors.kind.errordef]). They agreed on nothing before; they agree here.
 static bool expect_introduces(Parser *p)
 {
     if (match_op(p, LHAT_OP_EQ) || match_op(p, LHAT_OP_REASSIGN)) {
@@ -429,11 +429,11 @@ static void synchronize(Parser *p)
 }
 
 // ---------------------------------------------------------------------------
-// Types (§13)
+// Types ([syntax.type])
 // ---------------------------------------------------------------------------
 
-// A parameter inside a type carries no name (§13.4); only '...' may appear
-// where a name would be (§13.7).
+// A parameter inside a type carries no name ([syntax.type.param-names]); only '...' may appear
+// where a name would be ([syntax.type.variadic]).
 static LhatNode *parse_type_params(Parser *p)
 {
     LhatNode *head = NULL;
@@ -452,7 +452,7 @@ static LhatNode *parse_type_params(Parser *p)
                 param->v.param.type = parse_type(p);
             }
         } else {
-            // §15.1+2: the marker, exactly as parse_params reads it.
+            // [syntax.sub.mutable-self]: the marker, exactly as parse_params reads it.
             if (check_hat(p, "mutable") &&
                 token_is_hat(p, &p->ahead, "self")) {
                 param->v.param.mutable_receiver = true;
@@ -470,12 +470,12 @@ static LhatNode *parse_type_params(Parser *p)
     return head;
 }
 
-// §13.8+2: a result position reads a bare tuple -- a top-level ',' there is
+// [syntax.type.tuple-parens]: a result position reads a bare tuple -- a top-level ',' there is
 // the tuple's, and '|' binds tighter, so 'A, B|nil^' is '(A, (B|nil^))' and
 // a union over the whole tuple keeps its parentheses ('(A, B)|SomeError').
-// Safe without lookahead because every result is closed: a signature by §13.3's
+// Safe without lookahead because every result is closed: a signature by [syntax.type.semicolon]'s
 // ';' (which is there to settle exactly this comma), a coroutine's T by '}'.
-// One type is that type, never a one-position tuple (the reading §13.8+ left
+// One type is that type, never a one-position tuple (the reading [syntax.type.tuple] left
 // to the grouping parentheses).
 static LhatNode *parse_type_result(Parser *p)
 {
@@ -511,11 +511,11 @@ static LhatNode *parse_type_function(Parser *p, bool is_function)
     node->v.func.params = parse_type_params(p);
 
     if (match_op(p, LHAT_OP_ARROW)) {
-        // §15.1+3: 'fresh^' on the result's seat promises the answer is new.
+        // [syntax.sub.fresh]: 'fresh^' on the result's seat promises the answer is new.
         if (match_hat(p, "fresh")) {
             node->v.func.answers_fresh = true;
         }
-        // §13.2: '->' is present only when something is returned. §13.8+2:
+        // [syntax.type.empty]: '->' is present only when something is returned. [syntax.type.tuple-parens]:
         // and several, written bare, are the tuple that one result is.
         node->v.func.return_type = parse_type_result(p);
         if (node->v.func.answers_fresh &&
@@ -541,12 +541,12 @@ static LhatNode *parse_type_coroutine(Parser *p)
 
     expect_op(p, LHAT_OP_LBRACE);
 
-    // §13.9+: the three slots in the order a coroutine lives them --
+    // [syntax.type.coroutine-arrows]: the three slots in the order a coroutine lives them --
     // 'c^{ p^R -> Y -> T }' reads as "receives R, yields Y, ends with T".
-    // The kind of the body (§15.3+) is the word in front, and how many
+    // The kind of the body ([syntax.sub.yieldable-f]) is the word in front, and how many
     // arrows are written is how many slots were. A signature's ';' is not
     // wanted here: '{' opened this and '}' closes it, so nothing has to be
-    // told apart from an enclosing list (§13.3's reason for the ';' is about
+    // told apart from an enclosing list ([syntax.type.semicolon]'s reason for the ';' is about
     // a signature nested in a parameter list, which this is not).
     if (match_hat(p, "f")) {
         node->v.coroutine.is_function = true;
@@ -554,7 +554,7 @@ static LhatNode *parse_type_coroutine(Parser *p)
         node->v.coroutine.kind_any = true;
     }
 
-    // §15.2 with §13.8+: R is what one resume sends -- resume(a, b) writes as
+    // [syntax.sub.yieldable] with [syntax.type.tuple]: R is what one resume sends -- resume(a, b) writes as
     // many arguments as stand here, and several are the tuple the yield^'s
     // binding takes apart. Left out, nothing is sent in at all and a resume
     // takes no argument.
@@ -572,9 +572,9 @@ static LhatNode *parse_type_coroutine(Parser *p)
             node->v.coroutine.produce = parse_type_result(p);
         }
         if (match_op(p, LHAT_OP_ARROW)) {
-            // §13.9: the third slot says what the last resume receives, and
+            // [syntax.type.coroutine]: the third slot says what the last resume receives, and
             // has two ways of saying there is none. Left out -- no second
-            // arrow at all -- the body ends without a value and §15.6+'s
+            // arrow at all -- the body ends without a value and [syntax.sub.coroutine-members]'s
             // nil^ is what the last resume really gets, so it joins Y|T
             // there rather than standing here. Written '-', the body cannot
             // end at all, so there is no last resume and nothing joins.
@@ -588,7 +588,7 @@ static LhatNode *parse_type_coroutine(Parser *p)
             } else if (match_op(p, LHAT_OP_SUB)) {
                 node->v.coroutine.endless = true;
             } else if (!check_op(p, LHAT_OP_RBRACE)) {
-                node->v.coroutine.result = parse_type_result(p);  // §13.8+2
+                node->v.coroutine.result = parse_type_result(p);  // [syntax.type.tuple-parens]
             }
         }
     }
@@ -597,8 +597,8 @@ static LhatNode *parse_type_coroutine(Parser *p)
 }
 
 // 'name : type, ...' up to the closing brace, and the one self^{ ... } section
-// a definition's type carries (§14.7+).
-// §14.10+: 'type[n]' takes n positions rather than one, which is what writing
+// a definition's type carries ([syntax.obj.members-order]).
+// [syntax.obj.structure-repeat]: 'type[n]' takes n positions rather than one, which is what writing
 // the type out n times means. Answers the count, or 1 where no '[' follows --
 // inside a t^{ … } nothing else may stand there, so the bracket is this and
 // only this.
@@ -610,7 +610,7 @@ static uint32_t parse_position_count(Parser *p)
     if (!match_op(p, LHAT_OP_LBRACKET)) {
         return 1;
     }
-    // §14.10: '[]' with no count is the unbounded run -- the sequence
+    // [syntax.obj.structure]: '[]' with no count is the unbounded run -- the sequence
     // past the fixed positions, one element type throughout. Zero, which no
     // written count may be, is how this answer says it.
     if (match_op(p, LHAT_OP_RBRACKET)) {
@@ -649,10 +649,10 @@ static LhatNode *parse_member_decls(Parser *p)
             break;
         }
 
-        // §14.7+: a definition says what its instances carry in a self^{ ... }
+        // [syntax.obj.members-order]: a definition says what its instances carry in a self^{ ... }
         // section, written the way the def^ itself writes its template -- it
-        // is what §14.16 puts there, and what makes a definition's signature
-        // read back as a type (05§8.7). Inside are member declarations,
+        // is what [syntax.obj.typeof] puts there, and what makes a definition's signature
+        // read back as a type ([modules.host.import]). Inside are member declarations,
         // not fields with values, so the section holds this same list; the
         // entry that carries it is told apart by what it holds.
         if (check_hat(p, "self") && is_op(&p->ahead, LHAT_OP_LBRACE)) {
@@ -677,8 +677,8 @@ static LhatNode *parse_member_decls(Parser *p)
             continue;
         }
 
-        // §14.10: a member is written 'name : type'. Anything else in the
-        // list is a type on its own, and takes the next position -- §14
+        // [syntax.obj.structure]: a member is written 'name : type'. Anything else in the
+        // list is a type on its own, and takes the next position -- [syntax.obj]
         // makes a table a sequence as well as a mapping, and the sequence
         // half is described by writing its types in order. One token of
         // lookahead separates them: only a name followed by ':' is a member.
@@ -705,7 +705,7 @@ static LhatNode *parse_member_decls(Parser *p)
             member->v.entry.key = NULL;
             member->v.entry.value = parse_type(p);
             uint32_t count = parse_position_count(p);
-            // §14.10: 'T[]' is the unbounded tail -- one spelling family
+            // [syntax.obj.structure]: 'T[]' is the unbounded tail -- one spelling family
             // with 'T[n]', where '...:T' stays the parameter list's own.
             member->v.entry.variadic = count == 0;
             member->v.entry.repeat = count == 0 ? 1 : count;
@@ -733,7 +733,7 @@ static LhatNode *parse_member_decls(Parser *p)
             break;
         }
 
-        // §13.6 の (1): ':' ties a name to a type.
+        // [syntax.type.summary] の (1): ':' ties a name to a type.
         expect_op(p, LHAT_OP_COLON);
         member->v.entry.value = parse_type(p);
         if (check_op(p, LHAT_OP_LBRACKET)) {
@@ -754,9 +754,9 @@ static LhatNode *parse_type_table(Parser *p)
     LhatToken start = p->current;
     advance(p);  // t^
 
-    // §14.10: bare, with no members listed, t^ asks for nothing in particular
+    // [syntax.obj.structure]: bare, with no members listed, t^ asks for nothing in particular
     // -- the top of tables. That is an ordinary type name, so it is written
-    // as one and §13.7's judgement reads it without a case of its own.
+    // as one and [syntax.type.variadic]'s judgement reads it without a case of its own.
     if (!check_op(p, LHAT_OP_LBRACE)) {
         LhatNode *node = make(p, LHAT_NODE_TYPE_NAME, &start);
         if (node != NULL) {
@@ -799,7 +799,7 @@ static LhatNode *parse_type_atom(Parser *p)
         advance(p);
         LhatNode *first = parse_type(p);
         if (!check_op(p, LHAT_OP_COMMA)) {
-            // Grouping, exactly as before. §13.8+ leaves this reading
+            // Grouping, exactly as before. [syntax.type.tuple] leaves this reading
             // untouched, and that is what makes a one-position tuple
             // unwritable: '(T)' was already taken, so there is no '(T,)' to
             // invent and no arbitrary choice to make.
@@ -807,7 +807,7 @@ static LhatNode *parse_type_atom(Parser *p)
             return first;
         }
 
-        // §13.8+: two positions or more, in order. A trailing ',' is not
+        // [syntax.type.tuple]: two positions or more, in order. A trailing ',' is not
         // allowed -- parse_type reports on the ')' that follows one.
         LhatNode *node = make(p, LHAT_NODE_TYPE_TUPLE, &start);
         if (node == NULL) {
@@ -826,13 +826,13 @@ static LhatNode *parse_type_atom(Parser *p)
 
     if (p->current.kind == LHAT_TOKEN_HAT_IDENT ||
         p->current.kind == LHAT_TOKEN_IDENT) {
-        // A type name never stacks: number^^ counts nothing (01§2.3).
+        // A type name never stacks: number^^ counts nothing ([lex.hat.repeat]).
         //
-        // §13.13 is the one exception, and the fifth word of 01§2.3
+        // [syntax.type.self] is the one exception, and the fifth word of [lex.hat.repeat]
         // to count levels: Self^ names the type literal enclosing it, so a
         // second hat counts written t^/def^ literals outwards the way it^^
         // counts loops. The word is not self^ -- capital S, a different name
-        // (01§2.3: a hat identifier is its word plus one hat, compared
+        // ([lex.hat.repeat]: a hat identifier is its word plus one hat, compared
         // byte for byte) -- and unlike self^ it is a type rather than a value.
         if (!token_is_hat_stacked(p, &p->current, "Self")) {
             refuse_extra_hats(p, &p->current);
@@ -877,7 +877,7 @@ static LhatNode *parse_type_application(Parser *p, LhatNode *node)
     return finish(p, access_node(p, LHAT_NODE_TYPE_APPLY, &at, node, head, false));
 }
 
-// §13.5 and §14.5: '&' binds tighter than '|', as it does in TypeScript.
+// [syntax.type.union] and [syntax.obj.compose]: '&' binds tighter than '|', as it does in TypeScript.
 static LhatNode *parse_type_suffix(Parser *p, LhatNode *node)
 {
     while (check_op(p, LHAT_OP_DOT) ||
@@ -942,11 +942,11 @@ static LhatNode *parse_type(Parser *p)
 // Expressions
 // ---------------------------------------------------------------------------
 
-// 01§2.3: only these words have levels for a second hat to count --
+// [lex.hat.repeat]: only these words have levels for a second hat to count --
 // it^ this^ self^ def^ reach the enclosing focus, subroutine, receiver or
 // definition (compiled as stacked reaches -- vm.c). break^ and
 // the '$' specifier read their counts on paths of their own. super^^ is
-// refused on purpose (§14.12+): which implementation an override wraps is
+// refused on purpose ([syntax.obj.super]): which implementation an override wraps is
 // the composition's business, and skipping layers by count breaks the
 // moment a part is inserted -- naming the part (A.a) is that spelling.
 static bool word_stacks(const Parser *p, const LhatToken *token)
@@ -966,7 +966,7 @@ static void refuse_extra_hats(Parser *p, const LhatToken *token)
     }
 }
 
-// 01§3.1: what a name node carries. The span is the source's, which is
+// [lex.ident.chars]: what a name node carries. The span is the source's, which is
 // what the language server colours by; a name written with backticks is not
 // spelled by that span (the delimiters are out and a doubled backtick is
 // one), so the lexer's decoded spelling travels beside it. A hat identifier
@@ -1038,7 +1038,7 @@ static LhatNode *simple_node(Parser *p)
     return simple_node_in(p, false);
 }
 
-// §5.4: the lexer hands over an interpolated string as a sequence, so the
+// [syntax.if.bool]: the lexer hands over an interpolated string as a sequence, so the
 // holes are ordinary expressions parsed by the ordinary rules.
 static LhatNode *parse_interpolation(Parser *p)
 {
@@ -1083,7 +1083,7 @@ static LhatNode *parse_interpolation(Parser *p)
             if (p->current.kind == LHAT_TOKEN_INTERP_EXPR_END) {
                 advance(p);
             } else {
-                // §5.4: what closes a hole, spelled as the brace it is.
+                // [syntax.if.bool]: what closes a hole, spelled as the brace it is.
                 report_expected(p, &p->current, LHAT_OP_RBRACE);
             }
             lhat_node_append(&head, &tail, finish(p, hole));
@@ -1102,7 +1102,7 @@ static LhatNode *parse_interpolation(Parser *p)
 }
 
 // Entries of a braced list, shared by the table literal and by the field
-// template of §14.6. A table may hold positional values; a template names
+// template of [syntax.obj.template]. A table may hold positional values; a template names
 // every field, so `require_key` reports the difference here rather than
 // leaving a nameless field for a later stage to puzzle over.
 static LhatNode *parse_brace_entries(Parser *p, bool require_key)
@@ -1114,7 +1114,7 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
     p->brace_is_body = false;
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
-        // §18.4: a field of a self^{ … } takes one, which is where
+        // [syntax.annot.where]: a field of a self^{ … } takes one, which is where
         // @export goes.
         LhatNode *annotations = parse_annotations(p);
         LhatNode *entry = make(p, LHAT_NODE_TABLE_ENTRY, &p->current);
@@ -1123,7 +1123,7 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
         }
         entry->v.entry.annotations = annotations;
 
-        // §14.15: a field the composition has to provide, written with its
+        // [syntax.obj.abstract]: a field the composition has to provide, written with its
         // type. Only a template has one -- a table literal makes a value,
         // and there is nothing there for a declaration to wait for.
         if (require_key && check_hat(p, "abstract")) {
@@ -1147,7 +1147,7 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
             continue;
         }
 
-        // §14.14+: an entry names a member that was not there, and 05§8.6 spells
+        // [syntax.obj.keys-equals]: an entry names a member that was not there, and [modules.host.machine] spells
         // that '='. ':=' is the older spelling and still reads.
         //
         // What '=' costs here is that 'a = 0' cannot be a comparison
@@ -1159,15 +1159,15 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
                      (is_op(&p->ahead, LHAT_OP_REASSIGN) ||
                       is_op(&p->ahead, LHAT_OP_EQ));
 
-        // §14.6: a field may say what it holds as well as what it starts as,
+        // [syntax.obj.template]: a field may say what it holds as well as what it starts as,
         // the way a let^ target does -- 'hp : number^ = 50'. A table literal
         // uses the same annotation; computed keys put it after the ']'.
         bool typed = (p->current.kind == LHAT_TOKEN_IDENT ||
                       p->current.kind == LHAT_TOKEN_HAT_IDENT) &&
                      is_op(&p->ahead, LHAT_OP_COLON);
 
-        // §14.14+: '[ ... ] =' gives the key as an expression, for the keys
-        // 01§6 leaves unwritable as names. Nothing else can begin with
+        // [syntax.obj.keys-equals]: '[ ... ] =' gives the key as an expression, for the keys
+        // [lex.comment] leaves unwritable as names. Nothing else can begin with
         // '[' here -- it does not start an expression -- so no lookahead is
         // needed to tell this from a positional entry.
         if (check_op(p, LHAT_OP_LBRACKET)) {
@@ -1180,7 +1180,7 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
                 entry->v.entry.type = parse_type(p);
             }
             expect_introduces(p);
-            // §14.6: a field template names every field, so a computed key is
+            // [syntax.obj.template]: a field template names every field, so a computed key is
             // not one of them.
             if (require_key) {
                 report(p, &at_bracket, LHAT_PARSE_ERR_FIELD_NEEDS_NAME);
@@ -1208,7 +1208,7 @@ static LhatNode *parse_brace_entries(Parser *p, bool require_key)
     return head;
 }
 
-// §10.7: a bare '{ ... }' is a table literal.
+// [syntax.finally.coroutine]: a bare '{ ... }' is a table literal.
 static LhatNode *parse_table(Parser *p)
 {
     LhatToken start = p->current;
@@ -1223,11 +1223,11 @@ static LhatNode *parse_table(Parser *p)
     return finish(p, node);
 }
 
-// §14.6 and §14.11: one spelling, two readings decided by where it stands. In
+// [syntax.obj.template] and [syntax.obj.new]: one spelling, two readings decided by where it stands. In
 // the body of a def^ it declares the fields an instance gets; inside new it
 // fills them in. Both name the fields of an instance, so the parser keeps
 // them as one node and lets the position speak.
-// §14.11 with §16.1: a header expression -- one whose own '{' is the body
+// [syntax.obj.new] with [syntax.for.not-loop]: a header expression -- one whose own '{' is the body
 // that follows it (a for^'s bound, an if^'s condition, a with^'s value).
 // A bare self^-table is not read while one is open; any bracketed context
 // inside it reads plainly again (see the resets at the brackets).
@@ -1276,12 +1276,12 @@ static LhatNode *parse_qualified_name(Parser *p)
     return finish(p, node);
 }
 
-// 01§3.3: 'id^name' answers the spelling of `name` as a string. Nothing is
-// looked up -- 01§3.3 is about how the string is written, not about the name
+// [lex.ident.id-hat]: 'id^name' answers the spelling of `name` as a string. Nothing is
+// looked up -- [lex.ident.id-hat] is about how the string is written, not about the name
 // being there -- so this is a leaf, and the node carries the name the way
 // every other name node does.
 //
-// A hat identifier is a name too (01§2.3: the hat is part of it), which is what
+// A hat identifier is a name too ([lex.hat.repeat]: the hat is part of it), which is what
 // lets a member's key be written this way -- 'id^tostring^' is "tostring^".
 // A stacked spelling is not a name and is refused where it is everywhere
 // else.
@@ -1307,10 +1307,10 @@ static LhatNode *parse_id(Parser *p)
     return finish(p, node);
 }
 
-// 04§2.5. The kind is written into the construction rather than left to a
-// member, since 04§2.3 makes the kind the type. The leading error^ is what lets
+// [errors.kind.new]. The kind is written into the construction rather than left to a
+// member, since [errors.kind.made] makes the kind the type. The leading error^ is what lets
 // this be recognised without knowing any types: a qualified name followed by
-// '{' would otherwise read as a name and a table literal (§10.7).
+// '{' would otherwise read as a name and a table literal ([syntax.finally.coroutine]).
 static LhatNode *parse_error_new(Parser *p)
 {
     LhatToken start = p->current;
@@ -1322,7 +1322,7 @@ static LhatNode *parse_error_new(Parser *p)
     }
 
     if (check_op(p, LHAT_OP_LBRACE)) {
-        // 04§2.2 requires a kind, and 04§2.5 puts it in the syntax, so an error^
+        // [errors.kind.errordef] requires a kind, and [errors.kind.new] puts it in the syntax, so an error^
         // with nothing in front of the brace has lost it rather than defaulted.
         report(p, &p->current, LHAT_PARSE_ERR_ERROR_NEEDS_KIND);
     } else {
@@ -1353,12 +1353,12 @@ static LhatNode *parse_new(Parser *p)
     return finish(p, node);
 }
 
-// §14. def^ stays an expression (§14.9), so the name of a definition comes
+// [syntax.obj]. def^ stays an expression ([syntax.obj.name]), so the name of a definition comes
 // from whatever it is bound to and composition reads as an ordinary '..'.
-// §14.7+2: what delegate^ names. Two spellings and no others -- 'self^.name'
+// [syntax.obj.delegate]: what delegate^ names. Two spellings and no others -- 'self^.name'
 // for a field of the template, a bare name for a member of the definition.
 //
-// The two are not one form with an optional prefix. §14.3 has fields and
+// The two are not one form with an optional prefix. [syntax.obj.methods] has fields and
 // members declared apart, so one name may be both, and which of the two is
 // meant is the whole of what the spelling says -- at run time as much as
 // here, since the answer is looked for in a different table for each.
@@ -1406,23 +1406,23 @@ static LhatNode *parse_def(Parser *p)
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
     bool seen_template = false;
-    bool seen_delegate = false;  // §14.7+2: one per def^
+    bool seen_delegate = false;  // [syntax.obj.delegate]: one per def^
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE)) {
-        // §18.4: above the member, and so above §14.12's marker too --
+        // [syntax.annot.where]: above the member, and so above [syntax.obj.override]'s marker too --
         // the marker says how the member joins the group, the annotation
         // says something about the member itself.
         LhatNode *member_annotations = parse_annotations(p);
         LhatToken at = p->current;
         LhatDefModifier modifier = LHAT_DEF_PLAIN;
 
-        // §14.12. The marker leads the member it applies to.
+        // [syntax.obj.override]. The marker leads the member it applies to.
         if (match_hat(p, "override")) {
             modifier = LHAT_DEF_OVERRIDE;
         } else if (match_hat(p, "overload")) {
             modifier = LHAT_DEF_OVERLOAD;
         } else if (match_hat(p, "abstract")) {
-            // §14.15: a third marker in the same place, since what it says is
+            // [syntax.obj.abstract]: a third marker in the same place, since what it says is
             // about the member as a whole the way the other two are.
             modifier = LHAT_DEF_ABSTRACT;
         }
@@ -1435,8 +1435,8 @@ static LhatNode *parse_def(Parser *p)
         entry->v.entry.annotations = member_annotations;
 
         if (check_hat(p, "self") && is_op(&p->ahead, LHAT_OP_LBRACE)) {
-            // §14.3: the template is the one entry that is not a member, so it
-            // carries no key and no marker of §14.12 can apply to it.
+            // [syntax.obj.methods]: the template is the one entry that is not a member, so it
+            // carries no key and no marker of [syntax.obj.override] can apply to it.
             if (modifier != LHAT_DEF_PLAIN) {
                 report(p, &at, LHAT_PARSE_ERR_MODIFIER_ON_TEMPLATE);
             }
@@ -1446,7 +1446,7 @@ static LhatNode *parse_def(Parser *p)
             seen_template = true;
             entry->v.entry.value = parse_self_table(p);
         } else if (check_hat(p, "delegate")) {
-            // §14.7+2: the other entry that is not a member. What follows
+            // [syntax.obj.delegate]: the other entry that is not a member. What follows
             // names something this definition declares -- 'self^.field' for
             // one of the template's, a bare name for one of the definition's
             // own. Which of the two is where the answer is looked for, so
@@ -1462,17 +1462,17 @@ static LhatNode *parse_def(Parser *p)
             entry->v.entry.modifier = LHAT_DEF_DELEGATE;
             entry->v.entry.value = parse_delegate_target(p);
         } else if (check_hat(p, "op")) {
-            // §11.1: an operator is a function, and a definition carries it as
+            // [syntax.op.functions]: an operator is a function, and a definition carries it as
             // an ordinary member. The name is the operator itself, which
-            // 01§6 keeps a program from writing by hand -- so nothing
+            // [lex.comment] keeps a program from writing by hand -- so nothing
             // of the writer's can collide with it.
             advance(p);
             LhatToken symbol = p->current;
-            // §11.8: '..' and the arithmetic of §11.4. and^, or^ and '!' stay
-            // built in, and §11.5's comparisons are not written one by one --
-            // §11.9 has '<=>' answer for the orderings at once.
+            // [syntax.op.define]: '..' and the arithmetic of [syntax.op.framework]. and^, or^ and '!' stay
+            // built in, and [syntax.op.precedence]'s comparisons are not written one by one --
+            // [syntax.op.compare] has '<=>' answer for the orderings at once.
             //
-            // §11.9+: '=' is the exception. A type may know what equals what
+            // [syntax.op.equal]: '=' is the exception. A type may know what equals what
             // with no order to put its values in, and writing a '<=>' for it
             // would be answering a question it has no answer to.
             bool named_product = check_hat(p, "cross") || check_hat(p, "dot");
@@ -1488,7 +1488,7 @@ static LhatNode *parse_def(Parser *p)
                               symbol.v.op == LHAT_OP_MOD ||
                                symbol.v.op == LHAT_OP_POW));
             if (!definable) {
-                // §8.6+: a compound spelling is worth its own answer. It is
+                // [syntax.stmt.compound]: a compound spelling is worth its own answer. It is
                 // the one an overload would plausibly be written for, and
                 // what it stands for -- 'a := a + b' -- already carries the
                 // op^ that decides it, so there is a definition to point at
@@ -1498,13 +1498,13 @@ static LhatNode *parse_def(Parser *p)
                 LhatParseErrorCode why = LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE;
                 if (symbol.kind == LHAT_TOKEN_OP &&
                     compound_assign_op(symbol.v.op, &base, &nil_safe)) {
-                    // §8.6.4's spellings answer here too: an 'op^?+' is no
+                    // [syntax.stmt.nil-assign]'s spellings answer here too: an 'op^?+' is no
                     // more a definition than an 'op^+' is, and for the same
                     // reason -- 'op^+' is what decides both.
                     why = LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE;
                 } else if (symbol.kind == LHAT_TOKEN_OP &&
                            is_derived_comparison(symbol.v.op)) {
-                    // §11.9: the same shape of answer as the compound
+                    // [syntax.op.compare]: the same shape of answer as the compound
                     // spellings -- there is a definition to point at, and it
                     // is the one that decides all six at once.
                     why = LHAT_PARSE_ERR_COMPARISON_NOT_DEFINABLE;
@@ -1530,10 +1530,10 @@ static LhatNode *parse_def(Parser *p)
             break;
         }
 
-        // A member, named by a word or by an operator (§11.1 makes the two
+        // A member, named by a word or by an operator ([syntax.op.functions] makes the two
         // one thing) -- the template and delegate^ above carry no key.
-        // §14.15: an abstract^ member is written with its type, since there
-        // is no value to read it from. §14.10 spells a member's type the same
+        // [syntax.obj.abstract]: an abstract^ member is written with its type, since there
+        // is no value to read it from. [syntax.obj.structure] spells a member's type the same
         // way, so the two agree.
         if (entry->v.entry.key != NULL && modifier == LHAT_DEF_ABSTRACT) {
             entry->v.entry.declared = true;
@@ -1563,11 +1563,11 @@ static LhatNode *parse_def(Parser *p)
 
 // A parameter in a definition may be named, typed and given a default.
 //
-// §13.4: the default is kept on the node and read by nothing downstream. It is
+// [syntax.type.param-names]: the default is kept on the node and read by nothing downstream. It is
 // what completion and the visual editor put into a call site while the call is
 // being written, not a value the callee supplies for a missing argument, so
 // neither the checker nor the compiler has anything to do with it.
-// §13.14: the rest of the spelling a type read as an expression may
+// [syntax.type.as-expr]: the rest of the spelling a type read as an expression may
 // carry -- '&' binding tighter than '|' exactly as in a type position --
 // and the wrap that makes it the value typeof^ answers.
 static LhatNode *type_value_from(Parser *p, const LhatToken *start,
@@ -1603,12 +1603,12 @@ static LhatNode *type_value_from(Parser *p, const LhatToken *start,
     return finish(p, node);
 }
 
-// §15.12: a function whose body is one expression answers with it, without a
+// [syntax.sub.expr-body]: a function whose body is one expression answers with it, without a
 // return^ written. Whether the body is one statement shows only once the list
 // has ended, so a bare expression is read as an expression statement while
 // parsing and sorted out here.
 //
-// The narrow form on purpose. Anywhere it does not reach, §8.2 holds as it
+// The narrow form on purpose. Anywhere it does not reach, [syntax.stmt.no-bare-expr] holds as it
 // did, and a call standing alone is untouched -- it was already a statement
 // and already meant "run this and drop what it answers". So nothing that
 // compiles today changes what it does.
@@ -1622,22 +1622,22 @@ static void answer_with_body(Parser *p, LhatNode *body)
     if (only != NULL && only->next == NULL) {
         // Whatever it computed is what the function answers with -- a call
         // included. Telling a call that answers a value from one that does
-        // not is the checker's to do, and it does: §13.2 already refuses a f^
+        // not is the checker's to do, and it does: [syntax.type.empty] already refuses a f^
         // whose body is one call, so this can only make a refused body work.
         // Where the call answers nothing, 'return^ foo()' is refused in its
         // turn, and says so better than falling out did.
         if (only->kind == LHAT_NODE_CALL_STMT) {
             only->kind = LHAT_NODE_RETURN;
             only->v.jump.implicit = true;
-            // §13.8+: 'f^ { (0, 1) }' answers a tuple, and folding it here is
+            // [syntax.type.tuple]: 'f^ { (0, 1) }' answers a tuple, and folding it here is
             // what makes that the very node 'return^ 0, 1' produces.
             fold_tuple_answer(only);
         }
         return;
     }
 
-    // More than one statement, so §8.2 holds and a bare expression was never
-    // allowed here. A call standing alone still is, and so does 07§4's
+    // More than one statement, so [syntax.stmt.no-bare-expr] holds and a bare expression was never
+    // allowed here. A call standing alone still is, and so does [lsp.hover]'s
     // half-written member -- see ends_in_truncated_member.
     for (LhatNode *s = body->v.list.items; s != NULL; s = s->next) {
         if (s->kind != LHAT_NODE_CALL_STMT ||
@@ -1647,7 +1647,7 @@ static void answer_with_body(Parser *p, LhatNode *body)
         }
         LhatToken at;
         memset(&at, 0, sizeof at);
-        // Anything but EOF: §3.1 reads that as input that stopped early, and
+        // Anything but EOF: [syntax.repl.incomplete] reads that as input that stopped early, and
         // this input did not.
         at.kind = LHAT_TOKEN_IDENT;
         at.offset = s->offset;
@@ -1658,9 +1658,9 @@ static void answer_with_body(Parser *p, LhatNode *body)
     }
 }
 
-// §13.14: 'f^'/'p^' opens a literal or a written signature (§13.3), and
+// [syntax.type.as-expr]: 'f^'/'p^' opens a literal or a written signature ([syntax.type.semicolon]), and
 // the two only part at the '{' that begins a body or the ';' that closes a
-// signature -- at unbounded distance. 01§4.5 forbids backtracking, so the
+// signature -- at unbounded distance. [lex.number.exponent] forbids backtracking, so the
 // head is read once, each parameter slot kept neutral where it could belong
 // to either: a bare name may be a parameter's or a type's, and is settled in
 // place when the decider arrives (its node re-kinded to a type name). A ':'
@@ -1693,13 +1693,13 @@ static LhatNode *parse_subroutine_or_type(Parser *p, bool is_function)
         }
 
         if (match_op(p, LHAT_OP_ELLIPSIS)) {
-            // §13.7: the collector, spelled the same in both readings.
+            // [syntax.type.variadic]: the collector, spelled the same in both readings.
             param->v.param.variadic = true;
             if (match_op(p, LHAT_OP_COLON)) {
                 param->v.param.type = parse_type(p);
             }
         } else {
-            // §15.1+2: 'mutable^self^' -- the marker on the receiver's
+            // [syntax.sub.mutable-self]: 'mutable^self^' -- the marker on the receiver's
             // seat, also one spelling shared by both. 'mutable^' anywhere
             // else stays an ordinary name of the writer's.
             if (check_hat(p, "mutable") &&
@@ -1711,7 +1711,7 @@ static LhatNode *parse_subroutine_or_type(Parser *p, bool is_function)
             // qualifies ('.'), unions ('|', '&'), or opens a table or
             // coroutine type on ('{' after t^/c^) is a spelling no
             // parameter name takes -- and Self^ is a type wherever it
-            // stands (§13.13).
+            // stands ([syntax.type.self]).
             bool named =
                 (p->current.kind == LHAT_TOKEN_IDENT ||
                  p->current.kind == LHAT_TOKEN_HAT_IDENT) &&
@@ -1756,11 +1756,11 @@ static LhatNode *parse_subroutine_or_type(Parser *p, bool is_function)
     node->v.func.params = head;
 
     if (match_op(p, LHAT_OP_ARROW)) {
-        // §15.1+3: 'fresh^' on the result's seat promises the answer is new.
+        // [syntax.sub.fresh]: 'fresh^' on the result's seat promises the answer is new.
         if (match_hat(p, "fresh")) {
             node->v.func.answers_fresh = true;
         }
-        // §13.8+2: several written bare are the tuple that one result is.
+        // [syntax.type.tuple-parens]: several written bare are the tuple that one result is.
         // The decider closes the reading either way: a body's '{' or a
         // signature's ';'.
         node->v.func.return_type = parse_type_result(p);
@@ -1771,7 +1771,7 @@ static LhatNode *parse_subroutine_or_type(Parser *p, bool is_function)
         }
     }
 
-    // §13.3's ';' says signature. Anything else is read as the literal it
+    // [syntax.type.semicolon]'s ';' says signature. Anything else is read as the literal it
     // was, whose '{' the expect below still demands.
     if (match_op(p, LHAT_OP_SEMICOLON)) {
         if (literal_told) {
@@ -1794,7 +1794,7 @@ static LhatNode *parse_subroutine_or_type(Parser *p, bool is_function)
         report(p, &typed_at, LHAT_PARSE_ERR_PARAM_NEEDS_NAME);
     }
 
-    // §15.2: yield^ in the body is what makes a procedure yieldable, so the
+    // [syntax.sub.yieldable]: yield^ in the body is what makes a procedure yieldable, so the
     // flag is collected while parsing rather than by walking the tree
     // afterwards. A nested definition gets its own scope for the same reason
     // its yield^ belongs to it and not to this one.
@@ -1803,20 +1803,20 @@ static LhatNode *parse_subroutine_or_type(Parser *p, bool is_function)
 
     LhatToken brace = p->current;
     if (expect_op(p, LHAT_OP_LBRACE)) {
-        // §15.12: only a function, and only in this list -- not in a block
-        // nested inside it. §13.2 makes a f^ that falls out an error already,
+        // [syntax.sub.expr-body]: only a function, and only in this list -- not in a block
+        // nested inside it. [syntax.type.empty] makes a f^ that falls out an error already,
         // so this can only make a refused body work and never change one.
         size_t enclosing_bare = p->bare_depth;
         p->bare_depth = is_function ? p->depth + 1 : 0;
 
-        // A subroutine body is not a loop, so §9.10's walk-only rules do not
+        // A subroutine body is not a loop, so [syntax.loop.pre]'s walk-only rules do not
         // apply to it either.
         node->v.func.body = parse_clause_body(p, &brace, false, false);
 
         p->bare_depth = enclosing_bare;
         if (is_function) {
             answer_with_body(p, node->v.func.body);
-            // 04§4.5: an arm is the other way the body ends, so one that
+            // [errors.catch.clause]: an arm is the other way the body ends, so one that
             // is one expression answers with it the same way.
             for (LhatNode *arm = node->v.func.body != NULL
                                      ? node->v.func.body->v.list.arms
@@ -1836,7 +1836,7 @@ static LhatNode *parse_subroutine_or_type(Parser *p, bool is_function)
     return finish(p, node);
 }
 
-// §5.1 and §5.3: one marker, 'el^', covers both else-if and else, and a
+// [syntax.if.expr] and [syntax.if.spellings]: one marker, 'el^', covers both else-if and else, and a
 // condition before the ':' is what tells them apart. The longer spellings are
 // accepted too.
 static bool is_else_marker(const Parser *p)
@@ -1845,15 +1845,15 @@ static bool is_else_marker(const Parser *p)
            check_hat(p, "elseif") || check_hat(p, "elsif") || check_hat(p, "elif");
 }
 
-// 04§4.5: a word an arm's kind may start with. An error kind has a name
-// (04§2.2), and the two tops (04§2.7) are the hat identifiers among them.
+// [errors.catch.clause]: a word an arm's kind may start with. An error kind has a name
+// ([errors.kind.errordef]), and the two tops ([errors.kind.local]) are the hat identifiers among them.
 static bool names_error_kind(const Parser *p, const LhatToken *token)
 {
     return token->kind == LHAT_TOKEN_IDENT || token_is_hat(p, token, "error") ||
            token_is_hat(p, token, "localerror");
 }
 
-// 04§4.5: whether the catch^ here is written as an arm -- 'catch^:', or
+// [errors.catch.clause]: whether the catch^ here is written as an arm -- 'catch^:', or
 // 'catch^' and a kind (dotted, alternatives joined by '|') and then ':'.
 // The kind may run past the one token of lookahead the parser keeps, so the
 // rest is read off a copy of the lexer.
@@ -1893,15 +1893,15 @@ static bool catch_arm_shaped(const Parser *p)
     return shaped;
 }
 
-// 04§4.5: a catch^ that ends the statement being read and opens an arm.
-// Anywhere else it is 11§4.1's binary operator.
+// [errors.catch.clause]: a catch^ that ends the statement being read and opens an arm.
+// Anywhere else it is [binary.net.api]'s binary operator.
 static bool at_catch_arm(const Parser *p)
 {
     return check_hat(p, "catch") && p->tail_expr_depth != 0 &&
            p->expr_depth == p->tail_expr_depth && catch_arm_shaped(p);
 }
 
-// Words that begin a statement. The lexer keeps no keyword table (01§2.1),
+// Words that begin a statement. The lexer keeps no keyword table ([lex.hat.no-reserved]),
 // so this knowledge lives here. It is needed wherever a construct may be
 // followed by an optional expression: without it, 'break^' would swallow the
 // 'yield^ 1' that follows it as though it were its operand.
@@ -1910,12 +1910,12 @@ static bool is_statement_keyword(const Parser *p)
     static const char *const words[] = {
         "if", "do", "var", "let", "with", "return", "break", "panic", "yield",
         "overload", "override",  // Diagnose member markers used as statements.
-        "_yield", "await",  // §15.8 with §15.14: delegating suspends too
-        // §9.11: and the three spellings of the one that goes on with the loop
+        "_yield", "await",  // [syntax.sub.await] with [syntax.sub.await-done]: delegating suspends too
+        // [syntax.loop.next]: and the three spellings of the one that goes on with the loop
         "next", "skip", "continue",
         "for", "repeat", "while", "until", "when", "other",
-        "errordef", "localerrordef",  // 04§2.7: two tops, one form
-        "enum",  // §19
+        "errordef", "localerrordef",  // [errors.kind.local]: two tops, one form
+        "enum",  // [syntax.enum]
         "prolog", "prologue", "pre", "premain", "first", "main", "last",
         "epilog", "epilogue", "finally"
     };
@@ -1928,15 +1928,15 @@ static bool is_statement_keyword(const Parser *p)
 }
 
 // Whether what stands here ends the if^ expression rather than continuing a
-// clause. §6 closes it with ';', and an input that stopped early closes it
-// by running out -- 10§3.1 reads on from there rather than reporting.
+// clause. [syntax.colon] closes it with ';', and an input that stopped early closes it
+// by running out -- [l10n.scope.shown] reads on from there rather than reporting.
 static bool closes_if_expression(const Parser *p)
 {
     return at_eof(p) || check_op(p, LHAT_OP_SEMICOLON) ||
            check_op(p, LHAT_OP_RBRACE) || check_op(p, LHAT_OP_RPAREN);
 }
 
-// 04§5.1: the condition is already read by the time the ':' says which form
+// [errors.try.form]: the condition is already read by the time the ':' says which form
 // this is, so the two callers hand it in rather than reading it again.
 static LhatNode *parse_if_expression_from(Parser *p, LhatToken start,
                                           LhatNode *condition)
@@ -1968,9 +1968,9 @@ static LhatNode *parse_if_expression_from(Parser *p, LhatToken start,
         if (!check_op(p, LHAT_OP_COLON)) {
             clause->v.clause.condition = parse_expression(p);
         }
-        // 10§5.1: 'el^' takes a condition or nothing, and which one it was is
+        // [l10n.compose.holes]: 'el^' takes a condition or nothing, and which one it was is
         // known only once the ':' turns up. When what turns up instead is the
-        // ';' that closes the construct (09§6), there was no condition -- what
+        // ';' that closes the construct ([debug.godot]), there was no condition -- what
         // was read is the value, and the ':' the writer left out belongs
         // right after the marker.
         //
@@ -1989,20 +1989,20 @@ static LhatNode *parse_if_expression_from(Parser *p, LhatToken start,
         lhat_node_append(&head, &tail, finish(p, clause));
     }
 
-    // 10§5.1: an expression answers with a value in every case, and the clause
+    // [l10n.compose.holes]: an expression answers with a value in every case, and the clause
     // written without a condition is the one that answers when no test held.
     // The statement form may leave that case out; this one may not -- every
     // clause writes into the same register, so a chain that ends on a test
     // reads back whatever stood there.
     //
     // Reported where the missing clause goes, which is right before the ';'.
-    // Input that ran out stands here as EOF, and report() takes that for 10§3.1's
+    // Input that ran out stands here as EOF, and report() takes that for [l10n.scope.shown]'s
     // unfinished input rather than a mistake.
     if (tail == NULL || tail->v.clause.condition != NULL) {
         report(p, &p->current, LHAT_PARSE_ERR_IF_EXPR_NEEDS_ELSE);
     }
 
-    // §6: a ':' opens the construct and a ';' closes it.
+    // [syntax.colon]: a ':' opens the construct and a ';' closes it.
     expect_op(p, LHAT_OP_SEMICOLON);
     node->v.list.items = head;
     return finish(p, node);
@@ -2030,7 +2030,7 @@ static LhatNode *parse_primary(Parser *p)
             if (node != NULL) {
                 node->v.scope.kind = t.v.scope.kind;
                 node->v.scope.depth = t.v.scope.depth;
-                // 01§8: the name is glued to the sigil, so it is part
+                // [lex.scope]: the name is glued to the sigil, so it is part
                 // of this node rather than a separate expression.
                 node->v.scope.name = simple_node(p);
                 if (node->v.scope.name == NULL) {
@@ -2059,7 +2059,7 @@ static LhatNode *parse_primary(Parser *p)
                 return made;
             }
             if (check_hat(p, "f") || check_hat(p, "p")) {
-                // §13.14: a literal or a written signature -- the one
+                // [syntax.type.as-expr]: a literal or a written signature -- the one
                 // head both share is read once, and the '{' or the ';' says
                 // which it was. A signature is the value typeof^ answers.
                 bool making_function = check_hat(p, "f");
@@ -2074,19 +2074,19 @@ static LhatNode *parse_primary(Parser *p)
                 advance(p);
                 return parse_if_expression(p, t);
             }
-            // §17.2: the expression form of a match. parse_for sorts out which
+            // [syntax.match.form]: the expression form of a match. parse_for sorts out which
             // form it is, since both start the same way.
             if (check_hat(p, "for")) {
                 return parse_for(p);
             }
-            // §14.4+: 'def^{' opens a literal; 'def^' anywhere else names
+            // [syntax.obj.def-word]: 'def^{' opens a literal; 'def^' anywhere else names
             // the definition being written, the way 'self^{' and 'self^'
             // divide between the template and the receiver. Read as an
             // ordinary hat identifier here, so the scope answers it.
             if (check_hat(p, "def") && is_op(&p->ahead, LHAT_OP_LBRACE)) {
                 return parse_def(p);
             }
-            // §14.16: the delimited form remains a primary, so
+            // [syntax.obj.typeof]: the delimited form remains a primary, so
             // typeof^(x).signature reads the descriptor's member. The bare
             // prefix form is handled at the unary level below.
             if (check_hat(p, "typeof")) {
@@ -2110,7 +2110,7 @@ static LhatNode *parse_primary(Parser *p)
                 LhatToken head = p->current;
                 return type_value_from(p, &head, parse_type(p));
             }
-            // §13.14: 't^{' and 'c^{' open nothing an expression
+            // [syntax.type.as-expr]: 't^{' and 'c^{' open nothing an expression
             // could be, so the spelling is a written type standing as a
             // value -- all of it, parse_type taking the unions too. A bare
             // 't^' stays a name, and in a header
@@ -2121,10 +2121,10 @@ static LhatNode *parse_primary(Parser *p)
                 return type_value_from(p, &head, parse_type(p));
             }
             // 'self^' on its own is an ordinary value, as in self^.value1, so
-            // only a '{' immediately after it makes the form of §14.6. The
-            // parameter list of §14.4 never reaches here: it takes the name
+            // only a '{' immediately after it makes the form of [syntax.obj.template]. The
+            // parameter list of [syntax.obj.self] never reaches here: it takes the name
             // directly, and its '{' opens the body.
-            // §14.11: except in a header expression, where the '{' that
+            // [syntax.obj.new]: except in a header expression, where the '{' that
             // follows is the body -- 'for^ k, v in^self^ { ... }' reads the
             // receiver and then its block, and a literal wanted there is
             // written in parentheses.
@@ -2142,7 +2142,7 @@ static LhatNode *parse_primary(Parser *p)
             if (check_hat(p, "new")) {
                 return parse_new(p);
             }
-            // 01§3.3: 'id^name' is the name's spelling as a string. The
+            // [lex.ident.id-hat]: 'id^name' is the name's spelling as a string. The
             // name is not looked up -- what this asks for is the way it is
             // written, which a string literal would say just as well and
             // would not be read as a name by anyone looking at it.
@@ -2150,7 +2150,7 @@ static LhatNode *parse_primary(Parser *p)
                 return parse_id(p);
             }
             // The one position a stacked word may be written in: a value
-            // reference (01§2.3), where it^^ means the enclosing focus.
+            // reference ([lex.hat.repeat]), where it^^ means the enclosing focus.
             return simple_node_in(p, true);
 
         case LHAT_TOKEN_OP:
@@ -2162,7 +2162,7 @@ static LhatNode *parse_primary(Parser *p)
                 p->brace_is_body = false;
                 LhatNode *inner = parse_expression(p);
                 if (!check_op(p, LHAT_OP_COMMA)) {
-                    // Grouping, as it always was. §13.8+ leaves this reading
+                    // Grouping, as it always was. [syntax.type.tuple] leaves this reading
                     // untouched, which is what makes a one-position tuple
                     // unwritable on the value side too: '(x)' was taken.
                     expect_op(p, LHAT_OP_RPAREN);
@@ -2170,7 +2170,7 @@ static LhatNode *parse_primary(Parser *p)
                     return inner;
                 }
 
-                // §13.8+: two positions or more -- the same shape and the
+                // [syntax.type.tuple]: two positions or more -- the same shape and the
                 // same one-token lookahead parse_type_primary uses, so the
                 // value side and the type side read '(' alike.
                 LhatNode *node = make(p, LHAT_NODE_TUPLE, &t);
@@ -2192,7 +2192,7 @@ static LhatNode *parse_primary(Parser *p)
             if (t.v.op == LHAT_OP_LBRACE) {
                 return parse_table(p);
             }
-            // §13.7: inside a body '...' names the collected arguments.
+            // [syntax.type.variadic]: inside a body '...' names the collected arguments.
             if (t.v.op == LHAT_OP_ELLIPSIS) {
                 LhatNode *node = make(p, LHAT_NODE_HAT_IDENT, &t);
                 if (node != NULL) {
@@ -2242,7 +2242,7 @@ static LhatNode *parse_arguments(Parser *p)
 
     while (!at_eof(p) && !check_op(p, LHAT_OP_RPAREN)) {
         LhatNode *argument;
-        // §13.7: '...' bare, written as an argument, forwards the collected
+        // [syntax.type.variadic]: '...' bare, written as an argument, forwards the collected
         // tail into this call rather than naming it as a value in its own
         // right -- there is no other reading a table has here, since a
         // variadic slot never takes one table as a single element.
@@ -2260,22 +2260,22 @@ static LhatNode *parse_arguments(Parser *p)
             }
             argument = spread;
             lhat_node_append(&head, &tail, argument);
-            // §13.7: nothing can follow the whole tail it forwards.
+            // [syntax.type.variadic]: nothing can follow the whole tail it forwards.
             if (check_op(p, LHAT_OP_COMMA)) {
                 report(p, &p->current, LHAT_PARSE_ERR_SPREAD_NOT_LAST);
             }
             break;
         }
         argument = parse_expression(p);
-        // §13.7: the same forwarding written after a value rather than as the
+        // [syntax.type.variadic]: the same forwarding written after a value rather than as the
         // bare word -- 'expr...', which the section is named for. The reading
         // is the one the bare form has and for the same reason: a variadic
         // slot never takes one value as a whole, so there is nothing else
         // '...' could mean here.
         //
-        // §13.8+: this is what lets a tuple reach the parameters. Spreading
+        // [syntax.type.tuple]: this is what lets a tuple reach the parameters. Spreading
         // is written rather than inferred from the callee, which is what
-        // keeps §13.7's expansion rule from arising. Whether more may follow
+        // keeps [syntax.type.variadic]'s expansion rule from arising. Whether more may follow
         // is the checker's to say: a tuple's width is known and it may stand
         // anywhere, a table's is not and it has to come last.
         if (check_op(p, LHAT_OP_ELLIPSIS)) {
@@ -2304,7 +2304,7 @@ static bool is_access_node(const LhatNode *node)
             node->kind == LHAT_NODE_CALL);
 }
 
-// §13.14: a run of names and nothing else -- what may be re-read as
+// [syntax.type.as-expr]: a run of names and nothing else -- what may be re-read as
 // the qualified type name it already spells.
 static bool names_only(const LhatNode *node)
 {
@@ -2321,8 +2321,8 @@ static bool names_only(const LhatNode *node)
                             node->kind == LHAT_NODE_HAT_IDENT);
 }
 
-// 07§4: a member with nothing under it, which is what parse_postfix
-// leaves for a dot at the end of what has been typed so far. §8.2 refuses a
+// [lsp.hover]: a member with nothing under it, which is what parse_postfix
+// leaves for a dot at the end of what has been typed so far. [syntax.stmt.no-bare-expr] refuses a
 // bare expression where a statement belongs, but this one is a writer asking
 // what may follow the dot rather than an expression written for its value --
 // and the dot has been reported already. Refusing it a second time would say
@@ -2368,7 +2368,7 @@ static LhatNode *parse_postfix(Parser *p)
     LhatToken start = p->current;
     LhatNode *node = parse_primary(p);
 
-    // §11.7+2: the first '?' guards the rest of the run, and the nil^ arm is
+    // [syntax.op.nil-safe-chain]: the first '?' guards the rest of the run, and the nil^ arm is
     // put on once, at the end. Which access that is only this loop knows --
     // it is the one nothing else was appended to.
     //
@@ -2390,10 +2390,10 @@ static LhatNode *parse_postfix(Parser *p)
         if (check_op(p, LHAT_OP_DOT) || check_op(p, LHAT_OP_NIL_DOT)) {
             bool nil_safe = at.v.op == LHAT_OP_NIL_DOT;
             advance(p);
-            // §10.1: digits after a '.' are an integer key.
+            // [syntax.finally.block]: digits after a '.' are an integer key.
             LhatNode *name = simple_node(p);
             if (name == NULL) {
-                // 07§4: the dot is kept as a member with nothing under
+                // [lsp.hover]: the dot is kept as a member with nothing under
                 // it, so that a tool asked what may stand here has a node to
                 // ask about -- and the checker, which walks whatever tree
                 // came out, records what stands to its left. The name is
@@ -2431,7 +2431,7 @@ static LhatNode *parse_postfix(Parser *p)
             continue;
         }
 
-        // §10.9: a '(' on a line of its own starts a statement rather than
+        // [syntax.finally.epilog]: a '(' on a line of its own starts a statement rather than
         // continuing this expression.
         if (check_op(p, LHAT_OP_LPAREN) && !at.preceded_by_newline) {
             advance(p);
@@ -2449,10 +2449,10 @@ static LhatNode *parse_postfix(Parser *p)
             continue;
         }
 
-        // §11.7+2: postfix '?' asks whether the value is not absent --
+        // [syntax.op.present]: postfix '?' asks whether the value is not absent --
         // '!(x fits^ nil^)' written short. Here with the other postfix forms
         // rather than in parse_unary, so it binds as tightly as they do
-        // (§11.6's level 11): 'a.b?' is '(a.b)?'.
+        // ([syntax.op.table]'s level 11): 'a.b?' is '(a.b)?'.
         if (check_op(p, LHAT_OP_PRESENT)) {
             advance(p);
             LhatNode *asked = make(p, LHAT_NODE_UNARY, &at);
@@ -2474,13 +2474,13 @@ static LhatNode *parse_postfix(Parser *p)
         }
         break;
     }
-    // §11.7+2: the run is over, so this is the access the nil^ arm goes on.
-    // A postfix '?' above it (§11.7+2's own form) asks about the value the
+    // [syntax.op.nil-safe-chain]: the run is over, so this is the access the nil^ arm goes on.
+    // A postfix '?' above it ([syntax.op.nil-safe-chain]'s own form) asks about the value the
     // chain answers, so it is not the end -- the access under it is.
     if (guarded && last_access != NULL) {
         last_access->v.access.nil_chain_end = true;
     }
-    // §13.14: '|' and '&' belong to no expression (§11.6's table leaves
+    // [syntax.type.as-expr]: '|' and '&' belong to no expression ([syntax.op.table]'s table leaves
     // them to the types), so one standing after a plain run of names is a
     // union or intersection being spelled -- the leaf re-kinded to the type
     // name it already carries the fields of. Anything else before the '|'
@@ -2499,7 +2499,7 @@ static LhatNode *parse_postfix(Parser *p)
 
 static LhatNode *parse_unary(Parser *p);
 
-// §11.5 の (2): '**' binds tighter than a unary minus, and its right operand
+// [syntax.op.precedence] の (2): '**' binds tighter than a unary minus, and its right operand
 // may itself be unary, so '-2 ** 2' is -4 while '2 ** -1' still parses.
 static LhatNode *parse_power(Parser *p)
 {
@@ -2533,7 +2533,7 @@ static LhatNode *parse_unary(Parser *p)
         return finish(p, node);
     }
 
-    // 05§5. Unary like try^, so '(require^ "m").f' needs the brackets
+    // [modules.require]. Unary like try^, so '(require^ "m").f' needs the brackets
     // that say what is being reached into.
     if (check_hat(p, "require")) {
         if (p->lton_body) report(p, &p->current, LHAT_PARSE_ERR_LTON_IMPORT);
@@ -2544,7 +2544,7 @@ static LhatNode *parse_unary(Parser *p)
         if (node == NULL) {
             return NULL;
         }
-        // 05§5.2: the checker follows this, so the path has to be settled
+        // [modules.require.literal]: the checker follows this, so the path has to be settled
         // by the time it looks. A computed one is a different mechanism (M3).
         if (p->current.kind != LHAT_TOKEN_STRING) {
             report(p, &p->current, LHAT_PARSE_ERR_REQUIRE_NEEDS_LITERAL);
@@ -2554,9 +2554,9 @@ static LhatNode *parse_unary(Parser *p)
         return finish(p, node);
     }
 
-    // 05§8.7: import^ names a module rather than a file, so its operand is
-    // the path 12§3 spells rather than a string. Only what the host
-    // registered answers to it -- see 05§8.7 for why not what require^ brought.
+    // [modules.host.import]: import^ names a module rather than a file, so its operand is
+    // the path [spec.member-cache] spells rather than a string. Only what the host
+    // registered answers to it -- see [modules.host.import] for why not what require^ brought.
     if (check_hat(p, "import")) {
         if (p->lton_body) report(p, &p->current, LHAT_PARSE_ERR_LTON_IMPORT);
         LhatToken at = p->current;
@@ -2570,16 +2570,16 @@ static LhatNode *parse_unary(Parser *p)
         return finish(p, node);
     }
 
-    // §15.8: delegation. A word of its own rather than a reading of
+    // [syntax.sub.await]: delegation. A word of its own rather than a reading of
     // yield^, since the two have different types -- yield^ answers what the
     // resume sent, this answers the inner coroutine's return value.
     //
-    // §15.14: the word a reader of async code knows is the word the language
+    // [syntax.sub.await-done]: the word a reader of async code knows is the word the language
     // uses. Delegation and awaiting were the same thing said twice -- same
     // type rule, same instructions -- so there is one spelling for it.
     if (check_hat(p, "await")) {
         LhatToken at = p->current;
-        p->saw_yield = true;  // §15.2: delegating is suspending
+        p->saw_yield = true;  // [syntax.sub.yieldable]: delegating is suspending
         advance(p);
         LhatNode *node = make(p, LHAT_NODE_AWAIT, &at);
         if (node == NULL) {
@@ -2589,24 +2589,24 @@ static LhatNode *parse_unary(Parser *p)
         return finish(p, node);
     }
 
-    // §15.4: yield^ is an expression, since its value is what the resume
+    // [syntax.sub.yield-both]: yield^ is an expression, since its value is what the resume
     // sent. It takes everything to its right, so 'yield^ a + 1' sends the sum
     // -- there is nothing for a tighter reading to do with the remainder.
     //
-    // §15.11: '_yield^' is written the same way and says the same thing about
+    // [syntax.sub.phantom-yield]: '_yield^' is written the same way and says the same thing about
     // the three types. It is the same node with a flag rather than one of
     // its own, so that no part of the checker can tell the two apart.
     bool phantom_yield = check_hat(p, "_yield");
     if (phantom_yield || check_hat(p, "yield")) {
         LhatToken at = p->current;
-        p->saw_yield = true;  // §15.2: this is what makes the body yieldable
+        p->saw_yield = true;  // [syntax.sub.yieldable]: this is what makes the body yieldable
         advance(p);
         LhatNode *node = make(p, LHAT_NODE_YIELD, &at);
         if (node == NULL) {
             return NULL;
         }
         node->v.jump.phantom = phantom_yield;
-        // 01§10.9 again: what it sends has to be on its own line. A '('
+        // [lex.ambig.call-line] again: what it sends has to be on its own line. A '('
         // is admitted besides starts_expression's list, for the
         // parenthesised tuple spelling below.
         if (!p->current.preceded_by_newline &&
@@ -2615,7 +2615,7 @@ static LhatNode *parse_unary(Parser *p)
               p->current.v.op == LHAT_OP_LPAREN)) &&
             !is_statement_keyword(p)) {
             node->v.jump.value = parse_expression(p);
-            // §13.8+: the commas after a yield^ are its own, exactly as
+            // [syntax.type.tuple]: the commas after a yield^ are its own, exactly as
             // return^ reads them -- 'var^ a, b = yield^ x, y' sends the
             // pair and the binding takes the answer apart. A binding
             // meaning a two-value list of its own writes '(yield^ x), y'.
@@ -2635,7 +2635,7 @@ static LhatNode *parse_unary(Parser *p)
         return finish(p, node);
     }
 
-    // 04§5: try^ sits at the unary level, so 'try^ f() + 1' adds to the
+    // [errors.try]: try^ sits at the unary level, so 'try^ f() + 1' adds to the
     // unwrapped value rather than trying to unwrap the sum.
     if (check_hat(p, "try")) {
         LhatToken at = p->current;
@@ -2648,7 +2648,7 @@ static LhatNode *parse_unary(Parser *p)
         return finish(p, node);
     }
 
-    // §13.8+: 'pack^ expr' is the one bridge from a tuple to a table. At the
+    // [syntax.type.tuple]: 'pack^ expr' is the one bridge from a tuple to a table. At the
     // unary level, like try^ above -- 'pack^ f().x' would be reading a member
     // of a tuple, which is not a thing, so binding tighter buys nothing.
     if (check_hat(p, "pack")) {
@@ -2662,9 +2662,9 @@ static LhatNode *parse_unary(Parser *p)
         return finish(p, node);
     }
 
-    // 05§8.9: 'box^ expr' puts a host value in the box the heap can hold.
+    // [modules.hostvalue]: 'box^ expr' puts a host value in the box the heap can hold.
     // At the unary level for pack^'s reason -- what it takes is the whole
-    // value, and nothing tighter reads differently. 05§8.9+: 'constbox^ expr'
+    // value, and nothing tighter reads differently. [modules.hostvalue.union]: 'constbox^ expr'
     // makes the sealed, get-only box -- off a host value, or off a box of
     // either kind as a copy.
     if (check_hat(p, "box") || check_hat(p, "constbox")) {
@@ -2680,7 +2680,7 @@ static LhatNode *parse_unary(Parser *p)
         return finish(p, node);
     }
 
-    // §11.6: 'bitnot^' is a prefix word at '!''s level.
+    // [syntax.op.table]: 'bitnot^' is a prefix word at '!''s level.
     bool bitnot = check_hat(p, "bitnot");
     if (bitnot || check_op(p, LHAT_OP_NOT) || check_op(p, LHAT_OP_SUB)) {
         LhatToken at = p->current;
@@ -2713,12 +2713,12 @@ static LhatNode *parse_ascription(Parser *p)
     return left;
 }
 
-// 04§4 and §11.7. Both drop one arm of a union and put a value in its
+// [errors.catch] and [syntax.op.default]. Both drop one arm of a union and put a value in its
 // place; only the arm differs, so they share a level, a shape and a side of
 // the tree. Binding tighter than the binary operators is what makes
 // 'base + t[k] ?? 0' default around t[k] rather than around the sum.
 //
-// §11.6+3: and looser than as^, so 'x as^ T catch^ 0' takes the alternative
+// [syntax.op.as-error]: and looser than as^, so 'x as^ T catch^ 0' takes the alternative
 // around the cast rather than around whatever the cast is written inside --
 // the pairing that replaced a second cast operator. Kotlin's 'as? T ?: d'
 // and Swift's 'as? T ?? d' put their two in the same order.
@@ -2727,7 +2727,7 @@ static LhatNode *parse_fallback(Parser *p)
     LhatNode *left = parse_ascription(p);
 
     for (;;) {
-        // 04§4.5: not the one that opens an arm -- there the statement
+        // [errors.catch.clause]: not the one that opens an arm -- there the statement
         // has ended, and the word belongs to the block.
         bool catching = check_hat(p, "catch") && !at_catch_arm(p);
         if (!catching && !check_op(p, LHAT_OP_NIL_ELSE)) {
@@ -2743,16 +2743,16 @@ static LhatNode *parse_fallback(Parser *p)
         }
         node->v.binary.op = catching ? LHAT_OP_CATCH : LHAT_OP_NIL_ELSE;
         node->v.binary.left = left;
-        // 04§4.1+: the one statement catch^ takes on its right. §12.7's
+        // [errors.catch.panic]: the one statement catch^ takes on its right. [syntax.with.no-fail]'s
         // panic^ answers no value AND does not come back, so it leaves no
         // hole where a value was wanted -- which is what lets it stand here
         // when nothing else may. 'x as^ T catch^ panic^ it^' is the
         // assertion, and the whole is worth what the left is without its
         // error arm.
         //
-        // Not on '??': 04§11.3 makes absence no failure, so panicking on
+        // Not on '??': [errors.runtime.index] makes absence no failure, so panicking on
         // one asserts something else. And not return^, however writable it
-        // looks -- 05§4.5's catch^ arms are there for exactly that, and
+        // looks -- [modules.public.host]'s catch^ arms are there for exactly that, and
         // admitting it here would hollow them out.
         //
         // Where this catch^ ends a statement, so does the panic^, and an arm
@@ -2783,7 +2783,7 @@ static bool binary_info(const Parser *p, LhatOpKind *op, int *precedence,
             *precedence = PREC_MUL;
             return true;
         }
-        // §11.6: the bitwise words share '*''s level, one level for all four,
+        // [syntax.op.table]: the bitwise words share '*''s level, one level for all four,
         // so a mix reads left to right like any other run of products.
         static const struct { const char *word; LhatOpKind op; } bitwise[] = {
             {"bitand", LHAT_OP_BITAND}, {"bitor", LHAT_OP_BITOR},
@@ -2814,7 +2814,7 @@ static bool binary_info(const Parser *p, LhatOpKind *op, int *precedence,
     }
 
     switch (p->current.v.op) {
-        // §11.9: an ordinary binary operator, not one of the chaining
+        // [syntax.op.compare]: an ordinary binary operator, not one of the chaining
         // comparisons -- its answer is a number^, which nothing chains on.
         case LHAT_OP_SPACESHIP:
             *op = LHAT_OP_SPACESHIP;
@@ -2823,7 +2823,7 @@ static bool binary_info(const Parser *p, LhatOpKind *op, int *precedence,
         case LHAT_OP_CONCAT:
             *op = LHAT_OP_CONCAT;
             *precedence = PREC_CONCAT;
-            *right_associative = true;  // §11.5 の (1)
+            *right_associative = true;  // [syntax.op.precedence] の (1)
             return true;
         case LHAT_OP_ADD:
         case LHAT_OP_SUB:
@@ -2846,10 +2846,10 @@ static bool binary_info(const Parser *p, LhatOpKind *op, int *precedence,
 
 static bool is_comparison(const Parser *p, LhatOpKind *op)
 {
-    // 04§11.6+: 'is^' asks identity, 'fits^' asks the type fit. Two words with
+    // [errors.runtime.traceback]: 'is^' asks identity, 'fits^' asks the type fit. Two words with
     // nothing in common to mistake, so the order they are tried in decides
-    // nothing; it reads the one the two are introduced in (§13.11 の後の
-    // 04§11.6+).
+    // nothing; it reads the one the two are introduced in ([syntax.type.fits] の後の
+    // [errors.runtime.traceback]).
     if (check_hat(p, "fits")) {
         *op = LHAT_OP_FITS;
         return true;
@@ -2906,11 +2906,11 @@ static LhatNode *parse_binary(Parser *p, int min_precedence)
     return left;
 }
 
-// §11.5 の (5): comparisons chain, and an operand shared by two links is
+// [syntax.op.precedence] の (5): comparisons chain, and an operand shared by two links is
 // evaluated once, which is why the chain is kept as one node.
 static LhatNode *parse_comparison(Parser *p)
 {
-    // §11.9: '<=>' binds tighter than the chain, so each link may be one.
+    // [syntax.op.compare]: '<=>' binds tighter than the chain, so each link may be one.
     LhatNode *first = parse_binary(p, PREC_SPACESHIP);
 
     LhatOpKind op;
@@ -2935,7 +2935,7 @@ static LhatNode *parse_comparison(Parser *p)
         marker->v.unary.op = op;
         lhat_node_append(&operators, &operator_tail, marker);
 
-        // §13.11: fits^ asks whether the left side may stand where the right
+        // [syntax.type.fits]: fits^ asks whether the left side may stand where the right
         // side is written, so what it takes on the right is a type. is^
         // asks identity, an ordinary value on both sides.
         lhat_node_append(&operands, &operand_tail,
@@ -3002,7 +3002,7 @@ static LhatNode *parse_logical(Parser *p, int min_precedence)
 
 static LhatNode *parse_expression(Parser *p)
 {
-    // How deep in expressions this stands -- which is how 04§4.5 tells
+    // How deep in expressions this stands -- which is how [errors.catch.clause] tells
     // the expression ending a statement (tail_expr_depth) from one inside a
     // bracket, a call's arguments, a table or a hole.
     p->expr_depth++;
@@ -3011,7 +3011,7 @@ static LhatNode *parse_expression(Parser *p)
     return node;
 }
 
-// 04§4.5: an expression that ends its statement, so that a catch^ arm
+// [errors.catch.clause]: an expression that ends its statement, so that a catch^ arm
 // written after it is read as one (tail_expr_depth).
 static LhatNode *parse_tail_expression(Parser *p)
 {
@@ -3042,8 +3042,8 @@ static bool starts_expression(const LhatToken *token)
     }
 }
 
-// §2.3: whether this token could carry on the expression that came before it.
-// The same classification 01§10.9 uses, which is why the command form
+// [syntax.juxta.when]: whether this token could carry on the expression that came before it.
+// The same classification [lex.ambig.call-line] uses, which is why the command form
 // needs no notion of its own -- 'x - 1' stays a subtraction because '-' can
 // continue, while 'print "done"' is a call because a string cannot.
 static bool continues_expression(const Parser *p, const LhatToken *token)
@@ -3053,7 +3053,7 @@ static bool continues_expression(const Parser *p, const LhatToken *token)
             switch (token->v.op) {
                 // Anything that could not start a fresh expression on its own
                 // is a continuation. '!' and '-' differ: '!' is prefix only
-                //, '-' can be either, and §2.3 gives '-' to subtraction.
+                //, '-' can be either, and [syntax.juxta.when] gives '-' to subtraction.
                 case LHAT_OP_NOT:
                 case LHAT_OP_LBRACE:
                     return false;
@@ -3061,7 +3061,7 @@ static bool continues_expression(const Parser *p, const LhatToken *token)
                     return true;
             }
         case LHAT_TOKEN_HAT_IDENT:
-            // The binary ones (§11.6). Everything else with a hat starts
+            // The binary ones ([syntax.op.table]). Everything else with a hat starts
             // something and so may be an argument.
             return token_is_hat(p, token, "and") || token_is_hat(p, token, "or") ||
                    token_is_hat(p, token, "is") || token_is_hat(p, token, "as") ||
@@ -3076,7 +3076,7 @@ static bool continues_expression(const Parser *p, const LhatToken *token)
     }
 }
 
-// §8.3: the forms a statement may begin with. Anything else appearing after a
+// [syntax.stmt.forms]: the forms a statement may begin with. Anything else appearing after a
 // finished statement is a continuation that does not belong there.
 static bool can_begin_statement(const Parser *p)
 {
@@ -3086,12 +3086,12 @@ static bool can_begin_statement(const Parser *p)
             return true;
         case LHAT_TOKEN_HAT_IDENT:
             // Some hat identifiers name a value rather than syntax -- the
-            // machine (05§8.6), a coroutine's own handle (§15.10), the
-            // receiver (§14.4) and the focus (§16.2). A statement can start
+            // machine ([modules.host.machine]), a coroutine's own handle ([syntax.sub.this]), the
+            // receiver ([syntax.obj.self]) and the focus ([syntax.for.it]). A statement can start
             // with any of them, the way one can start with any other name
-            // (04§8.3), so 09§2.1 must not read them as a further argument to the
+            // ([errors.dropped.answer]), so [debug.hook.line] must not read them as a further argument to the
             // call on the line above.
-            // 04§4.5's catch^ ends the statement above it as surely as a
+            // [errors.catch.clause]'s catch^ ends the statement above it as surely as a
             // '}' would: where a statement may begin, the word opens an arm.
             //
             // The five below open a statement of their own
@@ -3114,22 +3114,22 @@ static bool can_begin_statement(const Parser *p)
                    check_hat(p, "this") || check_hat(p, "self") ||
                    check_hat(p, "it") || check_hat(p, "super");
         case LHAT_TOKEN_OP:
-            // 01§10.9: a '(' on a fresh line opens a statement.
+            // [lex.ambig.call-line]: a '(' on a fresh line opens a statement.
             return p->current.v.op == LHAT_OP_LPAREN;
         default:
             return false;
     }
 }
 
-// §9.2: the clause markers, in the order they must appear. Returns -1 when
+// [syntax.loop.order]: the clause markers, in the order they must appear. Returns -1 when
 // the current token is not one of them.
 static int clause_index(const Parser *p)
 {
     if (check_hat(p, "prolog") || check_hat(p, "prologue")) {
         return LHAT_CLAUSE_PROLOG;
     }
-    // §9.10: pre^ runs before the condition is tested, which is what gives a
-    // loop the shape C spells do ... while. premain^ is the same word (§9.6).
+    // [syntax.loop.pre]: pre^ runs before the condition is tested, which is what gives a
+    // loop the shape C spells do ... while. premain^ is the same word ([syntax.loop.spellings]).
     if (check_hat(p, "pre") || check_hat(p, "premain")) {
         return LHAT_CLAUSE_PRE;
     }
@@ -3151,7 +3151,7 @@ static int clause_index(const Parser *p)
     return -1;
 }
 
-// §18.3: an argument is a literal, so nothing here has to be run to be
+// [syntax.annot.literal-args]: an argument is a literal, so nothing here has to be run to be
 // read. A leading '-' on a number is the one shape that is not a single
 // token, and is kept as the unary it is -- what reads the tree normalises it.
 static LhatNode *parse_annotation_argument(Parser *p)
@@ -3186,8 +3186,8 @@ static LhatNode *parse_annotation_argument(Parser *p)
     }
 }
 
-// §18: the run of annotations written above a declaration, or NULL when
-// none was. The name is the token's own span -- §18.2 makes the '@' a mark on
+// [syntax.annot]: the run of annotations written above a declaration, or NULL when
+// none was. The name is the token's own span -- [syntax.annot.spelling] makes the '@' a mark on
 // the token rather than a character of the name.
 static LhatNode *parse_annotations(Parser *p)
 {
@@ -3252,7 +3252,7 @@ static LhatNode *parse_statement_list(Parser *p)
     p->tail_expr_depth = 0;
 
     // Stops at an else marker and at a clause marker as well as at '}',
-    // because 10§5.2 and §9.2 both put those inside the braces. 04§4.5's
+    // because [l10n.compose.hole-kinds] and [syntax.loop.order] both put those inside the braces. [errors.catch.clause]'s
     // catch^ arms sit inside them the same way: no statement begins with the
     // word, so met here it opens one.
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE) && !is_else_marker(p) &&
@@ -3290,10 +3290,10 @@ static LhatNode *parse_block_body(Parser *p, const LhatToken *at)
     return finish_body(p, block);
 }
 
-// A body that may carry the clauses of 04§9. Outside a loop only finally^ is
-// allowed (§10.1), since the others describe how an iteration proceeds --
-// finally^ and 04§4.5's catch^ arms, which are the block's own.
-// `walks` marks a for^ ... in^, which §9.10 keeps pre^ out of.
+// A body that may carry the clauses of [errors.cleanup]. Outside a loop only finally^ is
+// allowed ([syntax.finally.block]), since the others describe how an iteration proceeds --
+// finally^ and [errors.catch.clause]'s catch^ arms, which are the block's own.
+// `walks` marks a for^ ... in^, which [syntax.loop.pre] keeps pre^ out of.
 static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
                                    bool walks)
 {
@@ -3308,12 +3308,12 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
     int previous = -1;
-    // §9.3: an unheaded statement list is an implicit main^, so it counts.
+    // [syntax.loop.body]: an unheaded statement list is an implicit main^, so it counts.
     bool has_body = unlabelled;
     bool saw_clause = false;
 
     for (;;) {
-        // 04§4.5: the arms close main^ -- in a loop they take what a try^
+        // [errors.catch.clause]: the arms close main^ -- in a loop they take what a try^
         // in it found, one turn at a time -- so they stand where main^ ends:
         // after it and before last^. Outside a loop that leaves finally^.
         if (check_hat(p, "catch")) {
@@ -3341,11 +3341,11 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
         } else if (index <= previous) {
             report(p, &at_clause, LHAT_PARSE_ERR_CLAUSE_ORDER);
         } else if (unlabelled && index <= LHAT_CLAUSE_MAIN) {
-            // §9.3: prolog^, pre^ and first^ lead, so statements written before
+            // [syntax.loop.body]: prolog^, pre^ and first^ lead, so statements written before
             // them would be swallowed; main^ must be named to keep them apart.
             report(p, &at_clause, LHAT_PARSE_ERR_MAIN_REQUIRED);
         } else if (walks && index == LHAT_CLAUSE_PRE) {
-            // §9.10: what a walk binds is bound after the coroutine answers,
+            // [syntax.loop.pre]: what a walk binds is bound after the coroutine answers,
             // so a clause running before that would read the turn before.
             report(p, &at_clause, LHAT_PARSE_ERR_PRE_IN_WALK);
         }
@@ -3373,7 +3373,7 @@ static LhatNode *parse_clause_body(Parser *p, const LhatToken *at, bool in_loop,
         lhat_node_append(&head, &tail, finish_body(p, clause));
     }
 
-    // §9.3: first^, pre^, main^ and last^ are the body. Once the braces are
+    // [syntax.loop.body]: first^, pre^, main^ and last^ are the body. Once the braces are
     // carved into clauses, one of them has to be it -- otherwise the loop
     // iterates over nothing, which is what a prolog^ followed by unheaded
     // statements silently becomes, since those statements join the prolog^.
@@ -3428,11 +3428,11 @@ static LhatNode *parse_target(Parser *p)
     return finish(p, target);
 }
 
-// 01§7.4: 'target op= value' names the plain operator it stands for. Not an
+// [lex.op.compound]: 'target op= value' names the plain operator it stands for. Not an
 // operator table lookup, since a compound token never reaches parse_binary --
 // is_comparison/binary_info never see one, so this is the only place asking.
 //
-// §8.6.4: `nil_safe` says which of the two spellings this was. Both stand for
+// [syntax.stmt.nil-assign]: `nil_safe` says which of the two spellings this was. Both stand for
 // the same plain operator and expand the same way -- what the '?' adds is that
 // an absent place is left alone, which is decided where the write happens
 // rather than in the shape read here.
@@ -3491,16 +3491,16 @@ static LhatNode *parse_binding(Parser *p, LhatNodeKind kind,
     if (target_count != source_count && source_count != 1) {
         report(p, at, LHAT_PARSE_ERR_BINDING_ARITY);
     }
-    // §13.8+: one value on the right with several names on the left is a
+    // [syntax.type.tuple]: one value on the right with several names on the left is a
     // tuple being taken apart. Whether it actually is one is a question about
     // the type, which the parser cannot answer -- so it does not ask, and no
-    // mark is demanded (§13.10). A value that turns out not to be a tuple is
+    // mark is demanded ([syntax.type.destructure]). A value that turns out not to be a tuple is
     // the checker's TUPLE_ARITY.
     return finish(p, node);
 }
 
-// 05§3. Names the unit, independently of where its file sits, so that
-// moving a file does not change the label a type shows (05§7.1).
+// [modules.unit]. Names the unit, independently of where its file sits, so that
+// moving a file does not change the label a type shows ([modules.label.unit]).
 static LhatNode *parse_module(Parser *p)
 {
     LhatToken start = p->current;
@@ -3514,8 +3514,8 @@ static LhatNode *parse_module(Parser *p)
     return finish(p, node);
 }
 
-// 05§4. A mark on the declaration rather than a list at the end of the
-// file, which is what lets the exports be known from the text alone -- 05§6
+// [modules.public]. A mark on the declaration rather than a list at the end of the
+// file, which is what lets the exports be known from the text alone -- [modules.deps]
 // needs that, since the checker follows an import without running anything.
 static LhatNode *parse_public(Parser *p)
 {
@@ -3536,7 +3536,7 @@ static LhatNode *parse_public(Parser *p)
             declaration->v.named.exported = true;
             break;
         default:
-            // 07§4 puts it on a declaration. Anything else has no name to
+            // [lsp.hover] puts it on a declaration. Anything else has no name to
             // publish.
             report(p, &start, LHAT_PARSE_ERR_PUBLIC_NEEDS_DECLARATION);
             break;
@@ -3544,32 +3544,32 @@ static LhatNode *parse_public(Parser *p)
     return start_at(declaration, &start);
 }
 
-// 05§8.6. An introducer is what creates a name; without one ':=' reassigns.
+// [modules.host.machine]. An introducer is what creates a name; without one ':=' reassigns.
 // Making the dangerous spelling the longer one is the whole point: were ':='
 // a definition, writing it where a reassignment was meant would shadow
 // silently, which is the accident Go is known for.
 //
-// 05§8.6 also allows '=' here, and only here, because no expression can follow
-// 'var^ name': the same reason §13.4 already writes a default with '='.
+// [modules.host.machine] also allows '=' here, and only here, because no expression can follow
+// 'var^ name': the same reason [syntax.type.param-names] already writes a default with '='.
 // What an introducer binds is a name, never an arbitrary expression, so this
 // does not go through parse_target: reading the target as an expression would
 // swallow the '=' as a comparison before the binding ever saw it.
 //
-// §8.9: `allow_path` is false under let^, which binds a name and nothing else.
-// 05§8.8's member introduction stays var^'s, so that a name let^ bound is one
+// [syntax.stmt.let]: `allow_path` is false under let^, which binds a name and nothing else.
+// [modules.hostdata]'s member introduction stays var^'s, so that a name let^ bound is one
 // nothing may reassign -- 'let^ t.a = 1' followed by 't.a := 2' would say
 // otherwise, and per-member immutability is 05 の M7's question, not this
 // one's.
 static LhatNode *parse_let_target(Parser *p, bool allow_path)
 {
     LhatToken start = p->current;
-    // 05§8.6: L^ is a place a path may start from, and the only hat
+    // [modules.host.machine]: L^ is a place a path may start from, and the only hat
     // identifier that is. The '.' is what tells it from 'let^ true^ = 1',
     // which names nothing; the checker refuses any other spelling.
     bool hatted_root = p->current.kind == LHAT_TOKEN_HAT_IDENT &&
                        p->ahead.kind == LHAT_TOKEN_OP &&
                        p->ahead.v.op == LHAT_OP_DOT;
-    // §13.12: and '_^' is the other hat identifier a target may be -- a place
+    // [syntax.type.discard]: and '_^' is the other hat identifier a target may be -- a place
     // to put a value with no name to read it back by.
     if (!hatted_root && !at_discard(p) &&
         p->current.kind != LHAT_TOKEN_IDENT &&
@@ -3579,7 +3579,7 @@ static LhatNode *parse_let_target(Parser *p, bool allow_path)
 
     LhatNode *name = parse_primary(p);
 
-    // 05§8.8: a target may name a member rather than a place of its own. Only
+    // [modules.hostdata]: a target may name a member rather than a place of its own. Only
     // the plain '.' form -- '?.' asks whether something is there, which is
     // not a question a name being introduced can answer.
     while (check_op(p, LHAT_OP_DOT)) {
@@ -3607,12 +3607,12 @@ static LhatNode *parse_let_target(Parser *p, bool allow_path)
     return finish(p, target);
 }
 
-// §12.1: with^ always introduces a fresh local of its own, never a path into
-// an existing table, so its target skips the '.member' chain 05§8.8 lets an
+// [syntax.with.form]: with^ always introduces a fresh local of its own, never a path into
+// an existing table, so its target skips the '.member' chain [modules.hostdata] lets an
 // ordinary definition take -- a name, optionally typed, and nothing more.
 static LhatNode *parse_with_target(Parser *p)
 {
-    // §13.12: '_^' is written here too -- §12.6's disposal is what the form is
+    // [syntax.type.discard]: '_^' is written here too -- [syntax.with.coroutine]'s disposal is what the form is
     // for, and that needs no name to reach the value by.
     if (!at_discard(p) && p->current.kind != LHAT_TOKEN_IDENT) {
         return error_node(p, LHAT_PARSE_ERR_EXPECTED_NAME);
@@ -3635,7 +3635,7 @@ static LhatNode *parse_with_target(Parser *p)
     return finish(p, target);
 }
 
-// §8.9: var^ and let^ read alike and differ only in what they leave behind --
+// [syntax.stmt.let]: var^ and let^ read alike and differ only in what they leave behind --
 // a name a later ':=' may reach, or one it may not. The word is not otherwise
 // part of the grammar, which is why one function reads both.
 static LhatNode *parse_let(Parser *p, bool immutable)
@@ -3651,16 +3651,16 @@ static LhatNode *parse_let(Parser *p, bool immutable)
     }
 
     LhatToken at = p->current;
-    // 05§8.8+: which of the two was written matters for a path target, so it
-    // is recorded rather than just accepted like 05§8.6 treats it for a name.
+    // [modules.hostdata.base]: which of the two was written matters for a path target, so it
+    // is recorded rather than just accepted like [modules.host.machine] treats it for a name.
     bool via_reassign_op = match_op(p, LHAT_OP_REASSIGN);
     if (!via_reassign_op && !match_op(p, LHAT_OP_EQ)) {
-        // §8.7: a declaration without a value is not a form. Mutual recursion
+        // [syntax.stmt.visible]: a declaration without a value is not a form. Mutual recursion
         // is handled by the whole scope seeing the name, so nothing needs one.
         report(p, &p->current, LHAT_PARSE_ERR_LET_NEEDS_VALUE);
         return make(p, LHAT_NODE_ERROR, &start);
     }
-    // §8.9: 05§8.6 made '=' and ':=' the same word after an introducer, and 05§8.8+
+    // [syntax.stmt.let]: [modules.host.machine] made '=' and ':=' the same word after an introducer, and [modules.hostdata.base]
     // gave ':=' a second meaning for a path. Neither survives let^: a name it
     // binds is never reassigned, so the spelling that says "reassign" is not
     // one it accepts.
@@ -3671,9 +3671,9 @@ static LhatNode *parse_let(Parser *p, bool immutable)
     if (node != NULL) {
         node->v.binding.via_reassign_op = via_reassign_op && !immutable;
         node->v.binding.immutable = immutable;
-        // 07§6: the word itself, for a fix that writes the other one. Kept
+        // [lsp.next]: the word itself, for a fix that writes the other one. Kept
         // here because start_at below is not the last word on the node's
-        // start -- a public^ moves it back again (05§4).
+        // start -- a public^ moves it back again ([modules.public]).
         node->v.binding.keyword.offset = start.offset;
         node->v.binding.keyword.length = start.length;
     }
@@ -3695,7 +3695,7 @@ static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
         return node;
     }
 
-    // 10§5.2: the clauses live inside the braces.
+    // [l10n.compose.hole-kinds]: the clauses live inside the braces.
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
 
@@ -3728,9 +3728,9 @@ static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
                          finish_at(finish(p, clause), clause->v.clause.body));
     }
 
-    // 04§4.5: the arms follow the last clause and take what a try^ in any
+    // [errors.catch.clause]: the arms follow the last clause and take what a try^ in any
     // of the bodies found -- the condition is not theirs, being outside the
-    // braces. §10.1: a finally^ is the if^'s as a whole in the same way.
+    // braces. [syntax.finally.block]: a finally^ is the if^'s as a whole in the same way.
     node->v.list.arms = parse_catch_arms(p);
     if (clause_index(p) == LHAT_CLAUSE_FINALLY) {
         LhatToken at = p->current;
@@ -3749,8 +3749,8 @@ static LhatNode *parse_if_body(Parser *p, LhatToken start, LhatNode *condition)
     return finish(p, node);
 }
 
-// 04§4.5: the catch^ arms at the end of a block, read once its statements
-// have stopped at the first of them. An arm has 09§5.2's shape -- a ':' opens
+// [errors.catch.clause]: the catch^ arms at the end of a block, read once its statements
+// have stopped at the first of them. An arm has [debug.dap.paths]'s shape -- a ':' opens
 // it, and the next one or the end of the braces closes it -- with a written
 // kind where an if^'s condition would stand, and the bare one last.
 static LhatNode *parse_catch_arms(Parser *p)
@@ -3770,7 +3770,7 @@ static LhatNode *parse_catch_arms(Parser *p)
         if (bare) {
             report(p, &at, LHAT_PARSE_ERR_CATCH_AFTER_BARE);
         }
-        // An error kind is named (§2.2), so a word that could not start one
+        // An error kind is named ([syntax.juxta.command]), so a word that could not start one
         // is refused here rather than by letting a type fail to parse.
         bool shaped = true;
         if (check_op(p, LHAT_OP_COLON)) {
@@ -3800,10 +3800,10 @@ static LhatNode *parse_catch_arms(Parser *p)
     return head;
 }
 
-// Where a bare expression is read at all: the top of interactive input (§8.2,
-// where 03§4.3 makes it the answer) and the body of a function (§15.12,
+// Where a bare expression is read at all: the top of interactive input ([syntax.stmt.no-bare-expr],
+// where [pipeline.machine] makes it the answer) and the body of a function ([syntax.sub.expr-body],
 // where answer_with_body makes it the return^). Not in a block nested inside
-// either -- 12§8.1's reason holds there, and `bare_depth` is the list itself
+// either -- [spec.open.unreported]'s reason holds there, and `bare_depth` is the list itself
 // rather than anything below it.
 static bool may_stand_alone(const Parser *p)
 {
@@ -3811,10 +3811,10 @@ static bool may_stand_alone(const Parser *p)
            (p->bare_depth != 0 && p->depth == p->bare_depth);
 }
 
-// §8.2: an expression that has arrived where a statement belongs. A call may
+// [syntax.stmt.no-bare-expr]: an expression that has arrived where a statement belongs. A call may
 // stand alone anywhere; anything else only where the above says so. Reading
 // it as a return^ here instead would stop what follows and would refuse a
-// call of a procedure that answers nothing -- §15.12 turns the one that is
+// call of a procedure that answers nothing -- [syntax.sub.expr-body] turns the one that is
 // the whole of a function's body into one, once the body has ended.
 static LhatNode *expression_as_statement(Parser *p, LhatToken start,
                                          LhatNode *value)
@@ -3835,10 +3835,10 @@ static LhatNode *expression_as_statement(Parser *p, LhatToken start,
     return refused(p, start, value);
 }
 
-// §16.3. The focus is a list of bindings, of destructuring targets, or one
-// expression when it is unnamed and reached through it^ (§16.2).
+// [syntax.for.forms]. The focus is a list of bindings, of destructuring targets, or one
+// expression when it is unnamed and reached through it^ ([syntax.for.it]).
 // True when the parser stands where a type annotation could begin but the
-// ':' really opens the clauses of §17.2.
+// ':' really opens the clauses of [syntax.match.form].
 static bool opens_when_clauses(const Parser *p)
 {
     if (!check_op(p, LHAT_OP_COLON) || p->ahead.kind != LHAT_TOKEN_HAT_IDENT) {
@@ -3850,7 +3850,7 @@ static bool opens_when_clauses(const Parser *p)
            token_is_hat(p, &p->ahead, "else");
 }
 
-// §16.3 with §8.6: a focus binding reads its values the way any let^ does --
+// [syntax.for.forms] with [syntax.stmt.define]: a focus binding reads its values the way any let^ does --
 // a comma-separated list, so 'for^let^c, d = ",", 1' is the multiple
 // definition it is anywhere. What a comma cannot start here is another
 // binding: one for^ introduces one, and the next takes a for^ of its own
@@ -3872,7 +3872,7 @@ static LhatNode *parse_focus_values(Parser *p)
 
 // The three flags answer which spelling the focus used, so that
 // parse_for can judge it against the form -- which is not known until the
-// clause after the focus has been read (§16.3+2).
+// clause after the focus has been read ([syntax.for.from]).
 static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
                                  bool *saw_reassign)
 {
@@ -3884,16 +3884,16 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
 
     for (;;) {
         LhatToken at = p->current;
-        // §8.6+: for^ is not an introducer of its own. An introducer
+        // [syntax.stmt.compound]: for^ is not an introducer of its own. An introducer
         // asks for a fresh, loop-scoped name exactly as it would anywhere
         // else; without one, a bare ':=' reaches an existing name instead
-        // (§8.6's own rule for a bare ':=', applied here rather than for^
+        // ([syntax.stmt.define]'s own rule for a bare ':=', applied here rather than for^
         // making every focus a definition regardless of what was written).
         //
-        // §8.9 and §16.3+2: either word may introduce a focus, and nothing here
+        // [syntax.stmt.let] and [syntax.for.from]: either word may introduce a focus, and nothing here
         // decides between them -- parse_for judges which the form wanted, once
         // the clause after the focus has said what the form is. The while^ and
-        // until^ forms of §16.3 ask the writer for a 'next^ i := i + 1', so
+        // until^ forms of [syntax.for.forms] ask the writer for a 'next^ i := i + 1', so
         // theirs is a var^; the to^ and downto^ forms advance their own focus
         // and take neither word, spelling the range 'i from^ A to^ B' instead.
         bool immutable = check_hat(p, "let");
@@ -3903,12 +3903,12 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
         }
 
         LhatNode *target;
-        // 05§8.6: set the moment a bare '=' is found meaning comparison rather
+        // [modules.host.machine]: set the moment a bare '=' is found meaning comparison rather
         // than assignment, so the one diagnostic it earns is not followed by
         // whatever nonsense checking the comparison as a focus would add.
         bool equals_error = false;
         if (has_let) {
-            // 05§8.6: let^ always introduces a name, never an arbitrary
+            // [modules.host.machine]: let^ always introduces a name, never an arbitrary
             // expression, so the target is read the same restricted way
             // parse_let_target reads one (name, optional '.member' chain,
             // optional ':type'). parse_expression would otherwise read
@@ -3916,10 +3916,10 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
             // mean definition here -- ':=' never had this problem, since it
             // is not a token an expression continues through.
             //
-            // §13.10: a run of names before one '=' takes apart what the value
+            // [syntax.type.destructure]: a run of names before one '=' takes apart what the value
             // answers with, here as anywhere -- which is what lets a focus be
             // 'let^ x, y = f()'. parse_define reads its targets the same way.
-            // The other ',' of §16.3 is the walk's own 'k, v', and that one is
+            // The other ',' of [syntax.for.forms] is the walk's own 'k, v', and that one is
             // written with no introducer, so the two do not meet.
             LhatNode *targets = NULL;
             LhatNode *targets_tail = NULL;
@@ -3931,14 +3931,14 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
             }
             target = targets;
         } else {
-            // §17.2's expression form puts a ':' straight after the subject,
-            // which is the shape of the type annotation of §16.3. What
+            // [syntax.match.form]'s expression form puts a ':' straight after the subject,
+            // which is the shape of the type annotation of [syntax.for.forms]. What
             // follows the ':' tells them apart, and one token of lookahead
             // is enough.
             target = parse_header_expression(p);
-            // §8.6: with no introducer, 'i = 0' is read whole, as a
+            // [syntax.stmt.define]: with no introducer, 'i = 0' is read whole, as a
             // comparison, before a bare ':=' ever gets a look-in -- caught
-            // the same way a top-level 'x = 1' statement already is (05§8.2),
+            // the same way a top-level 'x = 1' statement already is ([modules.host.initial]),
             // and refused with the same message rather than accepted as an
             // unnamed focus that happens to be a boolean.
             if (is_binary_op(target, LHAT_OP_EQ)) {
@@ -3959,7 +3959,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
         if (equals_error) {
             target = make(p, LHAT_NODE_ERROR, &at);
         } else if (has_let) {
-            // 05§8.6: var^ accepts either spelling, both meaning define. §8.9:
+            // [modules.host.machine]: var^ accepts either spelling, both meaning define. [syntax.stmt.let]:
             // let^ takes only the one that does not also mean reassign.
             LhatToken op = p->current;
             bool via_reassign_op = check_op(p, LHAT_OP_REASSIGN);
@@ -3982,14 +3982,14 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
                 target = finish(p, binding);
             }
         } else if (check_hat(p, "from")) {
-            // §16.3+2: 'i from^ 0 to^ 9'. from^ is the introducer of the
+            // [syntax.for.from]: 'i from^ 0 to^ 9'. from^ is the introducer of the
             // counted form, and the only one it takes. A keyword cannot be
-            // read as a comparison, so this brings back what §16.3+ had to
+            // read as a comparison, so this brings back what [syntax.for.reuse] had to
             // take away when the spelling was '=' -- for^ introducing its own
             // focus -- without the ambiguity that cost it.
             //
-            // §8.9: the name is a let^. Nothing in the source advances it,
-            // §16.4's machine does, and writing neither word is what keeps the
+            // [syntax.stmt.let]: the name is a let^. Nothing in the source advances it,
+            // [syntax.for.direction]'s machine does, and writing neither word is what keeps the
             // header from saying something the reader has to un-learn.
             *saw_from = true;
             advance(p);
@@ -4003,7 +4003,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
             binding->v.binding.bound_by_form = true;
             target = finish(p, binding);
         } else if (check_op(p, LHAT_OP_REASSIGN)) {
-            // 05§8.6: no introducer, so ':=' reassigns an existing name.
+            // [modules.host.machine]: no introducer, so ':=' reassigns an existing name.
             *saw_reassign = true;
             advance(p);
             LhatNode *binding = make(p, LHAT_NODE_REASSIGN, &at);
@@ -4014,9 +4014,9 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
             binding->v.binding.values = parse_focus_values(p);
             target = finish(p, binding);
         } else if (check_op(p, LHAT_OP_EQ)) {
-            // §8.6: '=' with no introducer reads as a comparison -- the same
+            // [syntax.stmt.define]: '=' with no introducer reads as a comparison -- the same
             // ambiguity for^'s old blanket-introducer rule existed to avoid,
-            // now refused with the same message 04§8.2 already gives a bare
+            // now refused with the same message [errors.dropped.around-value] already gives a bare
             // 'x = 1' statement rather than silently deciding for the writer.
             // Reached only for an annotated target ('i:number^ = 0'), which
             // parse_expression above stopped short of on its own.
@@ -4025,10 +4025,10 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
             parse_expression(p);
             target = make(p, LHAT_NODE_ERROR, &at);
         } else if (head == NULL && !check_op(p, LHAT_OP_COMMA)) {
-            // §16.2: a focus with no name written is still a focus, and it^ is
+            // [syntax.for.it]: a focus with no name written is still a focus, and it^ is
             // what names it. Binding it here rather than leaving a bare
             // expression means every form of for^ introduces a name, which is
-            // what §16.1 says for^ is for.
+            // what [syntax.for.not-loop] says for^ is for.
             LhatNode *binding = make(p, LHAT_NODE_DEFINE, &at);
             LhatNode *name = make(p, LHAT_NODE_FOCUS, &at);
             if (binding == NULL || name == NULL) {
@@ -4056,7 +4056,7 @@ static LhatNode *parse_for_focus(Parser *p, bool *saw_from, bool *saw_word,
     return head;
 }
 
-// §17.9: a pattern becomes the condition of an if-clause, which is what makes
+// [syntax.match.expand]: a pattern becomes the condition of an if-clause, which is what makes
 // narrowing and exhaustiveness apply without anything new. The subject is
 // referred to by the name for^ gave it, copied so each condition holds its
 // own node.
@@ -4064,7 +4064,7 @@ static LhatNode *subject_reference(Parser *p, const LhatNode *focus,
                                    const LhatToken *at)
 {
     const LhatNode *name = focus;
-    // §8.6+: when^ を分岐させる書き方が for^ の焦点なので、焦点が既存の外側名を
+    // [syntax.stmt.compound]: when^ を分岐させる書き方が for^ の焦点なので、焦点が既存の外側名を
     // 使い回す LHAT_NODE_REASSIGN のときも、DEFINE と同じく targets から名前を
     // 取り出す。ここを素通りさせると、再代入文そのものがコピーされて式の位置に
     // 置かれ、コンパイラが式として扱えず失敗する。
@@ -4075,7 +4075,7 @@ static LhatNode *subject_reference(Parser *p, const LhatNode *focus,
     if (name != NULL && name->kind == LHAT_NODE_PARAM) {
         name = name->v.param.name;
     }
-    // §17.2 with §13.11: a subject that is a bare name is referenced by that
+    // [syntax.match.form] with [syntax.type.fits]: a subject that is a bare name is referenced by that
     // name, so the arms narrow what the writer reads back -- 'for^x:' tests
     // x the way the if^-chain it desugars to would. A subject that is a
     // wider expression stays the focus, and the arms narrow it^.
@@ -4116,13 +4116,13 @@ static LhatNode *binary_node(Parser *p, const LhatToken *at, LhatOpKind op,
     return finish(p, node);
 }
 
-// One pattern of §17.3, lowered against the subject.
+// One pattern of [syntax.match.patterns], lowered against the subject.
 static LhatNode *parse_pattern(Parser *p, const LhatNode *focus)
 {
     LhatToken at = p->current;
 
-    // §17.4: a type has to say so, since a bare name cannot be told from a
-    // value. fits^ already means exactly this question (§13.11).
+    // [syntax.match.fits]: a type has to say so, since a bare name cannot be told from a
+    // value. fits^ already means exactly this question ([syntax.type.fits]).
     if (match_hat(p, "fits")) {
         return binary_node(p, &at, LHAT_OP_FITS, subject_reference(p, focus, &at),
                            parse_type(p));
@@ -4134,7 +4134,7 @@ static LhatNode *parse_pattern(Parser *p, const LhatNode *focus)
                            low);
     }
 
-    // §17.3: both ends are included, as in §16.4.
+    // [syntax.match.patterns]: both ends are included, as in [syntax.for.direction].
     advance(p);
     LhatNode *high = parse_expression(p);
     return binary_node(
@@ -4143,7 +4143,7 @@ static LhatNode *parse_pattern(Parser *p, const LhatNode *focus)
         binary_node(p, &at, LHAT_OP_LE, subject_reference(p, focus, &at), high));
 }
 
-// §17.3: several patterns on one when^ mean any of them, which is an or^.
+// [syntax.match.patterns]: several patterns on one when^ mean any of them, which is an or^.
 static LhatNode *parse_patterns(Parser *p, const LhatNode *focus)
 {
     LhatToken at = p->current;
@@ -4160,10 +4160,10 @@ static bool is_when_marker(const Parser *p)
     return check_hat(p, "when") || check_hat(p, "other") || is_else_marker(p);
 }
 
-// §17.2. The clauses become an if-chain, so §17.9's expansion is the tree
+// [syntax.match.form]. The clauses become an if-chain, so [syntax.match.expand]'s expansion is the tree
 // itself rather than something a later stage has to perform.
 //
-// §17.6: only the ':' after the subject opens, exactly as only the if^ of an
+// [syntax.match.semicolon]: only the ':' after the subject opens, exactly as only the if^ of an
 // if expression does, so the expression form is closed by one ';'.
 static LhatNode *parse_when_clauses(Parser *p, const LhatToken *start,
                                     const LhatNode *focus, bool as_expression)
@@ -4190,7 +4190,7 @@ static LhatNode *parse_when_clauses(Parser *p, const LhatToken *start,
             clause->v.clause.condition = parse_patterns(p, focus);
         }
 
-        // §17.5: the ':' is not optional.
+        // [syntax.match.other]: the ':' is not optional.
         expect_op(p, LHAT_OP_COLON);
 
         if (as_expression) {
@@ -4220,11 +4220,11 @@ static LhatNode *parse_when_clauses(Parser *p, const LhatToken *start,
 
         lhat_node_append(&head, &tail, finish(p, clause));
         if (defaulting) {
-            break;  // §17.5: the default is the last thing there can be
+            break;  // [syntax.match.other]: the default is the last thing there can be
         }
     }
 
-    // §17.5: the statement form does nothing when the subject matches no
+    // [syntax.match.other]: the statement form does nothing when the subject matches no
     // clause, so it may leave the default out. The expression form has to
     // answer -- but whether a set of arms exhausts the subject is a fact
     // about its type, which the checker knows and this parser does not, so
@@ -4253,7 +4253,7 @@ static LhatNode *parse_advance(Parser *p)
     return head;
 }
 
-// §16.3+2: which spelling the focus took has to agree with the form, and the
+// [syntax.for.from]: which spelling the focus took has to agree with the form, and the
 // form is not known until the clause after the focus has been read.
 //
 // A counted loop takes from^ and nothing else. It refuses both introducers
@@ -4261,7 +4261,7 @@ static LhatNode *parse_advance(Parser *p)
 // changes when nothing in it does, and var^ would invite a write the body may
 // not make. Refusing a bare ':=' as well follows from that: if neither word
 // may name a focus the machine drives, neither may an outer name be handed to
-// it. What §16.3+ wanted there is the conditional form, which says in the
+// it. What [syntax.for.reuse] wanted there is the conditional form, which says in the
 // source what it does to the name.
 static void check_focus_form(Parser *p, const LhatNode *node,
                              const LhatToken *at, bool saw_from, bool saw_word,
@@ -4317,13 +4317,13 @@ static LhatNode *parse_for(Parser *p)
             node->v.loop.advance = parse_advance(p);
         }
     } else if (check_hat(p, "if")) {
-        // §16.3: this one does not iterate. It scopes the definitions to a
+        // [syntax.for.forms]: this one does not iterate. It scopes the definitions to a
         // condition without another level of nesting.
         LhatToken at = p->current;
         advance(p);
         node->v.loop.kind = LHAT_FOR_IF;
         node->v.loop.bound = parse_header_expression(p);
-        // 10§5.2: '{' opens the statement form and ':' the expression one,
+        // [l10n.compose.hole-kinds]: '{' opens the statement form and ':' the expression one,
         // here as anywhere. The focus still does not leave -- only the value
         // built from it does, which is what an expression is.
         node->v.loop.is_expression = check_op(p, LHAT_OP_COLON);
@@ -4334,9 +4334,9 @@ static LhatNode *parse_for(Parser *p)
                 : parse_if_body(p, at, node->v.loop.bound);
         return finish(p, node);
     } else if (check_hat(p, "do")) {
-        // §16.3: the focus is made and what follows it is the answer. This is
+        // [syntax.for.forms]: the focus is made and what follows it is the answer. This is
         // how a tuple reaches another call without a name for each position
-        // (§13.8+): 'for^ let^ x, y = f() do^: g(x, y);'.
+        // ([syntax.type.tuple]): 'for^ let^ x, y = f() do^: g(x, y);'.
         //
         // There is no statement form. 'do^{ let^ x, y = f() … }' with the
         // definitions written inside is that, and it was always there.
@@ -4346,7 +4346,7 @@ static LhatNode *parse_for(Parser *p)
         node->v.loop.is_expression = true;
         expect_op(p, LHAT_OP_COLON);
         check_focus_form(p, node, &focus_at, saw_from, saw_word, saw_reassign);
-        // §17.6: a match is opened by the ':' after its subject, and that is
+        // [syntax.match.semicolon]: a match is opened by the ':' after its subject, and that is
         // the only spelling it has -- so this is one way of writing it too
         // many. The clauses are still read, since reading them as one
         // expression would earn a second diagnostic for the same mistake.
@@ -4358,12 +4358,12 @@ static LhatNode *parse_for(Parser *p)
         } else {
             node->v.loop.body = parse_expression(p);
         }
-        // 09§6: the ':' opened this, so a ';' closes it.
+        // [debug.godot]: the ':' opened this, so a ';' closes it.
         expect_op(p, LHAT_OP_SEMICOLON);
         return finish(p, node);
     } else if (check_hat(p, "for")) {
-        // §16.3: several definitions stand in a row, each scoped to the one
-        // after it. The innermost carries the driving clause, so §16.1's rule
+        // [syntax.for.forms]: several definitions stand in a row, each scoped to the one
+        // after it. The innermost carries the driving clause, so [syntax.for.not-loop]'s rule
         // -- for^ takes the form of the clause that follows it -- reaches
         // this one through the body rather than from anything written here.
         node->v.loop.kind = LHAT_FOR_ONCE;
@@ -4374,7 +4374,7 @@ static LhatNode *parse_for(Parser *p)
                                      node->v.loop.body->v.loop.is_expression;
         return finish(p, node);
     } else if (check_op(p, LHAT_OP_LBRACE) || check_op(p, LHAT_OP_COLON)) {
-        // §17: no driving clause at all, so what follows dispatches on the
+        // [syntax.match]: no driving clause at all, so what follows dispatches on the
         // subject rather than iterating over it.
         node->v.loop.kind = LHAT_FOR_WHEN;
         check_focus_form(p, node, &focus_at, saw_from, saw_word, saw_reassign);
@@ -4387,14 +4387,14 @@ static LhatNode *parse_for(Parser *p)
             parse_when_clauses(p, &at, node->v.loop.focus, as_expression);
 
         // A brace with no when^ inside dispatches on nothing and iterates
-        // over nothing, so it is the missing clause of §16.3 rather than an
+        // over nothing, so it is the missing clause of [syntax.for.forms] rather than an
         // empty match.
         if (node->v.loop.body != NULL &&
             node->v.loop.body->v.list.items == NULL) {
             report(p, &at, LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE);
         }
 
-        // §17.6: one ';' closes the expression form, since only the ':' after
+        // [syntax.match.semicolon]: one ';' closes the expression form, since only the ':' after
         // the subject opened anything.
         expect_op(p, as_expression ? LHAT_OP_SEMICOLON : LHAT_OP_RBRACE);
         return finish(p, node);
@@ -4405,9 +4405,9 @@ static LhatNode *parse_for(Parser *p)
 
     check_focus_form(p, node, &focus_at, saw_from, saw_word, saw_reassign);
 
-    // §16.3: next^ is the update of a conditional loop, and only that. §16.4
+    // [syntax.for.forms]: next^ is the update of a conditional loop, and only that. [syntax.for.direction]
     // makes to^ and downto^ sugar for a while^ that already carries one, and
-    // §16.3 has a walk advanced by the coroutine it is stepping -- so in every
+    // [syntax.for.forms] has a walk advanced by the coroutine it is stepping -- so in every
     // other form there is no focus for next^ to move. Consumed either way, so
     // that the body still parses and this is the only diagnostic.
     if (is_loop && node->v.loop.kind != LHAT_FOR_WHILE &&
@@ -4422,7 +4422,7 @@ static LhatNode *parse_for(Parser *p)
     return finish(p, node);
 }
 
-// §16.5: repeat^ introduces no focus, and takes no next^.
+// [syntax.for.repeat]: repeat^ introduces no focus, and takes no next^.
 static LhatNode *parse_repeat(Parser *p)
 {
     LhatToken start = p->current;
@@ -4456,9 +4456,9 @@ static LhatNode *parse_repeat(Parser *p)
     return finish(p, node);
 }
 
-// 04§2.2. A field of an error kind, which may carry a type, a default, or
-// both. The default is written with ':=' because §14.6's template already
-// writes a named field with an initial value that way, and 05§8.6 keeps '=' to
+// [errors.kind.errordef]. A field of an error kind, which may carry a type, a default, or
+// both. The default is written with ':=' because [syntax.obj.template]'s template already
+// writes a named field with an initial value that way, and [modules.host.machine] keeps '=' to
 // the two positions where no expression could stand.
 //
 // PARAM rather than MEMBER_DECL, since it is the shape that already holds a
@@ -4483,9 +4483,9 @@ static LhatNode *parse_error_fields(Parser *p)
         if (match_op(p, LHAT_OP_COLON)) {
             field->v.param.type = parse_type(p);
         }
-        // §14.14+: a brace introduces, so either spelling reads. Unlike the
+        // [syntax.obj.keys-equals]: a brace introduces, so either spelling reads. Unlike the
         // sites that call expect_introduces, a default is optional here --
-        // 04§2.2 lets a field carry only a type -- so nothing is reported
+        // [errors.kind.errordef] lets a field carry only a type -- so nothing is reported
         // when neither is there.
         if (match_op(p, LHAT_OP_EQ) || match_op(p, LHAT_OP_REASSIGN)) {
             field->v.param.fallback = parse_expression(p);
@@ -4502,11 +4502,11 @@ static LhatNode *parse_error_fields(Parser *p)
     return head;
 }
 
-// 04§2.2. A declaration rather than an expression, because 04§2.4 makes the
+// [errors.kind.errordef]. A declaration rather than an expression, because [errors.kind.nominal] makes the
 // name the identity: a name that is only a label can be taken from a binding
-// the way def^ does (§14.9), but one the type is made of belongs in the
+// the way def^ does ([syntax.obj.name]), but one the type is made of belongs in the
 // declaration. So there is no way to write an anonymous one.
-// 04§2.7: `local` is what localerrordef^ read. The two spellings share
+// [errors.kind.local]: `local` is what localerrordef^ read. The two spellings share
 // everything below -- variants, fields, defaults -- and differ only in which
 // top what they declare sits under.
 static LhatNode *parse_errordef(Parser *p, bool local)
@@ -4546,7 +4546,7 @@ static LhatNode *parse_errordef(Parser *p, bool local)
         kind->v.named.name = simple_node(p);
 
         // A kind may declare fields, which narrowing then makes visible
-        // (04§6.1). Unlike the members of t^{ ... } they may carry a
+        // ([errors.fits.form]). Unlike the members of t^{ ... } they may carry a
         // default, so they are read here rather than shared with the type.
         if (match_op(p, LHAT_OP_LBRACE)) {
             kind->v.named.members = parse_error_fields(p);
@@ -4565,10 +4565,10 @@ static LhatNode *parse_errordef(Parser *p, bool local)
     return finish(p, node);
 }
 
-// §19: enum^ Name { AAA, BBB = expr, ... }. The same declaration
+// [syntax.enum]: enum^ Name { AAA, BBB = expr, ... }. The same declaration
 // shape errordef^ takes -- a required name, a brace of named members -- with
 // a written value where a kind would have fields. No anonymous form: the
-// name is the nominal identity, exactly 04§2.4's rule.
+// name is the nominal identity, exactly [errors.kind.nominal]'s rule.
 static LhatNode *parse_enumdef(Parser *p)
 {
     LhatToken start = p->current;
@@ -4604,7 +4604,7 @@ static LhatNode *parse_enumdef(Parser *p)
         }
         member->v.named.name = simple_node(p);
 
-        // §19: '=' hands the member its value -- any expression,
+        // [syntax.enum]: '=' hands the member its value -- any expression,
         // evaluated once where the declaration runs. Without one the
         // member takes the next number.
         if (match_op(p, LHAT_OP_EQ)) {
@@ -4634,14 +4634,14 @@ static LhatNode *parse_with(Parser *p)
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
 
-    // §12.1: only local definitions may appear, and several with^ clauses may
-    // precede one block. with^ is its own introducer (05§8.6), so a name gets
+    // [syntax.with.form]: only local definitions may appear, and several with^ clauses may
+    // precede one block. with^ is its own introducer ([modules.host.machine]), so a name gets
     // an optional ':type' the same way let^'s target does -- but never a
     // '.member' path, since with^ always introduces a fresh local rather than
     // reaching into an existing table.
     //
-    // §8.9: what it introduces is a let^, not a var^. The block holds the
-    // resource for exactly as long as the name does, and §12.2 disposes of
+    // [syntax.stmt.let]: what it introduces is a let^, not a var^. The block holds the
+    // resource for exactly as long as the name does, and [syntax.with.dispose] disposes of
     // whatever the name still holds at the end of it; a ':=' in between would
     // leave the block disposing of one object having leaked another. So ':='
     // is refused here for the same reason let^ refuses it.
@@ -4673,18 +4673,18 @@ static LhatNode *parse_with(Parser *p)
     return finish(p, node);
 }
 
-// §13.8+: 'return^ (a, b)' and 'return^ a, b' answer the same tuple, so they
+// [syntax.type.tuple]: 'return^ (a, b)' and 'return^ a, b' answer the same tuple, so they
 // become the same node -- the positions hang off `value` with `level` naming
 // how many. One shape reaches the checker and the compiler, and neither
 // grows a case for the parenthesised spelling.
 //
-// This is also what makes §15.12's implicit return of a literal work without
+// This is also what makes [syntax.sub.expr-body]'s implicit return of a literal work without
 // a word of its own: answer_with_body turns the body's bare '(a, b)' into a
 // return^ and folds it here, so 'f^ { (0, 1) }' and 'f^ { return^ 0, 1 }'
 // compile to the same instructions.
 //
 // Left alone in expression position: 'f() catch^ (0, 1)' has no jump to fold
-// into, and the literal stands there as a value (§13.8+'s MAKERUN).
+// into, and the literal stands there as a value ([syntax.type.tuple]'s MAKERUN).
 static void fold_tuple_answer(LhatNode *jump)
 {
     LhatNode *value = jump->v.jump.value;
@@ -4705,13 +4705,13 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
         return NULL;
     }
 
-    // §9.8: how many loops to leave, spelt either way. The hats on the
+    // [syntax.loop.exit]: how many loops to leave, spelt either way. The hats on the
     // word count it -- break^ is one, break^^^ is three -- and the bracketed
     // form says the same number, so 'break^[3]' and 'break^^^' are
     // one thing written twice. The bracket is never a bare expression, which
     // is what keeps it apart from the operand return^ and yield^ take.
     //
-    // §9.11: next^ counts the same way, over the loop it goes on with rather
+    // [syntax.loop.next]: next^ counts the same way, over the loop it goes on with rather
     // than the one it leaves.
     if (kind == LHAT_NODE_BREAK || kind == LHAT_NODE_NEXT) {
         node->v.jump.level = start.v.hats > 0 ? start.v.hats : 1;
@@ -4726,7 +4726,7 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
                                          ? (uint32_t)written->v.integer.value
                                          : 0;
             } else {
-                // §9.8's label form, or a count contradicting the hats. Kept
+                // [syntax.loop.exit]'s label form, or a count contradicting the hats. Kept
                 // for the compiler to refuse by name.
                 node->v.jump.value = written;
             }
@@ -4737,24 +4737,24 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
     // With no statement terminator, a word that begins a statement must not
     // be mistaken for the operand of the one before it.
     //
-    // 01§10.9 settles the case a keyword cannot: the operand has to be on
+    // [lex.ambig.call-line] settles the case a keyword cannot: the operand has to be on
     // the same line. Without that, a bare `yield^` or `return^` swallows
     // whatever statement comes next, since an ordinary name begins an
     // expression just as well as it begins a statement.
     //
-    // 09§5.1 and §17.2: these begin an expression as readily as a statement, and
-    // what stands after a jump is a value -- §15.12 writes the very same if^
+    // [debug.dap.machines] and [syntax.match.form]: these begin an expression as readily as a statement, and
+    // what stands after a jump is a value -- [syntax.sub.expr-body] writes the very same if^
     // expression as a body, so refusing them here made one spelling of an
     // answer unwritable. The statement form written on this line is what
     // gives way; the next line still reads as it always did, which is where
     // a statement after a valueless jump belongs.
     //
-    // §15.4 and §15.8 put the suspending three here for the same reason, and
+    // [syntax.sub.yield-both] and [syntax.sub.await] put the suspending three here for the same reason, and
     // it is the reason they exist: yield^ answers what the resume sent and
     // await^ answers the inner body's result, so `return^ await^ f()` is
     // the plainest thing an async body writes. Left out, it read as a
     // return^ of nothing followed by a statement -- and checked clean,
-    // since a bare await^ is a statement too (§15.8).
+    // since a bare await^ is a statement too ([syntax.sub.await]).
     bool begins_expression_form = check_hat(p, "if") || check_hat(p, "for") ||
                                   check_hat(p, "yield") ||
                                   check_hat(p, "_yield") ||
@@ -4769,11 +4769,11 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
     if (operand_follows) {
         node->v.jump.value = parse_tail_expression(p);
 
-        // §13.8+: 'return^ a, b' answers a tuple. The values are a list
+        // [syntax.type.tuple]: 'return^ a, b' answers a tuple. The values are a list
         // hanging off `value`, and `level` says how many -- 0 and 1 both mean
         // one, which is every return^ written before tuples existed.
         //
-        // A ',' can only be this here: 01§11 has no comma operator, and the
+        // A ',' can only be this here: [lex.open] has no comma operator, and the
         // ones inside a call or a table were consumed by parse_expression.
         // 'return^ { a, b }' is untouched, and still answers a table -- the
         // two forms are told apart by what is written, which is why nothing
@@ -4797,7 +4797,7 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
     return finish(p, node);
 }
 
-// 04§11.6: unlike return^/break^/yield^, the value is not optional --
+// [errors.runtime.panic]: unlike return^/break^/yield^, the value is not optional --
 // panic^ answers no value of its own, so a bare panic^ would say nothing.
 static LhatNode *parse_panic(Parser *p, bool tail)
 {
@@ -4811,12 +4811,12 @@ static LhatNode *parse_panic(Parser *p, bool tail)
     return finish(p, node);
 }
 
-// 05§8.2 lets a call stand alone. try^ (04§5.1) and catch^ (04§4.4) wrap
+// [modules.host.initial] lets a call stand alone. try^ ([errors.try.form]) and catch^ ([errors.catch.ignore]) wrap
 // one without changing that a call is being made -- they only say what to do
 // with a failure -- so `try^ save(x)` and `save(x) catch^ nil^` are
-// statements too. `??` is included on the same footing as catch^ (§11.7).
+// statements too. `??` is included on the same footing as catch^ ([syntax.op.default]).
 //
-// §15.8: await^ stands alone as well. Its value may be wanted or not, and
+// [syntax.sub.await]: await^ stands alone as well. Its value may be wanted or not, and
 // what it does -- running the inner coroutine to its end -- happens either
 // way. A plain call of a yieldable procedure is what does nothing.
 static bool is_binary_op(const LhatNode *node, LhatOpKind op)
@@ -4833,7 +4833,7 @@ static bool is_call_statement(const LhatNode *node)
         if (node->kind == LHAT_NODE_AWAIT) {
             return true;
         }
-        // §14.11: 'self^{ … }' is a batch of field writes, which does
+        // [syntax.obj.new]: 'self^{ … }' is a batch of field writes, which does
         // something standing alone the way a call does -- the form a written
         // new adjusts its instance with.
         if (node->kind == LHAT_NODE_SELF_TABLE) {
@@ -4856,7 +4856,7 @@ static bool is_call_statement(const LhatNode *node)
 
 static LhatNode *parse_statement(Parser *p)
 {
-    // §18.4: what is written above a declaration belongs to it. Read
+    // [syntax.annot.where]: what is written above a declaration belongs to it. Read
     // before anything else so that every path below reaches the statement
     // itself with the annotations already in hand.
     LhatNode *annotations = parse_annotations(p);
@@ -4894,9 +4894,9 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         if (check_hat(p, "with")) {
             return parse_with(p);
         }
-        // §16.1: which form a for^ is shows only after its driving clause, so
+        // [syntax.for.not-loop]: which form a for^ is shows only after its driving clause, so
         // it is parsed and then asked. One written with ':' answers a value,
-        // and §8.2 decides whether a value may stand here.
+        // and [syntax.stmt.no-bare-expr] decides whether a value may stand here.
         if (check_hat(p, "for")) {
             LhatNode *node = parse_for(p);
             if (node != NULL && node->kind == LHAT_NODE_FOR &&
@@ -4911,9 +4911,9 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         if (check_hat(p, "return")) {
             return parse_jump(p, LHAT_NODE_RETURN);
         }
-        // §9.8: break^^^ counts loops with its hats, so the word is matched
-        // rather than the spelling. §9.11's next^ counts the same way, and
-        // §9.6 gives it two other spellings -- the loop it names is the one
+        // [syntax.loop.exit]: break^^^ counts loops with its hats, so the word is matched
+        // rather than the spelling. [syntax.loop.next]'s next^ counts the same way, and
+        // [syntax.loop.spellings] gives it two other spellings -- the loop it names is the one
         // it goes on with.
         if (token_is_hat_stacked(p, &p->current, "break")) {
             return parse_jump(p, LHAT_NODE_BREAK);
@@ -4926,12 +4926,12 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         if (check_hat(p, "panic")) {
             return parse_panic(p, true);
         }
-        // 05§5.5: a require^ standing alone binds the unit under the
+        // [modules.require.short]: a require^ standing alone binds the unit under the
         // path it declared, rather than under a name the reader picks. It is
-        // a statement of its own so that 05§8.2 keeps holding -- a bare
+        // a statement of its own so that [modules.host.initial] keeps holding -- a bare
         // expression is still not a statement.
         if (check_hat(p, "require") || check_hat(p, "import")) {
-            bool importing = check_hat(p, "import");  // 05§8.7
+            bool importing = check_hat(p, "import");  // [modules.host.import]
             LhatToken at = p->current;
             LhatNode *inner = parse_unary(p);
             LhatNodeKind wanted =
@@ -4948,7 +4948,7 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
             return finish_at(node, inner);
         }
         if (check_hat(p, "yield") || check_hat(p, "_yield")) {
-            bool phantom = check_hat(p, "_yield");  // §15.11
+            bool phantom = check_hat(p, "_yield");  // [syntax.sub.phantom-yield]
             p->saw_yield = true;
             LhatNode *node = parse_jump(p, LHAT_NODE_YIELD);
             if (node != NULL) {
@@ -4956,10 +4956,10 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
             }
             return node;
         }
-        // 04§5.1: '{' opens the statement form and ':' the expression one, and
+        // [errors.try.form]: '{' opens the statement form and ':' the expression one, and
         // which it is shows only once the condition has been read. So the
         // condition is read here and the token after it decides -- an
-        // expression standing at a statement then answers to 04§8.2 like any
+        // expression standing at a statement then answers to [errors.dropped.around-value] like any
         // other, rather than being refused for wanting a brace.
         if (check_hat(p, "if")) {
             advance(p);
@@ -4973,14 +4973,14 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         if (check_hat(p, "errordef")) {
             return parse_errordef(p, false);
         }
-        // 04§2.7: the same declaration under the other top.
+        // [errors.kind.local]: the same declaration under the other top.
         if (check_hat(p, "localerrordef")) {
             return parse_errordef(p, true);
         }
         if (check_hat(p, "enum")) {
             return parse_enumdef(p);
         }
-        // §8.9: the two introducers of a name. var^ is 05§8.6's, unchanged; let^
+        // [syntax.stmt.let]: the two introducers of a name. var^ is [modules.host.machine]'s, unchanged; let^
         // is the same form binding a name nothing may reassign.
         if (check_hat(p, "var")) {
             return parse_let(p, false);
@@ -4996,7 +4996,7 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         }
     }
 
-    // Otherwise a reassignment or a call. A definition needs let^ (05§8.6), so
+    // Otherwise a reassignment or a call. A definition needs let^ ([modules.host.machine]), so
     // nothing here can create a name.
     LhatNode *head = NULL;
     LhatNode *tail = NULL;
@@ -5005,7 +5005,7 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         lhat_node_append(&head, &tail, parse_target(p));
     }
 
-    // §8.6.4: '?:=' is the same statement with one more thing said about it,
+    // [syntax.stmt.nil-assign]: '?:=' is the same statement with one more thing said about it,
     // so it is read here rather than beside the compound spellings below --
     // it stands for no operator, and everything the plain form allows (13.8's
     // one value across several targets included) it allows too.
@@ -5020,8 +5020,8 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         return node;
     }
 
-    // 01§7.4: 'target op= value' is 'target := target op value' with target
-    // read once. 01§7.4 lets several be written at once, the way a plain ':='
+    // [lex.op.compound]: 'target op= value' is 'target := target op value' with target
+    // read once. [lex.op.compound] lets several be written at once, the way a plain ':='
     // already may: each target is paired with the value standing at its own
     // position, and 13.8's "read everything, then write everything" holds
     // here as it does there.
@@ -5083,7 +5083,7 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
 
 
     // '<<' and '>>' are reserved. Met after a target they read as an
-    // operator that does not exist; 01§7 makes bit operations
+    // operator that does not exist; [lex.op] makes bit operations
     // functions rather than operators, so the message can say so.
     if (check_op(p, LHAT_OP_LSHIFT) || check_op(p, LHAT_OP_RSHIFT)) {
         report(p, &p->current, LHAT_PARSE_ERR_RESERVED_SHIFT);
@@ -5092,7 +5092,7 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         return refused(p, start, head);
     }
 
-    // §2.1: 'foo 1 2 3' is only a call in command mode. What follows here is
+    // [syntax.juxta.free-error]: 'foo 1 2 3' is only a call in command mode. What follows here is
     // juxtaposition only if it could not have started a statement of its own,
     // since there is no separator to tell the two apart.
     if (starts_expression(&p->current) && !can_begin_statement(p)) {
@@ -5100,7 +5100,7 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         return refused(p, start, head);
     }
 
-    // §8.2: only a call may stand alone as a statement -- and 07§4's
+    // [syntax.stmt.no-bare-expr]: only a call may stand alone as a statement -- and [lsp.hover]'s
     // half-written member, which is a question rather than an expression
     // written for its value (ends_in_truncated_member).
     if (head != NULL && head->next == NULL &&
@@ -5117,7 +5117,7 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         return head;
     }
 
-    // §8.2: at the top level of interactive input, and §15.12 in the body of a
+    // [syntax.stmt.no-bare-expr]: at the top level of interactive input, and [syntax.sub.expr-body] in the body of a
     // function. Being unable to work out 2 + 3 at a prompt is not an option,
     // and a function whose body is one expression answers with it.
     if (head != NULL && head->next != NULL &&
@@ -5133,7 +5133,7 @@ static LhatNode *parse_statement_after_annotations(Parser *p)
         return expression_as_statement(p, start, head);
     }
 
-    // 05§8.6: 'x = 1' is a comparison, so it lands here as a bare expression.
+    // [modules.host.machine]: 'x = 1' is a comparison, so it lands here as a bare expression.
     // The C habit is common enough to deserve its own message rather than a
     // generic one, since the writer meant one of two different things.
     if (head != NULL && head->next == NULL && is_binary_op(head, LHAT_OP_EQ)) {
@@ -5162,12 +5162,12 @@ static void parser_begin(Parser *p, LhatLexer *lexer, LhatParseResult *result)
     p->lton_body = false;
     p->interactive = false;
     p->depth = 0;
-    // §15.12: no body is open yet. Left unset, this read whatever the stack
-    // held, and a value that happened to equal `depth` let §8.2's bare
+    // [syntax.sub.expr-body]: no body is open yet. Left unset, this read whatever the stack
+    // held, and a value that happened to equal `depth` let [syntax.stmt.no-bare-expr]'s bare
     // expression through at the top level of a unit.
     p->bare_depth = 0;
     p->expr_depth = 0;
-    p->tail_expr_depth = 0;  // 04§4.5, and left unset for the same reason
+    p->tail_expr_depth = 0;  // [errors.catch.clause], and left unset for the same reason
     // Nothing has been consumed yet, so `finish` before the first advance
     // must not widen anything.
     memset(&p->previous, 0, sizeof p->previous);
@@ -5177,7 +5177,7 @@ static void parser_begin(Parser *p, LhatLexer *lexer, LhatParseResult *result)
 
 #if LHAT_WITH_COMMENTS
 
-// 01§6.4: tying the kept comments to the nodes they were written against.
+// [lex.comment.kept]: tying the kept comments to the nodes they were written against.
 //
 // One pass, after the whole unit is parsed. Both the comment table and the
 // walk are in source order, so a single cursor over the table is enough --
@@ -5353,7 +5353,7 @@ static void parser_finish(Parser *p, LhatLexer *lexer, LhatParseResult *result)
 #endif
 
     // A lexical error means the token stream was already wrong, and two of
-    // them mean the input simply stopped early (§3.1).
+    // them mean the input simply stopped early ([syntax.repl.incomplete]).
     for (size_t i = 0; i < lexer->diagnostic_count; i++) {
         LhatErrorCode code = lexer->diagnostics[i].code;
         if (code == LHAT_ERR_UNTERMINATED_STRING ||
@@ -5371,20 +5371,20 @@ static void parse_unit(LhatLexer *lexer, LhatParseResult *result,
     parser.interactive = interactive;
 
     LhatToken origin = parser.current;
-    // §18.4: written at the head of the unit, before even module^, and
+    // [syntax.annot.where]: written at the head of the unit, before even module^, and
     // about the unit rather than about whatever follows.
     LhatNode *unit_annotations = parse_annotations(&parser);
     result->root = parse_block_body(&parser, &origin);
-    // §18.4: what stands at the very head is about the unit. A
+    // [syntax.annot.where]: what stands at the very head is about the unit. A
     // declaration's own are read where the declaration is.
     if (result->root != NULL) {
         result->root->v.list.annotations = unit_annotations;
-        // §15.2: the top level is a body too, and what it saw is its own --
+        // [syntax.sub.yieldable]: the top level is a body too, and what it saw is its own --
         // a nested definition's yield^ was set aside where that one closed.
         result->root->v.list.yields = parser.saw_yield;
     }
 
-    // 05§3: at most one, and at the top. Checked here rather than while
+    // [modules.unit]: at most one, and at the top. Checked here rather than while
     // parsing, because "the first statement of the unit" is a fact about the
     // finished list rather than about the parser's position.
     if (result->root != NULL) {
@@ -5461,7 +5461,7 @@ void lhat_parse_lton(LhatLexer *lexer, LhatParseResult *result)
     LhatNode *answer = make(&p, LHAT_NODE_RETURN, &body_at);
     LhatNode *body = make(&p, LHAT_NODE_BLOCK, &origin);
     LhatNode *function = make(&p, LHAT_NODE_FUNC, &origin);
-    // 08§7: what a load answers is t^{} (std.lton.parse's own result), so
+    // [lton.load]: what a load answers is t^{} (std.lton.parse's own result), so
     // that is written on the body as well. Left out, the checker infers the
     // literal's whole structure as the answer -- which nothing reads, and
     // which costs more than linearly in the size of the data.
@@ -5478,7 +5478,7 @@ void lhat_parse_lton(LhatLexer *lexer, LhatParseResult *result)
         function->v.func.body = finish(&p, body);
         call->v.access.target = finish(&p, function);
         outer_answer->v.jump.value = finish(&p, call);
-        // §15.1: requiring runs a unit, which no f^ does on its own
+        // [syntax.sub.kinds]: requiring runs a unit, which no f^ does on its own
         // behalf -- so the preamble stands at the unit's top, outside the
         // f^ the data is read in, and the data reaches its names by capture.
         lhat_node_append(&head, &tail, finish(&p, outer_answer));
@@ -5496,9 +5496,9 @@ void lhat_parse_interactive(LhatLexer *lexer, LhatParseResult *result)
     parse_unit(lexer, result, true);
 }
 
-// §14.10 asks that a signature print in a form that parses back as a type
-// annotation, and 05§8.7 has a host write one as text. Both need the type
-// grammar of §13 reachable on its own, which is all this is.
+// [syntax.obj.structure] asks that a signature print in a form that parses back as a type
+// annotation, and [modules.host.import] has a host write one as text. Both need the type
+// grammar of [syntax.type] reachable on its own, which is all this is.
 void lhat_parse_type_only(LhatLexer *lexer, LhatParseResult *result)
 {
     Parser parser;
@@ -5512,7 +5512,7 @@ void lhat_parse_type_only(LhatLexer *lexer, LhatParseResult *result)
     }
 }
 
-// §2.3: the command form applies when the input opens with a name and the
+// [syntax.juxta.when]: the command form applies when the input opens with a name and the
 // token after it could not carry an expression on. That second half is what
 // keeps arithmetic working at a prompt -- 'x - 1' is a subtraction, not a
 // call of x.
@@ -5536,7 +5536,7 @@ bool lhat_parse_is_command(const LhatLexer *lexer)
 
 void lhat_parse_command(LhatLexer *lexer, LhatParseResult *result)
 {
-    // 11§3.2: the command form is tried first and the normal form is what the
+    // [binary.codec.kinds]: the command form is tried first and the normal form is what the
     // input falls back to, so a host can hand every line to one entry point.
     if (!lhat_parse_is_command(lexer)) {
         lhat_parse(lexer, result);
@@ -5549,7 +5549,7 @@ void lhat_parse_command(LhatLexer *lexer, LhatParseResult *result)
     LhatToken origin = parser.current;
     LhatNode *callee = simple_node(&parser);
 
-    // §2.4: a call parenthesis binds tighter than juxtaposition, so 'foo(1)'
+    // [syntax.juxta.call-binds]: a call parenthesis binds tighter than juxtaposition, so 'foo(1)'
     // reaches the same tree in both forms rather than becoming foo applied to
     // a parenthesised list.
     LhatNode *arguments = NULL;
@@ -5585,10 +5585,10 @@ void lhat_parse_result_dispose(LhatParseResult *result)
     result->root = NULL;
 }
 
-// 10§4: the ID and the English text of every LhatParseErrorCode, indexed by
+// [l10n.id]: the ID and the English text of every LhatParseErrorCode, indexed by
 // the code. The ID is the one a translation is written against and never
 // changes meaning; the English is the reference every other language translates
-// (10§2.2).
+// ([l10n.principle.english]).
 static const LhatMessageEntry PARSE_MESSAGES[] = {
     [LHAT_PARSE_ERR_NONE] = {"parse.none", "no error"},
     // The codes about the token they met, rather than about something larger
@@ -5778,7 +5778,7 @@ const char *lhat_parse_error_id(LhatParseErrorCode code)
     return entry != NULL ? entry->id : NULL;
 }
 
-// 10§5.2: the texts a parse message is drawn from besides its code's. The
+// [l10n.compose.hole-kinds]: the texts a parse message is drawn from besides its code's. The
 // first is what a diagnostic says when it knows the token that was wanted;
 // the rest are what the token that was there is called, the phrase {found}
 // takes. An operator is worth quoting, since it is short enough to read

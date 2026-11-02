@@ -1,8 +1,8 @@
 // L^ (lhat) -- LSP server tests: where the name at a position was written
-// (definition.c). 07§4.
+// (definition.c). [lsp.hover].
 //
 // A name a scope holds and a member found in a type are two different
-// questions -- 08§8 answers the first and §14.10 the second -- and going to a
+// questions -- [lton.host] answers the first and [syntax.obj.structure] the second -- and going to a
 // definition has to answer both. The unit here is standalone, so what is
 // pinned is the same-unit half; the half that crosses units is in
 // tests/test_program.c, where a program with two of them can be built.
@@ -90,7 +90,7 @@ static void test_a_name_a_scope_holds(void)
     check_dispose(&c);
 }
 
-// §14.10 looks a member up in a type rather than in a scope, so the place is
+// [syntax.obj.structure] looks a member up in a type rather than in a scope, so the place is
 // the type's to know (type.h's declared_at) -- and until it did, this was the
 // half of going to a definition that could not be answered at all.
 static void test_a_member_found_in_a_type(void)
@@ -106,7 +106,7 @@ static void test_a_member_found_in_a_type(void)
                "let^ r = Reader.new()\n"
                "let^ n = r.peek()\n");
     expect_definition(&c, "peek()", "peek = f^self^");
-    // §14.11's template field is a member of the instance, written in the
+    // [syntax.obj.new]'s template field is a member of the instance, written in the
     // self^{ } section.
     expect_definition(&c, "at },", "at = 1");
     // And the name the def^ was bound to is a name a scope holds, so both
@@ -115,7 +115,7 @@ static void test_a_member_found_in_a_type(void)
     check_dispose(&c);
 }
 
-// §14.9: a name written where a type is names the same thing it names in an
+// [syntax.obj.name]: a name written where a type is names the same thing it names in an
 // expression, so it goes to the same place.
 static void test_a_written_type_name(void)
 {
@@ -129,7 +129,7 @@ static void test_a_written_type_name(void)
     check_dispose(&c);
 }
 
-// 04§2.2 and §19: a kind is found in the set that declared it
+// [errors.kind.errordef] and [syntax.enum]: a kind is found in the set that declared it
 // rather than in a scope, and the set is a type -- so the place is the type's
 // to carry (type.h's v.error.declared_at), the way a member's is.
 static void test_a_kind_of_a_set(void)
@@ -143,7 +143,7 @@ static void test_a_kind_of_a_set(void)
     expect_definition(&c, "Worse {", "Worse }");
     check_dispose(&c);
 
-    // In value position the name answers the wide enum type (§19), which
+    // In value position the name answers the wide enum type ([syntax.enum]), which
     // is not where it was written -- the place is still the member's.
     LHAT_TEST("02 の 19 章: an enum member goes to its declaration");
     check_text(&c,
@@ -178,7 +178,7 @@ static void test_nothing_to_point_at(void)
                "expected no definition on the declaration itself");
     check_dispose(&c);
 
-    // §14.19: a built-in is the language's own, declared nowhere a reader
+    // [syntax.obj.substring]: a built-in is the language's own, declared nowhere a reader
     // could be sent to.
     LHAT_TEST("and neither does a built-in member");
     check_text(&c, "let^ n = \"text\".length\n");
@@ -188,7 +188,7 @@ static void test_nothing_to_point_at(void)
     check_dispose(&c);
 }
 
-// 01§3.1 says which bytes a name is made of; the record keeps only where
+// [lex.ident.chars] says which bytes a name is made of; the record keeps only where
 // it starts, so the range is made by walking to the end of one.
 static void test_the_name_ends_where_the_name_ends(void)
 {

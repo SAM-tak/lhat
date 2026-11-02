@@ -1,7 +1,7 @@
 // L^ (lhat) -- sample standard library: std.channel.
 //
 // One function a host calls once, before lhat_program_check, the same as any
-// of program.h's own registrations (05§8.7). Needs an OS thread
+// of program.h's own registrations ([modules.host.import]). Needs an OS thread
 // implementation: port/thread.h. A host linking this must also link
 // lhatthread.
 //
@@ -21,7 +21,7 @@
 //
 // What crosses is what carry.h carries: the primitives (an integer stays an
 // integer), tables with their cycles, closures as their shared proto plus a
-// snapshot of what they closed over, and -- 05§8.8+2 -- hostdata whose
+// snapshot of what they closed over, and -- [modules.hostdata.sharing] -- hostdata whose
 // type declared it may. Anything else answers ChannelError.Refused with
 // carry's own reason. A channel is itself such a type, so a channel may be
 // pushed into a channel, or handed to std.thread.spawn as an argument.
@@ -62,13 +62,13 @@
 //   clear()                    empties it, and every supply waiting on it
 //   atomic(fn)                 calls fn(self) with the channel held, so a
 //                              read and the write that follows it are one
-//   dispose()                  gives this hold back (§12.5)
+//   dispose()                  gives this hold back ([syntax.with.checked])
 //
 // For Channel<T>, pop/peek/demand return T|nil^, including demand() without
 // a timeout: inside atomic it does not wait. take() preserves T|nil^ as its
 // coroutine result (rebuilding a carried value may fail and return nil^).
 //
-// A nil^ pushed and an empty channel read the same through pop (04§11.3
+// A nil^ pushed and an empty channel read the same through pop ([errors.runtime.index]
 // gives every read a nil^ arm, and a queue is a read); demand tells them
 // apart by waiting, and count() answers what is there.
 //
@@ -77,7 +77,7 @@
 // under it could only be woken by a machine that cannot get in.
 //
 // A named channel outlives every program, so a closure left in one after its
-// program is gone would be holding a body that has been freed (05§5.6 the
+// program is gone would be holding a body that has been freed ([modules.require.load] the
 // other way round). lhatstdlib_channel_forget_named is what a host calls
 // before it disposes of the program that filled them -- a restart, a
 // teardown -- with nothing of that program still running.

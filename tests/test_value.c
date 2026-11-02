@@ -1,9 +1,9 @@
 // L^ (lhat) -- tests for the runtime value representation.
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
-// prefixed with "02". What is pinned here is what 03§2.2 decided and what it
+// prefixed with "02". What is pinned here is what [pipeline.value.layout] decided and what it
 // decided against: an integer keeps 64 bits, and the two representations of
-// number^ stay one type as §14.8 requires.
+// number^ stay one type as [syntax.obj.number] requires.
 
 #include <math.h>
 #include <string.h>
@@ -16,7 +16,7 @@ static void test_tags(void)
 {
     LHAT_TEST("a value carries its own type");
     {
-        // §2.1. Each answers only to its own question.
+        // [syntax.juxta.free-error]. Each answers only to its own question.
         LHAT_CHECK(lhat_is_nil(lhat_nil()), "nil^");
         LHAT_CHECK(lhat_is_bool(lhat_bool(true)), "bool^");
         LHAT_CHECK(lhat_is_integer(lhat_integer(1)), "an integer");
@@ -33,7 +33,7 @@ static void test_tags(void)
         LHAT_CHECK(lhat_as_real(lhat_real(0.5)) == 0.5, "a real");
     }
 
-    // §14.8: one type, two representations. Both are number^.
+    // [syntax.obj.number]: one type, two representations. Both are number^.
     LHAT_TEST("both representations are number^");
     {
         LHAT_CHECK(lhat_is_number(lhat_integer(1)), "an integer is a number");
@@ -57,7 +57,7 @@ static void test_tags(void)
     }
 }
 
-// 03§2.2: this is the reason NaN boxing was not taken. Its payload holds about
+// [pipeline.value.layout]: this is the reason NaN boxing was not taken. Its payload holds about
 // 48 bits, which is not enough for these.
 static void test_integer_width(void)
 {
@@ -82,7 +82,7 @@ static void test_integer_width(void)
     }
 }
 
-// §11.6 で '=' が問うこと。
+// [syntax.op.table] で '=' が問うこと。
 static void test_equality(void)
 {
     LHAT_TEST("like for like");
@@ -96,7 +96,7 @@ static void test_equality(void)
         LHAT_CHECK(!lhat_value_equal(lhat_integer(7), lhat_integer(8)), "7 ≠ 8");
     }
 
-    // §14.8 makes number^ one type, so which representation a value happens to
+    // [syntax.obj.number] makes number^ one type, so which representation a value happens to
     // have must not show through here.
     LHAT_TEST("the two representations compare as one type");
     {
@@ -117,7 +117,7 @@ static void test_equality(void)
                    "2^53 itself still is");
     }
 
-    // §14.8: what '=' and §11.9's orderings ask, which admits the error a real
+    // [syntax.obj.number]: what '=' and [syntax.op.compare]'s orderings ask, which admits the error a real
     // carries. lhat_value_equal above stays exact -- a key and a constant
     // are matched by it, and neither may sit in a band.
     LHAT_TEST("two reals a division apart are one number");
@@ -216,7 +216,7 @@ static void test_equality(void)
     }
 }
 
-// §2.2: the whole point of going through accessors is that this can change.
+// [syntax.juxta.command]: the whole point of going through accessors is that this can change.
 static void test_shape(void)
 {
     LHAT_TEST("a value is one word plus a tag");
@@ -228,7 +228,7 @@ static void test_shape(void)
     }
 }
 
-// 03§4: a prompt answers with a value, so one has to be writable down.
+// [pipeline.repl]: a prompt answers with a value, so one has to be writable down.
 static void wrote(LhatValue value, const char *expected)
 {
     char buffer[256];
@@ -249,7 +249,7 @@ static void test_writing(void)
     wrote(lhat_integer(-7), "-7");
     wrote(lhat_real(1.5), "1.5");
 
-    // §14.8 makes one number type of two representations, so a real that
+    // [syntax.obj.number] makes one number type of two representations, so a real that
     // happens to be whole still says which one it is.
     LHAT_TEST("a whole real still reads as one");
     wrote(lhat_real(4.0), "4.0");
@@ -281,7 +281,7 @@ static void test_writing(void)
         wrote(lhat_object((LhatObject *)tricky), "\"a\\\"b\\\\c\\nd\"");
     }
 
-    // §14: the sequence half in order, then the keyed half. §14.14 makes a
+    // [syntax.obj]: the sequence half in order, then the keyed half. [syntax.obj.keys] makes a
     // key that spells a name the same key the name form reaches, so it is
     // written back the shorter way.
     LHAT_TEST("a table writes its sequence half in order");
@@ -299,7 +299,7 @@ static void test_writing(void)
         wrote(lhat_object((LhatObject *)t), "{}");
     }
 
-    // §14.14+: an element is an introduction, so '=' is the spelling.
+    // [syntax.obj.keys-equals]: an element is an introduction, so '=' is the spelling.
     // ':=' is read as well, but writing one out would be showing the form the
     // chapter calls the unintended one.
     LHAT_TEST("a key that spells a name is written as one");

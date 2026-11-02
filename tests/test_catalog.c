@@ -1,4 +1,4 @@
-// 10§6.4: reading a catalog. What a host hands over is bytes in 10§6.1's
+// [l10n.catalog.load]: reading a catalog. What a host hands over is bytes in [l10n.catalog.format]'s
 // format, for one language and one source; what comes out is the entries
 // this build knows the names and the holes of. Nothing here fails -- a line
 // the reader cannot use is left out and the rest stands -- so what each case
@@ -167,7 +167,7 @@ static void test_lines(void)
     lhat_catalog_dispose(&catalog);
 }
 
-// 10§6.3: a tool holds its own table, so it hands it over to be checked
+// [l10n.catalog.dump]: a tool holds its own table, so it hands it over to be checked
 // against instead of a source this build holds.
 static void test_own_table(void)
 {
@@ -192,7 +192,7 @@ static void test_own_table(void)
     lhat_catalog_dispose(&catalog);
 }
 
-// 10§7.1: a program holds the catalogs it was handed and the language its
+// [l10n.choose.program]: a program holds the catalogs it was handed and the language its
 // messages come out in -- one program's language is not another's.
 static void test_program(void)
 {
@@ -254,7 +254,7 @@ static void test_program(void)
     lhat_program_dispose(&program);
 }
 
-// 10§6.5: the catalogs this repository ships are held to the English -- a
+// [l10n.catalog.build-check]: the catalogs this repository ships are held to the English -- a
 // name no source holds, or a text whose holes are not the English's, is left
 // out by the reader, and that is what this would catch.
 static void test_shipped(void)

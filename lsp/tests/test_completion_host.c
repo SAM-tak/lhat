@@ -1,5 +1,5 @@
 // L^ (lhat) -- LSP server tests: offering a name the unit has not taken in
-// (07§4 with 05§8.7).
+// ([lsp.hover] with [modules.host.import]).
 //
 // Apart from test_completion.c because this half needs a real LhatProgram:
 // what import^ would reach is program->hosted, the one nested table the
@@ -147,7 +147,7 @@ static void expect_taken_in(const char *label, cJSON *items)
     if (open == NULL) {
         return;
     }
-    // 05§8.7 binds the root and leaves the rest as members, so what gets
+    // [modules.host.import] binds the root and leaves the rest as members, so what gets
     // written is the whole path and not the member alone.
     const char *whole = written_by(open);
     LHAT_CHECK(whole != NULL && strcmp(whole, "std.io.open") == 0,
@@ -186,7 +186,7 @@ static void test_a_module_not_taken_in(void)
     ask("taken in", "import^ std.io\nlet^ a = 1\nop\n", "\nop",
         expect_no_line);
 
-    // 05§8.7: an import^ takes in the one unit it names, so the parent's
+    // [modules.host.import]: an import^ takes in the one unit it names, so the parent's
     // leaves std.io to a line of its own.
     LHAT_TEST("while one whose parent was taken in still needs its own");
     ask("parent", "import^ std\nlet^ a = 1\nop\n", "\nop", expect_taken_in);
@@ -194,7 +194,7 @@ static void test_a_module_not_taken_in(void)
 
 static void expect_shadowed(const char *label, cJSON *items)
 {
-    // 07§8: the writer can already reach a name of that spelling, so that is
+    // [lsp.vscode]: the writer can already reach a name of that spelling, so that is
     // the one they meant. Offering the other as well would put two `open`s
     // in the list with no way to tell them apart.
     LHAT_CHECK(times_offered(items, "open") == 1,
@@ -213,7 +213,7 @@ static void test_what_is_already_reachable(void)
 
 static void expect_after_a_dot(const char *label, cJSON *items)
 {
-    // §14.10: the receiver answers, and nothing is offered that would need a
+    // [syntax.obj.structure]: the receiver answers, and nothing is offered that would need a
     // line added to reach it.
     LHAT_CHECK(item_named(items, "floor") == NULL,
                "%s: expected no module member after a dot", label);

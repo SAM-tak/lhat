@@ -7,7 +7,7 @@
 // cryptographically secure.
 //
 // One function a host calls once, before lhat_program_check, the same as any
-// of program.h's own registrations (05§8.7). Nothing here is required --
+// of program.h's own registrations ([modules.host.import]). Nothing here is required --
 // a host that never calls this never sees a "random" module, the same way a
 // host that leaves port/ out never sees the default allocator.
 //
@@ -34,10 +34,10 @@
 //
 // std.random.new answers std.random.Random|std.sys.Error.OutOfMemory -- read
 // it with try^/catch^, or narrow with fits^ against std.random.Random or
-// std.sys.Error.OutOfMemory (05§8.8's hostdata path and 04§2.4's error
+// std.sys.Error.OutOfMemory ([modules.hostdata]'s hostdata path and [errors.kind.nominal]'s error
 // kind path, both supported). Naming std.sys.Error.OutOfMemory in an fits^
 // (rather than just letting try^/catch^ read it) needs its own
-// `import^ std.sys` -- 12§8.1's "the language hands out no names" applies
+// `import^ std.sys` -- [spec.open.unreported]'s "the language hands out no names" applies
 // to a name reached through another module's registration too.
 
 #ifndef LHATSTDLIB_RANDOM_H

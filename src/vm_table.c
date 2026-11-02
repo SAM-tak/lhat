@@ -4,7 +4,7 @@
 #include <string.h>
 #include "lhat/port.h"
 
-// 03§5.12: everything in this file that writes into a table goes through here.
+// [pipeline.bc.gc]: everything in this file that writes into a table goes through here.
 // A table is written over and over, so the barrier it takes is the backward
 // one -- the table goes back on the collector's list, to be looked at once
 // the writing has settled, rather than every value being marked as it
@@ -16,14 +16,14 @@
 bool vm_set_key(Machine *m, LhatTable *table, LhatValue key,
                     LhatValue value, bool *refused)
 {
-    // 05§8.7+5: the program's table, written by nobody. Refused here, next
+    // [modules.host.shared-registry]: the program's table, written by nobody. Refused here, next
     // to the barrier it would otherwise trip, so that no host entry point has
     // to remember to ask -- and before the seat below, which writes too.
     if (table->shared) {
         *refused = true;
         return true;
     }
-    // §14.15: writing nil^ over a field its definition declared puts
+    // [syntax.obj.abstract]: writing nil^ over a field its definition declared puts
     // the seat back rather than taking the key. The prototype keeps its own
     // seat for ever (sealed, never filled), which is what says the name was
     // declared -- no other ledger exists.
@@ -43,7 +43,7 @@ bool vm_set_key(Machine *m, LhatTable *table, LhatValue key,
     return true;
 }
 
-// §14.11: the leaves that may sit in a definition's prototype as they
+// [syntax.obj.new]: the leaves that may sit in a definition's prototype as they
 // are. Immutable values -- a subroutine's captured places are its own
 // affair, an error kind and a type are identities -- which sharing cannot
 // betray. A table is not one: vm_bake_default below copies it into the
@@ -73,7 +73,7 @@ static bool immutable_default(LhatValue value)
     }
 }
 
-// §14.11: a field's value on its way onto the prototype (SETPROTO).
+// [syntax.obj.new]: a field's value on its way onto the prototype (SETPROTO).
 // A table that is not a definition becomes the prototype's own: a sealed
 // structural copy, so what every instance starts from belongs to the
 // definition alone, whatever expression the initialiser was. Leaves pass
@@ -83,7 +83,7 @@ static bool immutable_default(LhatValue value)
 bool vm_bake_default(Machine *m, LhatValue held, LhatValue *out,
                          size_t depth, bool *refused_value)
 {
-    // 05§8.9: a box is a copyable node of depth nought -- bytes, no
+    // [modules.hostvalue]: a box is a copyable node of depth nought -- bytes, no
     // references -- so the prototype takes a sealed copy of its own.
     if (lhat_is_object_kind(held, LHAT_OBJECT_HOSTVALUE_BOX)) {
         const LhatHostValueBox *source =
@@ -150,7 +150,7 @@ LhatTable *vm_clone_table(Machine *m, const LhatTable *source,
                               size_t depth, bool *too_deep);
 
 // A field's value on its way into a copy. A table that is not a definition
-// is a tree of the instance's own (§14.11's literal trees), so it is copied
+// is a tree of the instance's own ([syntax.obj.new]'s literal trees), so it is copied
 // too; everything else -- the immutable leaves, and a definition, which is a
 // shared identity -- travels as it is.
 static bool clone_default(Machine *m, LhatValue held, LhatValue *out,
@@ -167,7 +167,7 @@ static bool clone_default(Machine *m, LhatValue held, LhatValue *out,
             return true;
         }
     }
-    // 05§8.9: a box is copied by its bytes, unsealed -- each instance's
+    // [modules.hostvalue]: a box is copied by its bytes, unsealed -- each instance's
     // own to set().
     if (lhat_is_object_kind(held, LHAT_OBJECT_HOSTVALUE_BOX)) {
         const LhatHostValueBox *source =
@@ -185,7 +185,7 @@ static bool clone_default(Machine *m, LhatValue held, LhatValue *out,
     return true;
 }
 
-// §14.11: the copy construction makes -- the table's own two halves,
+// [syntax.obj.new]: the copy construction makes -- the table's own two halves,
 // value by value, a held table copied as its own tree. The link and the seal
 // are the caller's to set; a fresh table has neither. The baking (SETPROTO)
 // already refused a cycle, so the depth cap only keeps the recursion off the
@@ -216,7 +216,7 @@ LhatTable *vm_clone_table(Machine *m, const LhatTable *source,
         if (lhat_is_nil(entry->key)) {
             continue;  // free, or a tombstone
         }
-        // §14.15: a seat travels as the seat it is -- vm_set_key would
+        // [syntax.obj.abstract]: a seat travels as the seat it is -- vm_set_key would
         // read its nil as a removal, and the clone is born with the very
         // keys the prototype holds.
         if (lhat_is_nil(entry->value)) {
@@ -232,7 +232,7 @@ LhatTable *vm_clone_table(Machine *m, const LhatTable *source,
             return NULL;
         }
     }
-    // 12§3: the building above counted as layout changes, but the
+    // [spec.member-cache]: the building above counted as layout changes, but the
     // clone is only now born -- no cache can remember a table that did not
     // exist. Version zero is what lets a from_definition answer stand for
     // an instance that only ever filled its declared seats.
@@ -240,12 +240,12 @@ LhatTable *vm_clone_table(Machine *m, const LhatTable *source,
     return clone;
 }
 
-// §11.2+: '..' between two plain tables concatenates into a new table.
+// [syntax.op.concat-table]: '..' between two plain tables concatenates into a new table.
 // The sequence halves go in order -- the left's positions and then the
 // right's, renumbered after them -- and the named keys come from both sides.
 // The copy is shallow: the elements are shared, only the holder is new.
 //
-// A key both sides carry answers NULL through *collided (§14.5+'s rule read
+// A key both sides carry answers NULL through *collided ([syntax.obj.compose-ambiguous]'s rule read
 // for values: neither side was written against the other, so neither is the
 // answer -- and unlike a composed definition's method there is no qualified
 // spelling left to reach one through, so it is refused outright).
@@ -293,11 +293,11 @@ LhatTable *vm_concat_tables(Machine *m, const LhatTable *left,
 }
 
 // ---------------------------------------------------------------------------
-// §14.22: the table's own operations
+// [syntax.obj.table-ops]: the table's own operations
 // ---------------------------------------------------------------------------
 
 // One comparison, three-way. `cmp` is the written comparator or nil^ for the
-// built-in ordering -- §11.9's own, numbers and strings.
+// built-in ordering -- [syntax.op.compare]'s own, numbers and strings.
 static LhatRunStatus sort_compare(Machine *m, LhatValue cmp, LhatValue x,
                                   LhatValue y, int *out)
 {
@@ -479,7 +479,7 @@ static LhatRunStatus table_blockmove(Machine *m, LhatTable *dst,
     }
     return LHAT_RUN_OK;
 }
-// §14.22: one value through the clone's written policy -- arbitrary L^ code,
+// [syntax.obj.table-ops]: one value through the clone's written policy -- arbitrary L^ code,
 // nested the way a sort's comparator is.
 static LhatRunStatus clone_policy(Machine *m, LhatValue policy,
                                   LhatValue held, LhatValue *out)
@@ -492,7 +492,7 @@ static LhatRunStatus clone_policy(Machine *m, LhatValue policy,
     return LHAT_RUN_OK;
 }
 
-// §14.22: the shallow copy, or each value through the policy. The copy under
+// [syntax.obj.table-ops]: the shallow copy, or each value through the policy. The copy under
 // construction rides m->native_hold while the policy runs, the way a sort's
 // aux table does -- the policy may allocate and collect. The keys are
 // carried as they are; only the values are asked about.
@@ -540,12 +540,12 @@ static LhatRunStatus table_clone(Machine *m, const LhatTable *t,
     return status;
 }
 
-// §14.22: makes `to` hold what `from` holds and nothing else, shallow. The
+// [syntax.obj.table-ops]: makes `to` hold what `from` holds and nothing else, shallow. The
 // keys `from` lacks go first and then every one it has is written over --
 // so two instances of one def^, which carry the same keys, are written in
 // place and nothing is allocated. Clearing and filling again would rebuild
 // the hash every time. vm_set_key does the writing, which is what puts a
-// def^'s declared field back to its seat where `from` holds nil^ (§14.15).
+// def^'s declared field back to its seat where `from` holds nil^ ([syntax.obj.abstract]).
 static LhatRunStatus table_assign(Machine *m, LhatTable *to,
                                   const LhatTable *from)
 {
@@ -617,7 +617,7 @@ static LhatRunStatus table_assign(Machine *m, LhatTable *to,
     return LHAT_RUN_OK;
 }
 
-// The one door for all of §14.22. `args` were copied out of the caller's
+// The one door for all of [syntax.obj.table-ops]. `args` were copied out of the caller's
 // window, so a nested comparator call cannot disturb them; what lands over
 // the call goes through *answer.
 LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
@@ -631,7 +631,7 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
     // write their own answer over this.
     *answer = native->bound;
 
-    // 05§8.6: the machine's own tables are read-only, natives included.
+    // [modules.host.machine]: the machine's own tables are read-only, natives included.
     bool mutates = native->kind == LHAT_NATIVE_INSERT ||
                    native->kind == LHAT_NATIVE_PUSH ||
                    native->kind == LHAT_NATIVE_EXTEND ||
@@ -729,7 +729,7 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
                 (count == 2 && !vm_ordinal_of(args[1], &to))) {
                 return LHAT_RUN_TYPE_ERROR;
             }
-            // §14.19's reading: one ordinal runs to the end, a negative one
+            // [syntax.obj.substring]'s reading: one ordinal runs to the end, a negative one
             // counts from it, and a range that does not stand answers empty.
             LhatInteger start = vm_resolve_ordinal(from, n);
             LhatInteger end = vm_resolve_ordinal(count == 2 ? to : -1, n);
@@ -826,7 +826,7 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
             } else if (count != 0) {
                 return LHAT_RUN_ARITY;
             }
-            // 04§11.3's line: what is not there is not an error. An empty
+            // [errors.runtime.index]'s line: what is not there is not an error. An empty
             // table's pop and an out-of-range remove both answer nil^.
             if (at_pos < 0 || at_pos >= (LhatInteger)n) {
                 *answer = lhat_nil();
@@ -837,7 +837,7 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
                 lhat_slots_set(t->array, (size_t)k,
                                lhat_slots_get(t->array, (size_t)k + 1));
             }
-            // §14.10: writing nil^ no longer shortens the sequence, so the
+            // [syntax.obj.structure]: writing nil^ no longer shortens the sequence, so the
             // last position is dropped explicitly.
             lhat_table_resize(t, n - 1, lhat_nil());
             return LHAT_RUN_OK;
@@ -881,7 +881,7 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
                 last = from;
             }
             if (!cross && !block) {
-                // §14.22: the two-ordinal form of self relocates one element,
+                // [syntax.obj.table-ops]: the two-ordinal form of self relocates one element,
                 // the others shifting to close and open the gap.
                 if (from < 0 || from >= (LhatInteger)n || to < 0 ||
                     to >= (LhatInteger)n) {
@@ -922,7 +922,7 @@ LhatRunStatus vm_table_native(Machine *m, const LhatNative *native,
             return LHAT_RUN_OK;
         }
 
-        // §14.22: the sequence made `length` long. Lengthening fills with the
+        // [syntax.obj.table-ops]: the sequence made `length` long. Lengthening fills with the
         // second argument, nil^ when it is left out.
         case LHAT_NATIVE_RESIZE: {
             if (count < 1 || count > 2) {

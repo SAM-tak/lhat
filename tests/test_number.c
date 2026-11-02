@@ -1,9 +1,9 @@
 // L^ (lhat) -- tests for the numeric literal grammar.
 //
 // Section numbers refer to DesignDocuments/01-lexical-structure.md. The lexer
-// reads this grammar and so does §14.17+2's tonumber, which is why it is
+// reads this grammar and so does [syntax.obj.tonumber]'s tonumber, which is why it is
 // a module of its own -- test_lexer.c pins what a lexer adds around it
-// (spans, diagnostics, §10.3's rule about what may follow), and this pins the
+// (spans, diagnostics, [syntax.finally.last]'s rule about what may follow), and this pins the
 // grammar itself and the whole-text reading tonumber asks for.
 
 #include <stdint.h>
@@ -33,7 +33,7 @@ static void test_literal(void)
     LHAT_CHECK_EQ_INT((int64_t)n.integer, 12);
     LHAT_CHECK_EQ_INT((int64_t)n.length, 2);
 
-    // 01§10.2: the fraction is taken only when a digit follows the '.', so
+    // [lex.ambig.dotdot]: the fraction is taken only when a digit follows the '.', so
     // "1..2" scans as INT CONCAT INT.
     LHAT_CHECK(lhat_number_literal("1..2", 4, false, &n), "read");
     LHAT_CHECK_EQ_INT(n.kind, LHAT_NUMBER_INTEGER);
@@ -68,7 +68,7 @@ static void test_literal(void)
     LHAT_CHECK(lhat_number_literal("1e-3", 4, false, &n), "read");
     LHAT_CHECK(n.real == 0.001, "value");
 
-    // 05§4.5: no backtracking, so a malformed exponent is an error rather than
+    // [modules.public.host]: no backtracking, so a malformed exponent is an error rather than
     // an integer with a word after it -- and the 'e' stays consumed.
     LHAT_TEST("and one with no digits after it is its own error");
     LHAT_CHECK(!lhat_number_literal("1e+", 3, false, &n), "refused");
@@ -87,7 +87,7 @@ static void test_literal(void)
                "refused");
     LHAT_CHECK_EQ_INT(n.status, LHAT_NUMBER_OVERFLOW);
 
-    // §10.1: immediately after a '.' the digits form an integer key and must
+    // [syntax.finally.block]: immediately after a '.' the digits form an integer key and must
     // not swallow a further '.'.
     LHAT_TEST("after a '.' only decimal digits are taken");
     LHAT_CHECK(lhat_number_literal("1.5", 3, true, &n), "read");
@@ -100,7 +100,7 @@ static void test_literal(void)
     LHAT_CHECK_EQ_INT((int64_t)n.length, 1);
 }
 
-// §14.17+2: the whole text as one number^, which is what tonumber asks.
+// [syntax.obj.tonumber]: the whole text as one number^, which is what tonumber asks.
 static void test_read(void)
 {
     bool is_real = false;
@@ -126,7 +126,7 @@ static void test_read(void)
     LHAT_CHECK(lhat_number_read("  12\n", 5, &is_real, &whole, &real), "read");
     LHAT_CHECK_EQ_INT(whole, 12);
 
-    // 04§10 has no sign in it: '-1' is §11's unary minus applied
+    // [errors.chain] has no sign in it: '-1' is [syntax.op]'s unary minus applied
     // to a literal, so the sign is read here rather than by the grammar.
     LHAT_TEST("a single sign in front is read");
     LHAT_CHECK(lhat_number_read("-5", 2, &is_real, &whole, &real), "read");

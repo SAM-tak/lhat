@@ -89,7 +89,7 @@ static WorkspacePaths read_workspace_paths(const cJSON *params)
     return paths;
 }
 
-// 10§7.4: the editor says which language it shows (LSP's `locale`) and,
+// [l10n.choose.tools]: the editor says which language it shows (LSP's `locale`) and,
 // through its own options, where the catalogs it ships are. Neither is this
 // process's business to guess: one server answers whichever editor started
 // it.
@@ -148,12 +148,12 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     cJSON_AddBoolToObject(semantic_tokens, "full", true);
     cJSON_AddItemToObject(capabilities, "semanticTokensProvider", semantic_tokens);
 
-    // 07§4: the definition a name reaches, and what was written about it.
+    // [lsp.hover]: the definition a name reaches, and what was written about it.
     cJSON_AddBoolToObject(capabilities, "hoverProvider", true);
-    // 07§4: the checker recorded where every name it resolved was
+    // [lsp.hover]: the checker recorded where every name it resolved was
     // declared, which is the whole of what going to one needs.
     cJSON_AddBoolToObject(capabilities, "definitionProvider", true);
-    // 07§4: what may stand where the cursor is. The dot is the one
+    // [lsp.hover]: what may stand where the cursor is. The dot is the one
     // character that starts it on its own; the quote is what opens a
     // require^'s path. Anything else is the editor asking on demand.
     cJSON *completion = cJSON_CreateObject();
@@ -163,7 +163,7 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     cJSON_AddItemToObject(completion, "triggerCharacters",
                           string_array(triggers, 2));
 
-    // 07§6: the fixes a diagnostic knows how to make. The library works
+    // [lsp.next]: the fixes a diagnostic knows how to make. The library works
     // them out, so what the editor is told here is only that there are some.
     cJSON *code_action = cJSON_CreateObject();
     static const char *const kinds[] = {"quickfix", "source.fixAll"};
@@ -174,7 +174,7 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
     // The outline, from the tree alone (document_symbol.h).
     cJSON_AddBoolToObject(capabilities, "documentSymbolProvider", true);
 
-    // 07§5: the same record read the other way round -- every use
+    // [lsp.references]: the same record read the other way round -- every use
     // pointing at one declaration rather than one use pointing at its.
     cJSON_AddBoolToObject(capabilities, "referencesProvider", true);
     // prepareRename is answered too, so a client asks whether a rename is

@@ -2,7 +2,7 @@
 //
 // Section numbers refer to DesignDocuments/05-modules.md. The loader is
 // replaced with a table held here, so what is pinned is the graph — the
-// dependency order of 01§6.2, the single load of 03§5.3 and the refusal of 10§6.3 —
+// dependency order of [lex.comment.block], the single load of [pipeline.bc.call] and the refusal of [l10n.catalog.dump] —
 // rather than anything about a file system.
 
 #include <math.h>
@@ -26,7 +26,7 @@ typedef struct {
 typedef struct {
     const File *files;
     size_t count;
-    size_t reads;  // 04§5.3: a unit is read once however often it is required
+    size_t reads;  // [errors.try.result]: a unit is read once however often it is required
 } Disk;
 
 static char *disk_load(void *context, const char *path, size_t *length)
@@ -92,7 +92,7 @@ static void test_dependencies(void)
     LhatProgram program;
     Disk disk;
 
-    // §6.2: a unit is checked only after the units it requires, which is what
+    // [syntax.colon.if-expr]: a unit is checked only after the units it requires, which is what
     // lets the type of an imported name be known at all.
     static const File simple[] = {
         {"lib/geometry.lh",
@@ -131,7 +131,7 @@ static void test_dependencies(void)
     }
     lhat_program_dispose(&program);
 
-    // §5.1: the path is relative to the unit that wrote it.
+    // [syntax.if.expr]: the path is relative to the unit that wrote it.
     LHAT_TEST("a require^ is relative to its own unit");
     {
         static const File nested[] = {
@@ -335,7 +335,7 @@ static void test_loading(void)
     LhatProgram program;
     Disk disk;
 
-    // 04§5.3: required twice, read once, and the same unit both times.
+    // [errors.try.result]: required twice, read once, and the same unit both times.
     LHAT_TEST("a unit is loaded once");
     {
         static const File shared[] = {
@@ -359,7 +359,7 @@ static void test_loading(void)
     }
     lhat_program_dispose(&program);
 
-    // Two spellings of one path are one unit, which is what keys 10§5.3.
+    // Two spellings of one path are one unit, which is what keys [l10n.compose.no-plurals].
     LHAT_TEST("a path is normalised before it is looked up");
     {
         static const File aliased[] = {
@@ -402,7 +402,7 @@ static void test_loading(void)
     lhat_program_dispose(&program);
 }
 
-// §6.3: refused, because allowing it makes what is visible depend on which
+// [syntax.colon.principle]: refused, because allowing it makes what is visible depend on which
 // side was read first.
 static void test_cycles(void)
 {
@@ -465,11 +465,11 @@ static void test_cycles(void)
     lhat_program_dispose(&program);
 }
 
-// 05§5.3: the units compile too, and the machine is given the lot so a
+// [modules.require.once]: the units compile too, and the machine is given the lot so a
 // require^ inside one can reach another. What is pinned here is that the
 // unit runs once however many times it is required, and that both requirers
 // see the very thing it made.
-// 05§5.7: a unit changes under a program that has already been compiled
+// [modules.require.reload]: a unit changes under a program that has already been compiled
 // and run. What is pinned here is the whole exchange -- the cascade, the
 // save that changed nothing, the machine's registry, and the old bodies
 // staying whole -- because each half is useless without the others.
@@ -543,7 +543,7 @@ static void test_reloading(void)
                        "%s went stale", lhat_unit_path(u));
             LHAT_CHECK(lhat_unit_proto(u) == NULL, "and gave up its body");
         }
-        // 05§5.7: the module name outlives the check that read it, since it is
+        // [modules.require.reload]: the module name outlives the check that read it, since it is
         // what the host has to hand every machine next.
         const LhatUnit *leaf = unit_at(&program, "leaf.lh");
         LHAT_CHECK(leaf != NULL &&
@@ -686,7 +686,7 @@ static void test_reloading(void)
     lhat_program_dispose(&program);
 }
 
-// 05§5.7 with §10.7: the one order that has to hold when a host
+// [modules.require.reload] with [syntax.finally.coroutine]: the one order that has to hold when a host
 // reloads a program under a machine that has been running it. A coroutine
 // suspended inside a do^ … finally^ holds the closure it stopped in, and so
 // the body that closure was made from. Retire that body, drop the coroutine,
@@ -762,7 +762,7 @@ static void test_reloading_with_a_pending_cleanup(void)
                        lhat_program_compile(&program),
                    "the units read and compiled again");
 
-        // §5.3: what still holds the old coroutine is the module table the
+        // [syntax.if.spellings]: what still holds the old coroutine is the module table the
         // machine registered, so forgetting the unit is also what drops it.
         LHAT_CHECK(lhat_machine_forget_unit(machine, "ns.gen"),
                    "the machine forgot what the old unit registered");
@@ -931,7 +931,7 @@ static void test_running(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.6: what require^ answers is sealed once the unit has
+    // [modules.host.machine]: what require^ answers is sealed once the unit has
     // built it. check.c refuses a write named against it, but a t^{ … }
     // parameter carries no mark of this -- so the machine asks again where
     // the write happens.
@@ -961,7 +961,7 @@ static void test_running(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.6: the registry is where the guard looks, so what ran is in it.
+    // [modules.host.machine]: the registry is where the guard looks, so what ran is in it.
     LHAT_TEST("and L^.modules holds what was registered");
     {
         static const File reading[] = {
@@ -987,9 +987,9 @@ static void test_running(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.7 reads an import^ root off L^.modules inside a nested body
+    // [modules.host.import] reads an import^ root off L^.modules inside a nested body
     // rather than capturing it. A require^ root is not one: what a unit made
-    // was made by running it, and 05§8.6's registry is the machine's own. So the
+    // was made by running it, and [modules.host.machine]'s registry is the machine's own. So the
     // capture stays, and a body written around one still sees what it built.
     LHAT_TEST("a nested body still captures a require^ root");
     {
@@ -1038,7 +1038,7 @@ static void test_running(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§5.3: a program grows under a machine already running. The
+    // [modules.require.once]: a program grows under a machine already running. The
     // second unit is checked and compiled after the first ran, reaches one
     // the first batch compiled and one of its own, and the registry on the
     // machine is what makes the shared one load once.
@@ -1081,9 +1081,9 @@ static void test_running(void)
     lhat_program_dispose(&program);
 }
 
-// 05§8.7: what the host registers, and how import^ reaches it.
-// 05§8.6: one that goes into L^ itself rather than under its registry,
-// so that 05§8.2's initial binding has something to name.
+// [modules.host.import]: what the host registers, and how import^ reaches it.
+// [modules.host.machine]: one that goes into L^ itself rather than under its registry,
+// so that [modules.host.initial]'s initial binding has something to name.
 static void host_twice(LhatMachine *machine, void *context,
                        const LhatValue *arguments, size_t count,
                        LhatValue *answers, int *answer_count)
@@ -1174,14 +1174,14 @@ static void host_add(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-// §11.8 with 05§8.9: a host value carrying the unary '-'. The tag
+// [syntax.op.define] with [modules.hostvalue]: a host value carrying the unary '-'. The tag
 // is handed over through the context, since a host function is given nothing
 // else to read its own type by.
 typedef struct {
     int64_t n;
 } Counter;
 
-// 05§8.9+: a host registered '-> T|nil^'. A positive argument answers
+// [modules.hostvalue.union]: a host registered '-> T|nil^'. A positive argument answers
 // the value arm, anything else the nil^ one -- which lands in the head slot
 // of the room the width reserved, where ISNIL reads for it.
 static void host_counter_maybe(LhatMachine *machine, void *context,
@@ -1220,7 +1220,7 @@ static void host_counter_make(LhatMachine *machine, void *context,
 
 // f^self^ -> number^; -- one operand and no argument, which is the whole of
 // what tells a unary operator from a binary one.
-// 05§8.7+2: a host function that panics rather than answering.
+// [modules.host.panic]: a host function that panics rather than answering.
 static void host_refuse(LhatMachine *machine, void *context,
                         const LhatValue *arguments, size_t count,
                         LhatValue *answers, int *answer_count)
@@ -1308,9 +1308,9 @@ static void host_counter_minus(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-// f^self^, o:test.c.C -> bool^; -- §11.9+'s op^= for a host value.
+// f^self^, o:test.c.C -> bool^; -- [syntax.op.equal]'s op^= for a host value.
 // It answers no to everything, including two whose bytes are the same, which
-// is what tells it apart from 05§8.9's default: byte equality could never
+// is what tells it apart from [modules.hostvalue]'s default: byte equality could never
 // answer that, so a false here is the registration being asked.
 static void host_counter_never_equal(LhatMachine *machine, void *context,
                                      const LhatValue *arguments, size_t count,
@@ -1323,7 +1323,7 @@ static void host_counter_never_equal(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-// f^lhs:number^, self^ -> number^; -- §11.3+'s trailing self^, so the
+// f^lhs:number^, self^ -> number^; -- [syntax.op.right]'s trailing self^, so the
 // receiver is the operand written on the RIGHT and 'n + v' finds it.
 static void host_counter_radd(LhatMachine *machine, void *context,
                               const LhatValue *arguments, size_t count,
@@ -1439,7 +1439,7 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§4.5: what a unit published, asked as types -- the contract a
+    // [modules.public.host]: what a unit published, asked as types -- the contract a
     // host holds (update is 'p^number^;') checked before anything runs.
     LHAT_TEST("a unit's exports answer their types, and whether they conform");
     {
@@ -1469,7 +1469,7 @@ static void test_hosting(void)
         LHAT_CHECK(lhat_unit_export_type_text(root, "hidden", NULL, 0) ==
                        SIZE_MAX,
                    "a private name is not an export");
-        // 05§4.5: the same answer as the walkable descriptor -- which lives
+        // [modules.public.host]: the same answer as the walkable descriptor -- which lives
         // on the compiled body, so compiling is part of the ask.
         LHAT_CHECK(lhat_program_compile(&program), "the program compiles");
         const LhatRuntimeType *rt = lhat_unit_export_type(root, "update");
@@ -1495,10 +1495,10 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.2: a host may bind a name so that a program writes it with no
-    // qualification. 12§8.1 is unchanged -- the language hands out nothing, and
+    // [modules.host.initial]: a host may bind a name so that a program writes it with no
+    // qualification. [spec.open.unreported] is unchanged -- the language hands out nothing, and
     // a host that binds none leaves a program seeing nothing.
-    // 03§3.4+3 with 05§8.7: what an operator demands of an
+    // [pipeline.infer.operators] with [modules.host.import]: what an operator demands of an
     // unannotated parameter is the union of the types that carry it, and a
     // registered type carries one as readily as a def^ written here. Before
     // this the registry was not looked at, so '+' fell to number^ alone
@@ -1526,7 +1526,7 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
-    // 03§3.4+3's first way out: name one of the candidates. The other side
+    // [pipeline.infer.operators]'s first way out: name one of the candidates. The other side
     // follows from the arm that one picks.
     LHAT_TEST("and writing one of them settles it");
     {
@@ -1547,7 +1547,7 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.1: what a unit did not import it cannot see, so a registration
+    // [modules.host.nothing]: what a unit did not import it cannot see, so a registration
     // it never named must not make its arithmetic ambiguous. This is the
     // guard on the whole change -- without it every unit in a program would
     // pay for a type one other unit imports.
@@ -1568,7 +1568,7 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.7: an import^ takes in one unit, so a unit and one under it are
+    // [modules.host.import]: an import^ takes in one unit, so a unit and one under it are
     // two imports into one scope, in either order (a LOVE2D binding's
     // love.getVersion beside love.graphics). And they run: the machine's
     // table for the parent holds the child, whichever import came first.
@@ -1627,7 +1627,7 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
-    // §8.7: nor the other way -- the unit under it is a unit of its own.
+    // [syntax.stmt.visible]: nor the other way -- the unit under it is a unit of its own.
     LHAT_TEST("and importing the parent alone brings none of the child");
     {
         static const File parent_only[] = {
@@ -1646,7 +1646,7 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
-    // §8.7: a step registered nothing is only on the way to a unit.
+    // [syntax.stmt.visible]: a step registered nothing is only on the way to a unit.
     LHAT_TEST("a step with nothing registered at it is no unit to import");
     {
         static const File files[] = {{"main.lh", "import^ lib\n"}};
@@ -1659,7 +1659,7 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
-    // §8.7: one name, one thing -- across what a unit published and the units
+    // [syntax.stmt.visible]: one name, one thing -- across what a unit published and the units
     // named under it, in either order.
     LHAT_TEST("a published name and a unit under it of that name collide");
     for (int order = 0; order < 2; order++) {
@@ -1744,7 +1744,7 @@ static void test_hosting(void)
         lhat_program_dispose(&program);
     }
 
-    // What it reaches stays readable as L^.<member>, since 05§8.1 keeps the hat
+    // What it reaches stays readable as L^.<member>, since [modules.host.nothing] keeps the hat
     // identifier out of the spellings a var^ can make.
     LHAT_TEST("a var^ of the same spelling shadows it, and L^ still reaches it");
     {
@@ -1773,7 +1773,7 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
-    // §8.1: nothing is handed out on its own. A name the host did not bind is
+    // [syntax.stmt.problem]: nothing is handed out on its own. A name the host did not bind is
     // missing exactly as it was before.
     LHAT_TEST("and a name nobody bound is still missing");
     {
@@ -1829,7 +1829,7 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.7: import^ reaches the host registry and nothing else. A unit read
+    // [modules.host.import]: import^ reaches the host registry and nothing else. A unit read
     // from a file comes in with require^, whatever L^.modules holds -- which
     // is what keeps the answer free of the order units are checked in.
     LHAT_TEST("but import^ does not reach a unit read from a file");
@@ -1857,7 +1857,7 @@ static void test_hosting(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.7: a signature may name a type registered before it, which is what
+    // [modules.host.import]: a signature may name a type registered before it, which is what
     // lets a pair that name each other be registered as two bare types first.
     LHAT_TEST("a signature may name a type registered earlier");
     {
@@ -1878,7 +1878,7 @@ static void test_hosting(void)
     lhat_program_dispose(&program);
 }
 
-// 05§8.8: something the host made, reached through a pointer L^ holds and
+// [modules.hostdata]: something the host made, reached through a pointer L^ holds and
 // never looks into.
 typedef struct {
     int value;
@@ -2003,7 +2003,7 @@ static void test_host_data(void)
                        lhat_register_member(&program, "store", "Held", "twin",
                                             "f^self^ -> store.Held;",
                                             host_self, NULL) &&
-                       // §13.13: the type a member is registered on is Self^
+                       // [syntax.type.self]: the type a member is registered on is Self^
                        // in its signature, the long spelling beside it.
                        lhat_register_member(&program, "store", "Held", "with",
                                             "f^self^, Self^ -> store.Held;",
@@ -2024,7 +2024,7 @@ static void test_host_data(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.8: a registered type is its tag. Lowering a registration's
+    // [modules.hostdata]: a registered type is its tag. Lowering a registration's
     // signature used to convert the type's members, and through them every
     // type they named -- five types naming each other eight ways held six
     // million nodes (a LOVE2D binding's physics). A nominal leaf holds one.
@@ -2068,7 +2068,7 @@ static void test_host_data(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.7+2: a registered enum is §19's enum -- singleton
+    // [modules.host.panic]: a registered enum is [syntax.enum]'s enum -- singleton
     // members with their integers, fits^ against the declaration, and a
     // when^ naming every member proving exhaustive.
     LHAT_TEST("a registered enum reads as a declared one");
@@ -2106,7 +2106,7 @@ static void test_host_data(void)
             LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 2111);
-            // 05§8.7 の読み: the host reads its own registration back, and
+            // [modules.host.import] の読み: the host reads its own registration back, and
             // what it gets is the singleton the program compared against.
             LhatValue found = lhat_nil();
             LHAT_CHECK(lhat_machine_registered(machine, "k", NULL, "Mode",
@@ -2130,7 +2130,7 @@ static void test_host_data(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.7+2 with 05§8.8: a host type is a namespace as well as a type,
+    // [modules.host.panic] with [modules.hostdata]: a host type is a namespace as well as a type,
     // so an enum may be declared under one -- godot.Node's own Mode. The
     // module's Mode and the type's are different declarations, which is
     // what a nominal type buys.
@@ -2154,7 +2154,7 @@ static void test_host_data(void)
         LHAT_CHECK(lhat_register_enum_valued(&program, "k", "T", "Mode", one,
                                              nine, 1),
                    "an enum under the type");
-        // §8.9: a host value type carries its members the same way, so a
+        // [syntax.stmt.let]: a host value type carries its members the same way, so a
         // signature may name what it declares.
         LHAT_CHECK(lhat_register_hostvalue_type(&program, "k", "V", 8) != NULL,
                    "a host value type registered");
@@ -2189,11 +2189,11 @@ static void test_host_data(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.9+: a host value crosses the host->L^ boundary as an
+    // [modules.hostvalue.union]: a host value crosses the host->L^ boundary as an
     // argument. Two stand at once in the caller's own rooms, a narrow
     // argument rides between them, and the widened frame is what the body
     // reads.
-    // 05§8.7+: a registered constant is the value itself -- typed by
+    // [modules.host.nested-fault]: a registered constant is the value itself -- typed by
     // the checker, installed once, read off the module, a hostdata type
     // and a hostvalue type alike (and off a value of the type: the type
     // table is the members table).
@@ -2331,7 +2331,7 @@ static void test_host_data(void)
         LHAT_CHECK(held_tag != NULL, "the type registered");
         lhat_register_member(&program, "store", "Held", "read",
                              "f^self^ -> number^;", held_read, NULL);
-        // §12.5 reads dispose^ off the type like any other, so registering one
+        // [syntax.with.checked] reads dispose^ off the type like any other, so registering one
         // is what makes the value the host's to take back.
         lhat_register_member(&program, "store", "Held", "dispose", "p^self^;",
                              held_dispose, NULL);
@@ -2352,7 +2352,7 @@ static void test_host_data(void)
             lhat_machine_dispose(machine);
         }
 #if LHAT_WITH_RESOLUTIONS
-        // 05§8.8: what the name holds is this declaration, so what writes a type
+        // [modules.hostdata]: what the name holds is this declaration, so what writes a type
         // out says the declaration. The registration above is the only place
         // the tag comes from, which is why this is asked here rather than of
         // a type built by hand.
@@ -2375,7 +2375,7 @@ static void test_host_data(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§7.3: identity is the declaration. Two host types of the same shape are
+    // [modules.label.errors]: identity is the declaration. Two host types of the same shape are
     // still two types, and the tag is what says so where a pointer would
     // otherwise be read as the wrong thing.
     LHAT_TEST("and a value of another type does not reach its C");
@@ -2412,7 +2412,7 @@ static void test_host_data(void)
     }
     lhat_program_dispose(&program);
 
-    // §11.3 stays structural for everything else, but not here: a host type is
+    // [syntax.op.semantic] stays structural for everything else, but not here: a host type is
     // nominal, so one cannot be written where the other is wanted.
     LHAT_TEST("and the checker keeps the two apart as well");
     {
@@ -2433,7 +2433,7 @@ static void test_host_data(void)
     lhat_program_dispose(&program);
 }
 
-// 05§8.8 with §10.7: what the host made goes back whether or not the
+// [modules.hostdata] with [syntax.finally.coroutine]: what the host made goes back whether or not the
 // program said so, and goes back once.
 static int cells_live;
 static int cells_freed;
@@ -2490,7 +2490,7 @@ static void with_cells(const char *text, int *live_after_run, int *freed_total)
     cells_freed = 0;
     program_with(&program, &disk, files, 1);
     cell_tag = lhat_register_hostdata_type(&program, "store", "Cell");
-    // §12.5: registering this is what makes the value the host's to take back.
+    // [syntax.with.checked]: registering this is what makes the value the host's to take back.
     lhat_register_member(&program, "store", "Cell", "dispose", "p^self^;",
                          cell_release, NULL);
     lhat_register_func(&program, "store", "make", "f^ -> store.Cell;",
@@ -2529,16 +2529,16 @@ static LhatRunResult run_main(LhatProgram *program)
     return ran;
 }
 
-// 05§8.8: a hostdata stands for what the host made, so two wrappers of
+// [modules.hostdata]: a hostdata stands for what the host made, so two wrappers of
 // one host object are equal and key one table entry between them. is^ still
 // asks for the wrapper itself, and a released wrapper is equal only to
 // itself -- its pointer may already name something else.
-// 05§5.7: an invalidation takes back what a unit was made into and
+// [modules.require.reload]: an invalidation takes back what a unit was made into and
 // nothing else. What the host registered has to come through untouched --
-// 10§7.3 makes the tag's address the identity, so a value made after a reload
+// [l10n.choose.structs] makes the tag's address the identity, so a value made after a reload
 // has to be the same type as one made before it.
 
-// 05§8.7 with 05§7.3: what a declaration is, is the C call that makes it --
+// [modules.host.import] with [modules.label.errors]: what a declaration is, is the C call that makes it --
 // so making it twice, from two programs, comes away with one identity. The
 // run time compares tags by address, and a second tag would make one host
 // type into two that agree about everything except the one thing that
@@ -2562,7 +2562,7 @@ static void test_declarations_are_the_process_s(void)
         LHAT_CHECK(first != NULL, "the first declaration made one");
         LHAT_CHECK_EQ_PTR(second, first);
 
-        // 05§8.7 still refuses a second one inside ONE program: that is a name
+        // [modules.host.import] still refuses a second one inside ONE program: that is a name
         // used twice, not a declaration made twice.
         LHAT_CHECK_EQ_PTR(lhat_register_hostdata_type(&a, "shared", "Thing"),
                           NULL);
@@ -2589,7 +2589,7 @@ static void test_declarations_are_the_process_s(void)
         LHAT_CHECK_EQ_PTR(kinds_b[0], kinds_a[0]);
         LHAT_CHECK_EQ_PTR(kinds_b[1], kinds_a[1]);
 
-        // 04§2.4: two lists are two declarations, and one name cannot be
+        // [errors.kind.nominal]: two lists are two declarations, and one name cannot be
         // both.
         static const char *const others[] = {"Torn"};
         LHAT_CHECK(!lhat_register_error_kind(&b, "shared", "Broken", others, 1,
@@ -2599,7 +2599,7 @@ static void test_declarations_are_the_process_s(void)
     lhat_program_dispose(&a);
     lhat_program_dispose(&b);
 
-    // §8.9: the same for a host value type, where the width is what every
+    // [syntax.stmt.let]: the same for a host value type, where the width is what every
     // frame holding one was laid out against -- so a second declaration at
     // another size is not the same type and cannot be allowed to look like
     // it.
@@ -2638,7 +2638,7 @@ static void test_declarations_are_the_process_s(void)
     lhat_program_dispose(&a);
     lhat_program_dispose(&b);
 
-    // §8.9 with registry.h: a tag's index is the process's, so a program that
+    // [syntax.stmt.let] with registry.h: a tag's index is the process's, so a program that
     // declares only the later of two types has an index past its own count.
     // The machine's array of members tables is taken to the width the
     // indices reach, not to how many this program declared.
@@ -2700,7 +2700,7 @@ static void test_reloading_keeps_registrations(void)
             "return^ a.read() + b.read() - 42\n";
         LHAT_CHECK_EQ_INT(lhat_program_invalidate(&program, "main.lh"), 1);
 
-        // §8.7: one name, one thing -- the registration is still standing, so
+        // [syntax.stmt.visible]: one name, one thing -- the registration is still standing, so
         // a second one of the same name is still refused.
         LHAT_CHECK_EQ_PTR(lhat_register_hostdata_type(&program, "store",
                                                       "Held"),
@@ -2777,10 +2777,10 @@ static void test_host_data_identity(void)
     }
     lhat_program_dispose(&program);
 
-    // §14.12 with 05§8.8: two registrations are disjoint, so where the checker
+    // [syntax.obj.override] with [modules.hostdata]: two registrations are disjoint, so where the checker
     // knows both it settles the comparison instead of leaving it to the run
     // (chk_infer's "these can never be equal"). The values meet through any^
-    // here, which is where 10§7.3's rule is what answers.
+    // here, which is where [l10n.choose.structs]'s rule is what answers.
     LHAT_TEST("wrappers of two types never equal, whatever the pointer");
     {
         static const File files[] = {
@@ -2801,7 +2801,7 @@ static void test_host_data_identity(void)
                              "f^self^ -> number^;", held_read, NULL);
         lhat_register_func(&program, "store", "make", "f^ -> store.Held;",
                            held_make, &held);
-        // The same pointer under another tag: 05§7.3 keeps them apart.
+        // The same pointer under another tag: [modules.label.errors] keeps them apart.
         lhat_register_func(&program, "store", "makeSame", "f^ -> store.Other;",
                            other_make_same, &held);
         LhatRunResult ran = run_main(&program);
@@ -2820,7 +2820,7 @@ static void test_host_data_release(void)
     with_cells("import^ store\nvar^ c = store.make()\nc.dispose()\nreturn^ 0\n",
                &live, &freed);
     LHAT_CHECK_EQ_INT(live, 0);
-    // §10.7: and the machine going does not give it back a second time.
+    // [syntax.finally.coroutine]: and the machine going does not give it back a second time.
     LHAT_CHECK_EQ_INT(freed, 1);
 
     LHAT_TEST("and one nobody disposed of goes back when the machine does");
@@ -2829,7 +2829,7 @@ static void test_host_data_release(void)
     LHAT_CHECK_EQ_INT(live, 1);   // still the host's while the machine lives
     LHAT_CHECK_EQ_INT(freed, 1);  // and given back when it went
 
-    // §10.7's last resort: what became unreachable is collected, and the
+    // [syntax.finally.coroutine]'s last resort: what became unreachable is collected, and the
     // pointer goes back then rather than at the end.
     LHAT_TEST("and one that became unreachable goes back at the collection");
     with_cells("import^ store\n"
@@ -2852,7 +2852,7 @@ static void test_host_data_release(void)
     LHAT_CHECK_EQ_INT(freed, 1);
 }
 
-// 05§8.9: the seam a shared build has to use, and the order it has that a
+// [modules.hostvalue]: the seam a shared build has to use, and the order it has that a
 // linker seam does not.
 static long registered_allocations;
 
@@ -2889,7 +2889,7 @@ static void test_port(void)
 {
     LhatProgram program;
 
-    // A program is given its loader or it reads nothing: §8.9 keeps an
+    // A program is given its loader or it reads nothing: [syntax.stmt.let] keeps an
     // embedded language off a file system it was not pointed at.
     LHAT_TEST("a program with no loader reads nothing");
     {
@@ -2921,7 +2921,7 @@ static void test_port(void)
     }
 }
 
-// 05§8.9: a host value lives in stack slots and nowhere else. A table
+// [modules.hostvalue]: a host value lives in stack slots and nowhere else. A table
 // element is the first place one would escape to, and the checker refuses
 // it by name. The maker is never called -- the check is the whole test.
 static void test_hostvalue_escape(void)
@@ -2950,7 +2950,7 @@ static void test_hostvalue_escape(void)
     }
     lhat_program_dispose(&program);
 
-    // §11.8: the unary '-' over a host value. call_operator's host arm
+    // [syntax.op.define]: the unary '-' over a host value. call_operator's host arm
     // builds its own operand array and counts what it hands over, so a unary
     // one reaches C with a single argument -- the closure arm passing is no
     // evidence for this path.
@@ -2991,7 +2991,7 @@ static void test_hostvalue_escape(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.7+2: a host function asks for a panic and returns; the run
+    // [modules.host.panic]: a host function asks for a panic and returns; the run
     // ends at the call with the host's value, the traceback standing there.
     LHAT_TEST("a host function's panic ends the run at the call, with its message");
     {
@@ -3106,7 +3106,7 @@ static void test_hostvalue_escape(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.9+: a host value stands in a union whose other arms the head
+    // [modules.hostvalue.union]: a host value stands in a union whose other arms the head
     // slot's tag tells apart, so a registration may answer 'T|nil^'. The
     // width is reserved either way; the nil^ writes the head and leaves the
     // slots behind it as they were, which is exactly what ISNIL reads.
@@ -3146,11 +3146,11 @@ static void test_hostvalue_escape(void)
     }
     lhat_program_dispose(&program);
 
-    // §14.17 with 05§8.9: every value can be written down, a host
+    // [syntax.obj.tostring] with [modules.hostvalue]: every value can be written down, a host
     // value included. Nothing is registered under tostring here, so this is
     // the built-in answering -- and what a value with no spelling of its own
     // answers is what it is, the way a coroutine answers 'c^'. The library
-    // that wants better registers one, which §14.17 lets win over this.
+    // that wants better registers one, which [syntax.obj.tostring] lets win over this.
     LHAT_TEST("a host value with no tostring answers its type's name");
     {
         static const File files[] = {
@@ -3184,14 +3184,14 @@ static void test_hostvalue_escape(void)
     }
     lhat_program_dispose(&program);
 
-    // §14.12 with 05§8.7: one registered name carrying several
+    // [syntax.obj.override] with [modules.host.import]: one registered name carrying several
     // signatures. A host has no body for the compiler to read a descriptor
     // out of, so the registration lowers the one it was written with and the
     // machine's search reads that -- the same search that resolves a written
     // overload^.
     //
     // Four arms over one type: '-' unary and binary (told apart by the
-    // count), '+' with a trailing self^ (§11.3+, so the receiver is the right
+    // count), '+' with a trailing self^ ([syntax.op.right], so the receiver is the right
     // operand), and a second binary '-' taking a string^ where the first
     // takes a number^ -- which counts alone could never tell apart.
     LHAT_TEST("a registered name carries several signatures");
@@ -3229,7 +3229,7 @@ static void test_hostvalue_escape(void)
                        "f^number^, self^ -> number^;", host_counter_radd,
                        (void *)tag),
                    "the right-operand arm registered");
-        // §14.12 forbids arms that could take the same call, and the
+        // [syntax.obj.override] forbids arms that could take the same call, and the
         // registration is where that is settled for a host.
         LHAT_CHECK(!lhat_register_hostvalue_member(
                        &program, "test.c", "C", "-",
@@ -3252,12 +3252,12 @@ static void test_hostvalue_escape(void)
     }
     lhat_program_dispose(&program);
 
-    // §13.7 with §14.12: a variadic arm is told apart from another exactly
+    // [syntax.type.variadic] with [syntax.obj.override]: a variadic arm is told apart from another exactly
     // where the machine's search can tell them apart -- a written position
     // the two disagree on, or an argument one arm has no place for. The
     // tail itself compares nothing (a LOVE2D binding's newSoundData(path)
     // beside newSoundData(samples, ...)).
-    // 05§8.8 with §14.12: two registered types are two declarations, so
+    // [modules.hostdata] with [syntax.obj.override]: two registered types are two declarations, so
     // one arm may take each -- even where the two carry the same member
     // names, which is all a structural reading would have to go on (a
     // LOVE2D binding's File and FileData both answer getSize).
@@ -3351,7 +3351,7 @@ static void test_hostvalue_escape(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.9 with §11.9+: the bytes are what a host value answers
+    // [modules.hostvalue] with [syntax.op.equal]: the bytes are what a host value answers
     // when nothing was written, and a written op^= is not nothing. These two
     // are byte for byte the same, so the registration is the only thing that
     // can make '=' say no.
@@ -3391,7 +3391,7 @@ static void test_hostvalue_escape(void)
     }
     lhat_program_dispose(&program);
 
-    // And with nothing written, §8.9's own answer stands -- the same two
+    // And with nothing written, [syntax.stmt.let]'s own answer stands -- the same two
     // values, the same question, the other way round.
     LHAT_TEST("and without one the bytes still answer");
     {
@@ -3468,7 +3468,7 @@ static void test_hostvalue_escape(void)
     lhat_program_dispose(&program);
 }
 
-// §13.8+: a host answering several values. The positions go into the
+// [syntax.type.tuple]: a host answering several values. The positions go into the
 // machine's room and come back as the run every other producer makes.
 static void host_divmod(LhatMachine *machine, void *context,
                         const LhatValue *arguments, size_t count,
@@ -3483,13 +3483,13 @@ static void host_divmod(LhatMachine *machine, void *context,
     (void)machine;
     int64_t a = lhat_as_integer(arguments[0]);
     int64_t b = lhat_as_integer(arguments[1]);
-    // §13.8+: two answers, written where the machine handed the room.
+    // [syntax.type.tuple]: two answers, written where the machine handed the room.
     answers[0] = lhat_integer(a / b);
     answers[1] = lhat_integer(a % b);
     *answer_count = 2;
 }
 
-// §13.7 with §13.8+: the host arm gathers its own arguments, so a tuple spread
+// [syntax.type.variadic] with [syntax.type.tuple]: the host arm gathers its own arguments, so a tuple spread
 // into a variadic tail reaches it as ordinary arguments and nothing else.
 static void host_sum(LhatMachine *machine, void *context,
                      const LhatValue *arguments, size_t count,
@@ -3527,7 +3527,7 @@ static void host_divmod_then_allocate(LhatMachine *machine, void *context,
     }
 }
 
-// 05§8.7 with §13.8+: registered as answering several values but written
+// [modules.host.import] with [syntax.type.tuple]: registered as answering several values but written
 // to answer one. The two sides can only disagree by being built apart, and
 // the machine is what catches it.
 static void host_answers_one(LhatMachine *machine, void *context,
@@ -3660,7 +3660,7 @@ static void test_host_tuple(void)
     }
     lhat_program_dispose(&program);
 
-    // §13.8+: the other direction. A unit answering a tuple hands the host
+    // [syntax.type.tuple]: the other direction. A unit answering a tuple hands the host
     // its positions, and `value` is position 1 so a host written before
     // tuples still reads something it can use.
     LHAT_TEST("a unit answers several values to the host");
@@ -3713,7 +3713,7 @@ static void test_host_tuple(void)
     }
     lhat_program_dispose(&program);
 
-    // §13.8+: a tuple's positions are ordinary arguments, so a host takes
+    // [syntax.type.tuple]: a tuple's positions are ordinary arguments, so a host takes
     // them as it takes written ones -- the first filling its fixed
     // parameter, the other joining the tail with what follows. The host arm
     // builds its argument array itself, so the closure arm passing is no
@@ -3746,7 +3746,7 @@ static void test_host_tuple(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§8.9 with §13.8+: a position is one slot, and a host value is as
+    // [modules.hostvalue] with [syntax.type.tuple]: a position is one slot, and a host value is as
     // wide as its tag says. The signature registers -- it only describes
     // what the host answers -- and the refusal lands where L^ takes the
     // tuple apart, in the reader's own source.
@@ -3792,7 +3792,7 @@ static void test_dump_host_api(void)
                "the error kind registered");
     LHAT_CHECK(lhat_register_hostdata_type(&program, "sys.io", "File") != NULL,
                "the hostdata type registered");
-    // 05§8.8+: and one under it. A host whose model is a class tree
+    // [modules.hostdata.base]: and one under it. A host whose model is a class tree
     // writes the tree, and what the derived type inherits is reached through
     // this relation alone -- so a dump that leaves it out hands a reader
     // types that are not the ones registered here.
@@ -3805,7 +3805,7 @@ static void test_dump_host_api(void)
     LHAT_CHECK(lhat_register_hostvalue_field(&program, "sys.geo", "Vec2", "x",
                                              0, LHAT_HVFIELD_F32),
                "the field registered");
-    // 05§8.7+2: an enum under a host type. A signature may name it, so
+    // [modules.host.panic]: an enum under a host type. A signature may name it, so
     // the dump has to declare it among the types, after the type it stands
     // under.
     static const char *const dump_modes[] = {"Read", "Write"};
@@ -3831,7 +3831,7 @@ static void test_dump_host_api(void)
                "the global registered");
     LHAT_CHECK(lhat_bind_initial(&program, "twice", "L^.twice"),
                "the binding took");
-    // §18.5's places go out by name rather than as the mask they arrive as:
+    // [syntax.annot.host]'s places go out by name rather than as the mask they arrive as:
     // the reader holds no C enum to read one against. Two are set here so
     // that the shape between them is pinned as well as the names.
     LHAT_CHECK(lhat_register_annotation(&program, "h", "badge",
@@ -3843,7 +3843,7 @@ static void test_dump_host_api(void)
     LHAT_CHECK(lhat_register_annotation(&program, "h", "atop",
                                         LHAT_ANNOTATION_UNIT),
                "the unit annotation registered");
-    // 05§8.7+: constants, including the values JSON has no number for --
+    // [modules.host.nested-fault]: constants, including the values JSON has no number for --
     // the infinities, NaN, and an integer a double cannot hold exactly.
     LHAT_CHECK(lhat_register_const_real(&program, "c", NULL, "HALF", 0.5) &&
                    lhat_register_const_real(&program, "c", NULL, "INF",
@@ -3922,7 +3922,7 @@ static void test_dump_host_api(void)
     }
     lhat_program_dispose(&program);
 
-    // 03§3.1: the dump names the value this program was made with, not
+    // [pipeline.strict.per-unit]: the dump names the value this program was made with, not
     // always true -- lsp/host_config.c reads it back for lsp/diagnostics.c.
     LHAT_TEST("and it names a relaxed program too");
     {
@@ -3969,7 +3969,7 @@ static void test_diagnostics(void)
     }
     lhat_program_dispose(&program);
 
-    // §6.2: what a host shows is the graph's, so a mistake in a required unit
+    // [syntax.colon.if-expr]: what a host shows is the graph's, so a mistake in a required unit
     // is found by walking rather than by asking the unit that was named.
     LHAT_TEST("a required unit's own mistake is found by the walk");
     {
@@ -4083,11 +4083,11 @@ static void test_diagnostics(void)
     }
     lhat_program_dispose(&program);
 
-    // 03§3.1: exactly the three strict-only gap codes answer true --
+    // [pipeline.strict.per-unit]: exactly the three strict-only gap codes answer true --
     // an ordinary mismatch, found the same way under both, answers false.
     LHAT_TEST("lhat_unit_diagnostic_relaxed_ok answers only the strict-only gaps");
     {
-        // 03§3.4+3: a called f would take its parameter's type from
+        // [pipeline.infer.operators]: a called f would take its parameter's type from
         // the call, so the one with a genuine gap is a subroutine nobody
         // calls.
         static const File gap[] = {
@@ -4115,8 +4115,8 @@ static void test_diagnostics(void)
     LHAT_CHECK(!lhat_unit_diagnostic_relaxed_ok(NULL, 0), "no unit answers false");
 }
 
-// §14.2 と 05§5.3: composing onto a definition another unit published.
-// §14.2 fixes the chain where it is written, so this is a compile-time
+// [syntax.obj.chain] と [modules.require.once]: composing onto a definition another unit published.
+// [syntax.obj.chain] fixes the chain where it is written, so this is a compile-time
 // flattening like any other -- what crosses the boundary is the tree, and
 // never a value.
 static void test_composing_across_units(void)
@@ -4160,7 +4160,7 @@ static void test_composing_across_units(void)
             LhatRunResult ran = lhat_run(machine, lhat_unit_proto(root));
             LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
             // 42 through the base's own member, 1 of its own, and 21 again
-            // through a parameter typed as the base -- §14.10's width
+            // through a parameter typed as the base -- [syntax.obj.structure]'s width
             // subtyping is what lets the composed one land there.
             LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 64);
             lhat_machine_dispose(machine);
@@ -4206,12 +4206,12 @@ static void test_composing_across_units(void)
         lhat_program_dispose(&program);
     }
 
-    // §14.7+2 with 03§4.3: the delegate the base declared, when the
+    // [syntax.obj.delegate] with [pipeline.machine]: the delegate the base declared, when the
     // base was written in another unit. The chain crosses (def_chain_across),
     // so the entry is found -- but its spelling is that unit's, and reading
     // it against this one's text names whatever happens to sit at the
     // offset. The checker had no such split and took the program, which is
-    // 10§4.2's disagreement: it checked and would not run.
+    // [l10n.id.spelling]'s disagreement: it checked and would not run.
     LHAT_TEST("14.7改2: a delegate the base declared crosses units");
     {
         static const File delegating[] = {
@@ -4250,7 +4250,7 @@ static void test_composing_across_units(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§4: what another unit may name is what this one published.
+    // [modules.public]: what another unit may name is what this one published.
     LHAT_TEST("but only what that unit published");
     {
         static const File hidden[] = {
@@ -4267,7 +4267,7 @@ static void test_composing_across_units(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§5.3: a part flattened here was written elsewhere, so what is free
+    // [modules.require.once]: a part flattened here was written elsewhere, so what is free
     // in it is that unit's. What it can reach from here is what lives under
     // L^.modules -- what that unit published, and the roots it imported.
     LHAT_TEST("and its body still names what its own unit named");
@@ -4306,7 +4306,7 @@ static void test_composing_across_units(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§4: a name that unit kept to itself is a register in a frame
+    // [modules.public]: a name that unit kept to itself is a register in a frame
     // this body does not have, and saying so is worth more than "no such
     // name" about a name plainly there in the other file.
     LHAT_TEST("but not what it kept to itself");
@@ -4334,7 +4334,7 @@ static void test_composing_across_units(void)
     }
     lhat_program_dispose(&program);
 
-    // 03§4.2: a form §14.2 cannot follow to a chain is a hole to report
+    // [pipeline.repl.no-fork]: a form [syntax.obj.chain] cannot follow to a chain is a hole to report
     // where it is written, not instructions that fault where they run. A
     // definition reached through an ordinary table is one of those.
     LHAT_TEST("and a chain that cannot be followed is reported, not emitted");
@@ -4357,10 +4357,10 @@ static void test_composing_across_units(void)
     lhat_program_dispose(&program);
 }
 
-// §18: an annotation is what the host registered and nothing else. The
+// [syntax.annot]: an annotation is what the host registered and nothing else. The
 // language never reads what one means -- what is pinned here is that it is
 // carried, and that the three ways of writing one wrongly are all refused.
-// §18.5: the registration and the shape of its arguments, which the
+// [syntax.annot.host]: the registration and the shape of its arguments, which the
 // tests below say together because almost every one of them has both to say.
 // Two calls under one name rather than a parameter: what a registration can
 // carry grows, and program.h gives each part its own way in.
@@ -4413,8 +4413,8 @@ static void test_annotations(void)
     }
     lhat_program_dispose(&program);
 
-    // §18.2 keeps the namespace flat, so a second registration of one name is
-    // a collision rather than another arm -- unlike a member (§14.12).
+    // [syntax.annot.spelling] keeps the namespace flat, so a second registration of one name is
+    // a collision rather than another arm -- unlike a member ([syntax.obj.override]).
     LHAT_TEST("and a name is registered once");
     {
         program_with(&program, &disk, wearing, 1);
@@ -4436,7 +4436,7 @@ static void test_annotations(void)
     }
     lhat_program_dispose(&program);
 
-    // §18.5: where it may be written is what the registration says.
+    // [syntax.annot.host]: where it may be written is what the registration says.
     LHAT_TEST("and so is one written where it was not registered for");
     {
         static const File misplaced[] = {
@@ -4449,8 +4449,8 @@ static void test_annotations(void)
     }
     lhat_program_dispose(&program);
 
-    // §18.4+: whether the binding is published is part of the place. A host
-    // reaches a value through the table the unit answers with (05§5.5), so
+    // [syntax.annot.public]: whether the binding is published is part of the place. A host
+    // reaches a value through the table the unit answers with ([modules.require.short]), so
     // an annotation about the value has no hold on a private name -- writing
     // one there would be a mark that quietly does nothing.
     LHAT_TEST("a public-only annotation is refused on a private binding");
@@ -4477,7 +4477,7 @@ static void test_annotations(void)
     }
     lhat_program_dispose(&program);
 
-    // §18.5: FILEUNIQUE is a count rather than a place. The one just above
+    // [syntax.annot.host]: FILEUNIQUE is a count rather than a place. The one just above
     // shows the same name twice being fine without it, which is what makes
     // this pair say something.
     LHAT_TEST("a file-unique annotation is refused a second time");
@@ -4507,7 +4507,7 @@ static void test_annotations(void)
     }
     lhat_program_dispose(&program);
 
-    // 03§3.4+2: a member calling one declared after it makes the checker
+    // [pipeline.infer.rounds]: a member calling one declared after it makes the checker
     // walk the statements again, and the second walk visits the same
     // annotation node. The same node is not a second writing.
     LHAT_TEST("one annotation over a forward self^ call is still once");
@@ -4560,7 +4560,7 @@ static void test_annotations(void)
     }
     lhat_program_dispose(&program);
 
-    // §18.3: an argument is a literal, and a bare name arrives as a string^ --
+    // [syntax.annot.literal-args]: an argument is a literal, and a bare name arrives as a string^ --
     // what the name means is the host's to decide.
     LHAT_TEST("arguments are asked what the registration said");
     {
@@ -4589,7 +4589,7 @@ static void test_annotations(void)
         LHAT_CHECK(lhat_program_has_errors(&program), "reported");
     }
     lhat_program_dispose(&program);
-    // §18.1: what the host reads back. The language never says what an
+    // [syntax.annot.why]: what the host reads back. The language never says what an
     // annotation means, so this is the whole of what it hands over -- the
     // name, and the literals written with it.
     LHAT_TEST("and the host reads back what was written");
@@ -4642,7 +4642,7 @@ static void test_annotations(void)
     }
     lhat_program_dispose(&program);
 
-    // §18.3: the four kinds, each arriving as itself. A name is not resolved
+    // [syntax.annot.literal-args]: the four kinds, each arriving as itself. A name is not resolved
     // -- it is the spelling, for the host to read.
     LHAT_TEST("every kind of argument arrives as itself");
     {
@@ -4667,7 +4667,7 @@ static void test_annotations(void)
 
         LhatAnnotationArgument number = lhat_annotation_argument(written, 0);
         LHAT_CHECK_EQ_INT(number.kind, LHAT_ANNOTATION_ARG_NUMBER);
-        // §18.3's leading '-' is applied on the way out, so a host reads one
+        // [syntax.annot.literal-args]'s leading '-' is applied on the way out, so a host reads one
         // number rather than the shape it was written as.
         LHAT_CHECK_EQ_REAL(number.number, -1.5, 1e-9);
 
@@ -4707,7 +4707,7 @@ static void expect_documentation(const LhatUnit *unit, const char *definition,
                want);
 }
 
-// 01§6.4: L^ has no spelling for a description -- the comment block
+// [lex.comment.kept]: L^ has no spelling for a description -- the comment block
 // written directly above a thing is what it says about it, the way Go has
 // it. These are the four addresses a host reads one at, and the two rules
 // that say where a block begins and ends.
@@ -4777,7 +4777,7 @@ static void test_documentation(void)
         // belongs to the member whose line it ends.
         expect_documentation(root, "Thing", "quiet", "");
 
-        // 01§6.5: code switched off is not prose, and it ends a block the
+        // [lex.comment.disabled]: code switched off is not prose, and it ends a block the
         // way the statement it holds would.
         expect_documentation(root, NULL, "fresh", "");
         expect_documentation(root, NULL, "kept", "新しい説明");
@@ -4789,7 +4789,7 @@ static void test_documentation(void)
     lhat_program_dispose(&program);
 
 
-    // §18.4 writes an annotation between the block and the thing it is about,
+    // [syntax.annot.where] writes an annotation between the block and the thing it is about,
     // and lhat_node_visit_children does not walk one -- so the span begins
     // after it. What stands between is not a blank line for all that.
     LHAT_TEST("an annotation between does not cut the block off");
@@ -4843,7 +4843,7 @@ static void test_documentation(void)
 #endif  // LHAT_WITH_COMMENTS
 
 
-// 05§5.3: a unit whose name another unit's sits under is a member of that
+// [modules.require.once]: a unit whose name another unit's sits under is a member of that
 // unit's table. Each order of the two is a case of its own: the child read
 // inside the parent's body, after the parent, and before it from elsewhere.
 static const File NESTED[] = {
@@ -4898,7 +4898,7 @@ static const File NESTED[] = {
     {"leaf_only.lh",
      "let^l = require^\"leaf.lh\"\n"
      "return^ l.bump()\n"},
-    // 05§5.5: the same units required standing alone, in either order.
+    // [modules.require.short]: the same units required standing alone, in either order.
     {"short_ab.lh",
      "require^ \"a.lh\"\n"
      "require^ \"b.lh\"\n"
@@ -5133,7 +5133,7 @@ static void test_nested_units(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§5.5: a require^ standing alone binds its root to the registry's
+    // [modules.require.short]: a require^ standing alone binds its root to the registry's
     // table, which holds game's names and b alike.
     LHAT_TEST("the short form takes a unit and one under it, either order");
     LHAT_CHECK_EQ_INT(nested_answer(&program, &disk, "short_ab.lh"), 12);
@@ -5228,12 +5228,12 @@ static void test_nested_units(void)
     }
 }
 
-// §18.5.1: two names the host registered as one choice. FILEUNIQUE counts
+// [syntax.annot.host.two-answers]: two names the host registered as one choice. FILEUNIQUE counts
 // each registration on its own, so the pair is what only the host can say --
 // and having said it, the checker is the one that says where.
-// 07§6: a name no host registered is offered the nearest one that was --
+// [lsp.next]: a name no host registered is offered the nearest one that was --
 // registered for what it is written above, since one registered elsewhere
-// would be the next diagnostic. The '@' is §18.2's mark and stays; what is
+// would be the next diagnostic. The '@' is [syntax.annot.spelling]'s mark and stays; what is
 // rewritten is the name.
 static void test_annotation_near(void)
 {
@@ -5317,8 +5317,8 @@ static void test_annotation_exclusion(void)
         LHAT_CHECK(root != NULL && root->checked.diagnostic_count == 1 &&
                        root->checked.diagnostics[0].line == 4,
                    "at the second of the two");
-        // 07§6: and something to do about it. The whole line goes -- an
-        // annotation stands on one of its own (§18.4), so leaving it
+        // [lsp.next]: and something to do about it. The whole line goes -- an
+        // annotation stands on one of its own ([syntax.annot.where]), so leaving it
         // blank would be a second thing to tidy.
         const char *text = apart[0].text;
         const char *marked = strstr(text, "@tool");
@@ -5428,7 +5428,7 @@ static void test_annotation_exclusion(void)
                    "a name that was never registered says nothing");
         LHAT_CHECK(!lhat_register_annotation_exclusive(&program, "one", "one"),
                    "and nothing excludes itself");
-        // §18.2 keeps the namespace flat, so the other side is a name rather
+        // [syntax.annot.spelling] keeps the namespace flat, so the other side is a name rather
         // than a registration -- and another host may be the one to bring it.
         LHAT_CHECK(lhat_register_annotation_exclusive(&program, "one",
                                                       "unheard"),
@@ -5439,7 +5439,7 @@ static void test_annotation_exclusion(void)
     }
     lhat_program_dispose(&program);
 
-    // §18.3, now that the signature is said in its own call rather than beside
+    // [syntax.annot.literal-args], now that the signature is said in its own call rather than beside
     // the targets.
     LHAT_TEST("a signature is said once");
     {
@@ -5458,7 +5458,7 @@ static void test_annotation_exclusion(void)
     lhat_program_dispose(&program);
 }
 
-// §18.5.2: a name the host registered as half of something. Read on the
+// [syntax.annot.host.alone]: a name the host registered as half of something. Read on the
 // declaration the annotation is written above, which is what tells it from
 // the exclusion above -- that one is a file's to answer, this one a
 // declaration's.
@@ -5467,7 +5467,7 @@ static void test_annotation_requisite(void)
     LhatProgram program;
     Disk disk;
 
-    // §18.4+'s target for both, so what varies between the cases below is
+    // [syntax.annot.public]'s target for both, so what varies between the cases below is
     // only which of them is written and where.
     static const File both[] = {
         {"main.lh",
@@ -5601,7 +5601,7 @@ static void test_annotation_requisite(void)
                    "a name that was never registered says nothing");
         LHAT_CHECK(!lhat_register_annotation_requisite(&program, "one", "one"),
                    "and nothing is its own other half");
-        // §18.2 keeps the namespace flat, so the other side is a name rather
+        // [syntax.annot.spelling] keeps the namespace flat, so the other side is a name rather
         // than a registration -- another host may be the one to bring it.
         LHAT_CHECK(lhat_register_annotation_requisite(&program, "one",
                                                       "unheard"),
@@ -5614,7 +5614,7 @@ static void test_annotation_requisite(void)
 }
 
 
-// §18.7+: which members a host may put its own value under. What is
+// [syntax.annot.host-fills]: which members a host may put its own value under. What is
 // written is an ordinary member with an ordinary signature -- the body is
 // where it says there is nothing to run.
 static void test_empty_body(void)
@@ -5671,7 +5671,7 @@ static void test_empty_body(void)
             } else if (member.name_length == 7 &&
                        memcmp(member.name, "waiting", 7) == 0) {
                 saw_waiting = true;
-                // §14.15 has no value at all, so there is no body to be empty.
+                // [syntax.obj.abstract] has no value at all, so there is no body to be empty.
                 LHAT_CHECK(member.declared, "the declaration is one");
                 LHAT_CHECK(!member.empty_body, "and is not this");
             } else if (member.name_length == 5 &&
@@ -5686,7 +5686,7 @@ static void test_empty_body(void)
     }
     lhat_program_dispose(&program);
 
-    // §10.1 lets a body outside a loop carry finally^, and one written there
+    // [syntax.finally.block] lets a body outside a loop carry finally^, and one written there
     // is written -- so both halves of the list are asked.
     LHAT_TEST("and a body carrying only a clause is not empty");
     {
@@ -5716,7 +5716,7 @@ static void test_empty_body(void)
     lhat_program_dispose(&program);
 }
 
-// §14.7+2: what a def^ writes, when one of the entries is a delegate.
+// [syntax.obj.delegate]: what a def^ writes, when one of the entries is a delegate.
 // A host walks a definition's members by index, and both walks that answer
 // it read the template off the entry with no key -- which the delegate also
 // has. Reading its value as a list of fields is reading a union the wrong
@@ -5778,7 +5778,7 @@ static void test_delegate_among_the_members(void)
     lhat_program_dispose(&program);
 }
 
-// 07§4 with 05§6.1: a unit publishes a type, and a member of it was
+// [lsp.hover] with [modules.deps.static]: a unit publishes a type, and a member of it was
 // written in the unit that published it -- so a reader standing on the member
 // in another unit has somewhere to be sent, and it is not this file. The
 // same-unit half is in lsp/tests/test_definition.c, where no program is
@@ -5827,15 +5827,15 @@ static void test_where_a_published_member_was_written(void)
             const char *declared;
             const char *what;
         } across[] = {
-            // 05§4 publishes names, so the place is the public^let^
+            // [modules.public] publishes names, so the place is the public^let^
             // that wrote this one.
             {"Held.new()", "Held =", "a published member"},
-            // §13: the same name written where a type is (07§4).
+            // [syntax.type]: the same name written where a type is ([lsp.hover]).
             {"Held -> number^", "Held =", "a published type name"},
-            // 04§2.2: a kind is found in the set that declared it, and
+            // [errors.kind.errordef]: a kind is found in the set that declared it, and
             // the set was published.
             {"Bad {", "Bad }", "a published error kind"},
-            // §19: an enum member in value position answers the wide
+            // [syntax.enum]: an enum member in value position answers the wide
             // type, and still says where it was written.
             {"Walk\n", "Walk }", "a published enum member"},
         };
@@ -5867,7 +5867,7 @@ static void test_where_a_published_member_was_written(void)
                        across[i].what);
         }
 
-        // 05§5: the written path names the whole unit, so the place is
+        // [modules.require]: the written path names the whole unit, so the place is
         // its start -- and the type is what it publishes.
         const char *path = strstr(root->source.text, "\"lib.lh\"");
         LHAT_CHECK(path != NULL, "expected the require^ path to be there");
@@ -5906,7 +5906,7 @@ static void test_where_a_published_member_was_written(void)
 }
 #endif
 
-// 05§5.7, bundled: lhat_reload is what an editor's save becomes --
+// [modules.require.reload], bundled: lhat_reload is what an editor's save becomes --
 // invalidate, forget on every machine handed in, recheck, recompile, and
 // the retired bodies discarded only once no machine still holds one. What
 // is pinned: the discard happens by itself when nothing holds, waits when
@@ -5984,7 +5984,7 @@ static void test_reload_call(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§5.7 taken apart, the way lhatove takes it: the check while the
+    // [modules.require.reload] taken apart, the way lhatove takes it: the check while the
     // old world still runs, touching no machine; the forget and the discard
     // at a frame's end, the machines stopped. The discard asks rather than
     // trusts, as lhat_reload's last step does.
@@ -6267,7 +6267,7 @@ static void test_module_binding_identity(void)
     }
     lhat_program_dispose(&program);
 
-    // 05§5.5: a require^ standing alone names the registry's table, as an
+    // [modules.require.short]: a require^ standing alone names the registry's table, as an
     // import^ does, so a body elsewhere reads the root from L^.modules either
     // way -- nothing is captured.
     LHAT_TEST("require on an import namespace keeps reads of the root live");
@@ -6329,7 +6329,7 @@ int main(void)
     test_declarative_result_types();
     test_host_instantiation();
     test_host_instantiation_abi();
-    // §8.9: before anything is taken, so the refusal above is about the order
+    // [syntax.stmt.let]: before anything is taken, so the refusal above is about the order
     // rather than about this test running second.
     test_port();
     test_dependencies();

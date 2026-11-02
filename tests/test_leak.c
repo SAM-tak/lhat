@@ -101,7 +101,7 @@ typedef struct {
 } File;
 
 // Not const: a round rewrites the library so that the invalidation in it
-// really retires something (an unchanged text retires nothing, 05§5.7).
+// really retires something (an unchanged text retires nothing, [modules.require.reload]).
 static File files[] = {
     {"lib.lh",
      "module^ ns.lib\n"
@@ -131,7 +131,7 @@ static char *load(void *context, const char *path, size_t *length)
         if (strcmp(files[i].path, path) != 0) {
             continue;
         }
-        // 05§5.1: the program frees this with lhat_free, so it has to
+        // [modules.require.path]: the program frees this with lhat_free, so it has to
         // come from lhat_alloc -- which under this test is the counting
         // allocator, and pairing it with the C library's malloc would be
         // reading a header that was never written.
@@ -146,7 +146,7 @@ static char *load(void *context, const char *path, size_t *length)
     return NULL;
 }
 
-// 05§8.8: something for a registration to have made, so what a
+// [modules.hostdata]: something for a registration to have made, so what a
 // registration owns is counted too.
 typedef struct {
     int n;
@@ -215,7 +215,7 @@ static void one_round(void)
         LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
         LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 42);
 
-        // 05§5.7: one unit changes and is read again, so what an
+        // [modules.require.reload]: one unit changes and is read again, so what an
         // invalidation retires is counted too -- including the objects a
         // discarded body's constants named, which the program keeps.
         files[0].text =
@@ -249,7 +249,7 @@ int main(void)
     LHAT_TEST("the counting allocator takes, before anything else has");
     LHAT_CHECK(lhat_set_allocator(&counting), "registered");
 
-    // 03§4.3+: what a machine of each measurement weighs -- the whole
+    // [pipeline.machine.sizing]: what a machine of each measurement weighs -- the whole
     // reason the measurements exist. The exact numbers move as the struct's
     // own fields do, so what is pinned is the shape: a measured machine is a
     // fraction of the default one. Measured here: 165,157 bytes whole,
@@ -279,7 +279,7 @@ int main(void)
                    "the smallest one worth having: %zu bytes", small_bytes);
     }
 
-    // 05§8.7: what the first round leaves behind is what the process
+    // [modules.host.import]: what the first round leaves behind is what the process
     // keeps, not what a round leaks -- the identities a declaration makes
     // belong to the process (registry.h) and are made once however many
     // programs declare them. So the first round sets the mark, and what

@@ -1,4 +1,4 @@
-// L^ (lhat) -- the fixes a diagnostic carries (07§6).
+// L^ (lhat) -- the fixes a diagnostic carries ([lsp.next]).
 //
 // The titles a fix is offered under, the slots a stage stores its fixes in,
 // and what a unit answers about them. A front-end source: the parser and the
@@ -11,7 +11,7 @@
 #include "message.h"
 #include "program_internal.h"
 
-// 07§6: the titles a fix is offered under. A title names what the fix
+// [lsp.next]: the titles a fix is offered under. A title names what the fix
 // writes, since that is what a reader is choosing between; `{text}` is what
 // the fix's first edit writes, for the one title that stands for any token
 // ("write '}'", not "write the token").
@@ -89,7 +89,7 @@ const LhatMessageEntry *lhat_fix_message(size_t which)
     return LHAT_MESSAGE_AT(FIX_MESSAGES, which);
 }
 
-// 07§6: the fixes the diagnostic at `index` carries, whichever stage made
+// [lsp.next]: the fixes the diagnostic at `index` carries, whichever stage made
 // it. The lexer works none out -- a byte it cannot read says nothing about
 // what belonged there -- so its diagnostics answer none.
 static const LhatFixSlot *fix_slots_at(const LhatUnit *unit, size_t index)
@@ -137,7 +137,7 @@ size_t lhat_unit_diagnostic_fix_title(const LhatUnit *unit, size_t index,
     return lhat_message_render(text, &arg, 1, out, capacity);
 }
 
-// 07§6: two edits meet when what they replace overlaps, or when they start
+// [lsp.next]: two edits meet when what they replace overlaps, or when they start
 // at the one place -- two insertions there have no order a reader could
 // have meant.
 static bool edits_meet(const LhatFixEdit *a, const LhatFixEdit *b)

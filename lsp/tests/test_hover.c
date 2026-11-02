@@ -1,5 +1,5 @@
 // L^ (lhat) -- LSP server tests: what a hover answers with (hover.c).
-// 07§4.
+// [lsp.hover].
 
 #include <stdlib.h>
 #include <string.h>
@@ -118,7 +118,7 @@ static void test_definition(void)
     check_dispose(&c);
 
     // The annotation as written is what shows, which is where a type comes
-    // from until the doc-comment half of hover exists (07§4).
+    // from until the doc-comment half of hover exists ([lsp.hover]).
     LHAT_TEST("an annotation shows as it was written");
     check_text(&c, "let^ n:number^ = 1\nprint(n)\n");
     text = hover_text(&c, last_offset(&c, "n"));
@@ -126,8 +126,8 @@ static void test_definition(void)
     free(text);
     check_dispose(&c);
 
-    // §13.1 spells an annotated target as a parameter node, but the form that
-    // declares the name is the let^ -- the whole line, with what 01§6.4
+    // [syntax.type.signature] spells an annotated target as a parameter node, but the form that
+    // declares the name is the let^ -- the whole line, with what [lex.comment.kept]
     // wrote above it, rather than 'n:number^' alone.
     LHAT_TEST("and an annotated let^ still shows as the let^ it is");
     check_text(&c,
@@ -196,7 +196,7 @@ static void test_comments(void)
 {
     Checked c;
 
-    // 01§6.4: the comment block above a definition is what it says about
+    // [lex.comment.kept]: the comment block above a definition is what it says about
     // itself. The markers come off so it reads as prose.
     LHAT_TEST("a hover carries the comment written above the definition");
     check_text(&c,
@@ -284,7 +284,7 @@ static uint32_t first_offset(const Checked *c, const char *needle)
     return found != NULL ? (uint32_t)(found - c->source.text) : 0;
 }
 
-// §14.10: a member is looked up in a type rather than in a scope, so there is
+// [syntax.obj.structure]: a member is looked up in a type rather than in a scope, so there is
 // no binding to point at -- and for a type from another unit or from a host
 // registration there is nothing in this source to point at either. What it
 // is is still known, and that is what a reader wanted.
@@ -313,8 +313,8 @@ static void test_member(void)
 
 // A declaration binds a name rather than resolving one, so the checker
 // records nothing against it and the answer is found by position instead.
-// §14.15 with §14.11: a definition still holding a member nothing has provided
-// is one to compose onto rather than one to make anything of, and §14.11
+// [syntax.obj.abstract] with [syntax.obj.new]: a definition still holding a member nothing has provided
+// is one to compose onto rather than one to make anything of, and [syntax.obj.new]
 // refuses its new. Two definitions differing only in that read the same in
 // the source until the self^{ } section is gone through line by line, so the
 // hover says which this is.
@@ -331,7 +331,7 @@ static void test_an_abstract_definition_says_so(void)
                "    self^{ slot = 1 },\n"
                "}\n"
                "let^ made = Filled.new()\n");
-    // The name of the hole, which is the one §14.11's refusal names too.
+    // The name of the hole, which is the one [syntax.obj.new]'s refusal names too.
     char *text = hover_text(&c, last_offset(&c, "Base.."));
     expect_contains(text, "*(abstract: slot)*");
     free(text);
@@ -344,9 +344,9 @@ static void test_an_abstract_definition_says_so(void)
     free(text);
     check_dispose(&c);
 
-    // §14.15+3: a written new gives a template field its value too, so a
+    // [syntax.obj.abstract-new]: a written new gives a template field its value too, so a
     // definition built that way has no hole to say anything about. The note
-    // is the same predicate §14.11's refusal asks, so the two agree here.
+    // is the same predicate [syntax.obj.new]'s refusal asks, so the two agree here.
     LHAT_TEST("and a field the written new writes is not a hole");
     check_text(&c,
                "let^ Held = def^{\n"
@@ -412,10 +412,10 @@ static void test_declaration(void)
     check_dispose(&c);
 }
 
-// A name whose meaning comes from neither a scope nor a type: §15.10's this^
+// A name whose meaning comes from neither a scope nor a type: [syntax.sub.this]'s this^
 // is the subroutine running, given by the body around it. Nothing in the
 // source declares it, so the type is the whole answer -- the same shape a
-// host-bound name like print takes (05§8.2), which needs a registration
+// host-bound name like print takes ([modules.host.initial]), which needs a registration
 // behind it and is pinned against a running server instead.
 static void test_named_by_the_form(void)
 {
@@ -432,7 +432,7 @@ static void test_named_by_the_form(void)
     free(text);
     check_dispose(&c);
 
-    // 07§4: the three literals are left unrecorded on purpose -- the
+    // [lsp.hover]: the three literals are left unrecorded on purpose -- the
     // spelling is already the answer, so a hover would repeat the word.
     LHAT_TEST("and a literal keyword answers nothing, being its own answer");
     check_text(&c, "let^ yes = true^\n");
@@ -443,7 +443,7 @@ static void test_named_by_the_form(void)
 
 // ---------------------------------------------------------------------------
 // Across units. The same table-driven fake disk tests/test_program.c reads
-// units from, since 05§6.1 needs a program with two.
+// units from, since [modules.deps.static] needs a program with two.
 // ---------------------------------------------------------------------------
 
 typedef struct {
@@ -512,7 +512,7 @@ static char *hover_across(const LhatProgram *program, const LhatUnit *asked,
     return copy;
 }
 
-// 05§6.1: a name from another unit reaches a definition written there, and
+// [modules.deps.static]: a name from another unit reaches a definition written there, and
 // what a hover shows of it has to be cut from that unit -- not from whatever
 // stands at the same offset in this one, which is what the one-unit shape
 // showed before the halves were split (hover.h).
@@ -570,7 +570,7 @@ static void test_across_units(void)
                             offset_in(main_unit, "\"lib.lh\""));
         // lib.lh opens with a comment, so nothing stands at its byte 0: the
         // first statement is what there is to show, and its comment is the
-        // unit's own description (07§4).
+        // unit's own description ([lsp.hover]).
         expect_contains(text, "module^ store");
         expect_contains(text, "Held");  // the exports, as the type
 #if LHAT_WITH_COMMENTS
@@ -591,7 +591,7 @@ static void test_across_units(void)
         LHAT_TEST("02 の 19 章: an enum member shows its declaration elsewhere");
         text = hover_across(&program, main_unit, offset_in(main_unit, "Walk"));
         expect_contains(text, "Walk = 5");
-        expect_contains(text, ": Mode");  // §19: wide in value position
+        expect_contains(text, ": Mode");  // [syntax.enum]: wide in value position
         LHAT_CHECK(text != NULL && strstr(text, "let^ mode") == NULL,
                    "a line of main.lh leaked in: %s", text ? text : "");
         free(text);

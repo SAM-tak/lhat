@@ -10,10 +10,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "compile.h"  // 05§5.3: the units are compiled here too
-#include "gc.h"  // LHAT_GC_BLACK -- host_heap の初期色 (04§12.4)
+#include "compile.h"  // [modules.require.once]: the units are compiled here too
+#include "gc.h"  // LHAT_GC_BLACK -- host_heap の初期色 ([errors.grammar.types])
 #include "grow.h"
-#include "lhat/error.h"  // one shape for what a stage reported (03§1.1)
+#include "lhat/error.h"  // one shape for what a stage reported ([pipeline.stages.tree])
 #include "lhat/port.h"
 #include "rttype.h"
 #include "type.h"
@@ -23,7 +23,7 @@
 // Paths
 // ---------------------------------------------------------------------------
 
-// 10§5.3 keys the cache on the resolved path, so two spellings of one unit have
+// [l10n.compose.no-plurals] keys the cache on the resolved path, so two spellings of one unit have
 // to arrive at the same string. Separators are unified and '.' and '..' are
 // folded away; nothing else is interpreted, since the loader may not be a
 // file system at all.
@@ -111,7 +111,7 @@ static bool absolute_path(const char *path, size_t length)
                           (length > 1 && path[1] == ':'));
 }
 
-// 05§5.1: a require^ is relative to the unit that wrote it.
+// [modules.require.path]: a require^ is relative to the unit that wrote it.
 static char *resolve_against(const LhatProgram *program, const char *base, const char *relative,
                              size_t relative_length)
 {
@@ -203,11 +203,11 @@ static const LhatSignatureIndex *find_signature(const LhatProgram *program,
 static void check_parsed(LhatProgram *program, LhatUnit *unit,
                          LhatTypeArena *arena);
 #endif
-// 05§8.8+: gives every derived host type what its base registered. Both
+// [modules.hostdata.base]: gives every derived host type what its base registered. Both
 // of the two ways checking starts call it; it does its work once.
 static void flatten_hostdata_bases(LhatProgram *program);
 static void stamp_source(LhatProto *proto, const char *path);
-// 05§8.11: the halves that run with the lock already held, for the
+// [modules.host.lock]: the halves that run with the lock already held, for the
 // entries that would otherwise take it twice.
 static bool compile_all(LhatProgram *program);
 static const LhatUnit *check_held(LhatProgram *program, const char *path);
@@ -219,11 +219,11 @@ static LhatLoadStatus load_text_held(LhatProgram *program, const char *name,
                                      const LhatLoadOptions *options,
                                      LhatProto **out);
 
-// 05§5.3: `from` require^s `to`. Answers the position in `from`'s list,
+// [modules.require.once]: `from` require^s `to`. Answers the position in `from`'s list,
 // which is the number the compiler writes into a UNIT instruction, or
 // LHAT_NO_UNIT when there is no room.
 //
-// 03§5.7 reads these backwards to find every unit a changed one reaches, and
+// [pipeline.bc.coroutine] reads these backwards to find every unit a changed one reaches, and
 // that is why the checker records them too rather than only the compiler:
 // a unit the checker rejected never compiles, so its edges would never be
 // known -- and an editor's units are rejected all day.
@@ -240,7 +240,7 @@ static size_t remember_edge(LhatUnit *from, LhatUnit *to)
     return from->referenced_count++;
 }
 
-// What the checker asks when it meets a require^ (05§6.1).
+// What the checker asks when it meets a require^ ([modules.deps.static]).
 typedef struct {
     LhatProgram *program;
     LhatUnit *requiring;
@@ -260,20 +260,20 @@ static LhatType *resolve_require(void *context, const char *path, size_t length,
     if (unit == NULL) {
         return NULL;
     }
-    // 05§5.7: recorded before the state is judged. A require^ that reached a
+    // [modules.require.reload]: recorded before the state is judged. A require^ that reached a
     // unit which would not read is still an edge -- when that file appears
     // and is invalidated, this unit is what has to be checked again.
     (void)remember_edge(r->requiring, unit);
     if (unit->state != LHAT_UNIT_DONE) {
         return NULL;
     }
-    // 05§10: a text unit reaching a binary one has no exports to read
+    // [modules.binary]: a text unit reaching a binary one has no exports to read
     // -- a program is one or the other.
     if (unit->binary) {
         report(r->program, LHAT_PROGRAM_ERR_MIXED, unit->path);
         return NULL;
     }
-    // 05§3: the unit outlives this program's checking, so handing the
+    // [modules.unit]: the unit outlives this program's checking, so handing the
     // text out rather than a copy is safe -- and its path the same.
     if (module_name != NULL) {
         *module_name = unit->checked.module_name;
@@ -288,7 +288,7 @@ static LhatType *resolve_require(void *context, const char *path, size_t length,
                : lhat_type_table(&r->program->types);
 }
 
-// 05§5.7: FNV-1a over a unit's text, so that a save which changed nothing
+// [modules.require.reload]: FNV-1a over a unit's text, so that a save which changed nothing
 // can be told from one that did. Not a security question -- a collision costs
 // a reload that was not needed, or misses one that was, and the host may
 // always invalidate a path it knows changed.
@@ -305,13 +305,13 @@ static uint64_t hash_text(const char *text, size_t length)
 }
 
 // Reads the unit's text through the program's loader and takes it as far as
-// checking. Shared by a unit met for the first time and by one 05§5.7 made
+// checking. Shared by a unit met for the first time and by one [modules.require.reload] made
 // stale, which is the whole reason it stands apart from check_path.
 static void load_into(LhatProgram *program, LhatUnit *unit)
 {
     unit->state = LHAT_UNIT_CHECKING;
 
-    // 05§8.9: no loader is not an error of the program's -- it is a host
+    // [modules.hostvalue]: no loader is not an error of the program's -- it is a host
     // that never handed one over, and then nothing can be read.
     size_t length = 0;
     char *text = program->load != NULL
@@ -326,7 +326,7 @@ static void load_into(LhatProgram *program, LhatUnit *unit)
 
     unit->source_hash = hash_text(text, length);
 
-    // 05§10: the bytes say which they are. A binary unit is built
+    // [modules.binary]: the bytes say which they are. A binary unit is built
     // rather than read -- no tree, no check -- and lands in the same state
     // a checked one does, so that everything after this treats the two
     // alike.
@@ -358,7 +358,7 @@ static void load_into(LhatProgram *program, LhatUnit *unit)
     lhat_free(text);
     check_parsed(program, unit, &program->types);
 #else
-    // 05§10.8: text, and nothing here reads text.
+    // [modules.binary.vm-only]: text, and nothing here reads text.
     lhat_free(text);
     report(program, LHAT_PROGRAM_ERR_NO_FRONTEND, unit->path);
     unit->state = LHAT_UNIT_FAILED;
@@ -368,13 +368,13 @@ static void load_into(LhatProgram *program, LhatUnit *unit)
 // Takes ownership of `path`.
 static LhatUnit *check_path(LhatProgram *program, char *path)
 {
-    // 05§8.8+: registration has closed by the time anything is checked,
+    // [modules.hostdata.base]: registration has closed by the time anything is checked,
     // so this is where a host type comes to carry its base's members.
     flatten_hostdata_bases(program);
 
     LhatUnit *existing = find_unit(program, path);
     if (existing != NULL) {
-        // 10§6.3: meeting a unit that is still being checked means the graph
+        // [l10n.catalog.dump]: meeting a unit that is still being checked means the graph
         // has a cycle. Reported here, where both ends are known.
         if (existing->state == LHAT_UNIT_CHECKING) {
             report(program, LHAT_PROGRAM_ERR_CYCLE, path);
@@ -382,9 +382,9 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
             return NULL;
         }
         lhat_free(path);
-        // 05§5.7: an invalidated unit is read again here -- the shell is
+        // [modules.require.reload]: an invalidated unit is read again here -- the shell is
         // the same one the host may be holding, and only what was made of it
-        // went. Every other state is 05§5.3's "loaded once": a second require^
+        // went. Every other state is [modules.require.once]'s "loaded once": a second require^
         // gets the same unit.
         if (existing->state == LHAT_UNIT_STALE) {
             load_into(program, existing);
@@ -408,8 +408,8 @@ static LhatUnit *check_path(LhatProgram *program, char *path)
 }
 
 // Lexes, parses and checks a unit whose source is in place. `arena` is the
-// program's for a unit of the program (08§6: what it publishes has to
-// outlive it) and NULL for a loaded script (05§5.6), whose types nobody else
+// program's for a unit of the program ([lton.nil]: what it publishes has to
+// outlive it) and NULL for a loaded script ([modules.require.load]), whose types nobody else
 // will point at -- the result then owns them.
 #if LHAT_WITH_FRONTEND
 static void check_parsed(LhatProgram *program, LhatUnit *unit,
@@ -435,9 +435,9 @@ static void check_parsed(LhatProgram *program, LhatUnit *unit,
     LhatRequire require;
     require.resolve = resolve_require;
     require.context = &resolution;
-    require.hosted = program->hosted;  // 05§8.7
-    require.globals = program->globals;  // 05§8.6
-    // 05§8.2: the initial bindings are the host's convenience for a
+    require.hosted = program->hosted;  // [modules.host.import]
+    require.globals = program->globals;  // [modules.host.machine]
+    // [modules.host.initial]: the initial bindings are the host's convenience for a
     // program it means to run. A text read as data is not that -- what a
     // host bound for its own units is no part of what a configuration file
     // may name -- so LhatLoadOptions can leave them out.
@@ -447,16 +447,16 @@ static void check_parsed(LhatProgram *program, LhatUnit *unit,
     require.initial_members =
         initial ? (const char *const *)program->initial_members : NULL;
     require.initial_count = initial ? program->initial_count : 0;
-    require.annotations = program->annotations;  // §18.5
+    require.annotations = program->annotations;  // [syntax.annot.host]
     require.annotation_count = program->annotation_count;
 
-    // The recursion is what puts the graph in dependency order (05§6.2): the
+    // The recursion is what puts the graph in dependency order ([modules.deps.order]): the
     // required unit finishes before this one's checking gets past the
     // require^ that asked for it.
     lhat_check_unit(unit->parsed.root, &unit->lexer, program->strict, arena,
                     &require, &unit->checked);
 
-    // 05§5.7: kept past the check that read it, since an invalidation
+    // [modules.require.reload]: kept past the check that read it, since an invalidation
     // throws the check away and the name is what a machine holds the unit
     // under. A second check of the same unit may read a different one.
     lhat_free(unit->module_name);
@@ -468,7 +468,7 @@ static void check_parsed(LhatProgram *program, LhatUnit *unit,
 }
 #endif  // LHAT_WITH_FRONTEND
 
-// 05§5: the compile-time twin of resolve_require. The unit is already
+// [modules.require]: the compile-time twin of resolve_require. The unit is already
 // there -- checking put it there -- so this only has to say where it sits.
 #if LHAT_WITH_FRONTEND
 static size_t resolve_unit(void *context, const char *path, size_t length,
@@ -493,7 +493,7 @@ static size_t resolve_unit(void *context, const char *path, size_t length,
 }
 
 // ---------------------------------------------------------------------------
-// §18: what a unit wrote as annotations
+// [syntax.annot]: what a unit wrote as annotations
 // ---------------------------------------------------------------------------
 
 static bool unit_name_is(const LhatUnit *unit, const LhatNode *node,
@@ -509,7 +509,7 @@ static bool unit_name_is(const LhatUnit *unit, const LhatNode *node,
     return strlen(name) == length && memcmp(spelt, name, length) == 0;
 }
 
-// The top-level binding of `name`, or NULL. §18.4 puts an annotation on the
+// The top-level binding of `name`, or NULL. [syntax.annot.where] puts an annotation on the
 // declaration, so this is where one is looked for.
 static const LhatNode *unit_top_binding(const LhatUnit *unit,
                                         const char *name)
@@ -530,7 +530,7 @@ static const LhatNode *unit_top_binding(const LhatUnit *unit,
     return NULL;
 }
 
-// A member of the definition, or a field of its template -- §18.4 puts an
+// A member of the definition, or a field of its template -- [syntax.annot.where] puts an
 // annotation on both, and a host asking for `hp` does not care which it is.
 static const LhatNode *definition_entry(const LhatUnit *unit,
                                         const LhatNode *definition,
@@ -539,7 +539,7 @@ static const LhatNode *definition_entry(const LhatUnit *unit,
     if (definition == NULL) {
         return NULL;
     }
-    // §14.5: a definition is often written as a composition, and what a host
+    // [syntax.obj.compose]: a definition is often written as a composition, and what a host
     // asks about may have been written in any part of it. The right side is
     // what overrides, so it is asked first.
     if (definition->kind == LHAT_NODE_BINARY &&
@@ -553,7 +553,7 @@ static const LhatNode *definition_entry(const LhatUnit *unit,
     // A name standing for a definition written elsewhere in this unit.
     if (definition->kind == LHAT_NODE_IDENT ||
         definition->kind == LHAT_NODE_MEMBER) {
-        return NULL;  // 05§5.3: another unit's tree is not this one's to walk
+        return NULL;  // [modules.require.once]: another unit's tree is not this one's to walk
     }
     if (definition->kind != LHAT_NODE_DEF) {
         return NULL;
@@ -566,7 +566,7 @@ static const LhatNode *definition_entry(const LhatUnit *unit,
             }
             continue;
         }
-        // §14.3 with §14.7+2: the template has no key -- and neither has the
+        // [syntax.obj.methods] with [syntax.obj.delegate]: the template has no key -- and neither has the
         // delegate entry, so what marks the template is the absence of both.
         // What a delegate lends is not written here, and this answers what
         // the unit's tree says.
@@ -675,7 +675,7 @@ static LhatAnnotationArgument tree_argument(LhatAnnotation annotation,
         return out;
     }
 
-    // §18.3's leading '-' is kept as the unary it is, and applied here so a
+    // [syntax.annot.literal-args]'s leading '-' is kept as the unary it is, and applied here so a
     // host reads one number rather than a shape.
     LhatReal sign = 1.0;
     if (argument->kind == LHAT_NODE_UNARY) {
@@ -718,7 +718,7 @@ static LhatAnnotationArgument tree_argument(LhatAnnotation annotation,
 }
 
 // ---------------------------------------------------------------------------
-// 01§6.4: what a unit says about itself
+// [lex.comment.kept]: what a unit says about itself
 // ---------------------------------------------------------------------------
 
 // The node a description is read off, for the same four addresses the
@@ -791,7 +791,7 @@ static const LhatNode *definition_entry_at(const LhatUnit *unit,
             }
             continue;
         }
-        // §14.7+2: the delegate entry has no key either -- see
+        // [syntax.obj.delegate]: the delegate entry has no key either -- see
         // definition_entry above, which counts the same entries this does.
         if (entry->v.entry.modifier == LHAT_DEF_DELEGATE) {
             continue;
@@ -826,8 +826,8 @@ static const LhatNode *member_entry(const LhatUnit *unit,
     return definition_entry_at(unit, binding->v.binding.values, index, &seen);
 }
 
-// The parameters a member wrote, whether it wrote a signature (§14.15) or the
-// f^ / p^ itself. §13.4: self^ is a mark saying a call hands the receiver
+// The parameters a member wrote, whether it wrote a signature ([syntax.obj.abstract]) or the
+// f^ / p^ itself. [syntax.type.param-names]: self^ is a mark saying a call hands the receiver
 // over, not a parameter a call writes -- so it is not one here either.
 static const LhatNode *member_params(const LhatUnit *unit,
                                      const LhatNode *entry)
@@ -884,7 +884,7 @@ static LhatUnitTypeKind written_type_kind(const LhatUnit *unit,
     return LHAT_UNIT_TYPE_OTHER;
 }
 
-// What a value is written as, for a field given one instead of a type. §14.6
+// What a value is written as, for a field given one instead of a type. [syntax.obj.template]
 // lets 'speed = 1' stand without saying number^, and a host putting a widget
 // on that field has nothing else to read: this runs before anything has, so
 // there is no value to look at, only the way one was spelt.
@@ -902,7 +902,7 @@ static LhatUnitTypeKind value_type_kind(const LhatUnit *unit,
         case LHAT_NODE_INT:
         case LHAT_NODE_FLOAT:
             return LHAT_UNIT_TYPE_NUMBER;
-        // 01§5.4: an interpolation is a string however many holes it has.
+        // [lex.string.interp]: an interpolation is a string however many holes it has.
         case LHAT_NODE_STRING:
         case LHAT_NODE_INTERP:
             return LHAT_UNIT_TYPE_STRING;
@@ -955,7 +955,7 @@ static void walk_written_names(NameWalk *walk, const LhatNode *node)
             LhatUnitText text;
             text.text = NULL;
             text.length = 0;
-            // 01§3.3: id^name and "name" answer the same bytes, and which
+            // [lex.ident.id-hat]: id^name and "name" answer the same bytes, and which
             // one was written is the reader's business rather than a host's.
             if (at->kind == LHAT_NODE_STRING) {
                 text.text = walk->unit->lexer.strings + at->v.string.offset;
@@ -1004,14 +1004,14 @@ static LhatUnitMember tree_member(const LhatUnit *unit, const char *definition,
         out.name_length = length;
     }
     out.declared = entry->v.entry.declared;
-    // §18.7+: what a writer writes when there is nothing for the language to
-    // run. The clauses a block may carry (05§9) count as something written,
+    // [syntax.annot.host-fills]: what a writer writes when there is nothing for the language to
+    // run. The clauses a block may carry ([modules.open]) count as something written,
     // so both halves of the list have to be empty for this to be true.
     const LhatNode *body = member_body(entry);
     out.empty_body = body != NULL && body->kind == LHAT_NODE_BLOCK &&
                      body->v.list.items == NULL && body->v.list.extra == NULL &&
                      body->v.list.arms == NULL;
-    // The written type first: §14.6's 'name : type = value' says it outright.
+    // The written type first: [syntax.obj.template]'s 'name : type = value' says it outright.
     // Where only a value was written, the way it was spelt is what is left.
     out.type = written_type_kind(unit, entry->v.entry.type);
     if (out.type == LHAT_UNIT_TYPE_OTHER) {
@@ -1085,13 +1085,13 @@ static LhatUnitText tree_written_name(const LhatUnit *unit,
 #endif  // LHAT_WITH_FRONTEND
 
 // ---------------------------------------------------------------------------
-// 05§10.6: a binary unit answers §18 off the records the bytes carried
+// [modules.binary.reflect]: a binary unit answers [syntax.annot] off the records the bytes carried
 // ---------------------------------------------------------------------------
 //
 // The addresses are the four lhat_unit_annotation_count names (program.h).
 // The records hold the top-level bindings in written order, each with the
 // members of the definition it holds -- what the walkers above answered
-// when the unit was written, kept because the bytes have no tree. 05§10.8: a
+// when the unit was written, kept because the bytes have no tree. [modules.binary.vm-only]: a
 // build without the front end has only these, and answers nothing else.
 
 static bool reflected_named(const LhatReflectedText *text, const char *name)
@@ -1373,7 +1373,7 @@ LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
 }
 
 // ---------------------------------------------------------------------------
-// 05§4.5: what the unit published, as types
+// [modules.public.host]: what the unit published, as types
 // ---------------------------------------------------------------------------
 
 static const LhatTypeMember *export_named(const LhatUnit *unit,
@@ -1393,7 +1393,7 @@ static const LhatTypeMember *export_named(const LhatUnit *unit,
     return NULL;
 }
 
-// 05§10: a binary unit answers off the descriptors it carried; the
+// [modules.binary]: a binary unit answers off the descriptors it carried; the
 // index of a name in them is what lhat_unit_export_type reads by.
 static size_t binary_export_index(const LhatUnit *unit, const char *name)
 {
@@ -1515,13 +1515,13 @@ size_t lhat_unit_export_type_text(const LhatUnit *unit, const char *name,
 bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
                                const char *signature)
 {
-    // 05§10: a binary unit carries no checker type to conform, and
+    // [modules.binary]: a binary unit carries no checker type to conform, and
     // this question is the checker's -- it answers no.
     const LhatTypeMember *m = export_named(unit, name);
     if (m == NULL || signature == NULL || unit->program == NULL) {
         return false;
     }
-    // 05§8.7: read the way a registration's signature is, against what the
+    // [modules.host.import]: read the way a registration's signature is, against what the
     // program registered -- so a host type may be named.
     LhatProgram *program = unit->program;
     const LhatType *wanted = lhat_type_of_text(signature, strlen(signature),
@@ -1536,16 +1536,16 @@ bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
     (void)unit;
     (void)name;
     (void)signature;
-    return false;  // 05§10.8: the checker's question, and there is no checker
+    return false;  // [modules.binary.vm-only]: the checker's question, and there is no checker
 }
 #endif  // LHAT_WITH_FRONTEND
 
 // ---------------------------------------------------------------------------
-// 05§8.7: what the host provides
+// [modules.host.import]: what the host provides
 // ---------------------------------------------------------------------------
 
 
-// 05§8.6: what the host registered is the machine's record of it. Nothing
+// [modules.host.machine]: what the host registered is the machine's record of it. Nothing
 // written in L^ adds to it or writes over it -- the host reaches it through
 // this file's own API instead.
 static LhatType *hosted_namespace(LhatProgram *program)
@@ -1567,7 +1567,7 @@ static LhatType *hosted_root(LhatProgram *program)
     return program->hosted;
 }
 
-// 05§8.7: the table the unit at a dotted path published into, made where
+// [modules.host.import]: the table the unit at a dotted path published into, made where
 // the path does not reach one. The tree is two tables a step: the step's own
 // members are the units named under it, and what the unit there published is
 // its `base` -- so an import^ can be handed the one without the other, while
@@ -1575,7 +1575,7 @@ static LhatType *hosted_root(LhatProgram *program)
 // `base` is only on the way to a unit and is none itself.
 //
 // `name`, when given, is the name about to be published there, and is
-// refused where a unit under this one already stands -- 05§8.7's one name, one
+// refused where a unit under this one already stands -- [modules.host.import]'s one name, one
 // thing, across the two tables. The walk refuses the other order.
 static LhatType *hosted_unit(LhatProgram *program, const char *module,
                              const char *name)
@@ -1616,21 +1616,21 @@ static LhatType *hosted_unit(LhatProgram *program, const char *module,
 static const LhatTypeMember *hosted_member(const LhatType *table,
                                            const char *name)
 {
-    // 05§8.9: a host value type keeps its members in the same half of the
-    // union a table does, and 05§8.7 registers into one exactly as into the
+    // [modules.hostvalue]: a host value type keeps its members in the same half of the
+    // union a table does, and [modules.host.import] registers into one exactly as into the
     // other -- so both are searched here.
     //
-    // The type's OWN members and no link: 05§8.8+ puts a derived type under
+    // The type's OWN members and no link: [modules.hostdata.base] puts a derived type under
     // its base, and registering a name the base already has is registering
     // it here, not finding it there.
     return lhat_type_own_member(table, name, strlen(name));
 }
 
-// §14.12 with 05§8.7: a registration's signature as the descriptors
+// [syntax.obj.override] with [modules.host.import]: a registration's signature as the descriptors
 // the machine's overload search reads -- rttype.c's conversion, onto the
 // program's own heap (host_heap), once, at registration. A parameter whose
 // descriptor comes back NULL is not compared, so the search falls back on
-// the counts. §13.4 keeps self^ out of the list either way, so the count is
+// the counts. [syntax.type.param-names] keeps self^ out of the list either way, so the count is
 // the same one the entry recorded.
 static LhatRuntimeType **lower_host_params(LhatProgram *program,
                                            const LhatType *signature,
@@ -1696,7 +1696,7 @@ static bool keep_entry(LhatProgram *program, const char *module,
             count++;
         }
         entry->parameters = (uint8_t)count;
-        // §13.7: '...' is kept apart from the parameter list (check.c's
+        // [syntax.type.variadic]: '...' is kept apart from the parameter list (check.c's
         // resolve_func_type), so what is counted above is the floor and this
         // is what says the count is one.
         entry->has_variadic = signature->v.func.variadic != NULL;
@@ -1723,11 +1723,11 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
 {
     LhatType *table = hosted_unit(program, module, name);
     if (table == NULL || hosted_member(table, name) != NULL) {
-        return NULL;  // 05§8.7: one name, one thing
+        return NULL;  // [modules.host.import]: one name, one thing
     }
 
-    // 05§7.3's shape: what makes it its own type is the declaration, not
-    // the members, so two host types that look alike stay apart. §8.8's
+    // [modules.label.errors]'s shape: what makes it its own type is the declaration, not
+    // the members, so two host types that look alike stay apart. [syntax.stmt.member]'s
     // mark keeps a member from being added to it afterwards.
     LhatType *made = lhat_type_table(&program->types);
     if (made == NULL) {
@@ -1741,7 +1741,7 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
         return NULL;
     }
 
-    // 05§8.8: the tag is identity and nothing else, so there is exactly one per
+    // [modules.hostdata]: the tag is identity and nothing else, so there is exactly one per
     // DECLARATION -- and the declaration is this C call, however many
     // programs make it. The registry (registry.h) is where the one lives; a
     // second program registering std.io.File comes away with the same tag,
@@ -1752,12 +1752,12 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
         return NULL;
     }
     // And the checker's type says which declaration it is, so what writes a
-    // type out can name it rather than spelling the shape -- 05§8.8 puts
+    // type out can name it rather than spelling the shape -- [modules.hostdata] puts
     // identity in the declaration, and a shape written in its place is a
     // wider type that anything of the same members satisfies.
     made->v.table.hostdata_tag = entry->tag;
 
-    // 05§8.8 の fits^ 版: vm.c がコンパイル時に "module.Name" から
+    // [modules.hostdata] の fits^ 版: vm.c がコンパイル時に "module.Name" から
     // 引けるよう、host_entries(非公開)とは別に vm.h の形へ薄く複製する。
     // 文字列は entry->module/name(host_entries が所有)をそのまま指す
     // だけ -- ここでは複製しない。program_dispose も host_type_entries
@@ -1792,7 +1792,7 @@ bool lhat_register_type(LhatProgram *program, const char *module,
     return lhat_register_hostdata_type(program, module, name) != NULL;
 }
 
-// 05§8.8+: the checker's type for a registered hostdata name, which is
+// [modules.hostdata.base]: the checker's type for a registered hostdata name, which is
 // what the flatten pass moves members between. hosted_unit would make a
 // module that is not there, but every type asked about here registered
 // through it already, so it only ever finds one.
@@ -1819,12 +1819,12 @@ static LhatHostTypeEntry *host_type_entry_of(LhatProgram *program,
     return NULL;  // registered by another program; nothing here to read
 }
 
-// 05§8.8+: gives one type what its base registered, the base having been given
+// [modules.hostdata.base]: gives one type what its base registered, the base having been given
 // its own first -- so a chain of any depth settles whatever order the
 // entries happen to be in.
 //
 // A name the derived type registered for itself is left alone. That is what
-// overriding is: 05§8.8's "what was registered cannot be written over" is about
+// overriding is: [modules.hostdata]'s "what was registered cannot be written over" is about
 // L^ writing into a host type, and this is one registration standing in
 // front of another.
 static void flatten_host_type(LhatProgram *program, LhatHostTypeEntry *entry)
@@ -1849,13 +1849,13 @@ static void flatten_host_type(LhatProgram *program, LhatHostTypeEntry *entry)
     // Linked, not copied. A binding declares a class per engine class and
     // each one carries its whole ancestry, so copying makes every class pay
     // for every class above it -- a walk inside a walk, and the editor
-    // waits for all of it on each save (03§1.1). chk_find_member follows
+    // waits for all of it on each save ([pipeline.stages.tree]). chk_find_member follows
     // this the way the machine follows the tag chain, and a name the derived
     // type declares itself still wins because its own list is asked first.
     derived->v.table.base = base;
 }
 
-// 05§8.8+: run once, when registration has closed. The moment is the first
+// [modules.hostdata.base]: run once, when registration has closed. The moment is the first
 // check: program.h already says registering after one "is too late and
 // answers false", so there is nothing left to arrive.
 //
@@ -1879,7 +1879,7 @@ static void flatten_hostdata_bases(LhatProgram *program)
     }
 }
 
-// 05§8.8+: the same declaration, under a type declared earlier. The base
+// [modules.hostdata.base]: the same declaration, under a type declared earlier. The base
 // is looked up rather than made, so naming one that is not there is refused
 // -- a tree written out of order would otherwise settle silently on a base
 // that arrived later meaning something else.
@@ -1929,7 +1929,7 @@ bool lhat_register_hostdata_shared(LhatProgram *program, const char *module,
     for (size_t i = 0; i < program->host_type_entry_count; i++) {
         const LhatHostTypeEntry *at = &program->host_type_entries[i];
         if (strcmp(at->module, module) == 0 && strcmp(at->name, name) == 0) {
-            // 05§8.8+2: the tag is the process's, so the contract settles
+            // [modules.hostdata.sharing]: the tag is the process's, so the contract settles
             // there (registry.h), as the release and the base do.
             return lhat_registry_set_hold(at->tag, retain, let_go, context);
         }
@@ -1966,12 +1966,12 @@ static void free_variant_arrays(char **variant_copies,
     lhat_free(variants);
 }
 
-// 04§12.4 の host 版: errordef^ を書かずに存在する誤り種別。型側は
+// [errors.grammar.types] の host 版: errordef^ を書かずに存在する誤り種別。型側は
 // lhat_register_hostdata_type と同じ hosted_unit/hosted_member を通る;
 // 実行時側は check.c の check_errordef / vm.c の declare_error が unit の
 // ASTから作るのと同じ2つの呼び出し(lhat_type_error_set/error_kind、
 // lhat_error_kind_new)を、program->host_heap に対して行う。
-// 04§2.7: `local` is which top, the C side of errordef^ / localerrordef^.
+// [errors.kind.local]: `local` is which top, the C side of errordef^ / localerrordef^.
 // The two public entries below are this with that decided.
 static bool register_error_kind(LhatProgram *program, const char *module,
                                 const char *name,
@@ -1985,7 +1985,7 @@ static bool register_error_kind(LhatProgram *program, const char *module,
     }
     LhatType *table = hosted_unit(program, module, name);
     if (table == NULL || hosted_member(table, name) != NULL) {
-        return false;  // 05§8.7: one name, one thing
+        return false;  // [modules.host.import]: one name, one thing
     }
 
     LhatType *set =
@@ -2002,7 +2002,7 @@ static bool register_error_kind(LhatProgram *program, const char *module,
         }
     }
 
-    // 04§2.4: a kind is the declaration it came from, and the declaration
+    // [errors.kind.nominal]: a kind is the declaration it came from, and the declaration
     // is this C call -- so the kinds are the registry's (registry.h) and a
     // second program declaring the same ones comes away with the very same
     // objects. A declaration of the same name with a different list of
@@ -2150,12 +2150,12 @@ void *lhat_lookup_host_context(const LhatProgram *program, const char *module,
     return NULL;
 }
 
-// §14.12: whether two registrations of one name could take the same
+// [syntax.obj.override]: whether two registrations of one name could take the same
 // call. Arms may stand together only where no call fits both -- which is what
 // makes the search that resolves one able to stop at the first that fits.
 //
 // Told apart by anything that decides a call: how many parameters, whether a
-// tail collects more, which operand the receiver is (§11.3+), and failing all
+// tail collects more, which operand the receiver is ([syntax.op.right]), and failing all
 // of those, a parameter position where neither type admits the other's values.
 #if LHAT_WITH_FRONTEND
 static bool host_arms_overlap(const LhatType *a, const LhatType *b)
@@ -2171,7 +2171,7 @@ static bool host_arms_overlap(const LhatType *a, const LhatType *b)
     // Two arms are told apart exactly where the machine's search (vm.c's
     // fits_call) can tell them apart: by a written parameter position the
     // two disagree on, or by one arm having no place for an argument the
-    // other requires. §13.7: a variadic tail makes the count a floor and is
+    // other requires. [syntax.type.variadic]: a variadic tail makes the count a floor and is
     // not compared by type at the call, so past its written parameters an
     // arm takes anything -- 'f(string^)' and 'f(number^, ...)' part at the
     // first position, 'f(number^)' and 'f(number^, number^, ...)' at the
@@ -2205,17 +2205,17 @@ static bool register_into(LhatProgram *program, LhatType *owner,
     if (owner == NULL || call == NULL) {
         return false;
     }
-    // 05§8.7: a signature may name the builtins and whatever was registered
+    // [modules.host.import]: a signature may name the builtins and whatever was registered
     // before it. Nothing a require^ brings in -- that would put the answer
     // back at the mercy of the order units are checked in. A member's may
-    // write the type it is registered on as §13.13's Self^.
+    // write the type it is registered on as [syntax.type.self]'s Self^.
     LhatType *written = lhat_type_of_text(signature, strlen(signature),
                                           &program->types, program->hosted,
                                           type != NULL ? owner : NULL);
     if (written == NULL) {
         return false;
     }
-    // §13.8+: the room a boundary answers into is LHAT_MAX_TUPLE
+    // [syntax.type.tuple]: the room a boundary answers into is LHAT_MAX_TUPLE
     // wide, and the reason it is that wide is that the machine's own is.
     // A signature promising more than the machine can carry is refused
     // HERE, where it is declared -- not found out later, when a host has
@@ -2228,7 +2228,7 @@ static bool register_into(LhatProgram *program, LhatType *owner,
         return false;
     }
 
-    // §14.12: a name already registered gains an arm rather than being
+    // [syntax.obj.override]: a name already registered gains an arm rather than being
     // refused. The type becomes the intersection of what was there and what
     // is written now -- which is exactly what an overload^ makes of a member
     // written twice, so a call site reads the two the same way.
@@ -2264,7 +2264,7 @@ static bool register_into(LhatProgram *program, LhatType *owner,
                       signature);
 }
 #else
-// 05§10.7: what keep_entry takes from a parsed signature, taken from the
+// [modules.binary.signatures]: what keep_entry takes from a parsed signature, taken from the
 // descriptor the table holds instead -- the parts are the parameters, the
 // marks are the receiver and the variadic tail.
 static bool keep_entry_rt(LhatProgram *program, const char *module,
@@ -2304,7 +2304,7 @@ static bool keep_entry_rt(LhatProgram *program, const char *module,
     return true;
 }
 
-// 05§10.8: the signature table stands in for the text. The checker's side
+// [modules.binary.vm-only]: the signature table stands in for the text. The checker's side
 // (hosted) is not built -- nothing here reads it.
 static bool register_into(LhatProgram *program, LhatType *owner,
                           const char *module, const char *type,
@@ -2339,7 +2339,7 @@ bool lhat_register_member(LhatProgram *program, const char *module,
         return false;
     }
 
-    // 05§8.8: §12.5 reads a lifetime off whether the type carries a
+    // [modules.hostdata]: [syntax.with.checked] reads a lifetime off whether the type carries a
     // dispose^, so registering one is what makes the value the host's to
     // take back. The tag carries it, since that is what a value still has
     // when a collection reaches it.
@@ -2361,7 +2361,7 @@ bool lhat_register_member(LhatProgram *program, const char *module,
     return true;
 }
 
-// §18.5: an annotation is checked and never installed, so this records
+// [syntax.annot.host]: an annotation is checked and never installed, so this records
 // only what the checker asks -- where it may be written, and what shape its
 // arguments have. No LhatHostEntry: there is no value to build for a machine.
 bool lhat_register_annotation(LhatProgram *program, const char *module,
@@ -2370,8 +2370,8 @@ bool lhat_register_annotation(LhatProgram *program, const char *module,
     if (program == NULL || module == NULL || name == NULL || targets == 0) {
         return false;
     }
-    // 05§8.7: one name, one thing. Unlike a member, a second registration is not
-    // another arm -- §18.2 keeps the namespace flat, and two hosts wanting the
+    // [modules.host.import]: one name, one thing. Unlike a member, a second registration is not
+    // another arm -- [syntax.annot.spelling] keeps the namespace flat, and two hosts wanting the
     // same spelling is a collision to report rather than to merge.
     for (size_t i = 0; i < program->annotation_count; i++) {
         if (strcmp(program->annotations[i].name, name) == 0) {
@@ -2420,7 +2420,7 @@ bool lhat_register_annotation(LhatProgram *program, const char *module,
     return true;
 }
 
-// The registration of `name`, or NULL. §18.2's flat namespace is what lets the
+// The registration of `name`, or NULL. [syntax.annot.spelling]'s flat namespace is what lets the
 // name alone find it.
 static LhatAnnotationDecl *annotation_named(LhatProgram *program,
                                             const char *name, size_t *at)
@@ -2467,7 +2467,7 @@ bool lhat_register_annotation_signature(LhatProgram *program,
                                         const char *name,
                                         const char *signature)
 {
-    // 05§10.8: an annotation is the checker's to read, and there is no
+    // [modules.binary.vm-only]: an annotation is the checker's to read, and there is no
     // checker; the text is kept for a dump, the type is not made.
     size_t at = 0;
     LhatAnnotationDecl *decl = annotation_named(program, name, &at);
@@ -2577,7 +2577,7 @@ bool lhat_register_instantiation_check_handler(
     return true;
 }
 
-// 05§8.7+: the shared road of the four constant registrations. No
+// [modules.host.nested-fault]: the shared road of the four constant registrations. No
 // signature text and no lhat_type_of_text: an enum dump registers
 // thousands of these, and lhat_type_simple answers the one shared node
 // per kind. A constant takes its name whole -- an existing member,
@@ -2594,7 +2594,7 @@ static bool register_const(LhatProgram *program, const char *module,
     LhatType *owner = hosted_unit(program, module, type == NULL ? name : NULL);
     if (type != NULL) {
         const LhatTypeMember *found = hosted_member(owner, type);
-        // 05§8.8's nominal table or §8.9's host value type -- both carry the
+        // [modules.hostdata]'s nominal table or [syntax.stmt.let]'s host value type -- both carry the
         // member list a static lands in.
         if (found == NULL || (found->type->kind != LHAT_TYPE_TABLE &&
                               found->type->kind != LHAT_TYPE_HOSTVALUE)) {
@@ -2644,7 +2644,7 @@ bool lhat_register_enum_valued(LhatProgram *program, const char *module,
     LhatType *owner = hosted_unit(program, module, type == NULL ? name : NULL);
     if (type != NULL) {
         const LhatTypeMember *found = hosted_member(owner, type);
-        // 05§8.8's nominal table or §8.9's host value type -- the same member
+        // [modules.hostdata]'s nominal table or [syntax.stmt.let]'s host value type -- the same member
         // list a static constant lands in.
         if (found == NULL || (found->type->kind != LHAT_TYPE_TABLE &&
                               found->type->kind != LHAT_TYPE_HOSTVALUE)) {
@@ -2680,7 +2680,7 @@ bool lhat_register_enum_valued(LhatProgram *program, const char *module,
         e->values[i] = values != NULL ? values[i] : (LhatInteger)i + 1;
     }
 
-    // The checker's two tiers, §19's -- a unit's when^ over the
+    // The checker's two tiers, [syntax.enum]'s -- a unit's when^ over the
     // members proves exhaustive the way a declared enum's does.
     LhatType *decl =
         lhat_type_enum_decl(&program->types, e->name, strlen(e->name));
@@ -2755,7 +2755,7 @@ bool lhat_register_const_string(LhatProgram *program, const char *module,
                           LHAT_HOST_CONST_STRING, 0, 0.0, false, text);
 }
 
-// 05§8.9: how many payload bytes one field kind occupies, which is what
+// [modules.hostvalue]: how many payload bytes one field kind occupies, which is what
 // registration checks offsets against.
 static size_t hostvalue_field_bytes(LhatHostValueFieldKind kind)
 {
@@ -2784,7 +2784,7 @@ const LhatHostValueTag *lhat_register_hostvalue_type(LhatProgram *program,
     }
     LhatType *table = hosted_unit(program, module, name);
     if (table == NULL || hosted_member(table, name) != NULL) {
-        return NULL;  // 05§8.7: one name, one thing
+        return NULL;  // [modules.host.import]: one name, one thing
     }
 
     // Grown before anything below can half-succeed, so a refusal here leaves
@@ -2803,7 +2803,7 @@ const LhatHostValueTag *lhat_register_hostvalue_type(LhatProgram *program,
         program->hostvalue_type_entry_capacity = grown_count;
     }
 
-    // §8.9: the tag is identity, and there is one per DECLARATION rather than
+    // [syntax.stmt.let]: the tag is identity, and there is one per DECLARATION rather than
     // one per program -- the registry (registry.h) keeps it, and a second
     // program declaring the same type comes away with the same one. A
     // declaration of the same name at a different size is refused there:
@@ -2905,7 +2905,7 @@ bool lhat_register_hostvalue_field(LhatProgram *program, const char *module,
     return true;
 }
 
-// 05§8.6: L^ itself. Kept apart from the entries above because those land
+// [modules.host.machine]: L^ itself. Kept apart from the entries above because those land
 // under L^.modules and this one does not -- and because the checker reads it
 // from a different place, its own L^ rather than the import^ registry.
 bool lhat_register_global(LhatProgram *program, const char *name,
@@ -2922,7 +2922,7 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         }
     }
     if (hosted_member(program->globals, name) != NULL) {
-        return false;  // 05§8.7: one name, one thing
+        return false;  // [modules.host.import]: one name, one thing
     }
 #if LHAT_WITH_FRONTEND
     LhatType *written = lhat_type_of_text(signature, strlen(signature),
@@ -2934,7 +2934,7 @@ bool lhat_register_global(LhatProgram *program, const char *name,
         return false;
     }
 #else
-    // 05§10.8: the table stands in for the text, as in register_into.
+    // [modules.binary.vm-only]: the table stands in for the text, as in register_into.
     if (signature == NULL || find_signature(program, signature) == NULL) {
         report(program, LHAT_PROGRAM_ERR_NO_SIGNATURE,
                signature != NULL ? signature : name);
@@ -2989,8 +2989,8 @@ bool lhat_register_global(LhatProgram *program, const char *name,
     return true;
 }
 
-// 05§8.2. `member` is written "L^.<name>", which is the only form for now:
-// 05§8.6's table is where a host puts what it wants seen without a require^.
+// [modules.host.initial]. `member` is written "L^.<name>", which is the only form for now:
+// [modules.host.machine]'s table is where a host puts what it wants seen without a require^.
 bool lhat_bind_initial(LhatProgram *program, const char *name,
                        const char *member)
 {
@@ -3035,7 +3035,7 @@ bool lhat_bind_initial(LhatProgram *program, const char *name,
 // Public interface
 // ---------------------------------------------------------------------------
 
-// 04§11.6+: the unit's path, stamped onto every proto of its tree so a
+// [errors.runtime.traceback]: the unit's path, stamped onto every proto of its tree so a
 // traceback can name the file a frame belongs to. Debug only -- a copy per
 // proto, freed with it.
 static void stamp_source(LhatProto *proto, const char *path)
@@ -3073,7 +3073,7 @@ static bool fill_unit_table(LhatUnit *u)
         lhat_free((void *)protos);
         return false;
     }
-    // 05§5.7: the list stays. It is the only record of which way the
+    // [modules.require.reload]: the list stays. It is the only record of which way the
     // graph runs, and lhat_program_invalidate reads it backwards to find
     // every unit a changed one reaches.
     return true;
@@ -3104,8 +3104,8 @@ static char *enum_require_path(const LhatProgram *program, const char *path, boo
     return out;
 }
 
-// Compiles one checked unit into u->proto. `registers` is 05§5.3's guard and
-// registry write for a module^ unit -- off for a loaded one (05§5.6), which
+// Compiles one checked unit into u->proto. `registers` is [modules.require.once]'s guard and
+// registry write for a module^ unit -- off for a loaded one ([modules.require.load]), which
 // answers its table to whoever called it and enters no registry. False
 // leaves the failure where lhat_program_compile_failure reads it.
 static bool compile_one(LhatProgram *program, LhatUnit *u, bool registers)
@@ -3130,11 +3130,11 @@ static bool compile_one(LhatProgram *program, LhatUnit *u, bool registers)
     units.context = &resolution;
     units.module_name = u->checked.module_name;
     units.registers = registers;
-        units.host_errors = program->host_error_entries;  // 05§8.7 の誤り版
+        units.host_errors = program->host_error_entries;  // [modules.host.import] の誤り版
         units.host_error_count = program->host_error_entry_count;
-        units.host_types = program->host_type_entries;  // 05§8.8 の fits^ 版
+        units.host_types = program->host_type_entries;  // [modules.hostdata] の fits^ 版
         units.host_type_count = program->host_type_entry_count;
-        units.hostvalue_types = program->hostvalue_type_entries;  // 05§8.9
+        units.hostvalue_types = program->hostvalue_type_entries;  // [modules.hostvalue]
         units.hostvalue_type_count = program->hostvalue_type_entry_count;
 
     lhat_free(u->referenced);
@@ -3169,7 +3169,7 @@ void lhat_program_set_lock(LhatProgram *program, LhatProgramLockFn lock,
     program->lock_context = context;
 }
 
-// 05§8.11: taken at the public entries and nowhere else, so the pair
+// [modules.host.lock]: taken at the public entries and nowhere else, so the pair
 // never has to nest. A program with no lock pays a branch.
 void lhat_program_hold(LhatProgram *program)
 {
@@ -3186,12 +3186,12 @@ void lhat_program_release(LhatProgram *program)
 }
 
 // ---------------------------------------------------------------------------
-// 10§7.1: the language a program draws its messages in, and the catalogs it
+// [l10n.choose.program]: the language a program draws its messages in, and the catalogs it
 // was handed.
 
 // How close `tag` is to the language `wanted`: 2 for the same tag, 1 for the
 // language alone (a `ja` catalog answers a `ja-JP` program), 0 for neither.
-// Tags are matched without case, as 10§6.1 says.
+// Tags are matched without case, as [l10n.catalog.format] says.
 static int tag_rank(const char *tag, const char *wanted)
 {
     size_t i = 0;
@@ -3293,7 +3293,7 @@ const char *lhat_program_language(const LhatProgram *program)
                                                         : "en";
 }
 
-// 10§2.2: the text to draw `id` from -- this program's language, or the
+// [l10n.principle.english]: the text to draw `id` from -- this program's language, or the
 // English the build holds when that language has nothing for it. Read while
 // a message is being written, which the lock is already around, so it takes
 // none of its own.
@@ -3320,7 +3320,7 @@ const char *lhat_program_text(const LhatProgram *program, const char *id,
     return found != NULL ? found : english;
 }
 
-// 07§4. Freed here rather than where they are made, since the program
+// [lsp.hover]. Freed here rather than where they are made, since the program
 // is what outlives them. The three counts are left alone: what they say is
 // which registrations the cache was emptied against, and an empty cache
 // against the current ones is exactly what this leaves behind.
@@ -3391,7 +3391,7 @@ bool lhat_program_on_dispose(LhatProgram *program, LhatProgramDisposeFn call,
 }
 
 // ---------------------------------------------------------------------------
-// 05§8.7+5: the registrations, built once on the program's own heap
+// [modules.host.shared-registry]: the registrations, built once on the program's own heap
 // ---------------------------------------------------------------------------
 //
 // install used to build every registration again for every machine: a value
@@ -3450,7 +3450,7 @@ static LhatTable *shared_reach(LhatHeap *heap, LhatTable *owner,
 }
 
 // The heap-only twin of lhat_machine_register, overloads included: 02 の
-// §14.12 makes a second registration of one name another arm, and that is a
+// [syntax.obj.override] makes a second registration of one name another arm, and that is a
 // fact about the registrations rather than about any machine.
 static bool shared_register(LhatHeap *heap, LhatTable *root,
                             const char *module, const char *type,
@@ -3578,10 +3578,10 @@ static bool shared_enum(LhatProgram *program, LhatTable *root,
                            lhat_object((LhatObject *)made));
 }
 
-// 05§8.8+, done once: a derived type's members table stands on its
+// [modules.hostdata.base], done once: a derived type's members table stands on its
 // base's, so a member the base declares is found by walking. `definition` is
 // the link table_get_in already climbs, and `is_definition` makes the climb
-// §14.5's walk up to a base, which passes everything. It is a fact about the
+// [syntax.obj.compose]'s walk up to a base, which passes everything. It is a fact about the
 // declarations, so it belongs to the build.
 static bool shared_link_bases(LhatProgram *program, LhatTable *root)
 {
@@ -3741,7 +3741,7 @@ static bool build_shared_modules(LhatProgram *program)
 
 static bool install_all(const LhatProgram *program, LhatMachine *machine)
 {
-    // 05§8.7+5: the registrations, the types they stand under and the
+    // [modules.host.shared-registry]: the registrations, the types they stand under and the
     // enums, all built once on the program's heap and hung here by name.
     // What was a value object and a key string per registration is now a
     // pointer per module.
@@ -3756,11 +3756,11 @@ static bool install_all(const LhatProgram *program, LhatMachine *machine)
         }
     }
 
-    // 05§8.8+'s base links and 05§8.7+2's enums used to be built here, once per
+    // [modules.hostdata.base]'s base links and [modules.host.panic]'s enums used to be built here, once per
     // machine. They are facts about the declarations rather than about any
     // machine, so build_shared_modules has them (shared_link_bases,
     // shared_enum).
-    // 05§8.6: what goes in L^ itself rather than under its registry.
+    // [modules.host.machine]: what goes in L^ itself rather than under its registry.
     for (size_t i = 0; i < program->global_count; i++) {
         const LhatGlobalEntry *e = &program->global_entries[i];
         LhatValue value = lhat_nil();
@@ -3776,13 +3776,13 @@ static bool install_all(const LhatProgram *program, LhatMachine *machine)
         }
         ((LhatHost *)lhat_as_object(value))->signature = e->runtime_signature;
     }
-    // 05§8.9: a host value has no heap half to carry its members table,
+    // [modules.hostvalue]: a host value has no heap half to carry its members table,
     // so the machine keeps one per registered type, found by the tag's
     // index. The tables themselves are the ones the entry loop above put
     // under L^.modules -- reachable from the environment, so the collector
     // needs nothing new.
     //
-    // 05§5.7 with registry.h: the index is the process's, so the array is taken
+    // [modules.require.reload] with registry.h: the index is the process's, so the array is taken
     // to the width every declared type reaches rather than to how many this
     // program declared -- otherwise a program declaring the second of two
     // types would index past its own array.
@@ -3798,13 +3798,13 @@ static bool install_all(const LhatProgram *program, LhatMachine *machine)
 
 bool lhat_program_install(const LhatProgram *program, LhatMachine *machine)
 {
-    // 05§8.11: a read of the registrations and the unit table, and still
+    // [modules.host.lock]: a read of the registrations and the unit table, and still
     // under the lock -- those are what a check or a load writes, and
     // std.thread's worker is the caller this exists for.
     LhatProgram *writable = (LhatProgram *)program;
     lhat_program_hold(writable);
     bool ok = install_all(program, machine);
-    // 10§7.2: and this is whose language the machine says things in.
+    // [l10n.choose.machine]: and this is whose language the machine says things in.
     lhat_machine_hold_program(machine, program);
     lhat_program_release(writable);
     return ok;
@@ -3822,18 +3822,18 @@ void lhat_program_init(LhatProgram *program, bool strict,
     // host-registered error kind never writes into program->host_heap
     // -- required once more than one machine (std.thread) can read it.
     program->host_heap.white = LHAT_GC_BLACK;
-    // 05§5.7: what discarded bodies leave behind. Black for the same reason --
+    // [modules.require.reload]: what discarded bodies leave behind. Black for the same reason --
     // they came off chunk heaps that were born black, and no machine's
     // collection may write into them.
     program->retired_objects.white = LHAT_GC_BLACK;
 }
 
 // ---------------------------------------------------------------------------
-// 05§5.6: loading a script at run time
+// [modules.require.load]: loading a script at run time
 // ---------------------------------------------------------------------------
 
 // Everything the four stages made, leaving the shell -- its path, its module
-// name and its place in the list -- standing. 05§5.7 invalidates a unit
+// name and its place in the list -- standing. [modules.require.reload] invalidates a unit
 // with this; unit_dispose_contents below finishes the job for a unit that is
 // going altogether.
 //
@@ -3907,7 +3907,7 @@ static void say(Said *s, const char *text, size_t length)
     s->text[s->length] = '\0';
 }
 
-// 10§5.1: a failure a load says, about the unit it names.
+// [l10n.compose.holes]: a failure a load says, about the unit it names.
 static const LhatMessageEntry PROGRAM_PARTS[] = {
     {"program.failed", "{path}: error: {message}"},
 };
@@ -3983,7 +3983,7 @@ static LhatLoadStatus settle_placed(LhatProgram *program,
 // Takes the unit's source as already placed. What it requires joins the
 // program as any unit does (checked into the program's arena, compiled by
 // lhat_program_compile, registered when it first runs); the unit itself is
-// checked into an arena of its own, compiled without 10§5.3's guard and
+// checked into an arena of its own, compiled without [l10n.compose.no-plurals]'s guard and
 // registry write, and left holding its proto for the caller to take.
 #if LHAT_WITH_FRONTEND
 static LhatLoadStatus build_placed(LhatProgram *program, LhatUnit *unit)
@@ -4008,7 +4008,7 @@ static LhatLoadStatus build_placed(LhatProgram *program, LhatUnit *unit)
 #else
 static LhatLoadStatus build_placed(LhatProgram *program, LhatUnit *unit)
 {
-    // 05§10.8: text, and nothing here reads text.
+    // [modules.binary.vm-only]: text, and nothing here reads text.
     (void)unit;
     program->load_failure =
         duplicate("this build has no front end; only a binary unit runs");
@@ -4016,7 +4016,7 @@ static LhatLoadStatus build_placed(LhatProgram *program, LhatUnit *unit)
 }
 #endif  // LHAT_WITH_FRONTEND
 
-// 05§10 with 08§7+: the bytes a full build wrote for a script or
+// [modules.binary] with [lton.load.compiled]: the bytes a full build wrote for a script or
 // an LTON file (lhat_program_write_text), read the way load_into reads a
 // unit. A script is not one of the program's units, so what the bytes carry
 // beyond the body -- exports, what a host asks of the declarations -- has
@@ -4053,7 +4053,7 @@ static LhatLoadStatus load_binary_placed(LhatProgram *program,
 static LhatUnit *place(LhatProgram *program, const char *name,
                        const LhatLoadOptions *options)
 {
-    // 05§8.8+: the other way checking begins (05§5.6). check_path's own call
+    // [modules.hostdata.base]: the other way checking begins ([modules.require.load]). check_path's own call
     // does not cover this one -- a script that requires nothing never reaches
     // it -- and the pass does its work once whichever arrives first.
     flatten_hostdata_bases(program);
@@ -4069,7 +4069,7 @@ static LhatUnit *place(LhatProgram *program, const char *name,
         return NULL;
     }
     unit->program = program;
-    // 05§8.2: what check_parsed reads to decide whether the host's initial
+    // [modules.host.initial]: what check_parsed reads to decide whether the host's initial
     // bindings are in scope. Set before anything is checked, since that is
     // the one moment it is asked.
     unit->as_data = options != NULL && !options->initial_bindings;
@@ -4108,7 +4108,7 @@ static LhatLoadStatus load_text_held(LhatProgram *program, const char *name,
     if (unit == NULL) {
         return LHAT_LOAD_OUT_OF_MEMORY;
     }
-    // 05§10.1: the first byte says which the caller holds.
+    // [modules.binary.magic]: the first byte says which the caller holds.
     LhatLoadStatus status;
     if (lhat_serialize_is_binary(text, length)) {
         status = load_binary_placed(program, unit, (const uint8_t *)text,
@@ -4181,7 +4181,7 @@ LhatLoadStatus lhat_program_load_text(LhatProgram *program, const char *name,
                                       LhatProto **out)
 {
     LhatLoadOptions options = {0};
-    options.initial_bindings = true;  // 05§8.2, as it always was
+    options.initial_bindings = true;  // [modules.host.initial], as it always was
     lhat_program_hold(program);
     LhatLoadStatus status =
         load_text_held(program, name, text, length, &options, out);
@@ -4227,7 +4227,7 @@ const char *lhat_program_load_failure(const LhatProgram *program)
 
 void lhat_program_dispose(LhatProgram *program)
 {
-    // 05§10: the strings; the types are the arena's.
+    // [modules.binary]: the strings; the types are the arena's.
     for (size_t i = 0; i < program->enum_identity_count; i++) {
         lhat_free(program->enum_identities[i].path);
         lhat_free(program->enum_identities[i].name);
@@ -4235,7 +4235,7 @@ void lhat_program_dispose(LhatProgram *program)
     lhat_free(program->enum_identities);
     lhat_free(program->signature_index);
     lhat_free(program->signatures);
-    // 05§8.7: what the registrations left with the program, first and in
+    // [modules.host.import]: what the registrations left with the program, first and in
     // reverse -- everything of the program's own is still standing here, so
     // a disposal may read whatever it was written against, and a module may
     // undo what one it built on top of has not undone yet.
@@ -4250,7 +4250,7 @@ void lhat_program_dispose(LhatProgram *program)
 
     lhat_free(program->load_failure);
     program->load_failure = NULL;
-    // 10§7.1: the catalogs this program was handed, and the language it drew
+    // [l10n.choose.program]: the catalogs this program was handed, and the language it drew
     // its messages in.
     for (size_t i = 0; i < program->catalog_count; i++) {
         lhat_catalog_dispose(&program->catalogs[i]);
@@ -4279,7 +4279,7 @@ void lhat_program_dispose(LhatProgram *program)
         lhat_free(e->module);
         lhat_free(e->type);
         lhat_free(e->name);
-        // 05§8.8: the tag is not the program's -- one declaration, one tag,
+        // [modules.hostdata]: the tag is not the program's -- one declaration, one tag,
         // for the process (registry.h).
     }
     lhat_free(program->host_entries);
@@ -4291,7 +4291,7 @@ void lhat_program_dispose(LhatProgram *program)
     program->host_enum_count = 0;
     program->host_enum_capacity = 0;
 
-    // §18.5: the declaration owns the two names it points at, and the
+    // [syntax.annot.host]: the declaration owns the two names it points at, and the
     // text sits beside it.
     for (size_t i = 0; i < program->annotation_count; i++) {
         lhat_free((void *)program->annotations[i].module);
@@ -4321,7 +4321,7 @@ void lhat_program_dispose(LhatProgram *program)
     program->host_type_entry_count = 0;
     program->host_type_entry_capacity = 0;
 
-    // 05§8.9: the tags and their fields belong to the process, not to
+    // [modules.hostvalue]: the tags and their fields belong to the process, not to
     // this program -- one declaration, one tag (registry.h). Only the array
     // of entries is the program's.
     lhat_free(program->hostvalue_type_entries);
@@ -4344,14 +4344,14 @@ void lhat_program_dispose(LhatProgram *program)
     program->host_error_entry_count = 0;
     program->host_error_entry_capacity = 0;
     lhat_program_forget_completions(program);
-    // 05§8.7+5: the frontier itself. What it points at is on host_heap
+    // [modules.host.shared-registry]: the frontier itself. What it points at is on host_heap
     // and goes with it below.
     lhat_free(program->shared);
     program->shared = NULL;
     program->shared_count = 0;
     program->shared_capacity = 0;
     program->shared_ready = false;
-    // 04§12.4: この program が登録した誤り種別のオブジェクト自身
+    // [errors.grammar.types]: この program が登録した誤り種別のオブジェクト自身
     // (LhatErrorKind/LhatString)。chunk->heap と同じ扱いで、program の
     // 寿命が尽きるここでまとめて解放する。
     lhat_object_free_all(&program->host_heap);
@@ -4386,7 +4386,7 @@ void lhat_program_dispose(LhatProgram *program)
     }
     program->units = NULL;
 
-    // 05§5.7: what invalidations retired and the host never discarded.
+    // [modules.require.reload]: what invalidations retired and the host never discarded.
     // The program outlives every machine that could hold a closure of one,
     // so here it is safe whether the host took a pass or not.
     lhat_program_discard_retired(program);
@@ -4441,7 +4441,7 @@ const LhatProto *lhat_unit_proto(const LhatUnit *unit)
 
 const char *lhat_unit_module_name(const LhatUnit *unit)
 {
-    // 05§5.7: the unit's own copy, so that this still answers after an
+    // [modules.require.reload]: the unit's own copy, so that this still answers after an
     // invalidation -- which is exactly when a host needs it, to tell each
     // machine to forget what the unit registered.
     return unit->module_name;
@@ -4498,7 +4498,7 @@ const LhatProgramDiagnostic *lhat_program_diagnostic(const LhatProgram *program,
 }
 
 // ---------------------------------------------------------------------------
-// 05§5.7: a unit changed under the program
+// [modules.require.reload]: a unit changed under the program
 // ---------------------------------------------------------------------------
 
 static bool among(LhatUnit *const *set, size_t count, const LhatUnit *unit)
@@ -4516,7 +4516,7 @@ static bool among(LhatUnit *const *set, size_t count, const LhatUnit *unit)
 //
 // A fixed point over the list rather than a traversal: the edges run the
 // wrong way for one, a require^ graph may hold a cycle the checker reported
-// and carried on past (10§6.3), and a project's units are few enough that the
+// and carried on past ([l10n.catalog.dump]), and a project's units are few enough that the
 // difference is nothing. `set` has room for every unit.
 static size_t reaching(LhatProgram *program, LhatUnit *start, LhatUnit **set)
 {
@@ -4724,7 +4724,7 @@ static size_t fill_bodies(const LhatProto *proto, const LhatProto **out,
     return at;
 }
 
-// 05§5.7's question, asked outright: collect on every machine, then look for
+// [modules.require.reload]'s question, asked outright: collect on every machine, then look for
 // anything still holding a retired body. Held anywhere -- or a cleanup still
 // waiting, whose run is code this walk cannot see into -- means the bodies
 // wait for the next pass, which is the safe side of every answer here.
@@ -4952,7 +4952,7 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
     }
 
 #if !LHAT_WITH_FRONTEND
-    // 05§10.8: a binary unit reports nothing of its own.
+    // [modules.binary.vm-only]: a binary unit reports nothing of its own.
     (void)within;
     if (out != NULL && capacity > 0) {
         out[0] = '\0';
@@ -4996,7 +4996,7 @@ const char *lhat_unit_diagnostic_id(const LhatUnit *unit, size_t index)
     }
 #if !LHAT_WITH_FRONTEND
     (void)within;
-    return NULL;  // 05§10.8: a binary unit reports nothing of its own
+    return NULL;  // [modules.binary.vm-only]: a binary unit reports nothing of its own
 #else
     switch (stage) {
         case LHAT_STAGE_LEXER:
@@ -5060,7 +5060,7 @@ static const LhatUnit *check_held(LhatProgram *program, const char *path)
 }
 
 #if LHAT_WITH_FRONTEND
-// 05§5.3: a unit named under another is a member of that unit's table in
+// [modules.require.once]: a unit named under another is a member of that unit's table in
 // L^.modules, beside what that unit published -- so the name it would stand
 // at may not be one the other publishes. Asked of the whole program, since no
 // one check need have read both units in.
@@ -5129,10 +5129,10 @@ bool lhat_program_has_errors(const LhatProgram *program)
     return false;
 }
 
-// 10§4: the ID and the English text of every LhatProgramErrorCode, indexed by
+// [l10n.id]: the ID and the English text of every LhatProgramErrorCode, indexed by
 // the code. The ID is the one a translation is written against and never
 // changes meaning; the English is the reference every other language translates
-// (10§2.2).
+// ([l10n.principle.english]).
 static const LhatMessageEntry PROGRAM_MESSAGES[] = {
     [LHAT_PROGRAM_ERR_CANNOT_READ] =
         {"program.cannot-read", "this unit could not be read"},
@@ -5174,7 +5174,7 @@ const char *lhat_program_error_id(LhatProgramErrorCode code)
 }
 
 // ---------------------------------------------------------------------------
-// 05§10: what serialize.c asks of the program
+// [modules.binary]: what serialize.c asks of the program
 // ---------------------------------------------------------------------------
 
 LhatUnit *lhat_program_require_unit(LhatProgram *program, LhatUnit *from,
@@ -5245,7 +5245,7 @@ LhatWriteStatus lhat_unit_write_binary(const LhatUnit *unit,
     (void)with_debug_names;
     (void)bytes;
     (void)length;
-    return LHAT_WRITE_NO_FRONTEND;  // 05§10.8: what it was written from is gone
+    return LHAT_WRITE_NO_FRONTEND;  // [modules.binary.vm-only]: what it was written from is gone
 #endif
 }
 
@@ -5415,7 +5415,7 @@ static void dump_comma(DumpWriter *w, bool *first)
     }
 }
 
-// §18.5's places, spelled. Has to be kept in step with
+// [syntax.annot.host]'s places, spelled. Has to be kept in step with
 // LhatAnnotationTarget in lhat/object.h -- this is the only place a new one
 // would have to be named, so it is the only place that would notice.
 static const struct {
@@ -5504,7 +5504,7 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
             dump_string(&w, entry->module);
             dump_text(&w, ", \"name\": ");
             dump_string(&w, entry->name);
-            // 05§8.8+: a host whose model is a class tree writes the tree
+            // [modules.hostdata.base]: a host whose model is a class tree writes the tree
             // rather than flattening it, and what a derived type inherits is
             // reached through this link -- so a dump without it describes a
             // Sprite2D that has none of Object's members, and every reader
@@ -5549,7 +5549,7 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
         }
         dump_text(&w, "]}");
     }
-    // 05§8.7+2: an enum is a declaration the signatures name, the same
+    // [modules.host.no-string-lookup]: an enum is a declaration the signatures name, the same
     // standing as a type's -- and one may stand under a host type
     // ("godot.Node.InternalMode"), so the types come first and the enums
     // close the section. A reader registering in file order then never
@@ -5686,7 +5686,7 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
     }
     dump_text(&w, first ? "],\n" : "\n  ],\n");
 
-    // §18.5: what a program may write as an annotation. The language
+    // [syntax.annot.host]: what a program may write as an annotation. The language
     // server has no way to run this host's C, so what it registered is told
     // here the way its types and functions are.
     dump_text(&w, "  \"annotations\": [");
@@ -5704,7 +5704,7 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
             dump_text(&w, ", \"signature\": ");
             dump_string(&w, program->annotation_signatures[i]);
         }
-        // §18.5.1: written as the names themselves rather than as anything
+        // [syntax.annot.host.two-answers]: written as the names themselves rather than as anything
         // resolved, since that is how the registration said them and a
         // reader hands them back the same way.
         if (decl->exclusive_count > 0) {
@@ -5717,7 +5717,7 @@ size_t lhat_program_dump_host_api(const LhatProgram *program, char *out,
             }
             dump_text(&w, "]");
         }
-        // §18.5.2: the same, and read back the same way. Both columns are
+        // [syntax.annot.host.alone]: the same, and read back the same way. Both columns are
         // left out where nothing was said, so a registration that has only
         // targets to give writes only targets.
         if (decl->requisite_count > 0) {

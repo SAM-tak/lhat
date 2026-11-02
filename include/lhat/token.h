@@ -6,7 +6,7 @@
 // Public, with lhat/lexer.h: a host that reads L^ rather than runs it -- one
 // colouring a script editor, say -- needs to know what a token is. Not
 // reached by lhat.h, which is the header for running; this one is named by
-// whoever wants it (07§4).
+// whoever wants it ([lsp.hover]).
 
 #ifndef LHAT_TOKEN_H
 #define LHAT_TOKEN_H
@@ -25,17 +25,17 @@
 extern "C" {
 #endif
 
-// §10.9.
+// [syntax.finally.epilog].
 typedef enum {
     LHAT_TOKEN_EOF,
-    // 01§3.1. A name written with backticks is one of these too -- the
+    // [lex.ident.chars]. A name written with backticks is one of these too -- the
     // form is a way of spelling an identifier, not a different kind of name,
     // so `a` and a are the same name and come back the same way. What tells
     // the two apart is `v.string`, where the lexer put the spelling: the
     // delimiters are not part of the name and a doubled backtick is one.
     LHAT_TOKEN_IDENT,
     LHAT_TOKEN_HAT_IDENT,    // identifier followed by one or more '^'
-    // §18.2: '@' glued to an identifier. One token, so '@ export' is
+    // [syntax.annot.spelling]: '@' glued to an identifier. One token, so '@ export' is
     // not one -- the spelling carries the name without the '@', the way a
     // hat identifier's carries the hats separately.
     LHAT_TOKEN_ANNOTATION,
@@ -46,7 +46,7 @@ typedef enum {
     LHAT_TOKEN_SCOPE,        // '$', '$^^^'
     LHAT_TOKEN_OP,
 
-    // 01§5.4. An interpolated string is delivered as a sequence rather
+    // [lex.string.interp]. An interpolated string is delivered as a sequence rather
     // than a single token, so the expressions inside the holes are scanned by
     // the ordinary rules instead of by a second, duplicated scanner:
     //
@@ -63,8 +63,8 @@ typedef enum {
     LHAT_TOKEN_ERROR
 } LhatTokenKind;
 
-// 01§7.1. The lexer never classifies a hat identifier as a keyword;
-// that is the parser's job (section 01§2.1).
+// [lex.op.list]. The lexer never classifies a hat identifier as a keyword;
+// that is the parser's job (section [lex.hat.no-reserved]).
 typedef enum {
     LHAT_OP_LPAREN,
     LHAT_OP_RPAREN,
@@ -79,7 +79,7 @@ typedef enum {
     LHAT_OP_REASSIGN,    // :=
     LHAT_OP_ARROW,       // ->   separates arguments from return value
 
-    // 01§7.4: compound assignment. 'target op= value' means 'target :=
+    // [lex.op.compound]: compound assignment. 'target op= value' means 'target :=
     // target op value', with target evaluated once. Each names the plain
     // operator it stands for; the parser reads the pair apart.
     LHAT_OP_ADD_ASSIGN,      // +=
@@ -91,7 +91,7 @@ typedef enum {
     LHAT_OP_POW_ASSIGN,      // **=
     LHAT_OP_CONCAT_ASSIGN,   // ..=
 
-    // §8.6.4: the assignments written to skip an absent place -- 'a ?op= b'
+    // [syntax.stmt.nil-assign]: the assignments written to skip an absent place -- 'a ?op= b'
     // is 'if^ a? { a op= b }', and 'a ?:= b' is 'if^ a? { a := b }'. The
     // 'NIL_' reads as it does in NIL_DOT: the form steps around a nil^
     // rather than reaching into one.
@@ -106,7 +106,7 @@ typedef enum {
     LHAT_OP_NIL_CONCAT_ASSIGN,   // ?..=
 
     // Not part of the language; recognised so the parser can point at '->'
-    // (01§7.6) instead of reporting a stray character.
+    // ([lex.op.types]) instead of reporting a stray character.
 
     LHAT_OP_LSHIFT,      // <<   reserved
     LHAT_OP_RSHIFT,      // >>   reserved
@@ -117,7 +117,7 @@ typedef enum {
     LHAT_OP_GE,          // ≧ >=
     LHAT_OP_LT,
     LHAT_OP_GT,
-    // §11.9: three-way comparison. The one comparison a type defines,
+    // [syntax.op.compare]: three-way comparison. The one comparison a type defines,
     // and the four orderings are read off it -- 'a < b' is '(a <=> b) < 0'.
     LHAT_OP_SPACESHIP,   // <=>
 
@@ -127,22 +127,22 @@ typedef enum {
     LHAT_OP_CROSS,       // cross^ or ×
     LHAT_OP_DOT_PRODUCT, // dot^ or ⋅ (not member access '.')
     LHAT_OP_DIV,
-    LHAT_OP_FLOORDIV,    // //   (01§6.1 freed this by putting comments on '#')
+    LHAT_OP_FLOORDIV,    // //   ([lex.comment.line] freed this by putting comments on '#')
     LHAT_OP_MOD,         // %
     LHAT_OP_POW,         // **
 
     LHAT_OP_NOT,         // !    prefix logical negation
 
-    // These are operators (01§7.1) but reach the parser as hat
-    // identifiers, since the lexer keeps no keyword table (01§2.1). They
+    // These are operators ([lex.op.list]) but reach the parser as hat
+    // identifiers, since the lexer keeps no keyword table ([lex.hat.no-reserved]). They
     // never appear in the operator table and are listed here so a syntax
     // tree can name them alongside the rest.
     LHAT_OP_AND,         // and^
     LHAT_OP_OR,          // or^
     LHAT_OP_IS,          // is^   identity: the same instance, not just equal
     LHAT_OP_FITS,         // fits^  fits: the left may stand where the type is
-    LHAT_OP_CATCH,       // catch^  (04§4)
-    // 01§7.5: bitwise operators are words, since '|' and '&' belong to
+    LHAT_OP_CATCH,       // catch^  ([errors.catch])
+    // [lex.op.small]: bitwise operators are words, since '|' and '&' belong to
     // types. They work on 64-bit integers only and nothing overloads them.
     LHAT_OP_BITAND,      // bitand^
     LHAT_OP_BITOR,       // bitor^
@@ -152,7 +152,7 @@ typedef enum {
 
 
     LHAT_OP_UNION,       // |    type union, valid only in a type context
-    LHAT_OP_INTERSECT,   // &    type intersection (§14.5)
+    LHAT_OP_INTERSECT,   // &    type intersection ([syntax.obj.compose])
 
     LHAT_OP_DOT,
     LHAT_OP_CONCAT,      // .. or ::
@@ -160,22 +160,22 @@ typedef enum {
     LHAT_OP_NIL_DOT,     // ?.
     LHAT_OP_NIL_CALL,    // ?(
     LHAT_OP_NIL_INDEX,   // ?[
-    LHAT_OP_NIL_ELSE,    // ??   value to use when the left side is nil^ (§11.7)
-    LHAT_OP_PRESENT,     // ?    postfix: not absent (§11.7+2). The rest of the
+    LHAT_OP_NIL_ELSE,    // ??   value to use when the left side is nil^ ([syntax.op.default])
+    LHAT_OP_PRESENT,     // ?    postfix: not absent ([syntax.op.present]). The rest of the
                          // '?' family reaches through an absent value; this
                          // one asks about it and answers bool^
 
     LHAT_OP_COUNT
 } LhatOpKind;
 
-// §5.
+// [syntax.if].
 typedef enum {
     LHAT_STRING_ESCAPED,  // "..."   escapes processed, may span lines
     LHAT_STRING_RAW,      // '...'   no escapes, '' denotes a single quote
     LHAT_STRING_LINE      // """...  runs to the end of the line
 } LhatStringKind;
 
-// §8.
+// [syntax.stmt].
 typedef enum {
     LHAT_SCOPE_FILE,      // $
     LHAT_SCOPE_RELATIVE   // $^, $^^, ...
@@ -189,7 +189,7 @@ typedef struct {
     uint32_t line;    // 1-based
     uint32_t column;  // 1-based, counted in code points, not bytes
 
-    // 01§10.9. The only newline-sensitive rule in the language reads
+    // [lex.ambig.call-line]. The only newline-sensitive rule in the language reads
     // this flag: a call or index '(' must not be preceded by a newline.
     // The first token of a file has it set.
     bool preceded_by_newline;
@@ -223,7 +223,7 @@ typedef struct {
 } LhatToken;
 
 #if LHAT_WITH_COMMENTS
-// 01§6.4. A comment, kept rather than discarded. The span covers the whole of it,
+// [lex.comment.kept]. A comment, kept rather than discarded. The span covers the whole of it,
 // '#' or '#[' and ']#' included, so the text of one is a slice of the source.
 //
 // The lexer keeps these in a table of its own, in source order, rather than

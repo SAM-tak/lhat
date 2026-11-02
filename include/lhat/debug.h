@@ -1,4 +1,4 @@
-// L^ (lhat) -- what a debugger asks of a machine (09§).
+// L^ (lhat) -- what a debugger asks of a machine ([debug]).
 //
 // Two things: to be told when the machine reaches a new line or terminal
 // fault, and, while it is being told, to read the frames standing and what
@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 typedef enum {
-    // 09§2.1: the next instruction begins a line -- a line other than the last
+    // [debug.hook.line]: the next instruction begins a line -- a line other than the last
     // one the machine was on, or the same one reached by a jump back (a
     // loop), or the first of a body just entered.
     LHAT_DEBUG_LINE,
@@ -36,13 +36,13 @@ typedef enum {
     LHAT_DEBUG_HOST_PAUSE_POINT
 } LhatDebugEvent;
 
-// 04§2.3: called on the machine's own thread, at a safe execution boundary, and
+// [errors.kind.made]: called on the machine's own thread, at a safe execution boundary, and
 // the machine waits for it to return -- a debugger that wants to stop the
 // program stops here. `where` is level 0 of lhat_machine_fault_frame,
 // already read. Every register holds what the program sees, so the frame API
 // below reads them as they are.
 //
-// 09§2.4: the hook may call back into L^ (lhat_machine_call and friends); it is
+// [debug.hook.reentry]: the hook may call back into L^ (lhat_machine_call and friends); it is
 // not told about the lines those calls run. A fault in such a call, or
 // lhat_machine_panic, ends the run the hook interrupted, the way it would
 // for a host function.
@@ -50,7 +50,7 @@ typedef void (*LhatDebugHook)(LhatMachine *machine, void *context,
                               LhatDebugEvent event,
                               const LhatFrameInfo *where);
 
-// 03§2.2: while set, every instruction pays one test; while not, one branch
+// [pipeline.value.layout]: while set, every instruction pays one test; while not, one branch
 // not taken. NULL takes it away -- from inside the hook too.
 void lhat_machine_set_debug_hook(LhatMachine *machine, LhatDebugHook hook,
                                  void *context);
@@ -75,11 +75,11 @@ bool lhat_machine_debug_pause_point(LhatMachine *machine);
 LhatRunStatus lhat_machine_fault_status(const LhatMachine *machine);
 LhatValue lhat_machine_fault_value(const LhatMachine *machine);
 
-// 09§3.2: one name of a frame. A local is a written binding, a parameter, or a
+// [debug.inspect.binding]: one name of a frame. A local is a written binding, a parameter, or a
 // name the language binds (self^, it^, def^, super^, '...'); a capture is a
-// place the body shares with the one that made it (03§5.4). `name` is the
+// place the body shares with the one that made it ([pipeline.bc.capture]). `name` is the
 // body's and is good as long as the body is. A host value comes in its
-// pointer form aimed into the stack (05§8.9), good until the machine
+// pointer form aimed into the stack ([modules.hostvalue]), good until the machine
 // moves again.
 typedef struct {
     const char *name;
@@ -92,7 +92,7 @@ typedef struct {
 //
 // The locals are the ones live at the frame's instruction, in declaration
 // order; of two under one name the later is the inner. What a let^ declares
-// is live from the start of its block (§8.7), nil^ until it runs.
+// is live from the start of its block ([syntax.stmt.visible]), nil^ until it runs.
 size_t lhat_frame_local_count(const LhatMachine *machine, size_t level);
 bool lhat_frame_local(const LhatMachine *machine, size_t level, size_t index,
                       LhatBindingInfo *out);
@@ -100,7 +100,7 @@ size_t lhat_frame_upvalue_count(const LhatMachine *machine, size_t level);
 bool lhat_frame_upvalue(const LhatMachine *machine, size_t level,
                         size_t index, LhatBindingInfo *out);
 
-// 09§3.4: writes one binding of a frame -- the debugger's privilege, standing
+// [debug.inspect.write]: writes one binding of a frame -- the debugger's privilege, standing
 // outside anything the checker promised about the program. `index` counts
 // the same bindings the readers above answer. The machine stays memory safe
 // whatever ordinary value is written (a register holds any tagged value),
@@ -109,18 +109,18 @@ bool lhat_frame_upvalue(const LhatMachine *machine, size_t level,
 //
 // Refused -- false, nothing written -- when the level or index names
 // nothing, or when the binding or the value is a host value: those are raw
-// slots of a registered width (05§8.9), and writing across that layout
+// slots of a registered width ([modules.hostvalue]), and writing across that layout
 // is the one thing that would not be safe.
 bool lhat_frame_set_local(LhatMachine *machine, size_t level, size_t index,
                           LhatValue value);
 bool lhat_frame_set_upvalue(LhatMachine *machine, size_t level, size_t index,
                             LhatValue value);
 
-// 09§3.5: compiles `text` as one input -- §8.2's interactive form, where a
+// [debug.inspect.eval]: compiles `text` as one input -- [syntax.stmt.no-bare-expr]'s interactive form, where a
 // bare expression is the answer -- with the frame's names in scope, and runs
 // it on the machine. The names are copies: what := writes inside the input
 // stays inside it (writing back is lhat_frame_set_local's job). Compiled
-// without checking (03§4.2 keeps that a supported way to run), so a type
+// without checking ([pipeline.repl.no-fork] keeps that a supported way to run), so a type
 // the frame's values do not bear surfaces as the runtime error it then is,
 // reported here rather than anywhere.
 //
@@ -133,7 +133,7 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
                            const char *text, size_t length, LhatValue *answer,
                            char *error, size_t error_capacity);
 
-// 09§5.1: how a debugger follows every machine without the host wiring each
+// [debug.dap.machines]: how a debugger follows every machine without the host wiring each
 // one: `born` is called at the end of lhat_machine_new, `dying` at the top
 // of lhat_machine_dispose (before its cleanups run), on whichever thread is
 // making or disposing -- which is the one point every machine passes,

@@ -8,11 +8,11 @@
 ソケットを開き、そのバイト列を送受信する。どちらも標準ライブラリで、特定のホスト
 （LÔVE など）に依らない。
 
-## 1. 動機
+## 1. 動機 [binary.why]
 
 対戦ゲームのロールバック型ネットコードは、毎フレームの入力を相手へ送る。
 1 フレームの入力はボタンが数個とスティックの向きくらいで、詰めれば数バイトに
-収まる。テキストやテーブルの汎用の書き出し（LTON、08§8）で送ると何倍にも
+収まる。テキストやテーブルの汎用の書き出し（LTON、[lton.host]）で送ると何倍にも
 膨らむ。**1 ビットも無駄にせず詰める道具**が要る。
 
 送る手段も要る。オンラインの対戦は、マッチングと NAT 越えとリレーを持つ
@@ -30,13 +30,13 @@ LÖVE は Lua 版で LuaSocket・ENet・lua-https を同梱していたが、ど
 C API で書かれていて L^ へは移せない。LÖVE のために書き直すより、**言語の
 標準ライブラリとして持つ**方が、LÖVE 以外のホストでも使える。
 
-## 2. 入れ物は `string^` と `std.binary.Bytes`
+## 2. 入れ物は `string^` と `std.binary.Bytes` [binary.containers]
 
 送受信するバイト列は `string^` で運ぶ。
 
-L^ の文字列はバイトの列であって、文字の列ではない（01§5）。作るときに
+L^ の文字列はバイトの列であって、文字の列ではない（[lex.string]）。作るときに
 UTF-8 として検査しないので、任意のバイトも NUL もそのまま持てる。バイト数は
-`.size`、文字数は `.length`（02§14.18）。**直列化したデータの大きさは
+`.size`、文字数は `.length`（[syntax.obj.count]）。**直列化したデータの大きさは
 `.size` で測る。** `.length` は先頭バイトの数を数えるだけなので、バイト列に
 対しては意味を持たない。
 
@@ -49,9 +49,9 @@ Lua 5.3 の `string.pack` が Lua の文字列にバイト列を詰めるのと�
 
 符号化と復号は `std.binary` が C の中で行い、L^ 側はテーブルと文字列
 （と `Bytes`）だけを扱う。詰めた値のフラグを読むなら言語のビット演算
-（02§14.23）を使う。
+（[syntax.obj.bits]）を使う。
 
-### 2.1 Bytes［補足］
+### 2.1 Bytes［補足］ [binary.containers.bytes]
 
 ```lhat
 let^ out = std.binary.bytes()
@@ -68,12 +68,12 @@ try^ sock.send(out)
 
 バイト列を受け取る側は `string^` と `Bytes` の両方を受ける。`decode`・
 `decodeInto` は合併 `string^|std.binary.Bytes` の1本、`send`・`sendTo` は
-`string^` 版と `Bytes` 版の2本のオーバーロード（02§14.12）である。
+`string^` 版と `Bytes` 版の2本のオーバーロード（[syntax.obj.override]）である。
 書き込む側は `fmt.encodeInto` と `sock.receiveInto` で、どちらも中身を
 置き換える。中身を 1 バイトずつ読み書きする口は持たない — 読み書きは
-形式（§3）を通す。
+形式（[binary.codec]）を通す。
 
-### 2.2 std.binary の外から Bytes に触る［補足］
+### 2.2 std.binary の外から Bytes に触る［補足］ [binary.containers.outside]
 
 std.net やネイティブ拡張（05 の拡張 ABI）のように、std.binary の外にある C が
 `Bytes` を読み書きするときは、std.binary が登録時に置いた口を引く。
@@ -94,9 +94,9 @@ const LhatBinaryInterface *binary =
 オーバーロードの1本として足す。std.net もこの形で、`Bytes` を受ける
 `send`・`sendTo`・`receiveInto` は std.binary が先に登録されているときだけ現れる。
 
-## 3. std.binary
+## 3. std.binary [binary.codec]
 
-### 3.1 形式（Format）
+### 3.1 形式（Format） [binary.codec.format]
 
 まず**形式**を作る。形式はフィールドの並びで、各行は `{ 名前, 種類 }` である。
 
@@ -118,11 +118,11 @@ let^ input = b.format(Input, {
 ```
 
 **並びは列で書く。** テーブルの名前付きのキーは書いた順を保たない（02 の
-02§16.3。ハッシュ部の順序は約束されない）ので、`{ aaa = 16, bbb = 8 }` の形では
+[syntax.for.forms]。ハッシュ部の順序は約束されない）ので、`{ aaa = 16, bbb = 8 }` の形では
 ビットの並び順を決められない。
 
 `std.binary.format` は最初の型値と列を一度だけ読んで、**型付き形式オブジェクト**
-（`std.binary.Format<T>`、05§8.8 の hostdata）にする。上の `input` は
+（`std.binary.Format<T>`、[modules.hostdata] の hostdata）にする。上の `input` は
 `std.binary.Format<Input>` である。次をここで検査する。
 
 - 名前が文字列で、重複していない
@@ -134,17 +134,17 @@ let^ input = b.format(Input, {
 プログラマの誤りになる（04 の線引き）。
 
 形式オブジェクト自身は可変個数のフィールド定義を持つので、ホスト値
-（05§8.9、248 バイト上限・スタック限定）にはできず、hostdata になる。これは
+（[modules.hostvalue]、248 バイト上限・スタック限定）にはできず、hostdata になる。これは
 符号化される値の幅が可変という意味ではない。
 
 #### 種類も hostdata である［補足］
 
 `b.uint(16)` などが返す種類は `std.binary.Kind`（hostdata）で、`Format` は
-その派生型（05§8.8+）である。だから形式をそのまま種類として書ける（§3.2）。
+その派生型（[modules.hostdata.base]）である。だから形式をそのまま種類として書ける（[binary.codec.kinds]）。
 `format` と `array` は渡された種類を**写して**持つので、元の種類や形式を
 `dispose` しても、それを含む形式は壊れない。
 
-### 3.2 種類
+### 3.2 種類 [binary.codec.kinds]
 
 | 種類 | 幅 | L^ の値 | 備考 |
 | --- | --- | --- | --- |
@@ -179,7 +179,7 @@ let^ packet = b.format(Packet, {
 
 形式はそのまま種類として入れ子にできる。
 
-`enum(E)` は E を作った機械のホスト根（05§8.12）に E を置く［補足］。種類は
+`enum(E)` は E を作った機械のホスト根（[modules.host.memory]）に E を置く［補足］。種類は
 GC の根ではないので、そうしないと復号で返すメンバが回収されうる。E 1 つにつき
 1 つで、同じ E を何度渡しても増えない。
 
@@ -187,7 +187,7 @@ GC の根ではないので、そうしないと復号で返すメンバが回�
 列など、値によって幅が変わる種類は持たない。これにより `bits()` と `size()` は
 常に形式だけから決まり、符号化前に出力領域を正確に確保できる。可変長のデータが
 必要なプロトコルは、固定長のヘッダと別のバイト列に分け、Format の外で境界を
-管理する。境界は `decode` の読み始めの位置と、答える次の位置で渡していく（§3.3）。
+管理する。境界は `decode` の読み始めの位置と、答える次の位置で渡していく（[binary.codec.encode]）。
 
 ```lhat
 let^ header, start = try^ Header.decode(src, 0)
@@ -202,7 +202,7 @@ for^ i from^ 1 to^ header.count {
 固定幅とする。可変個数の列が必要なら、個数と最大個数分の領域を持つ固定幅の形式を
 使う。いずれも Format の固定長という契約を変えない。
 
-### 3.3 符号化と復号
+### 3.3 符号化と復号 [binary.codec.encode]
 
 ```lhat
 let^ data = input.encode({
@@ -217,7 +217,7 @@ next                       # 4
 ```
 
 - `fmt.encode(t) -> string^` — `T` のテーブルから形式どおりに詰める
-- `fmt.encodeInto(t, bytes)` — 同じものを `Bytes` に書き込む（§2.1）
+- `fmt.encodeInto(t, bytes)` — 同じものを `Bytes` に書き込む（[binary.containers.bytes]）
 - `fmt.decode(s, at) -> (T, number^)|std.binary.Error` — `s` の `at` バイト目から
   読み、新しい `T` のテーブルと、次の形式が始まる位置 `at + fmt.size()` を返す。
   `s` は `string^|std.binary.Bytes`。返す位置をそのまま次の `decode` に渡せば、
@@ -239,10 +239,10 @@ next                       # 4
 型値は単なる注釈ではない。`format` は種類の木から復号結果の構造型を一度作り、
 それが `T` に適合しなければ panic にする。たとえば `uint` のフィールドを
 `string^` と宣言することはできない。検査済みの型記述子は `Format` が所有し、
-05§8.8+2 の型引数として公開する。`encode` と `decode` のメンバ署名はそれぞれ
+[modules.host.boundary-yields] の型引数として公開する。`encode` と `decode` のメンバ署名はそれぞれ
 `self^.T0` を引数と答えに使う。
 
-### 3.4 ビット順とバイト順［重要］
+### 3.4 ビット順とバイト順［重要］ [binary.codec.bit-order]
 
 並びは OS にも CPU にも依らず、常に同じにする。
 
@@ -250,7 +250,7 @@ next                       # 4
 - バイトをまたぐ値は**リトルエンディアン**（下位バイトが先）
 - 最後のバイトの余りは 0 で埋める
 
-§3.3 の例は 16 + 8 + 1 + 1 + 1 = 27 ビットで、4 バイトになる。
+[binary.codec.encode] の例は 16 + 8 + 1 + 1 + 1 = 27 ビットで、4 バイトになる。
 
 ```text
 aaa = 11111 = 0x2B67   → bytes 0..1: 67 2B
@@ -269,13 +269,13 @@ data = "\x67\x2B\x6F\x03"
 `fixed` の番号は**最も近い刻み**に丸める（B2）［補足］。両端から半刻みまでは
 端の刻みに入り、それより外は範囲外である。
 
-### 3.5 誤り
+### 3.5 誤り [binary.codec.errors]
 
 誤りは、誰が間違えたかで 2 つに分ける（04 の線引き）。
 
 - **符号化に渡したテーブルの誤りは panic。** 範囲外の値、型の違い（`uint` に
   文字列）、欠けたフィールド、整数でない数（`number^` は内部で整数と実数を
-  持ち、溢れると実数になる。02§14.8+）。どれも書き手のプログラムの誤りである
+  持ち、溢れると実数になる。[syntax.obj.number-widen]）。どれも書き手のプログラムの誤りである
 - **復号に渡したバイト列の誤りはエラー値。** バイト列は外から来るので、壊れて
   いても書き手の誤りではない。`std.binary.Error` を宣言し、変種は何が起きたかで
   名付ける
@@ -291,7 +291,7 @@ data = "\x67\x2B\x6F\x03"
 合併に入れると、毎フレーム呼ぶ `encode` の答えをいちいち絞り込むことになる。
 `dispose` した種類・形式・`Bytes` を使うのも書き手の誤りで、panic になる。
 
-### 3.6 先例
+### 3.6 先例 [binary.codec.prior-art]
 
 - **Erlang のビット構文。** `<<Aaa:16, Bbb:8, A:1, B:1, C:1>>` で組み立て、
   同じ形のパターンで分ける。順序付きの並びにビット幅を書く点、組み立てと分解が
@@ -308,9 +308,9 @@ data = "\x67\x2B\x6F\x03"
 - **ASN.1 PER**（範囲からビット数を決める規格）
 - **Lua 5.3 の `string.pack`**（バイト単位。文字列にバイト列を詰める先例）
 
-## 4. std.net（UDP）
+## 4. std.net（UDP） [binary.net]
 
-### 4.1 API
+### 4.1 API [binary.net.api]
 
 ```lhat
 import^std.net
@@ -338,15 +338,15 @@ try^ sock.send(data)
 | `sock.dispose()` | — |
 
 `data` は `string^` か `std.binary.Bytes` で、どちらも1本ずつのオーバーロード
-である（§2.1）。`receiveInto` は届いたデータグラムを渡した `Bytes` に書き込み、
+である（[binary.containers.bytes]）。`receiveInto` は届いたデータグラムを渡した `Bytes` に書き込み、
 データの位置にその `Bytes` を返す。`Bytes` を取る3つは、std.binary が先に
-登録されているときだけある（§2.2）。
+登録されているときだけある（[binary.containers.outside]）。
 
-誤りは答え全体と合併する。02§13.8+2 は**タプルの位置に誤り型を置かない**
+誤りは答え全体と合併する。[syntax.type.tuple-parens] は**タプルの位置に誤り型を置かない**
 ので、`receive` の誤りは 3 つの答えを覆う。受け側は `try^`（か `catch^`）で
 誤りを除いてから分解する［補足］。
 
-`Udp` は hostdata で、`dispose` でソケットを閉じる。回収時にも閉じる（05§8.8 の
+`Udp` は hostdata で、`dispose` でソケットを閉じる。回収時にも閉じる（[modules.hostdata] の
 `dispose` の規則のまま）。
 
 #### ソケットは最初の宛先で作る［補足］
@@ -359,13 +359,13 @@ try^ sock.send(data)
 `setPeer` を呼ばずに `send` するのと、0〜65535 の外のポートは、書き手の誤り
 なので panic である［補足］。
 
-### 4.2 受信は待たない［重要］
+### 4.2 受信は待たない［重要］ [binary.net.no-wait]
 
 **`receive` は常にすぐ返る。** 答えは 3 つ — データ、送り主のアドレス、
 送り主のポート。届いているデータグラムが無ければ、データの位置が `nil^` で、
 アドレスは `""`、ポートは `0` になる。ブロックする版は持たない。
 
-`nil^` を取るのはデータの位置だけにしてある（02§13.8+2 の `B, C|nil^` の形）。
+`nil^` を取るのはデータの位置だけにしてある（[syntax.type.tuple-parens] の `B, C|nil^` の形）。
 タプル全体を `nil^` と合併させる形（`(B, C, D)|nil^`）にすると、受け側は
 分解する前に絞り込まなければならない。位置ごとにしておけば、誤りを除いた後は
 いつも `let^ data, host, port = try^ sock.receive()` と 3 つに受けられる。
@@ -387,7 +387,7 @@ LuaSocket で `settimeout(0)` にして使うのと同じ形である。ブロ�
 何も届いていない答えの `""` は機械ごとに 1 つ作って使い回す［補足］。毎フレーム
 空になるまで読むと、空の答えは毎フレーム返るからである。
 
-### 4.3 アドレス
+### 4.3 アドレス [binary.net.address]
 
 - IPv4 と IPv6 の両方を受ける。名前は `bind` / `setPeer` / `sendTo` の中で
   解決する（`getaddrinfo`、同期）。最初の答えを使う
@@ -396,7 +396,7 @@ LuaSocket で `settimeout(0)` にして使うのと同じ形である。ブロ�
   （N2）［補足］。UDP が運べる最大のデータグラムが収まるので、届いたものが
   切り詰められることは無い。受け用の領域はソケットごとに最初の `receive` で作る
 
-### 4.4 誤り
+### 4.4 誤り [binary.net.errors]
 
 ネットワークの失敗は外から来るのでエラー値にする。`std.net.Error` を宣言し、
 変種は何が起きたかで名付ける。
@@ -414,9 +414,9 @@ Windows は、閉じたポートへ送ったデータグラムの ICMP を次の
 切ってある（`SIO_UDP_CONNRESET`）［補足］。送信バッファが満ちて送れなかった
 ときは、UDP が落としてよいものとして誤りにしない［補足］。
 
-### 4.5 実装の置き場
+### 4.5 実装の置き場 [binary.net.where]
 
-lhat には DAP（08§9）のためのソケット層 `port/socket.c`（`lhatsocket`）が
+lhat には DAP（[lton.text]）のためのソケット層 `port/socket.c`（`lhatsocket`）が
 ある。TCP はループバック専用のまま、UDP をここに足した。
 
 - `lhatsocket` は DAP と `std.net` のどちらかが要るときに組む
@@ -429,11 +429,11 @@ lhat には DAP（08§9）のためのソケット層 `port/socket.c`（`lhatsoc
   `ws2_32` をリンクする
 
 `std.net` は `std.binary` に依らない。`Bytes` を使うホストは `std.binary` を
-先に登録する（§2.2）。どちらの登録も 2 回呼んでよい［補足］。
+先に登録する（[binary.containers.outside]）。どちらの登録も 2 回呼んでよい［補足］。
 
-### 4.6 機械をまたがない
+### 4.6 機械をまたがない [binary.net.one-machine]
 
-`Udp` は作った一つの機械だけが使う。共有契約（carry、05§8.8）は宣言せず、別の
+`Udp` は作った一つの機械だけが使う。共有契約（carry、[modules.hostdata]）は宣言せず、別の
 機械へは渡さない。ソケットを task に持たせるなら、その task の中で `Udp` を
 作る。送受信するデータは `string^` として Task の結果や `Channel<string^>` で
 機械の間を渡す。継続する送受信には Channel を使い、その一つの所有者が送信と
@@ -443,7 +443,7 @@ lhat には DAP（08§9）のためのソケット層 `port/socket.c`（`lhatsoc
 `receiveInto`・`encodeInto` は、その Bytes を作った機械の中で使う。機械をまたぐ
 ときは `receive`・`encode` の `string^` を使う。
 
-## 5. 展望（この章では作らない）
+## 5. 展望（この章では作らない） [binary.future]
 
 - **TCP。** POSIX で切れた相手へ書いたときの SIGPIPE 対策（`MSG_NOSIGNAL` /
   `SO_NOSIGPIPE`）を含める
@@ -453,30 +453,30 @@ lhat には DAP（08§9）のためのソケット層 `port/socket.c`（`lhatsoc
 - **信頼性の層。** 再送・順序保証・チャネルを持つ、ENet に当たるもの
 - **LÖVE 側の糊。** LuaSocket に似せた `socket` を LÖVE が別に用意するか
 
-## 6. 未決事項
+## 6. 未決事項 [binary.open]
 
 現在はない。
 
 閉じたもの:
 
 - **B1** `format(type, fields)` が `Format<T>` を作り、`decode` は `T` を返す。
-  種類の木と型は `format` 時に一度照合する（§3.1・§3.3）
-- **B2** `fixed` の丸めは最も近い刻み（03§3.4）［補足］
+  種類の木と型は `format` 時に一度照合する（[binary.codec.format]・[binary.codec.encode]）
+- **B2** `fixed` の丸めは最も近い刻み（[pipeline.infer]）［補足］
 - **B3** Format は固定ビット長だけを扱う。可変長の種類は持たず、`bits()` と
-  `size()` は常に形式だけから決まる（§3.2）
+  `size()` は常に形式だけから決まる（[binary.codec.kinds]）
 - **N1** `Udp` は共有契約を持たず、作った一つの機械だけが所有する。機械間の
-  送受信データは `string^` として Task または Channel で渡す（§4.6）
-- **N2** 受信の最大は 65536 バイト固定（§4.3）［補足］
+  送受信データは `string^` として Task または Channel で渡す（[binary.net.one-machine]）
+- **N2** 受信の最大は 65536 バイト固定（[binary.net.address]）［補足］
 - **N3** VM のみのビルド（`LHAT_WITH_FRONTEND=OFF`）にも両方が入る。どちらも
   構文解析器に依らない［補足］
 
-## 7. スキーマ不要のテーブル保存とストリーム
+## 7. スキーマ不要のテーブル保存とストリーム [binary.store]
 
 ゲームの進行状態など、可変の構造を持つデータには、Format の固定ビット列とは別に
 型タグ付きの形式を用いる。コンパイル済み LTON やバイトコードとは異なる**データ専用形式**。
 読み書きとも字句解析器・構文解析器・型検査器に依存せず、VMOnly でも動く。
 
-### 7.1 API
+### 7.1 API [binary.store.api]
 
 | 呼び出し | 動作 |
 | --- | --- |
@@ -494,7 +494,7 @@ lhat には DAP（08§9）のためのソケット層 `port/socket.c`（`lhatsoc
 ストリーム経由の操作は、下層からの `error^` もそのまま返す。
 型情報は保存しないので、復元後は `fits^` などで期待する形を検査する。
 
-### 7.2 Reader／Writer の構造的な契約
+### 7.2 Reader／Writer の構造的な契約 [binary.store.contracts]
 
 共通の Stream 基底型は作らない。ホスト型やテーブルが次のメソッドを持てばよい。
 
@@ -517,7 +517,7 @@ t^{ write : p^self^, std.binary.Bytes -> nil^|error^; }
 圧縮・暗号化は将来、この契約を持つラッパーとして追加できる。
 その正常終了はラッパー固有の `finish()` などで明示し、シリアライザーの責務にはしない。
 
-### 7.3 保存対象と制限
+### 7.3 保存対象と制限 [binary.store.limits]
 
 素のテーブル、nil^、bool^、整数、有限の実数、任意のバイト文字列を扱う。
 配列部と辞書部を区別し、配列内の nil^ も含めて長さを保持する。
@@ -534,7 +534,7 @@ def^・そのインスタンス・エラー・enum・関数・コルーチン・
 スナップショットを自動取得する機能ではない。ゲーム側で保存時点を決める。
 ストリームへの書き込みに失敗すると、不完全なレコードが残りうる。
 
-### 7.4 バイナリ形式 v1
+### 7.4 バイナリ形式 v1 [binary.store.format]
 
 先頭8バイトは `89 4C 48 54 01 0D 0A 1A`。01 がバージョン。
 続けて「u32 little-endian の長さ、ペイロード」を繰り返す。
@@ -556,7 +556,7 @@ def^・そのインスタンス・エラー・enum・関数・コルーチン・
 過長・オーバーフローの長さ、重複辞書キー、不正なタグ・フレームは拒否する。
 これは圧縮形式でも暗号化形式でもなく、上層・下層でそれらと組み合わせるための形式。
 
-### 7.5 C API と検証
+### 7.5 C API と検証 [binary.store.c-api]
 
 `stdlib/binary.h` の `lhatstdlib_binary_serialize` / `deserialize` は、
 Machine と C の read/write コールバックで直接使える。Program やモジュール登録は不要。
@@ -572,13 +572,13 @@ Machine と C の read/write コールバックで直接使える。Program や�
 - **案として起こした。** 対戦ゲームのロールバックの入力を詰める `std.binary` と、
   LAN・検証用の UDP を持つ `std.net` を、LÖVE 専用でなく標準ライブラリとして
   設計した。入れ物は `string^`、形式は順序付きの列、受信は待たない
-- **v1 を実装した。** 使い回す入れ物 `std.binary.Bytes` を足した（§2.1）。
-  `receive` の答えは、02§13.8+2 に合わせて誤りがタプル全体を覆う形にした（§4.1）。
+- **v1 を実装した。** 使い回す入れ物 `std.binary.Bytes` を足した（[binary.containers.bytes]）。
+  `receive` の答えは、[syntax.type.tuple-parens] に合わせて誤りがタプル全体を覆う形にした（[binary.net.api]）。
   B2・N2・N3 を閉じた
 - **std.net を std.binary から切り離した（2026-10-10）。** `send`・`sendTo` の
   `string^|std.binary.Bytes` を2本のオーバーロードに分け、`Bytes` 版は
   std.binary が登録されているときだけ足す。std.binary の外から `Bytes` に触る口
-  （§2.2）を設け、拡張の関数表に `lhat_lookup_host_context` を足した
+  （[binary.containers.outside]）を設け、拡張の関数表に `lhat_lookup_host_context` を足した
 - **B1 を閉じた（2026-10-11）。** `format(type, fields)` が型記述子を所有する
   `Format<T>` を作り、`decode` の答えと `encode` の引数を `T` にした。種類の木が
   復号する構造と `T` は形式の作成時に照合する

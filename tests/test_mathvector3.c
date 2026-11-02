@@ -1,5 +1,5 @@
 // L^ (lhat) -- tests for std.math.vector3, which is the proving ground for 05 の
-// §8.9's host values.
+// [syntax.stmt.let]'s host values.
 //
 // What is pinned here is the machinery rather than the arithmetic: a host
 // value crossing every boundary it is allowed to cross (an operator, a
@@ -146,7 +146,7 @@ static void test_operators(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // §11.8: the unary spelling of a name the type also carries as a
+    // [syntax.op.define]: the unary spelling of a name the type also carries as a
     // binary one. Told apart by the count, so both arms of '-' stand together
     // and each answers what it was written for.
     LHAT_TEST("a host value answers the unary '-'");
@@ -160,7 +160,7 @@ static void test_operators(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // §11.3+: the arm written with a trailing self^, so the receiver is
+    // [syntax.op.right]: the arm written with a trailing self^, so the receiver is
     // the operand on the right. Without it a number^ on the left carries no
     // answer for a host value and '2 * v' has nowhere to go.
     LHAT_TEST("and a scalar on the left scales it too");
@@ -179,7 +179,7 @@ static void test_operators(void)
 
     // The counts still do not stand in for each other. A scalar on the left
     // of '-' finds nothing: Vector3 carries the trailing self^ arm for '*'
-    // and not for '-', so §14.8's number^ is what is left to fall back on.
+    // and not for '-', so [syntax.obj.number]'s number^ is what is left to fall back on.
     LHAT_TEST("and an arm that was not written is not invented");
     LHAT_CHECK(!checks("import^ std.math.vector3\n"
                        "let^ v = std.math.vector3.new(1, 2, 3)\n"
@@ -300,7 +300,7 @@ static void test_coroutine_locals(void)
     }
 }
 
-// 05§8.9: the box the language hangs under every host value type --
+// [modules.hostvalue]: the box the language hangs under every host value type --
 // `T.Box^`, made with box^, read with get(), written with set().
 static void test_boxing(void)
 {
@@ -360,7 +360,7 @@ static void test_boxing(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 05§8.9+: '=' is the bytes under the same tag, as it is on the stack;
+    // [modules.hostvalue.union]: '=' is the bytes under the same tag, as it is on the stack;
     // is^ still asks for the very box.
     LHAT_TEST("two boxes of the same bytes are equal, not the same");
     {
@@ -378,7 +378,7 @@ static void test_boxing(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 05§8.9+: constbox^ makes the sealed, get-only box -- off a value or as
+    // [modules.hostvalue.union]: constbox^ makes the sealed, get-only box -- off a value or as
     // a copy of a live box -- and only that one may be a key. Lookups key
     // by content, so a fresh copy finds the entry.
     LHAT_TEST("a constbox^ keys a table by its bytes");
@@ -466,7 +466,7 @@ static void test_boxing(void)
                        "b.set(std.math.vector3.new(4, 5, 6))\n"),
                "the sealed box is get-only");
 
-    // 05§8.9+: a Box^ fits a ConstBox^ seat -- the get-only view -- and never
+    // [modules.hostvalue.union]: a Box^ fits a ConstBox^ seat -- the get-only view -- and never
     // the other way around, where set() would be a lie.
     LHAT_TEST("a Box^ fits a ConstBox^ seat and not the reverse");
     LHAT_CHECK(checks("import^ std.math.vector3\n"
@@ -484,7 +484,7 @@ static void test_boxing(void)
                        "write(sealed)\n"),
                "the sealed box stays out of a set seat");
 
-    // 05§8.9+: a field reads straight off the box's bytes; a write still goes
+    // [modules.hostvalue.union]: a field reads straight off the box's bytes; a write still goes
     // through set().
     LHAT_TEST("a field reads off the box and never writes");
     {
@@ -512,7 +512,7 @@ static void test_boxing(void)
                        "let^ b = box^7\n"),
                "a number needs no box");
 
-    // 05§8.9+: a box writes itself as its flavour over its bytes, so a
+    // [modules.hostvalue.union]: a box writes itself as its flavour over its bytes, so a
     // printed key reads as a value rather than as an opaque handle.
     LHAT_TEST("a box writes its flavour and its content");
     {
@@ -524,7 +524,7 @@ static void test_boxing(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 05§8.9+: the variadic tail cannot say a host value's type, so a bare
+    // [modules.hostvalue.union]: the variadic tail cannot say a host value's type, so a bare
     // one is boxed to ride it -- print(v) is the everyday arrival.
     LHAT_TEST("a variadic seat refuses a bare host value");
     LHAT_CHECK(!checks("import^ std.math.vector3\n"
@@ -556,7 +556,7 @@ static void test_boxing(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // §14.11: a box is a copyable node, so it may sit on a prototype --
+    // [syntax.obj.new]: a box is a copyable node, so it may sit on a prototype --
     // baked sealed, handed to each instance as an unsealed copy of its own.
     LHAT_TEST("a box may be a field's default");
     {
@@ -585,9 +585,9 @@ static void test_boxing(void)
     }
 }
 
-// §14.17 with 05§8.9: a host value is written down like any other
+// [syntax.obj.tostring] with [modules.hostvalue]: a host value is written down like any other
 // value. The library registers the spelling under the bare name -- the hat
-// is §14.17+'s, and what it keeps apart is a plain table's names, which a
+// is [syntax.obj.tostring-hat]'s, and what it keeps apart is a plain table's names, which a
 // registered type has none of.
 static void test_tostring(void)
 {
@@ -599,9 +599,9 @@ static void test_tostring(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 01§5.4: the hole asks for tostring^, and on a host value the two
+    // [lex.string.interp]: the hole asks for tostring^, and on a host value the two
     // spellings are one member -- so what the registration wrote is what
-    // lands here. 05§8.9: the receiver is three slots wide, and the key
+    // lands here. [modules.hostvalue]: the receiver is three slots wide, and the key
     // sits past them rather than in the middle of the value.
     LHAT_TEST("and an interpolation hole writes that same spelling");
     {
@@ -614,7 +614,7 @@ static void test_tostring(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // §14.8: the components are numbers, so they are spelled the way a
+    // [syntax.obj.number]: the components are numbers, so they are spelled the way a
     // number^ is spelled anywhere else -- 3 and 3.0 apart, and no printf
     // format of this library's own.
     LHAT_TEST("the components read as L^ spells a number^");
@@ -628,7 +628,7 @@ static void test_tostring(void)
 
 static void test_collection(void)
 {
-    // 05§8.9: nothing here is the collector's -- a host value in a
+    // [modules.hostvalue]: nothing here is the collector's -- a host value in a
     // register must read the same after a full cycle, and the CONT slots
     // must never be walked as references.
     LHAT_TEST("a collection walks past host values in registers");
@@ -650,7 +650,7 @@ static void test_collection(void)
 }
 
 // ---------------------------------------------------------------------------
-// The escape rules (05§8.9): every one of these must refuse to check
+// The escape rules ([modules.hostvalue]): every one of these must refuse to check
 // ---------------------------------------------------------------------------
 
 static void test_escapes(void)
@@ -673,7 +673,7 @@ static void test_escapes(void)
                        "let^ f = f^ -> number^ { return^ v.x }\n"),
                "capture");
 
-    // 05§8.9+: a yield^ carries a host value whole -- one seat, full width.
+    // [modules.hostvalue.union]: a yield^ carries a host value whole -- one seat, full width.
     // Only the mixed forms stay refused: a run's positions are single
     // slots, so a host value never rides among them.
     LHAT_TEST("a yield^ carries a host value whole");
@@ -711,7 +711,7 @@ static void test_escapes(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // Y and T are the one type here -- §8.9 still keeps a host value out of
+    // Y and T are the one type here -- [syntax.stmt.let] still keeps a host value out of
     // a union, so a mixed union(Y, T) cannot carry one; same-typed they
     // fold to the value itself.
     LHAT_TEST("a coroutine may return one, and a wide parameter crosses");
@@ -752,7 +752,7 @@ static void test_escapes(void)
                        "}\n"),
                "member overwrite");
 
-    // 05§8.9+: every rule above is about the width a place has room for, not
+    // [modules.hostvalue.union]: every rule above is about the width a place has room for, not
     // about the kind's identity -- so a union carrying a host value is as
     // wide as the value in it and lands in none of those places either.
     // These are the same refusals written with a '|nil^' on, and they are
@@ -786,7 +786,7 @@ static void test_escapes(void)
                        "}\n"),
                "a run's position");
 
-    // 05§8.9+: what the lift opens. A host value stands in a union whose other
+    // [modules.hostvalue.union]: what the lift opens. A host value stands in a union whose other
     // arms the head slot's tag tells apart, so the room one reservation
     // makes serves both -- the value writes its width, the nil^ writes the
     // head and leaves the rest untouched.
@@ -837,7 +837,7 @@ static void test_escapes(void)
 
 
 // ---------------------------------------------------------------------------
-// 05§8.9: a parameter's width comes from the type, not from the spelling
+// [modules.hostvalue]: a parameter's width comes from the type, not from the spelling
 // ---------------------------------------------------------------------------
 //
 // A host value parameter reserves its registered width of consecutive slots,
@@ -883,7 +883,7 @@ static void test_parameter_width(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 03§3.4: a parameter left to inference has no annotation to read at
+    // [pipeline.infer]: a parameter left to inference has no annotation to read at
     // all. Getting this wrong answered a wrong number rather than faulting,
     // which is the worse of the two ways to be wrong: `q` took one slot,
     // contributed nothing, and `(p + q) * 0.5` came back as `p * 0.5`.
@@ -900,7 +900,7 @@ static void test_parameter_width(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // §14.4: a receiver is written among the parameters but is not in the
+    // [syntax.obj.self]: a receiver is written among the parameters but is not in the
     // type's list of them, so the walk over the signature has to step over
     // it or every parameter after one would take the wrong width.
     LHAT_TEST("a receiver does not put the walk over the signature out of step");
@@ -924,7 +924,7 @@ static void test_parameter_width(void)
 }
 
 // ---------------------------------------------------------------------------
-// §13.11 with 04§11.6+: a written type is what it resolves to, not what it says
+// [syntax.type.fits] with [errors.runtime.traceback]: a written type is what it resolves to, not what it says
 // ---------------------------------------------------------------------------
 //
 // fits^ and as^ take a type the compiler settles, and it settled one by
@@ -978,7 +978,7 @@ static void test_type_position_alias(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // §11.6+3: as^ answers the value or a localerror^.CastFailure, and
+    // [syntax.op.as-error]: as^ answers the value or a localerror^.CastFailure, and
     // lower_type hands LHAT_BC_ASCAST the same descriptor fits^ tests
     // against -- so it was refused in the same three ways and is mended in
     // the same one.

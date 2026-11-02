@@ -1,6 +1,6 @@
 // L^ (lhat) -- one shape for what every stage has to say.
 //
-// 03§1.1 has four stages and each keeps its own diagnostics: the lexer's
+// [pipeline.stages.tree] has four stages and each keeps its own diagnostics: the lexer's
 // LhatDiagnostic, the parser's LhatParseDiagnostic, the checker's
 // LhatCheckDiagnostic. That is right -- a stage's codes are its own -- but
 // what a reader sees should not depend on which stage spoke.
@@ -8,7 +8,7 @@
 // So the codes stay where they are and only the rendering is shared. A
 // caller turns whatever it has into an LhatReport and writes it out.
 //
-// Nothing here touches stdio. 05§8.9 keeps the language away from its
+// Nothing here touches stdio. [modules.hostvalue] keeps the language away from its
 // surroundings, so this fills a buffer and the caller decides where it goes
 // -- the same arrangement lhat_value_write uses.
 
@@ -25,7 +25,7 @@
 extern "C" {
 #endif
 
-// 10§7.1: a message is written in the language of the program it is about.
+// [l10n.choose.program]: a message is written in the language of the program it is about.
 // lhat/program.h is where that is declared; naming it here asks for nothing
 // else.
 struct LhatProgram;
@@ -49,7 +49,7 @@ typedef struct {
     //
     // The column shown is a count of characters, since that is what an editor
     // is told to go to. Where the mark is *put* is a count of terminal cells,
-    // which is not the same number -- see 03§1.3.
+    // which is not the same number -- see [pipeline.stages.diagnostics].
     uint32_t offset;
     uint32_t line;
     uint32_t column;
@@ -66,7 +66,7 @@ typedef struct {
 //                                                          ~
 //     (main.lh)1:67: error: a ';' closes what a ':' opened
 //
-// The mark is '~' and not '^' because a hat is a letter here (01§2.2): a
+// The mark is '~' and not '^' because a hat is a letter here ([lex.hat.one-use]): a
 // column of them under a line full of them reads as more of the same.
 //
 // A line too wide to fit is shown through a window around the mark, with
@@ -83,14 +83,14 @@ typedef struct {
 // not counting the terminating NUL, and fills up to `capacity` including it.
 // So measuring is a call with (NULL, 0).
 // `program` is the one the report is about, whose language it is written in
-// (10§7.1); NULL writes the English. Its declaration is lhat/program.h's,
+// ([l10n.choose.program]); NULL writes the English. Its declaration is lhat/program.h's,
 // which this header does not otherwise need.
 size_t lhat_report_write(const struct LhatProgram *program,
                          const LhatReport *report, const LhatSource *source,
                          const char *name, bool rich, char *out,
                          size_t capacity);
 
-// 07§6: one edit a fix asks for -- where it begins, how much of the source
+// [lsp.next]: one edit a fix asks for -- where it begins, how much of the source
 // it replaces, and what goes there. A zero `length` inserts; an empty `text`
 // deletes. The text is borrowed and NUL-terminated: it is a spelling of the
 // language or a span of the source, never something to free.
@@ -108,12 +108,12 @@ typedef enum {
     LHAT_FIX_SUGGESTED
 } LhatFixConfidence;
 
-// 07§6: what a quick fix would do about one diagnostic. The stage that
+// [lsp.next]: what a quick fix would do about one diagnostic. The stage that
 // refused is the one that knows what would have been right, so the library
 // works this out and a tool only translates it -- a second guess at the
 // language's rules in every editor is what this avoids.
 //
-// `title_id` is 10§4's ID of the text a reader sees; the text itself comes
+// `title_id` is [l10n.id]'s ID of the text a reader sees; the text itself comes
 // from lhat_unit_diagnostic_fix_title, in the program's language.
 typedef struct {
     const char *title_id;
@@ -122,20 +122,20 @@ typedef struct {
     size_t edit_count;
 } LhatFix;
 
-// 10§4: a message's stable ID and its English text. The ID is what a
+// [l10n.id]: a message's stable ID and its English text. The ID is what a
 // translation is written against and never changes meaning; the English is
-// the reference every other language translates (10§2.2).
+// the reference every other language translates ([l10n.principle.english]).
 typedef struct {
     const char *id;
     const char *text;
 } LhatMessageEntry;
 
-// 07§6: a fix as a stage stores it, before anyone asks for one. A `title`
+// [lsp.next]: a fix as a stage stores it, before anyone asks for one. A `title`
 // of NULL is a slot holding no fix, and the filled slots come first. Two is
 // what the codes with two ways out want -- write override^ or overload^ --
 // and every other code fills one.
 #define LHAT_FIX_SLOTS 2
-// And two edits is the most one fix makes so far: §14.5+'s way out names the
+// And two edits is the most one fix makes so far: [syntax.obj.compose-ambiguous]'s way out names the
 // side where the receiver stood and hands the receiver in as an argument.
 // The edits come in the order they stand in the source and never overlap.
 #define LHAT_FIX_EDITS 2
@@ -153,7 +153,7 @@ typedef struct {
 size_t lhat_fix_slot_count(const LhatFixSlot *slots);
 bool lhat_fix_slot_read(const LhatFixSlot *slots, size_t which, LhatFix *out);
 
-// 10§5.1: one argument of a message -- the hole it fills, by name, and the
+// [l10n.compose.holes]: one argument of a message -- the hole it fills, by name, and the
 // text that fills it, exactly as it is to be written.
 typedef struct {
     const char *name;
@@ -166,7 +166,7 @@ typedef struct {
 // every other brace is a brace, and `\{`, `\}` and `\\` write a brace or a
 // backslash. What fills a hole goes in as it is and is not read for holes
 // again, and a hole with no argument of its name is written as it stands. A
-// phrase (10§5.2) is looked up by whoever hands it over.
+// phrase ([l10n.compose.hole-kinds]) is looked up by whoever hands it over.
 //
 // Follows lhat_report_write: answers how many bytes the whole sentence
 // wants, not counting the terminating NUL, and fills up to `capacity`
@@ -174,12 +174,12 @@ typedef struct {
 size_t lhat_message_render(const char *text, const LhatMessageArg *args,
                            size_t count, char *out, size_t capacity);
 
-// 10§4.2: the sources this build holds messages for, in the order 10§3.1
+// [l10n.id.spelling]: the sources this build holds messages for, in the order [l10n.scope.shown]
 // lists them; NULL one past the last. A build without the front end holds no
-// `check`, `parse` or `lex` (10§6.2).
+// `check`, `parse` or `lex` ([l10n.catalog.english-baked]).
 const char *lhat_messages_source(size_t index);
 
-// 10§6.3: the English of one source, written as a catalog with every entry
+// [l10n.catalog.dump]: the English of one source, written as a catalog with every entry
 // commented out -- what a translation is made from. A source this build does
 // not hold writes nothing and answers 0.
 //

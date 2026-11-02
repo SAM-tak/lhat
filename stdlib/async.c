@@ -2,7 +2,7 @@
 //
 // A table of things a task may be waiting for, and the two questions a
 // scheduler asks about it: what is ready, and how long until the next one
-// could be. See async.h for the contract a host is held to, and §15.14
+// could be. See async.h for the contract a host is held to, and [syntax.sub.await-done]
 // for why the scheduler itself is L^ rather than any of this.
 //
 // Two kinds of wait live in the one table. A deadline comes due by itself,
@@ -29,7 +29,7 @@ typedef struct {
     int64_t due_ms;  // when the clock will make it ready
     bool timed;      // false for an external one: only a push makes it ready
     bool ready;      // pushed, and not yet handed back
-    // 05§8.7: whose wait it is. The table belongs to the program and a
+    // [modules.host.import]: whose wait it is. The table belongs to the program and a
     // program may have any number of machines on it (std.thread starts one
     // per worker), while a wait means something only to the scheduler that
     // armed it -- so a wait is answered to the machine it was armed on and
@@ -47,7 +47,7 @@ typedef struct {
     LhatInteger next_id;
 } AsyncModule;
 
-// 05§8.9: seconds are what a caller has in mind, and the clock counts
+// [modules.hostvalue]: seconds are what a caller has in mind, and the clock counts
 // milliseconds -- the same conversion std.thread.sleep makes, at the same
 // boundary. Nothing to wait for is not an error: a deadline in the past is
 // one that is already due.
@@ -353,13 +353,13 @@ int lhatstdlib_async_take(void *waits, LhatMachine *machine, LhatInteger id)
 
 void *lhatstdlib_async_waits(const LhatProgram *program)
 {
-    // 05§8.7: the context every registration of this module was given.
+    // [modules.host.import]: the context every registration of this module was given.
     // Asked of the program rather than kept in a static, for the reason
     // stdlib/io.c gives -- two programs are two tables.
     return lhat_lookup_host_context(program, "std.async", NULL, "external");
 }
 
-// 05§8.7: what this module leaves with the program. Unlike the other
+// [modules.host.import]: what this module leaves with the program. Unlike the other
 // modules' this one owns more than itself -- the waits it is holding and the
 // lock over them.
 static void dispose_async(void *context)

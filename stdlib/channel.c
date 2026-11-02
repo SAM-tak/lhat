@@ -50,7 +50,7 @@ typedef struct Channel {
     uint64_t sent;      // ++ per push; the number a push answers
     uint64_t received;  // ++ per pop; supply waits for it to reach its own
 
-    // 05§8.8+2: how many hold this pointer -- a wrapper on some machine,
+    // [modules.hostdata.sharing]: how many hold this pointer -- a wrapper on some machine,
     // a carried tree carrying it, the table of names. Counted under `lock`;
     // the last to let go frees it.
     int holds;
@@ -179,7 +179,7 @@ static void leave(Channel *channel, LhatMachine *machine)
     }
 }
 
-// 05§8.8+2's retain/let_go, which is also how the module's own code
+// [modules.hostdata.sharing]'s retain/let_go, which is also how the module's own code
 // keeps a channel while it is only in the table of names.
 static const LhatRuntimeType *channel_type_argument(const void *pointer, size_t index, void *context)
 {
@@ -319,7 +319,7 @@ static Channel *self_of(const ChannelModule *module, LhatValue value)
     return (Channel *)lhat_hostdata_pointer(value, module->tag);
 }
 
-// A channel as a value of this machine, holding it once more (05§8.8+2's
+// A channel as a value of this machine, holding it once more ([modules.hostdata.sharing]'s
 // wrapper hold, which its dispose^ gives back).
 static bool answer_channel(LhatMachine *machine, const ChannelModule *module,
                            Channel *channel, LhatValue *out)
@@ -388,7 +388,7 @@ static void channel_make(LhatMachine *machine, void *context,
         answers[0] = fail_with(machine, module->out_of_memory,
                                "a channel could not be made");
     } else {
-        // The value carries 05§8.8+2's wrapper hold now, and gives it back
+        // The value carries [modules.hostdata.sharing]'s wrapper hold now, and gives it back
         // through dispose^ or the collector. What channel_new left is this
         // call's own, and this call is done with it -- an anonymous channel
         // has no table standing behind it the way a named one does.
@@ -402,7 +402,7 @@ static void channel_make(LhatMachine *machine, void *context,
 // The names the process shares
 // ---------------------------------------------------------------------------
 //
-// Not in the registry (05§8.7+), which is what programs agree about
+// Not in the registry ([modules.host.nested-fault]), which is what programs agree about
 // before anything runs; this is written while machines run, so it carries
 // its own lock. Made on the first registration, which is single-threaded by
 // the same rule the registry rests on.
@@ -709,7 +709,7 @@ static void channel_demand(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-// §15.14 with 05§8.7+: a wait to yield^ instead of holding the thread.
+// [syntax.sub.await-done] with [modules.host.nested-fault]: a wait to yield^ instead of holding the thread.
 //
 // demand() waits on the channel's own condition, which is an OS thread going
 // to sleep -- and under std.task that thread is a worker, so a job waiting
@@ -783,12 +783,12 @@ static void channel_awaitable(LhatMachine *machine, void *context,
 // running again another taker may have had the value -- and it is exactly
 // the kind of thing that is forgotten once and then reads nil^ for ever
 // after. So the loop lives here instead, as a coroutine the job delegates
-// to (§15.6's await^):
+// to ([syntax.sub.coroutine-make]'s await^):
 //
 //     let^ got = await^ ch.take()
 //
 // The step answers false with the value when there is one, which is how a
-// host coroutine ends (§13.9), and true with the wait id when there is not,
+// host coroutine ends ([syntax.type.coroutine]), and true with the wait id when there is not,
 // which is a yield -- and a yield of a std.async id is what puts a task
 // aside (05 の std.task). Nothing of the retry reaches the writer.
 typedef struct {
@@ -979,7 +979,7 @@ bool lhatstdlib_channel_register(LhatProgram *program)
         return false;
     }
     if (!names.ready) {
-        // 05§8.7: registration is before anything runs, which is what
+        // [modules.host.import]: registration is before anything runs, which is what
         // makes this the one moment a process-wide lock may be made.
         lhat_mutex_init(&names.lock);
         names.ready = true;
@@ -1030,7 +1030,7 @@ bool lhatstdlib_channel_register(LhatProgram *program)
            lhat_register_member(program, "std.channel", "Channel", "push",
                                  "p^self^, self^.T0 -> number^" REFUSAL,
                                 channel_push, module) &&
-           // §14.12: the two shapes of a wait are two arms of one name, the
+           // [syntax.obj.override]: the two shapes of a wait are two arms of one name, the
            // way a host writes an optional argument (love does the same).
            lhat_register_member(program, "std.channel", "Channel", "supply",
                                  "p^self^, self^.T0 -> bool^" REFUSAL,
@@ -1072,7 +1072,7 @@ bool lhatstdlib_channel_register(LhatProgram *program)
            lhat_register_member(program, "std.channel", "Channel", "dispose",
                                 "p^self^;", channel_dispose,
                                 (void *)module->tag) &&
-           // 05§8.8+2: a channel crosses machines as its pointer, which is
+           // [modules.hostdata.sharing]: a channel crosses machines as its pointer, which is
            // what lets one be pushed into another or handed to spawn.
            lhat_register_hostdata_type_arguments(program, "std.channel", "Channel",
                                                  channel_type_argument, NULL) &&

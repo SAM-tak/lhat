@@ -186,7 +186,7 @@ static bool put_break(Writer *w, size_t depth)
     return true;
 }
 
-// §14.18: a JSON string is text, so the bytes have to be UTF-8. What must be
+// [syntax.obj.count]: a JSON string is text, so the bytes have to be UTF-8. What must be
 // escaped is the quote, the backslash and everything below a space; the
 // rest goes down as it stands, which keeps the text readable.
 static bool write_string(Writer *w, const JsonModule *m, const char *text,
@@ -240,7 +240,7 @@ static bool write_string(Writer *w, const JsonModule *m, const char *text,
 
 // A real written so that reading it back answers the same real. 17 digits
 // always do; 15 usually do and read better, so they are tried first and
-// kept where they hold. lhat_value_text is no use here -- §14.17 writes a
+// kept where they hold. lhat_value_text is no use here -- [syntax.obj.tostring] writes a
 // number for a reader, with %g, which does not come back the same.
 static bool write_real(Writer *w, const JsonModule *m, LhatReal real)
 {
@@ -353,7 +353,7 @@ static bool write_table(Writer *w, const JsonModule *m, const LhatTable *table,
         return put_break(w, depth) && put(w, "]", 1);
     }
 
-    // §14.16 answered this question once already, for the same reason:
+    // [syntax.obj.typeof] answered this question once already, for the same reason:
     // a table's own order is the hash's, which is not the writer's and not
     // stable, so what is written is put in a canonical one instead. Here
     // that makes the text of a table depend on what is in it and nothing
@@ -685,7 +685,7 @@ static bool read_string(Reader *r, LhatValue *out)
     return made ? true : reject(r, r->module->out_of_memory, "out of memory");
 }
 
-// §14.8: one number type, two representations. A JSON number written with
+// [syntax.obj.number]: one number type, two representations. A JSON number written with
 // neither a fraction nor an exponent, and small enough to hold, is an
 // integer; every other one is a real.
 static bool read_number(Reader *r, LhatValue *out)
@@ -746,7 +746,7 @@ static bool read_number(Reader *r, LhatValue *out)
     return true;
 }
 
-// §11.3: null is nothing, and nothing is what an unset key already holds --
+// [syntax.op.semantic]: null is nothing, and nothing is what an unset key already holds --
 // so a null is read and then not put anywhere. In an array that leaves a
 // hole; json.h says why that is the honest answer.
 static bool keep(Reader *r, LhatTable *table, LhatValue key, LhatValue held)
@@ -942,13 +942,13 @@ static void json_decode(LhatMachine *machine, void *context,
 
 bool lhatstdlib_json_register(LhatProgram *program)
 {
-    // 05§8.7: registration before checking -- std.sys.Error.OutOfMemory has to
+    // [modules.host.import]: registration before checking -- std.sys.Error.OutOfMemory has to
     // exist before this module's signatures name it. The call is idempotent.
     if (!lhatstdlib_sys_register(program)) {
         return false;
     }
 
-    // 05§8.7: every field of this is an identity, and an identity belongs
+    // [modules.host.import]: every field of this is an identity, and an identity belongs
     // to the process rather than to a program -- one declaration, one error
     // kind, however many programs declare it. So one of these serves them
     // all, and a second registration writes the same answers back into it.

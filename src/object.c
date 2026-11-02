@@ -7,13 +7,13 @@
 #include <string.h>
 
 #include "chain.h"
-#include "code.h"  // §14.4: a proto says whether its body takes a receiver
+#include "code.h"  // [syntax.obj.self]: a proto says whether its body takes a receiver
 #include "grow.h"
 #include "grapheme.h"
 #include "lhat/port.h"
 
-// 04§2.6 and 04§6.1: whether `value` is an error of `kind`. A kind object
-// standing for a whole errordef^ answers yes for any of its kinds, since 04§2.3
+// [errors.kind.disjoint] and [errors.fits.form]: whether `value` is an error of `kind`. A kind object
+// standing for a whole errordef^ answers yes for any of its kinds, since [errors.kind.made]
 // makes the declaration the union of them.
 static bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind);
 
@@ -126,7 +126,7 @@ LhatErrorKind *lhat_error_kind_new(LhatHeap *heap,
     }
     kind->group = group;
     kind->name = name;
-    // 04§2.7: a kind is of the family its declaration is, so the group
+    // [errors.kind.local]: a kind is of the family its declaration is, so the group
     // decides for every kind under it and nothing can be told two things.
     kind->local = group != NULL ? group->local : local;
     return kind;
@@ -146,7 +146,7 @@ LhatEnum *lhat_enum_new(LhatHeap *heap, const LhatString *name,
     if (made->members == NULL) {
         return NULL;
     }
-    made->members->sealed = true;  // §19: the declaration is closed
+    made->members->sealed = true;  // [syntax.enum]: the declaration is closed
     return made;
 }
 
@@ -200,7 +200,7 @@ LhatCoroutine *lhat_coroutine_new(LhatHeap *heap, const LhatClosure *closure,
 bool lhat_coroutine_frame_init(LhatCoroutineFrame *frame,
                                const LhatClosure *closure, size_t registers)
 {
-    // 03§2.2: the saved frame in the stack's own two-run shape. Zero payloads
+    // [pipeline.value.layout]: the saved frame in the stack's own two-run shape. Zero payloads
     // and tags are nil^ (tag zero is LHAT_VALUE_NIL), so fresh runs come
     // from calloc and kept ones are zeroed.
     size_t width = registers ? registers : 1;
@@ -325,7 +325,7 @@ bool lhat_table_walk(LhatWalkCursor *walk, LhatValue *key, LhatValue *value)
         *value = lhat_slots_get(table->array, position);
         return true;
     }
-    // The dense part first, in index order: §14 makes a table both a
+    // The dense part first, in index order: [syntax.obj] makes a table both a
     // sequence and a mapping, and the sequence half has an order worth
     // keeping. What order the rest comes in is not promised.
     if (walk->at_array < table->array_count) {
@@ -448,17 +448,17 @@ bool lhat_type_rt_add_member(LhatRuntimeType *type, const LhatString *name,
     return true;
 }
 
-// The members a value shows -- a plain table's own, and 05§8.8's hostdata
-// read off the table its type registered. Two places ask this: §14.7+2's
+// The members a value shows -- a plain table's own, and [modules.hostdata]'s hostdata
+// read off the table its type registered. Two places ask this: [syntax.obj.delegate]'s
 // delegate walk, which is the reason a delegate^ to a host value works at
-// all, and §13.11's fits^, which would otherwise answer no to a host value
+// all, and [syntax.type.fits]'s fits^, which would otherwise answer no to a host value
 // for every structure while the checker was answering yes to the same
-// question (03§4.2 -- one question, one answer).
+// question ([pipeline.repl.no-fork] -- one question, one answer).
 //
-// A host VALUE (05§8.9) is not here on purpose: its members are the
+// A host VALUE ([modules.hostvalue]) is not here on purpose: its members are the
 // machine's, found by tag->index, and the checker refuses one against a
 // structure too. Anything else has no members to lend and answers NULL,
-// which is 04§11.3's line rather than a failure.
+// which is [errors.runtime.index]'s line rather than a failure.
 static const LhatTable *members_table_of(LhatValue value)
 {
     if (lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {
@@ -472,13 +472,13 @@ static const LhatTable *members_table_of(LhatValue value)
 
 static const void *delegate_next(const void *object);
 
-// 05§8.8: identity is the tag alone, so the value has to actually be
+// [modules.hostdata]: identity is the tag alone, so the value has to actually be
 // hostdata -- otherwise there is no tag to compare and the answer is about
 // two different kinds of value.
 //
-// 05§8.8+: or a tag declared under the asked-for one. The same walk the
+// [modules.hostdata.base]: or a tag declared under the asked-for one. The same walk the
 // checker makes (type.c's nominal_derives), which is what keeps
-// 'x fits^ godot.Node' answering the same thing on both sides of 03§4.2.
+// 'x fits^ godot.Node' answering the same thing on both sides of [pipeline.repl.no-fork].
 static bool hostdata_derives(LhatValue value, const LhatHostDataTag *tag)
 {
     if (!lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {
@@ -756,7 +756,7 @@ static bool callable_satisfies(LhatValue value, const LhatRuntimeType *wanted,
 }
 
 // scope is the chain of structures the walk is inside, so a Self^ in a
-// wanted signature names the structure it was written in (§13.13).
+// wanted signature names the structure it was written in ([syntax.type.self]).
 static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
                             const RtScope *scope)
 {
@@ -784,8 +784,8 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
             return tag->type_argument(pointer, type->part_count, tag->type_argument_context) == NULL;
         }
         case LHAT_TYPE_RT_ANY:
-        // 03§3.4: inference did not decide, so nothing is being asked --
-        // the same answer as a place nobody wrote. Only §14.16's writing tells
+        // [pipeline.infer]: inference did not decide, so nothing is being asked --
+        // the same answer as a place nobody wrote. Only [syntax.obj.typeof]'s writing tells
         // the two apart.
         case LHAT_TYPE_RT_UNKNOWN:
             return true;
@@ -794,7 +794,7 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
         case LHAT_TYPE_RT_BOOL:
             return lhat_is_bool(value);
         case LHAT_TYPE_RT_NUMBER:
-            // §14.8: one type, so either representation answers yes.
+            // [syntax.obj.number]: one type, so either representation answers yes.
             return lhat_is_number(value);
         case LHAT_TYPE_RT_STRING:
             return lhat_is_object_kind(value, LHAT_OBJECT_STRING);
@@ -803,9 +803,9 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
         case LHAT_TYPE_RT_TYPEINFO:
             return lhat_is_object_kind(value, LHAT_OBJECT_TYPE);
         case LHAT_TYPE_RT_TABLE: {
-            // §14.10: at least these members, which is what makes the judgement
+            // [syntax.obj.structure]: at least these members, which is what makes the judgement
             // structural rather than a question about where it came from.
-            // 04§2.2: an error's fields are what it shows, and they are
+            // [errors.kind.errordef]: an error's fields are what it shows, and they are
             // not members -- so this reading is the error's own.
             const LhatTable *table =
                 lhat_is_object_kind(value, LHAT_OBJECT_ERROR)
@@ -890,18 +890,18 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
                 }
             }
             return true;
-        // 05§8.7 with §14.12: three things are a subroutine here. A closure
-        // is one; a registered C function is one, which is what 05§8.7 makes it;
+        // [modules.host.import] with [syntax.obj.override]: three things are a subroutine here. A closure
+        // is one; a registered C function is one, which is what [modules.host.import] makes it;
         // and a group is one, since a name carrying arms is called like any
         // other name. The checker knows all three as f^/p^, so a test that
         // knew only the first would answer no exactly where the annotation
         // answered yes.
         //
         // The kind is the whole of the question. The signature is the
-        // checker's -- 03§4.2 leaves the run time the part that cannot be
+        // checker's -- [pipeline.repl.no-fork] leaves the run time the part that cannot be
         // decided ahead, and which arm of a group a call takes is decided at
         // the call.
-        // §19: identity is the declaration. The descriptor a fits^
+        // [syntax.enum]: identity is the declaration. The descriptor a fits^
         // was compiled with and the one the declaration was built with are
         // different objects; the enum_decl they share is what compares.
         case LHAT_TYPE_RT_ENUM: {
@@ -928,7 +928,7 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
         }
         case LHAT_TYPE_RT_SUBROUTINE:
             return callable_satisfies(value, type, scope);
-        // §15.3+: an f^ coroutine type admits only a body an f^ wrote or a
+        // [syntax.sub.yieldable-f]: an f^ coroutine type admits only a body an f^ wrote or a
         // built-in walk. Host walks are p^ unless the VM marked a pure walk.
         case LHAT_TYPE_RT_COROUTINE: {
             if (!lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE)) return false;
@@ -939,7 +939,7 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
             return co->source == LHAT_COROUTINE_BODY && co->frame.closure != NULL &&
                    co->frame.closure->proto != NULL && co->frame.closure->proto->is_function;
         }
-        // 04§2.7: a family, not every error. The two tops are disjoint, so
+        // [errors.kind.local]: a family, not every error. The two tops are disjoint, so
         // asking error^ of a localerror^ answers false.
         case LHAT_TYPE_RT_ERROR: {
             if (!lhat_is_object_kind(value, LHAT_OBJECT_ERROR)) {
@@ -953,19 +953,19 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
             return lhat_error_is_kind(value, type->error_kind);
         case LHAT_TYPE_RT_HOSTDATA:
             return hostdata_derives(value, type->hostdata_tag);
-        // 05§8.9: the same rule over the head slot's own tag. A head
+        // [modules.hostvalue]: the same rule over the head slot's own tag. A head
         // travels as the first slot of its width, so asking the head is
         // asking the value.
         case LHAT_TYPE_RT_HOSTVALUE:
             return lhat_is_hostvalue(value) &&
                    lhat_as_hostvalue_tag(value) == type->hostvalue_tag;
-        // 05§8.9: the same tag, read off the box's own head slot.
+        // [modules.hostvalue]: the same tag, read off the box's own head slot.
         case LHAT_TYPE_RT_HOSTVALUE_BOX:
             return lhat_is_object_kind(value, LHAT_OBJECT_HOSTVALUE_BOX) &&
                    lhat_hostvalue_box_tag(
                        (const LhatHostValueBox *)lhat_as_object(value)) ==
                        type->hostvalue_tag;
-        // §13.8+: no value satisfies a tuple. One is never a value in hand --
+        // [syntax.type.tuple]: no value satisfies a tuple. One is never a value in hand --
         // it lives in the slots a call reserved and is taken apart there,
         // which is why the checker refuses it everywhere a name could hold
         // one. Reaching here means a written type got past that, and false is
@@ -979,7 +979,7 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
                 }
             }
             return false;
-        // §14.5, §14.12: an overload^ed member has to fit every arm at once --
+        // [syntax.obj.compose], [syntax.obj.override]: an overload^ed member has to fit every arm at once --
         // it is one value callable every way the intersection lists.
         case LHAT_TYPE_RT_INTERSECT:
             for (size_t i = 0; i < type->part_count; i++) {
@@ -988,11 +988,11 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
                 }
             }
             return true;
-        // §13.13: the structure this one is written inside, which the
+        // [syntax.type.self]: the structure this one is written inside, which the
         // walk has already been through. Asked of a value it answers what the
         // cycle used to be flattened to -- that it is a table -- since telling
         // more would mean walking a value that may hold itself as well. The
-        // checker is where the shape is judged (12§2); this is §11.6's
+        // checker is where the shape is judged ([spec.arms]); this is [syntax.op.table]'s
         // own check, and it says no less than it did.
         case LHAT_TYPE_RT_SELF:
             return lhat_is_object_kind(value, LHAT_OBJECT_TABLE);
@@ -1037,7 +1037,7 @@ void lhat_type_rt_sort_members(LhatRuntimeType *type)
 }
 
 // ---------------------------------------------------------------------------
-// Printing a runtime type down (§14.10, §14.16)
+// Printing a runtime type down ([syntax.obj.structure], [syntax.obj.typeof])
 // ---------------------------------------------------------------------------
 
 // Mirrors value.c's Writer -- each file that writes text down keeps its own
@@ -1065,8 +1065,8 @@ static void type_put_text(TypeWriter *w, const char *text)
 
 static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type);
 
-// §14.10's brace half, shared by the two things that wear it: a structure
-// after its 't^', and §14.7+'s self^{ … } section inside a definition.
+// [syntax.obj.structure]'s brace half, shared by the two things that wear it: a structure
+// after its 't^', and [syntax.obj.members-order]'s self^{ … } section inside a definition.
 static bool has_member_named(const LhatRuntimeType *type,
                              const LhatString *name)
 {
@@ -1089,8 +1089,8 @@ static void write_hostdata_name(TypeWriter *w, const LhatHostDataTag *tag)
     type_put_text(w, tag->name);
 }
 
-// 05§8.8+: the host type a structure holds through its delegate, named
-// by §14.5's '&' after the members -- what the structure has in addition to
+// [modules.hostdata.base]: the host type a structure holds through its delegate, named
+// by [syntax.obj.compose]'s '&' after the members -- what the structure has in addition to
 // them, not written out as them.
 static void write_held_host(TypeWriter *w, const LhatRuntimeType *type)
 {
@@ -1104,7 +1104,7 @@ static void write_structure_body(TypeWriter *w, const LhatRuntimeType *type)
 {
     type_put_text(w, "{");
     bool first = true;
-    // §14.7+: what the instances carry comes before the definition's
+    // [syntax.obj.members-order]: what the instances carry comes before the definition's
     // own members -- new and the static ones -- the way the def^ was written.
     if (type->instance != NULL) {
         type_put_text(w, " self^");
@@ -1112,7 +1112,7 @@ static void write_structure_body(TypeWriter *w, const LhatRuntimeType *type)
         write_held_host(w, type->instance);
         first = false;
     }
-    // §14: the sequence half first, in order, the way a value written down
+    // [syntax.obj]: the sequence half first, in order, the way a value written down
     // puts it (value.c's write_table) -- then the named half, sorted into a
     // canonical order already (this is read-only from here).
     for (size_t i = 0; i < type->part_count; i++) {
@@ -1122,7 +1122,7 @@ static void write_structure_body(TypeWriter *w, const LhatRuntimeType *type)
     }
     for (size_t i = 0; i < type->member_count; i++) {
         // What the section already showed is not written twice: an instance's
-        // member is reachable through the definition as well (§14.4's
+        // member is reachable through the definition as well ([syntax.obj.self]'s
         // `let^ f = A.m`), which is what the section is saying.
         if (type->instance != NULL &&
             has_member_named(type->instance, type->members[i].name)) {
@@ -1152,11 +1152,11 @@ static void write_structure_body(TypeWriter *w, const LhatRuntimeType *type)
     type_put_text(w, first ? "}" : " }");
 }
 
-// §13.8+2: a result position takes a tuple bare -- a top-level ',' there is
+// [syntax.type.tuple-parens]: a result position takes a tuple bare -- a top-level ',' there is
 // the tuple's, and the parentheses are left to say "the union covers the
 // whole of this" ('(A, B)|SomeError'). This text is read back as a type
-// (§14.16's `.signature`), so it spells what the parser accepts:
-// a signature's result, closed by §13.3's ';', and a coroutine's slots.
+// ([syntax.obj.typeof]'s `.signature`), so it spells what the parser accepts:
+// a signature's result, closed by [syntax.type.semicolon]'s ';', and a coroutine's slots.
 static void write_runtime_result(TypeWriter *w, const LhatRuntimeType *type)
 {
     if (type != NULL && type->kind == LHAT_TYPE_RT_TUPLE) {
@@ -1174,7 +1174,7 @@ static void write_runtime_result(TypeWriter *w, const LhatRuntimeType *type)
 static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
 {
     if (type == NULL) {
-        // §13.7: nothing written asks for the top type, not nothing.
+        // [syntax.type.variadic]: nothing written asks for the top type, not nothing.
         type_put_text(w, "any^");
         return;
     }
@@ -1194,7 +1194,7 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             }
             type_put_text(w, ">");
             return;
-        // 03§3.4: not a type. 05§8.7 has a signature read back as a type
+        // [pipeline.infer]: not a type. [modules.host.import] has a signature read back as a type
         // expression, and one with this in it will not -- which is the point.
         // A place inference did not decide is where an annotation is wanted,
         // and writing any^ there would hide both facts.
@@ -1216,12 +1216,12 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
         case LHAT_TYPE_RT_COSTATE:
             type_put_text(w, "costate^");
             return;
-        // 04§2.7: two tops, and §14.16 wants what it writes to read back.
+        // [errors.kind.local]: two tops, and [syntax.obj.typeof] wants what it writes to read back.
         case LHAT_TYPE_RT_ERROR:
             type_put_text(w, type->error_local ? "localerror^" : "error^");
             return;
-        // 04§2.4: identity is the declaration, and the declaration's own
-        // name is already qualified (05§7.3) -- the same text that names
+        // [errors.kind.nominal]: identity is the declaration, and the declaration's own
+        // name is already qualified ([modules.label.errors]) -- the same text that names
         // it in an is^ or an annotation.
         case LHAT_TYPE_RT_ERROR_KIND:
             if (type->error_kind != NULL && type->error_kind->name != NULL) {
@@ -1231,7 +1231,7 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 type_put_text(w, "error^");
             }
             return;
-        // 05§8.7: a signature reads back as a type expression, and 05§8.8
+        // [modules.host.import]: a signature reads back as a type expression, and [modules.hostdata]
         // names a host type the same way a program writes it -- qualified by
         // the module it was registered under.
         case LHAT_TYPE_RT_HOSTDATA:
@@ -1242,7 +1242,7 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             write_hostdata_name(w, type->hostdata_tag);
             return;
 
-        // 05§8.9: named the same qualified way; the box adds its own word.
+        // [modules.hostvalue]: named the same qualified way; the box adds its own word.
         case LHAT_TYPE_RT_HOSTVALUE:
         case LHAT_TYPE_RT_HOSTVALUE_BOX:
             if (type->hostvalue_tag == NULL) {
@@ -1258,7 +1258,7 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 type_put_text(w, ".Box^");
             }
             return;
-        // §19: spelt the way the checker spells them (type.c) -- the
+        // [syntax.enum]: spelt the way the checker spells them (type.c) -- the
         // enum's name, and a member through the enum that declared it.
         case LHAT_TYPE_RT_ENUM_MEMBER:
             if (type->enum_owner_name != NULL) {
@@ -1275,18 +1275,18 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 type_put(w, type->enum_name->text, type->enum_name->length);
             }
             return;
-        // §13.9's three slots. NULL still prints any^ -- not a guess, the same
+        // [syntax.type.coroutine]'s three slots. NULL still prints any^ -- not a guess, the same
         // "nothing written asks for the top type" convention as everywhere
         // else in this function.
-        // §15.3+: the front half is written as the signature it always
+        // [syntax.sub.yieldable-f]: the front half is written as the signature it always
         // described -- one resume takes R and answers Y -- which is where the
-        // kind of the body goes, both kinds being possible (§15.3+).
+        // kind of the body goes, both kinds being possible ([syntax.sub.yieldable-f]).
         case LHAT_TYPE_RT_COROUTINE: {
             if (type->coroutine_top) {
                 type_put_text(w, "c^");
                 return;
             }
-            // §13.9+: 'c^{f^R -> Y -> T}'. An empty slot is written by
+            // [syntax.type.coroutine-arrows]: 'c^{f^R -> Y -> T}'. An empty slot is written by
             // leaving it out, so a NULL is not the "nothing written asks for
             // any^" of every other position here -- it is the slot saying
             // nothing is sent in, or that the body ends without a value. How
@@ -1319,9 +1319,9 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             type_put_text(w, "}");
             return;
         }
-        // §13.8+: '(A, B)'. The parentheses the type grammar already used for
+        // [syntax.type.tuple]: '(A, B)'. The parentheses the type grammar already used for
         // grouping, which is why there is no one-position form to write.
-        // §13.8+2: reached here the tuple stands where a bare ',' would be
+        // [syntax.type.tuple-parens]: reached here the tuple stands where a bare ',' would be
         // read as something else's -- a result goes through
         // write_runtime_result instead.
         case LHAT_TYPE_RT_TUPLE:
@@ -1342,14 +1342,14 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 write_runtime_type(w, type->parts[i]);
             }
             return;
-        // §14.5: '&' is intersection, the same symbol §14.12's overload^ shows
+        // [syntax.obj.compose]: '&' is intersection, the same symbol [syntax.obj.override]'s overload^ shows
         // a multi-dispatched member's type with.
         case LHAT_TYPE_RT_INTERSECT:
             for (size_t i = 0; i < type->part_count; i++) {
                 if (i > 0) {
                     type_put_text(w, " & ");
                 }
-                // §11.5: '&' binds tighter than '|', so a union arm needs the
+                // [syntax.op.precedence]: '&' binds tighter than '|', so a union arm needs the
                 // grouping parentheses back -- without them the text reads
                 // as '(A & B) | C', which is a different type.
                 bool wrap = type->parts[i] != NULL &&
@@ -1365,8 +1365,8 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             return;
         case LHAT_TYPE_RT_SUBROUTINE: {
             type_put_text(w, type->is_function ? "f^" : "p^");
-            // §14.4: in a type the receiver is a parameter, written as the
-            // word itself -- and §11.3+ has it trail on a binary operator,
+            // [syntax.obj.self]: in a type the receiver is a parameter, written as the
+            // word itself -- and [syntax.op.right] has it trail on a binary operator,
             // where it is the right operand.
             bool others = type->part_count > 0 || type->variadic != NULL;
             if (type->takes_self && !type->self_last) {
@@ -1381,7 +1381,7 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
                 }
                 write_runtime_type(w, type->parts[i]);
             }
-            // §13.7: the same spelling a parameter list ends in.
+            // [syntax.type.variadic]: the same spelling a parameter list ends in.
             if (type->variadic != NULL) {
                 if (type->part_count > 0) {
                     type_put_text(w, ", ");
@@ -1403,7 +1403,7 @@ static void write_runtime_type(TypeWriter *w, const LhatRuntimeType *type)
             type_put_text(w, ";");
             return;
         }
-        // §13.13: the structure this one sits inside, a hat per step out.
+        // [syntax.type.self]: the structure this one sits inside, a hat per step out.
         case LHAT_TYPE_RT_SELF:
             type_put_text(w, "Self");
             for (unsigned i = 0; i < (type->levels > 0 ? type->levels : 1);
@@ -1434,7 +1434,7 @@ size_t lhat_runtime_type_write(const LhatRuntimeType *type, char *out,
 }
 
 // ---------------------------------------------------------------------------
-// Comparing two runtime types (02§2811, §11.3, §14.9)
+// Comparing two runtime types (02§2811, [syntax.op.semantic], [syntax.obj.name])
 // ---------------------------------------------------------------------------
 
 bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
@@ -1443,7 +1443,7 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         return true;
     }
     if (a == NULL || b == NULL) {
-        // NULL is "nothing written", which §13.7 makes any^ -- the same
+        // NULL is "nothing written", which [syntax.type.variadic] makes any^ -- the same
         // question lhat_value_satisfies answers by treating NULL as ANY.
         LhatRuntimeType blank;
         memset(&blank, 0, sizeof blank);
@@ -1467,22 +1467,22 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         case LHAT_TYPE_RT_NUMBER:
         case LHAT_TYPE_RT_STRING:
         case LHAT_TYPE_RT_COSTATE:
-        // 03§3.4: two undecided places are the same undecided place. Not
+        // [pipeline.infer]: two undecided places are the same undecided place. Not
         // equal to any^ though -- the kinds differ above, and NULL normalises
         // to any^ rather than to this, which keeps "nobody wrote one" apart
         // from "inference could not say".
         case LHAT_TYPE_RT_UNKNOWN:
         case LHAT_TYPE_RT_TYPEINFO:
             return true;
-        // 04§2.7: error^ and localerror^ are two types, not one.
+        // [errors.kind.local]: error^ and localerror^ are two types, not one.
         case LHAT_TYPE_RT_ERROR:
             return a->error_local == b->error_local;
-        // §13.9's three slots now carry real answers, so two coroutine
+        // [syntax.type.coroutine]'s three slots now carry real answers, so two coroutine
         // types are equal only when R, Y and T line up -- not just by kind.
-        // §15.3+ adds the body's own kind to that: what may be done with an
+        // [syntax.sub.yieldable-f] adds the body's own kind to that: what may be done with an
         // f^ coroutine is not what may be done with a p^ one.
         case LHAT_TYPE_RT_COROUTINE:
-            // §13.9: an empty slot is a statement of its own, so it is told
+            // [syntax.type.coroutine]: an empty slot is a statement of its own, so it is told
             if (a->coroutine_top || b->coroutine_top) {
                 return a->coroutine_top == b->coroutine_top;
             }
@@ -1500,17 +1500,17 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
                    lhat_runtime_type_equal(a->produce, b->produce) &&
                    lhat_runtime_type_equal(a->result, b->result);
         case LHAT_TYPE_RT_ERROR_KIND:
-            // 04§2.4: identity is the declaration.
+            // [errors.kind.nominal]: identity is the declaration.
             return a->error_kind == b->error_kind;
-        // 05§8.8: identity is the tag, which is the whole of what a
+        // [modules.hostdata]: identity is the tag, which is the whole of what a
         // registered type is.
         case LHAT_TYPE_RT_HOSTDATA:
             return a->hostdata_tag == b->hostdata_tag;
-        // 05§8.9: the same.
+        // [modules.hostvalue]: the same.
         case LHAT_TYPE_RT_HOSTVALUE:
         case LHAT_TYPE_RT_HOSTVALUE_BOX:
             return a->hostvalue_tag == b->hostvalue_tag;
-        // §11.3's structural identity for a union or an intersection asks the
+        // [syntax.op.semantic]'s structural identity for a union or an intersection asks the
         // same of both sides without caring about the order the arms were
         // written in.
         case LHAT_TYPE_RT_UNION:
@@ -1543,7 +1543,7 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
             lhat_free(matched);
             return equal;
         }
-        // §13.8+: the order and the count are what a tuple means, so this is
+        // [syntax.type.tuple]: the order and the count are what a tuple means, so this is
         // the positional walk the SUBROUTINE arm below does rather than the
         // order-blind matching a union gets above.
         case LHAT_TYPE_RT_TUPLE:
@@ -1559,7 +1559,7 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
         case LHAT_TYPE_RT_SUBROUTINE:
             if (a->is_function != b->is_function ||
                 a->takes_self != b->takes_self ||
-                // §11.3+: which operand the receiver is, is part of the shape
+                // [syntax.op.right]: which operand the receiver is, is part of the shape
                 // -- the checker refuses one where the other is written
                 // (type.c's conforms_func), and the two are written apart.
                 a->self_last != b->self_last ||
@@ -1574,7 +1574,7 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
                 }
             }
             // Whether there is a tail at all is part of the shape -- unlike
-            // NULL elsewhere (§13.7 makes an absent one any^), one side
+            // NULL elsewhere ([syntax.type.variadic] makes an absent one any^), one side
             // having no tail is not the same as a tail of any^.
             if ((a->variadic == NULL) != (b->variadic == NULL)) {
                 return false;
@@ -1613,12 +1613,12 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
                     return false;
                 }
             }
-            // §14.7+: two definitions are the same only if what they make is.
+            // [syntax.obj.members-order]: two definitions are the same only if what they make is.
             return lhat_runtime_type_equal(a->instance, b->instance);
-        // §13.13: the same word naming the same step out.
+        // [syntax.type.self]: the same word naming the same step out.
         case LHAT_TYPE_RT_SELF:
             return a->levels == b->levels;
-        // §19: an enum is its declaration, and a member is one
+        // [syntax.enum]: an enum is its declaration, and a member is one
         // position in it -- the same identity fits^ compares.
         case LHAT_TYPE_RT_ENUM:
             return a->enum_decl == b->enum_decl;
@@ -1643,14 +1643,14 @@ bool lhat_overload_add(LhatOverload *overload, LhatValue candidate)
     return true;
 }
 
-// §14.12: an override^ over an overloaded name replaces the one arm its
+// [syntax.obj.override]: an override^ over an overloaded name replaces the one arm its
 // signature overlaps. Which arm that is was settled by the checker, and the
 // values here carry no signature to settle it again -- but they do not have
 // to. The replacement is usable wherever that arm was and overlaps no other,
 // so putting it first is enough: every call the arm would have taken now
 // stops here, and the calls the other arms take never reach it.
 //
-// A fresh group rather than a write into the old one, because §14.12+ hands
+// A fresh group rather than a write into the old one, because [syntax.obj.super] hands
 // the old one to super^ -- prepending in place would make super^ reach the
 // replacement and call itself.
 LhatOverload *lhat_overload_with_first(LhatHeap *heap,
@@ -1669,7 +1669,7 @@ LhatOverload *lhat_overload_with_first(LhatHeap *heap,
     return made;
 }
 
-// 12§2: the same replacement, once the checker has named the arm. The
+// [spec.arms]: the same replacement, once the checker has named the arm. The
 // group then holds exactly the arms the name's type says it does -- the one
 // replaced is gone rather than kept behind the replacement -- so an index
 // into the arms means the same thing on both sides, which is what lets a
@@ -1705,11 +1705,11 @@ static bool lhat_error_is_kind(LhatValue value, const LhatErrorKind *kind)
     if (held == NULL) {
         return false;
     }
-    // §2.3: a declaration is the union of its kinds, so naming it asks whether
-    // the error is any of them. 04§2.7's built-in kinds stand under a top with
+    // [syntax.juxta.when]: a declaration is the union of its kinds, so naming it asks whether
+    // the error is any of them. [errors.kind.local]'s built-in kinds stand under a top with
     // no declaration around them, so one of those is its own group and the
     // question is about the object itself -- which is why both readings are
-    // taken. They cannot both hold: a group object is a type and 04§2.3 makes
+    // taken. They cannot both hold: a group object is a type and [errors.kind.made] makes
     // no value of it, so an error's own kind is never one.
     return kind->group == NULL ? (held == kind || held->group == kind)
                                : held == kind;
@@ -1728,28 +1728,28 @@ bool lhat_hostdata_release(LhatObject *object, struct LhatMachine *machine)
     if (data->released) {
         return false;
     }
-    // 05§8.8+: a type that registered no dispose^ of its own is handed
+    // [modules.hostdata.base]: a type that registered no dispose^ of its own is handed
     // back the way whatever it is under is. Walked rather than copied down
     // at registration: the tag is the process's (registry.h), and a
     // per-program pass has no business writing into it.
     //
     // This is the half of inheriting that does NOT go through the member
-    // table. §12.5 reads a lifetime off whether a `dispose` member is there,
+    // table. [syntax.with.checked] reads a lifetime off whether a `dispose` member is there,
     // so a derived type given the member and not this would check as
-    // disposable and then release nothing -- 03§4.2's shape of fault,
+    // disposable and then release nothing -- [pipeline.repl.no-fork]'s shape of fault,
     // silent rather than reported.
     const LhatHostDataTag *at = lhat_hostdata_releaser(data->tag);
     if (at == NULL) {
         return false;
     }
     // Marked before the call, so a release that somehow arrives here twice
-    // gives the pointer back once (§10.7).
+    // gives the pointer back once ([syntax.finally.coroutine]).
     data->released = true;
 
     // The value is still whole, so the release reads its pointer out of it
     // the way any other member of the type would.
     LhatValue self = lhat_object(object);
-    // 05§8.7: a release answers nothing, which the boundary now says in
+    // [modules.host.import]: a release answers nothing, which the boundary now says in
     // its own type -- there is no answer to take and no room to take it in.
     at->release(machine, at->release_context, &self, 1, NULL, NULL);
     return true;
@@ -1766,7 +1766,7 @@ bool lhat_coroutine_release(LhatObject *object, struct LhatMachine *machine)
         return false;
     }
     // Marked before the call, so a release that somehow arrives here twice
-    // gives the state back once (§10.7) -- lhat_hostdata_release's rule.
+    // gives the state back once ([syntax.finally.coroutine]) -- lhat_hostdata_release's rule.
     walk->host_released = true;
 
     LhatValue self = lhat_object(object);
@@ -1814,7 +1814,7 @@ void lhat_object_free(LhatObject *object)
     case LHAT_OBJECT_OVERLOAD:
         lhat_free(((LhatOverload *)object)->candidates);
         break;
-    // §14.12: the array belongs to the host; the types in it are the
+    // [syntax.obj.override]: the array belongs to the host; the types in it are the
     // heap's and are freed with everything else.
     case LHAT_OBJECT_HOST:
         lhat_free(((LhatHost *)object)->parameter_types);
@@ -1857,7 +1857,7 @@ bool lhat_string_equal(const LhatString *a, const LhatString *b)
 // Keys
 // ---------------------------------------------------------------------------
 
-// §14.8 makes number^ one type with two representations, so 2 and 2.0
+// [syntax.obj.number] makes number^ one type with two representations, so 2 and 2.0
 // have to be the same key. The real form folds into the integer one whenever
 // it names the same number.
 static LhatValue normalise_key(LhatValue key)
@@ -1879,7 +1879,7 @@ static bool usable_key(LhatValue key)
     if (lhat_is_real(key) && lhat_as_real(key) != lhat_as_real(key)) {
         return false;
     }
-    // 05§8.9+: a bare host value is never a stored key -- its width does
+    // [modules.hostvalue.union]: a bare host value is never a stored key -- its width does
     // not fit the entry's one slot -- and the generic get cannot read one
     // either (a head slot alone names no bytes); lookups by value go through
     // lhat_table_get_by_value instead.
@@ -1889,7 +1889,7 @@ static bool usable_key(LhatValue key)
     return true;
 }
 
-// 05§8.9+: what a box's bytes hash to, shared with the lookup that asks
+// [modules.hostvalue.union]: what a box's bytes hash to, shared with the lookup that asks
 // with a bare value -- the two have to collide for content keying to work.
 static uint32_t content_key_hash(const LhatHostValueTag *tag,
                                  const LhatValueUnion *data)
@@ -1919,7 +1919,7 @@ static uint32_t hash_key(LhatValue key)
             if (object != NULL && object->kind == LHAT_OBJECT_STRING) {
                 return ((const LhatString *)object)->hash;
             }
-            // 05§8.9+: a sealed box keys by its bytes and its tag --
+            // [modules.hostvalue.union]: a sealed box keys by its bytes and its tag --
             // computed on demand, since a sealed box never changes and the
             // runs are a few slots. The same formula answers for a bare
             // value asking at a lookup (lhat_table_get_by_value).
@@ -1930,7 +1930,7 @@ static uint32_t hash_key(LhatValue key)
                     return content_key_hash(tag, box->run + 1);
                 }
             }
-            // 05§8.8: two wrappers of one host object are equal, so they
+            // [modules.hostdata]: two wrappers of one host object are equal, so they
             // have to hash alike -- off the tag and the host's pointer, the
             // pair equality reads. Not switched on `released`: a key stored
             // in a table has to keep its hash, and the pointer is only ever
@@ -2051,7 +2051,7 @@ static bool grow_entries(LhatTable *table)
     table->entry_capacity = capacity;
     table->entry_count = moved;
     table->entry_tombs = 0;  // none survived the move
-    // 12§3: a rehash moves everything, so nothing remembered about
+    // [spec.member-cache]: a rehash moves everything, so nothing remembered about
     // where a key was is worth anything afterwards.
     table->version++;
     return true;
@@ -2061,10 +2061,10 @@ static bool grow_entries(LhatTable *table)
 // The array part
 // ---------------------------------------------------------------------------
 
-// §14.14+: which slot of the dense half a key names, if any.
+// [syntax.obj.keys-round]: which slot of the dense half a key names, if any.
 //
-// A real names one too, rounded, the way §14.19's at reads an ordinal that came
-// out of a division -- both are a number^ used as a position, and §14.8 makes
+// A real names one too, rounded, the way [syntax.obj.substring]'s at reads an ordinal that came
+// out of a division -- both are a number^ used as a position, and [syntax.obj.number] makes
 // the two representations one type, so the position should not depend on which
 // one the arithmetic happened to leave. The rounding is at's, floor(x + 0.5),
 // so that one spelling of "round a position" holds across the two.
@@ -2134,7 +2134,7 @@ static LhatValue take_entry(LhatTable *table, LhatTableEntry *entry)
     entry->value = lhat_bool(true);  // a tombstone
     table->entry_count--;
     table->entry_tombs++;
-    table->version++;  // 12§3: an entry left its place
+    table->version++;  // [spec.member-cache]: an entry left its place
     return value;
 }
 
@@ -2155,7 +2155,7 @@ static void drain_into_array(LhatTable *table)
 
 bool lhat_table_resize(LhatTable *table, size_t length, LhatValue fill)
 {
-    // §14.22: shortening drops the tail. The slots are cleared so nothing
+    // [syntax.obj.table-ops]: shortening drops the tail. The slots are cleared so nothing
     // past the end is kept alive.
     while (table->array_count > length) {
         lhat_slots_set(table->array, --table->array_count, lhat_nil());
@@ -2328,7 +2328,7 @@ LhatValue lhat_table_get_bytes(const LhatTable *table, const char *name,
                         NULL);
 }
 
-// 05§8.9+: a lookup asking with the bare value -- `t[vec]`. Everything
+// [modules.hostvalue.union]: a lookup asking with the bare value -- `t[vec]`. Everything
 // a table stores under a box key is sealed, so comparing the bytes of the
 // moment against them is exact; only the hash part can hold one, since a
 // box never normalises to an array index.
@@ -2360,11 +2360,11 @@ LhatValue lhat_table_get_by_value(const LhatTable *table,
     }
 }
 
-// §14.15: the reserved seat -- an entry holding its key and no value,
+// [syntax.obj.abstract]: the reserved seat -- an entry holding its key and no value,
 // the fourth state a slot can be in (free, tombstone, live, seat). It reads
 // as absent (table_get_in skips it), the walkers show it as (key, nil^),
 // and filling it is an overwrite -- no layout change, so no version bump,
-// which is what keeps 12§3's member cache standing across new.
+// which is what keeps [spec.member-cache]'s member cache standing across new.
 
 bool lhat_table_reserve(LhatTable *table, LhatValue key)
 {
@@ -2459,8 +2459,8 @@ void lhat_table_prune_seats(LhatTable *proto, const LhatTable *definition)
         if (!lhat_is_nil(member->key) && !lhat_is_nil(member->value)) {
             // The definition itself answers this name: a seat here would,
             // once filled, shadow that member with the clone's version
-            // still 0 -- the one hole in §5.1's guard. The checker refuses
-            // the clash first (§14.15); this is the unchecked run's backstop.
+            // still 0 -- the one hole in [syntax.if.expr]'s guard. The checker refuses
+            // the clash first ([syntax.obj.abstract]); this is the unchecked run's backstop.
             entry->key = lhat_nil();
             entry->value = lhat_bool(true);  // a tombstone
             proto->entry_count--;
@@ -2477,7 +2477,7 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
         *refused = true;
         return true;
     }
-    // 05§8.9+: a box keys by its bytes, so only a sealed one -- whose
+    // [modules.hostvalue.union]: a box keys by its bytes, so only a sealed one -- whose
     // bytes hold still -- may be *stored* as a key. constbox^ is how one is
     // made; the checker says so first (MUTABLE_KEY), and this is the
     // unchecked run's backstop. A lookup is free to ask with a live box:
@@ -2490,7 +2490,7 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
     }
     key = normalise_key(key);
 
-    // §14.10: the sequence holds nil^ like any element. Writing one inside it
+    // [syntax.obj.structure]: the sequence holds nil^ like any element. Writing one inside it
     // leaves a hole rather than shortening it; only pop^, remove^, clear^
     // and resize^ do that.
     size_t index;
@@ -2523,7 +2523,7 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
             entry->value = lhat_bool(true);  // a tombstone
             table->entry_count--;
             table->entry_tombs++;
-            table->version++;  // §5.1: what was at that place is gone
+            table->version++;  // [syntax.if.expr]: what was at that place is gone
         }
         return true;
     }
@@ -2545,7 +2545,7 @@ bool lhat_table_set(LhatTable *table, LhatValue key, LhatValue value,
             table->entry_tombs--;  // the slot was a tombstone, reused
         }
         table->entry_count++;
-        // §5.1: a place that held nothing now holds something. Writing over
+        // [syntax.if.expr]: a place that held nothing now holds something. Writing over
         // a key already there moves nothing, so it does not count -- that is
         // the whole reason a field written in a loop costs a cache nothing.
         table->version++;
@@ -2562,8 +2562,8 @@ size_t lhat_table_length(const LhatTable *table)
 
 size_t lhat_table_count(const LhatTable *table)
 {
-    // §14.18: both halves, and only this table's own. What an instance
-    // reads through `definition` (§14.7) is shared rather than held here, so
+    // [syntax.obj.count]: both halves, and only this table's own. What an instance
+    // reads through `definition` ([syntax.obj.instance]) is shared rather than held here, so
     // it is not one of this table's elements.
     return table == NULL ? 0 : table->array_count + table->entry_count;
 }
@@ -2571,16 +2571,16 @@ size_t lhat_table_count(const LhatTable *table)
 size_t lhat_string_characters(const LhatString *string)
 {
     // Counted when the string was made, so this is
-    // a read. §14.18 puts length^ beside size^ as a property of the value,
+    // a read. [syntax.obj.count] puts length^ beside size^ as a property of the value,
     // and a property that walked the bytes on every read would not be one.
     return string == NULL ? 0 : string->characters;
 }
 
 size_t lhat_string_byte_at(const LhatString *string, size_t character)
 {
-    // §14.19: where the nth character begins, counting from 0 -- the
+    // [syntax.obj.substring]: where the nth character begins, counting from 0 -- the
     // one place a run of characters has to be turned back into bytes.
-    // Walked rather than stored: §14.19 is a call, so the work is where the
+    // Walked rather than stored: [syntax.obj.substring] is a call, so the work is where the
     // parentheses are, and a table of offsets per string would cost every
     // string for the few that are cut.
     if (string == NULL) {

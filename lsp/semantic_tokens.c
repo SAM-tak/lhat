@@ -28,9 +28,9 @@ const size_t LSP_SEMANTIC_TOKEN_TYPES_COUNT =
 
 const char *const LSP_SEMANTIC_TOKEN_MODIFIERS[] = {
     "declaration",
-    "readonly",  // §8.9: bound by a let^ rather than a var^
+    "readonly",  // [syntax.stmt.let]: bound by a let^ rather than a var^
     // The spec's own word for a name the standard library provides, which is
-    // what §14.19's members are here -- the language answers them itself.
+    // what [syntax.obj.substring]'s members are here -- the language answers them itself.
     "defaultLibrary",
 };
 const size_t LSP_SEMANTIC_TOKEN_MODIFIERS_COUNT =

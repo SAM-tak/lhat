@@ -3,10 +3,10 @@
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
 // prefixed with "02".
 //
-// 11§2.1: a value carries its own type. 03§2.2 makes that a tagged union rather
+// [binary.containers.bytes]: a value carries its own type. [pipeline.value.layout] makes that a tagged union rather
 // than NaN boxing, so a 64-bit integer fits without being put on the heap;
-// 03§2.2 then split payloads from tags for bulk storage (LhatSlots below),
-// which is also what 05§8.9's host values stand on -- consecutive payload
+// [pipeline.value.layout] then split payloads from tags for bulk storage (LhatSlots below),
+// which is also what [modules.hostvalue]'s host values stand on -- consecutive payload
 // slots are plain contiguous bytes.
 //
 // **Nothing outside this header touches the representation.** That only
@@ -26,7 +26,7 @@
 extern "C" {
 #endif
 
-// 03§2.2. Integer and real are separate tags but one type: §14.8 makes
+// [pipeline.value.layout]. Integer and real are separate tags but one type: [syntax.obj.number] makes
 // number^ a single type whose representation may differ at run time.
 typedef enum {
     LHAT_VALUE_NIL,
@@ -34,17 +34,17 @@ typedef enum {
     LHAT_VALUE_INTEGER,
     LHAT_VALUE_REAL,
     LHAT_VALUE_OBJECT,
-    // 05§8.9: the head slot of a host value -- a host-defined value type
+    // [modules.hostvalue]: the head slot of a host value -- a host-defined value type
     // living in consecutive stack slots rather than on the heap. The payload
     // is the registered LhatHostValueTag, which knows how many continuation
     // slots follow; the raw bytes live in those. Only ever a stack register:
     // the checker keeps one out of every place that outlives a frame.
     LHAT_VALUE_HOSTVALUE,
-    // 05§8.9: a continuation slot of a host value. The payload is raw
+    // [modules.hostvalue]: a continuation slot of a host value. The payload is raw
     // bytes belonging to the head before it; no reader gives one a meaning
     // of its own, and every bulk copy moves it exactly as any other slot.
     LHAT_VALUE_CONT,
-    // §13.8+: the head slot of a tuple -- the several values a
+    // [syntax.type.tuple]: the head slot of a tuple -- the several values a
     // subroutine answers with, laid in the consecutive stack slots the caller
     // reserved instead of in a table on the heap. The payload is the number
     // of positions, which follow in the next slots.
@@ -57,7 +57,7 @@ typedef enum {
     // apart by the tag sitting in this slot.
     //
     // Never a value a name can hold: the machine puts one down and the next
-    // few instructions take it apart. §13.8+ confines it to a result, and the
+    // few instructions take it apart. [syntax.type.tuple] confines it to a result, and the
     // checker refuses every place it could escape to.
     LHAT_VALUE_RUN
 } LhatValueTag;
@@ -66,34 +66,34 @@ typedef enum {
 // value stays one word plus a tag whatever gets added here.
 typedef enum {
     LHAT_OBJECT_STRING,
-    LHAT_OBJECT_TABLE,       // §10.7: the one data structure
-    LHAT_OBJECT_SUBROUTINE,  // f^ and p^ (§15)
-    LHAT_OBJECT_COROUTINE,   // §13.9
-    LHAT_OBJECT_COSTATE,     // §15.16: a coroutine's frame as save()
+    LHAT_OBJECT_TABLE,       // [syntax.finally.coroutine]: the one data structure
+    LHAT_OBJECT_SUBROUTINE,  // f^ and p^ ([syntax.sub])
+    LHAT_OBJECT_COROUTINE,   // [syntax.type.coroutine]
+    LHAT_OBJECT_COSTATE,     // [syntax.sub.save-load]: a coroutine's frame as save()
                              // found it, for load() to put back
-    LHAT_OBJECT_ERROR,       // 04§2.3
-    LHAT_OBJECT_ERROR_KIND,  // 04§2.4: the declaration a kind belongs to,
+    LHAT_OBJECT_ERROR,       // [errors.kind.made]
+    LHAT_OBJECT_ERROR_KIND,  // [errors.kind.nominal]: the declaration a kind belongs to,
                              // which is what its identity is
-    LHAT_OBJECT_ENUM,        // §19: what one enum^ declaration made
+    LHAT_OBJECT_ENUM,        // [syntax.enum]: what one enum^ declaration made
     LHAT_OBJECT_ENUMERATOR,  // one member of it -- the singleton value a
                              // program passes around
     LHAT_OBJECT_NATIVE,      // an operation the runtime provides, bound to
                              // whatever it was reached through
-    LHAT_OBJECT_TYPE,        // §14.12: a written type, kept so that a
+    LHAT_OBJECT_TYPE,        // [syntax.obj.override]: a written type, kept so that a
                              // value can be tested against it while running
-    LHAT_OBJECT_OVERLOAD,    // §14.12: the signatures one name carries
-    LHAT_OBJECT_UPVALUE,     // 01§5.4: never a value, only reached through a
+    LHAT_OBJECT_OVERLOAD,    // [syntax.obj.override]: the signatures one name carries
+    LHAT_OBJECT_UPVALUE,     // [lex.string.interp]: never a value, only reached through a
                              // closure -- but allocated and collected alike
-    LHAT_OBJECT_HOST,        // 05§8.7: a subroutine the host wrote in C.
+    LHAT_OBJECT_HOST,        // [modules.host.import]: a subroutine the host wrote in C.
                              // 04§12.8 makes an error a value, so it
                              // answers one rather than unwinding
-    LHAT_OBJECT_HOSTDATA,    // 05§8.8: something the host made and holds,
+    LHAT_OBJECT_HOSTDATA,    // [modules.hostdata]: something the host made and holds,
                              // reached through a pointer the collector does
                              // not look into
-    LHAT_OBJECT_HOSTVALUE_BOX, // 05§8.9: a host value put in the box the
+    LHAT_OBJECT_HOSTVALUE_BOX, // [modules.hostvalue]: a host value put in the box the
                               // heap can hold -- the bytes inline, no
                               // references, so the collector never looks in
-    LHAT_OBJECT_SCRIPT        // 05§5.6: the body of a script std.load
+    LHAT_OBJECT_SCRIPT        // [modules.require.load]: the body of a script std.load
                               // brought in, owned by the heap -- reached
                               // from every closure of it, freed with the
                               // last of them. Never a value
@@ -101,12 +101,12 @@ typedef enum {
 
 typedef struct LhatObject {
     LhatObjectKind kind;
-    // 03§5.12: white, gray or black, and which of the two whites. gc.h says
+    // [pipeline.bc.gc]: white, gray or black, and which of the two whites. gc.h says
     // what each means and what the invariant between them is.
     uint8_t color;
     struct LhatObject *next;  // every object, for the collector to walk
 
-    // 03§5.12: the collector's own list of what it has reached but not yet
+    // [pipeline.bc.gc]: the collector's own list of what it has reached but not yet
     // looked into. Kept on the object rather than in an array of its own so
     // that adding to the list cannot fail -- a collection that runs out of
     // memory halfway is a bad enough position while it is stop-the-world,
@@ -118,7 +118,7 @@ typedef struct LhatObject {
 } LhatObject;
 
 
-// 03§2.2: the payload on its own, so that bulk storage can keep payloads and
+// [pipeline.value.layout]: the payload on its own, so that bulk storage can keep payloads and
 // tags in two parallel runs (LhatSlots below) instead of paying eight bytes
 // of padding per value for a tag that needs three bits.
 typedef union LhatValueUnion {
@@ -126,11 +126,11 @@ typedef union LhatValueUnion {
     LhatInteger integer;
     LhatReal real;
     LhatObject *object;
-    // 05§8.9: what a LHAT_VALUE_HOSTVALUE head carries *in a stack slot*.
+    // [modules.hostvalue]: what a LHAT_VALUE_HOSTVALUE head carries *in a stack slot*.
     // The tag lives on the program, exactly as LhatHostData.tag does, so the
     // collector never follows it.
     const struct LhatHostValueTag *hostvalue;
-    // 05§8.9: what a LHAT_VALUE_HOSTVALUE value carries *at the host
+    // [modules.hostvalue]: what a LHAT_VALUE_HOSTVALUE value carries *at the host
     // boundary* -- an argument handed to a host function, or the value one
     // answers with. It aims at a head-shaped run: run[0].hostvalue is the
     // tag, run[1..] the bytes. The machine expands one back into slots the
@@ -144,7 +144,7 @@ typedef struct {
     LhatValueTag tag;
 } LhatValue;
 
-// 03§2.2: a run of values stored as two parallel arrays -- the payloads
+// [pipeline.value.layout]: a run of values stored as two parallel arrays -- the payloads
 // aligned and dense, the tags one byte each. This is the shape every bulk
 // store takes: a table's array part, the machine's stack, a coroutine's
 // saved registers. LhatValue stays the currency handed around by value,
@@ -168,10 +168,10 @@ static inline void lhat_slots_set(LhatSlots slots, size_t i, LhatValue v)
     slots.tags[i] = (uint8_t)v.tag;
 }
 
-// 03§2.2: one slot of a run, named so it can be held. What an upvalue's
+// [pipeline.value.layout]: one slot of a run, named so it can be held. What an upvalue's
 // location is now -- the payload and tag pointers travel as a pair, and the
 // pair may aim into the machine's stack, a coroutine's saved registers, or
-// the upvalue's own closed cell, which is what 09§5.4's sharing and §15.4's
+// the upvalue's own closed cell, which is what [debug.dap.restart]'s sharing and [syntax.sub.yield-both]'s
 // suspension both need. Never a raw LhatValue pointer: bulk storage holds
 // no LhatValue to point at.
 typedef struct {
@@ -201,10 +201,10 @@ static inline void lhat_ref_set(LhatValueRef r, LhatValue v)
     *r.tag = (uint8_t)v.tag;
 }
 
-// §5.4: a place shared between a frame and the closures made inside it. While
+// [syntax.if.bool]: a place shared between a frame and the closures made inside it. While
 // the frame lives, `location` aims into the machine's stack; once the frame
 // goes, the value is carried into the closed cell and `location` is aimed
-// there. §8.6 is what requires the sharing -- a ':=' inside a nested
+// there. [syntax.stmt.define] is what requires the sharing -- a ':=' inside a nested
 // subroutine has to reach the outer binding, which a copy would not.
 typedef struct LhatUpvalue {
     LhatObject header;
@@ -216,7 +216,7 @@ typedef struct LhatUpvalue {
     uint8_t closed_tag;
     struct LhatUpvalue *next_open;  // the machine's open list, innermost first
 
-    // §15.4 with §5.4: while the frame that owns the slot is suspended,
+    // [syntax.sub.yield-both] with [syntax.if.bool]: while the frame that owns the slot is suspended,
     // `location` points into that coroutine's saved registers rather than
     // into the stack, and this says whose. The coroutine has to outlive the
     // capture (gc.c reaches it through this), and every resume clears it
@@ -271,7 +271,7 @@ static inline LhatValue lhat_integer(LhatInteger i)
     return v;
 }
 
-// §13.8+: the head slot of a tuple. The positions are in the slots after it
+// [syntax.type.tuple]: the head slot of a tuple. The positions are in the slots after it
 // and are ordinary values; this one only says how many.
 static inline LhatValue lhat_run_head(size_t positions)
 {
@@ -307,14 +307,14 @@ static inline bool lhat_is_integer(LhatValue v) { return v.tag == LHAT_VALUE_INT
 static inline bool lhat_is_real(LhatValue v)    { return v.tag == LHAT_VALUE_REAL; }
 static inline bool lhat_is_object(LhatValue v)  { return v.tag == LHAT_VALUE_OBJECT; }
 static inline bool lhat_is_hostvalue(LhatValue v) { return v.tag == LHAT_VALUE_HOSTVALUE; }
-// §13.8+: the head of a tuple, whose payload is how many positions follow it.
+// [syntax.type.tuple]: the head of a tuple, whose payload is how many positions follow it.
 static inline bool lhat_is_run(LhatValue v)     { return v.tag == LHAT_VALUE_RUN; }
 static inline size_t lhat_run_width(LhatValue v)
 {
     return v.tag == LHAT_VALUE_RUN ? (size_t)v.as.integer : 0;
 }
 
-// §14.8: one type, two representations. Code asking "is this a number^"
+// [syntax.obj.number]: one type, two representations. Code asking "is this a number^"
 // has to accept either, and asking which representation is a separate
 // question with its own predicate above.
 static inline bool lhat_is_number(LhatValue v)
@@ -350,8 +350,8 @@ static inline LhatReal lhat_number_as_real(LhatValue v)
 }
 
 // The value as a 64-bit integer when it names one, whichever representation
-// holds it: 8.0 does, §2.5 and 1e300 do not, and neither does NaN (it fails
-// both comparisons). Answers by value, never by representation (§14.8+).
+// holds it: 8.0 does, [syntax.juxta.hat-start] and 1e300 do not, and neither does NaN (it fails
+// both comparisons). Answers by value, never by representation ([syntax.obj.number-widen]).
 static inline bool lhat_number_as_whole(LhatValue v, LhatInteger *out)
 {
     if (v.tag == LHAT_VALUE_INTEGER) {
@@ -374,7 +374,7 @@ static inline bool lhat_number_as_whole(LhatValue v, LhatInteger *out)
 // Comparison
 // ---------------------------------------------------------------------------
 
-// §14.8: how far apart two reals may be and still be one number. A
+// [syntax.obj.number]: how far apart two reals may be and still be one number. A
 // division carries a few units in the last place away from the answer it
 // names -- '8/(3-8/3)' lands 1.07e-14 short of 24 -- and a writer comparing
 // what arithmetic produced should not have to say so at every comparison.
@@ -384,8 +384,8 @@ static inline bool lhat_number_as_whole(LhatValue v, LhatInteger *out)
 // of 24 about twelve units in the last place.
 #define LHAT_NUMBER_TOLERANCE (8.0 * 2.220446049250313e-16)
 
-// Equality as '=' means it (§11.6). Two numbers compare as numbers even
-// when their representations differ, since §14.8 makes them one type; an
+// Equality as '=' means it ([syntax.op.table]). Two numbers compare as numbers even
+// when their representations differ, since [syntax.obj.number] makes them one type; an
 // object compares by identity until the collector and the string table give
 // a better answer.
 //
@@ -394,7 +394,7 @@ static inline bool lhat_number_as_whole(LhatValue v, LhatInteger *out)
 // for the one '=' itself uses.
 bool lhat_value_equal(LhatValue a, LhatValue b);
 
-// §14.8: the same question '=' and the four orderings ask, which admits
+// [syntax.obj.number]: the same question '=' and the four orderings ask, which admits
 // the error a real carries. Where both sides are numbers and either is a
 // real, two are one number when
 //
@@ -409,7 +409,7 @@ bool lhat_value_equal(LhatValue a, LhatValue b);
 // an index would not survive a band around it.
 bool lhat_value_close(LhatValue a, LhatValue b, LhatReal tolerance);
 
-// Identity as 'is^' means it (§11.6+). Unlike lhat_value_equal, a
+// Identity as 'is^' means it ([syntax.op.as]). Unlike lhat_value_equal, a
 // string is never special-cased into a content comparison and a type object
 // is never special-cased into a structural one -- every object answers only
 // to itself, on purpose, so this stays the same once '=' moves to a real
@@ -420,22 +420,22 @@ bool lhat_value_close(LhatValue a, LhatValue b, LhatReal tolerance);
 // and returns true. Either operand being nil^ is an allowed absence check.
 bool lhat_value_same(LhatValue a, LhatValue b, bool *out);
 
-// 03§4: a prompt answers with a value, so something has to write one
+// [pipeline.repl]: a prompt answers with a value, so something has to write one
 // down. Writes `value` into `out` and answers how long the whole text is --
 // snprintf's contract, so a caller may ask with a capacity of zero first.
 // `out` may be NULL when `capacity` is zero. Always terminates the buffer
 // when there is room for it.
 //
 // A string is written quoted, so that 1 and "1" read differently at a prompt.
-// A table is written the way §14 has one written: its sequence half in
+// A table is written the way [syntax.obj] has one written: its sequence half in
 // order, then its keyed half. Nesting stops at a depth of its own, which is
 // what keeps a table holding itself from being followed for ever.
 size_t lhat_value_write(LhatValue value, char *out, size_t capacity);
 
-// §14.17: what tostring() answers -- the text a reader reads, where
+// [syntax.obj.tostring]: what tostring() answers -- the text a reader reads, where
 // lhat_value_write gives the spelling L^ would read back. They differ for
 // the three that name themselves as literals: a string^ is its own bytes
-// rather than a quoted spelling (03§4 quotes so that 1 and "1" read
+// rather than a quoted spelling ([pipeline.repl] quotes so that 1 and "1" read
 // apart at a prompt, which turning a value into text has no need to do),
 // and nil^ and bool^ are the words "nil", "true" and "false" without the
 // hats that make them literals.
@@ -446,14 +446,14 @@ size_t lhat_value_write(LhatValue value, char *out, size_t capacity);
 // Follows lhat_value_write's contract: asks with (NULL, 0) first.
 size_t lhat_value_text(LhatValue value, char *out, size_t capacity);
 
-// §14.17: a number^ written through the format a program wrote.
+// [syntax.obj.tostring]: a number^ written through the format a program wrote.
 //
 // The format is checked rather than handed to snprintf as it stands: it must
 // carry exactly one conversion and that conversion must be a numeric one, or
 // 'tostring(1, "%s")' would read the number as a pointer. The length
 // modifier is the machine's to supply -- the value is an int64_t whatever
 // this platform calls one, so a program spelling 'l' would be naming a width
-// it cannot know. §14.8: the conversion decides how the number is read, so
+// it cannot know. [syntax.obj.number]: the conversion decides how the number is read, so
 // either representation answers either family.
 //
 // Answers false when the format is not one a number^ can be written through,
@@ -463,7 +463,7 @@ bool lhat_number_format(LhatValue value, const char *format,
                         size_t format_length, char *out, size_t capacity,
                         size_t *needed);
 
-// §14.17+2: the same format read backwards -- what lhat_number_format
+// [syntax.obj.tonumber]: the same format read backwards -- what lhat_number_format
 // writes, this reads. snprintf on one side, sscanf on the other.
 //
 // The format is checked the same way and for the same reason, but against
@@ -475,9 +475,9 @@ bool lhat_number_format(LhatValue value, const char *format,
 // Two answers, because two things can go wrong and they are not the same
 // mistake. False: the format is not one a number^ can be read through -- the
 // writer's error, and *read is untouched. True with *read false: the format
-// was fine and the text did not match it -- data, which §14.17+2 answers
+// was fine and the text did not match it -- data, which [syntax.obj.tonumber] answers
 // nil^ for. True with *read true: *out holds the number^, an integer or a
-// real as §14.8 says the conversion asked for.
+// real as [syntax.obj.number] says the conversion asked for.
 bool lhat_number_scan(const char *text, size_t length, const char *format,
                       size_t format_length, LhatValue *out, bool *read);
 

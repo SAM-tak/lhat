@@ -1,6 +1,6 @@
 // L^ (lhat) -- LSP server: what the checker settled on at a position.
 //
-// 07§4 records a resolution for every name that was *used*, and a
+// [lsp.hover] records a resolution for every name that was *used*, and a
 // declaration binds a name rather than resolving one -- so a position on the
 // name a let^ introduces finds nothing, and that is exactly where a reader
 // stands to ask what it is. What is recorded is every use, each saying where

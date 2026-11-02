@@ -1,7 +1,7 @@
 // L^ (lhat) -- what checking a wrapper over a wide host type costs.
 //
 // A Godot binding writes one def^ per engine class and hands it the class's
-// members with delegate^ (§14.7+2):
+// members with delegate^ ([syntax.obj.delegate]):
 //
 //     public^let^ Sprite2D = def^{
 //         self^{ abstract^gdobj : godot.Sprite2D },
@@ -10,7 +10,7 @@
 //     }
 //
 // godot.Sprite2D carries a few hundred members, most of them its bases'
-// (05§8.8+'s flatten). 03§1.1 puts the check on the editor's save, so
+// ([modules.hostdata.base]'s flatten). [pipeline.stages.tree] puts the check on the editor's save, so
 // what this costs is what a writer waits for.
 //
 // WHAT THIS ANSWERS. Three numbers, apart:
@@ -52,7 +52,7 @@ typedef struct {
 
 // Two of them: the wrappers in one unit and what composes onto them in
 // another, which is the shape a binding has -- a generated lhat/Godot.lh
-// and the script that require^s it (05§5.3).
+// and the script that require^s it ([modules.require.once]).
 typedef struct {
     File files[2];
     size_t count;
@@ -83,7 +83,7 @@ static char *disk_load(void *context, const char *path, size_t *length)
 
 // ---------------------------------------------------------------------------
 // bench.C0 .. bench.C4, each under the one before it, each declaring N
-// members of its own. C4 therefore carries N * DEPTH once 05§8.8+ has run.
+// members of its own. C4 therefore carries N * DEPTH once [modules.hostdata.base] has run.
 
 static const char *level_name(size_t level)
 {
@@ -107,7 +107,7 @@ static void answer_one(LhatMachine *machine, void *context,
 // Declares the tree and gives every level `per_level` members. Answers false
 // only out of memory or on a registration the program refused.
 // The leaves, all under the deepest of the chain -- what makes the tree a
-// tree rather than a line. An engine has hundreds of classes and 05§8.8+
+// tree rather than a line. An engine has hundreds of classes and [modules.hostdata.base]
 // flattens each one against its base, so how many there are is as much a
 // part of the cost as how wide one is.
 static const char *leaf_name(size_t leaf)
@@ -133,7 +133,7 @@ static bool register_tree(LhatProgram *program, size_t per_level,
         }
     }
     // The members after the whole tree is declared, which is what program.h
-    // advises for types that name each other -- and what makes 05§8.8+'s
+    // advises for types that name each other -- and what makes [modules.hostdata.base]'s
     // flatten wait for the first check.
     for (size_t level = 0; level < DEPTH; level++) {
         for (size_t i = 0; i < per_level; i++) {
@@ -231,7 +231,7 @@ static void write_script(char *out, size_t capacity, size_t wrappers,
 // ROUNDS of them, because lhat_now_ms is the wall clock the machine offers
 // and on Windows that ticks about every 16 ms -- one check of anything small
 // reads as zero. Each round is its own program: the registry keeps the
-// identities (05§8.7) but the types, the units and the arena belong to the
+// identities ([modules.host.import]) but the types, the units and the arena belong to the
 // program, so what is timed is a save's worth of work rather than a second
 // pass over warm structures.
 
@@ -264,7 +264,7 @@ static bool time_one(size_t per_level, size_t leaves, size_t wrappers,
         }
         spent_registering += lhat_now_ms() - started;
 
-        // 05§8.8+'s flatten happens inside the first check, which is where it
+        // [modules.hostdata.base]'s flatten happens inside the first check, which is where it
         // belongs: this measures what an editor's save waits for.
         started = lhat_now_ms();
         const LhatUnit *root = lhat_program_check(program, "main.lh");
@@ -276,7 +276,7 @@ static bool time_one(size_t per_level, size_t leaves, size_t wrappers,
             return false;
         }
 
-        // 05§8.7: what a host does after the check -- compile, make a
+        // [modules.host.import]: what a host does after the check -- compile, make a
         // machine, and put the registrations into it. A binding that rebuilds
         // its world whenever a script is loaded pays this as often as it pays
         // the check, so it is timed apart rather than left in the noise.
@@ -307,14 +307,14 @@ static bool time_one(size_t per_level, size_t leaves, size_t wrappers,
     return true;
 }
 
-// The registry is the process's (05§8.7), and a second declaration of a
+// The registry is the process's ([modules.host.import]), and a second declaration of a
 // name has to agree with the first -- so a run that varied N would be asking
 // for one name with two member lists. Each width is therefore its own
 // process, which is what `argv[1]` selects.
 //
 // Four rows per wrapper count, since what a binding does is two things and
 // either may be the cost: the generated unit writes delegate^, and the
-// script composes onto what it published (05§5.3 across units).
+// script composes onto what it published ([modules.require.once] across units).
 static void run_row(size_t per_level, size_t leaves, size_t wrappers,
                     bool delegating, bool composing)
 {

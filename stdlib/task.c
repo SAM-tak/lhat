@@ -7,12 +7,12 @@
 // A machine is what a task's whole state is. Its frame stack is one stack
 // and a coroutine saves one frame, so a single machine cannot hold two jobs
 // half-done -- which is why a task that stops in the middle of a call chain
-// needs a machine of its own to stop in. 03§4.3+ is what made that
+// needs a machine of its own to stop in. [pipeline.machine.sizing] is what made that
 // affordable: a task's machine is measured for the job rather than for a
 // REPL.
 //
 // The worker owns no machine at all. It takes a runnable task, gives it one
-// slice (§15.15), and files it by what the slice answered:
+// slice ([syntax.sub.split-run]), and files it by what the slice answered:
 //
 //   still going  -> the back of the run queue, so the next task gets a turn
 //   waiting      -> the parked set, and the worker takes something else
@@ -41,7 +41,7 @@
 
 typedef struct Task Task;
 
-// §15.15: how many loop turns a task runs before the worker takes it
+// [syntax.sub.split-run]: how many loop turns a task runs before the worker takes it
 // off. This is the quantum -- what one task may do before another gets a
 // turn -- and it is also what lets a body that neither yields nor ends be
 // put down at all. Small enough that a stop is answered in well under a
@@ -49,7 +49,7 @@ typedef struct Task Task;
 // enough that the counting costs nothing.
 #define TASK_SLICE 20000
 
-// 03§4.3+: how big a task's machine is. It is PER TASK now, so it is
+// [pipeline.machine.sizing]: how big a task's machine is. It is PER TASK now, so it is
 // paid by everything running or parked at once rather than once per worker
 // -- which is what makes the measurements worth having. The default ones
 // (about 160 KiB) would make a thousand parked tasks 160 MiB; these make it
@@ -111,7 +111,7 @@ struct Task {
     LhatRuntimeType *result_type;
     TaskModule *module;
 
-    // 03§4.3+: the task's own machine, made the first time it runs and
+    // [pipeline.machine.sizing]: the task's own machine, made the first time it runs and
     // let go when it ends. Only ever touched by the worker holding the task
     // -- a task is in the run queue, in the parked set, or out with exactly
     // one worker, never two of those.
@@ -137,16 +137,16 @@ struct Task {
     bool taken;
     bool result_refused;
     char *traceback;
-    // 04§11.6+: what it failed with and where, read on the worker while
+    // [errors.runtime.traceback]: what it failed with and where, read on the worker while
     // its machine is still standing (stdlib/thread.c says why).
     char *fault_text;
     uint32_t fault_line;
 
-    // §15.14: the wait a scheduler parks on, pushed when the job ends.
+    // [syntax.sub.await-done]: the wait a scheduler parks on, pushed when the job ends.
     void *waits;
     LhatInteger await_id;
 
-    // 05§8.8+2: a wrapper on some machine, the queue, the worker
+    // [modules.hostdata.sharing]: a wrapper on some machine, the queue, the worker
     // running it. The last to let go frees it.
     int holds;
 };
@@ -158,7 +158,7 @@ struct Task {
 static void task_free(Task *task)
 {
     // A task dropped where it stood (the pool was torn down under it) still
-    // has its frames up. The machine goes whole, as §15.15 says a run
+    // has its frames up. The machine goes whole, as [syntax.sub.split-run] says a run
     // that will not be continued may.
     if (task->machine != NULL) {
         lhat_machine_dispose(task->machine);
@@ -215,7 +215,7 @@ static void task_finished(Task *task)
     }
 }
 
-// 04§11.6+: what a failure reads as. The status names the kind of it,
+// [errors.runtime.traceback]: what a failure reads as. The status names the kind of it,
 // and the three things beside it are what a reader actually needs: WHAT was
 // panicked with, WHERE it happened, and the frames it was standing in.
 //
@@ -289,7 +289,7 @@ static Task *queue_pop(TaskModule *module)
     return task;
 }
 
-// 04§11.6+: what a run failed with, kept while the machine that ran it
+// [errors.runtime.traceback]: what a run failed with, kept while the machine that ran it
 // is still standing -- the value is one of its objects and the frames are
 // still up. Every way out of run_job that carries a fault comes through
 // here, which is what the closure path used to skip.
@@ -324,7 +324,7 @@ static void note_failure(Task *task, LhatMachine *machine, LhatRunResult ran)
 // leaving `move` set to whatever the next turn does.
 static StepResult after_turn(TaskModule *module, Task *task)
 {
-    // §15.15: the budget ran out mid-body. The frames are standing and
+    // [syntax.sub.split-run]: the budget ran out mid-body. The frames are standing and
     // lhat_machine_continue picks them up -- on whichever worker takes the
     // task next, since a machine has no thread of its own.
     if (task->ran.status == LHAT_RUN_SUSPENDED) {
@@ -336,7 +336,7 @@ static StepResult after_turn(TaskModule *module, Task *task)
         task->move = MOVE_NONE;
         return STEP_DONE;
     }
-    // A closure's call answered. §15.5: a yieldable one answers its
+    // A closure's call answered. [syntax.sub.no-contagion]: a yieldable one answers its
     // coroutine, and that is what the rest of this drives; anything else is
     // the job's own answer.
     if (!task->driving_set) {
@@ -362,7 +362,7 @@ static StepResult after_turn(TaskModule *module, Task *task)
     // kind -- is a body that stopped to hand something over rather than to
     // wait, so it goes straight on.
     //
-    // 05§8.7+: taken by id rather than by whatever is ready, which is
+    // [modules.host.nested-fault]: taken by id rather than by whatever is ready, which is
     // what keeps two tasks from taking each other's.
     task->move = MOVE_RESUME;
     LhatInteger id =
@@ -382,7 +382,7 @@ static StepResult after_turn(TaskModule *module, Task *task)
 }
 
 // The first turn: the machine, the registrations, and the job rebuilt on it.
-// 03§4.3+ measures it for a job rather than for a REPL.
+// [pipeline.machine.sizing] measures it for a job rather than for a REPL.
 static StepResult task_begin(TaskModule *module, Task *task)
 {
     task->machine = lhat_machine_new_with_size(TASK_FRAMES, TASK_SLOTS);
@@ -403,7 +403,7 @@ static StepResult task_begin(TaskModule *module, Task *task)
     }
 
     // A subroutine is called with nothing; a coroutine carried in (05 の
-    // 05§8.8+3) is already the thing to drive.
+    // [modules.hostdata.unstarted]) is already the thing to drive.
     if (lhat_is_object_kind(job, LHAT_OBJECT_SUBROUTINE)) {
         task->ran = lhat_machine_call(task->machine, job, NULL, 0);
         return after_turn(module, task);
@@ -927,7 +927,7 @@ static void task_failed(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-// §15.14: the same push std.thread's handle answers with -- a scheduler
+// [syntax.sub.await-done]: the same push std.thread's handle answers with -- a scheduler
 // parks on the wait instead of asking done() over and over.
 static void task_awaitable(LhatMachine *machine, void *context,
                            const LhatValue *arguments, size_t count,
@@ -1039,7 +1039,7 @@ bool lhatstdlib_task_register(LhatProgram *program)
     return lhat_register_func(program, "std.task", "start",
                               "p^ -> number^|std.sys.Error.OutOfMemory;",
                               task_start, module) &&
-           // §14.12: the two shapes of one name, the way a host writes an
+           // [syntax.obj.override]: the two shapes of one name, the way a host writes an
            // optional argument.
            lhat_register_func(program, "std.task", "start",
                               "p^number^ -> number^|std.sys.Error.OutOfMemory;",
@@ -1075,7 +1075,7 @@ bool lhatstdlib_task_register(LhatProgram *program)
            lhat_register_member(program, "std.task", "Task", "dispose",
                                 "p^self^;", task_dispose,
                                 (void *)module->tag) &&
-           // 05§8.8+2: a Task crosses machines, so a job may be handed one.
+           // [modules.host.boundary-yields]: a Task crosses machines, so a job may be handed one.
            lhat_register_hostdata_type_arguments(program, "std.task", "Task",
                                                  task_type_argument, NULL) &&
            lhat_register_hostdata_shared(program, "std.task", "Task",

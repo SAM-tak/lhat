@@ -2,7 +2,7 @@
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
 // prefixed. Programs are run end to end, since what is worth pinning is the
-// answer rather than the instructions chosen to reach it -- 09§5.1 expects those
+// answer rather than the instructions chosen to reach it -- [debug.dap.machines] expects those
 // to be replaced by specialised ones later.
 
 #include <math.h>
@@ -12,7 +12,7 @@
 #include "code.h"
 #include "fixture.h"
 
-// 01§3.1 and 01§3.3: a name written with backticks is a name, and id^name is
+// [lex.ident.chars] and [lex.ident.id-hat]: a name written with backticks is a name, and id^name is
 // that name's spelling as a string. The two are separate forms -- one is how
 // a name may be written, the other is how a string may be.
 static void test_names(void)
@@ -34,7 +34,7 @@ static void test_names(void)
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
-    // §3.3: nothing is looked up -- the form is about how the string is
+    // [syntax.repl.paste]: nothing is looked up -- the form is about how the string is
     // written, so a name that is nowhere still spells itself.
     LHAT_TEST("id^ answers the spelling, of a name that need not exist");
     run_text(&r, "return^ id^nowhere\n");
@@ -46,7 +46,7 @@ static void test_names(void)
     CHECK_STRING(&r, "a b|tostring^");
     run_dispose(&r);
 
-    // §3.3's own example: the spelling answered by a match is the key.
+    // [syntax.repl.paste]'s own example: the spelling answered by a match is the key.
     LHAT_TEST("what id^ answers reads as a key");
     run_text(&r,
              "let^ foo = { a = f^ { return^ 1 }, b = f^ { return^ 2 } }\n"
@@ -64,13 +64,13 @@ static void test_strings(void)
     CHECK_STRING(&r, "hello");
     run_dispose(&r);
 
-    // 01§5: the escapes are resolved before the compiler sees them.
+    // [lex.string]: the escapes are resolved before the compiler sees them.
     LHAT_TEST("the escapes are already resolved");
     run_text(&r, "return^ \"a\\tb\"\n");
     CHECK_STRING(&r, "a\tb");
     run_dispose(&r);
 
-    // §11.6: a string is what it says.
+    // [syntax.op.table]: a string is what it says.
     LHAT_TEST("two strings spelling the same thing are equal");
     run_text(&r, "return^ \"foo\" = \"foo\"\n");
     CHECK_BOOL(&r, true);
@@ -81,7 +81,7 @@ static void test_strings(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
-    // 04§11.6+: is^ asks whether the two are the same object, not whether
+    // [errors.runtime.traceback]: is^ asks whether the two are the same object, not whether
     // they spell the same thing -- unlike '=', a string built at runtime is
     // never the same instance as one built separately even when it reads
     // the same.
@@ -98,7 +98,7 @@ static void test_strings(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // §14.8: a division lands a few units in the last place away from
+    // [syntax.obj.number]: a division lands a few units in the last place away from
     // the number it names, and '=' reads the two as one number. This is what
     // a writer would otherwise have written a tolerance by hand for.
     LHAT_TEST("'=' reads two numbers a division apart as one");
@@ -149,7 +149,7 @@ static void test_strings(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // §11.9: the orderings are read off the same comparison, so two numbers
+    // [syntax.op.compare]: the orderings are read off the same comparison, so two numbers
     // that are one number are neither less nor greater than each other.
     LHAT_TEST("and the orderings agree with it");
     run_checked_text(&r,
@@ -162,7 +162,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §14.8: a key is matched exactly, so the band '=' admits is not one a
+    // [syntax.obj.number]: a key is matched exactly, so the band '=' admits is not one a
     // table has. Two numbers '=' reads as one still reach different entries.
     LHAT_TEST("a key is matched without that error");
     run_checked_text(&r,
@@ -173,15 +173,15 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 100);
     run_dispose(&r);
 
-    // §14.8's own normalisation is untouched by that: 2 and 2.0 name one
+    // [syntax.obj.number]'s own normalisation is untouched by that: 2 and 2.0 name one
     // number exactly, so they were one key before and still are.
     LHAT_TEST("while 2 and 2.0 are one key as they always were");
     run_checked_text(&r, "var^ t = { }\nt[2.0] := 7\nreturn^ t[2]\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // §14.20: the same comparison with the distance written down rather than
-    // taken from §14.8.
+    // [syntax.obj.eq]: the same comparison with the distance written down rather than
+    // taken from [syntax.obj.number].
     LHAT_TEST("eq takes the error term from the writer");
     run_checked_text(&r,
                      "var^ v = 8.0 / (3.0 - 8.0 / 3.0)\n"
@@ -196,7 +196,7 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
-    // §14.21: the whole number below and above.
+    // [syntax.obj.round]: the whole number below and above.
     LHAT_TEST("floor and ceil go down and up");
     run_checked_text(&r,
                      "return^ (2.7).floor() * 1000 + (2.7).ceil() * 100\n"
@@ -211,7 +211,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 227);
     run_dispose(&r);
 
-    // §14.21: a half goes to the even side, which is the rounding §14.17's
+    // [syntax.obj.round]: a half goes to the even side, which is the rounding [syntax.obj.tostring]'s
     // "%.0f" already reads off the same setting. The two agree on every half.
     LHAT_TEST("round sends a half to the even side");
     run_checked_text(&r,
@@ -228,7 +228,7 @@ static void test_strings(void)
                      "     .. (1.5).round().tostring() .. (1.5).tostring(f)\n"
                      "     .. (2.5).round().tostring() .. (2.5).tostring(f)\n"
                      "     .. (3.5).round().tostring() .. (3.5).tostring(f)\n");
-    CHECK_STRING(&r, "00222244");  // 0.5→0 1.5→2 §2.5→2 03§3.5→4, each written twice
+    CHECK_STRING(&r, "00222244");  // 0.5→0 1.5→2 [syntax.juxta.hat-start]→2 [pipeline.strict.relaxed]→4, each written twice
     run_dispose(&r);
 
     // Inspect the runtime tag directly; is^ does not expose numeric storage.
@@ -262,7 +262,7 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
-    // §14.23: the bits, read by mask or by position.
+    // [syntax.obj.bits]: the bits, read by mask or by position.
     LHAT_TEST("bitany, bitall and bitat read the bits");
     run_checked_text(&r,
                      "var^ n = 12\n"  // 1100
@@ -296,8 +296,8 @@ static void test_strings(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // §11.2: '..' is concatenation in general; strings are the case
-    // that is settled, and §14.5's composition of definitions is the other.
+    // [syntax.op.concat]: '..' is concatenation in general; strings are the case
+    // that is settled, and [syntax.obj.compose]'s composition of definitions is the other.
     LHAT_TEST("'..' joins two strings");
     run_text(&r, "return^ \"ab\" .. \"cd\"\n");
     CHECK_STRING(&r, "abcd");
@@ -326,9 +326,9 @@ static void test_strings(void)
     CHECK_STRING(&r, "one");
     run_dispose(&r);
 
-    // §11.1: an operator is a function, and §11.3 asks the left operand for
+    // [syntax.op.functions]: an operator is a function, and [syntax.op.semantic] asks the left operand for
     // it. A string answers built in; anything else answers with a member,
-    // which §14.4 hands the left operand as self^.
+    // which [syntax.obj.self] hands the left operand as self^.
     LHAT_TEST("a definition answers '..' with its own op^");
     run_text(&r,
              "var^ Vec = def^{\n"
@@ -355,7 +355,7 @@ static void test_strings(void)
     CHECK_STRING(&r, "v!?");
     run_dispose(&r);
 
-    // §11.4: the arithmetic operators ask the same question '..' does.
+    // [syntax.op.framework]: the arithmetic operators ask the same question '..' does.
     LHAT_TEST("a definition answers arithmetic with its own op^");
     run_text(&r,
              "var^ Vec = def^{\n"
@@ -368,7 +368,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1530);  // 15, then 30
     run_dispose(&r);
 
-    // §11.5 の (5): 'a < b < c' is '(a < b) and^ (b < c)'. Written out and
+    // [syntax.op.precedence] の (5): 'a < b < c' is '(a < b) and^ (b < c)'. Written out and
     // compiled as that and^ it would read `b` twice, which is why the chain
     // is one node -- these two pin what that buys.
     LHAT_TEST("a comparison chain reads as the mathematics does");
@@ -411,7 +411,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §11.9: the four orderings are read off the one comparison a type
+    // [syntax.op.compare]: the four orderings are read off the one comparison a type
     // writes, by asking which side of zero its answer falls on.
     LHAT_TEST("an ordering is read off op^<=>");
     run_text(&r,
@@ -428,7 +428,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 12§4.1: a literal on the right folds into the instruction, and
+    // [spec.number.operands]: a literal on the right folds into the instruction, and
     // the constant still reaches the op^<=> that takes a number.
     LHAT_TEST("and against a literal too");
     run_text(&r,
@@ -463,7 +463,7 @@ static void test_strings(void)
     run_dispose(&r);
 
     // and so is equality, for a type that says how it orders: two of them
-    // that compare the same are equal, where §14.2 alone would say no.
+    // that compare the same are equal, where [syntax.obj.chain] alone would say no.
     LHAT_TEST("and so is equality");
     run_text(&r,
              "var^ V = def^{\n"
@@ -477,7 +477,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §14.2 still answers for a table that says nothing about how it orders.
+    // [syntax.obj.chain] still answers for a table that says nothing about how it orders.
     LHAT_TEST("a table with no op^<=> is equal only to itself");
     run_text(&r,
              "var^ t = { a := 1 }\n"
@@ -487,7 +487,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §11.9+: an op^= answers '=' itself rather than through zero, so what
+    // [syntax.op.equal]: an op^= answers '=' itself rather than through zero, so what
     // it says stands even where an ordering would disagree -- that is the
     // whole reason a type writes one.
     LHAT_TEST("an op^= answers equality on its own");
@@ -523,7 +523,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §11.3+: the right operand may carry it, the same as any other operator.
+    // [syntax.op.right]: the right operand may carry it, the same as any other operator.
     LHAT_TEST("and a self^-last op^= answers from the right");
     run_text(&r,
              "var^ V = def^{\n"
@@ -536,7 +536,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §11.9: number^ and string^ order their own, which is what a written
+    // [syntax.op.compare]: number^ and string^ order their own, which is what a written
     // '"a" < "b"' had nothing to reach for before.
     LHAT_TEST("the built-in types order their own");
     run_text(&r,
@@ -546,7 +546,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, -1);
     run_dispose(&r);
 
-    // §11.3+: with the built-in on the left there is no other way in --
+    // [syntax.op.right]: with the built-in on the left there is no other way in --
     // number^ carries the arithmetic and takes nothing but its own kind, and
     // no program adds to what it carries. A self^ written last is the answer.
     LHAT_TEST("a self^ written last answers from the right");
@@ -560,7 +560,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 11);
     run_dispose(&r);
 
-    // §11.3's order stands: the right side is reached only where the left
+    // [syntax.op.semantic]'s order stands: the right side is reached only where the left
     // carries no answer for this operand. Both claiming the same pair is the
     // left one answering, with the other never reached.
     LHAT_TEST("and the left one still answers first");
@@ -576,7 +576,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 12);  // the left arm, then the right one
     run_dispose(&r);
 
-    // §14.8's number^ carries all seven built in, so ordinary arithmetic keeps
+    // [syntax.obj.number]'s number^ carries all seven built in, so ordinary arithmetic keeps
     // the instructions it had and pays nothing for the lookup.
     LHAT_TEST("numbers keep their own instructions");
     run_text(&r, "return^ 1 + 2 * 3 - 4\n");
@@ -590,7 +590,7 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
-    // §11.2+: two plain tables concatenate, built in the way two strings
+    // [syntax.op.concat-table]: two plain tables concatenate, built in the way two strings
     // do -- positions in order, named keys from both sides.
     LHAT_TEST("two plain tables concatenate");
     run_text(&r,
@@ -608,7 +608,7 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_KEY);
     run_dispose(&r);
 
-    // §14.22: the table's own operations, a run through the whole set.
+    // [syntax.obj.table-ops]: the table's own operations, a run through the whole set.
     LHAT_TEST("push, pop, insert and remove reshape the sequence");
     run_checked_text(&r,
                      "var^ t = {3, 1, 2}\n"
@@ -643,7 +643,7 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_KEY);
     run_dispose(&r);
 
-    // §14.10: the sequence holds nil^ as a position. Writing one inside it, or
+    // [syntax.obj.structure]: the sequence holds nil^ as a position. Writing one inside it, or
     // at its end, keeps the length; an unused position does not break a run.
     LHAT_TEST("nil^ is a position of the sequence, not the end of it");
     run_checked_text(&r,
@@ -714,7 +714,7 @@ static void test_strings(void)
     CHECK_STRING(&r, "1,2.5,x");
     run_dispose(&r);
 
-    // 03§3.4+ with §14.12: the comparator's parameters are read off the
+    // [pipeline.infer.expected] with [syntax.obj.override]: the comparator's parameters are read off the
     // receiver's element type through the one arm this arity fits.
     LHAT_TEST("sort^ orders, with and without a comparator");
     run_checked_text(&r,
@@ -769,7 +769,7 @@ static void test_strings(void)
     CHECK_STRING(&r, "11235");
     run_dispose(&r);
 
-    // §14.22: clone^ -- the shallow copy shares elements and separates the
+    // [syntax.obj.table-ops]: clone^ -- the shallow copy shares elements and separates the
     // holder; a policy decides each value, and its own recursion is how a
     // deep copy is written.
     LHAT_TEST("a shallow clone shares elements and separates holders");
@@ -821,7 +821,7 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
-    // §14.19+3: split is join^'s inverse, and the law is the pin --
+    // [syntax.obj.find]: split is join^'s inverse, and the law is the pin --
     // s.split(sep).join^(sep) = s, which is what keeps every empty piece.
     LHAT_TEST("split and join^ round-trip, empties kept");
     run_checked_text(&r,
@@ -847,7 +847,7 @@ static void test_strings(void)
     CHECK_STRING(&r, "one/two/three");
     run_dispose(&r);
 
-    // §15.1+3: the pieces are fresh, so an f^ splits and mends its own.
+    // [syntax.sub.fresh]: the pieces are fresh, so an f^ splits and mends its own.
     LHAT_TEST("an f^ sorts what it split");
     run_checked_text(&r,
                      "let^ mend = f^ s:string^ -> string^ {\n"
@@ -874,7 +874,7 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §14.22: the contents become the other table's -- keys it lacks go, a
+    // [syntax.obj.table-ops]: the contents become the other table's -- keys it lacks go, a
     // longer sequence is cut back -- and the values are shared, not copied.
     LHAT_TEST("assign^ makes the contents another table's, shallow");
     run_checked_text(&r,
@@ -889,7 +889,7 @@ static void test_strings(void)
     run_dispose(&r);
 
     // The container stays: an instance is still one, so its methods answer,
-    // and a field the source left unset goes back to its seat (§14.15).
+    // and a field the source left unset goes back to its seat ([syntax.obj.abstract]).
     LHAT_TEST("assign^ keeps a def^ instance an instance");
     run_checked_text(&r,
                      "var^ Foo = def^{\n"
@@ -908,8 +908,8 @@ static void test_strings(void)
     CHECK_INTEGER(&r, 30);
     run_dispose(&r);
 
-    // §11.3 leaves the rest to the operator's own definition, which needs
-    // op^. 08§5.1 has the instruction refuse what it cannot do.
+    // [syntax.op.semantic] leaves the rest to the operator's own definition, which needs
+    // op^. [lton.names.imports] has the instruction refuse what it cannot do.
     LHAT_TEST("joining a number to a string is refused at run time");
     run_text(&r, "return^ \"a\" .. 1\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
@@ -921,7 +921,7 @@ static void test_strings(void)
     run_dispose(&r);
 }
 
-// §14: the one data structure.
+// [syntax.obj]: the one data structure.
 static void test_tables(void)
 {
     Run r;
@@ -937,7 +937,7 @@ static void test_tables(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
-    // 04§11.3: t.foo and t[k] differ in what the checker knows, not in
+    // [errors.runtime.index]: t.foo and t[k] differ in what the checker knows, not in
     // where the machine looks.
     LHAT_TEST("the two spellings reach one place");
     run_text(&r, "var^ t = { a := 1 }\nreturn^ t[\"a\"]\n");
@@ -964,7 +964,7 @@ static void test_tables(void)
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
-    // §14.14+: an entry introduces a member, which §8.6 spells '='. What that
+    // [syntax.obj.keys-equals]: an entry introduces a member, which [syntax.stmt.define] spells '='. What that
     // costs is that a comparison standing on its own has to say so.
     LHAT_TEST("an entry written with '=' is a member, not a comparison");
     run_text(&r,
@@ -986,7 +986,7 @@ static void test_tables(void)
     CHECK_INTEGER(&r, 1);  // true^ then false^
     run_dispose(&r);
 
-    // §11.3: a table is a mapping, so there is no out of range -- only a key
+    // [syntax.op.semantic]: a table is a mapping, so there is no out of range -- only a key
     // that is there and one that is not.
     LHAT_TEST("a missing key answers nil^ rather than failing");
     run_text(&r, "var^ t = { }\nreturn^ t[\"nowhere\"]\n");
@@ -1025,7 +1025,7 @@ static void test_tables(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
-    // §14.2 makes a table's identity what it is, so two literals of the same
+    // [syntax.obj.chain] makes a table's identity what it is, so two literals of the same
     // shape are two tables.
     LHAT_TEST("a table is equal only to itself");
     run_text(&r, "var^ a = { x := 1 }\nvar^ b = { x := 1 }\nreturn^ a = b\n");
@@ -1037,9 +1037,9 @@ static void test_tables(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // §11.6+: '=' and 'is^' agree here since §14.2 already makes a table's
+    // [syntax.op.as]: '=' and 'is^' agree here since [syntax.obj.chain] already makes a table's
     // '=' an identity comparison -- 'is^' means to keep meaning that once
-    // '=' moves to comparing a table's contents instead (03§7、P7).
+    // '=' moves to comparing a table's contents instead ([pipeline.open]、P7).
     LHAT_TEST("'is^' agrees with '=' on tables for now");
     run_text(&r, "var^ a = { x := 1 }\nvar^ b = { x := 1 }\nreturn^ a is^ b\n");
     CHECK_BOOL(&r, false);
@@ -1074,7 +1074,7 @@ static void test_tables(void)
     run_dispose(&r);
 }
 
-// §8.6.4: 'a ?op= b' is 'if^ a? { a op= b }' with the place read once. What
+// [syntax.stmt.nil-assign]: 'a ?op= b' is 'if^ a? { a op= b }' with the place read once. What
 // is pinned here is the run-time half of that -- the checker's half is in
 // test_check_tables.
 static void test_nil_safe_compound(void)
@@ -1086,7 +1086,7 @@ static void test_nil_safe_compound(void)
     CHECK_INTEGER(&r, 15);
     run_dispose(&r);
 
-    // 04§11.3: a key that is not there is not a failure, and here it is
+    // [errors.runtime.index]: a key that is not there is not a failure, and here it is
     // not a write either -- the table comes out of this untouched.
     LHAT_TEST("a place that is not there is left alone");
     run_text(&r,
@@ -1113,7 +1113,7 @@ static void test_nil_safe_compound(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §8.6+'s "the place is evaluated once", which the '?' spelling inherits
+    // [syntax.stmt.compound]'s "the place is evaluated once", which the '?' spelling inherits
     // rather than restates -- owner and key are still read a single time.
     LHAT_TEST("the key is evaluated once, present or not");
     run_text(&r,
@@ -1139,7 +1139,7 @@ static void test_nil_safe_compound(void)
     CHECK_INTEGER(&r, -1);
     run_dispose(&r);
 
-    // §8.6+3 reads every target before writing any, so what one pair
+    // [syntax.stmt.multi-assign] reads every target before writing any, so what one pair
     // answered cannot decide another's -- each is skipped on its own.
     LHAT_TEST("one absent target of several does not stop the rest");
     run_text(&r,
@@ -1170,7 +1170,7 @@ static void test_nil_safe_compound(void)
 }
 
 
-// §8.6.4's ninth spelling: 'a ?:= b' is 'if^ a? { a := b }'. Everything the
+// [syntax.stmt.nil-assign]'s ninth spelling: 'a ?:= b' is 'if^ a? { a := b }'. Everything the
 // eight are pinned for above is asked of it again, since what changed is
 // only that no operator stands between the place and the value.
 static void test_nil_safe_assign(void)
@@ -1211,7 +1211,7 @@ static void test_nil_safe_assign(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §8.6+'s rule: the owner and the key are evaluated once, before the
+    // [syntax.stmt.compound]'s rule: the owner and the key are evaluated once, before the
     // place is asked whether it is there.
     LHAT_TEST("the key is evaluated once whether or not the place is there");
     run_text(&r,
@@ -1233,10 +1233,10 @@ static void test_nil_safe_assign(void)
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
-    // §13.8+: one value across several targets, which the eight refuse and
+    // [syntax.type.tuple]: one value across several targets, which the eight refuse and
     // this takes -- a plain assignment reads nothing of the place it writes.
     LHAT_TEST("and a destructuring is decided position by position");
-    // §13.8+ sizes the run off the checker's stamp, so the tuple path is
+    // [syntax.type.tuple] sizes the run off the checker's stamp, so the tuple path is
     // reached only by a program that was checked.
     run_checked_text(&r,
                      "var^ pair = p^ -> (number^, number^) { return^ 7, 8 }\n"
@@ -1258,9 +1258,9 @@ static void test_nil_safe_assign(void)
     run_dispose(&r);
 }
 
-// 01§5.4: the lexer and the parser have read $"..." from the start; this
-// is what it compiles to. A hole is §14.17's tostring and the pieces
-// are joined with §11.2's '..', so interpolation adds no way of building a
+// [lex.string.interp]: the lexer and the parser have read $"..." from the start; this
+// is what it compiles to. A hole is [syntax.obj.tostring]'s tostring and the pieces
+// are joined with [syntax.op.concat]'s '..', so interpolation adds no way of building a
 // string that writing it out by hand would not reach.
 static void test_interpolation(void)
 {
@@ -1281,7 +1281,7 @@ static void test_interpolation(void)
     CHECK_STRING(&r, "n = 5");
     run_dispose(&r);
 
-    // 01§5.4: no empty text run is made between two holes that meet.
+    // [lex.string.interp]: no empty text run is made between two holes that meet.
     LHAT_TEST("two holes may meet");
     run_text(&r, "var^ a = 5\nreturn^ $\"{a}{a}\"\n");
     CHECK_STRING(&r, "55");
@@ -1292,13 +1292,13 @@ static void test_interpolation(void)
     CHECK_STRING(&r, "3");
     run_dispose(&r);
 
-    // §14.17: nil^ and bool^ are the bare words there, so they are here.
+    // [syntax.obj.tostring]: nil^ and bool^ are the bare words there, so they are here.
     LHAT_TEST("what a hole writes is what tostring answers");
     run_text(&r, "return^ $\"{nil^} {true^} {\"s\"} {3.0}\"\n");
     CHECK_STRING(&r, "nil true s 3.0");
     run_dispose(&r);
 
-    // 01§5.4: the text after ':' is a format, and §14.17 hands it to a number^.
+    // [lex.string.interp]: the text after ':' is a format, and [syntax.obj.tostring] hands it to a number^.
     LHAT_TEST("a format after ':' reaches tostring");
     run_text(&r, "var^ a = 5\nreturn^ $\"{a:%04d}\"\n");
     CHECK_STRING(&r, "0005");
@@ -1309,13 +1309,13 @@ static void test_interpolation(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
     run_dispose(&r);
 
-    // §5.4: '{{' and '}}' spell the braces themselves.
+    // [syntax.if.bool]: '{{' and '}}' spell the braces themselves.
     LHAT_TEST("doubled braces are the braces");
     run_text(&r, "return^ $\"{{literal}}\"\n");
     CHECK_STRING(&r, "{literal}");
     run_dispose(&r);
 
-    // 01§5.4: a hole is scanned by the ordinary rules, so what is in it may be
+    // [lex.string.interp]: a hole is scanned by the ordinary rules, so what is in it may be
     // a string literal, a table, or another interpolation.
     LHAT_TEST("a hole may hold a string of its own");
     run_text(&r, "return^ $\"{ \"in\" }\"\n");
@@ -1327,7 +1327,7 @@ static void test_interpolation(void)
     CHECK_STRING(&r, "[5]");
     run_dispose(&r);
 
-    // §14.17+: a hole asks for tostring^ -- the spelling that reaches the
+    // [syntax.obj.tostring-hat]: a hole asks for tostring^ -- the spelling that reaches the
     // built-in on every value -- so that is also the name a written one
     // answers under. A bare `tostring` on a plain table is the writer's own
     // member and no part of this.
@@ -1338,7 +1338,7 @@ static void test_interpolation(void)
     CHECK_STRING(&r, "got P");
     run_dispose(&r);
 
-    // §14.17+: and the bare one there is the writer's, so the built-in is
+    // [syntax.obj.tostring-hat]: and the bare one there is the writer's, so the built-in is
     // still what the hole gets. This is the line the search below stops at.
     LHAT_TEST("a bare tostring on a plain table is not what a hole uses");
     run_text(&r,
@@ -1348,7 +1348,7 @@ static void test_interpolation(void)
     CHECK_STRING(&r, "P { n = 1, tostring = f^ }");
     run_dispose(&r);
 
-    // §14.17 with 01§5.4: written first, built-in last. §14 reserves
+    // [syntax.obj.tostring] with [lex.string.interp]: written first, built-in last. [syntax.obj] reserves
     // the name on a def^, so there the bare spelling is the type's own and the
     // hole reaches it -- the same member '.tostring()' calls by hand.
     LHAT_TEST("a written tostring on a def^ instance is what a hole uses");
@@ -1359,7 +1359,7 @@ static void test_interpolation(void)
     CHECK_STRING(&r, "P!");
     run_dispose(&r);
 
-    // §14.17+: and the crossover runs both ways -- everywhere but a plain
+    // [syntax.obj.tostring-hat]: and the crossover runs both ways -- everywhere but a plain
     // table the two spellings are one member, so a written tostring^
     // answers the bare call too.
     LHAT_TEST("a written tostring^ on a def^ answers the bare call");
@@ -1380,7 +1380,7 @@ static void test_interpolation(void)
     run_dispose(&r);
 }
 
-// §14.17: every value carries tostring. §14.16 above turns a value's type
+// [syntax.obj.tostring]: every value carries tostring. [syntax.obj.typeof] above turns a value's type
 // into text; this turns the value itself into text.
 static void test_tostring(void)
 {
@@ -1404,7 +1404,7 @@ static void test_tostring(void)
     CHECK_STRING(&r, "hi");
     run_dispose(&r);
 
-    // §14.8: one type, two representations, and tostring keeps them apart the
+    // [syntax.obj.number]: one type, two representations, and tostring keeps them apart the
     // same way a literal does -- 3 and 3.0 are not the same text.
     LHAT_TEST("a number^ says which representation it has");
     run_text(&r, "return^ (3).tostring() .. \" \" .. (3.0).tostring()\n");
@@ -1434,7 +1434,7 @@ static void test_tostring(void)
     CHECK_STRING(&r, "n = 42 units");
     run_dispose(&r);
 
-    // §14.8: the conversion decides the reading, so either representation
+    // [syntax.obj.number]: the conversion decides the reading, so either representation
     // answers either family.
     LHAT_TEST("the conversion decides how the number is read");
     run_text(&r,
@@ -1478,7 +1478,7 @@ static void test_tostring(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_BAD_FORMAT);
     run_dispose(&r);
 
-    // §16.3's rule for iterate, which §14.17 follows: the built-in answers
+    // [syntax.for.forms]'s rule for iterate, which [syntax.obj.tostring] follows: the built-in answers
     // only where nothing was written under that name.
     LHAT_TEST("a written tostring wins over the built-in");
     run_text(&r,
@@ -1514,8 +1514,8 @@ static void test_tostring(void)
     CHECK_STRING(&r, "c^");
     run_dispose(&r);
 
-    // §14.17+: on a table the writer wrote, every name is the writer's, so
-    // the built-in is reached by the hat spelling alone. §14.11 already wrote
+    // [syntax.obj.tostring-hat]: on a table the writer wrote, every name is the writer's, so
+    // the built-in is reached by the hat spelling alone. [syntax.obj.new] already wrote
     // new that way and this is the same rule kept to.
     LHAT_TEST("a plain table answers the hat spelling");
     run_text(&r, "return^ { 1 }.tostring^()\n");
@@ -1529,7 +1529,7 @@ static void test_tostring(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // A def^ is the other way round: §14 reserves these names on one, which
+    // A def^ is the other way round: [syntax.obj] reserves these names on one, which
     // is what the hat was saying all along, so both spellings answer.
     LHAT_TEST("an instance answers either spelling");
     run_text(&r,
@@ -1538,9 +1538,9 @@ static void test_tostring(void)
     CHECK_STRING(&r, "{ x = 7 } { x = 7 }");
     run_dispose(&r);
 
-    // §14.9: the definition itself is a table nothing points at as one, so it
+    // [syntax.obj.name]: the definition itself is a table nothing points at as one, so it
     // carries a mark of its own -- without it this would read as plain.
-    // §14.11: and what it holds includes the prototype under self^, so the
+    // [syntax.obj.new]: and what it holds includes the prototype under self^, so the
     // structure an instance starts as is right there to read.
     LHAT_TEST("and so does the definition it came from");
     run_text(&r,
@@ -1549,7 +1549,7 @@ static void test_tostring(void)
     CHECK_STRING(&r, "{ new = f^, self^ = { x = 7 } }");
     run_dispose(&r);
 
-    // 01§2.3: the hat is part of the name, which is the whole of what
+    // [lex.hat.repeat]: the hat is part of the name, which is the whole of what
     // makes the two spellings two names.
     LHAT_TEST("a written tostring^ is what the hat spelling then finds");
     run_text(&r,
@@ -1567,7 +1567,7 @@ static void test_tostring(void)
     run_dispose(&r);
 }
 
-// §14.18: the three that are not calls. A count is the shape of the
+// [syntax.obj.count]: the three that are not calls. A count is the shape of the
 // value rather than an operation on it, so there are no parentheses to write
 // -- which is what these pin, along with which reading each spelling is.
 static void test_counting(void)
@@ -1579,7 +1579,7 @@ static void test_counting(void)
     CHECK_INTEGER(&r, 33);
     run_dispose(&r);
 
-    // §14.18: the run is the dense half (03§2.2), and count^ is both halves.
+    // [syntax.obj.count]: the run is the dense half ([pipeline.value.layout]), and count^ is both halves.
     LHAT_TEST("and how much it holds altogether");
     run_text(&r,
              "var^ t = { 1, 2, a := 9, b := 8 }\n"
@@ -1598,7 +1598,7 @@ static void test_counting(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §14.7: what an instance reads through its definition is shared, so it is
+    // [syntax.obj.instance]: what an instance reads through its definition is shared, so it is
     // not one of that instance's own elements.
     LHAT_TEST("an instance counts its fields and not the members it sees");
     run_text(&r,
@@ -1608,20 +1608,20 @@ static void test_counting(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
-    // §14.18 with §14.17+: written wins, the same order tostring^ is read in.
+    // [syntax.obj.count] with [syntax.obj.tostring-hat]: written wins, the same order tostring^ is read in.
     LHAT_TEST("a written length^ is what answers");
     run_text(&r, "var^ t = { 1, 2, 3, length^ := 99 }\nreturn^ t.length^\n");
     CHECK_INTEGER(&r, 99);
     run_dispose(&r);
 
-    // §14.18: the hat is not optional. `length` is a word a writer reaches for
+    // [syntax.obj.count]: the hat is not optional. `length` is a word a writer reaches for
     // first, so on a table the bare one is theirs whatever kind of table it is.
     LHAT_TEST("and a bare length is the writer's name");
     run_text(&r, "var^ t = { 1, 2, 3 }\nreturn^ t.length fits^ nil^\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // 01§1: the source is UTF-8, so the two readings of a string^ part
+    // [lex.source]: the source is UTF-8, so the two readings of a string^ part
     // company the moment anything is not ASCII.
     LHAT_TEST("a string answers its grapheme clusters and its bytes apart");
     run_text(&r,
@@ -1636,7 +1636,7 @@ static void test_counting(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // §14.18+: and the hat spelling is not a second way of writing it. The
+    // [syntax.obj.count-hat]: and the hat spelling is not a second way of writing it. The
     // hat is what keeps a built-in off a name the writer may mean for
     // something else, and nothing can be written on a string^.
     LHAT_TEST("a string^ has no hat spelling of these");
@@ -1660,7 +1660,7 @@ static void test_counting(void)
     run_dispose(&r);
 }
 
-// §14.19: a run of a string^'s characters. Ordinals start at 0 and count
+// [syntax.obj.substring]: a run of a string^'s characters. Ordinals start at 0 and count
 // from the end when negative, both ends are included, and a range that does
 // not stand answers the empty string rather than an error.
 static void test_grapheme_strings(void)
@@ -1737,7 +1737,7 @@ static void test_substring(void)
     CHECK_STRING(&r, "いう|いう|あいうえお|いうえ");
     run_dispose(&r);
 
-    // §14.19: one member under three names.
+    // [syntax.obj.substring]: one member under three names.
     LHAT_TEST("the three names are one member");
     snprintf(text, sizeof text, "%s%s", five,
              "return^ s.substring(1, 2) .. s.substr(1, 2) .. s.sub(1, 2)\n");
@@ -1745,14 +1745,14 @@ static void test_substring(void)
     CHECK_STRING(&r, "いういういう");
     run_dispose(&r);
 
-    // §14.18+: three names, and no hat spelling of any of them.
+    // [syntax.obj.count-hat]: three names, and no hat spelling of any of them.
     LHAT_TEST("and the hat spelling is not a fourth");
     snprintf(text, sizeof text, "%s%s", five, "return^ s.sub^(1, 2)\n");
     run_text(&r, text);
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
-    // 04§11.3's line: what is not there is not a mistake. A range that
+    // [errors.runtime.index]'s line: what is not there is not a mistake. A range that
     // does not stand is empty, not an error and not nil^.
     LHAT_TEST("a range that does not stand is the empty string");
     snprintf(text, sizeof text, "%s%s", five,
@@ -1762,7 +1762,7 @@ static void test_substring(void)
     CHECK_STRING(&r, "[]");
     run_dispose(&r);
 
-    // §14.19: a division answers a real, and an ordinal that came out of one
+    // [syntax.obj.substring]: a division answers a real, and an ordinal that came out of one
     // is read rather than refused. floor(x + 0.5), so a half goes to the
     // far end -- the one rounding that commutes with resolving a negative.
     LHAT_TEST("a fractional ordinal is rounded, halves to the far end");
@@ -1784,7 +1784,7 @@ static void test_substring(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §14.18 and §14.19 read the same unit: one character of あいうえお is one
+    // [syntax.obj.count] and [syntax.obj.substring] read the same unit: one character of あいうえお is one
     // character and three bytes.
     LHAT_TEST("the run is measured in characters, not bytes");
     snprintf(text, sizeof text, "%s%s", five,
@@ -1793,7 +1793,7 @@ static void test_substring(void)
     CHECK_INTEGER(&r, 31);
     run_dispose(&r);
 
-    // §14.19+: at(i) is substr(i, i), so every rule above is its rule too.
+    // [syntax.obj.at]: at(i) is substr(i, i), so every rule above is its rule too.
     LHAT_TEST("at takes the one character the ordinal names");
     snprintf(text, sizeof text, "%s%s", five,
              "return^ s.at(1) .. \"|\" .. s.at(-1) .. \"|\" .. s.at(1.5) ..\n"
@@ -1816,7 +1816,7 @@ static void test_substring(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
-    // §14.19+3: the searches answer in the same ordinals, and read their own
+    // [syntax.obj.find]: the searches answer in the same ordinals, and read their own
     // starting one the way substring reads its first.
     LHAT_TEST("find answers the ordinal the needle stands at");
     run_text(&r,
@@ -1838,7 +1838,7 @@ static void test_substring(void)
     CHECK_INTEGER(&r, 14);
     run_dispose(&r);
 
-    // §14.19+ takes the name only where §14.19's member is, so a table keeps
+    // [syntax.obj.at] takes the name only where [syntax.obj.substring]'s member is, so a table keeps
     // `at` for whatever the writer put under it -- a field being the ordinary
     // case, as sample/24.lh's reading position is.
     LHAT_TEST("at on a table is the writer's own");
@@ -1849,8 +1849,8 @@ static void test_substring(void)
     run_dispose(&r);
 }
 
-// §14.17+2: tostring read backwards, and only a string^ carries it. The
-// argument-less form runs 01§10's own grammar, so most of these are
+// [syntax.obj.tonumber]: tostring read backwards, and only a string^ carries it. The
+// argument-less form runs [lex.ambig]'s own grammar, so most of these are
 // pinning that the literal grammar is what arrived rather than a second one
 // written beside it.
 static void test_tonumber(void)
@@ -1862,7 +1862,7 @@ static void test_tonumber(void)
     CHECK_INTEGER(&r, 123);
     run_dispose(&r);
 
-    // §14.8: one type, two representations. Which one a text names is the
+    // [syntax.obj.number]: one type, two representations. Which one a text names is the
     // literal grammar's answer, not a rounding this makes up.
     LHAT_TEST("and a fraction is the real the same digits spell");
     run_text(&r, "return^ \"3.5\".tonumber()\n");
@@ -1876,7 +1876,7 @@ static void test_tonumber(void)
     CHECK_STRING(&r, "3 3.0");
     run_dispose(&r);
 
-    // 01§10.1 and 01§10.2, reached without a word of grammar written here.
+    // [lex.ambig.int-keys] and [lex.ambig.dotdot], reached without a word of grammar written here.
     LHAT_TEST("the bases the literal grammar has");
     run_text(&r, "return^ \"0xff\".tonumber()\n");
     CHECK_INTEGER(&r, 255);
@@ -1900,7 +1900,7 @@ static void test_tonumber(void)
     CHECK_REAL(&r, 1000.0);
     run_dispose(&r);
 
-    // §10 has no sign in it -- '-1' is §11's unary minus applied to
+    // [syntax.finally] has no sign in it -- '-1' is [syntax.op]'s unary minus applied to
     // a literal -- so tonumber reads the sign itself rather than leaving a
     // text no writer would call anything but a number unreadable.
     LHAT_TEST("a sign in front is read");
@@ -1942,7 +1942,7 @@ static void test_tonumber(void)
     LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
     run_dispose(&r);
 
-    // §14.17+2 answers nil^ rather than faulting: a text holding no number^
+    // [syntax.obj.tonumber] answers nil^ rather than faulting: a text holding no number^
     // is data, and reading data is not a mistake.
     LHAT_TEST("a text that names no number^ answers nil^");
     run_text(&r, "return^ \"abc\".tonumber()\n");
@@ -1953,7 +1953,7 @@ static void test_tonumber(void)
     LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
     run_dispose(&r);
 
-    // §10.3 refuses this in a unit, and the same refusal arrives here.
+    // [syntax.finally.last] refuses this in a unit, and the same refusal arrives here.
     run_text(&r, "return^ \"12abc\".tonumber()\n");
     LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
     run_dispose(&r);
@@ -1976,7 +1976,7 @@ static void test_tonumber(void)
     CHECK_INTEGER(&r, INT64_MAX);
     run_dispose(&r);
 
-    // §14.17's format written the other way round.
+    // [syntax.obj.tostring]'s format written the other way round.
     LHAT_TEST("a format reads the number through it");
     run_text(&r, "return^ \"ff\".tonumber(\"%x\")\n");
     CHECK_INTEGER(&r, 255);
@@ -1992,7 +1992,7 @@ static void test_tonumber(void)
     CHECK_INTEGER(&r, 255);
     run_dispose(&r);
 
-    // §14.8: the conversion decides the reading, on this side too.
+    // [syntax.obj.number]: the conversion decides the reading, on this side too.
     LHAT_TEST("a real conversion answers a real");
     run_text(&r, "return^ \"3.5\".tonumber(\"%f\")\n");
     CHECK_REAL(&r, 3.5);
@@ -2013,7 +2013,7 @@ static void test_tonumber(void)
     LHAT_CHECK(lhat_is_nil(r.ran.value), "nil^");
     run_dispose(&r);
 
-    // The other half of §14.17's line: the format is the writer's, so a bad
+    // The other half of [syntax.obj.tostring]'s line: the format is the writer's, so a bad
     // one is the writer's mistake and faults where a bad text does not.
     LHAT_TEST("a format a number^ cannot be read through is an error");
     run_text(&r, "return^ \"1\".tonumber(\"%s\")\n");
@@ -2067,7 +2067,7 @@ static void test_tonumber(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
-    // §14.18+: a string^ is a value a writer cannot add names to, so there is
+    // [syntax.obj.count-hat]: a string^ is a value a writer cannot add names to, so there is
     // nothing here for a hat to keep the built-in off -- and what only a
     // string^ carries has no hat spelling at all.
     LHAT_TEST("there is no hat spelling of it");
@@ -2092,7 +2092,7 @@ static void test_tonumber(void)
     run_dispose(&r);
 }
 
-// §14.4: the self^ receiver in a plain table literal's methods -- the
+// [syntax.obj.self]: the self^ receiver in a plain table literal's methods -- the
 // compile and the machine were general already (self^ is a parameter,
 // CALLMETHOD is proto-driven); this pins the whole road end to end.
 static void test_table_methods(void)
@@ -2109,7 +2109,7 @@ static void test_table_methods(void)
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
-    // §16.3: a written iterate^ makes the literal walkable, its own body
+    // [syntax.for.forms]: a written iterate^ makes the literal walkable, its own body
     // walking the raw table through keys^() -- and yields three, which the
     // loop's three names take apart.
     LHAT_TEST("a self-walking iterate^ drives for^ in^");
@@ -2147,7 +2147,7 @@ static void test_table_methods(void)
     run_dispose(&r);
 }
 
-// 12§3: a written member read remembers where it found the answer, and
+// [spec.member-cache]: a written member read remembers where it found the answer, and
 // asks the table's version before trusting the place again. What is pinned
 // here is that the remembering never changes an answer -- the cases are the
 // ones where a cache that did not notice something would hand back the
@@ -2225,7 +2225,7 @@ static void test_member_cache(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // §14.7: the member is the definition's and shared, so one site reading
+    // [syntax.obj.instance]: the member is the definition's and shared, so one site reading
     // it off many instances is the case the cache exists for.
     LHAT_TEST("one site reads one member off many instances");
     run_checked_text(&r,
@@ -2248,9 +2248,9 @@ static void test_member_cache(void)
     // And an instance that grew a key of its own must stop being trusted to
     // carry the prototype's keys and no others -- here the new key shadows
     // the definition's member.
-    // Compiled without checking (run_text), since 05§8.8's mark refuses writing
+    // Compiled without checking (run_text), since [modules.hostdata]'s mark refuses writing
     // a member onto an instance -- what is pinned is the machine's own
-    // answer, which 10§4.2 requires not to depend on the checker having run.
+    // answer, which [l10n.id.spelling] requires not to depend on the checker having run.
     LHAT_TEST("an instance that shadows the member is seen");
     run_text(&r,
              "let^ Box = def^{ read = f^self^ -> number^ { 1 } }\n"

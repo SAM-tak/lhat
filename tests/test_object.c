@@ -1,7 +1,7 @@
 // L^ (lhat) -- tests for the heap values: strings and tables.
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
-// prefixed. What is pinned here is the behaviour §14 and 04§11.3
+// prefixed. What is pinned here is the behaviour [syntax.obj] and [errors.runtime.index]
 // ask for, not the split between the dense part and the hash part, which is
 // an implementation choice free to change.
 
@@ -41,7 +41,7 @@ static void test_strings(void)
         LHAT_CHECK(memcmp(s->text, "a\0b", 3) == 0, "all three bytes");
     }
 
-    // §11.6: a string is what it says, so two copies are equal.
+    // [syntax.op.table]: a string is what it says, so two copies are equal.
     LHAT_TEST("two strings spelling the same thing are equal");
     {
         LhatValue a = string_value(&owner, "foo");
@@ -67,7 +67,7 @@ static void test_strings(void)
     LHAT_CHECK(owner.objects == NULL, "the owner is emptied");
 }
 
-// 04§11.3: a table is a mapping. There is no such thing as out of range,
+// [errors.runtime.index]: a table is a mapping. There is no such thing as out of range,
 // and a key that is not there answers nil^.
 static void test_table_basics(void)
 {
@@ -99,7 +99,7 @@ static void test_table_basics(void)
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(t, other)), 7);
     }
 
-    // §14.8: number^ is one type, so the representation of a key cannot
+    // [syntax.obj.number]: number^ is one type, so the representation of a key cannot
     // decide which key it is.
     LHAT_TEST("2 and 2.0 are one key");
     {
@@ -109,8 +109,8 @@ static void test_table_basics(void)
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(t, lhat_real(2.0))), 21);
     }
 
-    // §14.14+: a real names a position in the dense half, rounded the way
-    // §14.19's at reads one. Both are a number^ used as a position, and which
+    // [syntax.obj.keys-round]: a real names a position in the dense half, rounded the way
+    // [syntax.obj.substring]'s at reads one. Both are a number^ used as a position, and which
     // representation the arithmetic left should not decide which slot.
     LHAT_TEST("a real reaches the run it lands in");
     {
@@ -155,7 +155,7 @@ static void test_table_basics(void)
         LHAT_CHECK_EQ_INT(lhat_as_integer(lhat_table_get(t, lhat_bool(false))), 2);
     }
 
-    // §11.3 again: storing nil^ is how a key stops being there, since "absent"
+    // [syntax.op.semantic] again: storing nil^ is how a key stops being there, since "absent"
     // and "nil^" are the one answer.
     LHAT_TEST("storing nil^ removes the key");
     {

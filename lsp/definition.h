@@ -1,14 +1,14 @@
 // L^ (lhat) -- LSP server: where the name at a position was written.
 //
-// 07§4 records, for every name the checker resolved, where the meaning
+// [lsp.hover] records, for every name the checker resolved, where the meaning
 // it reached was declared -- a binding's own place for a name a scope holds
-// (08§8), and the member's written place for one found in a type (§14.10).
+// ([lton.host]), and the member's written place for one found in a type ([syntax.obj.structure]).
 // That is the whole of what going to a definition needs; the walk is the
 // checker's and is not done a second time here.
 //
 // What has no place to point at answers nothing, and that is the right
 // answer rather than a missing one: a name the host registered was declared
-// in C (05§8.7), and a built-in of a coroutine or a string (§15.6+, §14.19)
+// in C ([modules.host.import]), and a built-in of a coroutine or a string ([syntax.sub.coroutine-members], [syntax.obj.substring])
 // was declared by the language itself.
 
 #ifndef LSP_DEFINITION_H
@@ -34,7 +34,7 @@ bool lsp_definition_for_unit(const LhatUnit *unit, uint32_t offset,
 // The complete identifier under the cursor; source length when none covers it.
 uint32_t lsp_definition_name_start(const LhatSource *source, uint32_t offset);
 
-// How far the name at `offset` runs, so a range can be made of it: 01§3.1
+// How far the name at `offset` runs, so a range can be made of it: [lex.ident.chars]
 // says which bytes a name is made of, and the record keeps only where it
 // starts.
 uint32_t lsp_definition_name_end(const char *text, size_t length,

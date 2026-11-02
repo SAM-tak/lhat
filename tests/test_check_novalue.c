@@ -3,7 +3,7 @@
 // Section numbers refer to DesignDocuments/02-syntax.md unless prefixed with
 // "03" or "04". The cases pinned here are the ones a decision in the
 // specification produces and that would otherwise be invisible: the scope
-// rule of §8.7, the result inference of 03§3.4, and the way catch^, ?? and
+// rule of [syntax.stmt.visible], the result inference of [pipeline.infer], and the way catch^, ?? and
 // try^ each drop one arm of a union.
 
 #include <stdio.h>
@@ -12,8 +12,8 @@
 
 #include "fixture.h"
 
-// §13.2 gives a signature a form for "no result", and 03§3.4 keeps
-// that apart from nil^ on the grounds that otherwise §11.7's `??` would apply
+// [syntax.type.empty] gives a signature a form for "no result", and [pipeline.infer] keeps
+// that apart from nil^ on the grounds that otherwise [syntax.op.default]'s `??` would apply
 // to a meaningless expression. That reasoning only holds if calling such a
 // subroutine produces something no value fits -- which it did not: the result
 // was a NULL, and a NULL is how "not inferred" is spelled, so every use of it
@@ -30,7 +30,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_BE_NIL);
     unit_dispose(&u);
 
-    // 04§4.1 puts catch^ on the same footing.
+    // [errors.catch.form] puts catch^ on the same footing.
     LHAT_TEST("nor can catch^");
     check_text(&u,
                "var^ log = p^ m:string^ { var^ y = m }\n"
@@ -97,7 +97,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §8.2: a call is the one expression that stands alone as a statement, and
+    // [syntax.stmt.no-bare-expr]: a call is the one expression that stands alone as a statement, and
     // that is where a subroutine with no result belongs.
     LHAT_TEST("but calling it as a statement is the point of it");
     check_text(&u,
@@ -106,7 +106,7 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 03§3.4 reads a NULL result as "still being worked out", so a body
+    // [pipeline.infer] reads a NULL result as "still being worked out", so a body
     // calling itself has to keep getting one.
     LHAT_TEST("and a self-call is still a result being inferred");
     check_text(&u,
@@ -118,7 +118,7 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.9: a coroutine that cannot end never produces a return value, so
+    // [syntax.type.coroutine]: a coroutine that cannot end never produces a return value, so
     // delegating to one produces nothing either.
     LHAT_TEST("delegating to a coroutine that cannot end produces nothing");
     check_text(&u,
@@ -128,7 +128,7 @@ static void test_no_value(void)
     unit_dispose(&u);
 
     // Every position that wants a value says so. A statement is the one that
-    // does not (§8.2), and it is checked above.
+    // does not ([syntax.stmt.no-bare-expr]), and it is checked above.
     LHAT_TEST("a table entry wants a value");
     check_text(&u,
                "var^ log = p^ m:string^ { var^ y = m }\n"
@@ -159,7 +159,7 @@ static void test_no_value(void)
     unit_dispose(&u);
 
 
-    // §11.3 leaves what '..' means to op^, but it cannot mean anything at all
+    // [syntax.op.semantic] leaves what '..' means to op^, but it cannot mean anything at all
     // when handed nothing.
     LHAT_TEST("'..' wants one on either side");
     check_text(&u,
@@ -168,7 +168,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §11.2: '..' joins what answers it, and §11.3 settles that here. The
+    // [syntax.op.concat]: '..' joins what answers it, and [syntax.op.semantic] settles that here. The
     // machine already refused these; the checker had been silent.
     LHAT_TEST("a number does not answer '..'");
     check_text(&u, "var^ v = 1 .. \"b\"\n");
@@ -186,7 +186,7 @@ static void test_no_value(void)
     unit_dispose(&u);
 
     // Every arm has to answer, since the value may be any of them. Said with
-    // the code 03§1 keeps for the nil^ arm: the rest of this union does
+    // the code [pipeline.stages] keeps for the nil^ arm: the rest of this union does
     // answer '..', so what is asked for is a narrowing rather than an
     // operator nobody wrote.
     LHAT_TEST("and a union answers only when all of it does");
@@ -208,8 +208,8 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.5: between two definitions '..' composes, and never calls an op^..
-    // either of them carries. §14.7 gives a definition and an instance the
+    // [syntax.obj.compose]: between two definitions '..' composes, and never calls an op^..
+    // either of them carries. [syntax.obj.instance] gives a definition and an instance the
     // same members, so what tells them apart is what made them.
     LHAT_TEST("and between two definitions it composes");
     check_text(&u,
@@ -220,8 +220,8 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §11.1: an operator is a function, carried by the type as a member whose
-    // name is the operator. 01§6 keeps that name unwritable by hand.
+    // [syntax.op.functions]: an operator is a function, carried by the type as a member whose
+    // name is the operator. [lex.comment] keeps that name unwritable by hand.
     LHAT_TEST("an instance answers with the op^ its definition wrote");
     check_text(&u,
                "var^ Vec = def^{\n"
@@ -244,7 +244,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §11.1 again: the right operand is the operator's argument, so what may
+    // [syntax.op.functions] again: the right operand is the operator's argument, so what may
     // stand there is what its parameter admits.
     LHAT_TEST("and its parameter is what may stand on the right");
     check_text(&u,
@@ -257,7 +257,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    // §11.2+: two plain tables concatenate, built in -- but a name both
+    // [syntax.op.concat-table]: two plain tables concatenate, built in -- but a name both
     // sides carry reaches no one value, and a table put beside itself
     // carries every name twice.
     LHAT_TEST("a name both sides of a '..' carry is refused");
@@ -267,7 +267,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_CONCAT_COLLIDES);
     unit_dispose(&u);
 
-    // §11.4: the arithmetic operators ask the same question, so a written
+    // [syntax.op.framework]: the arithmetic operators ask the same question, so a written
     // op^ answers them too.
     LHAT_TEST("a definition answers arithmetic with its own op^");
     check_text(&u,
@@ -291,7 +291,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    // §14.8 keeps number^ answering all seven, so ordinary arithmetic is
+    // [syntax.obj.number] keeps number^ answering all seven, so ordinary arithmetic is
     // exactly what it was.
     LHAT_TEST("and a number still answers all of them itself");
     check_text(&u,
@@ -300,13 +300,13 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §11.8: bool^ carries none, and and^/or^/'!' are the language's own.
+    // [syntax.op.define]: bool^ carries none, and and^/or^/'!' are the language's own.
     LHAT_TEST("a bool^ answers no operator");
     check_text(&u, "var^ v = true^ + 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    // §11.8: an op^ is an f^ taking self^ and one argument. Nothing later
+    // [syntax.op.define]: an op^ is an f^ taking self^ and one argument. Nothing later
     // checks it -- the call site reads the signature and believes it, and the
     // machine hands over a receiver and one argument whatever was declared --
     // so a shape that is not an operator has to be refused here.
@@ -317,7 +317,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
-    // §11.1: an operator is a function, so a p^ could carry side effects into
+    // [syntax.op.functions]: an operator is a function, so a p^ could carry side effects into
     // one.
     LHAT_TEST("nor is a p^");
     check_text(&u,
@@ -330,7 +330,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
-    // §14.4 leaves exactly one parameter beside the self^: the right operand.
+    // [syntax.obj.self] leaves exactly one parameter beside the self^: the right operand.
     LHAT_TEST("and it takes the right operand, no more and no less");
     check_text(&u,
                "var^ V = def^{ self^{},\n"
@@ -345,7 +345,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
-    // §14.12: an overloaded operator is every arm at once, so each has to be
+    // [syntax.obj.override]: an overloaded operator is every arm at once, so each has to be
     // an operator on its own.
     LHAT_TEST("every arm of an overloaded operator is checked");
     check_text(&u,
@@ -356,7 +356,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
-    // §11.8: '-' is the one operator with a unary spelling, so self^ alone is
+    // [syntax.op.define]: '-' is the one operator with a unary spelling, so self^ alone is
     // its second shape. What tells the two apart is the count and nothing
     // else, which is why the arms above are still refused.
     LHAT_TEST("op^- written with self^ alone is the unary one");
@@ -388,7 +388,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    // §14.8 is what a unary '-' falls back on, so this reads as arithmetic
+    // [syntax.obj.number] is what a unary '-' falls back on, so this reads as arithmetic
     // asked of something that is not a number^ -- the same report a type
     // carrying no '-' at all gets.
     LHAT_TEST("nor does a binary op^- answer a unary use");
@@ -408,7 +408,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
-    // §11.1 and §15.7+ are unchanged by the new shape: what they refuse is
+    // [syntax.op.functions] and [syntax.sub.op-not-yieldable] are unchanged by the new shape: what they refuse is
     // refused whichever count is written.
     LHAT_TEST("a unary op^- is still a function that cannot yield^");
     check_text(&u,
@@ -416,7 +416,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
-    // §14.5: what a composition brings in keeps working, and §14.12's markers
+    // [syntax.obj.compose]: what a composition brings in keeps working, and [syntax.obj.override]'s markers
     // reach an operator like any other member.
     LHAT_TEST("a composition carries an operator in");
     check_text(&u,
@@ -449,7 +449,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_SUBSTITUTABLE);
     unit_dispose(&u);
 
-    // §11.3 判定 is structural, so a '..' member put there by §14.14's computed
+    // [syntax.op.semantic] 判定 is structural, so a '..' member put there by [syntax.obj.keys]'s computed
     // key answers exactly as a written op^ does.
     LHAT_TEST("a '..' reached by a computed key answers too");
     check_text(&u,
@@ -459,7 +459,7 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §11.8: an operator is a member, so §14.12's overload^ is what lets one
+    // [syntax.op.define]: an operator is a member, so [syntax.obj.override]'s overload^ is what lets one
     // type answer several right-hand types.
     LHAT_TEST("overload^ gives one operator several right-hand types");
     check_text(&u,
@@ -476,7 +476,7 @@ static void test_no_value(void)
 
     // Which arm it is has to reach the answer's type. Until the arms were
     // walked here, an overloaded operator settled nothing and the caller fell
-    // back -- on unknown^ for '..', which fits anywhere, and on §14.8's
+    // back -- on unknown^ for '..', which fits anywhere, and on [syntax.obj.number]'s
     // number^ for arithmetic, which fits where the arm's own answer does not.
     LHAT_TEST("the arm that fits decides what an operator answers");
     check_text(&u,
@@ -489,7 +489,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14.12 leaves at most one arm fitting, so none fitting is the same
+    // [syntax.obj.override] leaves at most one arm fitting, so none fitting is the same
     // mistake a single arm makes when the right operand is not what it takes.
     LHAT_TEST("a right operand no arm takes is reported");
     check_text(&u,
@@ -502,7 +502,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    // §11.5 の (5): every link of a chain is asked what a comparison written
+    // [syntax.op.precedence] の (5): every link of a chain is asked what a comparison written
     // on its own is asked. Until the links were walked here, a chain was
     // checked by inferring its operands and nothing else.
     LHAT_TEST("every link of a chain is judged");
@@ -522,7 +522,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_ORDERED);
     unit_dispose(&u);
 
-    // §13.11: an fits^ link takes a type, which is not an operand the next link
+    // [syntax.type.fits]: an fits^ link takes a type, which is not an operand the next link
     // could compare against -- so it tests the value to its left and leaves
     // that value in place.
     LHAT_TEST("an fits^ link tests the operand to its left");
@@ -530,7 +530,7 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §11.9: the one comparison a type writes, and the four orderings
+    // [syntax.op.compare]: the one comparison a type writes, and the four orderings
     // are read off it. Without one there was nothing to reach for at all --
     // a written 'a < b' passed here and faulted at run time.
     LHAT_TEST("an ordering is read off op^<=>");
@@ -551,7 +551,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_ORDERED);
     unit_dispose(&u);
 
-    // Equality is a different matter: §14.2 says what a table is the same as
+    // Equality is a different matter: [syntax.obj.chain] says what a table is the same as
     // whether or not it says how it orders.
     LHAT_TEST("but equality needs none");
     check_text(&u,
@@ -571,7 +571,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COMPARE_NOT_NUMBER);
     unit_dispose(&u);
 
-    // §11.9+: a type may know what equals what and put its values in no
+    // [syntax.op.equal]: a type may know what equals what and put its values in no
     // order at all. Then '=' and '≠' read the op^= it wrote, and the four
     // orderings have nothing to read -- which is exactly what it means.
     LHAT_TEST("an op^= answers equality on its own");
@@ -607,7 +607,7 @@ static void test_no_value(void)
     unit_dispose(&u);
 
     // Both of them is not a contradiction: one says what equals what, the
-    // other how they order, and §11.9+ has '=' read the first.
+    // other how they order, and [syntax.op.equal] has '=' read the first.
     LHAT_TEST("and a type may write both");
     check_text(&u,
                "var^ V = def^{\n"
@@ -620,7 +620,7 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §11.3+: written with the self^ last it relates a pair §14.12 would
+    // [syntax.op.right]: written with the self^ last it relates a pair [syntax.obj.override] would
     // otherwise call separate, so the disjointness rule gives way to it.
     LHAT_TEST("a self^-last one orders against a built-in");
     check_text(&u,
@@ -632,7 +632,7 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §11.9: number^ and string^ each order their own, so a written '"a" < "b"'
+    // [syntax.op.compare]: number^ and string^ each order their own, so a written '"a" < "b"'
     // resolves rather than faulting at run time.
     LHAT_TEST("the built-in types carry their own");
     check_text(&u,
@@ -647,7 +647,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_INCOMPARABLE);
     unit_dispose(&u);
 
-    // §11.3+: a self^ written last says the receiver is the RIGHT
+    // [syntax.op.right]: a self^ written last says the receiver is the RIGHT
     // operand, which is the only way to join an operation whose left operand
     // is a built-in -- number^ carries the arithmetic and takes nothing but
     // its own kind, and no program can add to what it carries.
@@ -673,7 +673,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    // §11.3's order is kept: the right side is asked only once the left has
+    // [syntax.op.semantic]'s order is kept: the right side is asked only once the left has
     // no arm taking this operand. Both sides claiming the same pair is not a
     // question -- the left one answers and the other is never reached.
     LHAT_TEST("the left still answers first when it can");
@@ -689,10 +689,10 @@ static void test_no_value(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.12 with §11.3+: and the two orders are apart even where the operand
+    // [syntax.obj.override] with [syntax.op.right]: and the two orders are apart even where the operand
     // is the same type on both sides, which is the ordinary case -- 'v * 2'
     // and '2 * v'. Which side the receiver stands on is a position too, and
-    // the one §11.3's order settles before any other is looked at.
+    // the one [syntax.op.semantic]'s order settles before any other is looked at.
     LHAT_TEST("both orders of one operand type are not an overlap");
     check_text(&u,
                "var^ V = def^{\n"
@@ -719,7 +719,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OVERLOAD_OVERLAPS);
     unit_dispose(&u);
 
-    // §14.4: everywhere else the receiver is what stands before the dot, so a
+    // [syntax.obj.self]: everywhere else the receiver is what stands before the dot, so a
     // member saying it is the last argument says nothing that can be acted on.
     LHAT_TEST("only an op^ writes its self^ last");
     check_text(&u,
@@ -740,7 +740,7 @@ static void test_no_value(void)
     unit_dispose(&u);
 
     // Written at both ends it is the receiver twice over, leaving no ordinary
-    // parameter at all -- which §11.8's shape rule is what reports.
+    // parameter at all -- which [syntax.op.define]'s shape rule is what reports.
     LHAT_TEST("and a self^ at both ends leaves no argument");
     check_text(&u,
                "var^ V = def^{\n"
@@ -750,7 +750,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
-    // §14.12 asks for a marker on two members of one name whether they came
+    // [syntax.obj.override] asks for a marker on two members of one name whether they came
     // from a base or from the same def^. Only the base had been looked at.
     LHAT_TEST("two members of one name in one def^ need the marker too");
     check_text(&u,
@@ -783,7 +783,7 @@ static void test_no_value(void)
     unit_dispose(&u);
 
     // The operator is what this is about: a gap says nothing either way, so
-    // '..' does not refuse it. 10§3.1③ reports the parameter itself, which is a
+    // '..' does not refuse it. [l10n.scope.shown]③ reports the parameter itself, which is a
     // different sentence about a different place.
     LHAT_TEST("a gap in inference says nothing either way");
     check_text(&u, "var^ f = f^ x -> string^ { return^ x .. \"b\" }\n");
@@ -804,7 +804,7 @@ static void test_no_value(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 01§5.4: a hole is an ordinary expression, and was not being checked
+    // [lex.string.interp]: a hole is an ordinary expression, and was not being checked
     // at all -- not for this and not for anything else.
     LHAT_TEST("an interpolation hole wants one");
     check_text(&u,

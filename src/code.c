@@ -69,12 +69,12 @@ bool lhat_chunk_field_fold(const LhatChunk *chunk, size_t pc, LhatFieldFold *out
 }
 
 // The one thing of the compiler's a build without it still has to say
-// (05§10.8): what a status means, which program.c and the cli print.
+// ([modules.binary.vm-only]): what a status means, which program.c and the cli print.
 //
-// 10§4: the ID and the English text of every LhatCompileStatus, indexed by
+// [l10n.id]: the ID and the English text of every LhatCompileStatus, indexed by
 // the code. The ID is the one a translation is written against and never
 // changes meaning; the English is the reference every other language
-// translates (10§2.2).
+// translates ([l10n.principle.english]).
 static const LhatMessageEntry COMPILE_MESSAGES[] = {
     [LHAT_COMPILE_OK] = {"compile.ok", "compiled"},
     [LHAT_COMPILE_UNSUPPORTED] = {"compile.unsupported",
@@ -105,7 +105,7 @@ const char *lhat_compile_status_id(LhatCompileStatus status)
     return entry != NULL ? entry->id : NULL;
 }
 
-// 10§5.1: the statuses a compile reports about a name, which are said
+// [l10n.compose.holes]: the statuses a compile reports about a name, which are said
 // without one too -- lhat_compile_status_message has only the status to go
 // on. With a name, the text is this table's: an ID of its own, the name in a
 // hole.
@@ -318,7 +318,7 @@ size_t lhat_proto_add_upvalue(LhatProto *proto, LhatUpvalueSource source,
                               uint8_t index, const char *name, size_t length)
 {
     // Reused rather than appended: a name read twice is one shared place, not
-    // two, which is what 05§5.4 means by sharing the location.
+    // two, which is what [modules.require.no-spill] means by sharing the location.
     for (size_t i = 0; i < proto->upvalue_count; i++) {
         if (proto->upvalues[i].source == source &&
             proto->upvalues[i].index == index) {
@@ -362,7 +362,7 @@ size_t lhat_chunk_add_local(LhatChunk *chunk, const char *name, size_t length,
 void lhat_chunk_init(LhatChunk *chunk)
 {
     memset(chunk, 0, sizeof *chunk);
-    // 03§5.12 の白は、掃かれる heap がどちらを配っているかを言うためのもの
+    // [pipeline.bc.gc] の白は、掃かれる heap がどちらを配っているかを言うためのもの
     // (object.h の LhatHeap.white)。chunk の heap は掃かれることが無い
     // -- 一度作られたら書き換わらない定数だけを持つので、machine の
     // GC サイクルをまたいで生き続ける。白のままだと、実行中の machine が
@@ -422,7 +422,7 @@ size_t lhat_chunk_emit(LhatChunk *chunk, LhatInstruction instruction,
 size_t lhat_chunk_constant(LhatChunk *chunk, LhatValue value)
 {
     // Reused rather than appended: a loop testing the same literal each time
-    // round would otherwise fill the pool, and 10§5.2 caps it at 65536.
+    // round would otherwise fill the pool, and [l10n.compose.hole-kinds] caps it at 65536.
     for (size_t i = 0; i < chunk->constant_count; i++) {
         if (chunk->constants[i].tag == value.tag &&
             lhat_value_equal(chunk->constants[i], value)) {
@@ -497,7 +497,7 @@ void lhat_chunk_patch_here(LhatChunk *chunk, size_t at)
     if (at >= chunk->count) {
         return;
     }
-    // 10§5.2: a jump counts instructions, not bytes, and is measured from the
+    // [l10n.compose.hole-kinds]: a jump counts instructions, not bytes, and is measured from the
     // one after itself.
     int32_t offset = (int32_t)(chunk->count - at - 1);
     LhatInstruction instruction = chunk->code[at];
@@ -649,12 +649,12 @@ void lhat_chunk_print(const LhatChunk *chunk, size_t index, char *out,
         case LHAT_BC_CALLMETHOD:
         case LHAT_BC_TAILCALL:
         case LHAT_BC_TAILCALLMETHOD: {
-            // §13.8+: C's high bits say how many slots the answer was given
+            // [syntax.type.tuple]: C's high bits say how many slots the answer was given
             // room in. Shown only when it is a run, so every call written
-            // before tuples reads exactly as it did. 10§5.3: a tail call that
+            // before tuples reads exactly as it did. [l10n.compose.no-plurals]: a tail call that
             // throws the answer away says so beside the count.
             unsigned prepared = lhat_call_prepared(lhat_c(i));
-            // §16.3: the bit is LHAT_CALL_WALK on a call that is not a tail.
+            // [syntax.for.forms]: the bit is LHAT_CALL_WALK on a call that is not a tail.
             bool tail_op = lhat_op(i) == LHAT_BC_TAILCALL ||
                            lhat_op(i) == LHAT_BC_TAILCALLMETHOD;
             const char *dropped =

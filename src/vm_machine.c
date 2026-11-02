@@ -141,7 +141,7 @@ void lhat_detached_value_free(LhatDetachedValue *value)
     lhat_free(value);
 }
 
-// 05§8.6: L^ is the one name that is there without being imported, so what
+// [modules.host.machine]: L^ is the one name that is there without being imported, so what
 // it answers is made with the machine. A member is added here and its type in
 // check.c's environment_type -- the two lists have to say the same thing.
 bool vm_set_member(Machine *m, LhatTable *table, const char *name,
@@ -159,10 +159,10 @@ bool vm_set_member(Machine *m, LhatTable *table, const char *name,
 static bool build_environment(Machine *m)
 {
     m->environment = lhat_table_new(&m->objects);
-    // 05§5.3: the registry a unit is loaded into once. Empty until
-    // something is loaded, and grown the way 05§8.8 grows any table.
+    // [modules.require.once]: the registry a unit is loaded into once. Empty until
+    // something is loaded, and grown the way [modules.hostdata] grows any table.
     LhatTable *modules_value = lhat_table_new(&m->objects);
-    // 05§8.6: the collector's controls, one value (vm_get_member reads
+    // [modules.host.machine]: the collector's controls, one value (vm_get_member reads
     // its members).
     LhatNative *gc_value =
         lhat_native_new(&m->objects, LHAT_NATIVE_GC, lhat_nil());
@@ -177,11 +177,11 @@ static bool build_environment(Machine *m)
     }
     LHAT_ENVIRONMENT(LHAT_ENVIRONMENT_SET)
 #undef LHAT_ENVIRONMENT_SET
-    // 05§8.6: sealed once built, not before -- the two members above
+    // [modules.host.machine]: sealed once built, not before -- the two members above
     // are the machine writing its own table, which is exactly what the mark
     // goes on to refuse from an instruction.
     //
-    // The registry inside it is not marked here. 03§5.3 has a unit register
+    // The registry inside it is not marked here. [pipeline.bc.call] has a unit register
     // itself, and what it emits for that is an ordinary instruction writing
     // into L^.modules -- the mark would refuse the machine's own bookkeeping.
     // check.c refuses what a writer spells there, which is the half that can
@@ -192,7 +192,7 @@ static bool build_environment(Machine *m)
     return m->host_root != NULL;
 }
 
-// 03§4.3+: the three runs sit after the struct in one block, so their
+// [pipeline.machine.sizing]: the three runs sit after the struct in one block, so their
 // starts have to land aligned without any padding arithmetic. They do,
 // because a type's size is a multiple of its alignment -- asserted rather
 // than assumed.
@@ -234,11 +234,11 @@ LhatMachine *lhat_machine_new_with_size(size_t frames, size_t slots)
 
     // A whole stack and a frame array, so the heap is where it belongs --
     // a static one could serve only one caller and never nest.
-    // calloc rather than malloc, and nothing more: 03§2.2 numbers
+    // calloc rather than malloc, and nothing more: [pipeline.value.layout] numbers
     // LHAT_VALUE_NIL first and gives it a zero payload, so zeroed memory is
     // already a stack full of nil^.
     //
-    // 03§4.3+: one block for the struct and the three runs together. A machine
+    // [pipeline.machine.sizing]: one block for the struct and the three runs together. A machine
     // is still one allocation and one free, and the runs are as near the
     // fields that walk them as the fixed arrays were.
     size_t bytes = sizeof(Machine) + frames * sizeof(Frame) +
@@ -249,7 +249,7 @@ LhatMachine *lhat_machine_new_with_size(size_t frames, size_t slots)
     }
     m->frames = (Frame *)((char *)m + sizeof *m);
     m->frame_capacity = frames;
-    // 03§2.2: the one view every register read goes through, fixed for the
+    // [pipeline.value.layout]: the one view every register read goes through, fixed for the
     // machine's whole life. Tag zero is nil^, so the zeroed runs are already
     // a stack full of it.
     LhatValueUnion *values = (LhatValueUnion *)(m->frames + frames);
@@ -264,13 +264,13 @@ LhatMachine *lhat_machine_new_with_size(size_t frames, size_t slots)
         lhat_machine_dispose(m);
         return NULL;
     }
-    // §14.11: the key every construction reads the prototype through.
+    // [syntax.obj.new]: the key every construction reads the prototype through.
     m->self_key = lhat_string_new(&m->objects, "self^", 5);
     if (m->self_key == NULL) {
         lhat_machine_dispose(m);
         return NULL;
     }
-    // 09§5.1: a debugger following every machine hears of this one here,
+    // [debug.dap.machines]: a debugger following every machine hears of this one here,
     // before it has run anything.
 #if LHAT_WITH_DEBUGGER
     if (lhat_machine_watcher.born != NULL) {
@@ -285,14 +285,14 @@ void lhat_machine_dispose(LhatMachine *machine)
     if (machine == NULL) {
         return;
     }
-    // 09§5.1: before anything else -- a watcher takes its hook off here,
+    // [debug.dap.machines]: before anything else -- a watcher takes its hook off here,
     // and whatever the disposal below still runs must not sound it.
 #if LHAT_WITH_DEBUGGER
     if (lhat_machine_watcher.dying != NULL) {
         lhat_machine_watcher.dying(lhat_machine_watcher.context, machine);
     }
 #endif
-    // 05§8.8: what the host made goes back before anything is freed, so a
+    // [modules.hostdata]: what the host made goes back before anything is freed, so a
     // release may still read the value it is given. Reachability is not asked
     // -- the machine is going, so everything on it is.
     for (LhatObject *object = machine->objects.objects; object != NULL;
@@ -301,7 +301,7 @@ void lhat_machine_dispose(LhatMachine *machine)
         lhat_coroutine_release(object, machine);
     }
     lhat_object_free_all(&machine->objects);
-    // 05§8.9: the tables were the heap's (freed just above); the array
+    // [modules.hostvalue]: the tables were the heap's (freed just above); the array
     // alone is the machine's.
     lhat_free(machine->weak);
     lhat_free(machine->hostvalue_members);
@@ -339,7 +339,7 @@ bool lhat_machine_holds_body(const LhatMachine *machine,
     return false;
 }
 // ---------------------------------------------------------------------------
-// 05§8.12: the host's root, and the weak cache
+// [modules.host.memory]: the host's root, and the weak cache
 // ---------------------------------------------------------------------------
 
 LhatTable *lhat_machine_host_root(LhatMachine *machine)

@@ -5,7 +5,7 @@
 // comments beside it -- and the copy an editor offers on a hover takes all
 // of it; neither that button nor what it copies is the server's to change.
 // What a reader wants to paste into an annotation, or into a host
-// registration (05§8.7 reads the same grammar back), is the type alone.
+// registration ([modules.host.import] reads the same grammar back), is the type alone.
 //
 // The two also differ in how much they say. A hover's type is elided
 // (config.h's depth and item limits) because a shorter answer reads better

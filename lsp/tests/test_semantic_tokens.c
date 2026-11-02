@@ -156,7 +156,7 @@ static void expect_token(const Tokens *tokens, const char *text,
                declared ? "set" : "unset", want_declaration ? "set" : "unset");
 }
 
-// §8.9's readonly, which stands beside whatever the name turned out to be
+// [syntax.stmt.let]'s readonly, which stands beside whatever the name turned out to be
 // rather than replacing it -- so it is asked about on its own.
 static void expect_readonly(const Tokens *tokens, const char *text,
                             const char *needle, bool want)
@@ -171,7 +171,7 @@ static void expect_readonly(const Tokens *tokens, const char *text,
                readonly ? "set" : "unset", want ? "set" : "unset");
 }
 
-// §14.19's defaultLibrary, asked on its own for the same reason readonly is:
+// [syntax.obj.substring]'s defaultLibrary, asked on its own for the same reason readonly is:
 // it stands beside whatever the name turned out to be rather than replacing
 // it.
 static void expect_builtin(const Tokens *tokens, const char *text,
@@ -209,8 +209,8 @@ static void collect_from(Names *names, const LhatNode *node)
     if (node == NULL) {
         return;
     }
-    // §18: an annotation and everything in it belongs to the host. §18.2's
-    // name is one the host registered, and §18.3 carries an argument that is a
+    // [syntax.annot]: an annotation and everything in it belongs to the host. [syntax.annot.spelling]'s
+    // name is one the host registered, and [syntax.annot.literal-args] carries an argument that is a
     // name by its spelling and never resolves it -- so there is nothing the
     // checker settled on for either, and nothing for this walk to say. The
     // grammar file colours them (storage.type.annotation.lhat), which is where
@@ -272,7 +272,7 @@ static void test_every_name_is_reached(void)
 
     // Written to put a name inside each construct that holds one, so that a
     // kind left out of semantic_tokens.c's switch shows up here as a name
-    // with nothing on it. 04§4.5's catch^ arms, §9.11's next^, §16.3's
+    // with nothing on it. [errors.catch.clause]'s catch^ arms, [syntax.loop.next]'s next^, [syntax.for.forms]'s
     // typed focus and 04§14.4's qualified type name are the four this test
     // was written for; the rest is here so the check keeps its reach.
     static const char *source =
@@ -286,8 +286,8 @@ static void test_every_name_is_reached(void)
         "    shout(\"x\")\n"
         "}\n"
         "for^ key, value in^ table { shout(key) }\n"
-        // 04§4.5: the arms live inside the block's own braces, and a ':'
-        // opens each body -- the shape 10§5.2 gives if^, not a braced block.
+        // [errors.catch.clause]: the arms live inside the block's own braces, and a ':'
+        // opens each body -- the shape [l10n.compose.hole-kinds] gives if^, not a braced block.
         "do^{\n"
         "    shout(\"y\")\n"
         "catch^ E.Bad:\n"
@@ -298,16 +298,16 @@ static void test_every_name_is_reached(void)
         "let^ held : E.Bad = error^ E.Bad { why = \"no\" }\n"
         "let^ widened = table.key as^ number^\n"
         "with^ resource = table { shout(\"v\") }\n"
-        // §14.7+: a definition with its type written out. The self^{ } section
+        // [syntax.obj.members-order]: a definition with its type written out. The self^{ } section
         // of a written type is a kind of its own, and it was the second thing
         // to fall into semantic_tokens.c's `default` -- with nothing here
         // holding one, this test had nothing to say about it.
         "let^ Shape : t^{ self^{ side : number^ }, new : f^ -> Self^; }"
         " = def^{ self^{ side = 1 }, }\n"
-        // §13.14: a type written where a value stands, which the parser
+        // [syntax.type.as-expr]: a type written where a value stands, which the parser
         // wraps in a kind of its own -- the third to fall into `default`.
         "let^ Sink = t^{ write : p^self^, string^; }\n"
-        // §18: a declaration wearing an annotation. What the annotation
+        // [syntax.annot]: a declaration wearing an annotation. What the annotation
         // holds is skipped above, but the declaration under it is not -- an
         // annotation must not swallow the name it was written over.
         "@sample(1, hint)\n"
@@ -349,7 +349,7 @@ static void test_every_name_is_reached(void)
 // What each place says a name means
 // ---------------------------------------------------------------------------
 
-// §13.14: the same type spelling reads the same wherever it is written.
+// [syntax.type.as-expr]: the same type spelling reads the same wherever it is written.
 // In an annotation the walk reaches it through the binding; written where a
 // value stands, the parser wraps it (LHAT_NODE_TYPE_VALUE), and a wrap the
 // walk did not know left every name inside it to the grammar's default --
@@ -417,7 +417,7 @@ static void test_for_focus(void)
 {
     LHAT_TEST("16.3: a focus takes every shape a let^ target does");
 
-    // §16.3+2: the counted form advances its own focus, so it takes no
+    // [syntax.for.from]: the counted form advances its own focus, so it takes no
     // introducer word -- the range is spelled 'i from^ A to^ B'.
     static const char *source =
         "for^ index:number^ from^ 0 to^ 4 { }\n"
@@ -499,8 +499,8 @@ static void test_compound_assignment_is_one_token(void)
 
     // The parser expands 'want[d] ?+= 1' into the reassignment and the
     // 'want[d] + 1' standing behind it, so the tree carries both spans --
-    // but the source says each name once, and 01§7.4 reads the target once.
-    // §8.6.4 is how counting into a table is written, 04§11.3 making
+    // but the source says each name once, and [lex.op.compound] reads the target once.
+    // [syntax.stmt.nil-assign] is how counting into a table is written, [errors.runtime.index] making
     // 'want[d]' a 'number^|nil^'.
     static const char *source =
         "var^ want = { 1, 2 }\n"
@@ -560,7 +560,7 @@ static void test_definition_reads_as_a_type(void)
     check_dispose(&c);
 }
 
-// §14.13: the tree spells 'Base..def^{ … }' as the '..' operator with the
+// [syntax.obj.def-form]: the tree spells 'Base..def^{ … }' as the '..' operator with the
 // def^ on its right, so a declaration reading the value has to look through
 // one -- or the class a writer inherits into reads as an ordinary name.
 static void test_an_inherited_definition_is_a_type(void)
@@ -588,7 +588,7 @@ static void test_an_inherited_definition_is_a_type(void)
     check_dispose(&c);
 }
 
-// §14.7+: the same, for a definition whose type was also written out. 05§8.7
+// [syntax.obj.members-order]: the same, for a definition whose type was also written out. [modules.host.import]
 // makes the annotation what the binding holds, so the def^'s own answer never
 // reaches the name -- what says "definition" has to be on the written type,
 // and resolve_table_type is what puts it there (check.c). Until it did, a
@@ -628,9 +628,9 @@ static void test_module_path_reads_the_same_everywhere(void)
 {
     LHAT_TEST("05 の 8.6: a module path is a namespace wherever it stands");
 
-    // 05§8.7's import^ is answered from what a host registered, and a check
+    // [modules.host.import]'s import^ is answered from what a host registered, and a check
     // with no host has nothing to answer with -- so this uses require^'s
-    // short form (05§5.5), which builds the same shape out of a unit that
+    // short form ([modules.require.short]), which builds the same shape out of a unit that
     // named itself. What is being pinned is that the path root and the
     // segment under it read alike in the import^ line and in an expression,
     // which was the whole complaint.
@@ -711,7 +711,7 @@ static void test_isa_within_a_comparison_chain(void)
     check_dispose(&c);
 }
 
-// §13.1: what declared the name is something only the checker knows -- the
+// [syntax.type.signature]: what declared the name is something only the checker knows -- the
 // place a use stands says only that there is a name, and the type says only
 // what it holds. Before the resolution carried it, a use of a parameter
 // came back as an ordinary variable while its declaration read as one.
@@ -739,7 +739,7 @@ static void test_a_parameter_reads_as_one_where_it_is_used(void)
     check_dispose(&c);
 }
 
-// 05§8.8: a host type is one table for the type and for everything of it,
+// [modules.hostdata]: a host type is one table for the type and for everything of it,
 // so what the checker hands back for the type's own name and for a name
 // holding one is the same type -- the spelling is the only thing that tells
 // them apart (semantic_tokens.c's names_its_own_type).
@@ -811,7 +811,7 @@ static void test_a_host_type_reads_as_a_type(void)
     lhat_program_dispose(&program);
 }
 
-// §14.15: 'abstract^ name : type' is a declaration standing among values, and
+// [syntax.obj.abstract]: 'abstract^ name : type' is a declaration standing among values, and
 // the parser says so with a flag rather than with a kind of its own. Read as
 // a value, its type was walked as an expression -- and a qualified type name
 // is rooted at a TYPE_NAME, which no expression holds, so the root of one
@@ -882,7 +882,7 @@ static void test_applied_types(void)
     lhat_program_dispose(&program);
 }
 
-// §13.11: a use inside a branch that narrowed the name reads like every other
+// [syntax.type.fits]: a use inside a branch that narrowed the name reads like every other
 // use of it. It did not: a narrowed name answers before chk_infer_name, which
 // is what records one, so the name went unresolved exactly where the branch
 // knew most about it -- and lost the readonly its other uses carried.
@@ -913,7 +913,7 @@ static void test_a_narrowed_use_reads_like_any_other(void)
     check_dispose(&c);
 }
 
-// §8.9: which word bound the name. The declaration reads it off the tree and
+// [syntax.stmt.let]: which word bound the name. The declaration reads it off the tree and
 // a use off the checker, and the two have to agree -- they are the same
 // fact asked in two places.
 static void test_let_is_readonly_and_var_is_not(void)
@@ -940,9 +940,9 @@ static void test_let_is_readonly_and_var_is_not(void)
     check_dispose(&c);
 }
 
-// The typed resolutions say nothing about §8.9, because the question does
+// The typed resolutions say nothing about [syntax.stmt.let], because the question does
 // not apply to them: a member is not a name a scope holds, and what may be
-// written through a table is §15.1+'s question rather than this one.
+// written through a table is [syntax.sub.table-write]'s question rather than this one.
 static void test_a_member_is_not_called_readonly(void)
 {
     LHAT_TEST("14.10: a member carries no answer about let^ or var^");
@@ -966,7 +966,7 @@ static void test_a_member_is_not_called_readonly(void)
     check_dispose(&c);
 }
 
-// §13: what makes a type name a type is that it names one. The place does
+// [syntax.type]: what makes a type name a type is that it names one. The place does
 // not: `n:number` and `n:number^` are the same node with the same span, and
 // painting the first like the second is how a forgotten hat stays hidden --
 // the squiggle is under a word that looks right.
@@ -1002,7 +1002,7 @@ static void test_a_type_name_is_coloured_only_where_it_names_a_type(void)
     check_dispose(&c);
 }
 
-// §14.19 and §14.17+: a member the language answers itself is not the
+// [syntax.obj.substring] and [syntax.obj.tostring-hat]: a member the language answers itself is not the
 // program's, and an editor wants to draw it as the library's. It was drawn
 // from a list of names in the grammar file, which is a copy of what the
 // checker knows and had already gone stale -- and which coloured only the
@@ -1026,7 +1026,7 @@ static void test_a_builtin_member_says_it_is_one(void)
     cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
     Tokens tokens = decode(data);
 
-    // §14.17+: the hat always reaches the built-in, and the bare spelling
+    // [syntax.obj.tostring-hat]: the hat always reaches the built-in, and the bare spelling
     // reaches it everywhere but a plain table. Both are the same member.
     expect_builtin(&tokens, source, "length", true);
     expect_builtin(&tokens, source, "tostring^", true);
@@ -1043,7 +1043,7 @@ static void test_a_builtin_member_says_it_is_one(void)
     check_dispose(&c);
 }
 
-// §14.7+2: a delegate^ entry carries no key, and what stands where a value
+// [syntax.obj.delegate]: a delegate^ entry carries no key, and what stands where a value
 // would is the name delegated to -- 'self^.field' for the template's, a bare
 // name for the definition's own. Both name a member, so both read as one:
 // the bare spelling used to come back a variable, which is what a name a

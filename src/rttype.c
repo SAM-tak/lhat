@@ -14,7 +14,7 @@
 //
 // A checker type may hold itself (an instance whose member answers one), so
 // the structures on the way in are remembered on the C stack. Meeting one
-// again is §13.13's Self^ -- the same thing the source would have written
+// again is [syntax.type.self]'s Self^ -- the same thing the source would have written
 // there -- and how many structures back it was is the hat count.
 typedef struct RtSeen {
     const LhatType *type;
@@ -76,15 +76,15 @@ static LhatRuntimeType *build_rt(RtBuild *build,
             if (s->type->kind == LHAT_TYPE_TABLE) level++;
         }
     }
-    // §13.13 counts structures and nothing else -- a signature is transparent,
+    // [syntax.type.self] counts structures and nothing else -- a signature is transparent,
     // so only a table joins the chain the hats are counted along.
     RtSeen here = { type, seen, NULL };
     if (type->kind == LHAT_TYPE_TABLE) {
         seen = &here;
     }
     switch (type->kind) {
-        // §19: identity is the declaration's address; the names ride
-        // along for §14.16's writing.
+        // [syntax.enum]: identity is the declaration's address; the names ride
+        // along for [syntax.obj.typeof]'s writing.
         case LHAT_TYPE_ENUM: {
             LhatRuntimeType *rt = lhat_type_rt_new(heap, LHAT_TYPE_RT_ENUM);
             if (rt != NULL) {
@@ -124,23 +124,23 @@ static LhatRuntimeType *build_rt(RtBuild *build,
             }
             return rt;
         }
-        // 03§3.4: inference did not decide this one. Asks nothing of a
-        // value, the same as nothing written -- but §14.16 writes it out as
+        // [pipeline.infer]: inference did not decide this one. Asks nothing of a
+        // value, the same as nothing written -- but [syntax.obj.typeof] writes it out as
         // UNKNOWN rather than any^, so a signature says which parameter or
         // member is still waiting for an annotation.
         case LHAT_TYPE_UNKNOWN:
         case LHAT_TYPE_PENDING:
             return lhat_type_rt_new(heap, LHAT_TYPE_RT_UNKNOWN);
 
-        // §13.7: asks nothing of a value, which is also what nothing written
-        // means -- but a NULL is how §13.9's empty coroutine slot is carried,
+        // [syntax.type.variadic]: asks nothing of a value, which is also what nothing written
+        // means -- but a NULL is how [syntax.type.coroutine]'s empty coroutine slot is carried,
         // so any^ is built rather than collapsed. Both still write out as
         // any^; what the kind buys is that a NULL now says only one thing.
         case LHAT_TYPE_ANY:
             return lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
 
         case LHAT_TYPE_NONE:
-            return NULL;  // §13.2: no value, so there is nothing to ask of one
+            return NULL;  // [syntax.type.empty]: no value, so there is nothing to ask of one
 
         case LHAT_TYPE_NIL:
             return lhat_type_rt_new(heap, LHAT_TYPE_RT_NIL);
@@ -153,7 +153,7 @@ static LhatRuntimeType *build_rt(RtBuild *build,
         case LHAT_TYPE_COSTATE:
             return lhat_type_rt_new(heap, LHAT_TYPE_RT_COSTATE);
 
-        // 05§8.9: identity is the tag, carried across whole.
+        // [modules.hostvalue]: identity is the tag, carried across whole.
         case LHAT_TYPE_HOSTVALUE: {
             LhatRuntimeType *rt =
                 lhat_type_rt_new(heap, LHAT_TYPE_RT_HOSTVALUE);
@@ -174,7 +174,7 @@ static LhatRuntimeType *build_rt(RtBuild *build,
 
         case LHAT_TYPE_TABLE: {
             if (type->v.table.is_typeinfo) return lhat_type_rt_new(heap, LHAT_TYPE_RT_TYPEINFO);
-            // 05§8.8: a registered type is its declaration and nothing
+            // [modules.hostdata]: a registered type is its declaration and nothing
             // else -- the machine asks a value for the tag (object.c's
             // satisfies), never for the members. Converting those would also
             // walk every type they name, and a library whose types name each
@@ -192,10 +192,10 @@ static LhatRuntimeType *build_rt(RtBuild *build,
             if (rt == NULL) {
                 return NULL;
             }
-            // §14.7+: a definition carries what its instances are, which is
-            // what §14.16 writes as the self^{ … } section. It is converted
+            // [syntax.obj.members-order]: a definition carries what its instances are, which is
+            // what [syntax.obj.typeof] writes as the self^{ … } section. It is converted
             // before the definition's own members so that they can point back
-            // at it as §13.13's Self^ -- inside a definition that is what the
+            // at it as [syntax.type.self]'s Self^ -- inside a definition that is what the
             // word names, and the definition itself is one step further out.
             RtSeen within = { type->v.table.instance, seen, NULL, true };
             if (type->v.table.instance != NULL) {
@@ -203,7 +203,7 @@ static LhatRuntimeType *build_rt(RtBuild *build,
                     rt_from_checked(build, type->v.table.instance, seen);
                 seen = &within;
             }
-            // §14.10: the sequence half first, in position order, the way a
+            // [syntax.obj.structure]: the sequence half first, in position order, the way a
             // written t^{ ... } puts it.
             size_t sequence = 0;
             for (;;) {
@@ -217,16 +217,16 @@ static LhatRuntimeType *build_rt(RtBuild *build,
                 }
                 sequence++;
             }
-            // §14.7+2 with 05§8.8+: the type's own members, then what its
+            // [syntax.obj.delegate] with [modules.hostdata.base]: the type's own members, then what its
             // links lend. A descriptor is asked what a value may be asked
-            // for (§13.11), so a name the wrapper answers has to be here --
+            // for ([syntax.type.fits]), so a name the wrapper answers has to be here --
             // the link is how the type HOLDS it, not a reason to leave it
             // out. lhat_type_find_member decides, so this and a lookup
             // never disagree.
             LhatChain walk = lhat_type_chain(type);
             const LhatType *up;
             while ((up = lhat_chain_next(&walk)) != NULL) {
-                // 05§8.8+: a host type on the chain is named, not copied.
+                // [modules.hostdata.base]: a host type on the chain is named, not copied.
                 // Its members are the host's whole API -- every signature of
                 // every method, and twice over for a definition and its
                 // instance -- and what a value holds of it is found the way
@@ -293,8 +293,8 @@ static LhatRuntimeType *build_rt(RtBuild *build,
             if (type->v.func.variadic != NULL) {
                 rt->variadic = rt_from_checked(build, type->v.func.variadic, seen);
             }
-            // §15.5: what a call answers -- the coroutine where the body
-            // yields (§13.9). §14.16's typeof^ comes through here, and what a
+            // [syntax.sub.no-contagion]: what a call answers -- the coroutine where the body
+            // yields ([syntax.type.coroutine]). [syntax.obj.typeof]'s typeof^ comes through here, and what a
             // reader wants from a signature is what a call hands back.
             rt->result = rt_from_checked(build, lhat_type_call_answer(type), seen);
             return rt;
@@ -305,7 +305,7 @@ static LhatRuntimeType *build_rt(RtBuild *build,
             if (rt == NULL) {
                 return NULL;
             }
-            // §13.9: an empty slot stays empty. rt_from_checked answers NULL
+            // [syntax.type.coroutine]: an empty slot stays empty. rt_from_checked answers NULL
             // for a NULL, which is what the writer reads as "left out".
             rt->receive = rt_from_checked(build, type->v.coroutine.receive, seen);
             rt->produce = rt_from_checked(build, type->v.coroutine.produce, seen);
@@ -316,14 +316,14 @@ static LhatRuntimeType *build_rt(RtBuild *build,
             rt->produce_any = type->produce_any;
             rt->result_any = type->result_any;
             rt->kind_any = type->kind_any;
-            rt->is_function = type->v.coroutine.is_function;  // §15.3+
+            rt->is_function = type->v.coroutine.is_function;  // [syntax.sub.yieldable-f]
             return rt;
         }
 
-        // 04§2.3 makes ERROR the top of every kind in its family; nothing
+        // [errors.kind.made] makes ERROR the top of every kind in its family; nothing
         // here reaches the runtime LhatErrorKind object a checker-side name
         // would need to name a precise one, so the coarser answer is the
-        // sound one for a set and a kind alike. 04§2.7: the family is carried
+        // sound one for a set and a kind alike. [errors.kind.local]: the family is carried
         // either way, since coarsening across the two tops would not be
         // sound -- they are disjoint.
         case LHAT_TYPE_ERROR:
@@ -367,7 +367,7 @@ static LhatRuntimeType *build_rt(RtBuild *build,
             return rt;
         }
 
-        // §13.8+: the positions, in order. Same walk as the two above -- the
+        // [syntax.type.tuple]: the positions, in order. Same walk as the two above -- the
         // checker holds them in the same list -- but its own kind, since the
         // order and the count are what a tuple means.
         case LHAT_TYPE_TUPLE: {
@@ -390,16 +390,16 @@ static LhatRuntimeType *build_rt(RtBuild *build,
     return NULL;
 }
 
-// §14.16: typeof^ answers the checker's settled type wherever one
+// [syntax.obj.typeof]: typeof^ answers the checker's settled type wherever one
 // exists -- with one carve-out. An error's identity is the declaration (04
-// の §2.4), and the checker's type carries only its NAME; the runtime
+// の [syntax.juxta.call-binds]), and the checker's type carries only its NAME; the runtime
 // LhatErrorKind object it would take to build the descriptor is not
 // reachable from here. The value carries the kind as a pointer read, so an
 // operand whose type mentions an error anywhere is answered by the tag
 // instruction instead -- which is also what keeps typeof^(e) naming the
 // leaf kind rather than the declared union.
 //
-// §13.13: a Self^ makes the walk come back to a type it has already read, so
+// [syntax.type.self]: a Self^ makes the walk come back to a type it has already read, so
 // the tables on the way in are remembered on the C stack the way
 // rt_from_checked remembers its own -- `seen` is NULL at the outermost
 // call. Meeting one again says false: nothing is found here that the first
@@ -450,7 +450,7 @@ static bool mentions_error(const LhatType *type, const RtSeen *seen)
                     return true;
                 }
             }
-            // §15.5: the answer rather than the result, since that is what is
+            // [syntax.sub.no-contagion]: the answer rather than the result, since that is what is
             // about to be built -- an error inside the coroutine a yielding
             // body makes has to send this to the instruction just the same.
             return (type->v.func.variadic != NULL &&

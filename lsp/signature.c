@@ -11,7 +11,7 @@
 char *lsp_signature_for_unit(const LhatUnit *unit, uint32_t offset)
 {
     // Where a declaration is answered for as well as a use -- which is where
-    // someone wanting to copy a signature is most likely standing (07§4,
+    // someone wanting to copy a signature is most likely standing ([lsp.hover],
     // resolution.h).
     const LhatResolution *resolved = lsp_resolution_at(unit, offset);
     if (resolved == NULL || resolved->type == NULL) {

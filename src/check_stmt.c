@@ -7,7 +7,7 @@
 // Statements
 // ---------------------------------------------------------------------------
 
-// ast.c's target readings (§8.8), shared with the compiler.
+// ast.c's target readings ([syntax.stmt.member]), shared with the compiler.
 static const LhatNode *target_name_node(const LhatNode *target)
 {
     return lhat_define_target_name(target);
@@ -16,7 +16,7 @@ static const LhatNode *target_name_node(const LhatNode *target)
 // Wider than ast.c's lhat_define_target_root on purpose: a define target's
 // grammar never holds an index, but a reassignment's does -- 't[k] := v'
 // changes the table exactly as 't.x := v' does, so every question asked of
-// a path here has to see both spellings. (This is where §15.1+'s origin rule
+// a path here has to see both spellings. (This is where [syntax.sub.table-write]'s origin rule
 // once let an indexed write through unasked.)
 static const LhatNode *target_root(const LhatNode *target)
 {
@@ -36,7 +36,7 @@ static bool target_is_path(const LhatNode *target)
 static const LhatTypeMember *member_named(const LhatType *type,
                                           const char *name, size_t length);
 
-// ast.c's L^ test (05§8.6), shared with the compiler.
+// ast.c's L^ test ([modules.host.machine]), shared with the compiler.
 static bool is_environment(const Checker *c, const LhatNode *node)
 {
     return lhat_node_is_environment(node, c->lexer->source->text,
@@ -57,8 +57,8 @@ static LhatType *gc_numbers(Checker *c, const char *const *names,
     return record;
 }
 
-// 05§8.6: L^.gc, the collector's controls. Running the collector is an
-// effect, so what answers nothing is a p^ (§12.7's shape); what answers a
+// [modules.host.machine]: L^.gc, the collector's controls. Running the collector is an
+// effect, so what answers nothing is a p^ ([syntax.with.no-fail]'s shape); what answers a
 // value is an f^, as a table's own mutating members are.
 static LhatType *chk_gc_type(Checker *c)
 {
@@ -91,7 +91,7 @@ static LhatType *chk_gc_type(Checker *c)
     read->v.func.result = settings_type;
     LhatType *configure = lhat_type_func(types, true);
     // The whole record, as settings() answers it: a table literal cannot
-    // leave a member out of a t^{} (§14), so the way to change one is to
+    // leave a member out of a t^{} ([syntax.obj]), so the way to change one is to
     // read them all, write the one, and hand them back.
     lhat_type_add_param(types, configure, settings_type);
     configure->v.func.result = settings_type;
@@ -121,7 +121,7 @@ LhatType *chk_environment_type(Checker *c)
     if (env == NULL || modules_type == NULL || gc_type == NULL) {
         return NULL;
     }
-    // 05§8.6: L^ is the machine itself, and the registry inside it is
+    // [modules.host.machine]: L^ is the machine itself, and the registry inside it is
     // what require^ and import^ write. Both are the machine's to change, not
     // the program's.
     env->v.table.sealed = true;
@@ -138,7 +138,7 @@ LhatType *chk_environment_type(Checker *c)
                          sizeof #name - 1, (type));
     LHAT_ENVIRONMENT(LHAT_ENVIRONMENT_ADD)
 #undef LHAT_ENVIRONMENT_ADD
-    // 05§8.6: and whatever the host put here on top of that list.
+    // [modules.host.machine]: and whatever the host put here on top of that list.
     if (c->require.globals != NULL) {
         for (const LhatTypeMember *m = c->require.globals->v.table.members;
              m != NULL; m = m->next) {
@@ -179,8 +179,8 @@ LhatType *chk_typeinfo_of(Checker *c, LhatType *represented)
     return (LhatType *)lhat_check_type_specialize(&context, chk_typeinfo_type(c), args, 1);
 }
 
-// §8.8: everything before the last segment holds the one written after it, so
-// it has to be a table. §14 fixes what an instance of a def^ carries, which
+// [syntax.stmt.member]: everything before the last segment holds the one written after it, so
+// it has to be a table. [syntax.obj] fixes what an instance of a def^ carries, which
 // is the one kind of table a member cannot be added to.
 static LhatType *holds_members(Checker *c, const LhatNode *at, LhatType *type)
 {
@@ -196,9 +196,9 @@ static LhatType *holds_members(Checker *c, const LhatNode *at, LhatType *type)
         chk_report(c, at, LHAT_CHECK_ERR_PATH_IS_DEFINITION);
         return NULL;
     }
-    // 05§8.6: the machine's own tables are not grown from here
+    // [modules.host.machine]: the machine's own tables are not grown from here
     // either. Adding a member changes one as much as writing over one does,
-    // and 05§8.8's own walk is what would make the segments on the way.
+    // and [modules.hostdata]'s own walk is what would make the segments on the way.
     if (type->v.table.sealed) {
         chk_report(c, at, LHAT_CHECK_ERR_TABLE_IS_SEALED);
         return NULL;
@@ -214,11 +214,11 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
     size_t length = 0;
 
     if (node->kind != LHAT_NODE_MEMBER) {
-        // 05§8.6: L^ is a place too, and the one no scope holds.
+        // [modules.host.machine]: L^ is a place too, and the one no scope holds.
         if (is_environment(c, node)) {
             return holds_members(c, node, chk_environment_type(c));
         }
-        // The root is a name a scope holds. 05§8.8 reaches an enclosing binding
+        // The root is a name a scope holds. [modules.hostdata] reaches an enclosing binding
         // rather than shadowing it: 'let^ a.b = 1' says where b goes and
         // nothing new about a, so a is only made when there is none.
         if (!chk_node_name(c, node, &name, &length)) {
@@ -267,12 +267,12 @@ static LhatType *path_table(Checker *c, const LhatNode *node)
     return made;
 }
 
-// The last segment is the name being introduced, so §8.7 refuses one that is
+// The last segment is the name being introduced, so [syntax.stmt.visible] refuses one that is
 // already there -- writing let^ twice for one place is a redefinition here
 // exactly as it is for a name of its own.
 //
-// 05§8.8+: unless `upsert` says otherwise (only let^'s ':=' spelling asks for
-// this -- 05§8.6's table still makes '=' mean plain definition). Then a path
+// [modules.hostdata.base]: unless `upsert` says otherwise (only let^'s ':=' spelling asks for
+// this -- [modules.host.machine]'s table still makes '=' mean plain definition). Then a path
 // that already answers to something is reassigned instead: the same check
 // check_reassign makes for a bare 'path := value', just reached through a
 // let^'s syntax instead. The type is not touched either way in that branch.
@@ -292,7 +292,7 @@ static void define_path(Checker *c, const LhatNode *target, LhatType *type,
     }
     const LhatTypeMember *found = member_named(owner, name, length);
     if (found != NULL) {
-        // 03§3.4+2: on a later walk over these statements the member is
+        // [pipeline.infer.rounds]: on a later walk over these statements the member is
         // the one this very statement made, so this walk writes over it --
         // the walk before it is not a second definition, and what it put
         // there is not something to hold this one to either.
@@ -315,25 +315,25 @@ void chk_check_define(Checker *c, const LhatNode *node)
 {
     const LhatNode *value = node->v.binding.values;
     size_t position = 0;
-    // §13.8+: what a call answered with, when several names are taking it
+    // [syntax.type.tuple]: what a call answered with, when several names are taking it
     // apart. Settled on the first target from the type of the one value, so
     // nothing is inferred twice -- and so the inference still happens inside
     // the defining-name context the loop sets up around it.
     //
-    // §13.10 asks for no mark of its own, because counting the right side
+    // [syntax.type.destructure] asks for no mark of its own, because counting the right side
     // settles which reading applies: one value there with several names on
-    // the left is a tuple being taken apart, two values is 05§8.6's multiple
+    // the left is a tuple being taken apart, two values is [modules.host.machine]'s multiple
     // definition, and neither reading fits the other's shape.
     LhatType *tuple = NULL;
     size_t target_count = lhat_node_list_length(node->v.binding.targets);
 
-    // §15.2 with §13.8+: several names binding one yield^ directly is where a
+    // [syntax.sub.yieldable] with [syntax.type.tuple]: several names binding one yield^ directly is where a
     // tuple R gets fixed -- resume(a, b) sends what these annotations spell,
     // and the binding takes it apart. Built before the walk so the one
     // chk_infer of the value sees the whole tuple; a name with no annotation
     // leaves it NULL, which the yield^ reports as needing one.
     // Only where the yield^ is the sole value: 'a, b = yield^ x, y' parses
-    // as two values (the comma is the binding's -- §13.9), and there the
+    // as two values (the comma is the binding's -- [syntax.type.coroutine]), and there the
     // yield^ binds one name, as before.
     LhatType *yield_bound = NULL;
     if (value != NULL && value->kind == LHAT_NODE_YIELD &&
@@ -349,21 +349,21 @@ void chk_check_define(Checker *c, const LhatNode *node)
                 spelt = false;
                 break;
             }
-            // The same three a position has to satisfy anywhere (§13.8+,
-            // 05§8.9).
+            // The same three a position has to satisfy anywhere ([syntax.type.tuple],
+            // [modules.hostvalue]).
             chk_check_tuple_position(c, target, piece);
             lhat_type_add_position(c->result->types, sent, piece);
         }
         yield_bound = spelt ? sent : NULL;
     }
 
-    // 05§4 with §8.9: what a unit publishes is a name other units read,
-    // and 01§8.3 refused a global variable outright. A public^ var^ would
+    // [modules.public] with [syntax.stmt.let]: what a unit publishes is a name other units read,
+    // and [lex.scope.no-globals] refused a global variable outright. A public^ var^ would
     // be one under another spelling -- a name a reader of another unit sees
     // change without being able to see what changed it. A p^ that publishes
     // an accessor is how a unit lets its state move.
     if (node->v.binding.exported && !node->v.binding.immutable) {
-        // 07§6: the var^ becomes a let^ where it stands. Suggested, since
+        // [lsp.next]: the var^ becomes a let^ where it stands. Suggested, since
         // the other way out is the accessor this paragraph describes, which
         // no one edit writes.
         const LhatSpan word = node->v.binding.keyword;
@@ -374,7 +374,7 @@ void chk_check_define(Checker *c, const LhatNode *node)
                        &bind, word.length > 0 ? 1 : 0);
     }
 
-    // §15.11: a _yield^ answers nothing at run time -- the whole statement
+    // [syntax.sub.phantom-yield]: a _yield^ answers nothing at run time -- the whole statement
     // is the type's alone and compiles to nothing, so only _^ may stand on
     // the left. A name would hold a value that never arrives.
     if (value != NULL && value->next == NULL &&
@@ -387,11 +387,11 @@ void chk_check_define(Checker *c, const LhatNode *node)
         }
     }
 
-    // §8.7+: every name this statement binds is unreadable from its own
+    // [syntax.stmt.old-world]: every name this statement binds is unreadable from its own
     // value -- the whole right side reads the old world, a deferred body
     // included (recursion by the bound name went with this; this^ is the
     // spelling). Marked before the walk, cleared at the end of this
-    // function. A session's names stay readable (03§4.3), and a path
+    // function. A session's names stay readable ([pipeline.machine]), and a path
     // target binds no scope name to mark.
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
@@ -411,13 +411,13 @@ void chk_check_define(Checker *c, const LhatNode *node)
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
         position++;
-        // §8.7 with 01§8: a let^ makes a name in the scope it is
+        // [syntax.stmt.visible] with [lex.scope]: a let^ makes a name in the scope it is
         // written in, so there is no other scope for a specifier to name.
         // ':=' is what reaches an existing binding, here as anywhere.
         const LhatNode *spelt = target_name_node(target);
         if (spelt->kind == LHAT_NODE_SCOPE) {
-            // 07§6: the specifier comes off and the name stays. The sigil is
-            // glued to the name (01§8), so what goes is the stretch in
+            // [lsp.next]: the specifier comes off and the name stays. The sigil is
+            // glued to the name ([lex.scope]), so what goes is the stretch in
             // front of the name itself.
             const LhatNode *bare = spelt->v.scope.name;
             const uint32_t sigil =
@@ -434,19 +434,19 @@ void chk_check_define(Checker *c, const LhatNode *node)
                                   ? chk_resolve_type(c, target->v.param.type)
                                   : NULL;
 
-        // §15.2: a let^ that binds a yield^ directly is where R gets fixed --
+        // [syntax.sub.yieldable]: a let^ that binds a yield^ directly is where R gets fixed --
         // it is the only place a yield^'s own annotation can be written. The
         // context is only good for the one chk_infer() call it is set around.
         enum YieldContext outer_yctx = c->yield_context;
         LhatType *outer_ybound = c->yield_bound_type;
         c->yield_context = (value != NULL && value->kind == LHAT_NODE_YIELD)
                                 ? YIELD_CTX_BOUND : YIELD_CTX_NONE;
-        // §13.8+: several names read R as the tuple built above; one name
+        // [syntax.type.tuple]: several names read R as the tuple built above; one name
         // reads its own annotation, as before.
         c->yield_bound_type = target_count > 1 ? yield_bound : annotated;
 
-        // §14.9: a def^ landing in a name may be written against that name
-        // from inside itself. §14.5 composes with '..' and the definition is
+        // [syntax.obj.name]: a def^ landing in a name may be written against that name
+        // from inside itself. [syntax.obj.compose] composes with '..' and the definition is
         // the right side of it, which is where infer_binary reads it too.
         // Anything deeper is some other def^ -- one made inside a body, say --
         // and this name is not what it will be bound to.
@@ -474,17 +474,17 @@ void chk_check_define(Checker *c, const LhatNode *node)
         LhatType *actual;
         LhatType *named_type = NULL;
         if (tuple != NULL) {
-            // §13.8+: the positions of what the one value answered with.
+            // [syntax.type.tuple]: the positions of what the one value answered with.
             actual = lhat_type_tuple_at(tuple, position - 1);
             if (actual == NULL) {
                 actual = chk_simple(c, LHAT_TYPE_PENDING);
             }
         } else {
-            // 03§3.1, 03§3.5: a target past the values a multiple assignment
+            // [pipeline.strict.per-unit], [pipeline.strict.relaxed]: a target past the values a multiple assignment
             // actually gave is a gap in inference, not table subtyping's
             // silence -- there is genuinely nothing here yet, so it is
             // pending^ rather than unknown^.
-            // 03§3.4+: a signature written on the binding is what the
+            // [pipeline.infer.expected]: a signature written on the binding is what the
             // value is expected to have, so a parameter nothing was written
             // on takes its type from there. Set around this one call, as the
             // yield context above is.
@@ -497,7 +497,7 @@ void chk_check_define(Checker *c, const LhatNode *node)
 
             if (lhat_type_tuple_width(actual) > 0) {
                 if (position == 1 && target_count > 1 && value->next == NULL) {
-                    // §13.8+: several values, several names, no word needed.
+                    // [syntax.type.tuple]: several values, several names, no word needed.
                     tuple = actual;
                     actual = lhat_type_tuple_at(tuple, 0);
                     if (actual == NULL) {
@@ -511,14 +511,14 @@ void chk_check_define(Checker *c, const LhatNode *node)
                     chk_report(c, value, LHAT_CHECK_ERR_TUPLE_MISPLACED);
                 }
             } else if (chk_contains_tuple(actual)) {
-                // §13.8+: a union with a tuple arm ('(K, V)|nil^', a walk's
+                // [syntax.type.tuple]: a union with a tuple arm ('(K, V)|nil^', a walk's
                 // resume) is no more bindable than the tuple itself -- the
                 // name would hold a maybe-run. The loop is what discriminates
                 // and takes one apart; drive the walk with it.
                 chk_report(c, value, LHAT_CHECK_ERR_TUPLE_MISPLACED);
             }
         }
-        // 05§8.9: a tuple crosses as one value per slot, so a host value
+        // [modules.hostvalue]: a tuple crosses as one value per slot, so a host value
         // among its positions arrives as a pointer into scratch the next
         // crossing overwrites -- the refusal check_focus makes for a walk's
         // focus, made here for a registered signature's answer.
@@ -537,7 +537,7 @@ void chk_check_define(Checker *c, const LhatNode *node)
             chk_expect(c, value, actual, annotated, LHAT_CHECK_ERR_MISMATCH);
         } else if (value != NULL && actual != NULL &&
                    actual->kind == LHAT_TYPE_NONE) {
-            // §13.2: a name binds a value, and a call of a signature with no
+            // [syntax.type.empty]: a name binds a value, and a call of a signature with no
             // result does not make one. With an annotation written the
             // expect above has already said so.
             chk_report(c, value, LHAT_CHECK_ERR_MISMATCH);
@@ -549,8 +549,8 @@ void chk_check_define(Checker *c, const LhatNode *node)
 #if LHAT_WITH_RESOLUTIONS
         ((LhatNode *)target)->display_type = held;
 #endif
-        // 04§8.3: '_^' throws a value away, and a failure is not one of
-        // the things it may throw. 04§4.4 already said so -- "no spelling of
+        // [errors.dropped.answer]: '_^' throws a value away, and a failure is not one of
+        // the things it may throw. [errors.catch.ignore] already said so -- "no spelling of
         // its own for dropping an error; catch^ is how it is written, and
         // Go's '_' is not needed" -- and this is that sentence enforced.
         // The same line Zig draws: a value may be discarded, an error may
@@ -559,10 +559,10 @@ void chk_check_define(Checker *c, const LhatNode *node)
             lhat_type_carries_error(held)) {
             chk_report(c, target, LHAT_CHECK_ERR_ERROR_DROPPED);
         }
-        // 03§3.1 ③: strict leaves nothing undecided in a unit. A gap that
+        // [pipeline.strict.per-unit] ③: strict leaves nothing undecided in a unit. A gap that
         // reached here came through whatever the value was inferred from, so
         // this name would hold something nobody decided and hand that on to
-        // every reader of it. 03§3.4+2's rounds are safe to report from --
+        // every reader of it. [pipeline.infer.rounds]'s rounds are safe to report from --
         // chk_rounds_next rolls back everything but the last walk. The arity
         // cases below say their own thing about a target with no value, so
         // they are left to say it.
@@ -571,29 +571,29 @@ void chk_check_define(Checker *c, const LhatNode *node)
             chk_report(c, target, LHAT_CHECK_ERR_TYPE_UNDECIDED);
         }
         if (target_is_path(target)) {
-            // 05§8.8: the place is a member of a table the path reaches, not a
-            // name of this scope. 05§8.8+: let^'s ':=' spelling asks to
+            // [modules.hostdata]: the place is a member of a table the path reaches, not a
+            // name of this scope. [modules.hostdata.base]: let^'s ':=' spelling asks to
             // reassign rather than fail when the path already answers to
             // something (node->v.binding.via_reassign_op is only ever set
             // by parse_let -- for^/with^ still always define).
             //
-            // §15.1+ and 05§8.6: adding a member changes the table as
+            // [syntax.sub.table-write] and [modules.host.machine]: adding a member changes the table as
             // much as writing over one does, so both judgements apply here
             // the same way they do to a reassignment.
             chk_check_write_target(c, target);
             chk_check_opaque_write(c, target);
-            // §15.1+: and what lands there is the table's from now on.
+            // [syntax.sub.table-write]: and what lands there is the table's from now on.
             chk_store_into(c, target, target_name_node(target)->v.access.target,
                            chk_made_depth(c, tuple == NULL ? value : NULL, actual));
-            // 05§8.9: a path lands in a table, and a table member is
+            // [modules.hostvalue]: a path lands in a table, and a table member is
             // never a host value.
             if (chk_is_hostvalue(held)) {
                 chk_report(c, target, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
             }
             define_path(c, target, held, node->v.binding.via_reassign_op);
         } else if (chk_node_name(c, target_name_node(target), &name, &length)) {
-            // 05§8.9: a session's top-level names keep one-slot places
-            // across inputs (03§4.3), which a host value's width does
+            // [modules.hostvalue]: a session's top-level names keep one-slot places
+            // across inputs ([pipeline.machine]), which a host value's width does
             // not fit. A unit's top level is one ordinary frame and holds
             // one fine.
             if (c->session && c->body_scope == NULL && chk_is_hostvalue(held)) {
@@ -606,7 +606,7 @@ void chk_check_define(Checker *c, const LhatNode *node)
                 b->definition = tuple == NULL && value != NULL
                                     ? value->checked_definition : NULL;
                 b->reached = true;
-                // 03§3.4+4: which literal the name means, for the call
+                // [pipeline.infer.call-shapes]: which literal the name means, for the call
                 // sites that hand it their shapes. Only a let^'s -- a var^
                 // may come to mean another subroutine -- and never a
                 // public^ one's: a published signature is a promise to
@@ -625,12 +625,12 @@ void chk_check_define(Checker *c, const LhatNode *node)
                 b->names_type = node->v.binding.immutable && tuple == NULL &&
                                 named_type != NULL;
                 b->named_type = b->names_type ? named_type : NULL;
-                // §15.1+. A destructuring bind takes pieces out of something
-                // that was already there (§13.10), so nothing it binds is new
+                // [syntax.sub.table-write]. A destructuring bind takes pieces out of something
+                // that was already there ([syntax.type.destructure]), so nothing it binds is new
                 // whatever the source looks like.
                 chk_bind_own(c, b, tuple == NULL ? value : NULL, actual);
             }
-            // §13.11+: a let^ holds what its value held, and nothing writes it
+            // [syntax.type.fits-range]: a let^ holds what its value held, and nothing writes it
             // afterwards -- so a range read off the value stays true. Read
             // before the drop below, since 'let^ d = d - 1' reads the old d.
             // A construct's own binding (a counted for^'s focus, a with^) is
@@ -653,13 +653,13 @@ void chk_check_define(Checker *c, const LhatNode *node)
         }
     }
 
-    // §13.8+: exactly the positions, both ways. §14.10's width subtyping has
+    // [syntax.type.tuple]: exactly the positions, both ways. [syntax.obj.structure]'s width subtyping has
     // nothing to say here -- a tuple carries its positions and no others,
     // since each one is a slot the caller reserved.
     if (tuple != NULL && position != lhat_type_tuple_width(tuple)) {
         chk_report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);
     }
-    // §13.8+: the parser stopped asking for a mark, so this is where one
+    // [syntax.type.tuple]: the parser stopped asking for a mark, so this is where one
     // value meeting several names is answered for. It is a tuple being taken
     // apart, or an error.
     if (tuple == NULL && target_count > 1 &&
@@ -667,7 +667,7 @@ void chk_check_define(Checker *c, const LhatNode *node)
         chk_report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);
     }
 
-    // §8.7+: the statement is over; its names stand readable from here on.
+    // [syntax.stmt.old-world]: the statement is over; its names stand readable from here on.
     for (const LhatNode *target = node->v.binding.targets; target != NULL;
          target = target->next) {
         const char *marked = NULL;
@@ -684,7 +684,7 @@ void chk_check_define(Checker *c, const LhatNode *node)
     }
 }
 
-// 05§8.6: the table a dotted import^ or require^ path stands on -- the
+// [modules.host.machine]: the table a dotted import^ or require^ path stands on -- the
 // 'a' of 'import^ a.b.c'. Names are reached through it rather than held in
 // it, which is what `is_module` says to a tool. It is the unit's own name and
 // no part of the registry, so it is not `is_namespace`.
@@ -704,13 +704,13 @@ LhatType *chk_module_root_table(Checker *c)
     return table;
 }
 
-// 05§5.3: a require^ runs the unit, and a unit that named itself registers
+// [modules.require.once]: a require^ runs the unit, and a unit that named itself registers
 // under that name. So the type of L^.modules can say so -- what makes this
 // honest rather than a guess is that the registration is in the unit's own
 // prologue, not something a caller may skip.
 //
-// Idempotent: 04§5.3 loads once, so meeting the same unit again adds nothing
-// and is not the clash 05§8.7 makes of two let^ writing one place.
+// Idempotent: [errors.try.result] loads once, so meeting the same unit again adds nothing
+// and is not the clash [modules.host.import] makes of two let^ writing one place.
 //
 // A unit named under another is a member of that unit's table at run time,
 // whichever registers first (vm_register_unit). Here, where units are named
@@ -747,7 +747,7 @@ void chk_register_module_type(Checker *c, const char *module_name,
                 // to hold them. It stands for this unit from here on.
                 found->type->v.table.base = exports;
             }
-            // Otherwise this unit is there already, or another unit is: §5.3,
+            // Otherwise this unit is there already, or another unit is: [syntax.if.spellings],
             // and the program's report.
             return;
         }
@@ -755,7 +755,7 @@ void chk_register_module_type(Checker *c, const char *module_name,
             return;  // a unit published something else here; the program says so
         }
         if (found == NULL || !found->type->v.table.registry_segment) {
-            // 05§8.6: a segment of the registry is the machine's, the same
+            // [modules.host.machine]: a segment of the registry is the machine's, the same
             // as the registry itself -- and is named through, the same way.
             LhatType *made = lhat_type_table(c->result->types);
             if (made == NULL) {
@@ -812,7 +812,7 @@ static const LhatType *hosted_step(Checker *c, const LhatNode *path)
     return found != NULL ? found->type : NULL;
 }
 
-// 05§8.7: what import^ names -- the one unit at that path, and none of
+// [modules.host.import]: what import^ names -- the one unit at that path, and none of
 // the units named under it -- or NULL when the host registered no unit there.
 // Only the host registry is searched -- what a require^ brought in is
 // reachable through require^ and through nothing else, which is what stops
@@ -823,10 +823,10 @@ LhatType *chk_hosted_module(Checker *c, const LhatNode *path)
     return step != NULL ? step->v.table.base : NULL;
 }
 
-// 05§8.7: the table the segments before the last name reach, made where
-// the path does not reach one. The same walk 05§8.8 does over a written path,
+// [modules.host.import]: the table the segments before the last name reach, made where
+// the path does not reach one. The same walk [modules.hostdata] does over a written path,
 // with what import^ has of its own: a table the machine holds is entered
-// rather than refused -- these are the machine's tables (05§8.6) and this is
+// rather than refused -- these are the machine's tables ([modules.host.machine]) and this is
 // the machine filling them, which is exactly what path_table, the writer's
 // walk, has to say no to.
 static LhatType *import_owner(Checker *c, const LhatNode *node, LhatType *root)
@@ -855,7 +855,7 @@ static LhatType *import_owner(Checker *c, const LhatNode *node, LhatType *root)
     return made;
 }
 
-// 05§8.7: the place an import^ names stands for that unit from here on.
+// [modules.host.import]: the place an import^ names stands for that unit from here on.
 // The table is this check's own, made by import_owner or the root binding:
 // its members are the units named under it that this unit imported too, and
 // what the unit published is reached through `base` -- so the units named
@@ -868,7 +868,7 @@ static bool import_takes_in(LhatType *place, LhatType *module)
     }
     if (place->v.table.base == NULL) {
         place->v.table.base = module;
-        // A segment of the registry now, not only the way to one (05§8.6).
+        // A segment of the registry now, not only the way to one ([modules.host.machine]).
         place->v.table.sealed = true;
         place->v.table.is_namespace = true;
     }
@@ -895,7 +895,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
     const LhatNode *path = node->v.jump.value;
     LhatType *module = chk_hosted_module(c, path);
     if (module == NULL) {
-        // 05§5.5 already binds what a unit declared; saying so here is what
+        // [modules.require.short] already binds what a unit declared; saying so here is what
         // keeps 'no such module' from being read as 'the host forgot it'.
         chk_report(c, node, c->require.resolve != NULL
                             ? LHAT_CHECK_ERR_NOT_HOSTED
@@ -906,7 +906,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         return;
     }
 
-    // The path is the same MEMBER chain 05§8.8 walks, so binding it is that walk
+    // The path is the same MEMBER chain [modules.hostdata] walks, so binding it is that walk
     // with the module put at the end.
     const char *name = NULL;
     size_t length = 0;
@@ -914,13 +914,13 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         if (!chk_node_name(c, path, &name, &length)) {
             return;
         }
-        // 03§3.4+2: on a later walk over these statements the name is
+        // [pipeline.infer.rounds]: on a later walk over these statements the name is
         // bound because this very statement bound it, which is not the
-        // collision §8.7 is about.
+        // collision [syntax.stmt.visible] is about.
         Binding *standing = chk_scope_find_local(c->scope, name, length);
         if (standing != NULL) {
             record_module_root(c, node, standing);
-            // 05§8.7: an import^ of a child path may have made this root, which
+            // [modules.host.import]: an import^ of a child path may have made this root, which
             // is what lets 'import^ love' and 'import^ love.graphics' stand
             // in one scope, in either order.
             if (!(standing->import_root &&
@@ -938,13 +938,13 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         Binding *only = chk_scope_add(c->scope, name, length, place, node->offset);
         if (only != NULL) {
             only->reached = true;
-            only->import_root = true;  // 05§8.7, read rather than captured
+            only->import_root = true;  // [modules.host.import], read rather than captured
             record_module_root(c, node, only);
         }
         return;
     }
 
-    // The root is a name of this scope. 05§8.8 reaches an enclosing one rather
+    // The root is a name of this scope. [modules.hostdata] reaches an enclosing one rather
     // than shadowing it, so two imports of one namespace meet; only when
     // nothing holds it is a new one made.
     const LhatNode *root_node = path;
@@ -963,13 +963,13 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
             return;
         }
         root->reached = true;
-        root->import_root = true;  // 05§8.7, read rather than captured
+        root->import_root = true;  // [modules.host.import], read rather than captured
         root_scope = c->scope;
     } else if (root->type == NULL || root->type->kind == LHAT_TYPE_UNKNOWN ||
                root->type->kind == LHAT_TYPE_PENDING) {
         root->type = chk_module_root_table(c);
     }
-    // 05§8.7: the name is a place from here on, whichever import made it --
+    // [modules.host.import]: the name is a place from here on, whichever import made it --
     // path_table said so while it was the walk below, and the walk below is
     // import^'s own now.
     root->reached = true;
@@ -980,7 +980,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
     ((LhatNode *)root_node)->checked_import_global = root->import_root &&
         c->body_scope != NULL && !chk_scope_within_body(c, root_scope);
 
-    // 05§8.7: the tables an import^ builds are the machine's own (05§8.6), and
+    // [modules.host.import]: the tables an import^ builds are the machine's own ([modules.host.machine]), and
     // this walk is what fills them -- path_table is the writer's, and
     // refuses a table the machine holds, which the host's own registry
     // tables are.
@@ -992,7 +992,7 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
         return;
     }
     // An earlier import of this path, or of a child of it, made the place
-    // already; 03§3.4+2's later walk finds the one this import made.
+    // already; [pipeline.infer.rounds]'s later walk finds the one this import made.
     const LhatTypeMember *found = lhat_type_own_member(owner, name, length);
     LhatType *place = found != NULL ? found->type : chk_module_root_table(c);
     if (!import_takes_in(place, module)) {
@@ -1006,10 +1006,10 @@ static void check_import(Checker *c, const LhatNode *node, bool binds)
     }
 }
 
-// 05§5.5: a require^ standing alone binds the unit under the path 05§3
+// [modules.require.short]: a require^ standing alone binds the unit under the path [modules.unit]
 // had it declare, rather than under a name the reader picks. What the root
-// names is the registry's table there -- the place 10§5.3 put the unit in, which
-// holds what it published and the units named under it -- so 05§8.8's merging
+// names is the registry's table there -- the place [l10n.compose.no-plurals] put the unit in, which
+// holds what it published and the units named under it -- so [modules.hostdata]'s merging
 // of two paths is the registry's own.
 static void record_required_root(Checker *c, const LhatNode *node,
                                   Binding *binding, const char *module)
@@ -1041,11 +1041,11 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
         return;
     }
 #if LHAT_WITH_RESOLUTIONS
-    // 07§4: the unit was found whether or not it declared a module^, so
-    // the path is recorded before 05§3.2 has its say below.
+    // [lsp.hover]: the unit was found whether or not it declared a module^, so
+    // the path is recorded before [modules.unit.optional] has its say below.
     chk_record_unit_resolution(c, path, exports, unit_path);
 #endif
-    // 09§3.2 lets a unit declare no path. Then there is nothing to bind it
+    // [debug.inspect.binding] lets a unit declare no path. Then there is nothing to bind it
     // under, and the reader has to pick a name with let^ instead.
     if (module_name == NULL || *module_name == '\0') {
         chk_report(c, node, LHAT_CHECK_ERR_MODULE_UNNAMED);
@@ -1090,10 +1090,10 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
         at = (LhatTypeMember *)member_named(owner, step, length);
     }
 
-    // §8.7 on the last segment: the writer's own duplicate -- one unit twice,
-    // or two units claiming one path -- is what 05§5.5 refuses. Told apart by
+    // [syntax.stmt.visible] on the last segment: the writer's own duplicate -- one unit twice,
+    // or two units claiming one path -- is what [modules.require.short] refuses. Told apart by
     // the statement that claimed it, so a later walk of the same statement
-    // (03§3.4+2) is not one.
+    // ([pipeline.infer.rounds]) is not one.
     if (at != NULL) {
         if (at->require_declaration != NULL && at->require_declaration != node) {
             chk_report_named(c, node, LHAT_CHECK_ERR_REDEFINED, segment, length);
@@ -1104,7 +1104,7 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
 
     // The root. A root an earlier require^ or import^ bound -- here or in a
     // scope around this one -- is the same name for the same place, and is
-    // taken up; any other name of that spelling in this scope is 05§8.7's clash.
+    // taken up; any other name of that spelling in this scope is [modules.host.import]'s clash.
     length = strcspn(module_name, ".");
     Binding *root = chk_scope_find_local(c->scope, module_name, length);
     if (root == NULL) {
@@ -1124,14 +1124,14 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
     }
     root->type = registry;
     root->reached = true;
-    // 05§8.7: the registry's table, so read rather than captured from
+    // [modules.host.import]: the registry's table, so read rather than captured from
     // bodies elsewhere -- the same live name an import^'s root is.
     root->import_root = true;
     record_required_root(c, node, root, module_name);
 }
 
 // The binding a path is rooted in, with the scope that answered, or NULL when
-// the root is not a name a scope holds -- L^ (05§8.6) and self^ among them,
+// the root is not a name a scope holds -- L^ ([modules.host.machine]) and self^ among them,
 // neither of which any body made.
 static Binding *path_root_binding(Checker *c, const LhatNode *target, Scope **found)
 {
@@ -1159,7 +1159,7 @@ static uint8_t own_min(size_t a, size_t b)
     return (uint8_t)(least < LHAT_OWN_DEEP ? least : LHAT_OWN_DEEP);
 }
 
-// 05§8.8: host data is changed from an f^ only through a member written
+// [modules.hostdata]: host data is changed from an f^ only through a member written
 // f^mutable^self^ -- what a host declares p^ an f^ cannot call at all.
 static bool host_type_mutates(const LhatType *type)
 {
@@ -1187,7 +1187,7 @@ static bool host_type_mutates(const LhatType *type)
     return false;
 }
 
-// §15.1+: whether a value of this type can carry a way to change something.
+// [syntax.sub.table-write]: whether a value of this type can carry a way to change something.
 // One that cannot -- a number, a string, a subroutine (only a p^ changes what
 // it captured, and an f^ calls none), a sealed table, a host value copied on
 // the stack, host data with nothing an f^ may call to change it -- is the
@@ -1229,7 +1229,7 @@ static bool type_inert(const LhatType *type)
     }
 }
 
-// §15.1+: how many levels of what `value` answers were made right here --
+// [syntax.sub.table-write]: how many levels of what `value` answers were made right here --
 // read off the shape alone, so that no aliases have to be followed. A name
 // answers 0 here even when it holds the body's own table: two places holding
 // one table would have to be lowered together, and only one of them is ever
@@ -1244,7 +1244,7 @@ uint8_t chk_made_depth(const Checker *c, const LhatNode *value,
         return 0;
     }
     switch (value->kind) {
-        // §14.1, §14.11: a literal and a self^{ ... } both build one here,
+        // [syntax.obj.def], [syntax.obj.new]: a literal and a self^{ ... } both build one here,
         // around whatever their entries brought.
         case LHAT_NODE_TABLE:
         case LHAT_NODE_NEW:
@@ -1252,17 +1252,17 @@ uint8_t chk_made_depth(const Checker *c, const LhatNode *value,
             return value->checked_own;
 
         case LHAT_NODE_CALL: {
-            // §15.5: calling a yieldable subroutine builds a coroutine, and
+            // [syntax.sub.no-contagion]: calling a yieldable subroutine builds a coroutine, and
             // builds a new one every time.
             if (type != NULL && type->kind == LHAT_TYPE_CORO) {
                 return LHAT_OWN_DEEP;
             }
-            // §15.1+3: '-> fresh^T' promises the answer and nothing about
+            // [syntax.sub.fresh]: '-> fresh^T' promises the answer and nothing about
             // what it holds -- clone^ keeps what the original held.
             if (value->call_answers_fresh) {
                 return 1;
             }
-            // §14.11: 'X.new(...)' answers an instance nobody else holds yet,
+            // [syntax.obj.new]: 'X.new(...)' answers an instance nobody else holds yet,
             // holding what its arguments brought.
             const LhatNode *callee = value->v.access.target;
             const char *name = NULL;
@@ -1279,7 +1279,7 @@ uint8_t chk_made_depth(const Checker *c, const LhatNode *value,
     }
 }
 
-// §15.1+: the ownership a path answers to, when its root is something the
+// [syntax.sub.table-write]: the ownership a path answers to, when its root is something the
 // body being checked owns at all. `steps` counts from that owner down to what
 // the path names, an alias's own distance included; `cap` is the alias
 // binding's own record, which a write of that name drops.
@@ -1302,14 +1302,14 @@ static bool own_root(Checker *c, const LhatNode *path, OwnRoot *out)
     if (!chk_node_name(c, root, &name, &length)) {
         return false;
     }
-    // §15.1+2 and §14.11: a mutable^self^ body and a new body hold their
+    // [syntax.sub.mutable-self] and [syntax.obj.new]: a mutable^self^ body and a new body hold their
     // receiver by the signature's word -- the one root no scope of the body
     // binds.
     if (chk_name_is(name, length, "self^")) {
         out->owner = c->receiver_mutable || c->in_new_body ? &c->self_owned : NULL;
         return out->owner != NULL;
     }
-    // L^ (05§8.6) is the machine's own table, and no body made it.
+    // L^ ([modules.host.machine]) is the machine's own table, and no body made it.
     Scope *found_in = NULL;
     Binding *b = path_root_binding(c, path, &found_in);
     if (b == NULL || !chk_scope_within_body(c, found_in)) {
@@ -1337,7 +1337,7 @@ static void lower_own(Checker *c, const LhatNode *at, ChkOwnership *owned,
     owned->own = level;
 }
 
-// §15.1+: whether `place` -- a table a write lands in, a receiver, a
+// [syntax.sub.table-write]: whether `place` -- a table a write lands in, a receiver, a
 // coroutine to advance, an answer -- is this body's to change. Changing what
 // a place holds asks for one level more than it lies below its owner; `whole`
 // asks for every level, which is what a mutable^self^ call may reach. What
@@ -1367,7 +1367,7 @@ bool chk_lean_on(Checker *c, const LhatNode *place, bool whole)
     return true;
 }
 
-// §15.1+: `made` levels of what was just put below `place` are the body's.
+// [syntax.sub.table-write]: `made` levels of what was just put below `place` are the body's.
 // The owner keeps what lies above that and no more.
 void chk_store_into(Checker *c, const LhatNode *at, const LhatNode *place,
                     uint8_t made)
@@ -1380,7 +1380,7 @@ void chk_store_into(Checker *c, const LhatNode *at, const LhatNode *place,
     lower_own(c, at, r.owner, own_min(r.steps + 1u + made, LHAT_OWN_DEEP));
 }
 
-// §15.1+2 and §14.11: what a mutable^self^ or new body puts into self^ itself.
+// [syntax.sub.mutable-self] and [syntax.obj.new]: what a mutable^self^ or new body puts into self^ itself.
 void chk_store_into_self(Checker *c, const LhatNode *at, uint8_t made)
 {
     if (made != LHAT_OWN_DEEP && (c->receiver_mutable || c->in_new_body)) {
@@ -1388,7 +1388,7 @@ void chk_store_into_self(Checker *c, const LhatNode *at, uint8_t made)
     }
 }
 
-// §15.1+: the name stands for what lies `steps` levels below `owner` -- a
+// [syntax.sub.table-write]: the name stands for what lies `steps` levels below `owner` -- a
 // read out of something the body owns, so writing through it leans there.
 static void alias_own(Binding *b, ChkOwnership *owner, const ChkOwnership *cap,
                       size_t steps)
@@ -1398,7 +1398,7 @@ static void alias_own(Binding *b, ChkOwnership *owner, const ChkOwnership *cap,
     b->owned = (ChkOwnership){cap != NULL ? cap->own : LHAT_OWN_DEEP, 0};
 }
 
-// §15.1+: what a name owns from its let^ or var^ on. Something made here owns
+// [syntax.sub.table-write]: what a name owns from its let^ or var^ on. Something made here owns
 // as many levels as were made; 'let^ r = rows[0]' is an alias of rows.
 void chk_bind_own(Checker *c, Binding *b, const LhatNode *value,
                   const LhatType *type)
@@ -1416,7 +1416,7 @@ void chk_bind_own(Checker *c, Binding *b, const LhatNode *value,
     }
 }
 
-// §15.1+: what for^ binds over a place the body owns is that place's, one
+// [syntax.sub.table-write]: what for^ binds over a place the body owns is that place's, one
 // level down. A key is left out: one is never written through in practice,
 // and a store does not say what its key brought.
 static void alias_focus(Checker *c, Binding *b, const LhatNode *walked)
@@ -1429,12 +1429,12 @@ static void alias_focus(Checker *c, Binding *b, const LhatNode *walked)
     }
 }
 
-// §15.3+: whether this expression names a coroutine the body being checked
+// [syntax.sub.yieldable-f]: whether this expression names a coroutine the body being checked
 // made. Advancing one is only allowed for those -- one that arrived is shared
 // with whoever passed it, and the progress would be visible out there.
 bool chk_receiver_is_own_coroutine(Checker *c, const LhatNode *receiver)
 {
-    // §15.5: a call builds one on the spot, so 'gen().start()' can never be
+    // [syntax.sub.no-contagion]: a call builds one on the spot, so 'gen().start()' can never be
     // reaching anyone else's.
     return receiver != NULL &&
            (receiver->kind == LHAT_NODE_CALL || chk_lean_on(c, receiver, false));
@@ -1461,11 +1461,11 @@ bool chk_scope_within_body(Checker *c, const Scope *found_in)
     return chk_scope_within(c, found_in, c->body_scope);
 }
 
-// §15.1: an f^ assigns to local variables only. §10.6 reads that twice over --
+// [syntax.sub.kinds]: an f^ assigns to local variables only. [syntax.finally.not-in-f] reads that twice over --
 // a body with nothing writable outside it has nothing a finally^ could
 // restore, which is why one may not be written there at all.
 //
-// §15.1+ carries it to 't.x := v', which changes a table rather than a name.
+// [syntax.sub.table-write] carries it to 't.x := v', which changes a table rather than a name.
 // A table the body made is its own and changing it is not observable from
 // outside; one that arrived belongs to whoever passed it.
 void chk_check_write_target(Checker *c, const LhatNode *target)
@@ -1477,8 +1477,8 @@ void chk_check_write_target(Checker *c, const LhatNode *target)
     if (target_is_path(target)) {
         // The table written into is the path less its last step -- 'u.a.x'
         // changes u.a, which has to be the body's as far down as it lies.
-        // self^ answers only in a new or mutable^self^ body (§14.11,
-        // §15.1+2), L^ never (05§8.6).
+        // self^ answers only in a new or mutable^self^ body ([syntax.obj.new],
+        // [syntax.sub.mutable-self]), L^ never ([modules.host.machine]).
         if (!chk_lean_on(c, target_name_node(target)->v.access.target, false)) {
             chk_report(c, target, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
         }
@@ -1492,7 +1492,7 @@ void chk_check_write_target(Checker *c, const LhatNode *target)
         return;
     }
 
-    // 01§8: a specifier says where to start looking. Reaching outward
+    // [lex.scope]: a specifier says where to start looking. Reaching outward
     // with one is the same write as reaching outward without one, so it is
     // judged by where the name was found either way.
     Scope *from = c->scope;
@@ -1512,13 +1512,13 @@ void chk_check_write_target(Checker *c, const LhatNode *target)
     }
 }
 
-// §8.9: a name a let^ bound is not one anything may reassign. Kept apart from
-// check_write_target because that one answers §15.1's question -- whose name is
+// [syntax.stmt.let]: a name a let^ bound is not one anything may reassign. Kept apart from
+// check_write_target because that one answers [syntax.sub.kinds]'s question -- whose name is
 // this to write -- and only inside an f^; this holds wherever the name does,
 // in a p^, at the top level of a unit, and in a session.
 //
-// Only a plain name is asked about. A path is a member of a table (05§8.8), and
-// what may be written there is settled by §15.1+ and 05§8.6 -- a table a
+// Only a plain name is asked about. A path is a member of a table ([modules.hostdata]), and
+// what may be written there is settled by [syntax.sub.table-write] and [modules.host.machine] -- a table a
 // let^ holds is still the table it was. What this refuses is the name coming
 // to mean something else.
 static void check_immutable_write(Checker *c, const LhatNode *target)
@@ -1534,8 +1534,8 @@ static void check_immutable_write(Checker *c, const LhatNode *target)
         return;
     }
 
-    // 01§8: a specifier says where to start looking, exactly as it does
-    // for §15.1's question above.
+    // [lex.scope]: a specifier says where to start looking, exactly as it does
+    // for [syntax.sub.kinds]'s question above.
     Scope *from = c->scope;
     if (name_node->kind == LHAT_NODE_SCOPE) {
         from = chk_scope_from(c->scope, name_node);
@@ -1546,10 +1546,10 @@ static void check_immutable_write(Checker *c, const LhatNode *target)
 
     const Binding *b = chk_scope_find(from, name, length, NULL);
     if (b != NULL && b->immutable) {
-        // §12.1 and §16.3+2 bind without the writer choosing a word, so there
+        // [syntax.with.form] and [syntax.for.keys-values] bind without the writer choosing a word, so there
         // is no var^ for them to write instead. Saying otherwise would send a
         // reader to a spelling that is itself refused.
-        // 07§6: and where there is one, the fix is that word becoming
+        // [lsp.next]: and where there is one, the fix is that word becoming
         // var^. Suggested: not writing to the name is the other way out, and
         // an edit cannot say that.
         const LhatFixSlot change = lhat_fix_slot(
@@ -1563,18 +1563,18 @@ static void check_immutable_write(Checker *c, const LhatNode *target)
     }
 }
 
-// 05§8.8: a host type is opaque -- §11.3 gives way to nominal identity
+// [modules.hostdata]: a host type is opaque -- [syntax.op.semantic] gives way to nominal identity
 // precisely because there is no structure to compare -- and what it carries
 // is what the host registered: C functions reading a raw pointer as the type
 // their tag names. Writing over one of those leaves the tag saying one thing
-// and the member doing another, which is the mistake 05§8.8 spends its two
-// checks avoiding. 05§8.8's own mark already refuses a member being *added*
+// and the member doing another, which is the mistake [modules.hostdata] spends its two
+// checks avoiding. [modules.hostdata]'s own mark already refuses a member being *added*
 // (holds_members reads from_definition for that); this is the other half.
 //
-// §14.16's type info is nominal for the same kind of reason: what it
+// [syntax.obj.typeof]'s type info is nominal for the same kind of reason: what it
 // carries is fixed by what made it.
 //
-// A def^ instance is not nominal, so §14's fields stay writable -- that is
+// A def^ instance is not nominal, so [syntax.obj]'s fields stay writable -- that is
 // what a field is for.
 // The type a path segment names, followed without reporting anything. The
 // ordinary walk below does the reporting; inferring the same nodes twice
@@ -1585,7 +1585,7 @@ static const LhatType *path_type_of(Checker *c, const LhatNode *node)
     size_t length = 0;
 
     if (node->kind != LHAT_NODE_MEMBER) {
-        // 05§8.6: L^ is a place too, and the one no scope holds.
+        // [modules.host.machine]: L^ is a place too, and the one no scope holds.
         if (is_environment(c, node)) {
             return chk_environment_type(c);
         }
@@ -1611,7 +1611,7 @@ static const LhatType *path_type_of(Checker *c, const LhatNode *node)
     return m != NULL ? m->type : NULL;
 }
 
-// §14.11: whether this path reads self^ off a definition anywhere along
+// [syntax.obj.new]: whether this path reads self^ off a definition anywhere along
 // the way. That member is the prototype every instance starts as -- read by
 // anyone, written by no one, and nothing inside it is written through it
 // either, however deep the path goes and whether the steps are members or
@@ -1647,7 +1647,7 @@ void chk_check_opaque_write(Checker *c, const LhatNode *target)
         return;
     }
     // What follows reads the owner of a member; an index writes an element,
-    // which §8.8 leaves to the table itself.
+    // which [syntax.stmt.member] leaves to the table itself.
     if (last->kind != LHAT_NODE_MEMBER) {
         return;
     }
@@ -1655,10 +1655,10 @@ void chk_check_opaque_write(Checker *c, const LhatNode *target)
     if (owner == NULL) {
         return;
     }
-    // 05§8.9: a host value's registered fields take writes -- they are
+    // [modules.hostvalue]: a host value's registered fields take writes -- they are
     // number^ members, and writing the bytes of one's own copy is the
     // field's whole purpose. Its registered members (operators, methods)
-    // stay the host's, 05§8.8's rule unchanged.
+    // stay the host's, [modules.hostdata]'s rule unchanged.
     if (owner->kind == LHAT_TYPE_HOSTVALUE) {
         const char *name = NULL;
         size_t length = 0;
@@ -1678,7 +1678,7 @@ void chk_check_opaque_write(Checker *c, const LhatNode *target)
     if (owner->v.table.nominal) {
         chk_report(c, last, LHAT_CHECK_ERR_PATH_IS_OPAQUE);
     }
-    // 05§8.6: the machine's own tables -- L^, its registry, and what
+    // [modules.host.machine]: the machine's own tables -- L^, its registry, and what
     // require^ or import^ answers with. The host writes these through its own
     // API, which never comes through here, so refusing what is written in L^
     // is the whole rule.
@@ -1687,7 +1687,7 @@ void chk_check_opaque_write(Checker *c, const LhatNode *target)
     }
 }
 
-// §15.1+: what a ':=' takes from the ownership of what it writes -- the table
+// [syntax.sub.table-write]: what a ':=' takes from the ownership of what it writes -- the table
 // a path lands in keeps only what lies above the value, and a name owns the
 // least of all it was given (an alias nothing past the first).
 static void own_after_write(Checker *c, const LhatNode *target,
@@ -1712,17 +1712,17 @@ static void check_reassign(Checker *c, const LhatNode *node)
 {
     const LhatNode *value = node->v.binding.values;
     size_t position = 0;
-    LhatType *tuple = NULL;  // §13.8+, as in check_define
+    LhatType *tuple = NULL;  // [syntax.type.tuple], as in check_define
     size_t target_count = lhat_node_list_length(node->v.binding.targets);
 
-    // §15.11: a _yield^ answers nothing at run time, and a reassignment's
+    // [syntax.sub.phantom-yield]: a _yield^ answers nothing at run time, and a reassignment's
     // left side is always a name -- there is nothing to write.
     if (value != NULL && value->next == NULL &&
         value->kind == LHAT_NODE_YIELD && value->v.jump.phantom) {
         chk_report(c, node, LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS);
     }
 
-    // §15.2 with §13.8+: a reassignment binding a yield^ directly fixes R
+    // [syntax.sub.yieldable] with [syntax.type.tuple]: a reassignment binding a yield^ directly fixes R
     // too -- off what the names already hold, so no annotation is written.
     // Several names make the tuple, as at a define; one name reads its own
     // held type in the loop below.
@@ -1754,22 +1754,22 @@ static void check_reassign(Checker *c, const LhatNode *node)
         check_immutable_write(c, target);
         chk_check_write_target(c, target);
         chk_check_opaque_write(c, target);
-        // §13.11: what may be written is what the name holds, not what a
+        // [syntax.type.fits]: what may be written is what the name holds, not what a
         // branch narrowed it to -- the write is exactly what ends that claim,
-        // and §13.11's own example writes a wider value inside a narrowed
+        // and [syntax.type.fits]'s own example writes a wider value inside a narrowed
         // branch. The value on the right is read below, where the claim still
         // holds, so 'x := x + 1' keeps it.
         const LhatNode *outer_target = c->writing_to;
         c->writing_to = target_name_node(target);
         LhatType *wanted = chk_infer(c, target_name_node(target));
         c->writing_to = outer_target;
-        // 03§3.4: what the name holds from here on is not what was passed
+        // [pipeline.infer]: what the name holds from here on is not what was passed
         // in, so nothing after this says anything about the parameter.
         chk_close_param_var(c, wanted);
         if (tuple != NULL) {
-            // §13.8+: the positions of what the one value answered with.
+            // [syntax.type.tuple]: the positions of what the one value answered with.
             LhatType *piece = lhat_type_tuple_at(tuple, position - 1);
-            // 05§8.9: a host value among the positions arrives as a
+            // [modules.hostvalue]: a host value among the positions arrives as a
             // pointer into scratch -- refused as at a define's destructure.
             if (chk_is_hostvalue(piece)) {
                 chk_report(c, target, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
@@ -1777,7 +1777,7 @@ static void check_reassign(Checker *c, const LhatNode *node)
             chk_expect(c, node, piece, wanted, LHAT_CHECK_ERR_MISMATCH);
             own_after_write(c, target, NULL, piece);
         } else if (value != NULL) {
-            // §8.6.4: the value of a '?op=' is 'target op rhs' built around
+            // [syntax.stmt.nil-assign]: the value of a '?op=' is 'target op rhs' built around
             // this very target node, so naming it here is what lets the one
             // read inside it answer without its nil^ arm. Set for the one
             // inference and taken back off: the same shape written in the
@@ -1786,7 +1786,7 @@ static void check_reassign(Checker *c, const LhatNode *node)
             if (node->v.binding.compound_nil_safe) {
                 c->nil_safe_place = target;
             }
-            // §15.2: the yield^'s R is what this place already holds -- the
+            // [syntax.sub.yieldable]: the yield^'s R is what this place already holds -- the
             // tuple built above for several names, this target's own type
             // for one. Set around the one chk_infer, as at a define.
             enum YieldContext outer_yctx = c->yield_context;
@@ -1796,7 +1796,7 @@ static void check_reassign(Checker *c, const LhatNode *node)
                 c->yield_bound_type =
                     target_count > 1 ? yield_bound : wanted;
             }
-            // 03§3.4+: what the place holds says what is expected here,
+            // [pipeline.infer.expected]: what the place holds says what is expected here,
             // as a signature written on a define does -- so a literal
             // written on the right takes its parameters from it.
             LhatType *outer_expected = c->expected_func;
@@ -1806,7 +1806,7 @@ static void check_reassign(Checker *c, const LhatNode *node)
             c->yield_context = outer_yctx;
             c->yield_bound_type = outer_ybound;
             c->nil_safe_place = outer_place;
-            // 05§8.9: a dotted or indexed target lands in a table, and a
+            // [modules.hostvalue]: a dotted or indexed target lands in a table, and a
             // table member is never a host value. Conformance alone would
             // let this through where the table's own typing went unknown^.
             if (chk_is_hostvalue(given) && target_is_path(target)) {
@@ -1814,7 +1814,7 @@ static void check_reassign(Checker *c, const LhatNode *node)
             }
             if (lhat_type_tuple_width(given) > 0) {
                 if (position == 1 && target_count > 1 && value->next == NULL) {
-                    tuple = given;  // §13.8+, as in check_define
+                    tuple = given;  // [syntax.type.tuple], as in check_define
                     chk_expect(c, node, lhat_type_tuple_at(tuple, 0), wanted,
                                LHAT_CHECK_ERR_MISMATCH);
                 } else {
@@ -1829,23 +1829,23 @@ static void check_reassign(Checker *c, const LhatNode *node)
                 value = value->next;
             }
         }
-        // §13.11: what a branch established about this path no longer holds.
+        // [syntax.type.fits]: what a branch established about this path no longer holds.
         chk_drop_narrowings_for(c, target_name_node(target));
     }
 
     if (tuple != NULL && position != lhat_type_tuple_width(tuple)) {
-        chk_report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);  // §13.8+
+        chk_report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);  // [syntax.type.tuple]
     }
     if (tuple == NULL && target_count > 1 &&
         lhat_node_list_length(node->v.binding.values) == 1) {
-        chk_report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);  // §13.8+, as above
+        chk_report(c, node, LHAT_CHECK_ERR_TUPLE_ARITY);  // [syntax.type.tuple], as above
     }
 }
 
-// §16.3: with in^ the focus is what each turn binds, not a value to evaluate.
-// A lone one is wrapped as `it^ := name` by the parser (§16.2), which puts the
+// [syntax.for.forms]: with in^ the focus is what each turn binds, not a value to evaluate.
+// A lone one is wrapped as `it^ := name` by the parser ([syntax.for.it]), which puts the
 // name on the value side -- the same unwrapping the compiler's target_of
-// does. What comes back may still carry the annotation of §16.3.
+// does. What comes back may still carry the annotation of [syntax.for.forms].
 static const LhatNode *focus_element(const LhatNode *element)
 {
     if (element->kind != LHAT_NODE_DEFINE) {
@@ -1859,7 +1859,7 @@ static const LhatNode *focus_element(const LhatNode *element)
 }
 
 // The member of that name a structure declares, or NULL.
-// find_member's search, reaching an error kind's fields too (04§2.2).
+// find_member's search, reaching an error kind's fields too ([errors.kind.errordef]).
 static const LhatTypeMember *member_named(const LhatType *type,
                                           const char *name, size_t length)
 {
@@ -1869,11 +1869,11 @@ static const LhatTypeMember *member_named(const LhatType *type,
     return chk_find_member(type, name, length);
 }
 
-// §16.3: `in^ e` walks e.iterate(). A coroutine answers with itself, a table
+// [syntax.for.forms]: `in^ e` walks e.iterate(). A coroutine answers with itself, a table
 // with a walk over its keys, and anything else by having a member of that
 // name -- the same three infer_member answers for, read off the type here
 // because the loop has no member access written in it to infer.
-// `count` is how many names the focus binds. §16.3 with §13.8+ gives the two
+// `count` is how many names the focus binds. [syntax.for.forms] with [syntax.type.tuple] gives the two
 // forms different meanings over a table -- one name takes the values of the
 // sequence half in order, several take the (K, V) pairs apart -- so what the
 // walk produces depends on which was written.
@@ -1882,7 +1882,7 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
 {
     *array_index = false;
     if (over != NULL && over->kind == LHAT_TYPE_PENDING) {
-        // 03§3.1, 03§3.5、P6: walking a still-pending^ expression makes the
+        // [pipeline.strict.per-unit], [pipeline.strict.relaxed]、P6: walking a still-pending^ expression makes the
         // element type pending^ too, not merely unknown^.
         return chk_simple(c, LHAT_TYPE_PENDING);
     }
@@ -1898,14 +1898,14 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
     if (written == NULL &&
         !(over->kind == LHAT_TYPE_TABLE && !over->v.table.is_definition &&
           !over->v.table.from_definition && !over->v.table.nominal)) {
-        // §14.17+: everywhere but a plain table the two spellings name one
+        // [syntax.obj.tostring-hat]: everywhere but a plain table the two spellings name one
         // member, so a bare `iterate` written on a def^ or registered on a
         // host type is the same declaration -- the runtime's member_written
         // makes the same crossover.
         written = member_named(over, "iterate", 7);
     }
     if (written != NULL) {
-        // §16.3 lets a written iterate win, so this comes before the built-in.
+        // [syntax.for.forms] lets a written iterate win, so this comes before the built-in.
         LhatType *answer = written->type;
         if (answer == NULL || answer->kind == LHAT_TYPE_UNKNOWN ||
             answer->kind == LHAT_TYPE_PENDING) {
@@ -1914,8 +1914,8 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
                                   ? LHAT_TYPE_PENDING
                                   : LHAT_TYPE_UNKNOWN);
         }
-        // §15.5: what calling it answers -- either a body that yields (§13.9),
-        // or one that hands back a coroutine it made itself. §16.3 asks only
+        // [syntax.sub.no-contagion]: what calling it answers -- either a body that yields ([syntax.type.coroutine]),
+        // or one that hands back a coroutine it made itself. [syntax.for.forms] asks only
         // that a coroutine arrive; which of the two wrote it does not matter.
         LhatType *walks = lhat_type_call_answer(answer);
         if (answer->kind != LHAT_TYPE_FUNC || walks == NULL ||
@@ -1926,7 +1926,7 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
         return walks->v.coroutine.produce;
     }
 
-    // 05§8.8: a host type is a table only in how its members are reached
+    // [modules.hostdata]: a host type is a table only in how its members are reached
     // -- there is nothing of a table's own behind it to walk, so one that
     // registered no iterate is refused here rather than silently walked as
     // an empty table at run time.
@@ -1935,7 +1935,7 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
 
-    // The built-in walk of a table. §13.8+: several names take the (K, V)
+    // The built-in walk of a table. [syntax.type.tuple]: several names take the (K, V)
     // pairs; one name takes the sequence half's values, and never visits the
     // keyed half at all -- 'for^ i from^ 0 to^ the length - 1 { t[i] }' written
     // as a walk.
@@ -2011,7 +2011,7 @@ static void bound_the_focus(Checker *c, const LhatNode *node)
     }
 }
 
-// §16.3: the focus of an in^ loop is bound, not evaluated, so it is checked
+// [syntax.for.forms]: the focus of an in^ loop is bound, not evaluated, so it is checked
 // here rather than by check_statements -- which would read the names as uses
 // and find nothing in scope.
 static void check_focus(Checker *c, const LhatNode *node)
@@ -2039,7 +2039,7 @@ static void check_focus(Checker *c, const LhatNode *node)
         }
     }
 
-    // §13.8+: a tuple has exactly its positions, and each one is a slot the
+    // [syntax.type.tuple]: a tuple has exactly its positions, and each one is a slot the
     // loop reserved -- said once here rather than once per name below.
     size_t width = lhat_type_tuple_width(produced);
     if (width > 0 && count > 1 && count != width) {
@@ -2054,8 +2054,8 @@ static void check_focus(Checker *c, const LhatNode *node)
     }
     // Several names take what was yielded apart, so there has to be
     // something to take apart: a tuple above, or a table by position below
-    // (§13.10). Anything else is a loop written with more names than the walk
-    // hands over -- §16.3+2's projections are the everyday way to arrive
+    // ([syntax.type.destructure]). Anything else is a loop written with more names than the walk
+    // hands over -- [syntax.for.keys-values]'s projections are the everyday way to arrive
     // here, since a keys^ walk yields one value and never a pair.
     if (width == 0 && count > 1 && produced != NULL &&
         produced->kind != LHAT_TYPE_TABLE &&
@@ -2076,7 +2076,7 @@ static void check_focus(Checker *c, const LhatNode *node)
                                   ? chk_resolve_type(c, element->v.param.type)
                                   : NULL;
 
-        // §13.10 and §16.3: one name takes what was yielded whole, several
+        // [syntax.type.destructure] and [syntax.for.forms]: one name takes what was yielded whole, several
         // take it apart by position. A tuple's positions come off the tuple;
         // a table's (a user iterator yielding one) off its indexed members.
         LhatType *taken = produced;
@@ -2092,7 +2092,7 @@ static void check_focus(Checker *c, const LhatNode *node)
 
         LhatType *type = taken;
         if (annotated != NULL) {
-            // §16.3: an annotated focus is a filter -- the turns whose element
+            // [syntax.for.forms]: an annotated focus is a filter -- the turns whose element
             // its type does not take are skipped (the compiler reads the
             // stamp to test only what the walk's type leaves open). One that
             // could take nothing the walk yields is a mistake; a parameter
@@ -2109,7 +2109,7 @@ static void check_focus(Checker *c, const LhatNode *node)
                    (type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
                     lhat_type_has_gap(type)) &&
                    c->result->diagnostic_count == already) {
-            // 03§3.1③: strict leaves nothing undecided, and a walk the
+            // [pipeline.strict.per-unit]③: strict leaves nothing undecided, and a walk the
             // table's type cannot describe (computed keys -- the dictionary
             // type is still unwritten) leaves the focus exactly that. An
             // annotation is the way to say it: 'for^ k:K, v:V in^ t'.
@@ -2119,7 +2119,7 @@ static void check_focus(Checker *c, const LhatNode *node)
             chk_report(c, element, LHAT_CHECK_ERR_TYPE_UNDECIDED);
         }
 
-        // 05§8.9: a tuple crosses the host boundary as copied values, and
+        // [modules.hostvalue]: a tuple crosses the host boundary as copied values, and
         // a host value among them would arrive as a pointer into scratch the
         // next step overwrites -- the same escape every other tuple position
         // refuses.
@@ -2140,16 +2140,16 @@ static void check_focus(Checker *c, const LhatNode *node)
         Binding *b = chk_scope_add(c->scope, name, length, type,
                                    target_name_node(element)->offset);
         if (b != NULL) {
-            b->reached = true;  // §8.7: a turn of the loop has bound it
+            b->reached = true;  // [syntax.stmt.visible]: a turn of the loop has bound it
             b->declaration = target_name_node(element);
             ((LhatNode *)b->declaration)->checked_binding = b->declaration;
-            // §8.9: what each turn binds is the walk's to say, so the focus of
-            // an in^ is a let^ -- §16.3 already refuses the ':=' and the
+            // [syntax.stmt.let]: what each turn binds is the walk's to say, so the focus of
+            // an in^ is a let^ -- [syntax.for.forms] already refuses the ':=' and the
             // introducer that would have said otherwise, since there is no
             // initial value for either to give.
             b->immutable = true;
             b->bound_by_form = true;
-            // §15.1+: one name walking a table holds each value it holds in
+            // [syntax.sub.table-write]: one name walking a table holds each value it holds in
             // turn. Several take each apart further down, and are left out.
             if (count == 1 && walked != NULL && walked->kind == LHAT_TYPE_TABLE) {
                 alias_focus(c, b, node->v.loop.bound);
@@ -2158,13 +2158,13 @@ static void check_focus(Checker *c, const LhatNode *node)
     }
 }
 
-// §12.5 with §12.7: what with^ asks of a value is that it has a dispose() and
+// [syntax.with.checked] with [syntax.with.no-fail]: what with^ asks of a value is that it has a dispose() and
 // that the dispose() returns nothing. The second half is not decoration --
-// §12.7 made it so that cleanup cannot fail, and a dispose() with a result
+// [syntax.with.no-fail] made it so that cleanup cannot fail, and a dispose() with a result
 // would have somewhere to report a failure from.
 //
 // Checked by hand rather than against a written structure, because the
-// implicit self^ of §14.4 means the parameter list of the member and of a call
+// implicit self^ of [syntax.obj.self] means the parameter list of the member and of a call
 // to it do not have the same length.
 static void check_disposable(Checker *c, const LhatNode *at, LhatType *type)
 {
@@ -2173,7 +2173,7 @@ static void check_disposable(Checker *c, const LhatNode *at, LhatType *type)
         return;
     }
 
-    // 05§8.8+: through the base link too -- a derived host type is
+    // [modules.hostdata.base]: through the base link too -- a derived host type is
     // disposable when what it is declared under registered a dispose,
     // which is exactly what the machine does with the tag chain.
     const LhatTypeMember *m =
@@ -2185,10 +2185,10 @@ static void check_disposable(Checker *c, const LhatNode *at, LhatType *type)
             m->type->kind == LHAT_TYPE_PENDING) {
             return;
         }
-        // §12.5 spells the condition 'dispose()' with the parentheses: with^
+        // [syntax.with.checked] spells the condition 'dispose()' with the parentheses: with^
         // hands over nothing, so one asking for an argument could not be
-        // called. §13.4 keeps self^ out of the list, which is why the ordinary
-        // 'p^self^ { }' of §14.4 has an empty one.
+        // called. [syntax.type.param-names] keeps self^ out of the list, which is why the ordinary
+        // 'p^self^ { }' of [syntax.obj.self] has an empty one.
         if (m->type->kind != LHAT_TYPE_FUNC || m->type->v.func.result != NULL ||
             m->type->v.func.params != NULL || m->type->v.func.variadic != NULL) {
             chk_report(c, at, LHAT_CHECK_ERR_NOT_DISPOSABLE);
@@ -2198,7 +2198,7 @@ static void check_disposable(Checker *c, const LhatNode *at, LhatType *type)
     chk_report(c, at, LHAT_CHECK_ERR_NOT_DISPOSABLE);
 }
 
-// 04§2.2: the declaration creates the set and its kinds as types.
+// [errors.kind.errordef]: the declaration creates the set and its kinds as types.
 static void check_errordef(Checker *c, const LhatNode *node)
 {
     const char *name = NULL;
@@ -2207,7 +2207,7 @@ static void check_errordef(Checker *c, const LhatNode *node)
         return;
     }
 
-    // 04§2.7: which top, from which word declared it. The kinds read it
+    // [errors.kind.local]: which top, from which word declared it. The kinds read it
     // off the set, so nothing below has to be told twice.
     LhatType *set = lhat_type_error_set(c->result->types, name, length,
                                         node->v.named.local);
@@ -2234,17 +2234,17 @@ static void check_errordef(Checker *c, const LhatNode *node)
                 continue;
             }
 
-            // 04§2.2: a default may stand in for the type, and its own
-            // type is then the field's, exactly as §14.11 reads a template.
+            // [errors.kind.errordef]: a default may stand in for the type, and its own
+            // type is then the field's, exactly as [syntax.obj.new] reads a template.
             LhatType *declared = chk_resolve_type(c, field->v.param.type);
             LhatType *fallback = chk_infer(c, field->v.param.fallback);
             if (declared != NULL && fallback != NULL) {
                 chk_expect(c, field->v.param.fallback, fallback, declared,
                            LHAT_CHECK_ERR_MISMATCH);
             }
-            // 04§2.7+: a kind is nominal, so chk_type_touches_local stops
+            // [errors.kind.local-no-propagate]: a kind is nominal, so chk_type_touches_local stops
             // at it and never sees this field -- which is the whole reason
-            // that walk can stop there (04§2.3's `cause` takes either family).
+            // that walk can stop there ([errors.kind.made]'s `cause` takes either family).
             // The hole is closed on the written side instead, here.
             if (chk_type_touches_local(declared != NULL ? declared : fallback, 0)) {
                 chk_report(c, field, LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN);
@@ -2260,7 +2260,7 @@ static void check_errordef(Checker *c, const LhatNode *node)
     }
 }
 
-// §19: the declaration makes the enum and its members -- the
+// [syntax.enum]: the declaration makes the enum and its members -- the
 // members as singleton types below it, and the name as a binding whose
 // type is the enum itself, so E.AAA reads as a member access and x : E
 // takes any member. The value expressions are inferred here for the
@@ -2303,7 +2303,7 @@ static void check_enumdef(Checker *c, const LhatNode *node)
     }
 }
 
-// §8.7: every name a scope defines is visible throughout it, so they are
+// [syntax.stmt.visible]: every name a scope defines is visible throughout it, so they are
 // collected before the statements are walked. That is what lets two
 // subroutines call each other without a forward declaration.
 static void collect_bindings(Checker *c, const LhatNode *statements)
@@ -2325,13 +2325,13 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
             const char *name = NULL;
             size_t length = 0;
 
-            // 05§8.8: a path introduces a member, not a name of this scope. Its
+            // [modules.hostdata]: a path introduces a member, not a name of this scope. Its
             // root is only made when nothing anywhere holds it -- reaching an
             // enclosing table is the point, so this must not shadow one.
             if (target_is_path(target)) {
                 const LhatNode *root = target_root(target);
                 // A hat identifier is not a name a scope can hold. L^ is a
-                // place of its own (05§8.6); anything else is refused when
+                // place of its own ([modules.host.machine]); anything else is refused when
                 // the path is walked.
                 if (root->kind != LHAT_NODE_HAT_IDENT &&
                     chk_node_name(c, root, &name, &length) &&
@@ -2349,7 +2349,7 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
             if (!chk_node_name(c, target_name_node(target), &name, &length)) {
                 continue;
             }
-            // §13.12: '_^' may be written as often as it likes, so a second one
+            // [syntax.type.discard]: '_^' may be written as often as it likes, so a second one
             // is not a redefinition -- it is the same place being thrown away
             // again. Nothing reads it either way: chk_infer refuses the
             // spelling wherever a value is wanted.
@@ -2360,16 +2360,16 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
                 continue;
             }
             if (already != NULL) {
-                // 03§4.3: a name an earlier input of a session bound is
+                // [pipeline.machine]: a name an earlier input of a session bound is
                 // written again here, which is the same place written again.
-                // Clearing the mark leaves §8.7 in force for a second let^
+                // Clearing the mark leaves [syntax.stmt.visible] in force for a second let^
                 // within this input.
                 if (!already->from_session) {
                     chk_report_named(c, target_name_node(target),
                                      LHAT_CHECK_ERR_REDEFINED, name, length);
                 }
                 already->from_session = false;
-                // §8.9 and 03§4.3: a session redefinition is the name being
+                // [syntax.stmt.let] and [pipeline.machine]: a session redefinition is the name being
                 // written again, so what the new input says about it is what
                 // holds -- a let^ over an earlier var^ makes it a let^ from
                 // here on, and the other way round.
@@ -2381,23 +2381,23 @@ static void collect_bindings(Checker *c, const LhatNode *statements)
             Binding *b =
                 chk_scope_add(c->scope, name, length, chk_simple(c, LHAT_TYPE_PENDING),
                               target_name_node(target)->offset);
-            // §8.9: set here rather than in check_define, so that a write
+            // [syntax.stmt.let]: set here rather than in check_define, so that a write
             // standing textually before the definition it names is judged by
-            // the same rule as one standing after it -- §8.7 makes the name
+            // the same rule as one standing after it -- [syntax.stmt.visible] makes the name
             // visible throughout the scope either way.
             if (b != NULL) {
                 b->immutable = s->v.binding.immutable;
                 b->declaration = target_name_node(target);
                 ((LhatNode *)b->declaration)->checked_binding = b->declaration;
                 b->bound_by_form = s->v.binding.bound_by_form;
-                // 07§6: which word, for a fix that offers the other one.
+                // [lsp.next]: which word, for a fix that offers the other one.
                 b->keyword = s->v.binding.keyword;
             }
         }
     }
 }
 
-// 05§3: 'module^ a.b.c' is the same MEMBER chain a path target is, so
+// [modules.unit]: 'module^ a.b.c' is the same MEMBER chain a path target is, so
 // writing it out is one walk. Appends to `out` when there is room, and
 // answers how much room the whole path wants either way.
 static size_t write_module_path(const Checker *c, const LhatNode *node,
@@ -2425,7 +2425,7 @@ static size_t write_module_path(const Checker *c, const LhatNode *node,
     return used + length;
 }
 
-// The path the unit declared, or NULL when it declared none (11§3.2). The
+// The path the unit declared, or NULL when it declared none ([binary.codec.kinds]). The
 // parser has already put module^ first and refused a second one.
 char *chk_read_module_name(const Checker *c, const LhatNode *statements)
 {
@@ -2450,9 +2450,9 @@ char *chk_read_module_name(const Checker *c, const LhatNode *statements)
     return text;
 }
 
-// 05§4: the exports are the names marked public^, read from the
+// [modules.public]: the exports are the names marked public^, read from the
 // declarations rather than from a value the unit returns. That is what lets
-// 05§6 follow an import without running anything.
+// [modules.deps] follow an import without running anything.
 LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
 {
     LhatType *table = NULL;
@@ -2480,10 +2480,10 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
             }
             if (table == NULL) {
                 table = lhat_type_table(c->result->types);
-                // 05§8.6: what require^ answers is the machine's record
+                // [modules.host.machine]: what require^ answers is the machine's record
                 // of what the unit published, not a table the requiring unit
                 // may add to or write over. What the published names hold is
-                // untouched -- 10§4.2 publishes names, and a table one of them
+                // untouched -- [l10n.id.spelling] publishes names, and a table one of them
                 // holds stays as mutable as it was.
                 if (table != NULL) {
                     table->v.table.sealed = true;
@@ -2491,12 +2491,12 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
                     table->v.table.is_module = true;
                 }
             }
-            // 05§6.1: a reader of the published type is in another unit,
+            // [modules.deps.static]: a reader of the published type is in another unit,
             // and the place to point at is the declaration here.
             LhatTypeMember *made = lhat_type_add_member(
                 c->result->types, table, name, length, b->type);
             if (made != NULL) made->definition = b->definition;
-            // §13.14: an exported name bound to a type^ value carries
+            // [syntax.type.as-expr]: an exported name bound to a type^ value carries
             // what it names, so another unit may write m.T where a type
             // stands.
             if (made != NULL && b->names_type) {
@@ -2511,14 +2511,14 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
 
 void chk_check_statements(Checker *c, const LhatNode *statements)
 {
-    // §8.7 collects the names once. What it reports -- a name written twice in
+    // [syntax.stmt.visible] collects the names once. What it reports -- a name written twice in
     // one scope -- is about the statements as written, so a second walk over
     // them has nothing to add to it.
     Binding *before = c->scope != NULL ? c->scope->tail : NULL;
     collect_bindings(c, statements);
 
-    // 03§3.4+2: the walk below is one iteration of a least fixpoint, the
-    // same as a def^'s entries. §8.7 makes every name of this list visible
+    // [pipeline.infer.rounds]: the walk below is one iteration of a least fixpoint, the
+    // same as a def^'s entries. [syntax.stmt.visible] makes every name of this list visible
     // throughout it, so a body may call one whose let^ this walk has not
     // reached -- and what answers there is the mark collect_bindings put down
     // rather than a type. Walking again from what the last walk inferred is
@@ -2563,10 +2563,10 @@ void chk_check_statements(Checker *c, const LhatNode *statements)
                                          : (c->scope != NULL ? c->scope->bindings
                                                              : NULL);
              b != NULL; b = b->next) {
-            // §8.7 again from the top: which names this walk has reached is
+            // [syntax.stmt.visible] again from the top: which names this walk has reached is
             // what it is about to work out a second time.
             b->reached = false;
-            // 03§3.4+2: the type the last walk inferred is the seed, with the
+            // [pipeline.infer.rounds]: the type the last walk inferred is the seed, with the
             // gap arms taken out. A 'bool^|pending^' read back whole would
             // union its own gap in again and never lose it; seeded 'bool^',
             // the walk answers what it can, and an arm that really belongs
@@ -2581,14 +2581,14 @@ void chk_check_statements(Checker *c, const LhatNode *statements)
     chk_rounds_end(c, &rounds);
 }
 
-// The block's statements in the scope that is already open. 01§8: a
+// The block's statements in the scope that is already open. [lex.scope]: a
 // subroutine's body is written with one '{', so it is one scope for '$^' to
 // count -- and its parameters are in it, not around it. infer_func has
 // already made that scope and put them there, so this must not make another
 // or a specifier would find the parameters one step too soon.
-// 01§9: the clauses other than main^, which the parser leaves in `extra`
+// [lex.space]: the clauses other than main^, which the parser leaves in `extra`
 // whatever order they were written in. Read by kind so the walk can follow
-// §9.2's order rather than the source's -- compile.c's clause_of is the same
+// [syntax.loop.order]'s order rather than the source's -- compile.c's clause_of is the same
 // lookup on the same list.
 static const LhatNode *clause_named(const LhatNode *node, LhatClauseKind kind)
 {
@@ -2622,13 +2622,13 @@ static void check_clause(Checker *c, const LhatNode *node, LhatClauseKind kind,
     c->scope = held;
 }
 
-// 04§4.5: the arms of `owner`, given what the try^ written before them
-// found. Each takes what it is written for, with it^ narrowed to that (04§4.2),
+// [errors.catch.clause]: the arms of `owner`, given what the try^ written before them
+// found. Each takes what it is written for, with it^ narrowed to that ([errors.catch.it]),
 // and what no arm took goes on out exactly as a bare try^ would have sent it.
 static void check_arms(Checker *c, const LhatNode *owner, LhatType *caught,
                        const LhatNode *arms)
 {
-    // 11§4.1's line, one construct over: catching what cannot fail says nothing.
+    // [binary.net.api]'s line, one construct over: catching what cannot fail says nothing.
     if (caught == NULL) {
         chk_report(c, owner, LHAT_CHECK_ERR_CATCHES_NOTHING);
     }
@@ -2639,7 +2639,7 @@ static void check_arms(Checker *c, const LhatNode *owner, LhatType *caught,
                              ? chk_resolve_type(c, arm->v.clause.condition)
                              : NULL;
         // The bare arm takes everything still standing; a written one takes
-        // the arms of that which fit it, the same reading §13.11's fits^ makes.
+        // the arms of that which fit it, the same reading [syntax.type.fits]'s fits^ makes.
         LhatType *here = want != NULL ? chk_only(c, left, want) : left;
 
         Scope scope;
@@ -2671,13 +2671,13 @@ static void check_arms(Checker *c, const LhatNode *owner, LhatType *caught,
     chk_error_leaves(c, owner, left);
 }
 
-// 04§4.5: a block's statements with its arms after them. The statements
+// [errors.catch.clause]: a block's statements with its arms after them. The statements
 // are checked with a frame open, so every try^ written in them hands its
 // errors to the arms instead of to the subroutine's result.
 //
 // What the statements bound is kept out of the arms' reach -- an arm may be
 // entered before any of it was -- by cutting it off the scope while they are
-// read. It stays in the scope for what follows the arms: §10.1's
+// read. It stays in the scope for what follows the arms: [syntax.finally.block]'s
 // finally^ still reads it. `plain` is what may be assumed in an arm, which
 // is whatever held before the statements ran.
 static void check_caught(Checker *c, const LhatNode *owner,
@@ -2724,16 +2724,16 @@ static void check_caught(Checker *c, const LhatNode *owner,
 
 void chk_check_block_in_scope(Checker *c, const LhatNode *node)
 {
-    // §13.11: the enclosing loop's condition, if this block is its body. Taken
+    // [syntax.type.fits]: the enclosing loop's condition, if this block is its body. Taken
     // here, so a block written inside the body is walked without one.
     struct LoopTest *test = c->loop_test;
     c->loop_test = NULL;
 
-    // §9.3: the block's own statements are main^, written or implied. With no
+    // [syntax.loop.body]: the block's own statements are main^, written or implied. With no
     // clauses beside them there is one layer and one order, which is every
     // block that is not a loop body -- a subroutine's among them.
     //
-    // 04§4.5: the arms close main^. In a loop body that makes them one
+    // [errors.catch.clause]: the arms close main^. In a loop body that makes them one
     // turn's, and the condition that let the turn in may no longer hold by
     // the time one runs -- main^ can change what it tested.
     if (node->v.list.extra == NULL) {
@@ -2742,14 +2742,14 @@ void chk_check_block_in_scope(Checker *c, const LhatNode *node)
         return;
     }
 
-    // §9.4: the body has two layers. prolog^ and first^ last the whole loop
+    // [syntax.loop.scope]: the body has two layers. prolog^ and first^ last the whole loop
     // and bind into the layer around this one; pre^ and main^ last one
     // iteration and bind here, so last^ and epilog^ -- walked back out there
-    // -- do not see them. §9.2 fixes the order the six run in and the walk
+    // -- do not see them. [syntax.loop.order] fixes the order the six run in and the walk
     // follows it, which is what lets main^ read what prolog^ declared.
     Scope *carried = c->scope->parent;
     Narrowing *narrowed = c->narrowings;
-    // §9.2: main^ and first^ are the two clauses on the far side of the test,
+    // [syntax.loop.order]: main^ and first^ are the two clauses on the far side of the test,
     // so they are the two that keep what the condition narrowed. The list is
     // a stack, so setting the head back is the whole of putting it aside.
     Narrowing *plain = test != NULL ? test->before : narrowed;
@@ -2762,7 +2762,7 @@ void chk_check_block_in_scope(Checker *c, const LhatNode *node)
 
     check_clause(c, node, LHAT_CLAUSE_LAST, carried, plain);
     check_clause(c, node, LHAT_CLAUSE_EPILOG, carried, plain);
-    // §10: a finally^ is the block's own cleanup rather than one of §9.2's
+    // [syntax.finally]: a finally^ is the block's own cleanup rather than one of [syntax.loop.order]'s
     // six, and it runs where the block is left -- with what the body bound
     // still in reach.
     check_clause(c, node, LHAT_CLAUSE_FINALLY, NULL, plain);
@@ -2772,8 +2772,8 @@ static void check_block(Checker *c, const LhatNode *node)
 {
     Scope *outer = c->scope;
 
-    // §9.4: a loop body written with clauses binds into two layers. The outer
-    // one carries what lasts the whole loop; 01§8  does not count it,
+    // [syntax.loop.scope]: a loop body written with clauses binds into two layers. The outer
+    // one carries what lasts the whole loop; [lex.scope]  does not count it,
     // since the writer put down one '{' and compile.c counts one scope too.
     Scope carried;
     bool layered = node->v.list.extra != NULL;
@@ -2796,13 +2796,13 @@ static void check_block(Checker *c, const LhatNode *node)
     }
 }
 
-// §13.11 with §16.3: a conditional loop tests before every turn -- §9.10 puts
+// [syntax.type.fits] with [syntax.for.forms]: a conditional loop tests before every turn -- [syntax.loop.pre] puts
 // the form that runs its body first under pre^ rather than in the condition
 // -- so a body that runs at all runs where the condition held. That is the
 // same ground an if^ body stands on, and it narrows the same way: while^
 // where the condition is true, until^ where it is not.
 //
-// Nothing is narrowed after the loop. §9.8's break^ leaves from anywhere, so
+// Nothing is narrowed after the loop. [syntax.loop.exit]'s break^ leaves from anywhere, so
 // what ended it is not known out there.
 static void check_loop_body(Checker *c, const LhatNode *body,
                             const LhatNode *condition, bool tested_true)
@@ -2816,7 +2816,7 @@ static void check_loop_body(Checker *c, const LhatNode *body,
     chk_narrow_from(c, condition, tested_true);
 
     // Which clauses stand on the far side of the test is the block's own
-    // question (§9.2), and this is how it is told.
+    // question ([syntax.loop.order]), and this is how it is told.
     struct LoopTest test;
     test.before = before;
     struct LoopTest *outer = c->loop_test;
@@ -2836,12 +2836,12 @@ void chk_check_statement(Checker *c, const LhatNode *node)
 
     switch (node->kind) {
         case LHAT_NODE_DEFINE:
-            // §18.4: a binding takes one. The unit's own were read where
+            // [syntax.annot.where]: a binding takes one. The unit's own were read where
             // the unit was, and a field's and a member's where the def^ is.
             //
-            // §18.4+: whether it is published is part of the place. A host
+            // [syntax.annot.public]: whether it is published is part of the place. A host
             // reaches a value through the table the unit answers with (05 の
-            // 05§5.5), so an annotation about the value has no hold on a name
+            // [modules.require.short]), so an annotation about the value has no hold on a name
             // kept private -- and saying so here is what keeps it from being
             // written and quietly doing nothing.
             chk_check_annotations(
@@ -2857,7 +2857,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             break;
 
         case LHAT_NODE_IMPORT_STMT:
-            check_import(c, node, true);  // 05§8.7
+            check_import(c, node, true);  // [modules.host.import]
             break;
 
         case LHAT_NODE_REASSIGN:
@@ -2866,16 +2866,16 @@ void chk_check_statement(Checker *c, const LhatNode *node)
 
         case LHAT_NODE_CALL_STMT: {
             LhatType *value = chk_infer(c, node->v.jump.value);
-            // §15.8: §15.5 makes such a call run no part of the body, so the
-            // statement provably has no effect. 04§8.1's form: the type
+            // [syntax.sub.await]: [syntax.sub.no-contagion] makes such a call run no part of the body, so the
+            // statement provably has no effect. [errors.dropped.no-new]'s form: the type
             // is the detection, with no must-use machinery added.
             //
-            // 03§4.3: unless it is the statement the input answers with.
+            // [pipeline.machine]: unless it is the statement the input answers with.
             // There the value is shown, which is an effect -- the reasoning
             // above is what stops applying, not the rule.
             if (value != NULL && value->kind == LHAT_TYPE_CORO &&
                 node != c->answering) {
-                // 07§6: await^ in front of it runs the body here, which is
+                // [lsp.next]: await^ in front of it runs the body here, which is
                 // the reading that keeps the statement. Keeping the coroutine
                 // wants a name, and naming it is the writer's to do.
                 const LhatFixSlot run = lhat_fix_slot(
@@ -2884,17 +2884,17 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 chk_report_fix(c, node, LHAT_CHECK_ERR_COROUTINE_DROPPED, NULL,
                                0, &run, 1);
             }
-            // 04§8.3: and the answer's failure goes with the answer. 12§8.1
+            // [errors.dropped.answer]: and the answer's failure goes with the answer. [spec.open.unreported]
             // reads the type as the detection -- "handle the error or you
             // cannot use the value" -- which holds wherever the value is
             // WANTED. A statement wants none, so nothing was stopping this,
-            // and 04§8.2's "L^ has no ignorable err" came back by the other
+            // and [errors.dropped.around-value]'s "L^ has no ignorable err" came back by the other
             // door: not a second value beside the first, but the first one
             // thrown away. The same door Zig shuts.
             if (lhat_type_carries_error(value) && node != c->answering) {
-                // 07§6: try^ in front of it hands the failure to the caller.
+                // [lsp.next]: try^ in front of it hands the failure to the caller.
                 // Suggested twice over -- the body has to declare the arm
-                // (04§5.3), and catching it here may be what was meant.
+                // ([errors.try.result]), and catching it here may be what was meant.
                 const LhatFixSlot hand = lhat_fix_slot(
                     LHAT_FIX_HAND_BACK, LHAT_FIX_SUGGESTED, node->offset, 0,
                     "try^ ");
@@ -2909,15 +2909,15 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             break;
 
         case LHAT_NODE_IF_STMT: {
-            // §13.11. A clause's body sees what its own condition established;
+            // [syntax.type.fits]. A clause's body sees what its own condition established;
             // every later clause, and the final else, see what the earlier
             // conditions ruled out. Handling every arm of a union that way is
-            // all 04§7 needs for exhaustiveness.
+            // all [errors.exhaustive] needs for exhaustiveness.
             Narrowing *outer = c->narrowings;
             bool has_else = false;
             bool every_branch_exits = true;
 
-            // 04§4.5: with arms, what a try^ in a body finds goes to them
+            // [errors.catch.clause]: with arms, what a try^ in a body finds goes to them
             // -- the conditions stand outside the braces, so theirs do not.
             struct CatchFrame frame = { NULL, c->catch_frame };
             struct CatchFrame *bodies =
@@ -2969,7 +2969,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 check_arms(c, node, frame.caught, node->v.list.arms);
             }
 
-            // §10.1: the if^'s own finally^, in a scope of its own the
+            // [syntax.finally.block]: the if^'s own finally^, in a scope of its own the
             // way a block's is.
             if (node->v.list.extra != NULL) {
                 Scope scope;
@@ -2984,12 +2984,12 @@ void chk_check_statement(Checker *c, const LhatNode *node)
         }
 
         case LHAT_NODE_RETURN: {
-            // §14.11: construction answers the instance itself, so a
+            // [syntax.obj.new]: construction answers the instance itself, so a
             // new body has nothing to return^ -- what it writes through
             // self^ is already on what the caller gets. A literal nested
             // inside the body is an ordinary one again (in_new_body is the
             // immediate body's alone), and a body that is one expression
-            // (§15.12) wrote no return^ to refuse. Either way the values
+            // ([syntax.sub.expr-body]) wrote no return^ to refuse. Either way the values
             // still run, so they are read here -- and nothing about the
             // result is, since the signature never asks the body.
             if (c->in_new_body) {
@@ -3002,10 +3002,10 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 }
                 break;
             }
-            // 03§3.4: a return^ that reaches the subroutine itself says
+            // [pipeline.infer]: a return^ that reaches the subroutine itself says
             // nothing about the result -- its type is the one being worked
             // out. The others determine it between them.
-            // 03§3.4: a bare return^ leaves without a value. That is the
+            // [pipeline.infer]: a bare return^ leaves without a value. That is the
             // same kind of exit as reaching the end of the body, and infer_func
             // treats the two together -- so nothing more is decided here.
             if (node->v.jump.value == NULL) {
@@ -3017,7 +3017,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             c->saw_self_call = false;
             LhatType *value = NULL;
             if (node->v.jump.level > 1) {
-                // §13.8+: 'return^ a, b' answers a tuple. The values hang off
+                // [syntax.type.tuple]: 'return^ a, b' answers a tuple. The values hang off
                 // `value` as a list and `level` counted them.
                 LhatType *tuple = lhat_type_tuple(c->result->types);
                 for (const LhatNode *item = node->v.jump.value; item != NULL;
@@ -3028,7 +3028,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 }
                 value = tuple;
             } else {
-                // 03§3.4+: a written result type is what this value is
+                // [pipeline.infer.expected]: a written result type is what this value is
                 // expected to have, so a literal returned here takes the
                 // parameters nothing was written on from it.
                 LhatType *outer_expected = c->expected_func;
@@ -3039,11 +3039,11 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             bool recursive = c->saw_self_call;
             c->saw_self_call = enclosing_self_call || recursive;
 
-            // §15.1+3: a '-> fresh^T' body owes every exit something this
+            // [syntax.sub.fresh]: a '-> fresh^T' body owes every exit something this
             // body made -- a literal, a new(), the answer of another fresh^
             // call ('return^ this^(…)' among them, since the signature
             // already carries the promise), or a name this body bound to
-            // one of those (the origin question §15.1+2 asks of a
+            // one of those (the origin question [syntax.sub.mutable-self] asks of a
             // receiver). In an f^ the reading is tight -- nothing this body
             // made can have leaked out; in a p^ it is closer to a
             // declaration, since a p^ could also have stored it somewhere.
@@ -3053,18 +3053,18 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 chk_report(c, node, LHAT_CHECK_ERR_ANSWER_NOT_FRESH);
             }
 
-            // 05§8.9: at the top level of a unit this is the program's
+            // [modules.hostvalue]: at the top level of a unit this is the program's
             // answer, which leaves through a single value slot the host
             // reads -- there is no frame above for the slots to land in.
             if (c->body_scope == NULL && chk_is_hostvalue(value)) {
                 chk_report(c, node, LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
             }
-            // §13.8+: a tuple does cross -- 05§8.7's LhatRunResult carries
+            // [syntax.type.tuple]: a tuple does cross -- [modules.host.import]'s LhatRunResult carries
             // the positions beside the value, so a unit may answer several.
             // A host value still may not: its width is its tag's, and the
             // result has one slot for the value itself.
 
-            // 04§2.7+: what a return^ carries is what a caller receives,
+            // [errors.kind.local-no-propagate]: what a return^ carries is what a caller receives,
             // so this is the other door chk_error_leaves guards. Asked before
             // either branch below: a written result that admits one has
             // already been refused where it was written, and an inferred one
@@ -3075,7 +3075,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             // error arm -- so what this finds is a value that failed and was
             // returned as it stands, which is what 'return^ x as^ T' is.
             //
-            // The unit's own top level (05§3.2) reaches here too, and only
+            // The unit's own top level ([modules.unit.optional]) reaches here too, and only
             // here: it is no func literal, so the signature check in
             // chk_infer_func never sees it.
             if (chk_type_touches_local(value, 0)) {
@@ -3084,12 +3084,12 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             }
 
             if (c->declared_result != NULL) {
-                // 03§7, P6: unlike chk_expect()'s other callers, this one
+                // [pipeline.open], P6: unlike chk_expect()'s other callers, this one
                 // runs while the subroutine being defined is still open --
                 // a call to a not-yet-checked partner in a mutually
                 // recursive pair is pending^ here for a reason that has
                 // nothing to do with strict, and forgiving it is what lets
-                // 03§3.4's "no forward declaration needed" hold under
+                // [pipeline.infer]'s "no forward declaration needed" hold under
                 // strict too. lhat_type_conforms_strict belongs where a
                 // value's own checking has already finished (this one's
                 // declared result has not) -- this call stays on the plain,
@@ -3103,7 +3103,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             if (recursive) {
                 c->recursive_return = true;
             }
-            // 03§3.4: a recursive exit says nothing only when its type is
+            // [pipeline.infer]: a recursive exit says nothing only when its type is
             // the one being worked out. Once the call sits inside a larger
             // expression the answer may not depend on it at all --
             // 'return^ "a" .. f(n).to_s()' is string^ whatever f answers --
@@ -3112,7 +3112,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                               value->kind == LHAT_TYPE_PENDING)) {
                 break;
             }
-            // §13.2: a return^ with an expression carries a value, and a call
+            // [syntax.type.empty]: a return^ with an expression carries a value, and a call
             // of a signature with no result does not make one. Reported here
             // rather than let into the union, where it would reach every
             // caller as a type nothing inhabits. A written result has already
@@ -3121,7 +3121,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 chk_report(c, node, LHAT_CHECK_ERR_MISMATCH);
                 break;
             }
-            // §13.8+: every exit of one subroutine answers the same width.
+            // [syntax.type.tuple]: every exit of one subroutine answers the same width.
             // A union of a tuple with anything but an error cannot be written
             // (resolve_type refuses it), and is not inferred either -- one
             // that could be would leave a caller with no width to reserve.
@@ -3131,13 +3131,13 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 chk_report(c, node, LHAT_CHECK_ERR_TUPLE_UNION);
                 break;
             }
-            // 03§3.4: several return^ make a union.
+            // [pipeline.infer]: several return^ make a union.
             c->inferred_result =
                 lhat_type_union(c->result->types, c->inferred_result, value);
             break;
         }
 
-        // 04§11.6: panic^ answers no value of its own (always_exits
+        // [errors.runtime.panic]: panic^ answers no value of its own (always_exits
         // already treats it as a way out, same as return^/break^), so the
         // operand is only checked for its own sake -- any type at all is
         // fine, the same way typeof^'s operand asks nothing of its type.
@@ -3146,7 +3146,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             break;
 
         case LHAT_NODE_YIELD: {
-            // §15.2: nobody receives this one, so R is not being fixed here
+            // [syntax.sub.yieldable]: nobody receives this one, so R is not being fixed here
             // -- only Y, from whatever chk_infer() finds inside it.
             enum YieldContext outer_yctx = c->yield_context;
             c->yield_context = YIELD_CTX_DISCARD;
@@ -3167,10 +3167,10 @@ void chk_check_statement(Checker *c, const LhatNode *node)
         case LHAT_NODE_REPEAT:
         case LHAT_NODE_WITH: {
             // The focus and the bindings belong to a scope of their own.
-            // with^ still treats its own keyword as the introducer (§12);
+            // with^ still treats its own keyword as the introducer ([syntax.with]);
             // for^'s focus is introduced by let^ written inside it, if any --
             // otherwise a bare ':=' reaches out through this scope to an
-            // existing name instead of defining one here (§8.6+, §16.3+).
+            // existing name instead of defining one here ([syntax.stmt.compound], [syntax.for.reuse]).
             Scope scope;
             chk_scope_open(&scope, c->scope, node, false);
 
@@ -3178,7 +3178,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             c->scope = &scope;
 
             if (node->kind == LHAT_NODE_FOR) {
-                // §16.3: in^ binds its focus each turn from what the walk
+                // [syntax.for.forms]: in^ binds its focus each turn from what the walk
                 // yields, so the names are defined here rather than read.
                 LhatType *bound_type = NULL;
                 if (node->v.loop.kind == LHAT_FOR_IN) {
@@ -3191,14 +3191,14 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 chk_infer(c, node->v.loop.step);
                 check_step(c, node->v.loop.step);
                 chk_check_statements(c, node->v.loop.advance);
-                // a loop body may run zero times. §16.3's do^ form has no
+                // a loop body may run zero times. [syntax.for.forms]'s do^ form has no
                 // clause to drive it, so its body is reached whatever the
                 // focus turned out to be.
                 bool always = node->v.loop.kind == LHAT_FOR_ONCE;
                 if (!always) {
                     c->conditional++;
                 }
-                // §13.11: the two conditional forms narrow their body. §16.4's
+                // [syntax.type.fits]: the two conditional forms narrow their body. [syntax.for.direction]'s
                 // to^ and downto^ are driven by a bound rather than tested,
                 // and in^ by what the walk answers, so neither has a
                 // condition to read -- and if^ and when^ are an if^ already.
@@ -3217,7 +3217,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                     c->conditional--;
                 }
             } else if (node->kind == LHAT_NODE_REPEAT) {
-                // §16.5: the same two forms, and repeat^ n counts rather than
+                // [syntax.for.repeat]: the same two forms, and repeat^ n counts rather than
                 // testing, so its bound is not a condition either.
                 bool conditional_loop =
                     node->v.repeat.kind == LHAT_REPEAT_WHILE ||
@@ -3238,14 +3238,14 @@ void chk_check_statement(Checker *c, const LhatNode *node)
                 c->conditional--;
             } else {
                 chk_check_statements(c, node->v.list.items);
-                // §12.5: the binding is what has to be disposable, so the
+                // [syntax.with.checked]: the binding is what has to be disposable, so the
                 // report belongs on it rather than inside the block.
                 for (const LhatNode *b = node->v.list.items; b != NULL;
                      b = b->next) {
-                    // §13.12: a '_^' is refused wherever a value is read, and
+                    // [syntax.type.discard]: a '_^' is refused wherever a value is read, and
                     // the target here is not read -- what is wanted is the
                     // type the binding took, which is looked up rather than
-                    // inferred. §12.6's disposal is the whole point of writing
+                    // inferred. [syntax.with.coroutine]'s disposal is the whole point of writing
                     // the form with no name.
                     const LhatNode *bound = target_name_node(b->v.binding.targets);
                     LhatType *held = NULL;
@@ -3270,7 +3270,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             break;
         }
 
-        // 07§4: a statement the parser turned down keeps the run it had
+        // [lsp.hover]: a statement the parser turned down keeps the run it had
         // read (parser.c's `refused`). Walking it is for the record and
         // nothing else -- the mistake has been reported once already, so
         // `rereading` silences chk_report while the resolutions and the

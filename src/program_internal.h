@@ -1,7 +1,7 @@
 // L^ (lhat) -- the inside of LhatProgram and LhatUnit.
 //
 // program.h keeps both opaque: a host registers, checks, compiles, runs and
-// reads reports, and never walks a unit's tree (05§8.7). What is here is
+// reads reports, and never walks a unit's tree ([modules.host.import]). What is here is
 // for the library itself and for the in-tree tools that are the language's
 // own front ends -- program.c, cli/'s dump and REPL paths, lsp/, and the
 // tests -- which read the stages' results directly.
@@ -19,7 +19,7 @@
 #include "lhat/source.h"
 #include "type.h"
 
-// 05§10.6: what a binary unit carries of §18 -- the answers the
+// [modules.binary.reflect]: what a binary unit carries of [syntax.annot] -- the answers the
 // reflection API (program.h) reads off a text unit's tree, kept as records
 // because the bytes have no tree. Every string is owned and NUL-terminated.
 typedef struct {
@@ -40,7 +40,7 @@ typedef struct {
     size_t argument_count;
 } LhatReflectedAnnotation;
 
-// What §18.4 puts on any of its four addresses.
+// What [syntax.annot.where] puts on any of its four addresses.
 typedef struct {
     LhatReflectedAnnotation *annotations;
     size_t annotation_count;
@@ -82,7 +82,7 @@ typedef struct LhatReflection {
 void lhat_reflection_free(LhatReflection *reflection);
 
 struct LhatUnit {
-    char *path;  // resolved and normalised; the key 05§5.3 loads once against
+    char *path;  // resolved and normalised; the key [modules.require.once] loads once against
     bool loaded;
     // The program this is a unit of -- what lhat_unit_export_conforms reads
     // a written type against (its arena and its registrations).
@@ -93,59 +93,59 @@ struct LhatUnit {
     LhatParseResult parsed;
     LhatCheckResult checked;
 
-    // 05§4.5: the export descriptors lhat_unit_export_type answered,
+    // [modules.public.host]: the export descriptors lhat_unit_export_type answered,
     // built lazily out of `checked` onto the proto's chunk heap (where
-    // 03§5.13's fits^ descriptors live, with the same lifetime). The array is
+    // [pipeline.bc.fits]'s fits^ descriptors live, with the same lifetime). The array is
     // parallel to the exports walk and cleared with the stages -- a
     // reload's recheck starts it empty again.
     struct LhatRuntimeType **export_rt;
     size_t export_rt_count;
-    // 05§10: a binary unit has no checked exports to walk, so it
+    // [modules.binary]: a binary unit has no checked exports to walk, so it
     // carries the names beside the descriptors, parallel to export_rt.
     // Owned; NULL for a text unit.
     char **export_names;
 
     LhatUnitState state;
 
-    // 05§5.7: what module^ the last check of this unit read, copied here
+    // [modules.require.reload]: what module^ the last check of this unit read, copied here
     // rather than left in `checked`. An invalidation throws the check away,
     // and the name is exactly what the host needs afterwards -- it is the
     // key a machine's L^.modules holds the unit under, which
-    // lhat_machine_forget_unit has to be handed. NULL for a script (11§3.2).
+    // lhat_machine_forget_unit has to be handed. NULL for a script ([binary.codec.kinds]).
     char *module_name;
 
     // What lhat_program_compile made of it, owned here. NULL until that ran
     // -- or while it will not compile.
     LhatProto *proto;
 
-    // 05§5.3: the units this one's require^s named, in the order its
+    // [modules.require.once]: the units this one's require^s named, in the order its
     // compile met them -- the number in each UNIT instruction is a position
     // here. Filled by the compile of this unit and read by the filling of
     // its table (lhat_program_compile's second pass), since a unit named
     // here may not have compiled yet when this one does.
     //
-    // 05§5.7: kept afterwards rather than freed, because it is the only record
+    // [modules.require.reload]: kept afterwards rather than freed, because it is the only record
     // of which way the graph runs. lhat_program_invalidate walks it backwards
     // to find every unit a changed one reaches.
     struct LhatUnit **referenced;
     size_t referenced_count;
     size_t referenced_capacity;
 
-    // 05§8.2 with 08: read as data rather than as a program, so the
+    // [modules.host.initial] with 08: read as data rather than as a program, so the
     // initial bindings are not in scope. Set by lhat_program_load_text_with
     // before anything is checked; false for every unit of the program.
     bool as_data;
     bool lton;
 
-    // 05§10: read from bytes rather than text. No source, no tree, no
+    // [modules.binary]: read from bytes rather than text. No source, no tree, no
     // check result -- `proto` is the whole of it, and the stages above are
     // zero. What reads them guards on parsed.root already.
     bool binary;
-    // 05§10.6: what the bytes carried for §18, owned. NULL for a
+    // [modules.binary.reflect]: what the bytes carried for [syntax.annot], owned. NULL for a
     // text unit, whose tree answers instead.
     LhatReflection *reflection;
 
-    // 05§5.7: the text this unit was last read from, hashed, so that
+    // [modules.require.reload]: the text this unit was last read from, hashed, so that
     // lhat_program_invalidate can tell a save that changed something from a
     // save that changed nothing. Zero before anything was read.
     uint64_t source_hash;
@@ -153,7 +153,7 @@ struct LhatUnit {
     struct LhatUnit *next;
 };
 
-// 05§8.7+2: one registered enum. The strings are owned; decl_rt is the
+// [modules.host.no-string-lookup]: one registered enum. The strings are owned; decl_rt is the
 // per-program identity on host_heap.
 typedef struct LhatProgramEnum {
     char *module;
@@ -165,7 +165,7 @@ typedef struct LhatProgramEnum {
     LhatRuntimeType *decl_rt;
 } LhatProgramEnum;
 
-// 05§10: one entry of the signature table a program read (05§10.7): the
+// [modules.binary]: one entry of the signature table a program read ([modules.binary.signatures]): the
 // text a registration is written with, and where its record stands in the
 // bytes the program keeps. Sorted by text, so a lookup halves its way in.
 typedef struct LhatSignatureIndex {
@@ -175,7 +175,7 @@ typedef struct LhatSignatureIndex {
     size_t body_length;
 } LhatSignatureIndex;
 
-// 05§10: the identity an enum^ declaration has in a binary program --
+// [modules.binary]: the identity an enum^ declaration has in a binary program --
 // the token fits^ compares (RT_ENUM.enum_decl), found again by the unit it
 // was declared in and its name. The type object is the arena's; the strings
 // are owned here.
@@ -188,7 +188,7 @@ typedef struct LhatEnumIdentity {
 // One thing the host registered, kept so that lhat_program_install can build
 // the values once a machine exists. The type side is in `program->hosted`
 // already, since the checker needs it before anything runs.
-// 05§8.7+: which scalar a constant entry carries. NONE for a function
+// [modules.host.nested-fault]: which scalar a constant entry carries. NONE for a function
 // or a type declaration -- the two shapes every entry had before.
 typedef enum {
     LHAT_HOST_CONST_NONE = 0,
@@ -214,19 +214,19 @@ typedef struct LhatHostEntry {
     LhatHostFn call;  // NULL for a type, which carries no value of its own
     void *context;
     uint8_t parameters;
-    bool has_variadic;  // §13.7: the signature ended in '...' -- see LhatHost
+    bool has_variadic;  // [syntax.type.variadic]: the signature ended in '...' -- see LhatHost
     bool takes_self;
-    bool self_last;     // §11.3+: the receiver is the right operand
-    // §14.12: the descriptor the machine's overload search reads, one
+    bool self_last;     // [syntax.op.right]: the receiver is the right operand
+    // [syntax.obj.override]: the descriptor the machine's overload search reads, one
     // per parameter, lowered once at registration onto host_heap (the
     // nodes) -- install hands every machine the same ones. The array is
     // owned; NULL where there is nothing to compare.
     LhatRuntimeType **parameter_types;
-    // 05§8.8: the tag values of this type carry. Kept on the entry so that
+    // [modules.hostdata]: the tag values of this type carry. Kept on the entry so that
     // it lives as long as the program and points at the entry's own strings.
     LhatHostDataTag *tag;
 
-    // 05§8.7+: the constant's shape and value, when the entry is one.
+    // [modules.host.nested-fault]: the constant's shape and value, when the entry is one.
     // `call` is NULL then, as for a type declaration -- const_kind is what
     // tells the two apart. const_text is owned.
     LhatHostConstKind const_kind;
@@ -236,7 +236,7 @@ typedef struct LhatHostEntry {
     char *const_text;
 } LhatHostEntry;
 
-// 05§8.6: one member of L^ itself. Separate from the above because it does
+// [modules.host.machine]: one member of L^ itself. Separate from the above because it does
 // not land under L^.modules, so install puts it somewhere else.
 typedef struct LhatGlobalEntry {
     char *name;  // owned
@@ -248,16 +248,16 @@ typedef struct LhatGlobalEntry {
     bool has_variadic;
     bool takes_self;
     bool self_last;
-    LhatRuntimeType **parameter_types;  // §14.12, as on LhatHostEntry
+    LhatRuntimeType **parameter_types;  // [syntax.obj.override], as on LhatHostEntry
 } LhatGlobalEntry;
 
-// 05§8.11: the host's lock. Declared because 07§4's remembered
+// [modules.host.lock]: the host's lock. Declared because [lsp.hover]'s remembered
 // completions are read and written from src/completion.c, which is not the
 // file that defines them.
 void lhat_program_hold(LhatProgram *program);
 void lhat_program_release(LhatProgram *program);
 
-// 07§4: what a member completion answered for one receiver.
+// [lsp.hover]: what a member completion answered for one receiver.
 //
 // Listing a receiver's members asks the checker for every built-in spelling
 // it knows of, one at a time (lhat_check_builtin_members), and that is nine
@@ -289,14 +289,14 @@ typedef struct {
 // and where a registration has arrived since they were made.
 void lhat_program_forget_completions(LhatProgram *program);
 
-// 05§8.7+5: one registered module's table, on the program's own heap.
+// [modules.host.shared-registry]: one registered module's table, on the program's own heap.
 typedef struct {
     const char *path;  // borrowed from the registration that named it
     LhatTable *table;
 } LhatSharedModule;
 
 struct LhatProgram {
-    // 05§8.11: the host's lock over every write to this program, or NULL
+    // [modules.host.lock]: the host's lock over every write to this program, or NULL
     // for the one-threaded case that needs none. Taken by the public
     // entries and by nothing else -- an entry that would nest calls the
     // half of itself that is already inside (compile_all, check_held,
@@ -305,17 +305,17 @@ struct LhatProgram {
     LhatProgramLockFn unlock;
     void *lock_context;
 
-    // 10§7.1: the language this program draws its messages in, NULL for the
+    // [l10n.choose.program]: the language this program draws its messages in, NULL for the
     // English the build holds, and the catalogs it was handed -- one per
     // language tag and source. Held here rather than anywhere global, since
-    // two programs in one process may be read in different languages (§2.3).
+    // two programs in one process may be read in different languages ([syntax.juxta.when]).
     char *language;
     LhatCatalog *catalogs;
     size_t catalog_count;
     size_t catalog_capacity;
 
-    // 05§6: shared, so the types one unit publishes stay valid in the units
-    // that require it. Never emptied while the program lives: 05§5.7's
+    // [modules.deps]: shared, so the types one unit publishes stay valid in the units
+    // that require it. Never emptied while the program lives: [modules.require.reload]'s
     // invalidation cannot free what it retired, since a unit it did not
     // touch may still be naming it.
     LhatTypeArena types;
@@ -326,7 +326,7 @@ struct LhatProgram {
     // and syntax diagnostics/ASTs but builds no semantic results or bytecode.
     bool syntax_only;
 
-    // 05§5.7: bodies lhat_program_invalidate took off their units and did
+    // [modules.require.reload]: bodies lhat_program_invalidate took off their units and did
     // not free. A closure made before the invalidation still points into one,
     // so they wait here until lhat_program_discard_retired -- or until the
     // program goes, which outlives every machine that could hold one.
@@ -334,7 +334,7 @@ struct LhatProgram {
     size_t retired_count;
     size_t retired_capacity;
 
-    // 05§5.7: what those bodies' constants named, taken off them when
+    // [modules.require.reload]: what those bodies' constants named, taken off them when
     // they were freed. A chunk's objects were always meant to outlive every
     // machine, and a machine goes on holding them after the body is gone --
     // L^.modules is keyed by the strings a unit's own prologue loads. So
@@ -364,11 +364,11 @@ struct LhatProgram {
     LhatCompileResult compile_result;
     const LhatUnit *compile_unit;
 
-    // 05§5.6: why the last lhat_program_load_* answered false, rendered
+    // [modules.require.load]: why the last lhat_program_load_* answered false, rendered
     // (every diagnostic, one per line). Owned; NULL until one has failed.
     char *load_failure;
 
-    // 05§8.7: what the host registered, as one nested table type keyed by
+    // [modules.host.import]: what the host registered, as one nested table type keyed by
     // module path -- the same shape L^.modules has, since that is where it
     // ends up. import^ resolves against this and against nothing else, which
     // is what keeps its answer independent of the order units are checked in.
@@ -376,19 +376,19 @@ struct LhatProgram {
     struct LhatHostEntry *host_entries;
     size_t host_entry_count;
 
-    // 05§8.7+2: the enums the host registered. Names owned; the RT_ENUM
+    // [modules.host.panic]: the enums the host registered. Names owned; the RT_ENUM
     // descriptor on host_heap is the per-program identity fits^ compares;
     // install builds the value objects per machine.
     struct LhatProgramEnum *host_enums;
     size_t host_enum_count;
     size_t host_enum_capacity;
 
-    // 05§10: see LhatEnumIdentity.
+    // [modules.binary]: see LhatEnumIdentity.
     LhatEnumIdentity *enum_identities;
     size_t enum_identity_count;
     size_t enum_identity_capacity;
 
-    // 05§10.7: the signature table lhat_program_read_signatures kept -- a copy
+    // [modules.binary.signatures]: the signature table lhat_program_read_signatures kept -- a copy
     // of the bytes and the sorted index into them. A build without the
     // front end registers a signature by looking it up here instead of
     // reading the text.
@@ -398,7 +398,7 @@ struct LhatProgram {
     size_t signature_count;
     size_t host_entry_capacity;
 
-    // §18.5: what lhat_register_annotation recorded. Only the checker
+    // [syntax.annot.host]: what lhat_register_annotation recorded. Only the checker
     // reads these -- an annotation never runs, so nothing is installed into
     // a machine for one. The strings are owned here.
     // The module and name strings are owned here, through the declaration
@@ -410,8 +410,8 @@ struct LhatProgram {
     size_t annotation_count;
     size_t annotation_capacity;
 
-    // 05§8.7: the run-time objects a registration makes -- 04§12.4's
-    // error kinds, and §14.12's descriptors of every registered
+    // [modules.host.import]: the run-time objects a registration makes -- [errors.grammar.types]'s
+    // error kinds, and [syntax.obj.override]'s descriptors of every registered
     // signature. On a heap of the program's own, born black, so they belong
     // to no machine's collection and live as long as the program: the same
     // reason chunk->heap (code.h) holds a unit's (lhat_proto_new's comment).
@@ -420,7 +420,7 @@ struct LhatProgram {
     // LhatUnits.host_errors.
     LhatHeap host_heap;
 
-    // 05§8.7+5: the registrations, built ONCE on host_heap as the tables
+    // [modules.host.shared-registry]: the registrations, built ONCE on host_heap as the tables
     // a machine would otherwise build for itself. `path` is the module a
     // registration named, `table` what stands at it; install hangs each off
     // the machine's own L^.modules rather than filling one in.
@@ -441,7 +441,7 @@ struct LhatProgram {
     size_t shared_from_types;
     size_t shared_from_enums;
 
-    // 07§4: what a member completion last answered, by receiver.
+    // [lsp.hover]: what a member completion last answered, by receiver.
     // LHAT_COMPLETION_REMEMBERED slots, allocated at the first answer worth
     // keeping. Emptied when a registration has arrived since they were
     // filled, which is the one thing that changes what a receiver answers --
@@ -459,7 +459,7 @@ struct LhatProgram {
     size_t host_error_entry_count;
     size_t host_error_entry_capacity;
 
-    // 05§8.8 の fits^ 版: lhat_register_hostdata_type が返した
+    // [modules.hostdata] の fits^ 版: lhat_register_hostdata_type が返した
     // LhatHostDataTag を、コンパイラが "module.Name" から引けるように
     // した登録簿。tag 自体は host_entries[i].tag が既に持っているが、
     // それは非公開の LhatHostEntry の中なので、hosted.h から読める形の
@@ -467,7 +467,7 @@ struct LhatProgram {
     LhatHostTypeEntry *host_type_entries;
     size_t host_type_entry_count;
     size_t host_type_entry_capacity;
-    // 05§8.8+: whether a derived type has been given what its base
+    // [modules.hostdata.base]: whether a derived type has been given what its base
     // registered. Done once, when registration closes -- which is the first
     // check, since registering after one "is too late and answers false"
     // (program.h). Doing it at each lhat_register_hostdata_subtype would be
@@ -476,7 +476,7 @@ struct LhatProgram {
     // no members to inherit at the moment the relation is declared.
     bool hostdata_flattened;
 
-    // 05§8.9: the host value types, one entry per registration. Unlike
+    // [modules.hostvalue]: the host value types, one entry per registration. Unlike
     // the two registries above this one owns its tags (and their field
     // arrays); the strings belong to host_entries as usual. Registration
     // order is the tag's index, which is how a machine finds the members
@@ -485,7 +485,7 @@ struct LhatProgram {
     size_t hostvalue_type_entry_count;
     size_t hostvalue_type_entry_capacity;
 
-    // 05§8.7: what lhat_program_on_dispose recorded -- what a
+    // [modules.host.import]: what lhat_program_on_dispose recorded -- what a
     // registration made and the program gives back. Run in reverse order at
     // dispose, before anything of the program's own goes.
     struct LhatProgramDisposal {
@@ -495,14 +495,14 @@ struct LhatProgram {
     size_t disposal_count;
     size_t disposal_capacity;
 
-    // 05§8.6: what the host put in L^ itself, as the type side of it. The
-    // checker's own L^ carries these on top of what 05§8.6 lists.
+    // [modules.host.machine]: what the host put in L^ itself, as the type side of it. The
+    // checker's own L^ carries these on top of what [modules.host.machine] lists.
     LhatType *globals;
     struct LhatGlobalEntry *global_entries;
     size_t global_count;
     size_t global_capacity;
 
-    // 05§8.2: the names bound without a require^, kept as two arrays so
+    // [modules.host.initial]: the names bound without a require^, kept as two arrays so
     // that check.h and compile.h can each read them without knowing a type
     // the other declares.
     char **initial_names;    // owned
@@ -518,7 +518,7 @@ void lhat_program_init(LhatProgram *program, bool strict,
                        LhatProgramLoader load, void *context);
 void lhat_program_dispose(LhatProgram *program);
 
-// 05§10: what serialize.c asks of the program while reading a unit.
+// [modules.binary]: what serialize.c asks of the program while reading a unit.
 // `relative` is read against `from`'s directory, as a require^ is.
 LhatUnit *lhat_program_require_unit(LhatProgram *program, LhatUnit *from,
                                     const char *relative, size_t length);
@@ -532,7 +532,7 @@ void lhat_program_report(LhatProgram *program, LhatProgramErrorCode code,
 const LhatType *lhat_program_enum_identity(LhatProgram *program,
                                            const char *path,
                                            const char *name);
-// 05§10.7: the descriptor the signature table holds for `text` -- a
+// [modules.binary.signatures]: the descriptor the signature table holds for `text` -- a
 // SUBROUTINE whose parts are the parameters, with the receiver and variadic
 // marks, built onto host_heap. NULL when the table has no such text, or a
 // name in it is not registered on this program (reported as
@@ -540,8 +540,8 @@ const LhatType *lhat_program_enum_identity(LhatProgram *program,
 const LhatRuntimeType *lhat_program_signature_type(LhatProgram *program,
                                                    const char *text);
 
-// 07§6 and the diagnostic accessors: one index over the three stages'
-// arrays, in the order 03§1.1 runs them. Answers false past the end, which
+// [lsp.next] and the diagnostic accessors: one index over the three stages'
+// arrays, in the order [pipeline.stages.tree] runs them. Answers false past the end, which
 // is what makes every entry point one bounds test rather than three.
 bool lhat_unit_stage_of(const LhatUnit *unit, size_t index, LhatStage *stage,
                         size_t *within);

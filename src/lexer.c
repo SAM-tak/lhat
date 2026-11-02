@@ -113,7 +113,7 @@ static bool is_reserved_symbol(uint32_t cp)
            cp == 0x00D7u || cp == 0x22C5u;
 }
 
-// 01§3.1 asks for UAX #31 XID_Start / XID_Continue. Shipping the full
+// [lex.ident.chars] asks for UAX #31 XID_Start / XID_Continue. Shipping the full
 // tables is deferred; every non-ASCII code point that is neither whitespace
 // nor a reserved symbol is accepted instead. This is deliberately more
 // permissive than UAX #31 and is the one place where the implementation
@@ -269,7 +269,7 @@ static void string_push_byte(LhatLexer *lexer, char byte)
 // ---------------------------------------------------------------------------
 
 #if LHAT_WITH_COMMENTS
-// 01§6.4: kept rather than dropped, in source order. Called once the whole of a
+// [lex.comment.kept]: kept rather than dropped, in source order. Called once the whole of a
 // comment has been scanned, so `lexer->pos` is already past it.
 static void record_comment(LhatLexer *lexer, uint32_t offset, uint32_t line,
                            uint32_t column, bool block)
@@ -323,7 +323,7 @@ static void skip_block_comment(LhatLexer *lexer)
         }
     }
 
-    // 10§6.2: it ran to the end of the input. Kept all the same -- what was
+    // [l10n.catalog.english-baked]: it ran to the end of the input. Kept all the same -- what was
     // written is still a comment, and a tool showing the source of a node
     // should not lose it because the file is mid-edit.
     record_comment(lexer, start_offset, start_line, start_column, true);
@@ -401,7 +401,7 @@ static LhatToken finish(LhatLexer *lexer, Mark start, LhatTokenKind kind)
 // Identifiers (sections 2 and 3)
 // ---------------------------------------------------------------------------
 
-// §18.2: '@' and the name glued to it. The '@' is the mark and not part
+// [syntax.annot.spelling]: '@' and the name glued to it. The '@' is the mark and not part
 // of the name, so what comes back spells `export` and a reader comparing
 // names never has to strip anything.
 static LhatToken scan_annotation(LhatLexer *lexer, Mark start)
@@ -424,7 +424,7 @@ static LhatToken scan_annotation(LhatLexer *lexer, Mark start)
     }
 
     LhatToken token = finish(lexer, start, LHAT_TOKEN_ANNOTATION);
-    // The span is the name alone: §18.2 makes the '@' a mark on the token
+    // The span is the name alone: [syntax.annot.spelling] makes the '@' a mark on the token
     // rather than a character of what it names.
     token.offset = (uint32_t)name.offset;
     token.length = (uint32_t)(lexer->pos - name.offset);
@@ -442,7 +442,7 @@ static LhatToken scan_identifier(LhatLexer *lexer, Mark start)
         advance_n(lexer, (size_t)width);
     }
 
-    // 09§2.3: a run of '^' glued to the identifier turns it into a hat
+    // [debug.hook.nature]: a run of '^' glued to the identifier turns it into a hat
     // identifier, and the count is retained (super^^^).
     uint32_t hats = 0;
     while (current_byte(lexer) == '^') {
@@ -458,11 +458,11 @@ static LhatToken scan_identifier(LhatLexer *lexer, Mark start)
     return finish(lexer, start, LHAT_TOKEN_IDENT);
 }
 
-// 10§3.1. `a name` is a name written out in full, spaces and symbols
+// [l10n.scope.shown]. `a name` is a name written out in full, spaces and symbols
 // included -- a way of spelling an identifier, not a different kind of name,
 // so it comes back as the LHAT_TOKEN_IDENT any other name does. A doubled
 // backtick stands for one backtick, following the same convention as the raw
-// string in 10§5.2.
+// string in [l10n.compose.hole-kinds].
 //
 // What tells one apart is `v.string`: the spelling is not the source slice
 // (the delimiters are not part of the name and a doubled backtick is one), so
@@ -472,7 +472,7 @@ static LhatToken scan_identifier(LhatLexer *lexer, Mark start)
 //
 // Newlines are not allowed inside: an identifier never spans lines, and
 // stopping at the end of the line keeps an unclosed delimiter from consuming
-// the rest of the file the way an unterminated string can (01§5.5).
+// the rest of the file the way an unterminated string can ([lex.string.multiline-risk]).
 static LhatToken scan_name_literal(LhatLexer *lexer, Mark start)
 {
     advance(lexer);  // opening backtick
@@ -515,12 +515,12 @@ static LhatToken scan_name_literal(LhatLexer *lexer, Mark start)
 }
 
 // ---------------------------------------------------------------------------
-// Numbers (sections 4, §10.1, §10.2, §10.3)
+// Numbers (sections 4, [syntax.finally.block], [syntax.finally.every-exit], [syntax.finally.last])
 // ---------------------------------------------------------------------------
 
-// The grammar itself is number.c's: §14.17+2 reads it too, and one
+// The grammar itself is number.c's: [syntax.obj.tonumber] reads it too, and one
 // grammar read two ways is two grammars. What is left here is what a lexer
-// owns -- moving the position, naming the error to a reader, and §10.3's rule
+// owns -- moving the position, naming the error to a reader, and [syntax.finally.last]'s rule
 // about what may follow, which needs the identifier tables that number.c has
 // no business knowing about.
 static LhatToken scan_number(LhatLexer *lexer, Mark start)
@@ -529,7 +529,7 @@ static LhatToken scan_number(LhatLexer *lexer, Mark start)
     lhat_number_literal(lexer->source->text + start.offset,
                         lexer->source->length - start.offset, lexer->after_dot,
                         &read);
-    advance_n(lexer, read.length);  // 04§4.5: what was read stays read
+    advance_n(lexer, read.length);  // [errors.catch.clause]: what was read stays read
 
     if (read.status == LHAT_NUMBER_BAD_EXPONENT) {
         report_at(lexer, LHAT_ERR_MALFORMED_EXPONENT, (uint32_t)start.offset,
@@ -537,7 +537,7 @@ static LhatToken scan_number(LhatLexer *lexer, Mark start)
         return finish(lexer, start, LHAT_TOKEN_ERROR);
     }
 
-    // 01§10.3: "1to^3" is an error; a space is required. Asked
+    // [lex.ambig.number-ident]: "1to^3" is an error; a space is required. Asked
     // before the status below, so that "0xg" is a number with a word stuck to
     // it rather than a malformed one.
     int width;
@@ -707,7 +707,7 @@ static LhatToken scan_raw_string(LhatLexer *lexer, Mark start)
     return token;
 }
 
-// 09§5.3. Runs to the end of the line and needs no closing delimiter,
+// [debug.dap.columns]. Runs to the end of the line and needs no closing delimiter,
 // which also makes it usable as a comment. Escapes are not processed: a line
 // string used as a comment must not fail on a stray backslash.
 static LhatToken scan_line_string(LhatLexer *lexer, Mark start)
@@ -728,10 +728,10 @@ static LhatToken scan_line_string(LhatLexer *lexer, Mark start)
 }
 
 // ---------------------------------------------------------------------------
-// Scope specifiers (section 8) and interpolation (section 01§5.4)
+// Scope specifiers (section 8) and interpolation (section [lex.string.interp])
 // ---------------------------------------------------------------------------
 
-// 01§5.4. Scans the literal run between two holes. Never skips trivia:
+// [lex.string.interp]. Scans the literal run between two holes. Never skips trivia:
 // whitespace inside a string is content.
 static LhatToken scan_interpolation_segment(LhatLexer *lexer)
 {
@@ -800,7 +800,7 @@ static LhatToken scan_interpolation_segment(LhatLexer *lexer)
     return token;
 }
 
-// 01§5.4. Everything from the ':' up to the closing '}' is taken as raw
+// [lex.string.interp]. Everything from the ':' up to the closing '}' is taken as raw
 // text; a format specifier is not an expression.
 static LhatToken scan_interpolation_format(LhatLexer *lexer)
 {
@@ -824,7 +824,7 @@ static LhatToken scan_dollar(LhatLexer *lexer, Mark start)
 {
     char next = byte_at(lexer, 1);
 
-    // §10.6: one byte of lookahead decides between an interpolated
+    // [syntax.finally.not-in-f]: one byte of lookahead decides between an interpolated
     // string and a scope specifier.
     if (next == '"') {
         advance_n(lexer, 2);
@@ -838,7 +838,7 @@ static LhatToken scan_dollar(LhatLexer *lexer, Mark start)
         return finish(lexer, start, LHAT_TOKEN_INTERP_BEGIN);
     }
 
-    // 01§5.4: interpolation requires double quotes, so $'...' is not a
+    // [lex.string.interp]: interpolation requires double quotes, so $'...' is not a
     // thing. Saying so beats letting it fail as a scope specifier.
     if (next == '\'') {
         report(lexer, LHAT_ERR_INTERPOLATION_NEEDS_QUOTES);
@@ -848,12 +848,12 @@ static LhatToken scan_dollar(LhatLexer *lexer, Mark start)
 
     advance(lexer);  // '$'
 
-    // 09§8: two ways of counting, and the sigil says which. Repeating
+    // [debug.open]: two ways of counting, and the sigil says which. Repeating
     // '$' counts inwards from the outermost scope -- '$' is the unit, '$$'
     // the one scope inside it, '$$$' the one inside that. Repeating '^'
     // counts outwards from here instead.
     //
-    // 01§8.3: there is no global scope, so '$' is the outermost there is.
+    // [lex.scope.no-globals]: there is no global scope, so '$' is the outermost there is.
     LhatScopeKind kind = LHAT_SCOPE_FILE;
     uint32_t depth = 0;
 
@@ -897,16 +897,16 @@ typedef struct {
 
 // Ordered longest first so that a linear scan implements maximal munch.
 static const OperatorEntry operator_table[] = {
-    // §8.6.4: the nil-safe assignment spellings. Longest of all, and each has
+    // [syntax.stmt.nil-assign]: the nil-safe assignment spellings. Longest of all, and each has
     // to precede both its own plain compound below and the '?' forms after
     // it -- "?..=" before "?." or the spelling splits, "?**=" before "?*=".
     { "?//=", 4, LHAT_OP_NIL_FLOORDIV_ASSIGN },
     { "?**=", 4, LHAT_OP_NIL_POW_ASSIGN },
     { "?..=", 4, LHAT_OP_NIL_CONCAT_ASSIGN },
 
-    { "...", 3, LHAT_OP_ELLIPSIS },     // must precede ".." (§13.7)
+    { "...", 3, LHAT_OP_ELLIPSIS },     // must precede ".." ([syntax.type.variadic])
 
-    // §8.6.4: before ":=" below, which it would otherwise split into.
+    // [syntax.stmt.nil-assign]: before ":=" below, which it would otherwise split into.
     { "?:=", 3, LHAT_OP_NIL_REASSIGN },
     { "?+=", 3, LHAT_OP_NIL_ADD_ASSIGN },
     { "?-=", 3, LHAT_OP_NIL_SUB_ASSIGN },
@@ -914,13 +914,13 @@ static const OperatorEntry operator_table[] = {
     { "?/=", 3, LHAT_OP_NIL_DIV_ASSIGN },
     { "?%=", 3, LHAT_OP_NIL_MOD_ASSIGN },
 
-    // 01§7.4: compound assignment. Each must precede its own plain operator
+    // [lex.op.compound]: compound assignment. Each must precede its own plain operator
     // below (e.g. "//=" before "//"), or the '=' would be left stray.
     { "//=", 3, LHAT_OP_FLOORDIV_ASSIGN },
     { "**=", 3, LHAT_OP_POW_ASSIGN },
     { "..=", 3, LHAT_OP_CONCAT_ASSIGN },
 
-    // §11.9: three-way comparison. Must precede "<=" and "<" below for
+    // [syntax.op.compare]: three-way comparison. Must precede "<=" and "<" below for
     // the same reason the compound spellings precede theirs.
     { "<=>", 3, LHAT_OP_SPACESHIP },
 
@@ -975,11 +975,11 @@ static const OperatorEntry operator_table[] = {
     { "|", 1, LHAT_OP_UNION },
     { "&", 1, LHAT_OP_INTERSECT },
     { ".", 1, LHAT_OP_DOT },
-    // §11.7+2: postfix '?'. Last of the '?' family on purpose -- the
+    // [syntax.op.present]: postfix '?'. Last of the '?' family on purpose -- the
     // two-character spellings above are matched first, so this one is only
     // ever reached where none of them can be ('?' before '{', ':', ')', ',',
     // a newline or a word). '(t?).x' therefore needs its parentheses, which
-    // costs nothing: §14.17's tostring is all a bool^ carries.
+    // costs nothing: [syntax.obj.tostring]'s tostring is all a bool^ carries.
     { "?", 1, LHAT_OP_PRESENT },
 };
 
@@ -1009,7 +1009,7 @@ void lhat_lexer_init(LhatLexer *lexer, const LhatSource *source)
     lexer->line = 1;
     lexer->column = 1;
     // The first token sits at the start of a line, so it counts as preceded by
-    // a newline for the purposes of section 01§10.9.
+    // a newline for the purposes of section [lex.ambig.call-line].
     lexer->pending_newline = true;
 }
 
@@ -1089,7 +1089,7 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
         advance(lexer);
         token = finish(lexer, start, LHAT_TOKEN_ERROR);
     } else if (c == '"') {
-        // §10.5: maximal munch, so `"""` wins over an empty string.
+        // [syntax.finally.result]: maximal munch, so `"""` wins over an empty string.
         token = (byte_at(lexer, 1) == '"' && byte_at(lexer, 2) == '"')
                     ? scan_line_string(lexer, start)
                     : scan_escaped_string(lexer, start);
@@ -1106,7 +1106,7 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
     } else if (is_ident_start(cp)) {
         token = scan_identifier(lexer, start);
     } else if (c == '^') {
-        // §2.5: '^' only ever follows an identifier.
+        // [syntax.juxta.hat-start]: '^' only ever follows an identifier.
         report(lexer, LHAT_ERR_BARE_HAT);
         advance(lexer);
         token = finish(lexer, start, LHAT_TOKEN_ERROR);
@@ -1143,7 +1143,7 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
 const char *lhat_lexer_string(const LhatLexer *lexer, const LhatToken *token,
                               size_t *length)
 {
-    // 10§3.1: an identifier written with backticks carries its spelling here
+    // [l10n.scope.shown]: an identifier written with backticks carries its spelling here
     // too, since the delimiters are not part of the name. Every other
     // identifier is its own source slice and leaves this empty.
     if (token->kind != LHAT_TOKEN_STRING &&
@@ -1160,10 +1160,10 @@ const char *lhat_lexer_string(const LhatLexer *lexer, const LhatToken *token,
     return lexer->strings + token->v.string.offset;
 }
 
-// 10§4: the ID and the English text of every LhatErrorCode, indexed by the
+// [l10n.id]: the ID and the English text of every LhatErrorCode, indexed by the
 // code. The ID is the one a translation is written against and never changes
 // meaning; the English is the reference every other language translates (10
-// §2.2).
+// [syntax.juxta.command]).
 static const LhatMessageEntry LEX_MESSAGES[] = {
     [LHAT_ERR_NONE] = {"lex.none", "no error"},
     [LHAT_ERR_UNEXPECTED_CHARACTER] =

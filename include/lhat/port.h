@@ -36,7 +36,7 @@ extern "C" {
 // ---------------------------------------------------------------------------
 //
 // These stand where the C library's four would. `lhat_calloc` is separate
-// rather than folded into `lhat_alloc` because 03§2.2 numbers
+// rather than folded into `lhat_alloc` because [pipeline.value.layout] numbers
 // LHAT_VALUE_NIL first with a zero payload, which makes zeroed memory a stack
 // already full of nil^ -- the machine leans on that rather than filling one.
 
@@ -82,9 +82,9 @@ FILE *lhat_fopen(const char *path, const char *mode);
 // Reading a unit
 // ---------------------------------------------------------------------------
 
-// 05§5.1: the bytes at `path` (UTF-8), or NULL when there are none there. The
+// [modules.require.path]: the bytes at `path` (UTF-8), or NULL when there are none there. The
 // caller frees the result with lhat_free. Normalising newlines and the BOM
-// belongs to the source (01§1) and is not done here.
+// belongs to the source ([lex.source]) and is not done here.
 //
 // Written in the shape of an LhatProgramLoader so that a host reading units
 // from files hands it to lhat_program_init as it is. **The language has no

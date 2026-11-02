@@ -1,18 +1,18 @@
 // L^ (lhat) -- the operators a type may define.
 //
 // Not a lexical fact, which is why it is here rather than beside the tokens:
-// 01§7 scans '+' and '<=>' the same way it scans '|' and '?', and this
-// is the shorter list of the ones §11.8 lets op^ name. It expands to
+// [lex.op] scans '+' and '<=>' the same way it scans '|' and '?', and this
+// is the shorter list of the ones [syntax.op.define] lets op^ name. It expands to
 // instruction names as well, so it would carry the machine into any header it
 // sat in.
 
 #ifndef LHAT_OPERATORS_H
 #define LHAT_OPERATORS_H
 
-// §11.8 with §11.9: the member names op^ may write -- '..', the seven
+// [syntax.op.define] with [syntax.op.compare]: the member names op^ may write -- '..', the seven
 // arithmetic operators, cross/dot, '<=>' and '='. The last is the one comparison
 // written on its own: a type may know what equals what without knowing what
-// comes first, and §11.9 has '=' and '≠' read it before reaching for '<=>'.
+// comes first, and [syntax.op.compare] has '=' and '≠' read it before reaching for '<=>'.
 // The other four comparisons are read off '<=>' alone. One list, expanded
 // three ways: the checker's member naming, the machine's candidate lookup,
 // and the membership test. They have to agree byte for byte, and one list is

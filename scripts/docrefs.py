@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Check that every reference to a design document names a heading.
+"""Check the labels of the design documents and every reference to them.
 
     python scripts/docrefs.py
 
-A reference is `NN§S` (DesignDocuments/README.md): NN is the two-digit prefix
-of a DesignDocuments file and S a heading's number -- `8.8`, a chapter `14`, a
-revision `15.1+` or `15.1+2`. `NN§` alone is the whole document. Without NN it
-means 02 in code and the document itself inside a document.
+Each numbered heading ends with its label -- `### 8.8 ホストのデータ
+[modules.hostdata]` -- and a reference is that label in brackets, in a
+comment or in a document's prose (DesignDocuments/README.md). A document's own
+name (`[modules]`) refers to the whole of it.
 """
 
 import io
@@ -17,33 +17,44 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOCS = os.path.join(ROOT, 'DesignDocuments')
-DEFAULT = '02'
+NAMES = {'01': 'lex', '02': 'syntax', '03': 'pipeline', '04': 'errors',
+         '05': 'modules', '07': 'lsp', '08': 'lton', '09': 'debug',
+         '10': 'l10n', '11': 'binary', '12': 'spec'}
 SOURCES = ['*.c', '*.h', '*.cpp', '*.lh', '*.py', '*.cmake', 'CMakeLists.txt',
            '*.ts', '*.mjs']
 
-SEC = r'\d+(?:\.\d+)*(?:\+\d*)?'
-HEADING = re.compile(r'^#{2,6} (' + SEC + r')\.?(?=\s|$)')
-REF = re.compile(r'(?<![\w.])(\d\d)?§(' + SEC + r')?')
-# What references were written as before the notation.
+NUMBERED = re.compile(r'^#{2,6} \d+(?:\.\d+)*(?:\+\d*)?\.?(?=\s|$)')
+LABEL = re.compile(r'\[([a-z0-9]+(?:\.[a-z0-9-]+)+)\]\s*$')
+REF = re.compile(r'\[((?:' + '|'.join(NAMES.values()) + r')(?:\.[a-z0-9-]+)*)\]')
+# What references were written as before the labels.
 OLD = re.compile(r'(?<![\d.])\d\d の \d|\d\s?章|(?<![A-Za-z\d])\d+(?:\.\d+)*改|'
-                 r'§\s\d|\d\d\s§|Section\s\d')
+                 r'§|Section\s\d')
 
 
-def headings():
-    docs = {}
+def labels(report):
+    """Every label, after checking that each numbered heading has one of its
+    own and that it starts with its document's name."""
+    found = set(NAMES.values())
     for name in sorted(os.listdir(DOCS)):
         m = re.match(r'(\d\d)-.*\.md$', name)
         if not m:
             continue
-        found = set()
         fence = False
-        for line in io.open(os.path.join(DOCS, name), encoding='utf-8'):
+        for i, line in enumerate(io.open(os.path.join(DOCS, name), encoding='utf-8')):
             fence ^= line.startswith('```')
-            h = None if fence else HEADING.match(line)
-            if h:
-                found.add(h.group(1))
-        docs[m.group(1)] = found
-    return docs
+            if fence or not NUMBERED.match(line):
+                continue
+            at = f'DesignDocuments/{name}:{i + 1}'
+            label = LABEL.search(line)
+            if not label:
+                report(f'{at}: a numbered heading without a label')
+            elif not label.group(1).startswith(NAMES.get(m.group(1), '?') + '.'):
+                report(f'{at}: [{label.group(1)}] does not start with {NAMES.get(m.group(1))}.')
+            elif label.group(1) in found:
+                report(f'{at}: [{label.group(1)}] is already another heading\'s')
+            else:
+                found.add(label.group(1))
+    return found
 
 
 def c_comments(lines):
@@ -91,42 +102,34 @@ def hash_comments(lines):
 
 
 def prose(lines):
-    """A document outside fenced code, less each heading's own number."""
+    """A document outside fenced code."""
     fence = False
     for i, line in enumerate(lines):
         if line.startswith('```'):
             fence = not fence
         elif not fence:
-            h = HEADING.match(line)
-            yield i, h.end() if h else 0, len(line)
+            yield i, 0, len(line)
 
 
-def check(path, home, spans, docs):
+def check(path, spans, known, report):
     lines = io.open(os.path.join(ROOT, path), encoding='utf-8').read().split('\n')
-    bad = 0
     for i, a, b in spans(lines):
         text = lines[i][a:b]
         old = OLD.search(text)
         if old:
-            print(f'{path}:{i + 1}: old spelling: {old.group(0)}')
-            bad += 1
+            report(f'{path}:{i + 1}: old spelling: {old.group(0)}')
         for m in REF.finditer(text):
-            doc = m.group(1) or home
-            ok = (doc in docs if m.group(2) is None
-                  else m.group(2) in docs.get(doc, ()))
-            if not ok:
-                print(f'{path}:{i + 1}: {m.group(0)} names no heading')
-                bad += 1
-    return bad
+            if m.group(1) not in known:
+                report(f'{path}:{i + 1}: [{m.group(1)}] names no heading')
 
 
 def main():
-    docs = headings()
-    bad = 0
+    problems = []
+    report = problems.append
+    known = labels(report)
     for name in sorted(os.listdir(DOCS)):
-        m = re.match(r'(\d\d)-.*\.md$', name)
-        if m:   # README.md spells the notation out, examples and all
-            bad += check('DesignDocuments/' + name, m.group(1), prose, docs)
+        if re.match(r'\d\d-.*\.md$', name):   # README.md spells the notation out
+            check('DesignDocuments/' + name, prose, known, report)
     listed = subprocess.run(['git', 'ls-files', '--', *SOURCES], cwd=ROOT,
                             capture_output=True, text=True, encoding='utf-8')
     for path in listed.stdout.splitlines():
@@ -134,9 +137,11 @@ def main():
             continue
         spans = c_comments if path.endswith(('.c', '.h', '.cpp', '.ts', '.mjs')) \
             else hash_comments
-        bad += check(path, DEFAULT, spans, docs)
-    print(f'{bad} reference(s) to fix' if bad else 'every reference names a heading')
-    return 1 if bad else 0
+        check(path, spans, known, report)
+    for line in problems:
+        print(line)
+    print(f'{len(problems)} problem(s)' if problems else 'every reference names a heading')
+    return 1 if problems else 0
 
 
 if __name__ == '__main__':

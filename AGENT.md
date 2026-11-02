@@ -22,10 +22,11 @@ Lua風の、C言語でコンパイル可能なバイトコードインタプリ�
 
 既存の日本語コメントはそのまま残す。そのコメント自体を書き直すときだけ英語にする。
 
-### 設計文書は `NN§S` で指す
+### 設計文書はラベルで指す
 
-`05§8.8`、`§15.1+`（文書番号を省くと 02）。詳細は [DesignDocuments/README.md](DesignDocuments/README.md) の「参照の書き方」。
-`python scripts/docrefs.py` で、参照が実在する見出しを指しているかを確かめる。
+`[modules.hostdata]`、`[syntax.sub.kinds]` のように、見出しの行末のラベルを角括弧で書く。番号では指さない。
+詳細は [DesignDocuments/README.md](DesignDocuments/README.md) の「見出しとラベル」「参照の書き方」。
+`python scripts/docrefs.py` で、参照が実在するラベルを指しているかを確かめる。
 
 ## その他のリソース
 

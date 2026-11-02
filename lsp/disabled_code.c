@@ -1,4 +1,4 @@
-// L^ (lhat) -- LSP server: code switched off with '#[~ ... ]#' (01§6.5).
+// L^ (lhat) -- LSP server: code switched off with '#[~ ... ]#' ([lex.comment.disabled]).
 
 #include "disabled_code.h"
 
@@ -13,7 +13,7 @@ const char *lsp_disabled_code_statements_field(const LhatNode *node)
     switch (node->kind) {
         case LHAT_NODE_BLOCK:
             return "items";
-        // §9: a clause lists the statements under its marker.
+        // [syntax.loop]: a clause lists the statements under its marker.
         case LHAT_NODE_LOOP_CLAUSE:
             return "body";
         default:
@@ -133,7 +133,7 @@ static cJSON *refusal(const char *why)
 
 // The innermost disabled code holding the whole selection, looked for among
 // `comments` -- lexed from `text` -- and then inside what it holds, since
-// block comments nest (§6.2).
+// block comments nest ([syntax.colon.if-expr]).
 static bool enclosing_code(const char *text, size_t length,
                            const LhatComment *comments, size_t count,
                            Span s, Span *found)
@@ -179,7 +179,7 @@ static bool remove_marker(cJSON *edits, const LhatUnit *unit, uint32_t at,
     return add_edit(edits, unit, from, to, "");
 }
 
-// §18.4: an annotation is written above its declaration, whose span
+// [syntax.annot.where]: an annotation is written above its declaration, whose span
 // begins below it. Switching the declaration off without it would leave the
 // annotation over whatever statement comes next.
 static uint32_t statement_start(const LhatNode *statement)
@@ -244,7 +244,7 @@ static bool find_run(const LhatNode *holder, const Wrap *w,
     }
 
     if (*first == NULL) {
-        // §9's clauses list statements of their own, after the block's.
+        // [syntax.loop]'s clauses list statements of their own, after the block's.
         for (const LhatNode *clause =
                  holder->kind == LHAT_NODE_BLOCK ? holder->v.list.extra : NULL;
              clause != NULL; clause = clause->next) {
@@ -272,7 +272,7 @@ static bool find_run(const LhatNode *holder, const Wrap *w,
     return true;
 }
 
-// §6.2: inside a block comment the lexer counts '#[' and ']#' wherever they
+// [syntax.colon.if-expr]: inside a block comment the lexer counts '#[' and ']#' wherever they
 // stand, in a string or a line comment too. Wrapping text in which they do
 // not pair up would end the comment somewhere in the middle of it, or not
 // where the marker is.

@@ -37,7 +37,7 @@ static inline void vm_clear_scratch_inline(Machine *m, size_t base,
 }
 
 
-// §11.3+: how one side answered the operator it was asked for.
+// [syntax.op.right]: how one side answered the operator it was asked for.
 typedef enum {
     OPERATOR_PICKED,       // a candidate was found and takes the other operand
     OPERATOR_ABSENT,       // this side carries no such member
@@ -46,19 +46,19 @@ typedef enum {
 } OperatorLookup;
 
 
-// §16.3: a table's walk has no body to enter, so one step is the whole
+// [syntax.for.forms]: a table's walk has no body to enter, so one step is the whole
 // of resuming it. Both the opcode the loops emit and the start()/resume() a
-// program writes by hand take this step -- §16.3 puts a table's iterate() on
+// program writes by hand take this step -- [syntax.for.forms] puts a table's iterate() on
 // the same footing as any other coroutine, so what the two do has to agree.
 typedef enum {
     WALK_TOOK,      // a pair came out; the walk is suspended again
     WALK_ENDED      // nothing left, so the walk is finished
 } WalkStep;
 
-// §16.3 with §13.8+: how the walk was asked, which decides where one step's
+// [syntax.for.forms] with [syntax.type.tuple]: how the walk was asked, which decides where one step's
 // tuple goes. The loop says which by RESUME's C -- the count of names is
 // syntax, so an unchecked compile says the same thing a checked one does
-// (03§4.2). No mode allocates.
+// ([pipeline.repl.no-fork]). No mode allocates.
 typedef enum {
     // 'for^ v in^ t': the values of the sequence half, in order, the keyed
     // half not visited -- 'for^ i from^ 0 to^ the length - 1 { t[i] }' written
@@ -68,7 +68,7 @@ typedef enum {
     // the pair as a run -- head slot plus two positions in the slots the
     // caller reserved.
     WALK_AS_RUN,
-    // §15.8's delegation loop, which reserved one slot: the head goes into
+    // [syntax.sub.await]'s delegation loop, which reserved one slot: the head goes into
     // it and the positions into the frame's answer room, which is exactly
     // where the YIELD forwarding them reads a tuple's positions from.
     WALK_AS_ANSWER
@@ -76,7 +76,7 @@ typedef enum {
 
 
 
-// What an index reads from. 04§2.3 gives every error message and cause
+// What an index reads from. [errors.kind.made] gives every error message and cause
 // without declaring them, so an error answers a member the same way a table
 // does -- from the table its fields live in.
 static inline LhatTable *vm_table_of(LhatValue value)
@@ -87,7 +87,7 @@ static inline LhatTable *vm_table_of(LhatValue value)
     if (lhat_is_object_kind(value, LHAT_OBJECT_ERROR)) {
         return ((LhatError *)lhat_as_object(value))->fields;
     }
-    // §19: E.AAA reads the members table; it is sealed, so the
+    // [syntax.enum]: E.AAA reads the members table; it is sealed, so the
     // writes the instructions refuse stay refused.
     if (lhat_is_object_kind(value, LHAT_OBJECT_ENUM)) {
         return ((LhatEnum *)lhat_as_object(value))->members;
@@ -219,14 +219,14 @@ static inline void vm_table_write_barrier(Machine *m, LhatTable *table,
     }
 }
 
-// vm_member.c: vm_cached_member's answer where it was lent (§14.7+2). Out of
+// vm_member.c: vm_cached_member's answer where it was lent ([syntax.obj.delegate]). Out of
 // line, so that what the run loop inlines stays the size it was.
 const LhatValue *vm_cached_lent(Machine *m, const LhatChunk *chunk,
                                 size_t site, size_t receiver,
                                 const LhatTable *start,
                                 const LhatMemberCache *remembered);
 
-// 12§3: the member a GETMEMBER, GETMETHOD or CALLMEMBER site found
+// [spec.member-cache]: the member a GETMEMBER, GETMETHOD or CALLMEMBER site found
 // last time, when it is still the answer for what stands in slot
 // `receiver` -- or NULL, and `*cache` is where the slow path writes what it
 // finds. A lent answer puts what lent it in that slot, as the slow path does.
@@ -256,13 +256,13 @@ static inline const LhatValue *vm_cached_member(Machine *m,
         remembered->receiver == NULL
             // An instance is a fresh table per value, so what is compared
             // is not the table but the fact that it has never been
-            // structurally written since it was cloned -- and 03§5.10 seals the
+            // structurally written since it was cloned -- and [pipeline.bc.object] seals the
             // prototype, so such a clone carries the prototype's keys and no
             // others and cannot be shadowing this member.
             ? (start->version == 0 && start->definition == answered &&
                answered->version == remembered->version)
-            // 05§8.8 shares one members table per host type, so for
-            // those this is the same table every time -- and 05§8.7+5's shared
+            // [modules.hostdata] shares one members table per host type, so for
+            // those this is the same table every time -- and [modules.host.shared-registry]'s shared
             // tables are written by nobody, so neither is any base it found
             // the member on.
             : (start == remembered->receiver &&
@@ -294,11 +294,11 @@ bool vm_hostvalue_field_set(LhatValueUnion *data,
 bool vm_set_key(Machine *m, LhatTable *table, LhatValue key,
                     LhatValue value, bool *refused);
 
-// vm_host.c, 05§5.3. `exports` -- sealed -- is what the unit the string
+// vm_host.c, [modules.require.once]. `exports` -- sealed -- is what the unit the string
 // `path` names published; the machine registers it and answers the unit's
 // table in `answer`, which is another where the units named under it came
 // first. LHAT_RUN_SEALED where the path runs through the program's shared
-// tables (05§8.7+5).
+// tables ([modules.host.shared-registry]).
 LhatRunStatus vm_register_unit(Machine *m, LhatTable *exports, LhatValue path,
                                LhatValue *answer);
 // The unit's table where it has run, for its guard; nil^ otherwise.
@@ -322,12 +322,12 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
 
 // vm_call.c
 void vm_clear_scratch(Machine *m, size_t base, const LhatProto *proto);
-// §16.3: a coroutine for `closure`, taken from the machine's spares when one
+// [syntax.for.forms]: a coroutine for `closure`, taken from the machine's spares when one
 // is wide enough; and one a for^ loop has finished with, given back to them.
 LhatCoroutine *vm_coroutine_new(Machine *m, const LhatClosure *closure,
                                 size_t registers);
 void vm_coroutine_spare(Machine *m, LhatCoroutine *co);
-// §15.16: save() and load().
+// [syntax.sub.save-load]: save() and load().
 LhatRunStatus vm_coroutine_save(Machine *m, LhatCoroutine *co, LhatValue *out);
 LhatRunStatus vm_coroutine_load(Machine *m, LhatCoroutine *co, LhatValue saved);
 void vm_enter_disposal_frame(Machine *m, LhatCoroutine *co,

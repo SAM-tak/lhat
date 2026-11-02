@@ -1,5 +1,5 @@
 // L^ (lhat) -- LSP server: the fixes a diagnostic knows how to make, as LSP
-// CodeAction objects (07§6).
+// CodeAction objects ([lsp.next]).
 //
 // The library works a fix out, since the stage that refused is the one that
 // knows what would have been right (lhat/program.h's lhat_unit_diagnostic_fix).
@@ -23,7 +23,7 @@
 cJSON *lsp_code_actions_for_unit(const LhatUnit *unit, const char *uri,
                                  uint32_t from, uint32_t to);
 
-// 07§6: one CodeAction of kind source.fixAll holding every edit of
+// [lsp.next]: one CodeAction of kind source.fixAll holding every edit of
 // lhat_unit_fix_all -- what an editor applies on save or from its "fix all"
 // command. NULL when there is nothing to apply, since an action that does
 // nothing is one more line in a menu.

@@ -1,4 +1,4 @@
-// L^ (lhat) -- LSP server: code switched off with '#[~ ... ]#' (01§6.5).
+// L^ (lhat) -- LSP server: code switched off with '#[~ ... ]#' ([lex.comment.disabled]).
 //
 // The lexer sees a block comment there, and the language never looks inside.
 // The tools do: lhat/ast lists what one holds among the statements around it

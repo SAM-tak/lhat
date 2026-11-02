@@ -1,12 +1,12 @@
-// L^ (lhat) -- a message's stable ID and its English text (10§4).
+// L^ (lhat) -- a message's stable ID and its English text ([l10n.id]).
 //
 // Every table of messages the library writes is one of these, indexed by the
 // code it answers for. The ID is what a translation is written against and
-// never changes meaning (10§4.2); the English is the reference every other
-// language translates (10§2.2). A code the table does not hold has an entry
+// never changes meaning ([l10n.id.spelling]); the English is the reference every other
+// language translates ([l10n.principle.english]). A code the table does not hold has an entry
 // of NULLs, which LHAT_MESSAGE_AT answers as no entry at all.
 //
-// Internal. What an ID crosses the public API as is 10§7.3's to settle.
+// Internal. What an ID crosses the public API as is [l10n.choose.structs]'s to settle.
 
 #ifndef LHAT_MESSAGE_H
 #define LHAT_MESSAGE_H
@@ -22,7 +22,7 @@
 // How many rows a table of entries holds.
 #define LHAT_MESSAGE_COUNT(table) (sizeof(table) / sizeof((table)[0]))
 
-// One of a source's tables (10§6.3): a source hands over every table it
+// One of a source's tables ([l10n.catalog.dump]): a source hands over every table it
 // holds, and the catalog is written out of them in order. A row of NULLs is
 // a code the table does not hold and is left out.
 typedef struct {
@@ -51,7 +51,7 @@ const LhatMessageTable *lhat_report_message_tables(size_t *count);
 const LhatMessageTable *lhat_trace_message_tables(size_t *count);
 const LhatMessageTable *lhat_fix_message_tables(size_t *count);
 
-// 07§6: which title a fix is offered under. The kinds are the library's own,
+// [lsp.next]: which title a fix is offered under. The kinds are the library's own,
 // since a fix is worked out where a stage refused.
 typedef enum {
     LHAT_FIX_WRITE_TOKEN,
@@ -90,8 +90,8 @@ bool lhat_fix_slot_add(LhatFixSlot *slot, uint32_t offset, uint32_t length,
 // The ID of the text lhat_compile_message_write draws from.
 const char *lhat_compile_message_id(const LhatCompileResult *result);
 
-// 10§6: what one language has for one source -- the entries read out of the
-// bytes a host handed over (10§6.2). Owns its strings, and holds whole IDs,
+// [l10n.catalog]: what one language has for one source -- the entries read out of the
+// bytes a host handed over ([l10n.catalog.english-baked]). Owns its strings, and holds whole IDs,
 // since that is what a render site asks by. Zeroed is empty.
 typedef struct {
     char *tag;
@@ -101,7 +101,7 @@ typedef struct {
     size_t capacity;
 } LhatCatalog;
 
-// 10§6.4: reads `text` into `catalog`, replacing whatever it held, and
+// [l10n.catalog.load]: reads `text` into `catalog`, replacing whatever it held, and
 // answers how many entries it ends up holding -- a name written twice is one
 // entry, the later text. `english` is the table to check the names and the
 // holes against, or NULL to check against the source this build holds

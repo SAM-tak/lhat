@@ -1,18 +1,18 @@
 // L^ (lhat) -- sample standard library: std.io.
 //
 // print/readLine talk to the process's own stdin/stdout; File wraps a
-// FILE* as a std.io.File hostdata (05§8.8) -- registering `dispose`
-// is what makes it the host's to hand over and L^'s to give back (§12.5).
+// FILE* as a std.io.File hostdata ([modules.hostdata]) -- registering `dispose`
+// is what makes it the host's to hand over and L^'s to give back ([syntax.with.checked]).
 //
 // IOError is registered in C with lhat_register_error_kind rather than
 // written as an errordef^ in an L^ unit: the whole point of this file is
 // that std.io works without any .lh alongside it. A construction error
 // (open failing) is built with lhat_machine_make_error and handed back as
-// an ordinary value, the same shape 04§2.5's error^Kind{...} builds.
+// an ordinary value, the same shape [errors.kind.new]'s error^Kind{...} builds.
 //
 // std.io.open answers std.io.File|std.io.IOError.NotFound|std.io.IOError.
 // Denied|std.sys.Error.OutOfMemory -- read it with try^/catch^, or narrow with
-// fits^ against std.io.File (05§8.8's hostdata path). std.sys.
+// fits^ against std.io.File ([modules.hostdata]'s hostdata path). std.sys.
 // OutOfMemory (rather than a std.io.IOError.OutOfMemory of its own) is
 // shared with every other stdlib module that can fail the same way --
 // see sys.h.
@@ -25,10 +25,10 @@
 #include <string.h>
 
 // What lhatstdlib_io_register made, threaded through as every registration's
-// `context` (05§8.7) rather than kept in file-scope statics -- a second
+// `context` ([modules.host.import]) rather than kept in file-scope statics -- a second
 // LhatProgram registering this module gets its own kinds/tag instead of
 // silently overwriting the first program's, which would hand its already-
-// checked code a different (04§2.4: identity-by-declaration) kind object
+// checked code a different ([errors.kind.nominal]: identity-by-declaration) kind object
 // than the one its signatures were checked against.
 //
 // Allocated once per lhatstdlib_io_register call and never freed -- program.h
@@ -92,14 +92,14 @@ static LhatValue read_line_from(LhatMachine *machine, const IoModule *module,
                : fail_with(machine, module->out_of_memory, "out of memory");
 }
 
-// §13.7's '...', so what was handed over is written in the order it came,
+// [syntax.type.variadic]'s '...', so what was handed over is written in the order it came,
 // separated by a space and closed by one newline -- and nothing at all when
 // nothing was. A newline between them would make the argument boundary
 // indistinguishable from a newline inside a value, and a comma would read as
 // the table syntax, leaving `print(pack^ f())` and `print(f()...)` looking
-// alike. The reading is §14.17's tostring, lhat_value_text: a string^ is
+// alike. The reading is [syntax.obj.tostring]'s tostring, lhat_value_text: a string^ is
 // its own bytes, without the quotes that let 1 and "1" be read apart (those
-// belong to 03§4's prompt, not to a writer). nil^ and bool^ are words,
+// belong to [pipeline.repl]'s prompt, not to a writer). nil^ and bool^ are words,
 // and everything else is spelled the way lhat_value_write spells it.
 //
 // A value whose room could not be found is skipped in silence: a p^ has no
@@ -267,7 +267,7 @@ static void file_write(LhatMachine *machine, void *context,
     }
 }
 
-// 05§8.8: what dispose^ gives back. The machine marks a hand-written call
+// [modules.hostdata]: what dispose^ gives back. The machine marks a hand-written call
 // to this the same as a collection's own (vm.c's CALLMETHOD case), so this
 // never runs twice on the same handle.
 static void file_dispose(LhatMachine *machine, void *context,
@@ -291,14 +291,14 @@ static void file_dispose(LhatMachine *machine, void *context,
 
 bool lhatstdlib_io_register(LhatProgram *program)
 {
-    // 05§8.7: 登録は検査より前 -- std.sys.Error.OutOfMemory を使う側(この
+    // [modules.host.import]: 登録は検査より前 -- std.sys.Error.OutOfMemory を使う側(この
     // モジュール)より前に確実に存在させる。lhatstdlib_sys_register は
     // 冪等なので、他の stdlib モジュールが先に呼んでいても構わない。
     if (!lhatstdlib_sys_register(program)) {
         return false;
     }
 
-    // 05§8.7: every field of this is an identity, and an identity
+    // [modules.host.import]: every field of this is an identity, and an identity
     // belongs to the process rather than to a program -- one declaration,
     // one tag and one error kind, however many programs declare them. So
     // one of these serves them all, and a second registration writes the

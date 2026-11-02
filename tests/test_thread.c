@@ -1,7 +1,7 @@
 // L^ (lhat) -- tests for std.thread and for the variadic host functions it
 // is the first user of.
 //
-// Two things are pinned here. The first is §13.7 reaching a host registration:
+// Two things are pinned here. The first is [syntax.type.variadic] reaching a host registration:
 // a signature ending in '...' makes the arity a floor rather than an exact
 // count, and the tail arrives at the LhatHostFn uncollected. The second is
 // what std.thread does with it -- that fn is a 'p^...' closure
@@ -63,7 +63,7 @@ static void test_spawn_shape(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // §13.7: the collector's element type is any^, so a plain 'p^ ...' is what
+    // [syntax.type.variadic]: the collector's element type is any^, so a plain 'p^ ...' is what
     // the declared parameter 'p^...' asks for. A written parameter is not:
     // conformance compares the lists, and one of those has a variadic tail
     // where the other has a slot of its own.
@@ -188,7 +188,7 @@ static void test_spawn_upvalue(void)
 
 static void test_arguments(void)
 {
-    // §13.7: what spawn was written past fn reaches thread_spawn as the tail of
+    // [syntax.type.variadic]: what spawn was written past fn reaches thread_spawn as the tail of
     // its own arguments, is copied into the plain form, and is collected into
     // the callee's '...' by lhat_machine_call on the other machine.
     LHAT_TEST("what is written past fn arrives as fn's '...'");
@@ -218,7 +218,7 @@ static void test_arguments(void)
     // A string is the one carried kind that allocates on both sides, so it is
     // what pins the copy rather than the value. A position of '...' is any^
     //, and the only thing to do with an any^ is narrow it -- 02 の
-    // §13.11's fits^ reaches a builtin name now, so the far side reads the
+    // [syntax.type.fits]'s fits^ reaches a builtin name now, so the far side reads the
     // bytes it was given rather than counting that something arrived. Joining
     // them is what pins their order as well: the two go out separately and
     // come back as one string, which they could not do if either had been
@@ -237,9 +237,9 @@ static void test_arguments(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // A collector is a table, and §14.10's sequence holds nil^ as a position
+    // A collector is a table, and [syntax.obj.structure]'s sequence holds nil^ as a position
     // of its own -- so a nil^ written among the arguments is counted. That is
-    // §13.7's own behaviour and not spawn's: an ordinary L^ call written the
+    // [syntax.type.variadic]'s own behaviour and not spawn's: an ordinary L^ call written the
     // same way counts the same two positions, which is what this pins.
     LHAT_TEST("a nil^ argument keeps its position the same way an ordinary call's does");
     {
@@ -262,7 +262,7 @@ static void test_arguments(void)
         lhat_test_ran_dispose(&called);
     }
 
-    // §13.7's 'expr...' at a host call: the closure path unpacks a spread into
+    // [syntax.type.variadic]'s 'expr...' at a host call: the closure path unpacks a spread into
     // the frame it pushes, and the host path has no frame, so it packs one
     // array instead. Without that the table would arrive as a single argument.
     LHAT_TEST("a spread into spawn forwards the caller's own '...'");
@@ -287,7 +287,7 @@ static void test_arguments(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 05§8.8+3: a coroutine that has not started crosses, so a worker
+    // [modules.hostdata.unstarted]: a coroutine that has not started crosses, so a worker
     // may be handed the very thing the caller wrote as a call.
     LHAT_TEST("a spawn takes a coroutine that has not started");
     {
@@ -395,7 +395,7 @@ static void test_sleep(void)
     // Nothing to wait for is not an error -- there is no result to read one
     // out of, and a caller computing a delay that came out at or below zero
     // meant "do not wait". A whole number is the same number^ either way
-    // (§14.8), which is what these two are written as.
+    // ([syntax.obj.number]), which is what these two are written as.
     LHAT_TEST("and nothing to wait for returns at once");
     {
         LhatTestRan ran = run_source("import^ std.thread\n"
@@ -414,7 +414,7 @@ static void test_sleep(void)
     }
 }
 
-// 05§8.7: what a spawned body can reach. A registration is an object on
+// [modules.host.import]: what a spawned body can reach. A registration is an object on
 // the heap of the machine it was installed on, so the new machine is given
 // its own copies before anything runs -- without that the body reaches a
 // nil^ where print was and faults on the call. And an import^ root is read
@@ -461,7 +461,7 @@ static void test_modules_reach_the_thread(void)
     }
 }
 
-// §15.14: what a scheduler asks in place of waiting. join() blocks, and
+// [syntax.sub.await-done]: what a scheduler asks in place of waiting. join() blocks, and
 // a loop with other tasks to run may not -- so done() answers whether the
 // join would return at once.
 static void test_done(void)
@@ -504,7 +504,7 @@ static void test_done(void)
 }
 
 // ---------------------------------------------------------------------------
-// §15.14: what a body's end pushes, rather than what a caller has to ask for
+// [syntax.sub.await-done]: what a body's end pushes, rather than what a caller has to ask for
 // ---------------------------------------------------------------------------
 
 static const LhatTestRegister with_async[] = {lhatstdlib_thread_register,
@@ -637,7 +637,7 @@ static void test_pushed_completion(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 04§11.6+: the whole of what a failure says. A body whose failure
+    // [errors.runtime.traceback]: the whole of what a failure says. A body whose failure
     // is a top-level panic^ used to report the one word `panic^` -- no
     // value (the machine that held it was gone by then) and no line (the
     // traceback is only made from two frames down). Both are read on the
@@ -705,7 +705,7 @@ static void test_pushed_completion(void)
         lhat_mutex_destroy(&heard.lock);
     }
 
-    // 05§8.8+2 made carry answer with more than the scalars the old signature
+    // [modules.hostdata.sharing] made carry answer with more than the scalars the old signature
     // listed, so join says any^ and the caller narrows.
     LHAT_TEST("a body answering a table is joined as one");
     {
@@ -725,7 +725,7 @@ static void test_pushed_completion(void)
     }
 }
 
-// 05§4.5: a host disposing of a program has to know nothing of it is still
+// [modules.public.host]: a host disposing of a program has to know nothing of it is still
 // running. Every handle is dropped here without a join, which before this
 // left three threads reading a proto the program was about to free.
 // The one file these build a program out of. stdlibutil's own loader is
@@ -790,7 +790,7 @@ static void test_join_all(void)
 }
 
 // ---------------------------------------------------------------------------
-// 05§8.11: the host's lock over the program's writes
+// [modules.host.lock]: the host's lock over the program's writes
 // ---------------------------------------------------------------------------
 
 // A lock that counts, so the test can say the entries took it -- and a
@@ -881,7 +881,7 @@ static void test_program_lock(void)
 }
 
 // ---------------------------------------------------------------------------
-// 12§4.3: the member cache under several machines at once
+// [spec.number.compare-jump]: the member cache under several machines at once
 // ---------------------------------------------------------------------------
 
 // Workers share a proto but keep independent member caches. Alternate two

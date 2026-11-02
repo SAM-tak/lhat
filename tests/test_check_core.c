@@ -3,7 +3,7 @@
 // Section numbers refer to DesignDocuments/02-syntax.md unless prefixed with
 // "03" or "04". The cases pinned here are the ones a decision in the
 // specification produces and that would otherwise be invisible: the scope
-// rule of §8.7, the result inference of 03§3.4, and the way catch^, ?? and
+// rule of [syntax.stmt.visible], the result inference of [pipeline.infer], and the way catch^, ?? and
 // try^ each drop one arm of a union.
 
 #include <stdio.h>
@@ -220,7 +220,7 @@ static void test_names(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
-    // 05§8.6: the accident var^ was introduced to remove. The inner statement
+    // [modules.host.machine]: the accident var^ was introduced to remove. The inner statement
     // reassigns the outer name rather than making a second one.
     LHAT_TEST("':=' in a nested scope reaches the outer name");
     check_text(&u, "var^ i = 0\ndo^{ i := 1 }\n");
@@ -232,13 +232,13 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §8.7: twice in one scope is an error; the nested case above is not.
+    // [syntax.stmt.visible]: twice in one scope is an error; the nested case above is not.
     LHAT_TEST("the same scope may not define a name twice");
     check_text(&u, "var^ x = 1\nvar^ x = 2\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
     unit_dispose(&u);
 
-    // §8.7: visible throughout the scope, but not readable before its var^
+    // [syntax.stmt.visible]: visible throughout the scope, but not readable before its var^
     // has run.
     LHAT_TEST("reading before the var^ has run is an error");
     check_text(&u, "var^ x = y\nvar^ y = 2\n");
@@ -254,7 +254,7 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §8.7 exempts what a body reads of a name standing outside it, since the
+    // [syntax.stmt.visible] exempts what a body reads of a name standing outside it, since the
     // body runs later. A name the body itself bound is not standing outside
     // it: once the body is called its own statements run in order, so the
     // ordering rule holds there exactly as it does at the top level. The
@@ -270,7 +270,7 @@ static void test_names(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
     unit_dispose(&u);
 
-    // §8.7+: a shadow written one scope in reads the name it shadows. A
+    // [syntax.stmt.old-world]: a shadow written one scope in reads the name it shadows. A
     // body's parameters and its own top-level names share one scope, so this
     // is where a shadow of a parameter has to be written -- and what it is
     // written for is exactly this: the new name starts from the old one.
@@ -287,7 +287,7 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // With nothing outside answering, the read is still the one §8.7 refuses.
+    // With nothing outside answering, the read is still the one [syntax.stmt.visible] refuses.
     LHAT_TEST("but nothing outside to shadow is still a read too early");
     check_text(&u,
                "var^ f = f^ -> number^ {\n"
@@ -300,7 +300,7 @@ static void test_names(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_USED_BEFORE_DEFINED);
     unit_dispose(&u);
 
-    // §8.7+: every name the statement binds reads the old world -- all of
+    // [syntax.stmt.old-world]: every name the statement binds reads the old world -- all of
     // them, not only the one whose position is being inferred.
     LHAT_TEST("several names shadowing read what they shadow");
     check_text(&u,
@@ -315,7 +315,7 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §8.7+: a deferred body written in the initialiser reads the old world
+    // [syntax.stmt.old-world]: a deferred body written in the initialiser reads the old world
     // too -- the binding being made is unreadable anywhere in its own value,
     // so the capture is of what the name meant outside.
     LHAT_TEST("a body in the initialiser captures what it shadows");
@@ -329,7 +329,7 @@ static void test_names(void)
     unit_dispose(&u);
 
     // And with nothing outside, a body naming its own binding is the same
-    // read-too-early -- recursion is this^ (§15.10), not the bound name.
+    // read-too-early -- recursion is this^ ([syntax.sub.this]), not the bound name.
     LHAT_TEST("a body naming its own binding with nothing outside is refused");
     check_text(&u,
                "do^{\n"
@@ -340,7 +340,7 @@ static void test_names(void)
 
     // What the exemption is actually for, written one body further in: the
     // two bodies read each other, and each is bound outside the one reading
-    // it. Losing this to the rule above would be losing §8.7 itself.
+    // it. Losing this to the rule above would be losing [syntax.stmt.visible] itself.
     LHAT_TEST("mutual recursion written inside a body keeps working");
     check_text(&u,
                "var^ outer = f^ -> bool^ {\n"
@@ -363,7 +363,7 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 03§3.4+2: neither half is annotated, so the walk that reads 'b'
+    // [pipeline.infer.rounds]: neither half is annotated, so the walk that reads 'b'
     // before it was inferred is walked again from what it learned -- and what
     // it learns is that 'a' can answer a number, since 'b' does. The
     // annotation on the binding below is the one that is wrong.
@@ -397,7 +397,7 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 03§3.4+2: the second walk is what checks a forward call against what the
+    // [pipeline.infer.rounds]: the second walk is what checks a forward call against what the
     // body promised. 'a' says bool^ and hands back what 'b' answers, which is
     // wider -- on the first walk 'b' was a mark and the return was forgiven.
     LHAT_TEST("and a promise the forward call breaks is caught by the rewalk");
@@ -418,7 +418,7 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 03§3.1, 03§3.5: an unannotated parameter is pending^ itself (a
+    // [pipeline.strict.per-unit], [pipeline.strict.relaxed]: an unannotated parameter is pending^ itself (a
     // constraint nobody wrote), and a body that just hands it back leaves
     // the inferred result pending^ too. That is the same kind of gap P6's
     // unannotated mutual recursion leaves, and strict reports it the same
@@ -432,7 +432,7 @@ static void test_names(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 03§3.1③: nothing in this body says what `n` is, and strict leaves no
+    // [pipeline.strict.per-unit]③: nothing in this body says what `n` is, and strict leaves no
     // such hole in a signature -- every caller would be handed it. What is
     // refused is the parameter, not the call through it.
     LHAT_TEST("but an unannotated parameter nothing demands is reported");
@@ -444,7 +444,7 @@ static void test_names(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
-    // §13.7: a position that really does take anything is written any^, which
+    // [syntax.type.variadic]: a position that really does take anything is written any^, which
     // says it where a reader of the signature can see it.
     LHAT_TEST("and any^ is how to say it takes anything");
     check_text(&u,
@@ -455,7 +455,7 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.12: '_^' stands where a name would and binds nothing. What §13.10's
+    // [syntax.type.discard]: '_^' stands where a name would and binds nothing. What [syntax.type.destructure]'s
     // destructuring wanted it for is a position nobody needs.
     LHAT_TEST("'_^' takes a position without naming it");
     check_text(&u,
@@ -482,7 +482,7 @@ static void test_names(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_DISCARD_READ);
     unit_dispose(&u);
 
-    // §15.11's own motive: an annotation is written to say R, and a name
+    // [syntax.sub.phantom-yield]'s own motive: an annotation is written to say R, and a name
     // written to carry it would hold nil^ and claim otherwise.
     LHAT_TEST("'_^' carries an annotation without carrying a value");
     check_text(&u,
@@ -492,7 +492,7 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.1: a parameter written to match a signature and not used. The
+    // [syntax.type.signature]: a parameter written to match a signature and not used. The
     // annotation is still what the call is judged against.
     LHAT_TEST("'_^' stands as a parameter");
     check_text(&u,
@@ -501,7 +501,7 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §16.3: the walk binds two, and one of them may be unwanted.
+    // [syntax.for.forms]: the walk binds two, and one of them may be unwanted.
     LHAT_TEST("'_^' stands as the focus of a walk");
     check_text(&u,
                "var^ total = 0\n"
@@ -509,7 +509,7 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §12.5: the name is not wanted but §12.6's disposal is, which is the one
+    // [syntax.with.checked]: the name is not wanted but [syntax.with.coroutine]'s disposal is, which is the one
     // place a '_^' is written for what happens rather than for a value.
     LHAT_TEST("'_^' stands as a with^ target");
     check_text(&u,
@@ -518,7 +518,7 @@ static void test_names(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.12 refuses `_x` on purpose: the underscore prefix means discard in
+    // [syntax.type.discard] refuses `_x` on purpose: the underscore prefix means discard in
     // L^, and a name that merely begins with one is an ordinary name.
     LHAT_TEST("a name beginning with '_' is an ordinary name");
     check_text(&u, "var^ _x = 5\nvar^ n : number^ = _x\n");
@@ -555,7 +555,7 @@ static void test_expressions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 05§7.4: 'x += 1' checks the same way 'x := x + 1' would -- the operator
+    // [modules.label.typeof]: 'x += 1' checks the same way 'x := x + 1' would -- the operator
     // it stands for has to accept the right side, and the result has to fit
     // the name.
     LHAT_TEST("compound assignment checks like the operator it stands for");
@@ -588,7 +588,7 @@ static void test_expressions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_CALLABLE);
     unit_dispose(&u);
 
-    // §14.10: a structure asks for at least its members, so reading one it
+    // [syntax.obj.structure]: a structure asks for at least its members, so reading one it
     // does not have is where the report belongs.
     LHAT_TEST("a member has to exist");
     check_text(&u, "var^ t = { a := 1 }\nvar^ x = t.a\nvar^ y = t.b\n");
@@ -600,7 +600,7 @@ static void test_expressions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.7: any^ admits every value, so passing one on is fine.
+    // [syntax.type.variadic]: any^ admits every value, so passing one on is fine.
     LHAT_TEST("any^ accepts anything");
     check_text(&u,
                "var^ log = p^ x:any^ { }\n"
@@ -609,7 +609,7 @@ static void test_expressions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §11: unary '-' has no member form, so a wrong operand is refused by
+    // [syntax.op]: unary '-' has no member form, so a wrong operand is refused by
     // its own name rather than as a generic mismatch.
     LHAT_TEST("unary '-' on a string is refused by name");
     check_text(&u, "var^ x = -\"a\"\n");
@@ -617,7 +617,7 @@ static void test_expressions(void)
     unit_dispose(&u);
 }
 
-// 03§3.4.
+// [pipeline.infer].
 static void test_results(void)
 {
     Unit u;
@@ -644,7 +644,7 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §3.4: the exits that do not go through the subroutine itself settle the
+    // [syntax.repl.same]: the exits that do not go through the subroutine itself settle the
     // result between them, so recursion needs nothing written.
     LHAT_TEST("recursion is inferred from the exits that are not recursive");
     check_text(&u,
@@ -666,7 +666,7 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §3.4: a recursive exit is dropped only when its type is the one being
+    // [syntax.repl.same]: a recursive exit is dropped only when its type is the one being
     // worked out. Here the call sits inside something whose answer does not
     // depend on it, so the arm it contributes has to be kept.
     LHAT_TEST("a recursive call inside a larger expression still counts");
@@ -691,7 +691,7 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §12.8 and 03§5.6 leave no other way out, so a body every exit of
+    // [syntax.with.errors] and [pipeline.bc.no-unwind] leave no other way out, so a body every exit of
     // which calls itself can never produce a value.
     LHAT_TEST("a body whose every exit is recursive is reported");
     check_text(&u, "var^ f = f^ n:number^ { return^ this^(n) }\n");
@@ -706,7 +706,7 @@ static void test_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.2: not writing '-> …' is what says a signature answers nothing.
+    // [syntax.type.empty]: not writing '-> …' is what says a signature answers nothing.
     // There is no second spelling for it -- '-> ;' is not a way to say the
     // same thing, so a reader meets one form and typeof^ writes one form.
     LHAT_TEST("a signature answering nothing writes no arrow");
@@ -727,8 +727,8 @@ static void test_results(void)
     LHAT_CHECK(syntax_errors(&u) > 0, "expected a syntax error");
     unit_dispose(&u);
 
-    // §13.2: an empty argument side is not written by leaving the types out --
-    // 'p^number^;' would then be two readings of one form. §13.9's coroutine
+    // [syntax.type.empty]: an empty argument side is not written by leaving the types out --
+    // 'p^number^;' would then be two readings of one form. [syntax.type.coroutine]'s coroutine
     // first slot is where that shape is used instead.
     LHAT_TEST("a signature taking nothing still writes its arrow");
     check_text(&u,
@@ -737,9 +737,9 @@ static void test_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.2 keeps "returns nothing" apart from "returns nil^". A body that
+    // [syntax.type.empty] keeps "returns nothing" apart from "returns nil^". A body that
     // returns a value on one path and falls out on another does produce a
-    // value, so the missing one is nil^ (04§11.3).
+    // value, so the missing one is nil^ ([errors.runtime.index]).
     LHAT_TEST("falling out of the body puts nil^ in the result");
     check_text(&u,
                "var^ f = p^ b:bool^ { if^ b { return^ 1 } }\n"
@@ -754,7 +754,7 @@ static void test_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.2: a function answers on every path, so an f^ that can reach its
+    // [syntax.type.empty]: a function answers on every path, so an f^ that can reach its
     // end has one with nothing to answer with. No result type fixes that.
     LHAT_TEST("a function that can reach its end is reported");
     check_text(&u, "var^ f = f^ b:bool^ { if^ b { return^ true^ } }\n");
@@ -782,9 +782,9 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
-    // §12.1: a with^ runs its block once and always, so a block that
+    // [syntax.with.form]: a with^ runs its block once and always, so a block that
     // answers on every path leaves the with^ answering on every path. 04 の
-    // 04§5.1 writes a whole subroutine in this shape.
+    // [errors.try.form] writes a whole subroutine in this shape.
     LHAT_TEST("a with^ whose block always answers answers too");
     check_text(&u,
                "var^ C = def^{ self^{ v := 3 }, dispose := p^self^ { } }\n"
@@ -802,8 +802,8 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
-    // 04§5.1's own example: the error leaves through try^ and the value
-    // through the block, and 10§5.2 runs dispose() on both ways out.
+    // [errors.try.form]'s own example: the error leaves through try^ and the value
+    // through the block, and [l10n.compose.hole-kinds] runs dispose() on both ways out.
     LHAT_TEST("a with^ over a try^ answers on both ways out");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
@@ -829,7 +829,7 @@ static void test_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 03§3.4 counts every exit, and a bare return^ is one that produces
+    // [pipeline.infer] counts every exit, and a bare return^ is one that produces
     // no value -- the same exit reaching the end of the body is, and it
     // leaves the same nil^ behind at run time.
     LHAT_TEST("a bare return^ is an exit that produces no value");
@@ -856,7 +856,7 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT);
     unit_dispose(&u);
 
-    // §16.5: a repeat^ with no bound and no break^ of its own never ends, so
+    // [syntax.for.repeat]: a repeat^ with no bound and no break^ of its own never ends, so
     // the end of the body is not somewhere control can arrive.
     LHAT_TEST("an endless repeat^ is not a way to the end of a body");
     check_text(&u, "var^ f = f^ -> number^ { repeat^ { } }\n");
@@ -873,7 +873,7 @@ static void test_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §9.8: break^ leaves the loop, so the end is reachable again.
+    // [syntax.loop.exit]: break^ leaves the loop, so the end is reachable again.
     LHAT_TEST("a break^ puts the end of the body back within reach");
     check_text(&u, "var^ f = f^ -> number^ { repeat^ { break^ } }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
@@ -885,7 +885,7 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
-    // §9.11: a next^ is not a way out. It ends the turn and the loop goes on,
+    // [syntax.loop.next]: a next^ is not a way out. It ends the turn and the loop goes on,
     // so an endless one with nothing but next^ in it is still endless.
     LHAT_TEST("but a next^ is not a way out of the loop");
     check_text(&u, "var^ f = f^ -> number^ { repeat^ { next^ } }\n");
@@ -899,7 +899,7 @@ static void test_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §16.3: the if^ form of for^ does not iterate, so a break^ in it is the
+    // [syntax.for.forms]: the if^ form of for^ does not iterate, so a break^ in it is the
     // outer loop's.
     LHAT_TEST("and the if^ form of for^ is not a loop to break out of");
     check_text(&u,
@@ -909,7 +909,7 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
-    // §17: nor is the when^ form.
+    // [syntax.match]: nor is the when^ form.
     LHAT_TEST("nor is the when^ form");
     check_text(&u,
                "var^ f = f^ -> number^ {\n"
@@ -929,7 +929,7 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
     unit_dispose(&u);
 
-    // §13.11: a branch that ends in an endless loop is a branch that leaves.
+    // [syntax.type.fits]: a branch that ends in an endless loop is a branch that leaves.
     LHAT_TEST("a branch ending in one covers its path");
     check_text(&u,
                "var^ f = f^ -> number^ {\n"
@@ -938,7 +938,7 @@ static void test_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // A body with no return^ at all asked for no value. §13.2 has a form for
+    // A body with no return^ at all asked for no value. [syntax.type.empty] has a form for
     // it, and nil^ is not it.
     LHAT_TEST("a body that returns nothing stays returning nothing");
     check_text(&u,
@@ -954,7 +954,7 @@ static void test_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.10: this^ is a self-call like a call by name, so 03§3.4 counts it the
+    // [syntax.sub.this]: this^ is a self-call like a call by name, so [pipeline.infer] counts it the
     // same way and a body with no name can recurse.
     LHAT_TEST("this^ recursion is inferred the same way");
     check_text(&u,
@@ -971,7 +971,7 @@ static void test_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NEVER_RETURNS);
     unit_dispose(&u);
 
-    // §15.10: this^ has the signature of the body it is in, so the arguments
+    // [syntax.sub.this]: this^ has the signature of the body it is in, so the arguments
     // are checked -- which a call by name cannot do while the name is still
     // being bound.
     LHAT_TEST("this^ checks its arguments");
@@ -994,19 +994,19 @@ static void test_results(void)
     unit_dispose(&u);
 }
 
-// 03§3.4: a parameter written without a type is what the body demands of
+// [pipeline.infer]: a parameter written without a type is what the body demands of
 // it. Not unification -- the demands are collected and intersected, which is
-// why §11.3's structural reading is what makes this work rather than what makes
+// why [syntax.op.semantic]'s structural reading is what makes this work rather than what makes
 // it hard.
-// 03§3.4+3: what an operator demands of a parameter is the union of the
-// types that could carry it -- §11.8's built-in, and whatever this unit wrote
+// [pipeline.infer.operators]: what an operator demands of a parameter is the union of the
+// types that could carry it -- [syntax.op.define]'s built-in, and whatever this unit wrote
 // an op^ of the name on. With the built-in alone the demand is number^, which
 // is what it has always been; the cases above are all of that kind.
 static void test_operator_candidates(void)
 {
     Unit u;
 
-    // §11.3+: A writes both orders, but only one of them is this one, so
+    // [syntax.op.right]: A writes both orders, but only one of them is this one, so
     // there is one arm to read the right operand's type off.
     LHAT_TEST("one side written settles the other");
     check_text(&u,
@@ -1100,7 +1100,7 @@ static void test_operator_candidates(void)
     CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_OPERATOR_UNSETTLED);
     unit_dispose(&u);
 
-    // §8.7 makes the name visible over the whole unit, so a body written above
+    // [syntax.stmt.visible] makes the name visible over the whole unit, so a body written above
     // the def^ has to read the same candidates one written below it does.
     LHAT_TEST("where the def^ stands does not change the answer");
     check_text(&u,
@@ -1115,7 +1115,7 @@ static void test_operator_candidates(void)
     CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §13.11: the other way out. The union is written down and the body picks
+    // [syntax.type.fits]: the other way out. The union is written down and the body picks
     // an arm by narrowing to it, which is what the signature was naming.
     LHAT_TEST("narrowing the union picks an arm");
     check_text(&u,
@@ -1131,7 +1131,7 @@ static void test_operator_candidates(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §11.9: '<=>' is the one comparison a type writes, and both built-ins
+    // [syntax.op.compare]: '<=>' is the one comparison a type writes, and both built-ins
     // carry it -- so an ordering's candidates start as two. The other operand
     // is what tells them apart.
     LHAT_TEST("an ordering is decided by what it is compared against");
@@ -1154,14 +1154,14 @@ static void test_operator_candidates(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_UNSETTLED);
     unit_dispose(&u);
 
-    // §11.9 with §14.2: equality answers without a '<=>' at all, so what it
+    // [syntax.op.compare] with [syntax.obj.chain]: equality answers without a '<=>' at all, so what it
     // asks is that the two are not disjoint -- which is not a type to demand.
     LHAT_TEST("equality demands nothing");
     check_text(&u, "var^ f = f^ x -> bool^ { return^ x = 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
-    // §11.9+: a type writing op^= says how it compares for equality and
+    // [syntax.op.equal]: a type writing op^= says how it compares for equality and
     // nothing about order. The carriers are held per operator name, so it is
     // no candidate for '<'.
     LHAT_TEST("an op^= alone is no candidate for an ordering");
@@ -1199,7 +1199,7 @@ static void test_operator_candidates(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §11.9 gives '<=>' to string^ too, which the built-in seed left out.
+    // [syntax.op.compare] gives '<=>' to string^ too, which the built-in seed left out.
     LHAT_TEST("'<=>' written directly reaches string^ as well");
     check_text(&u,
                "var^ f = f^ x -> number^ { return^ x <=> \"s\" }\n"
@@ -1225,7 +1225,7 @@ static void test_parameter_inference(void)
 {
     Unit u;
 
-    // §11.8 with §14.8: number^ is the one type carrying the arithmetic, so an
+    // [syntax.op.define] with [syntax.obj.number]: number^ is the one type carrying the arithmetic, so an
     // arithmetic use says which type arrived.
     LHAT_TEST("arithmetic on a parameter decides it");
     check_text(&u,
@@ -1241,7 +1241,7 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14.4 puts the left operand in self^ and leaves the right one the
+    // [syntax.obj.self] puts the left operand in self^ and leaves the right one the
     // argument, so both sides of 'x + y' demand what number^'s operator takes.
     LHAT_TEST("both operands of an arithmetic operator are demands");
     check_text(&u,
@@ -1250,7 +1250,7 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14.10's "at least these" is the demand a member read makes, written as
+    // [syntax.obj.structure]'s "at least these" is the demand a member read makes, written as
     // a type. Nothing has to be named for this to work.
     LHAT_TEST("a member read demands a structure carrying it");
     check_text(&u,
@@ -1267,9 +1267,9 @@ static void test_parameter_inference(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.1: a call says what the arguments are and nothing about the rest of
-    // the signature, so it is not a demand -- see 03§3.4. Nothing else
-    // demands anything either, so 10§3.1③ reports the parameter.
+    // [syntax.type.signature]: a call says what the arguments are and nothing about the rest of
+    // the signature, so it is not a demand -- see [pipeline.infer]. Nothing else
+    // demands anything either, so [l10n.scope.shown]③ reports the parameter.
     LHAT_TEST("calling a parameter demands nothing");
     check_text(&u,
                "var^ f = p^ x { x() }\n"
@@ -1277,7 +1277,7 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
-    // §13.11: the demand belongs to the narrowed value, not to what arrived.
+    // [syntax.type.fits]: the demand belongs to the narrowed value, not to what arrived.
     // Counting it would undo the narrowing the writer put there -- so this
     // one is undecided as well.
     LHAT_TEST("a use under a narrowing is not a demand");
@@ -1289,7 +1289,7 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
-    // §3.4: what always runs decides; a branch is added only when it agrees.
+    // [syntax.repl.same]: what always runs decides; a branch is added only when it agrees.
     LHAT_TEST("an unconditional demand wins over a branch that disagrees");
     check_text(&u,
                "var^ f = p^ b:bool^, x {\n"
@@ -1322,7 +1322,7 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 03§3.4: a nested body demands of the enclosing parameter too. Whether it
+    // [pipeline.infer]: a nested body demands of the enclosing parameter too. Whether it
     // ever runs is not the question -- what it needs when it does, the value
     // handed in has to carry.
     LHAT_TEST("a demand written in a nested body still reaches the parameter");
@@ -1335,7 +1335,7 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §3.4: what the name holds after a reassignment is not what was passed in,
+    // [syntax.repl.same]: what the name holds after a reassignment is not what was passed in,
     // so the demand below it says nothing about the parameter and nothing is
     // left to decide it.
     LHAT_TEST("a reassignment ends the collection");
@@ -1357,7 +1357,7 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // Two member reads are one demand for a table carrying both (§14.10),
+    // Two member reads are one demand for a table carrying both ([syntax.obj.structure]),
     // rather than two demands standing side by side.
     LHAT_TEST("two member reads merge into one structure");
     check_text(&u,
@@ -1367,9 +1367,9 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // L^ has no generic types (§13.7, 04§7), so a parameter handed
+    // L^ has no generic types ([syntax.type.variadic], [errors.exhaustive]), so a parameter handed
     // straight back demands nothing and stays what nobody wrote -- which
-    // strict reports where it lands, exactly as it did before 03§3.4 read
+    // strict reports where it lands, exactly as it did before [pipeline.infer] read
     // anything off a body at all.
     LHAT_TEST("a parameter nothing demands stays undecided");
     check_text(&u,
@@ -1378,7 +1378,7 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 05§4 asks nothing of a signature that 04§3.1③ does not ask of every
+    // [modules.public] asks nothing of a signature that [errors.fallible.union]③ does not ask of every
     // signature: what a body decides is decided, published or not. A member
     // read is a demand, so this one is decided and nothing is owed.
     LHAT_TEST("a public^ subroutine is read the same as any other");
@@ -1397,14 +1397,14 @@ static void test_parameter_inference(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.2's form for answering nothing is what an omitted result already
+    // [syntax.type.empty]'s form for answering nothing is what an omitted result already
     // means where no exit produces a value, so nothing has to be written.
     LHAT_TEST("a body answering nothing needs no result written");
     check_text(&u, "public^ let^ f = p^ x:number^ { }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.5 with §13.9: what a call answers is the coroutine, and §15.2 settles
+    // [syntax.sub.no-contagion] with [syntax.type.coroutine]: what a call answers is the coroutine, and [syntax.sub.yieldable] settles
     // its R and Y off the yield^ sites -- publishing it asks for no writing.
     LHAT_TEST("nor does a yielding one have to write its coroutine");
     check_text(&u, "public^ let^ g = p^ n:number^ { yield^ n }\n");
@@ -1418,7 +1418,7 @@ static void test_parameter_inference(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.4: a default is what an editor writes into a call site, so it is held
+    // [syntax.type.param-names]: a default is what an editor writes into a call site, so it is held
     // to what that position takes -- a call carrying it has to be a call that
     // would have checked.
     LHAT_TEST("a default has to fit the parameter it stands in for");
@@ -1431,7 +1431,7 @@ static void test_parameter_inference(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 03§3.4 reads the body's demands and nothing else. A default is a value
+    // [pipeline.infer] reads the body's demands and nothing else. A default is a value
     // the call carries, not a use the body makes, so it decides nothing --
     // this is the case above it with the annotation taken away.
     LHAT_TEST("a default is not a demand");
@@ -1441,7 +1441,7 @@ static void test_parameter_inference(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §13.4: it does not make the parameter optional either.
+    // [syntax.type.param-names]: it does not make the parameter optional either.
     LHAT_TEST("a default does not let the call leave the argument out");
     check_text(&u,
                "var^ f = p^ x:number^ = 1 { }\n"
@@ -1457,14 +1457,14 @@ static void test_parameter_inference(void)
     unit_dispose(&u);
 }
 
-// 03§3.1: a result the body did not decide. The gap is reported at the
+// [pipeline.strict.per-unit]: a result the body did not decide. The gap is reported at the
 // definition -- a result type is a promise to every caller -- and again
 // wherever it reaches a place a concrete type is wanted.
 static void test_undecided_results(void)
 {
     Unit u;
 
-    // 03§3.4+2: 04§3.1's own example, which the second walk settles -- the
+    // [pipeline.infer.rounds]: [errors.fallible.union]'s own example, which the second walk settles -- the
     // one thing the first walk could not read is what the second one starts
     // from. Nothing is written and nothing is reported.
     LHAT_TEST("a mutually recursive pair settles without an annotation");
@@ -1502,7 +1502,7 @@ static void test_undecided_results(void)
     // A ring whose other half never settles keeps its gap however often it is
     // walked -- 'b' demands nothing of x, so what it answers stays undecided
     // and so does 'a'. Reported at both definitions, and once more at the x
-    // that started it (03§3.1③). 03§3.4+3: a let^-bound b would take its shape
+    // that started it ([pipeline.strict.per-unit]③). [pipeline.infer.operators]: a let^-bound b would take its shape
     // from the very call in a's body, so the half that cannot settle is a
     // var^'s -- the name may come to mean some other subroutine, and no call
     // shape is collected for it.
@@ -1518,7 +1518,7 @@ static void test_undecided_results(void)
     LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 3);
     unit_dispose(&u);
 
-    // 03§3.5: relaxed leaves an undecided type to the machine, so it says
+    // [pipeline.strict.relaxed]: relaxed leaves an undecided type to the machine, so it says
     // nothing here -- the same program, the same types, a different setting.
     LHAT_TEST("relaxed forgives the whole of it");
     check_relaxed_text(&u,
@@ -1543,8 +1543,8 @@ static void test_undecided_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §13.7 and 04§7: no generic types, so a parameter handed
-    // straight back leaves the result undecided too. 03§3.4's own reading of
+    // [syntax.type.variadic] and [errors.exhaustive]: no generic types, so a parameter handed
+    // straight back leaves the result undecided too. [pipeline.infer]'s own reading of
     // this case -- the writer ends up writing any^ or a concrete type -- is
     // what the report asks for.
     LHAT_TEST("a parameter handed straight back leaves the result undecided");
@@ -1557,7 +1557,7 @@ static void test_undecided_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§3.1③: a parameter is read the same way a result is. Nothing demanded
+    // [errors.fallible.union]③: a parameter is read the same way a result is. Nothing demanded
     // anything of this one and nothing was written, so its place in the
     // signature is a hole every caller would be handed.
     LHAT_TEST("a parameter nothing demands is reported on its own");
@@ -1565,9 +1565,9 @@ static void test_undecided_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
-    // 03§3.1③: a gap that survives into what a name holds is the same hole said
+    // [pipeline.strict.per-unit]③: a gap that survives into what a name holds is the same hole said
     // of a binding. Every reader of the name would be handed it. var^ again,
-    // as above -- a let^-bound b takes its shape from a's call (03§3.4+3).
+    // as above -- a let^-bound b takes its shape from a's call ([pipeline.infer.operators]).
     LHAT_TEST("a gap reaching a binding is reported at the name");
     check_text(&u,
                "let^ a = f^ n:number^ {\n"
@@ -1579,7 +1579,7 @@ static void test_undecided_results(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TYPE_UNDECIDED);
     unit_dispose(&u);
 
-    // 03§3.5: the same ones, left to the machine. 11§3.2 keeps the source identical
+    // [pipeline.strict.relaxed]: the same ones, left to the machine. [binary.codec.kinds] keeps the source identical
     // between the two settings -- only when it is said changes.
     LHAT_TEST("and relaxed forgives that too");
     check_relaxed_text(&u, "var^ f = p^ x { }\n");
@@ -1602,7 +1602,7 @@ static void test_undecided_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 03§3.4+: a signature written on the binding is written, wherever it
+    // [pipeline.infer.expected]: a signature written on the binding is written, wherever it
     // stands. The body decides nothing here, so there is nothing to report.
     LHAT_TEST("a result the binding wrote is not inferred");
     check_text(&u,
@@ -1614,7 +1614,7 @@ static void test_undecided_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 03§3.4+2 walks a def^'s members again from what the last walk
+    // [pipeline.infer.rounds] walks a def^'s members again from what the last walk
     // inferred, so a ring of them settles without anything being written --
     // and the first walk's report goes with the first walk.
     LHAT_TEST("a ring of def^ members is settled by the walks, not reported");
@@ -1630,7 +1630,7 @@ static void test_undecided_results(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §8.7 makes every name of a list visible throughout it wherever the list
+    // [syntax.stmt.visible] makes every name of a list visible throughout it wherever the list
     // stands, so the walks are run over a body's statements the same way.
     LHAT_TEST("a ring inside a body settles the same way");
     check_text(&u,
@@ -1658,7 +1658,7 @@ static void test_undecided_results(void)
     LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 1);
     unit_dispose(&u);
 
-    // A statement binds as well as answering -- §8.8's path grows a table --
+    // A statement binds as well as answering -- [syntax.stmt.member]'s path grows a table --
     // and a second walk over it must not read its own first walk as a second
     // definition.
     LHAT_TEST("what a walk bound is not a redefinition on the next walk");
@@ -1688,11 +1688,11 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§2.3: types and no values, so a kind standing where a value was wanted
+    // [errors.kind.made]: types and no values, so a kind standing where a value was wanted
     // is a type written in the wrong place. It reads as a member access --
     // the set is a name in scope -- which is why saying "no such member"
     // would send a writer hunting for a spelling mistake instead of for the
-    // error^ 04§2.5 puts in front.
+    // error^ [errors.kind.new] puts in front.
     LHAT_TEST("2.3: a kind written as a value says which it is");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
@@ -1707,7 +1707,7 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // The two the set does answer (01§2.3's table) are reached through a value,
+    // The two the set does answer ([lex.hat.repeat]'s table) are reached through a value,
     // and reaching them through the set itself is not this.
     LHAT_TEST("and message and cause are untouched");
     check_text(&u,
@@ -1717,7 +1717,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§8.1: the whole detection mechanism for an unhandled error is
+    // [errors.dropped.no-new]: the whole detection mechanism for an unhandled error is
     // ordinary conformance.
     LHAT_TEST("an unhandled error cannot be used as the value");
     check_text(&u,
@@ -1735,14 +1735,14 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§4.1: a catch^ that can never fire is an error, since it says
+    // [errors.catch.form]: a catch^ that can never fire is an error, since it says
     // something about a failure that cannot happen.
     LHAT_TEST("catch^ on what cannot fail is reported");
     check_text(&u, "var^ n = 1 catch^ 0\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_FAIL);
     unit_dispose(&u);
 
-    // 04§4.2: catch^ names the error it^ inside its right side. Both
+    // [errors.catch.it]: catch^ names the error it^ inside its right side. Both
     // halves have to know it -- the machine binds it (compile_catch) and the
     // checker resolves it.
     LHAT_TEST("catch^ binds it^ in its right side");
@@ -1754,7 +1754,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§2.3 gives every kind message and cause, so the error half of the left
+    // [errors.kind.made] gives every kind message and cause, so the error half of the left
     // side is enough for it^.message to answer through.
     LHAT_TEST("and it^ is typed as the error half of the left");
     check_text(&u,
@@ -1764,7 +1764,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 03§3.4+: a signature written on the binding is what the value is
+    // [pipeline.infer.expected]: a signature written on the binding is what the value is
     // expected to have, so a parameter nothing was written on takes its type
     // from there rather than waiting for the body to demand one.
     LHAT_TEST("a written signature fills in the parameters");
@@ -1779,7 +1779,7 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    // A signature on the binding decides both sides, so 10§3.1③ has nothing left
+    // A signature on the binding decides both sides, so [l10n.scope.shown]③ has nothing left
     // to report -- whether or not the name is published.
     LHAT_TEST("and a published one is decided by it just the same");
     check_text(&u,
@@ -1787,16 +1787,16 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.7 and 04§7: no generic types, so nothing decides this one
+    // [syntax.type.variadic] and [errors.exhaustive]: no generic types, so nothing decides this one
     // wherever it stands. Publishing it neither adds to that nor takes away.
     LHAT_TEST("and with nothing written anywhere it is undecided as ever");
     check_text(&u, "public^ let^ f = p^ x { return^ x }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
-    // 03§3.4+: a literal called where it is written is expected by that
+    // [pipeline.infer.expected]: a literal called where it is written is expected by that
     // call. Reading it leaves nothing -- the call is part of the same
-    // expression, which is what keeps 03§3.4's line about callers elsewhere.
+    // expression, which is what keeps [pipeline.infer]'s line about callers elsewhere.
     LHAT_TEST("a literal called where it is written takes the argument's type");
     check_text(&u,
                "var^ n : number^ = p^ x { return^ x.length }(\"abc\")\n");
@@ -1810,10 +1810,10 @@ static void test_errors(void)
     LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 1);
     unit_dispose(&u);
 
-    // 03§3.4+: the callee's written signature stands beside an argument,
+    // [pipeline.infer.expected]: the callee's written signature stands beside an argument,
     // so a literal written there takes the parameters nothing was written on
     // from the position it is going into. What decides them is the callee's
-    // own signature, not a caller elsewhere -- 03§3.4's line is about the other
+    // own signature, not a caller elsewhere -- [pipeline.infer]'s line is about the other
     // direction.
     LHAT_TEST("a literal argument takes its parameters from the position");
     check_text(&u,
@@ -1830,7 +1830,7 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    // §14.4: a member call hands the receiver over without writing it, and
+    // [syntax.obj.self]: a member call hands the receiver over without writing it, and
     // the parameters line up after it.
     LHAT_TEST("a member call fills in a literal argument too");
     check_text(&u,
@@ -1842,7 +1842,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.4: written out, the receiver takes the first position and the
+    // [syntax.obj.self]: written out, the receiver takes the first position and the
     // parameters follow it. The shift is one, and it is read off the way the
     // call is written -- so what comes after still lines up.
     LHAT_TEST("and so does one whose receiver is written out");
@@ -1856,7 +1856,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.12: an overloaded member is an intersection, and which arm a call
+    // [syntax.obj.override]: an overloaded member is an intersection, and which arm a call
     // means is settled by the arguments' own types -- so there is no one
     // position to read an expectation off of. The annotation is still owed
     // here, which is what this pins.
@@ -1872,7 +1872,7 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
-    // §13.2: a written result stands beside the value the same way, so a
+    // [syntax.type.empty]: a written result stands beside the value the same way, so a
     // literal returned into it is filled in as an argument is.
     LHAT_TEST("a written result fills in a literal returned into it");
     check_text(&u,
@@ -1881,7 +1881,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 05§8.6: and what a name already holds says it at a reassignment, which is
+    // [modules.host.machine]: and what a name already holds says it at a reassignment, which is
     // the define's own rule read from the other side.
     LHAT_TEST("and what a name holds fills in a reassigned literal");
     check_text(&u,
@@ -1890,7 +1890,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.4: a default is written into a call site, so the position it will
+    // [syntax.type.param-names]: a default is written into a call site, so the position it will
     // be written into is what it is expected to fit.
     LHAT_TEST("and a written parameter type fills in its own default");
     check_text(&u,
@@ -1911,7 +1911,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§2.3 again, where the call can fail two ways: it^ is then a union of
+    // [errors.kind.made] again, where the call can fail two ways: it^ is then a union of
     // kinds from two declarations, and what a union answers is what every
     // arm answers -- which for message and cause is every kind there is.
     LHAT_TEST("and answers through a union of kinds from two declarations");
@@ -1926,7 +1926,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §2.2's fields are the leaf's own, so they still want the narrowing --
+    // [syntax.juxta.command]'s fields are the leaf's own, so they still want the narrowing --
     // what every arm answers is message and cause and no more.
     LHAT_TEST("but a leaf's field still wants narrowing to that leaf");
     check_text(&u,
@@ -1950,7 +1950,7 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // §11.7: ?? asks about nil^, and there is nothing in a nil^ to name --
+    // [syntax.op.default]: ?? asks about nil^, and there is nothing in a nil^ to name --
     // it^ is catch^'s alone.
     LHAT_TEST("?? binds no it^");
     check_text(&u,
@@ -1979,7 +1979,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§5.3: reported where try^ is written, not at the caller.
+    // [errors.try.result]: reported where try^ is written, not at the caller.
     LHAT_TEST("try^ may not let out an error the result excludes");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
@@ -1990,7 +1990,7 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TRY_OUTSIDE);
     unit_dispose(&u);
 
-    // 03§3.4: with no result written, a try^ is one of the exits the
+    // [pipeline.infer]: with no result written, a try^ is one of the exits the
     // result is the union of -- an error leaves the body there as plainly as
     // a value leaves it through a return^.
     LHAT_TEST("a try^ is an exit the inferred result takes in");
@@ -2011,7 +2011,7 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // A p^ that makes no value of its own still says it may fail: 03§3.4 adds
+    // A p^ that makes no value of its own still says it may fail: [pipeline.infer] adds
     // nil^ beside the error, since leaving without a value is the other exit.
     LHAT_TEST("a p^ that only lets an error out says so too");
     check_text(&u,
@@ -2022,9 +2022,9 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§4.1 with 04§5.3: the shape a writer reaches for when the failing
+    // [errors.catch.form] with [errors.try.result]: the shape a writer reaches for when the failing
     // work is a block rather than a call -- wrap it, call it where it stands,
-    // and catch^ what comes out. 05§4.5's arms are what replace it.
+    // and catch^ what comes out. [modules.public.host]'s arms are what replace it.
     LHAT_TEST("a body written and called where it stands can be caught");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
@@ -2036,7 +2036,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§4.5: in a block with catch^ arms, a try^ hands its errors to the
+    // [errors.catch.clause]: in a block with catch^ arms, a try^ hands its errors to the
     // arms rather than to the result -- so a body answering number^ alone is
     // honest here even though what it calls may fail.
     LHAT_TEST("catch^ arms take the errors off the result");
@@ -2055,7 +2055,7 @@ static void test_errors(void)
 
     // The arms are the block's own clause, so a subroutine body carries them
     // as directly as a do^ does -- and an arm that is one expression answers
-    // with it, the way §15.12's body does.
+    // with it, the way [syntax.sub.expr-body]'s body does.
     LHAT_TEST("and a function body carries them itself");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
@@ -2069,7 +2069,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§4.2 with 07§6.1: it^ is the error, narrowed to the arm's own kind, so what
+    // [errors.catch.it] with [lsp.next.fixes]: it^ is the error, narrowed to the arm's own kind, so what
     // that kind declares is visible there.
     LHAT_TEST("and it^ is narrowed to the arm's kind");
     check_text(&u,
@@ -2088,8 +2088,8 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 05§4.5: what no arm takes leaves as a bare try^ would have sent it, so
-    // 04§5.3 asks the result about it -- at the block, where it leaves.
+    // [modules.public.host]: what no arm takes leaves as a bare try^ would have sent it, so
+    // [errors.try.result] asks the result about it -- at the block, where it leaves.
     LHAT_TEST("and what no arm takes is held to 5.3");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
@@ -2104,9 +2104,9 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TRY_OUTSIDE);
     unit_dispose(&u);
 
-    // 04§4.5: an arm may be entered before anything the statements bind was
+    // [errors.catch.clause]: an arm may be entered before anything the statements bind was
     // bound, so none of it is in reach there -- while the finally^ after the
-    // arms still reads it, as §10.1 writes it.
+    // arms still reads it, as [syntax.finally.block] writes it.
     LHAT_TEST("an arm does not see what the statements bound");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
@@ -2165,7 +2165,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§4.2: the kinds with a value to stand in take one, and the rest go on
+    // [errors.catch.it]: the kinds with a value to stand in take one, and the rest go on
     // out through a try^ written in the arm that is left -- it^ narrowed to
     // what the arms before it did not take.
     LHAT_TEST("a fallback can pass the kinds it has no value for");
@@ -2183,7 +2183,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // And nothing to catch is 11§4.1's line, one construct over.
+    // And nothing to catch is [binary.net.api]'s line, one construct over.
     LHAT_TEST("arms with no try^ before them catch nothing");
     check_text(&u,
                "var^ go = p^ {\n"
@@ -2212,7 +2212,7 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_CATCHES_NOTHING);
     unit_dispose(&u);
 
-    // 04§2.4: identity is the declaration, so two identical ones differ.
+    // [errors.kind.nominal]: identity is the declaration, so two identical ones differ.
     LHAT_TEST("kinds from different declarations do not mix");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
@@ -2221,7 +2221,7 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 04§2.2: a field may carry a default, written with ':=' as §14.6's
+    // [errors.kind.errordef]: a field may carry a default, written with ':=' as [syntax.obj.template]'s
     // template already writes a named field with an initial value.
     LHAT_TEST("a default stands in for the type");
     check_text(&u,
@@ -2245,7 +2245,7 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 04§2.5: without a default there is nothing to fall back to.
+    // [errors.kind.new]: without a default there is nothing to fall back to.
     LHAT_TEST("a field with no default has to be written");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ } }\n"
@@ -2260,7 +2260,7 @@ static void test_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§6.1: a declared field is reached through the kind.
+    // [errors.fits.form]: a declared field is reached through the kind.
     LHAT_TEST("a kind's declared field is visible");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ } }\n"
@@ -2280,9 +2280,9 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
     unit_dispose(&u);
 
-    // §13 has no such type as self^ or def^, and outside a def^ that is
+    // [syntax.type] has no such type as self^ or def^, and outside a def^ that is
     // already the answer, there being no binding of either to find. Inside
-    // one there is, and 05§2.2's one environment would otherwise hand it
+    // one there is, and [modules.env.one]'s one environment would otherwise hand it
     // over -- answering with a type that holds itself, which the relations walk
     // until the stack is gone. The spelling means the same thing in both places.
     LHAT_TEST("self^ is not a type, inside a def^ as well as out");
@@ -2305,7 +2305,7 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
     unit_dispose(&u);
 
-    // 05§2.2: a name stands for a value, a type, or both, and 'let^ x = 1'
+    // [modules.env.one]: a name stands for a value, a type, or both, and 'let^ x = 1'
     // is the first of those. Being in scope is not enough to be written as a
     // type -- that would make every binding one meaning "what this value is".
     LHAT_TEST("a name bound to a plain value is not a type");
@@ -2320,9 +2320,9 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
     unit_dispose(&u);
 
-    // §11.3 keeps identity structural, so what a table names is a shape that
-    // can be asked for -- a def^, a host type (05§8.8), what require^
-    // answers (05§6.1), and a table written by hand alike. The line is
+    // [syntax.op.semantic] keeps identity structural, so what a table names is a shape that
+    // can be asked for -- a def^, a host type ([modules.hostdata]), what require^
+    // answers ([modules.deps.static]), and a table written by hand alike. The line is
     // drawn at values with no structure to ask about, not at def^.
     LHAT_TEST("a table's name still says the shape it has");
     check_text(&u,
@@ -2332,7 +2332,7 @@ static void test_annotations(void)
     unit_dispose(&u);
 
     // What the two of them were reached for is written with the binding's own
-    // name, which §8.7 makes visible throughout the scope it is defined in, or
+    // name, which [syntax.stmt.visible] makes visible throughout the scope it is defined in, or
     // structurally where the definition has no name to use.
     LHAT_TEST("a definition's own name says the same thing and works");
     check_text(&u,
@@ -2344,7 +2344,7 @@ static void test_annotations(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.9: and it asks what it says. The collecting pass leaves a
+    // [syntax.obj.name]: and it asks what it says. The collecting pass leaves a
     // pending^ seed for every let^, which conforms to everything -- so reading
     // that seed would make the annotation ask nothing at all, where the same
     // one outside the def^ asks for the whole structure.
@@ -2368,7 +2368,7 @@ static void test_annotations(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.5: the definition is the right side of the '..', which is where
+    // [syntax.obj.compose]: the definition is the right side of the '..', which is where
     // infer_binary reads it too.
     LHAT_TEST("a composed one is written against its name as well");
     check_text(&u,
@@ -2389,8 +2389,8 @@ static void test_annotations(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.13: and a literal with no binding to take a name from says it
-    // with Self^. Capital S -- self^ is the receiver, a value, and §13.1 has no
+    // [syntax.type.self]: and a literal with no binding to take a name from says it
+    // with Self^. Capital S -- self^ is the receiver, a value, and [syntax.type.signature] has no
     // type by that name; this is the type, and only ever written as one.
     LHAT_TEST("Self^ names the structure written around it");
     check_text(&u,
@@ -2406,7 +2406,7 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §11.3: identity is structural, so two of these written apart are one
+    // [syntax.op.semantic]: identity is structural, so two of these written apart are one
     // type. The walk that decides it meets the same pair twice and answers
     // yes, which is what makes a recursive structure comparable at all.
     LHAT_TEST("two written apart are the same type");
@@ -2417,7 +2417,7 @@ static void test_annotations(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.7: writing a definition's name asks for an instance, and Self^
+    // [syntax.obj.instance]: writing a definition's name asks for an instance, and Self^
     // inside one says the same thing without needing the name.
     LHAT_TEST("a def^ says its own type with it");
     check_text(&u,
@@ -2450,7 +2450,7 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE);
     unit_dispose(&u);
 
-    // 01§2.3: the fifth word to count levels with a second hat.
+    // [lex.hat.repeat]: the fifth word to count levels with a second hat.
     LHAT_TEST("Self^^ reaches the literal one further out");
     check_text(&u,
                "var^ t : t^{ a : t^{ b : Self^^|nil^ } } = "
@@ -2464,7 +2464,7 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE);
     unit_dispose(&u);
 
-    // §14.10: at least the listed members.
+    // [syntax.obj.structure]: at least the listed members.
     LHAT_TEST("a structural annotation asks for at least its members");
     check_text(&u,
                "var^ t : t^{ a : number^ } = { a := 1, b := 2 }\n");
@@ -2476,8 +2476,8 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14.10: bare, with nothing listed, it asks for nothing in particular --
-    // the top of tables, which §13.7 notes is not the top of every value.
+    // [syntax.obj.structure]: bare, with nothing listed, it asks for nothing in particular --
+    // the top of tables, which [syntax.type.variadic] notes is not the top of every value.
     LHAT_TEST("a bare table type takes any table");
     check_text(&u,
                "var^ x : t^{} = { a := 1 }\n"
@@ -2497,7 +2497,7 @@ static void test_annotations(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.10: the members come with the word, so the braces are not optional
+    // [syntax.obj.structure]: the members come with the word, so the braces are not optional
     // -- a signature followed by a bare t^ would leave the '{' after it
     // reading as the list rather than as the body.
     LHAT_TEST("and the braces are what say it asks for none");
@@ -2510,8 +2510,8 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BARE_TABLE_TYPE);
     unit_dispose(&u);
 
-    // §14.10+: 'type[n]' is n positions of that type, so it is the same type
-    // the run written out is -- §14.10's "at least these" then makes the count
+    // [syntax.obj.structure-repeat]: 'type[n]' is n positions of that type, so it is the same type
+    // the run written out is -- [syntax.obj.structure]'s "at least these" then makes the count
     // a floor, the way a run of positions written by hand already is.
     LHAT_TEST("a count says how many positions the type takes");
     check_text(&u,
@@ -2617,14 +2617,14 @@ static void test_annotations(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.11: fits^ reads a type, so an unknown one is reported there too.
+    // [syntax.type.fits]: fits^ reads a type, so an unknown one is reported there too.
     LHAT_TEST("fits^ resolves its right side as a type");
     check_text(&u, "var^ x = 1\nvar^ b : bool^ = x fits^ number^\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.7: any^ holds of every value, so the question is empty whatever is
-    // on the left. §13.11 decides this from the right side alone -- it never
+    // [syntax.type.variadic]: any^ holds of every value, so the question is empty whatever is
+    // on the left. [syntax.type.fits] decides this from the right side alone -- it never
     // reads the left's inferred type against the right.
     LHAT_TEST("asking fits^ any^ asks nothing and is reported");
     check_text(&u, "var^ x : number^ = 1\nvar^ b = x fits^ any^\n");
@@ -2636,16 +2636,16 @@ static void test_annotations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
     unit_dispose(&u);
 
-    // §13.5 collapses a union with any^ to any^, so the written form does not
+    // [syntax.type.union] collapses a union with any^ to any^, so the written form does not
     // let it through.
     LHAT_TEST("and however the any^ is spelled");
     check_text(&u, "var^ x : number^ = 1\nvar^ b = x fits^ any^|nil^\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ISA_ALWAYS_TRUE);
     unit_dispose(&u);
 
-    // §13.11: an answer the left's inferred type fixes is not refused. fits^ is
+    // [syntax.type.fits]: an answer the left's inferred type fixes is not refused. fits^ is
     // there to be asked at run time, and the checker narrowing that from what
-    // it thinks it knows is what §13.7 introduced any^ to avoid.
+    // it thinks it knows is what [syntax.type.variadic] introduced any^ to avoid.
     LHAT_TEST("but an answer fixed by the left is left alone");
     check_text(&u,
                "var^ x : number^ = 1\n"
@@ -2661,10 +2661,10 @@ static void test_annotations(void)
 }
 
 #if LHAT_WITH_RESOLUTIONS
-// 07§4: lhat_check_resolution_at halves its way in, so the array has
+// [lsp.hover]: lhat_check_resolution_at halves its way in, so the array has
 // to be ordered by `use` with no position recorded twice. The walk itself
 // does not quite give that -- a member is recorded after the target it was
-// read from, and §14.7+'s two passes over a def^ meet the same member twice
+// read from, and [syntax.obj.members-order]'s two passes over a def^ meet the same member twice
 // -- so chk_settle_resolutions makes it hold. This is that invariant, asked
 // of a source written to exercise both: nested member chains inside a def^
 // whose members read each other.
@@ -2682,7 +2682,7 @@ static void test_resolutions_are_ordered(void)
                "}\n"
                "let^ b = Box.new()\n"
                "let^ n = b.twice() + pair.left + pair.right\n"
-               // §15.10: recorded from an early answer in chk_infer_name
+               // [syntax.sub.this]: recorded from an early answer in chk_infer_name
                // rather than from a binding, which is the other order the
                // walk can produce records in.
                "let^ fact = f^k:number^ -> number^ {\n"
@@ -2713,8 +2713,8 @@ static void test_resolutions_are_ordered(void)
     unit_dispose(&u);
 }
 
-// 07§4: what a resolution says besides the type. §13.1's "a signature
-// declared this" and §8.9's "a let^ bound it" are both things only the
+// [lsp.hover]: what a resolution says besides the type. [syntax.type.signature]'s "a signature
+// declared this" and [syntax.stmt.let]'s "a let^ bound it" are both things only the
 // checker knows -- where a use stands says neither, and the type says
 // neither. A tool asking what a name is has to be told.
 static void test_resolutions_say_what_bound_the_name(void)
@@ -2752,7 +2752,7 @@ static void test_resolutions_say_what_bound_the_name(void)
     unit_dispose(&u);
 }
 
-// §13.11 with 07§4: inside the branch that knows most about a name,
+// [syntax.type.fits] with [lsp.hover]: inside the branch that knows most about a name,
 // nothing was recorded about it at all -- chk_infer_name is what records one,
 // and a narrowed name answers before reaching it. So a tool asking about the
 // one place the type is sharpest got the enclosing declaration instead.
@@ -2778,7 +2778,7 @@ static void test_a_narrowed_name_still_resolves(void)
             // The branch's answer, not the binding's: number^, not the union.
             LHAT_CHECK(r->type != NULL && r->type->kind == LHAT_TYPE_NUMBER,
                        "13.11: the type is what the branch established");
-            // §8.9 and the place it was bound are the binding's to answer, and
+            // [syntax.stmt.let] and the place it was bound are the binding's to answer, and
             // narrowing changes neither.
             LHAT_CHECK(r->immutable, "8.9: a let^ name is readonly here too");
             LHAT_CHECK(r->has_definition, "it still points at its let^");
@@ -2787,21 +2787,21 @@ static void test_a_narrowed_name_still_resolves(void)
     unit_dispose(&u);
 }
 
-// §14.7+: a written-out definition is a definition. The section is what makes
+// [syntax.obj.members-order]: a written-out definition is a definition. The section is what makes
 // it one, and resolve_table_type has always read the section -- it just did
-// not say what reading one meant. §14.5's '..' asks this of both operands and
-// §14.9's built-in members ask it of a value, so the fact is the language's;
+// not say what reading one meant. [syntax.obj.compose]'s '..' asks this of both operands and
+// [syntax.obj.name]'s built-in members ask it of a value, so the fact is the language's;
 // asked here through a resolution because that is where it became visible,
 // a name annotated this way reading as an ordinary table to every tool.
 //
-// §8.7: an annotation is what the binding holds when one is written, so
+// [syntax.stmt.visible]: an annotation is what the binding holds when one is written, so
 // without this the def^'s own answer never reaches the name.
-// §13 with 07§4: a written type name is resolved here rather than
-// through 08§8's scoping, and until this was recorded nothing outside the
+// [syntax.type] with [lsp.hover]: a written type name is resolved here rather than
+// through [lton.host]'s scoping, and until this was recorded nothing outside the
 // checker could tell 'number^' from the 'number' somebody meant to write. The
 // place they stand in is the same one: the parser reads both into a type-name
 // node, and the hat is the whole difference.
-// §14.10 with 07§4: a member is looked up in a type rather than in a
+// [syntax.obj.structure] with [lsp.hover]: a member is looked up in a type rather than in a
 // scope, so the place it was written is the type's to know -- and a use of
 // one had nothing to point at until it did. What a name a scope holds gets
 // from its binding, a member gets from the member record (type.h).
@@ -2832,14 +2832,14 @@ static void test_a_member_use_says_where_it_was_written(void)
                               (uint32_t)(wrote - u.source.text));
             // The unit that wrote it, which for a member of this unit's own
             // def^ is this one -- the field is what a member from another
-            // unit fills differently (05§6.1).
+            // unit fills differently ([modules.deps.static]).
             LHAT_CHECK(r->definition_path != NULL,
                        "expected the member to name the unit it was in");
         }
     }
     unit_dispose(&u);
 
-    // 05§8.7: what the host registered was declared in C, and §14.19's
+    // [modules.host.import]: what the host registered was declared in C, and [syntax.obj.substring]'s
     // built-ins by the language. Neither has a place in any source, and
     // saying so is the answer rather than a missing one.
     LHAT_TEST("and a built-in member has no place to point at");
@@ -2873,7 +2873,7 @@ static void test_a_written_type_name_resolves(void)
     }
     unit_dispose(&u);
 
-    // And the hat forgotten: 11§2.1 reserves no word, so this is a name like any
+    // And the hat forgotten: [binary.containers.bytes] reserves no word, so this is a name like any
     // other and there is no type under it. Nothing recorded is what says so.
     LHAT_TEST("and one that names nothing is not");
     check_text(&u, "let^ twice = f^ n:number -> number^ { return^ 2 }\n");
@@ -2911,7 +2911,7 @@ static void test_a_written_definition_is_one(void)
             LHAT_CHECK(r->type->kind == LHAT_TYPE_TABLE &&
                            r->type->v.table.is_definition,
                        "the annotated name holds a definition");
-            // 05§8.8 is about a value, not about a demand written on a name --
+            // [modules.hostdata] is about a value, not about a demand written on a name --
             // a plain table that meets the shape is not closed by having been
             // asked for. Said here so that setting one is not read as
             // forgetting the other.
@@ -2922,12 +2922,12 @@ static void test_a_written_definition_is_one(void)
     }
     unit_dispose(&u);
 }
-// 07§4: what stands to the left of a '.', controlled where the checker
+// [lsp.hover]: what stands to the left of a '.', controlled where the checker
 // infers it. A tool asked what may follow the dot reads this rather than
 // working the receiver out from the names around it -- which for anything
 // but a plain name it could not do at all.
 
-// §14.19 と §15.6+: the built-in members, listed by asking the checker rather
+// [syntax.obj.substring] と [syntax.sub.coroutine-members]: the built-in members, listed by asking the checker rather
 // than by describing them a second time. What is pinned here is that the
 // answer tracks the cascade's own conditions -- the hat rules especially,
 // since those are what a hand-written list would get wrong.
@@ -2991,7 +2991,7 @@ static void test_the_built_ins_are_asked_for(void)
     Unit u;
     Offered seen;
 
-    // §14.19: a string^ is not a value a writer can add a name to, so its
+    // [syntax.obj.substring]: a string^ is not a value a writer can add a name to, so its
     // built-ins take no hat at all.
     LHAT_TEST("14.19: a string offers its own, bare and only bare");
     builtins_of(&u, &seen,
@@ -3023,7 +3023,7 @@ static void test_the_built_ins_are_asked_for(void)
     expect_offered(&seen, "length", false);
     unit_dispose(&u);
 
-    // §14.10+ with §14.17+: on a plain table the bare spellings stay the
+    // [syntax.obj.structure-repeat] with [syntax.obj.tostring-hat]: on a plain table the bare spellings stay the
     // writer's, so every built-in there wears the hat.
     LHAT_TEST("14.17改: a plain table's built-ins wear the hat");
     builtins_of(&u, &seen,
@@ -3039,7 +3039,7 @@ static void test_the_built_ins_are_asked_for(void)
     expect_offered(&seen, "length", false);
     unit_dispose(&u);
 
-    // §14.17+ again, the other way: a def^ made it, so the bare spelling is
+    // [syntax.obj.tostring-hat] again, the other way: a def^ made it, so the bare spelling is
     // not the writer's to claim and iterate answers under both.
     LHAT_TEST("but a def^'s instance takes either spelling of iterate");
     builtins_of(&u, &seen,
@@ -3049,7 +3049,7 @@ static void test_the_built_ins_are_asked_for(void)
     expect_offered(&seen, "iterate", true);
     expect_offered(&seen, "iterate^", true);
     expect_offered(&seen, "tostring", true);
-    // §14.10+: the sequence operations are a plain table's alone.
+    // [syntax.obj.structure-repeat]: the sequence operations are a plain table's alone.
     expect_offered(&seen, "push^", false);
     unit_dispose(&u);
 
@@ -3076,7 +3076,7 @@ static void test_the_built_ins_are_asked_for(void)
     expect_offered(&seen, "enum^", true);
     unit_dispose(&u);
 
-    // 05§8.9+'s box, where get and set live, needs a host value type --
+    // [modules.hostvalue.union]'s box, where get and set live, needs a host value type --
     // which needs a registration, which a standalone unit has none of. That
     // pair is pinned in tests/test_program.c instead, where a program can be
     // built with one.
@@ -3132,7 +3132,7 @@ static void test_every_word_answers_somewhere(void)
     };
     size_t count = sizeof receivers / sizeof receivers[0];
 
-    // 05§8.9+: a box is made from a registered host value type, and a
+    // [modules.hostvalue.union]: a box is made from a registered host value type, and a
     // standalone unit registers nothing -- so these two are unreachable
     // here and are pinned where a program can be built instead.
     static const char *const needs_a_host[] = { "get", "set" };
@@ -3174,7 +3174,7 @@ static void test_every_word_answers_somewhere(void)
                "cascade dropped it or this test needs another receiver", missing);
 }
 
-// 07§4: what names may stand at a position, which is the other half of
+// [lsp.hover]: what names may stand at a position, which is the other half of
 // what a tool asks -- a resolution answers about a name that was written, and
 // this answers where none has been.
 typedef struct {
@@ -3226,7 +3226,7 @@ static void test_what_names_may_stand_here(void)
     CHECK_CLEAN(&u);
     LHAT_CHECK(bindings_at(&u, "var^ ", "counter").seen == 1,
                "expected counter in scope");
-    // §8.7: a name is in scope throughout the scope that binds it, so one
+    // [syntax.stmt.visible]: a name is in scope throughout the scope that binds it, so one
     // written later stands here too.
     LHAT_CHECK(bindings_at(&u, "let^ counter", "twice").seen == 1,
                "expected twice in scope before its own let^");
@@ -3252,7 +3252,7 @@ static void test_what_names_may_stand_here(void)
 
     // The rule the whole record leans on: a scope closes before the one
     // around it, so a shadowing name is passed on first and a reader keeping
-    // the first of each spelling has what 08§8 would have found.
+    // the first of each spelling has what [lton.host] would have found.
     LHAT_TEST("8 章: a shadowing name is passed on before the one it shadows");
     check_text(&u,
                "let^ v = \"outer\"\n"
@@ -3344,14 +3344,14 @@ static void test_a_dot_says_what_stands_to_its_left(void)
         }
     }
     // And the checker says nothing new about it. The member answers
-    // unknown^ rather than a gap, so 03§3.1's "nothing decided this name"
+    // unknown^ rather than a gap, so [pipeline.strict.per-unit]'s "nothing decided this name"
     // does not fire -- the line carries the one diagnostic the missing name
     // already earned, and keeping the node cost no second squiggle.
     LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 0);
     LHAT_CHECK_EQ_INT(syntax_errors(&u), 1);
     unit_dispose(&u);
 
-    // §8.2 refuses this outright -- 'point.zz' is an expression standing
+    // [syntax.stmt.no-bare-expr] refuses this outright -- 'point.zz' is an expression standing
     // where a statement belongs -- but the parser keeps the run under the
     // refusal and the checker walks it for the record alone.
     LHAT_TEST("07 の 4 章: a refused statement still records its dot");
@@ -3412,7 +3412,7 @@ static void test_a_dot_says_what_stands_to_its_left(void)
     }
     unit_dispose(&u);
 
-    // §11.7+2: '?.' steps past the nil^ arm, and the record says so -- what
+    // [syntax.op.nil-safe-chain]: '?.' steps past the nil^ arm, and the record says so -- what
     // is offered there is what the access would accept.
     LHAT_TEST("11.7改2: '?.' records the receiver without its nil^ arm");
     check_text(&u,
@@ -3467,12 +3467,12 @@ static void test_a_dot_says_what_stands_to_its_left(void)
 
 #endif
 
-// 04§8.3: a failure is not a thing to drop.
+// [errors.dropped.answer]: a failure is not a thing to drop.
 //
-// 12§8.1 read the type itself as the detection -- handle the error or you
+// [spec.open.unreported] read the type itself as the detection -- handle the error or you
 // cannot use the value -- and that holds wherever the value is WANTED. A
 // statement wants none, so nothing was stopping a call written for its
-// effect from throwing its failure away with its answer; 04§8.2's "L^ has no
+// effect from throwing its failure away with its answer; [errors.dropped.around-value]'s "L^ has no
 // ignorable err" had come back by the other door. These pin the door shut,
 // where Zig shuts it too.
 static void test_dropped_errors(void)
@@ -3487,7 +3487,7 @@ static void test_dropped_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ERROR_DROPPED);
     unit_dispose(&u);
 
-    // 04§4.4: the deliberate ignore has a spelling, and it is catch^.
+    // [errors.catch.ignore]: the deliberate ignore has a spelling, and it is catch^.
     LHAT_TEST("catch^ is how it is said on purpose");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
@@ -3496,7 +3496,7 @@ static void test_dropped_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§5.1: and try^ hands it to the caller, where the caller says so.
+    // [errors.try.form]: and try^ hands it to the caller, where the caller says so.
     LHAT_TEST("try^ hands it back");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
@@ -3508,7 +3508,7 @@ static void test_dropped_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 12§8.1's own way: bind it, and the union makes the narrowing necessary.
+    // [spec.open.unreported]'s own way: bind it, and the union makes the narrowing necessary.
     LHAT_TEST("binding it is not dropping it");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
@@ -3518,8 +3518,8 @@ static void test_dropped_errors(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.12 throws a VALUE away. A failure is not one of the things it may
-    // throw -- 04§4.4 says Go's '_' is not needed here, and this is why.
+    // [syntax.type.discard] throws a VALUE away. A failure is not one of the things it may
+    // throw -- [errors.catch.ignore] says Go's '_' is not needed here, and this is why.
     LHAT_TEST("'_^' does not throw a failure away either");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"

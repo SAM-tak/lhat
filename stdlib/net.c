@@ -1,9 +1,9 @@
-// L^ (lhat) -- sample standard library: std.net (01§11).
+// L^ (lhat) -- sample standard library: std.net ([lex.open]).
 //
 // A std.net.Udp holds one socket, made when it is first given an address --
 // bind, setPeer's first send, or sendTo -- in that address's family. Every
 // socket is non-blocking: receive answers nil^ in the data's place when
-// nothing has arrived (11§4.2), and a loop reads until it does.
+// nothing has arrived ([binary.net.no-wait]), and a loop reads until it does.
 //
 // A failure of the network came from outside and answers std.net.Error; a
 // port outside 0..65535, or a send with no peer named, is the writer's
@@ -319,9 +319,9 @@ static bool answer_address(LhatMachine *machine, const LhatSocketAddress *addres
     return true;
 }
 
-// 11§4.2: three answers -- the data or nil^, the sender's host and its
+// [binary.net.no-wait]: three answers -- the data or nil^, the sender's host and its
 // port, which are "" and 0 when nothing arrived. An error is answered alone
-// (§13.8+2 pads it with nil^).
+// ([syntax.type.tuple-parens] pads it with nil^).
 static void answer_three(LhatMachine *machine, LhatValue first,
                          const LhatSocketAddress *from, LhatValue *answers, int *answer_count)
 {
@@ -460,10 +460,10 @@ static void udp_dispose(LhatMachine *machine, void *context, const LhatValue *ar
 
 #define M "std.net"
 // send and sendTo take a string^ or a Bytes: one overload arm each (02 の
-// §14.12), so a call with a settled argument is bound at compile time.
+// [syntax.obj.override]), so a call with a settled argument is bound at compile time.
 #define SEND(DATA) "p^self^, " DATA " -> nil^|std.net.Error;"
 #define SEND_TO(DATA) "p^self^, " DATA ", string^, number^ -> nil^|std.net.Error;"
-// §13.8+2: an error stands for the whole answer, never one position.
+// [syntax.type.tuple-parens]: an error stands for the whole answer, never one position.
 #define FROM ", string^, number^)|std.net.Error;"
 
 bool lhatstdlib_net_register(LhatProgram *program)
@@ -488,7 +488,7 @@ bool lhatstdlib_net_register(LhatProgram *program)
         return false;
     }
     NetModule *module = &shared;
-    // 11§2.1: the Bytes overloads come with std.binary, registered before
+    // [binary.containers.bytes]: the Bytes overloads come with std.binary, registered before
     // this. Without it std.net sends and receives string^ alone.
     const LhatBinaryInterface *binary =
         (const LhatBinaryInterface *)lhat_lookup_host_context(program, "std.binary", NULL, "bytes");

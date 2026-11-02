@@ -42,7 +42,7 @@ static void put_number(Writer *w, uint32_t value)
     }
 }
 
-// 01§1 normalises every line ending to LF, so one character ends a line
+// [lex.source] normalises every line ending to LF, so one character ends a line
 // and nothing has to look for a pair.
 static bool line_bounds(const LhatSource *source, uint32_t offset,
                         size_t *begin, size_t *end)
@@ -204,7 +204,7 @@ static void put_flattened(Writer *w, const char *line, size_t length)
     }
 }
 
-// 10§5.1: what a report is, said ahead of its message.
+// [l10n.compose.holes]: what a report is, said ahead of its message.
 enum { REPORT_ERROR, REPORT_NOTE, REPORT_WARNING };
 
 static const LhatMessageEntry REPORT_PARTS[] = {

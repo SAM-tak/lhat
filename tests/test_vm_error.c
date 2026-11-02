@@ -2,7 +2,7 @@
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
 // prefixed. Programs are run end to end, since what is worth pinning is the
-// answer rather than the instructions chosen to reach it -- 09§5.1 expects those
+// answer rather than the instructions chosen to reach it -- [debug.dap.machines] expects those
 // to be replaced by specialised ones later.
 
 #include <math.h>
@@ -13,7 +13,7 @@
 #include "code.h"
 #include "fixture.h"
 
-// 04: errors are values. 05§5.6 wants no unwinding for any of this, and none of
+// 04: errors are values. [modules.require.load] wants no unwinding for any of this, and none of
 // it needs any.
 static void test_errors(void)
 {
@@ -27,7 +27,7 @@ static void test_errors(void)
     CHECK_STRING(&r, "no such file");
     run_dispose(&r);
 
-    // 04§2.3: every kind gets message and cause without declaring either.
+    // [errors.kind.made]: every kind gets message and cause without declaring either.
     LHAT_TEST("message defaults to the empty string");
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
@@ -51,7 +51,7 @@ static void test_errors(void)
     CHECK_INTEGER(&r, 312);
     run_dispose(&r);
 
-    // 11§2.2: a default is an expression evaluated at each construction, not a
+    // [binary.containers.outside]: a default is an expression evaluated at each construction, not a
     // value stored once.
     LHAT_TEST("a field left out takes its default");
     run_text(&r,
@@ -72,7 +72,7 @@ static void test_errors(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
-    // §2.4: two declarations may spell a kind the same and still be different
+    // [syntax.juxta.call-binds]: two declarations may spell a kind the same and still be different
     // kinds. This is the whole reason identity is the declaration site.
     LHAT_TEST("the same spelling in two declarations is two kinds");
     run_text(&r,
@@ -92,7 +92,7 @@ static void test_errors(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // §2.3: naming the declaration asks about the union of its kinds.
+    // [syntax.juxta.when]: naming the declaration asks about the union of its kinds.
     LHAT_TEST("naming the declaration asks about all of its kinds");
     run_text(&r,
              "errordef^ IOError { NotFound, Denied }\n"
@@ -121,7 +121,7 @@ static void test_errors(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // §2.3: the declaration is the union, not a type to construct.
+    // [syntax.juxta.when]: the declaration is the union, not a type to construct.
     LHAT_TEST("the declaration itself cannot be constructed");
     run_text(&r,
              "errordef^ IOError { NotFound }\n"
@@ -129,7 +129,7 @@ static void test_errors(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // §12.7+, 04§11.6: the program's own panic. The value rides
+    // [syntax.with.panic], [errors.runtime.panic]: the program's own panic. The value rides
     // along, the line names where, and op_name stays empty -- it answers
     // only for the eight operator instructions.
     LHAT_TEST("panic^ carries its value out");
@@ -142,7 +142,7 @@ static void test_errors(void)
     LHAT_CHECK(r.ran.op_name == NULL, "no operator to name");
     run_dispose(&r);
 
-    // §12.7+: not catchable -- catch^ substitutes error values, and a panic
+    // [syntax.with.panic]: not catchable -- catch^ substitutes error values, and a panic
     // is not one.
     LHAT_TEST("panic^ passes catch^ by");
     run_text(&r,
@@ -153,8 +153,8 @@ static void test_errors(void)
     run_dispose(&r);
 }
 
-// 04§4 and 04§5, and §11.7.
-// 04§11.6+: a fault leaves its frames standing, and the machine answers
+// [errors.catch] and [errors.try], and [syntax.op.default].
+// [errors.runtime.traceback]: a fault leaves its frames standing, and the machine answers
 // them until the next run -- lhat_machine_fault_depth/_frame, and the text
 // lhat_machine_traceback spells. run_text compiles without a program, so
 // `source` stays NULL here; the stamped path is the program tests'.
@@ -164,7 +164,7 @@ static void test_traceback(void)
 
     // The statements after each call keep the calls out of tail position --
     // a tail call reuses the frame, and the folded caller leaves no trace
-    // (03§5.3; Lua elides them the same way).
+    // ([pipeline.bc.call]; Lua elides them the same way).
     LHAT_TEST("a fault leaves its frames readable");
     run_text(&r,
              "var^ inner = p^ { panic^ \"boom\" }\n"
@@ -249,7 +249,7 @@ static void test_catch_and_try(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 04§4.2: the error is it^ inside the right side, the same word §16.2
+    // [errors.catch.it]: the error is it^ inside the right side, the same word [syntax.for.it]
     // uses for a focus.
     LHAT_TEST("the caught error is it^");
     run_text(&r,
@@ -267,7 +267,7 @@ static void test_catch_and_try(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
-    // 04§4.3: catch^ binds tighter than the arithmetic around it, so what fails
+    // [errors.catch.precedence]: catch^ binds tighter than the arithmetic around it, so what fails
     // is the call and not the sum.
     LHAT_TEST("catch^ attaches to the operation, not the sum");
     run_text(&r,
@@ -286,7 +286,7 @@ static void test_catch_and_try(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // 04§5.1: try^ hands the error to the caller and carries on otherwise.
+    // [errors.try.form]: try^ hands the error to the caller and carries on otherwise.
     LHAT_TEST("try^ returns the error from the procedure that wrote it");
     run_text(&r,
              "errordef^ E { Bad }\n"
@@ -308,7 +308,7 @@ static void test_catch_and_try(void)
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
-    // 04§5.2: try^ leaves the way return^ does, so a loop's last^ and epilog^
+    // [errors.try.exit]: try^ leaves the way return^ does, so a loop's last^ and epilog^
     // do not run.
     LHAT_TEST("try^ leaving a loop runs neither last^ nor epilog^");
     run_text(&r,
@@ -340,8 +340,8 @@ static void test_catch_and_try(void)
     CHECK_STRING(&r, "gone");
     run_dispose(&r);
 
-    // 04§4.5: the arms are where a try^ before them leaves for, and
-    // an arm is chosen by §13.11's judgement -- so the kind decides which one
+    // [errors.catch.clause]: the arms are where a try^ before them leaves for, and
+    // an arm is chosen by [syntax.type.fits]'s judgement -- so the kind decides which one
     // runs, and it^ is narrowed to it there.
     LHAT_TEST("a catch^ arm takes the kind it names");
     run_text(&r,
@@ -365,7 +365,7 @@ static void test_catch_and_try(void)
     CHECK_STRING(&r, "okhereother");
     run_dispose(&r);
 
-    // §5.4: it^'s slot goes back to the pool when the arm ends, so a closure
+    // [syntax.if.bool]: it^'s slot goes back to the pool when the arm ends, so a closure
     // the arm made has to stop sharing it -- the call below stands there.
     LHAT_TEST("a closure an arm made keeps its own it^");
     run_text(&r,
@@ -401,7 +401,7 @@ static void test_catch_and_try(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 04§4.5: what no arm takes leaves the way a bare try^ would have sent it.
+    // [errors.catch.clause]: what no arm takes leaves the way a bare try^ would have sent it.
     LHAT_TEST("and what no arm takes goes on out");
     run_text(&r,
              "errordef^ E { A, B }\n"
@@ -419,7 +419,7 @@ static void test_catch_and_try(void)
     run_dispose(&r);
 
     // Reaching an arm is a way out of the block and no further, so what the
-    // block opened is drained on the way -- §9.8's reading, one construct over.
+    // block opened is drained on the way -- [syntax.loop.exit]'s reading, one construct over.
     LHAT_TEST("and a with^ inside the block disposes before the arm runs");
     run_text(&r,
              "errordef^ E { Bad }\n"
@@ -441,7 +441,7 @@ static void test_catch_and_try(void)
     CHECK_STRING(&r, "da");
     run_dispose(&r);
 
-    // 05§4.5: in a loop the arms close main^, so they take one turn's error and
+    // [modules.public.host]: in a loop the arms close main^, so they take one turn's error and
     // the loop goes on with the next.
     LHAT_TEST("a loop's arms take one turn's error and the loop goes on");
     run_text(&r,
@@ -467,7 +467,7 @@ static void test_catch_and_try(void)
     run_dispose(&r);
 
     // The arms are the block's own clause, so its finally^ still runs last
-    // -- after an arm, and reading what the statements bound (§10.1).
+    // -- after an arm, and reading what the statements bound ([syntax.finally.block]).
     LHAT_TEST("an arm runs before the block's finally^, which reads the body");
     run_text(&r,
              "errordef^ E { Bad }\n"
@@ -488,7 +488,7 @@ static void test_catch_and_try(void)
     CHECK_STRING(&r, "af");
     run_dispose(&r);
 
-    // An if^'s arms take what any of its bodies found, and §10.1 gives it a
+    // An if^'s arms take what any of its bodies found, and [syntax.finally.block] gives it a
     // finally^ of its own.
     LHAT_TEST("an if^ carries arms and a finally^");
     run_text(&r,
@@ -512,7 +512,7 @@ static void test_catch_and_try(void)
     CHECK_STRING(&r, "afafef");
     run_dispose(&r);
 
-    // §15.12: an arm that is one expression answers with it, the way a body
+    // [syntax.sub.expr-body]: an arm that is one expression answers with it, the way a body
     // that is one does.
     LHAT_TEST("a function body's arm answers with its expression");
     run_text(&r,
@@ -544,7 +544,7 @@ static void test_catch_and_try(void)
     CHECK_STRING(&r, "rd");
     run_dispose(&r);
 
-    // 04§4.2: a fallback for the kinds with a value, and a try^ in the arm that
+    // [errors.catch.it]: a fallback for the kinds with a value, and a try^ in the arm that
     // is left for the rest.
     LHAT_TEST("a fallback passes on the kinds it has no value for");
     run_text(&r,
@@ -565,7 +565,7 @@ static void test_catch_and_try(void)
     CHECK_INTEGER(&r, 1053);
     run_dispose(&r);
 
-    // §11.7: '??' is the same shape, asking about nil^.
+    // [syntax.op.default]: '??' is the same shape, asking about nil^.
     // The escape keeps "??'" from being read as a trigraph for '^'.
     LHAT_TEST("'?\?' supplies a value for a missing key");
     run_text(&r, "var^ t = { }\nreturn^ t[\"nowhere\"] ?? 5\n");
@@ -577,14 +577,14 @@ static void test_catch_and_try(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §11.7 asks about nil^ and nothing else, so false^ is a value that is
+    // [syntax.op.default] asks about nil^ and nothing else, so false^ is a value that is
     // there rather than one that is missing.
     LHAT_TEST("'?\?' asks about nil^, not about being false");
     run_text(&r, "var^ t = { a := false^ }\nreturn^ t[\"a\"] ?? true^\n");
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
-    // 04§11.4 with 01§7.1: the '?' access forms answer nil^ for
+    // [errors.runtime.nil] with [lex.op.list]: the '?' access forms answer nil^ for
     // an absent target rather than reaching into one. Before this they were
     // parsed and then compiled as ordinary accesses, so they faulted on the
     // very value they exist to handle.
@@ -638,7 +638,7 @@ static void test_catch_and_try(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §11.7+2: the run is one guard, so a call written on a guarded access is
+    // [syntax.op.nil-safe-chain]: the run is one guard, so a call written on a guarded access is
     // skipped with it. The callee here is read *out of* the absent target,
     // which is the shape the per-link reading could not express.
     LHAT_TEST("a call on a guarded access is skipped with it");
@@ -698,7 +698,7 @@ static void test_catch_and_try(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // §11.7+2: the postfix form asks about absence instead of reaching
+    // [syntax.op.present]: the postfix form asks about absence instead of reaching
     // through it, so it answers bool^ and the '?' family is complete.
     LHAT_TEST("'?' answers false for an absent value");
     run_text(&r, "var^ t : number^|nil^ = nil^\nreturn^ t?\n");
@@ -710,7 +710,7 @@ static void test_catch_and_try(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // §11.7 asks about nil^ and nothing else, and so does this -- §5.4 keeps
+    // [syntax.op.default] asks about nil^ and nothing else, and so does this -- [syntax.if.bool] keeps
     // truthiness out, which is what lets false^ be a value that is there.
     LHAT_TEST("'?' asks about nil^, not about being false");
     run_text(&r, "var^ t : bool^|nil^ = false^\nreturn^ t?\n");
@@ -725,8 +725,8 @@ static void test_catch_and_try(void)
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
-    // §8.2 keeps a bare expression from being a statement, so this one is
-    // bound -- a call is a statement (§8.3) and an index is not.
+    // [syntax.stmt.no-bare-expr] keeps a bare expression from being a statement, so this one is
+    // bound -- a call is a statement ([syntax.stmt.forms]) and an index is not.
     LHAT_TEST("an absent target evaluates no key");
     run_text(&r,
              "var^ log = { ran = 0 }\n"
@@ -738,15 +738,15 @@ static void test_catch_and_try(void)
     run_dispose(&r);
 }
 
-// §10 and §12: the cleanups, which 01§5.5 makes one mechanism.
+// [syntax.finally] and [syntax.with]: the cleanups, which [lex.string.multiline-risk] makes one mechanism.
 static void test_cleanups(void)
 {
     Run r;
 
-    // 04§11.6+2: and the one exit it does not run for. A panic is the
+    // [errors.runtime.panic-finally]: and the one exit it does not run for. A panic is the
     // fatal layer -- what catch^ cannot take, the language does not tidy up
     // after either; the frames stay standing for the traceback to read, and
-    // the host's own resources come back through 05§8.8's three
+    // the host's own resources come back through [modules.hostdata]'s three
     // occasions rather than through this.
     LHAT_TEST("a panic^ leaves finally^ unrun");
     run_text(&r,
@@ -789,7 +789,7 @@ static void test_cleanups(void)
     CHECK_INTEGER(&r, 11);
     run_dispose(&r);
 
-    // §10.2: however the block is left.
+    // [syntax.finally.every-exit]: however the block is left.
     LHAT_TEST("finally^ runs when return^ leaves through it");
     run_text(&r,
              "var^ log = { n := 0 }\n"
@@ -820,7 +820,7 @@ static void test_cleanups(void)
     CHECK_INTEGER(&r, 11);
     run_dispose(&r);
 
-    // 04§5.2: try^ leaves the way return^ does, so finally^ still runs.
+    // [errors.try.exit]: try^ leaves the way return^ does, so finally^ still runs.
     LHAT_TEST("and when try^ hands an error to the caller");
     run_text(&r,
              "errordef^ E { Bad }\n"
@@ -839,7 +839,7 @@ static void test_cleanups(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // §10.1: a p^ body is a block like any other.
+    // [syntax.finally.block]: a p^ body is a block like any other.
     LHAT_TEST("a procedure body may carry a finally^");
     run_text(&r,
              "var^ log = { n := 0 }\n"
@@ -853,7 +853,7 @@ static void test_cleanups(void)
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
-    // §10.4: innermost first, which is the order the frame drains in.
+    // [syntax.finally.impl]: innermost first, which is the order the frame drains in.
     LHAT_TEST("nested finally^ run from the inside out");
     run_text(&r,
              "var^ log = { s := 0 }\n"
@@ -889,14 +889,14 @@ static void test_cleanups(void)
     CHECK_INTEGER(&r, 11);
     run_dispose(&r);
 
-    // §10.5: Java lets a finally return and silently replace the answer. C#
+    // [syntax.finally.result]: Java lets a finally return and silently replace the answer. C#
     // refuses; so does this.
     LHAT_TEST("return^ inside a finally^ does not compile");
     run_text(&r, "do^{\n  var^ x = 1\nfinally^:\n  return^ 2\n}\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
     run_dispose(&r);
 
-    // §9.2 and §10.9: finally^ comes after the loop's own clauses.
+    // [syntax.loop.order] and [syntax.finally.epilog]: finally^ comes after the loop's own clauses.
     LHAT_TEST("a loop's finally^ runs after its epilog^");
     run_text(&r,
              "var^ log = { s := 0 }\n"
@@ -912,7 +912,7 @@ static void test_cleanups(void)
     CHECK_INTEGER(&r, 123);
     run_dispose(&r);
 
-    // §9.8: a return^ out of a loop runs neither epilog^ nor last^, but §10.2
+    // [syntax.loop.exit]: a return^ out of a loop runs neither epilog^ nor last^, but [syntax.finally.every-exit]
     // still runs the finally^.
     LHAT_TEST("a return^ out of a loop runs the finally^ and nothing else");
     run_text(&r,
@@ -932,7 +932,7 @@ static void test_cleanups(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // §12.2: dispose() at the end of the block.
+    // [syntax.with.dispose]: dispose() at the end of the block.
     LHAT_TEST("with^ disposes at the end of the block");
     run_text(&r,
              "var^ log = { n := 0 }\n"
@@ -945,7 +945,7 @@ static void test_cleanups(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §12.2: the reverse of the order they were defined in, so a resource that
+    // [syntax.with.dispose]: the reverse of the order they were defined in, so a resource that
     // depends on an earlier one goes first.
     LHAT_TEST("several with^ dispose in reverse order");
     run_text(&r,
@@ -960,7 +960,7 @@ static void test_cleanups(void)
     CHECK_INTEGER(&r, 21);
     run_dispose(&r);
 
-    // §12.3: dispose() has the same strength as finally^.
+    // [syntax.with.every-exit]: dispose() has the same strength as finally^.
     LHAT_TEST("with^ disposes when return^ leaves through it");
     run_text(&r,
              "var^ log = { n := 0 }\n"
@@ -976,7 +976,7 @@ static void test_cleanups(void)
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
-    // §12.4: finally^ first, dispose() after, because with^ wraps the block
+    // [syntax.with.finally-order]: finally^ first, dispose() after, because with^ wraps the block
     // from outside and finally^ is its last clause from inside.
     LHAT_TEST("finally^ runs before the dispose that surrounds it");
     run_text(&r,

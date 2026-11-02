@@ -41,7 +41,7 @@ static size_t write_title(const LhatUnit *unit, size_t index, size_t which,
                                                 capacity);
 }
 
-// The title, in the program's language (10§7.1). Wide enough for every one
+// The title, in the program's language ([l10n.choose.program]). Wide enough for every one
 // the library writes; the heap is for a translation that runs long.
 static cJSON *title_json(const LhatUnit *unit, size_t index, size_t which)
 {
@@ -103,7 +103,7 @@ cJSON *lsp_code_actions_for_unit(const LhatUnit *unit, const char *uri,
             cJSON *action =
                 action_json(unit, uri, LSP_QUICK_FIX, title_json(unit, i, which),
                             fix.edits, fix.edit_count);
-            // 07§6: a fix the library calls machine-applicable is the one an
+            // [lsp.next]: a fix the library calls machine-applicable is the one an
             // editor may put first and apply without being read. A suggested
             // one is a guess, and stands in the list like any other.
             if (fix.confidence == LHAT_FIX_MACHINE && fixes == 1) {

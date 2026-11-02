@@ -25,11 +25,11 @@ extern "C" {
 
 typedef struct DapSession DapSession;
 
-// 10§6.3: the adapter's own texts, for whoever writes the catalogs out --
+// [l10n.catalog.dump]: the adapter's own texts, for whoever writes the catalogs out --
 // the cli does, since the adapter is linked into it.
 const LhatMessageEntry *dap_messages(size_t *count);
 
-// 09§5.2: how the debugger's spelling of a file and the program's
+// [debug.dap.paths]: how the debugger's spelling of a file and the program's
 // spelling of a unit meet, when they are not the same thing -- a host
 // loading units out of an archive or a virtual filesystem has unit names no
 // filesystem holds, and only the host knows the correspondence.
@@ -60,7 +60,7 @@ typedef struct {
 // spellings to the program's unit spellings; NULL takes both as filesystem
 // paths. false (and `*out` NULL) when no debugger could be reached, which
 // the caller treats as "run without one".
-// 10§7.4: what the debugger says it reads (DAP's `locale`), handed to
+// [l10n.choose.tools]: what the debugger says it reads (DAP's `locale`), handed to
 // whoever started this process. The adapter has no files of its own and no
 // business guessing where a catalog lives, so it says the tag and the host
 // loads the catalogs into the program it gave (lhat_program_load_language).
@@ -96,11 +96,11 @@ bool dap_session_rebind(DapSession *session, LhatMachine *machine,
 // the caller shows no error of its own for the panic that stopped it.
 bool dap_session_ended_run(const DapSession *session);
 
-// 09§5.3: where the first thing written on `line` stands, 1-based -- the
+// [debug.dap.columns]: where the first thing written on `line` stands, 1-based -- the
 // column a stack frame reports. 1 when the line is blank, is past the end of
 // the text, or there is no text at all.
 //
-// The count is the lexer's (01§3 counts code points) without having to
+// The count is the lexer's ([lex.ident] counts code points) without having to
 // be told so: only ' ' and '\t' are stepped over and both are one byte, so
 // everything before the answer is ASCII and bytes, code points and UTF-16
 // units are the one number. `text` is a unit's, which LhatSource has already
@@ -109,7 +109,7 @@ bool dap_session_ended_run(const DapSession *session);
 // Public for its own test -- it is the one piece here with arithmetic in it.
 uint32_t dap_column_of_line(const char *text, size_t length, uint32_t line);
 
-// 09§5.2 with D6: `path` written the one way this session compares paths,
+// [debug.dap.paths] with D6: `path` written the one way this session compares paths,
 // malloc'd for the caller. Absolute, with '.' and '..' taken out, and with
 // every symbolic link and junction walked through, so two spellings of one
 // file answer the same string. What names nothing that can be opened is

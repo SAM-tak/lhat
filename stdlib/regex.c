@@ -35,7 +35,7 @@ static LhatValue fail_with(LhatMachine *machine, const LhatErrorKind *kind,
 }
 
 // The character ordinal of a byte offset -- continuation bytes carry no
-// ordinal of their own (§14.19's counting).
+// ordinal of their own ([syntax.obj.substring]'s counting).
 static size_t ordinal_at(const char *text, size_t byte_at)
 {
     size_t count = 0;
@@ -149,7 +149,7 @@ static LhatValue do_captures(LhatMachine *machine, const RegexModule *module,
     LhatTable *holder = (LhatTable *)lhat_as_object(table);
     size_t groups = lhat_regex_groups(compiled);
     for (size_t i = 0; i <= groups; i++) {
-        // 04§11.3: a group that took part in no match is simply absent.
+        // [errors.runtime.index]: a group that took part in no match is simply absent.
         if (spans[i].begin == (size_t)-1) {
             continue;
         }
@@ -195,7 +195,7 @@ static void expand_replacement(Buffer *out, const LhatString *with,
 // One match through the written function: (match, ordinal, captures) in,
 // string^ or nil^ out -- nil^ keeps the original (Lua's gsub rule). A fault
 // in the function comes back as a non-OK status; answering nil^ then lets
-// the machine's own fault propagation end the outer run (05§8.7).
+// the machine's own fault propagation end the outer run ([modules.host.import]).
 static bool call_replacement(LhatMachine *machine, LhatValue fn,
                              const LhatString *text,
                              const LhatRegexSpan *spans, size_t groups,
@@ -304,7 +304,7 @@ static LhatValue do_gsub(LhatMachine *machine, const RegexModule *module,
     return ok ? made : lhat_nil();
 }
 
-// The pieces between the matches, empties kept -- §14.19+3's law read
+// The pieces between the matches, empties kept -- [syntax.obj.find]'s law read
 // with a pattern for the separator (Python's re.split).
 static LhatValue do_split(LhatMachine *machine, const RegexModule *module,
                           const LhatRegex *compiled, const LhatString *text)
@@ -386,7 +386,7 @@ static bool gmatch_step(LhatMachine *machine, void *context,
                            &blown)) {
         return false;  // done -- a blown budget ends the walk too (regex.h)
     }
-    // §13.8+: a `for^ i, s` walk hands over two answers, written
+    // [syntax.type.tuple]: a `for^ i, s` walk hands over two answers, written
     // where the machine gave the room.
     answers[0] = lhat_integer(
         (LhatInteger)ordinal_at(walk->subject->text, spans[0].begin));
@@ -697,7 +697,7 @@ static void module_gsub(LhatMachine *machine, void *context,
 
 bool lhatstdlib_regex_register(LhatProgram *program)
 {
-    // 05§8.7: every field of this is an identity, and an identity
+    // [modules.host.import]: every field of this is an identity, and an identity
     // belongs to the process rather than to a program -- one declaration,
     // one tag and one error kind, however many programs declare them. So
     // one of these serves them all, and a second registration writes the
@@ -719,7 +719,7 @@ bool lhatstdlib_regex_register(LhatProgram *program)
         return false;
     }
 
-    // §13.4: registration signatures take no parameter names. The gsub
+    // [syntax.type.param-names]: registration signatures take no parameter names. The gsub
     // replacement is a union of the written string and the per-match
     // function; the function's own ';' closes it inside the union.
     return lhat_register_func(

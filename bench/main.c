@@ -1,7 +1,7 @@
 // L^ (lhat) -- what a member read costs, measured rather than assumed.
 //
-// 12§1 foretold specialised instructions for places where the type is
-// settled, the first of them (03§5.11) being in. The next candidate is the
+// [spec.policy] foretold specialised instructions for places where the type is
+// settled, the first of them ([pipeline.bc.overload]) being in. The next candidate is the
 // member read: 'x.m' is LHAT_BC_GETINDEX, a probe of the receiver's table.
 // Replacing it with a slot read is a large change either way -- a vtable-like
 // layout for the static form, a cache area in every chunk for the dynamic one
@@ -98,9 +98,9 @@ static void make_thing(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-// 05§8.7: the boundary itself, with nothing behind it. Registered under
+// [modules.host.import]: the boundary itself, with nothing behind it. Registered under
 // several arities so that what an argument COSTS can be read off the slope
-// -- the machine holds its stack split into payloads and tags (09§2.2), so a
+// -- the machine holds its stack split into payloads and tags ([debug.hook.cost]), so a
 // host taking `const LhatValue *` has its arguments rebuilt into one array
 // on every call (vm.c's `gathered`). That rebuilding is what a boundary
 // reading the slots by index would not do, and this is what says how much
@@ -120,7 +120,7 @@ static void answer_nothing(LhatMachine *machine, void *context,
 static bool register_bench(LhatProgram *program)
 {
     thing_tag = lhat_register_hostdata_type(program, "bench", "Thing");
-    // 05§8.8+: the inherited case reads a member the base declared, which
+    // [modules.hostdata.base]: the inherited case reads a member the base declared, which
     // the flatten put into this type's own table. Case 6 is what says that
     // costs the same as case 1 rather than adding a step.
     derived_tag = lhat_register_hostdata_subtype(program, "bench", "Derived",
@@ -192,7 +192,7 @@ static bool register_bench(LhatProgram *program)
 // something a compiler could decide is unwanted.
 //
 // Answers nanoseconds for one turn, or 0 where it could not be built.
-// 09§2.2: a hook that does nothing, to price what an instruction pays
+// [debug.hook.cost]: a hook that does nothing, to price what an instruction pays
 // while one is set -- the test, the frame lookup and the call -- against the
 // same loop with none (the one not-taken branch every other case already
 // pays). Set for the hooked case alone.
@@ -304,7 +304,7 @@ int main(void)
     double inherited = run_case("6 d.read()  (inherited)",
                                 "sink := sink + d.read()", empty);
 
-    // 05§8.7 with 03§2.2: the same boundary crossed with 0, 1, 2, 4 and 8
+    // [modules.host.import] with [pipeline.value.layout]: the same boundary crossed with 0, 1, 2, 4 and 8
     // arguments. What lies between them is what an argument costs to hand
     // over -- the rebuilding vm.c does because the stack holds no LhatValue
     // run any more. The 0-argument case is the crossing with none of that.
@@ -330,7 +330,7 @@ int main(void)
     double l8 = run_case("13 L8(1..8)",
                          "sink := sink + L8(1,2,3,4,5,6,7,8)", empty);
 
-    // 09§2.2: the empty loop again, with a hook that does nothing set --
+    // [debug.hook.cost]: the empty loop again, with a hook that does nothing set --
     // what an instruction pays while a debugger is attached, over what it
     // pays with none (which the empty loop above already includes: the one
     // branch not taken).
@@ -378,7 +378,7 @@ int main(void)
     printf("  def^ member  = %6.2f ns   (5 - 3)  14.7 walks the definition\n",
            def - local);
 
-    // The one claim here: 05§8.8+ flattens an inherited member into the
+    // The one claim here: [modules.hostdata.base] flattens an inherited member into the
     // derived type's own table, so reading one is the same read. A gap wider
     // than the noise would mean a step was added.
     printf("\n  inherited    = %6.2f ns   (6 - 1)  should be noise\n",

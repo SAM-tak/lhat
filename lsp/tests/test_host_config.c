@@ -50,7 +50,7 @@ static const char *const CONFIG =
     "    {\"kind\": \"errordef\", \"module\": \"std.sys\", \"name\": \"Error\","
     " \"variants\": [\"OutOfMemory\"]},\n"
     "    {\"kind\": \"hostdata\", \"module\": \"std.io\", \"name\": \"File\"},\n"
-    // 05§8.8+: a type under another. What the derived one inherits is
+    // [modules.hostdata.base]: a type under another. What the derived one inherits is
     // reached through this link and is registered nowhere else, so a dump
     // carrying the two types but not the relation between them describes a
     // Socket with none of File's members -- which is a different type from
@@ -61,7 +61,7 @@ static const char *const CONFIG =
     " \"size\": 8, \"fields\": ["
     "{\"name\": \"x\", \"offset\": 0, \"type\": \"f32\"},"
     " {\"name\": \"y\", \"offset\": 4, \"type\": \"f32\"}]},\n"
-    // 05§8.7+2: an enum stands among the types, after the host type it
+    // [modules.host.panic]: an enum stands among the types, after the host type it
     // is declared under -- so a signature further down may name it.
     "    {\"kind\": \"enum\", \"module\": \"std.io\", \"type\": \"File\","
     " \"name\": \"Mode\", \"members\": [\"Read\", \"Write\"],"
@@ -70,7 +70,7 @@ static const char *const CONFIG =
     "  \"functions\": [\n"
     // Answering the type alone (no error union) keeps the member test below
     // a one-liner -- f.write on a File|OutOfMemory union would rightly ask
-    // for a catch^ first, which is 04§4's business, not this file's.
+    // for a catch^ first, which is [errors.catch]'s business, not this file's.
     "    {\"kind\": \"func\", \"module\": \"std.io\", \"name\": \"open\","
     " \"signature\": \"f^string^ -> std.io.File;\"},\n"
     "    {\"kind\": \"member\", \"module\": \"std.io\", \"type\": \"File\","
@@ -87,20 +87,20 @@ static const char *const CONFIG =
     "    {\"kind\": \"global\", \"name\": \"print\","
     " \"signature\": \"f^...->nil^;\"}\n"
     "  ],\n"
-    // §18.5's places, by name. The two extra keys are the ones a reader has
+    // [syntax.annot.host]'s places, by name. The two extra keys are the ones a reader has
     // to pass over: a place written false, and a place it has never heard of
     // -- which is what a dump from a later build would carry.
     "  \"annotations\": [\n"
     "    {\"module\": \"h\", \"name\": \"badge\", \"targets\":"
     " {\"field\": true, \"fileunique\": true,"
     " \"binding\": false, \"nonesuch\": true}},\n"
-    // §18.5.1: one of a pair, and only one side of the dump says so. The
+    // [syntax.annot.host.two-answers]: one of a pair, and only one side of the dump says so. The
     // checker reads it both ways, so carrying it once is enough.
     "    {\"module\": \"h\", \"name\": \"here\","
     " \"targets\": {\"binding\": true}},\n"
     "    {\"module\": \"h\", \"name\": \"there\","
     " \"targets\": {\"binding\": true}, \"exclusives\": [\"here\"]},\n"
-    // §18.5.2: half of something, and the other half is the one above.
+    // [syntax.annot.host.alone]: half of something, and the other half is the one above.
     "    {\"module\": \"h\", \"name\": \"half\","
     " \"targets\": {\"binding\": true}, \"requisites\": [\"here\"]}\n"
     "  ],\n"
@@ -187,7 +187,7 @@ static void test_round_trip(void)
                 "let^ v = std.geo.vec2(1, 2) + std.geo.vec2(3, 4)\n"
                 "let^ n : number^ = v.x\n");
 
-    // 05§8.8+: the relation is the whole of how a derived type has the
+    // [modules.hostdata.base]: the relation is the whole of how a derived type has the
     // base's members -- nothing registers them a second time.
     LHAT_TEST("a member of the base is reached through the derived type");
     check_clean("hostdata subtype",
@@ -207,7 +207,7 @@ static void test_round_trip(void)
     LHAT_TEST("a configured binding is written unqualified");
     check_clean("binding", "print(\"hi\")\n");
 
-    // §18.5's places arrive as names rather than as a mask, so what the reader
+    // [syntax.annot.host]'s places arrive as names rather than as a mask, so what the reader
     // made of them is only visible in where the annotation is taken.
     LHAT_TEST("an annotation is taken where its named place says");
     check_clean("annotation",
@@ -220,7 +220,7 @@ static void test_round_trip(void)
                   "@badge\n"
                   "let^ x = 1\n");
 
-    // §18.5's count travels the same way its places do, and only a second
+    // [syntax.annot.host]'s count travels the same way its places do, and only a second
     // occurrence shows whether it arrived.
     LHAT_TEST("a file-unique annotation is refused a second time");
     check_refused("annotation twice",
@@ -228,7 +228,7 @@ static void test_round_trip(void)
                   "    self^{ @badge hp = 1, @badge mp = 2 },\n"
                   "}\n");
 
-    // §18.5.1: the pair, whose whole point is that neither name is written
+    // [syntax.annot.host.two-answers]: the pair, whose whole point is that neither name is written
     // twice -- so nothing but the exclusion the dump carried can refuse it.
     LHAT_TEST("and two names the dump made one choice are refused together");
     check_refused("annotation exclusive",
@@ -244,7 +244,7 @@ static void test_round_trip(void)
                 "@here\n"
                 "let^ x = 1\n");
 
-    // §18.5.2: the other column, and the other scope -- what a requisite asks
+    // [syntax.annot.host.alone]: the other column, and the other scope -- what a requisite asks
     // is on the declaration, so this only shows up written together or not.
     LHAT_TEST("a mark the dump said needs another is refused alone");
     check_refused("annotation requisite",
@@ -316,7 +316,7 @@ static void test_malformed(void)
     }
 }
 
-// 03§3.1: the "strict" lhat_program_dump_host_api writes (test_program.c
+// [pipeline.strict.per-unit]: the "strict" lhat_program_dump_host_api writes (test_program.c
 // pins the writer's side), read back by the one thing that cares --
 // lsp/diagnostics.c's severity choice.
 static void test_strict_field(void)
@@ -399,7 +399,7 @@ static char *dumped(LhatProgram *program)
     return text;
 }
 
-// 05§8.7+: a constant goes out through the dump and back through the
+// [modules.host.nested-fault]: a constant goes out through the dump and back through the
 // config unchanged -- the values JSON has no number for as well, which once
 // made the whole file unreadable (inf, nan) or came back rounded (an integer
 // past 2^53).

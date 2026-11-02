@@ -1,14 +1,14 @@
 // L^ (lhat) -- a message's text and its arguments, made into the sentence.
 //
-// 10§5.1: a sentence is never built by concatenation; its arguments go into
+// [l10n.compose.holes]: a sentence is never built by concatenation; its arguments go into
 // named holes. A hole is `{`, then a name -- a lower-case ASCII letter, then
 // letters, digits and '-' -- then `}`. Every other brace is a brace, which is
 // what lets the English already written stand unchanged: its braces are `{}`,
 // `{ ... }` and `'{'`, none of them the shape of a hole. `\{`, `\}` and `\\`
 // write a brace or a backslash where one would otherwise read as a hole or an
-// escape (10§6.1); no English text holds a backslash, so none of it changes.
+// escape ([l10n.catalog.format]); no English text holds a backslash, so none of it changes.
 //
-// What fills a hole goes in as it is. A phrase (10§5.2) is looked up by the
+// What fills a hole goes in as it is. A phrase ([l10n.compose.hole-kinds]) is looked up by the
 // caller, in whatever language it is drawing the sentence in, before it is
 // handed over -- this knows nothing of languages.
 //
@@ -131,13 +131,13 @@ size_t lhat_message_render(const char *text, const LhatMessageArg *args,
 }
 
 // ---------------------------------------------------------------------------
-// 10§6.3: the English, written out as a catalog -- one file per source, its
+// [l10n.catalog.dump]: the English, written out as a catalog -- one file per source, its
 // entries all commented out, for a translation to be made from.
 
 typedef const LhatMessageTable *(*Tables)(size_t *count);
 
-// The sources this build holds, in the order 10§3.1 lists them. A build
-// without the front end holds no check, parse, lex or fix to write (10§6.2).
+// The sources this build holds, in the order [l10n.scope.shown] lists them. A build
+// without the front end holds no check, parse, lex or fix to write ([l10n.catalog.english-baked]).
 static const struct {
     const char *name;
     Tables tables;
@@ -175,7 +175,7 @@ static void put_header(Sink *s, const char *source)
 }
 
 // One entry, commented out. The name is the ID without its source, since the
-// file is named for the source (10§6.1), and a newline in the text becomes a
+// file is named for the source ([l10n.catalog.format]), and a newline in the text becomes a
 // continuation line. An entry of another source is not this file's.
 static void put_entry(Sink *s, const char *source,
                       const LhatMessageEntry *entry)
@@ -191,7 +191,7 @@ static void put_entry(Sink *s, const char *source,
     for (const char *p = entry->text; *p != '\0'; p++) {
         if (*p == '\n') {
             // A continuation line is one space, then the text's own line --
-            // the reader takes that one space back off (10§6.1), so what
+            // the reader takes that one space back off ([l10n.catalog.format]), so what
             // was written comes back unchanged.
             put_text(s, "\n#  ");
         } else if (*p == '\\') {
@@ -241,7 +241,7 @@ size_t lhat_messages_write_english(const char *source, char *out,
 }
 
 // ---------------------------------------------------------------------------
-// 10§6.4: reading a catalog -- bytes in 10§6.1's format, for one language
+// [l10n.catalog.load]: reading a catalog -- bytes in [l10n.catalog.format]'s format, for one language
 // and one source, into the entries this build knows the names and the holes
 // of. Nothing here fails: a line it cannot use is left out and the rest
 // stands, so a catalog written for another version still reads.
@@ -306,7 +306,7 @@ static bool same_holes(const char *english, const char *said)
     return true;
 }
 
-// 10§4.2's spelling, over the name a line gives: lower-case letters and
+// [l10n.id.spelling]'s spelling, over the name a line gives: lower-case letters and
 // digits, joined by '-' or '.', with neither doubled nor at either end.
 static bool well_spelled(const char *name, size_t length)
 {
@@ -496,7 +496,7 @@ size_t lhat_catalog_load(LhatCatalog *catalog, const char *tag,
 
     // The entry being read: the name its line gave, and the text its
     // continuation lines are adding to. A blank line is the text's only when
-    // a continuation line follows it (10§6.1).
+    // a continuation line follows it ([l10n.catalog.format]).
     const char *name = NULL;
     size_t name_length = 0;
     Held said = {NULL, 0, 0, false};
@@ -505,7 +505,7 @@ size_t lhat_catalog_load(LhatCatalog *catalog, const char *tag,
     size_t at = 0;
     if (length >= 3 && (unsigned char)text[0] == 0xEF &&
         (unsigned char)text[1] == 0xBB && (unsigned char)text[2] == 0xBF) {
-        at = 3;  // a BOM some editor wrote, as 01§1 drops it from a source
+        at = 3;  // a BOM some editor wrote, as [lex.source] drops it from a source
     }
     while (at < length) {
         size_t end = at;

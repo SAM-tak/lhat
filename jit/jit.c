@@ -76,7 +76,7 @@ static size_t step_base(const LhatJitContext *context)
     return (size_t)(context->values - context->machine->slots.values);
 }
 
-// 03§5.12: the collector's poll beside an instruction that allocates,
+// [pipeline.bc.gc]: the collector's poll beside an instruction that allocates,
 // where the interpreter's LHAT_GC_POLL stands -- the frame names the next
 // instruction while the step runs, as it does there. Every value the code
 // holds is in a slot, so the roots are what they always are.
@@ -88,7 +88,7 @@ static void step_gc_poll(Machine *m, uintptr_t pc)
     }
 }
 
-// 12§3: a member the site's cache answers. A miss is the
+// [spec.member-cache]: a member the site's cache answers. A miss is the
 // interpreter's, whose lookup fills the cache for the next time.
 static bool jit_get_member(LhatJitContext *context, uintptr_t a, uintptr_t b,
                            uintptr_t c, uintptr_t pc)
@@ -129,7 +129,7 @@ static bool jit_set_index(LhatJitContext *context, uintptr_t a, uintptr_t b,
            !refused;
 }
 
-// 01§5.4: what still points into these registers takes its value with it.
+// [lex.string.interp]: what still points into these registers takes its value with it.
 static bool jit_close(LhatJitContext *context, uintptr_t a, uintptr_t b,
                       uintptr_t c, uintptr_t pc)
 {
@@ -175,7 +175,7 @@ static bool jit_new_table(LhatJitContext *context, uintptr_t a, uintptr_t b,
     if (table == NULL) {
         return false;
     }
-    table->is_definition = b != 0;  // §14.9
+    table->is_definition = b != 0;  // [syntax.obj.name]
     context->values[a].object = (LhatObject *)table;
     context->tags[a] = LHAT_VALUE_OBJECT;
     return true;
@@ -191,7 +191,7 @@ static bool jit_new_instance(LhatJitContext *context, uintptr_t a,
            LHAT_RUN_OK;
 }
 
-// §11.2: two strings join. Every other '..' -- two plain tables, an
+// [syntax.op.concat]: two strings join. Every other '..' -- two plain tables, an
 // operator a type carries -- is the interpreter's, asked before anything
 // is allocated.
 static bool jit_concat(LhatJitContext *context, uintptr_t a, uintptr_t b,
@@ -282,7 +282,7 @@ static const LhatJitStencil *order_stencil(LhatOpcode op, bool fused)
     return fused ? taking[at] : plain[at];
 }
 
-// 12§4.3: the JUMP_FALSE reading a comparison's answer is taken in,
+// [spec.number.compare-jump]: the JUMP_FALSE reading a comparison's answer is taken in,
 // as the interpreter takes it -- forward only, so the jump back a loop turns
 // on keeps its poll. Says whether it was, having pointed `choice` past it.
 static bool take_jump_false(const LhatChunk *chunk, size_t pc,
@@ -440,7 +440,7 @@ static Choice choose(const LhatChunk *chunk, size_t pc)
             choice.stencil = &lhat_jit_stencil_step;
             choice.step = &jit_set_index;
             break;
-        // 03§5.3: the plain call and the return of one value; what else either
+        // [pipeline.bc.call]: the plain call and the return of one value; what else either
         // can be -- a method, a tail call, a tuple -- is the interpreter's.
         case LHAT_BC_CALL:
         case LHAT_BC_CALLMETHOD:
@@ -448,7 +448,7 @@ static Choice choose(const LhatChunk *chunk, size_t pc)
         case LHAT_BC_TAILCALLMETHOD:
             choice.stencil = &lhat_jit_stencil_call;
             break;
-        // 12§3.1: taken with the CALLMETHOD it reads for, the way the
+        // [spec.member-cache.call-pair]: taken with the CALLMETHOD it reads for, the way the
         // interpreter takes the two.
         case LHAT_BC_CALLMEMBER:
             if (pc + 1 < chunk->count &&
@@ -753,10 +753,10 @@ static void moved_to(LhatJitContext *context, const Frame *frame)
     context->moved = true;
 }
 
-// 03§5.3, what the interpreter's calls -- plain, method and tail -- do for the
+// [pipeline.bc.call], what the interpreter's calls -- plain, method and tail -- do for the
 // case they are most often asked: an L^ body taking exactly the arguments
 // laid out for it, no spread, no collected tail, not a coroutine to make --
-// and, for a CALLMEMBER, a member its site remembers (12§3.1), read
+// and, for a CALLMEMBER, a member its site remembers ([spec.member-cache.call-pair]), read
 // on the way into the call it is paired with. Nothing is allocated, which is why
 // the collector's poll is not asked here. The body is entered the way the
 // interpreter enters one, slice and all. The instruction is read here
@@ -803,7 +803,7 @@ static LhatJitOp *jit_call(LhatJitContext *context, uintptr_t unused_a,
     }
     LhatOpcode op = lhat_op(instruction);
     bool tail = op == LHAT_BC_TAILCALL || op == LHAT_BC_TAILCALLMETHOD;
-    // §14.4: the receiver sits between the callee and the arguments, and
+    // [syntax.obj.self]: the receiver sits between the callee and the arguments, and
     // is the first of them only for a callee that takes it.
     size_t skip = 1;
     if (op == LHAT_BC_CALLMETHOD || op == LHAT_BC_TAILCALLMETHOD) {
@@ -823,7 +823,7 @@ static LhatJitOp *jit_call(LhatJitContext *context, uintptr_t unused_a,
                    proto->yields || given != proto->parameters)) {
         return NULL;
     }
-    // 03§5.3: a tail call takes this frame over where it is free to go -- not
+    // [pipeline.bc.call]: a tail call takes this frame over where it is free to go -- not
     // while a cleanup is pending, not a coroutine's body, not a session's
     // top level -- and is an ordinary call everywhere else.
     bool reuse = tail && frame->cleanup_count == 0 &&
@@ -858,7 +858,7 @@ static LhatJitOp *jit_call(LhatJitContext *context, uintptr_t unused_a,
         entered->jit_return = code->resumes[pc];
     }
     moved_to(context, entered);
-    // §15.15 at a body's entry, as the interpreter polls it. A slice
+    // [syntax.sub.split-run] at a body's entry, as the interpreter polls it. A slice
     // about to run out is left for the interpreter to end, at the body's
     // first instruction.
     context->leave_pc = 0;
@@ -881,7 +881,7 @@ static LhatJitOp *jit_call(LhatJitContext *context, uintptr_t unused_a,
 
 // The interpreter's RETURN and the drain after it, for a frame with nothing
 // to drain: no cleanup waiting, no coroutine whose body it is, no operator
-// whose answer is read again (§11.9), one plain value. Not the run's own
+// whose answer is read again ([syntax.op.compare]), one plain value. Not the run's own
 // frame either -- that one ends the run, which is vm_finish's.
 static LhatJitOp *jit_return(LhatJitContext *context, uintptr_t a,
                              uintptr_t nil, uintptr_t c, uintptr_t pc)

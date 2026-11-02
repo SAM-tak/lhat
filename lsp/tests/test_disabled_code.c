@@ -1,5 +1,5 @@
 // L^ (lhat) -- LSP server tests: lhat/toggleDisabledCode (disabled_code.c),
-// which switches statements off with '#[~ ... ]#' and on again (01§6.5).
+// which switches statements off with '#[~ ... ]#' and on again ([lex.comment.disabled]).
 
 #include <stdlib.h>
 #include <string.h>
@@ -155,7 +155,7 @@ static void test_wrap(void)
                   "#[~\nif^ true^ {\n    f()\n}\n]#\n");
     expect_toggle("if^ true^ { f()$ }\n", "#[~\nif^ true^ { f() }\n]#\n");
 
-    // Not at the head of the unit, where §18.4 makes one the unit's.
+    // Not at the head of the unit, where [syntax.annot.where] makes one the unit's.
     LHAT_TEST("an annotation goes with its declaration");
     expect_toggle("f()\n@sample(1)\nlet^ y = 1$\n",
                   "f()\n#[~\n@sample(1)\nlet^ y = 1\n]#\n");
@@ -191,7 +191,7 @@ static void test_refusals(void)
     expect_toggle("# note$\nf()\n", NULL);
     expect_toggle("if^ true^ {\n    # note$\n    f()\n}\n", NULL);
 
-    // §6.2: the lexer counts them inside a string as well.
+    // [syntax.colon.if-expr]: the lexer counts them inside a string as well.
     LHAT_TEST("nor where a '#[' or ']#' would not pair up");
     expect_toggle("let^ s = \"]#\"$\n", NULL);
     expect_toggle("let^ s = \"#[\"$\n", NULL);

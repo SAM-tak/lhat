@@ -9,10 +9,10 @@ project(lhat
 option(LHAT_BUILD_TESTS "Build the L^ test suite" ON)
 option(LHAT_BUILD_CLI "Build the lhat command line driver" ON)
 option(LHAT_BUILD_LSP "Build the L^ language server" ON)
-# 09§: the debug adapter, folded into the cli (`lhat --dap=PORT`). Off
+# [debug]: the debug adapter, folded into the cli (`lhat --dap=PORT`). Off
 # takes it out of the cli and builds nothing under dap/ or port/socket.
 option(LHAT_BUILD_DAP "Build the L^ debug adapter into the cli" ON)
-# 09§: the VM-side debugger -- hook, frame inspection, machine watcher.
+# [debug]: the VM-side debugger -- hook, frame inspection, machine watcher.
 # Off for a shipping build: the per-instruction hook test and all of
 # src/debug.c compile away.
 option(LHAT_WITH_DEBUGGER "Compile the VM-side debugger into the core" ON)
@@ -20,9 +20,9 @@ if(LHAT_BUILD_DAP AND NOT LHAT_WITH_DEBUGGER)
     message(FATAL_ERROR "LHAT_BUILD_DAP needs LHAT_WITH_DEBUGGER: the "
         "adapter sits on the machine's line hook.")
 endif()
-# 05§10.8: the front end -- lexer, parser, checker, compiler -- or the VM
-# alone. Off, the library reads binary units (04§10) and registers a host
-# by the signature table (05§10.7); no text is ever read, and the source files
+# [modules.binary.vm-only]: the front end -- lexer, parser, checker, compiler -- or the VM
+# alone. Off, the library reads binary units ([errors.chain]) and registers a host
+# by the signature table ([modules.binary.signatures]); no text is ever read, and the source files
 # that read one are not compiled. What needs the front end says so here.
 option(LHAT_WITH_FRONTEND "Compile the front end (lexer, parser, checker, compiler) into the core" ON)
 if(LHAT_BUILD_LSP AND NOT LHAT_WITH_FRONTEND)
@@ -35,7 +35,7 @@ if(NOT LHAT_WITH_FRONTEND)
     set(LHAT_BUILD_TESTS OFF)
     set(LHAT_BUILD_BENCH OFF)
 endif()
-# 12§1: what a specialised instruction would be worth, measured.
+# [spec.policy]: what a specialised instruction would be worth, measured.
 # Off by default -- it takes minutes to run and asserts almost nothing, so
 # it has no business in an ordinary build or in CI.
 option(LHAT_BUILD_BENCH "Build the L^ member-read benchmark" OFF)
@@ -46,9 +46,9 @@ option(LHAT_BUILD_BENCH "Build the L^ member-read benchmark" OFF)
 # pays for neither the table nor the walk that attaches it.
 option(LHAT_WITH_COMMENTS "Keep comments and attach them to the syntax tree" ON)
 
-# 07§4: the same bargain for what the checker learned about each name.
+# [lsp.hover]: the same bargain for what the checker learned about each name.
 # Compiling and running read none of it -- it is recorded for the language
-# server, which would otherwise resolve 08§8's scoping a second time and
+# server, which would otherwise resolve [lton.host]'s scoping a second time and
 # disagree in exactly the hard cases. A host embedding the language and no
 # tooling turns this off and pays for neither the array nor the recording.
 option(LHAT_WITH_RESOLUTIONS "Record what each name resolved to, for tooling" ON)
@@ -93,7 +93,7 @@ if(LHAT_SANITIZE)
 endif()
 
 # ---- PGO ------------------------------------------------------------------
-# 12§6: the cure for the code-layout lottery. Two phases share one build
+# [spec.pgo]: the cure for the code-layout lottery. Two phases share one build
 # tree (scripts/pgo.ps1 drives them): GENERATE instruments, a training run
 # writes the profile, USE relinks with it. Under MSVC the /GL objects are
 # common to both phases, so the second build is a relink; GCC/Clang carry
@@ -200,7 +200,7 @@ add_link_options(${lhat_pgo_link})
 # Everything but the driver, so a host embeds this and nothing else. It calls
 # out to lhatport for memory and for reading a unit -- see
 # include/lhat/port.h.
-# 05§10.8: the core is what runs a compiled unit; the front end is what
+# [modules.binary.vm-only]: the core is what runs a compiled unit; the front end is what
 # makes one out of text. type.c stays with the core -- registration builds
 # types, and it reads nothing of the front end.
 set(LHAT_CORE_SOURCES
@@ -299,7 +299,7 @@ configure_file(include/lhat/version.h.in
 # A host gets include/ and nothing else. src/ holds names like parser.h and
 # type.h, which are too ordinary to put on someone else's include path --
 # include/lhat.h reaches what a host runs with, and lhat/lexer.h is the one
-# other header it may name (07§4: colouring an editor).
+# other header it may name ([lsp.hover]: colouring an editor).
 target_include_directories(lhat
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
@@ -307,7 +307,7 @@ target_include_directories(lhat
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# 03§5.12: a write barrier that is missing does not fail where it is
+# [pipeline.bc.gc]: a write barrier that is missing does not fail where it is
 # missing. The object is freed while still live and the program reads it back
 # some time later, somewhere else -- so the collector checks its own invariant
 # outright wherever that can be paid for. A pass over the heap per cycle, in
@@ -315,7 +315,7 @@ target_include_directories(lhat
 target_compile_definitions(lhat PRIVATE $<$<CONFIG:Debug>:LHAT_GC_PARANOID>)
 
 # ---- What the language asks of its surroundings ---------------------------
-# 05§8.9: the seam is the linker. A host with its own allocator, or its own
+# [modules.hostvalue]: the seam is the linker. A host with its own allocator, or its own
 # way of reading a unit, copies these files, changes them, and leaves this
 # target out of its link -- there is nothing to register and nothing to
 # install before the first allocation.
@@ -336,7 +336,7 @@ target_include_directories(lhatport PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # otherwise. PUBLIC so it carries through to whatever links lhat.
 target_link_libraries(lhat PUBLIC lhatport)
 
-# floor and pow, which §11.2's division and §14.8's ordinals reach for.
+# floor and pow, which [syntax.op.concat]'s division and [syntax.obj.number]'s ordinals reach for.
 # Unix keeps the maths out of the C library and wants it named; the Windows
 # CRT has it inside, and macOS's libSystem does too -- naming it there is
 # harmless but says something untrue, so it is asked for where it is real.
@@ -373,8 +373,8 @@ target_include_directories(lhatthread
 option(LHAT_BUILD_STDLIB "Build the L^ sample standard library (stdlib/)" ON)
 
 # ---- Sockets --------------------------------------------------------------
-# port/socket: TCP on the loopback for the debug adapter (09§), UDP for
-# std.net (01§11). Built when either is; neither the core nor `lhat` links it.
+# port/socket: TCP on the loopback for the debug adapter ([debug]), UDP for
+# std.net ([lex.open]). Built when either is; neither the core nor `lhat` links it.
 option(LHAT_BUILD_STDLIB_NET "Build std.net (UDP) into the sample standard library" ON)
 set(LHAT_WITH_NET OFF)
 if(LHAT_BUILD_STDLIB AND LHAT_BUILD_STDLIB_NET)
@@ -401,7 +401,7 @@ if(LHAT_BUILD_STDLIB)
         stdlib/sys.c
         stdlib/io.c
         stdlib/json.c
-        # 05§10.8 with 08§7+: std.load and std.lton read text through
+        # [modules.binary.vm-only] with [lton.load.compiled]: std.load and std.lton read text through
         # the front end and bytes without it, so both ship in every build.
         stdlib/load.c
         stdlib/lton.c
@@ -483,7 +483,7 @@ if(LHAT_BUILD_CLI)
             target_compile_definitions(lhat_cli PRIVATE LHAT_CLI_WITH_NET)
         endif()
     endif()
-    # 09§: `lhat --dap=PORT` drives a run under a debugger. The adapter is
+    # [debug]: `lhat --dap=PORT` drives a run under a debugger. The adapter is
     # its own library, so cli/main.c names it only under the macro.
     if(LHAT_BUILD_DAP)
         target_link_libraries(lhat_cli PRIVATE lhatdap)
@@ -493,7 +493,7 @@ if(LHAT_BUILD_CLI)
 endif()
 
 # ---- Benchmark --------------------------------------------------------------
-# 12§3: the member read is the next candidate for a specialised
+# [spec.member-cache]: the member read is the next candidate for a specialised
 # instruction, and replacing it is a large change whichever shape it takes.
 # This is what puts a number in front of that decision. Not a test -- a claim
 # about time does not pass or fail -- so it is built only when asked for and
@@ -505,7 +505,7 @@ if(LHAT_BUILD_BENCH)
     target_link_libraries(lhat_bench PRIVATE lhat lhatthread)
     target_include_directories(lhat_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-    # 03§1.1 puts the check on the editor's save, so what checking costs is
+    # [pipeline.stages.tree] puts the check on the editor's save, so what checking costs is
     # what a writer waits for. A second entry point rather than a case of the
     # one above: that one turns a loop TURNS times and measures the machine,
     # this one builds a program and measures a stage.
@@ -541,7 +541,7 @@ if(LHAT_BUILD_LSP OR LHAT_BUILD_DAP)
 endif()
 
 # ---- Debug adapter --------------------------------------------------------
-# 09§: what a debugger (a VS Code extension, an editor) talks DAP to. It
+# [debug]: what a debugger (a VS Code extension, an editor) talks DAP to. It
 # sits on the machine's line hook (include/lhat/debug.h) and reaches the
 # debugger over a loopback socket (port/socket). Linked into the cli, which
 # turns it on with --dap=PORT.
@@ -562,7 +562,7 @@ endif()
 # A second, independent consumer of lhat.lib alongside the CLI -- it speaks
 # LSP over stdio instead of a prompt.
 if(LHAT_BUILD_LSP)
-    # 07§4: hover, semantic tokens and lhat/signature all answer from
+    # [lsp.hover]: hover, semantic tokens and lhat/signature all answer from
     # what the checker recorded about each name, so the server is exactly the
     # consumer LHAT_WITH_RESOLUTIONS exists for. Turning that off and asking
     # for a server anyway is a contradiction worth naming here rather than

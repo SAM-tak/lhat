@@ -4,15 +4,15 @@
 //
 // The lexer deliberately has no keyword table. A '^'-suffixed identifier is
 // always returned as LHAT_TOKEN_HAT_IDENT and the parser decides whether it
-// is a keyword, a type name or a meta property (section 11§2.1).
+// is a keyword, a type name or a meta property (section [binary.containers.bytes]).
 //
 // Public, and the one part of the front end that is. Where a word begins and
-// ends cannot be worked out from outside: 01§2.3 makes the hat part of the name,
-// 01§6.2's block comments nest, 10§5.2's raw strings write a quote by doubling it,
-// 01§5.4's interpolations hold code. A host that colours L^ in an editor has to
-// read it the way the compiler does, and this is that reading (07§4).
+// ends cannot be worked out from outside: [lex.hat.repeat] makes the hat part of the name,
+// [lex.comment.block]'s block comments nest, [l10n.compose.hole-kinds]'s raw strings write a quote by doubling it,
+// [lex.string.interp]'s interpolations hold code. A host that colours L^ in an editor has to
+// read it the way the compiler does, and this is that reading ([lsp.hover]).
 //
-// What it does not answer is which spellings the language knows -- 11§2.1
+// What it does not answer is which spellings the language knows -- [binary.containers.bytes]
 // reserves none, and a host drawing `def^` apart from a member somebody named
 // `tostring^` is guessing from the spelling. The tree, the checker's types
 // and the instruction set stay in src/: past the words, a host is better
@@ -36,21 +36,21 @@ typedef enum {
     LHAT_ERR_NONE,
     LHAT_ERR_UNEXPECTED_CHARACTER,
     LHAT_ERR_INVALID_UTF8,
-    LHAT_ERR_BARE_HAT,                   // §2.5
-    LHAT_ERR_BARE_AT,                    // §18.2
-    LHAT_ERR_IDENT_AFTER_NUMBER,         // §10.3: '1to^3'
+    LHAT_ERR_BARE_HAT,                   // [syntax.juxta.hat-start]
+    LHAT_ERR_BARE_AT,                    // [syntax.annot.spelling]
+    LHAT_ERR_IDENT_AFTER_NUMBER,         // [syntax.finally.last]: '1to^3'
     LHAT_ERR_MALFORMED_NUMBER,           // '0x' with no digits, stray '_'
-    LHAT_ERR_MALFORMED_EXPONENT,         // 01§4.5: 'e' not followed by digits
+    LHAT_ERR_MALFORMED_EXPONENT,         // [lex.number.exponent]: 'e' not followed by digits
     LHAT_ERR_INTEGER_OVERFLOW,
-    LHAT_ERR_UNTERMINATED_STRING,        // 03§5.5
-    LHAT_ERR_UNTERMINATED_NAME_LITERAL,  // 10§3.1: backtick not closed on the line
-    LHAT_ERR_EMPTY_NAME_LITERAL,         // 10§3.1: `` names nothing
-    LHAT_ERR_UNKNOWN_ESCAPE,             // 01§5.1
+    LHAT_ERR_UNTERMINATED_STRING,        // [pipeline.bc.finally]
+    LHAT_ERR_UNTERMINATED_NAME_LITERAL,  // [l10n.scope.shown]: backtick not closed on the line
+    LHAT_ERR_EMPTY_NAME_LITERAL,         // [l10n.scope.shown]: `` names nothing
+    LHAT_ERR_UNKNOWN_ESCAPE,             // [lex.string.double]
     LHAT_ERR_MALFORMED_ESCAPE,           // \xHH or \u{...} with bad digits
-    LHAT_ERR_UNTERMINATED_BLOCK_COMMENT, // 01§6.2
+    LHAT_ERR_UNTERMINATED_BLOCK_COMMENT, // [lex.comment.block]
     LHAT_ERR_SCOPE_WITHOUT_NAME,         // 8: '$' must be glued to a name
-    LHAT_ERR_INTERPOLATION_NEEDS_QUOTES, // 05§5.4: $'...' does not interpolate
-    LHAT_ERR_INTERPOLATION_TOO_DEEP      // 05§5.4: nesting limit reached
+    LHAT_ERR_INTERPOLATION_NEEDS_QUOTES, // [modules.require.no-spill]: $'...' does not interpolate
+    LHAT_ERR_INTERPOLATION_TOO_DEEP      // [modules.require.no-spill]: nesting limit reached
 } LhatErrorCode;
 
 typedef struct {
@@ -69,9 +69,9 @@ typedef struct {
     uint32_t column;
 
     bool pending_newline;  // a newline was crossed since the last token
-    bool after_dot;        // §10.1: digits after '.' scan as an integer only
+    bool after_dot;        // [syntax.finally.block]: digits after '.' scan as an integer only
 
-    // Interpolation mode stack (section 01§5.4). Frames alternate between a
+    // Interpolation mode stack (section [lex.string.interp]). Frames alternate between a
     // string segment and a hole; brace_depth counts the '{' opened inside a
     // hole so that a table literal's '}' is not mistaken for the hole's end.
     struct {
@@ -89,7 +89,7 @@ typedef struct {
     size_t diagnostic_capacity;
 
 #if LHAT_WITH_COMMENTS
-    // 10§6.4, in source order. Grows as scanning goes; nothing removes from it.
+    // [l10n.catalog.load], in source order. Grows as scanning goes; nothing removes from it.
     LhatComment *comments;
     size_t comment_count;
     size_t comment_capacity;
@@ -112,7 +112,7 @@ const char *lhat_lexer_string(const LhatLexer *lexer, const LhatToken *token,
                               size_t *length);
 
 const char *lhat_lexer_error_message(LhatErrorCode code);
-// 10§4: the stable ID of that message, which a host draws its own language's
+// [l10n.id]: the stable ID of that message, which a host draws its own language's
 // text from (lhat_program_text). NULL for a code the table does not hold.
 const char *lhat_lexer_error_id(LhatErrorCode code);
 

@@ -1,6 +1,6 @@
 // L^ (lhat) -- tests for std.math.vector2.
 //
-// test_mathvector3.c pins 05§8.9's machinery on a three-component value;
+// test_mathvector3.c pins [modules.hostvalue]'s machinery on a three-component value;
 // this pins the arithmetic of the two-component one, and the machinery again
 // where a narrower value could take a different path -- a parameter's width,
 // a coroutine's saved registers, a box's bytes. The numbers are chosen so a
@@ -397,7 +397,7 @@ static void test_collection(void)
     }
 }
 
-// 05§8.9: the places a host value may not go, narrow as this one is.
+// [modules.hostvalue]: the places a host value may not go, narrow as this one is.
 static void test_escapes(void)
 {
     LHAT_TEST("a table member refuses a host value");

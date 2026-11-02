@@ -222,7 +222,7 @@ static void open_text(LspWorkspace *workspace, const char *path,
     lsp_document_store_put(&workspace->documents, path, copy, length, version);
 }
 
-// 07§6: a fix is an edit against the text that was checked. Between an
+// [lsp.next]: a fix is an edit against the text that was checked. Between an
 // edit and the check that follows it, the unit is the text before the edit,
 // and a request that rewrites the source is handed nothing.
 static void test_current_unit(void)

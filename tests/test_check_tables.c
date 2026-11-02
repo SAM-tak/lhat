@@ -3,7 +3,7 @@
 // Section numbers refer to DesignDocuments/02-syntax.md unless prefixed with
 // "03" or "04". The cases pinned here are the ones a decision in the
 // specification produces and that would otherwise be invisible: the scope
-// rule of §8.7, the result inference of 03§3.4, and the way catch^, ?? and
+// rule of [syntax.stmt.visible], the result inference of [pipeline.infer], and the way catch^, ?? and
 // try^ each drop one arm of a union.
 
 #include <stdio.h>
@@ -12,7 +12,7 @@
 
 #include "fixture.h"
 
-// §16.3. The focus of an in^ loop is bound from what the walk yields,
+// [syntax.for.forms]. The focus of an in^ loop is bound from what the walk yields,
 // which is the one place a for^ header defines names rather than reading
 // them. Until this, they were read -- and found nothing.
 static void test_unconstrained_table_walks(void)
@@ -120,7 +120,7 @@ static void test_contextual_table_focus(void)
     check_text(&u, "let^t:t^{number^[]} = {}\nfor^v:string^ in^t {}\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
-    // §16.3: the annotation filters, so naming a narrower type than any^ is
+    // [syntax.for.forms]: the annotation filters, so naming a narrower type than any^ is
     // asking for the elements that fit it.
     LHAT_TEST("an annotation narrower than any^ elements filters them");
     check_text(&u, "let^t:t^{any^[]} = {}\nfor^v:number^ in^t {}\n");
@@ -153,7 +153,7 @@ static void test_walking(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §16.7: the focus belongs to the loop, which is a scope of its own.
+    // [syntax.for.focus-life]: the focus belongs to the loop, which is a scope of its own.
     LHAT_TEST("and it does not outlive the loop");
     check_text(&u,
                "var^ gen = p^ { yield^ 1 }\n"
@@ -162,7 +162,7 @@ static void test_walking(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
-    // §16.3: the annotation form of the focus.
+    // [syntax.for.forms]: the annotation form of the focus.
     LHAT_TEST("a written focus type is what the name gets");
     check_text(&u,
                "var^ gen = p^ { yield^ 1 }\n"
@@ -177,7 +177,7 @@ static void test_walking(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §16.3: a coroutine answers iterate() with itself, so one held in a name
+    // [syntax.for.forms]: a coroutine answers iterate() with itself, so one held in a name
     // walks without being called again.
     LHAT_TEST("a coroutine walks as itself");
     check_text(&u,
@@ -187,7 +187,7 @@ static void test_walking(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §16.3 with §13.8+: one name over a table takes the sequence half's
+    // [syntax.for.forms] with [syntax.type.tuple]: one name over a table takes the sequence half's
     // values in order -- 'for^ i from^ 0 to^ the length - 1 { t[i] }' written as
     // a walk. The keyed half is not visited, and no pair exists to receive.
     LHAT_TEST("one name over a table takes the values");
@@ -204,7 +204,7 @@ static void test_walking(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §13.10: several names take the value apart by position, and §14 makes
+    // [syntax.type.destructure]: several names take the value apart by position, and [syntax.obj] makes
     // position 1 the key and position 2 the value of the pair.
     LHAT_TEST("several names take the pair apart by position");
     check_text(&u,
@@ -220,7 +220,7 @@ static void test_walking(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14: a table is a sequence and a mapping at once, so what a key can
+    // [syntax.obj]: a table is a sequence and a mapping at once, so what a key can
     // be depends on which halves the table has.
     LHAT_TEST("the key of a walk over the dense part is a number^");
     check_text(&u,
@@ -250,7 +250,7 @@ static void test_walking(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §16.3: a written focus type is checked against the position it takes.
+    // [syntax.for.forms]: a written focus type is checked against the position it takes.
     LHAT_TEST("a focus annotation is checked against its position");
     check_text(&u,
                "var^ t = { 10, 20 }\n"
@@ -278,8 +278,8 @@ static void test_walking(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §16.3: what in^ walks has to answer with a coroutine, the same demand
-    // §15.8 makes of await^.
+    // [syntax.for.forms]: what in^ walks has to answer with a coroutine, the same demand
+    // [syntax.sub.await] makes of await^.
     LHAT_TEST("walking something with no iterate is reported");
     check_text(&u, "for^ x in^ 5 { var^ n = x }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NOT_COROUTINE);
@@ -293,7 +293,7 @@ static void test_walking(void)
     unit_dispose(&u);
 }
 
-// §14 makes a table a sequence as well as a mapping. The keyed half
+// [syntax.obj] makes a table a sequence as well as a mapping. The keyed half
 // was described by name from the start; the sequence half was dropped on the
 // floor, so nothing downstream of it -- t[0], a walk's pair -- had
 // anything to read.
@@ -331,11 +331,11 @@ static void test_positions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§11.3: a position the type does not list is one it does not
+    // [errors.runtime.index]: a position the type does not list is one it does not
     // promise, so what comes back is what it does say the sequence half
     // holds, or nil^. Reading is bounded by what was declared -- 't.foo' for
     // a member the type never mentions is a static error, and a position is
-    // that same question asked with digits. §14.10's "at least these" says
+    // that same question asked with digits. [syntax.obj.structure]'s "at least these" says
     // which values fit a type, not what may be read off one.
     LHAT_TEST("a position the type does not mention may be absent");
     check_text(&u,
@@ -358,7 +358,7 @@ static void test_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14.14+: '[ ... ] :=' writes a key that 01§6 leaves unwritable as
+    // [syntax.obj.keys-equals]: '[ ... ] :=' writes a key that [lex.comment] leaves unwritable as
     // a name. A literal one still tells the type what it named.
     LHAT_TEST("an integer key reaches the sequence half");
     check_text(&u,
@@ -367,7 +367,7 @@ static void test_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // Lua's rule, which §14 follows: t.a and t["a"] are one key.
+    // Lua's rule, which [syntax.obj] follows: t.a and t["a"] are one key.
     LHAT_TEST("and a string key is the member of that name");
     check_text(&u,
                "var^ t = { [\"a\"] := 7 }\n"
@@ -375,7 +375,7 @@ static void test_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14.10 lets a table carry more than its type lists, so a key only known
+    // [syntax.obj.structure] lets a table carry more than its type lists, so a key only known
     // when it runs leaves the type saying nothing about it.
     LHAT_TEST("a computed key leaves the type quiet");
     check_text(&u,
@@ -390,7 +390,7 @@ static void test_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
-    // 04§11.3: nil^ spells absence, so it cannot also be a key. A key that
+    // [errors.runtime.index]: nil^ spells absence, so it cannot also be a key. A key that
     // can only ever be one is decided here rather than left to the machine.
     LHAT_TEST("a key that can only be nil^ is reported");
     check_text(&u, "var^ t = { [nil^] := 7 }\n");
@@ -413,7 +413,7 @@ static void test_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14.10: the sequence half can be written down as well as inferred --
+    // [syntax.obj.structure]: the sequence half can be written down as well as inferred --
     // types listed with no name in front of them, in order.
     LHAT_TEST("a written type may list its positions");
     check_text(&u, "var^ t : t^{ number^, string^ } = { 1, \"a\" }\n");
@@ -430,7 +430,7 @@ static void test_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14.10 asks for at least what is listed, positions included.
+    // [syntax.obj.structure] asks for at least what is listed, positions included.
     LHAT_TEST("but more positions than were asked for are fine");
     check_text(&u, "var^ t : t^{ number^ } = { 1, \"a\" }\n");
     CHECK_CLEAN(&u);
@@ -450,8 +450,8 @@ static void test_positions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 05§8.6: two values on the right pair off with two names on the left, and
-    // §13.8+ left that path exactly as it was.
+    // [modules.host.machine]: two values on the right pair off with two names on the left, and
+    // [syntax.type.tuple] left that path exactly as it was.
     LHAT_TEST("a multiple definition still pairs the two sides off");
     check_text(&u,
                "var^ a, b = 1, \"x\"\n"
@@ -468,13 +468,13 @@ static void test_positions(void)
     unit_dispose(&u);
 }
 
-// 04§11.3: 't.foo' is the static half and answers T; 't[k]' is the dynamic
+// [errors.runtime.index]: 't.foo' is the static half and answers T; 't[k]' is the dynamic
 // one and answers 'T|nil^'. What T is, is what the type says a key of that
-// kind reaches -- and which kind decides which half of §14's table is being
+// kind reaches -- and which kind decides which half of [syntax.obj]'s table is being
 // asked about, since a number names a position and a string names a member.
 //
 // A type that says nothing about that kind is left alone: there is no T to
-// make the union out of, and §14.10 leaves what an undeclared table holds
+// make the union out of, and [syntax.obj.structure] leaves what an undeclared table holds
 // unsaid. Closing that would need a spelling for an open keyed half, which
 // 't^{ T[] }' is not -- it describes the sequence.
 static void test_dynamic_key(void)
@@ -506,7 +506,7 @@ static void test_dynamic_key(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14: a number names a position and a string names a member, so the
+    // [syntax.obj]: a number names a position and a string names a member, so the
     // two halves answer separate questions.
     LHAT_TEST("a string key reads the keyed half");
     check_text(&u,
@@ -532,7 +532,7 @@ static void test_dynamic_key(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 09§3.5: a key whose own type is not decided could be either, so both
+    // [debug.inspect.eval]: a key whose own type is not decided could be either, so both
     // halves answer. Picking one would be claiming to know which.
     LHAT_TEST("an undecided key reads both halves");
     check_text(&u,
@@ -550,7 +550,7 @@ static void test_dynamic_key(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.7's unbounded tail reached this answer already, and goes on
+    // [syntax.type.variadic]'s unbounded tail reached this answer already, and goes on
     // reaching it now that one road serves both.
     LHAT_TEST("an unbounded tail answers the same as before");
     check_text(&u,
@@ -571,7 +571,7 @@ static void test_dynamic_key(void)
     unit_dispose(&u);
 }
 
-// §8.6.4. 04§11.3 makes what a key reads out of a table a 'T|nil^', which
+// [syntax.stmt.nil-assign]. [errors.runtime.index] makes what a key reads out of a table a 'T|nil^', which
 // leaves a plain compound assignment with nothing to add to -- the arm has no
 // operator on it. The '?' spelling says the write is skipped when the place is
 // absent, so the operator is asked of the rest.
@@ -602,7 +602,7 @@ static void test_nil_safe_compound(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
-    // §11.7+'s posture, carried over: a '?.' whose target can never be absent
+    // [syntax.op.nil-safe]'s posture, carried over: a '?.' whose target can never be absent
     // is let through rather than reported, and so is this.
     LHAT_TEST("a place that can never be absent takes it anyway");
     check_text(&u, "var^ n = 1\n"
@@ -639,7 +639,7 @@ static void test_nil_safe_compound(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
-    // §8.6.4's '?:=' asks nothing of the place -- it writes rather than reads,
+    // [syntax.stmt.nil-assign]'s '?:=' asks nothing of the place -- it writes rather than reads,
     // so there is no operator to be short of and nothing here to report. What
     // it changes is which places get written, which only the machine sees.
     LHAT_TEST("the plain nil-safe assignment checks like ':='");
@@ -664,7 +664,7 @@ static void test_nil_safe_compound(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §8.9: a let^ binds a name nothing may write again, whichever spelling
+    // [syntax.stmt.let]: a let^ binds a name nothing may write again, whichever spelling
     // asks.
     LHAT_TEST("and a let^ name refuses it the way it refuses ':='");
     check_text(&u, "let^ n = 1\n"
@@ -673,7 +673,7 @@ static void test_nil_safe_compound(void)
     unit_dispose(&u);
 }
 
-// 04§11.3: only a table holds keys. A settled type that is not one
+// [errors.runtime.index]: only a table holds keys. A settled type that is not one
 // answers a key with nothing -- the machine refuses it, so the checker says
 // so first.
 static void test_not_indexable(void)
@@ -707,8 +707,8 @@ static void test_not_indexable(void)
     unit_dispose(&u);
 }
 
-// §14.4: the self^ receiver works in a plain table literal's methods too --
-// §8.7+ took the bound name out of the initialiser, and this is the door
+// [syntax.obj.self]: the self^ receiver works in a plain table literal's methods too --
+// [syntax.stmt.old-world] took the bound name out of the initialiser, and this is the door
 // that stays. self^'s type is the literal's own.
 static void test_table_methods(void)
 {
@@ -739,7 +739,7 @@ static void test_table_methods(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 01§2.3: a hat name is the language's. Only tostring^ and iterate^
+    // [lex.hat.repeat]: a hat name is the language's. Only tostring^ and iterate^
     // are written as members; nothing else declares one.
     static const char *const refused[] = {
         "let^ t = { width^ = 3, 1, 2 }\n",
@@ -788,7 +788,7 @@ static void test_table_methods(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §16.3: a written iterate^ makes the literal walkable, and its own body
+    // [syntax.for.forms]: a written iterate^ makes the literal walkable, and its own body
     // reaches the raw walk through the projections.
     LHAT_TEST("a written iterate^ walks itself through keys^()");
     check_text(&u,
@@ -802,7 +802,7 @@ static void test_table_methods(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.1+: a table-literal method's self^ meets the same write rule a
+    // [syntax.sub.table-write]: a table-literal method's self^ meets the same write rule a
     // def^ method's does -- an f^ may not change the table it was handed.
     LHAT_TEST("an f^ method may not write through self^");
     check_text(&u,
@@ -823,7 +823,7 @@ static void test_table_methods(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.11: the construction notation belongs to a written new, and a
+    // [syntax.obj.new]: the construction notation belongs to a written new, and a
     // plain table has none -- its methods write one field at a time.
     LHAT_TEST("but not with the construction notation");
     check_text(&u,
@@ -835,13 +835,13 @@ static void test_table_methods(void)
     unit_dispose(&u);
 }
 
-// §14.22: the table's own operations, as the checker reads them. The
+// [syntax.obj.table-ops]: the table's own operations, as the checker reads them. The
 // machine's side is test_vm_data's.
 static void test_builtin_operations(void)
 {
     Unit u;
 
-    // 03§3.4+ with §14.12: sort^'s two arms differ in arity alone, so the one
+    // [pipeline.infer.expected] with [syntax.obj.override]: sort^'s two arms differ in arity alone, so the one
     // this call fits is settled by the count -- and the comparator literal
     // reads its parameters off the receiver's element type through it.
     LHAT_TEST("a comparator's parameters come from the element type");
@@ -865,14 +865,14 @@ static void test_builtin_operations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §14.10: the parameter list keeps its own spelling; a table type
+    // [syntax.obj.structure]: the parameter list keeps its own spelling; a table type
     // does not read it any more.
     LHAT_TEST("the parameter spelling is no table type");
     check_text(&u, "var^ t : t^{ ...:number^ } = {1}\n");
     LHAT_CHECK(syntax_errors(&u) > 0, "the old spelling is refused");
     unit_dispose(&u);
 
-    // §14.22: resize^(n) fills with nil^, so only an element admitting it has
+    // [syntax.obj.table-ops]: resize^(n) fills with nil^, so only an element admitting it has
     // the one-argument form; resize^(n, fill) is there for every element.
     LHAT_TEST("resize^ without a fill needs an element that admits nil^");
     check_text(&u, "var^ t:t^{number^[]} = {1, 2}\nt.resize^(4)\n");
@@ -883,7 +883,7 @@ static void test_builtin_operations(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04§11.3's line: an empty table's pop is not an error, so the
+    // [errors.runtime.index]'s line: an empty table's pop is not an error, so the
     // answer carries the nil^ arm and a narrowing is owed.
     LHAT_TEST("pop^ answers the element type beside nil^");
     check_text(&u,
@@ -892,7 +892,7 @@ static void test_builtin_operations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §15.1+2: the mutating half write through the receiver alone, so an
+    // [syntax.sub.mutable-self]: the mutating half write through the receiver alone, so an
     // f^ body may call them on a table it made itself.
     LHAT_TEST("an f^ sorts a table its own body made");
     check_text(&u,
@@ -922,7 +922,7 @@ static void test_builtin_operations(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §14.22 belongs to a plain table alone -- a def^'s names are the
+    // [syntax.obj.table-ops] belongs to a plain table alone -- a def^'s names are the
     // writer's, and the hat is what keeps the built-in off the bare word.
     LHAT_TEST("a definition's instance carries none of them");
     check_text(&u,
@@ -948,7 +948,7 @@ static void test_builtin_operations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // §15.1+2: it writes through the receiver alone -- an f^ assigns into
+    // [syntax.sub.mutable-self]: it writes through the receiver alone -- an f^ assigns into
     // what it made, never into what arrived.
     LHAT_TEST("an f^ assigns into its own table, not one it was handed");
     check_text(&u,
@@ -967,7 +967,7 @@ static void test_builtin_operations(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MUTATES_OUTSIDE);
     unit_dispose(&u);
 
-    // §15.1+3: clone^ and slice^ answer '-> fresh^…', so what they answer
+    // [syntax.sub.fresh]: clone^ and slice^ answer '-> fresh^…', so what they answer
     // is the body's own -- an f^ clones what arrived and mends the copy.
     LHAT_TEST("an f^ mends its own clone of what arrived");
     check_text(&u,

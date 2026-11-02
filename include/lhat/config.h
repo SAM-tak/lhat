@@ -33,8 +33,8 @@ typedef int64_t LhatInteger;
 // type
 // Types are handed out from fixed-size blocks the same way ast nodes are.
 #define LHAT_TYPE_BLOCK_BYTES 8192
-// 07§4: how far lhat_type_write descends before writing an ellipsis.
-// A table may hold itself (§14), so something has to stop the walk; and
+// [lsp.hover]: how far lhat_type_write descends before writing an ellipsis.
+// A table may hold itself ([syntax.obj]), so something has to stop the walk; and
 // past this depth a written-out type says less to a reader than a short one
 // does anyway.
 #define LHAT_TYPE_WRITE_MAX_DEPTH 3
@@ -55,46 +55,46 @@ typedef int64_t LhatInteger;
 #define LHAT_MAX_REGISTERS 250
 #define LHAT_MAX_LOCALS 200
 #define LHAT_MAX_UPVALUES 256
-// §11.7+2: how many '?' one postfix run may carry. Each is a jump that
+// [syntax.op.nil-safe-chain]: how many '?' one postfix run may carry. Each is a jump that
 // stays open until the run ends, and a run is written in one line of source
 // -- 'a?.b?[i]?(x)' is three, and nothing readable goes far past that.
 #define LHAT_MAX_NIL_CHAIN 16
-// §14.2: the chain of delegation is settled when the definition is
-// written, and §14.2 says the checker can decide the parts of any expression.
+// [syntax.obj.chain]: the chain of delegation is settled when the definition is
+// written, and [syntax.obj.chain] says the checker can decide the parts of any expression.
 // So the compiler resolves composition rather than the machine: what a def^
 // composes onto is a def^ it can already see.
 #define LHAT_MAX_DEF_CHAIN 8
-// §14.11: how deep the tree a field's default may be. The checker keeps
+// [syntax.obj.new]: how deep the tree a field's default may be. The checker keeps
 // one to what a literal spells, which never goes far -- this bound is the
 // machine's own C-stack guard: baking and copying a tree recurse, and the
 // recursion must stop while the stack is whole. A cycle cannot be written as
 // a literal tree, so no correct program ever sees this limit.
 #define LHAT_MAX_PROTOTYPE_DEPTH 32
-// §13.11 with §14.9: a def^ name written as a type lowers to the shape it
-// stands for, and §14.15 lets a field of that shape be annotated with another
+// [syntax.type.fits] with [syntax.obj.name]: a def^ name written as a type lowers to the shape it
+// stands for, and [syntax.obj.abstract] lets a field of that shape be annotated with another
 // definition -- so the walk nests. How far it may, before a member is left as
 // its name alone. A definition already inside the walk is answered that way
 // too, whatever the depth, which is what closes a cycle.
 #define LHAT_MAX_TYPE_NESTING 8
-// §14.10+: how many positions one 'type[n]' may ask for. The count is
+// [syntax.obj.structure-repeat]: how many positions one 'type[n]' may ask for. The count is
 // written out and the positions are made one by one, so this is what keeps a
 // single token from asking for as much of the checker's arena as it likes.
 // Far past any table a writer names position by position.
 #define LHAT_MAX_TYPE_POSITIONS 256
 // "Group.Kind" -- what typeof^ answers for an error made from an errordef^
-// (04§2.3). Longer than any name a writer is likely to choose.
+// ([errors.kind.made]). Longer than any name a writer is likely to choose.
 #define LHAT_QUALIFIED_NAME_BUFFER 256
 // How many "." segments a qualified name reaching into a host-registered
-// error kind (05§8.7 の誤り版) may have -- "module...Name.Variant". Same
+// error kind ([modules.host.import] の誤り版) may have -- "module...Name.Variant". Same
 // margin as LHAT_MAX_DEF_CHAIN gives a chain of composition.
 #define LHAT_MAX_QUALIFIER_SEGMENTS 8
 
 // vm -- running
 // The shared stack every frame's registers live on -- what
-// lhat_machine_new asks for. 03§4.3+: a machine's own length is in the
+// lhat_machine_new asks for. [pipeline.machine.sizing]: a machine's own length is in the
 // machine (Machine.slot_capacity), since a caller may choose another.
 #define LHAT_STACK_SLOTS 8192
-// 05§8.9: the largest payload a host value type may register, sized so a
+// [modules.hostvalue]: the largest payload a host value type may register, sized so a
 // whole value (one head slot plus the data slots) fits the machine's answer
 // scratch. Generous for the small mathematical types the feature exists for.
 #define LHAT_HOSTVALUE_MAX_BYTES 248
@@ -103,7 +103,7 @@ typedef int64_t LhatInteger;
 #define LHAT_HOSTVALUE_MAX_SLOTS \
     (1 + (LHAT_HOSTVALUE_MAX_BYTES + sizeof(LhatValueUnion) - 1) / \
              sizeof(LhatValueUnion))
-// §13.8+: how many positions a tuple may have. A tuple rides a frame's
+// [syntax.type.tuple]: how many positions a tuple may have. A tuple rides a frame's
 // answer room through the cleanup drain the way a host value does, so it is
 // bounded by the same scratch -- one head slot plus this many positions. Far
 // beyond anything a signature is written with; the bound exists so the room
@@ -134,21 +134,21 @@ typedef int64_t LhatInteger;
 // between steps, and so, with STEPMUL, how long one pause is.
 //
 // Measured against a game's frame loop (300k live objects): 200/200 let the
-// heap reach 11§3.3 times what was live; 150/800 holds it near twice, for about
+// heap reach [binary.codec.encode] times what was live; 150/800 holds it near twice, for about
 // 1.7 times the collector's total work.
 #define LHAT_GC_GROWTH 150
 #define LHAT_GC_STEPMUL 800
 #define LHAT_GC_STEP_SIZE 10
-// §16.3: how many finished loop coroutines a machine keeps to reuse. Enough
+// [syntax.for.forms]: how many finished loop coroutines a machine keeps to reuse. Enough
 // for loops nested this deep over generators; more would only hold memory.
 #define LHAT_SPARE_COROUTINES 8
 
 // value
-// §14 makes a table both a sequence and a mapping, and one holding itself
+// [syntax.obj] makes a table both a sequence and a mapping, and one holding itself
 // is nothing the type system forbids. A depth of its own is what stops the
 // walk; nothing here has to know whether it went round.
 #define LHAT_WRITE_MAX_DEPTH 6
-// §14.17: how long a format written for a number^ may be. It carries
+// [syntax.obj.tostring]: how long a format written for a number^ may be. It carries
 // one conversion and whatever text the writer put around it, so the room is
 // for the text -- a format needing more than this is doing something a
 // tostring of one number was not meant for.

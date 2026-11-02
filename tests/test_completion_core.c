@@ -1,8 +1,8 @@
 // L^ (lhat) -- what may stand where the cursor is (include/lhat/completion.h).
 //
-// 07§4. The two questions the checker owns are pinned here, against the
+// [lsp.hover]. The two questions the checker owns are pinned here, against the
 // one rule each has: what a member access offers is what lhat_type_find_member
-// would answer with, and what a word offers is what 07§8's lookup would have
+// would answer with, and what a word offers is what [lsp.vscode]'s lookup would have
 // found. A second list in this file would be a second reading of those, which
 // is the thing the header exists to refuse.
 
@@ -138,7 +138,7 @@ static void test_which_question(void)
         check_dispose(&c);
     }
 
-    // 01§2.3: the hat is part of a name, so a path written straight after
+    // [lex.hat.repeat]: the hat is part of a name, so a path written straight after
     // the word is one run of name bytes -- which is how this repository
     // writes it, and how it read as a name being typed.
     LHAT_TEST("import^ takes the path with no space between");
@@ -248,7 +248,7 @@ static void test_members(void)
         check_dispose(&c);
     }
 
-    // §14.19: no list holds these; the checker answers them, and the
+    // [syntax.obj.substring]: no list holds these; the checker answers them, and the
     // header's whole argument is that a host cannot ask any other way.
     LHAT_TEST("a string offers the built-ins the checker answers");
     {
@@ -260,7 +260,7 @@ static void test_members(void)
         check_dispose(&c);
     }
 
-    // §14.10 with §13.4: what takes a receiver is written as a call on the
+    // [syntax.obj.structure] with [syntax.type.param-names]: what takes a receiver is written as a call on the
     // value, and an editor draws those apart from fields.
     LHAT_TEST("a member that takes a receiver reads as a method");
     {
@@ -320,7 +320,7 @@ static void test_words(void)
         check_dispose(&c);
     }
 
-    // 08§8: the first of a spelling is what the lookup would have found, and
+    // [lton.host]: the first of a spelling is what the lookup would have found, and
     // one list holds one of each.
     LHAT_TEST("a name written twice is offered once");
     {
@@ -362,7 +362,7 @@ static void test_words(void)
 
 
 // ---------------------------------------------------------------------------
-// What a registered receiver answers, remembered (07§4)
+// What a registered receiver answers, remembered ([lsp.hover])
 
 typedef struct {
     const char *path;

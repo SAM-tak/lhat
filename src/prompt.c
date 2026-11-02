@@ -1,4 +1,4 @@
-// L^ (lhat) -- a prompt (lhat/prompt.h): 03§4's loop, less the
+// L^ (lhat) -- a prompt (lhat/prompt.h): [pipeline.repl]'s loop, less the
 // reading and the printing, which are the host's.
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
@@ -35,7 +35,7 @@ struct LhatPrompt {
     size_t held_count;
     size_t held_capacity;
 
-    // What has been fed since the last whole input (§3.1).
+    // What has been fed since the last whole input ([syntax.repl.incomplete]).
     char *input;
     size_t input_length;
 
@@ -45,8 +45,8 @@ struct LhatPrompt {
     size_t report_capacity;
 };
 
-// 05§8.7: what LhatRequire and LhatUnits carry for a file -- the registry
-// import^ resolves against, 05§8.6's L^ members and 05§8.2's bound names for the
+// [modules.host.import]: what LhatRequire and LhatUnits carry for a file -- the registry
+// import^ resolves against, [modules.host.machine]'s L^ members and [modules.host.initial]'s bound names for the
 // checker, the error kinds and hostdata types fits^ names for the compiler.
 // All of it is the program's, which is why it has to outlive the prompt.
 static void install_checks(const LhatProgram *program,
@@ -241,7 +241,7 @@ static bool accept(LhatPrompt *prompt, Held *in)
         LhatCompileResult compiled = lhat_compile_next(
             prompt->compiles, &checked, &in->lexer, &in->proto);
         if (compiled.status != LHAT_COMPILE_OK) {
-            // 03§4.2 puts the refusals in the checker, so this is a hole in it,
+            // [pipeline.repl.no-fork] puts the refusals in the checker, so this is a hole in it,
             // told about the way the checker's own diagnostics are.
             char text[256];
             lhat_compile_message_write(prompt->program, &compiled, text,
@@ -261,7 +261,7 @@ LhatPromptResult lhat_prompt_feed(LhatPrompt *prompt, const char *text,
     LhatPromptResult result = {LHAT_PROMPT_REFUSED, lhat_nil()};
     prompt->report_length = 0;
 
-    // §3.1 tells input that stopped early from input that is wrong, so
+    // [syntax.repl.incomplete] tells input that stopped early from input that is wrong, so
     // a construct spanning lines is read by asking for more rather than by
     // counting brackets.
     char *joined = (char *)realloc(prompt->input,
@@ -292,7 +292,7 @@ LhatPromptResult lhat_prompt_feed(LhatPrompt *prompt, const char *text,
     lhat_parse_interactive(&in->lexer, &in->parsed);
     in->proto = NULL;
 
-    // 10§3.1: input that merely stopped early is not wrong yet, so its
+    // [l10n.scope.shown]: input that merely stopped early is not wrong yet, so its
     // diagnostics say nothing about what the reader will type next.
     if (in->parsed.incomplete) {
         drop_held(in);
@@ -302,7 +302,7 @@ LhatPromptResult lhat_prompt_feed(LhatPrompt *prompt, const char *text,
     lhat_prompt_drop(prompt);
 
     if (!accept(prompt, in)) {
-        // 03§4.3: a refused input added nothing to either session, so dropping
+        // [pipeline.machine]: a refused input added nothing to either session, so dropping
         // its pieces leaves the session as it was.
         drop_held(in);
         return result;

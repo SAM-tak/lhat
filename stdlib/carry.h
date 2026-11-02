@@ -1,6 +1,6 @@
 // L^ (lhat) -- sample standard library: values carried between machines.
 //
-// Two machines share nothing on the heap (05§8.7: a machine is the
+// Two machines share nothing on the heap ([modules.host.import]: a machine is the
 // caller's, and std.thread gives every thread one of its own), so what
 // crosses between them has to be taken apart into a form that belongs to
 // neither and put back together on the far side. That form is an
@@ -26,7 +26,7 @@
 //
 //   a started coroutine          a frame belongs to the machine that runs
 //                                it. One whose body has NOT started
-//                                crosses (05§8.8+3): §15.5 runs
+//                                crosses ([modules.hostdata.unstarted]): [syntax.sub.no-contagion] runs
 //                                nothing at the call, so it is the closure
 //                                and the arguments laid out, and the copy
 //                                is a second coroutine both machines may
@@ -37,13 +37,13 @@
 //   a host value                 a pointer's ownership (dispose^) is the
 //                                host's contract, not settled here --
 //                                and hostdata whose type declared that
-//                                contract (05§8.8+2,
+//                                contract ([modules.hostdata.sharing],
 //                                lhat_register_hostdata_shared) crosses as
 //                                its pointer, held once for the tree and
 //                                once per wrapper rebuilt; the rest stays
 //   a host subroutine            installed per machine, not carried
 //   a loaded script's closure    its body belongs to the machine that
-//                                loaded it (05§5.6)
+//                                loaded it ([modules.require.load])
 //   an error value, a module     later, if wanted
 //
 // std.thread carries spawn's arguments and join's answer this way; a host's

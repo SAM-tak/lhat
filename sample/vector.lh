@@ -1,4 +1,4 @@
-# 05§8.9: host values, end to end. Vector3 lives on the stack;
+# [modules.hostvalue]: host values, end to end. Vector3 lives on the stack;
 # Vector3.Box^ is the box the heap can hold, made with box^.
 let^vector3 = import^std.math.vector3
 let^Vector3 = vector3.Vector3

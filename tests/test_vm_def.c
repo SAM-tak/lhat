@@ -2,7 +2,7 @@
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
 // prefixed. Programs are run end to end, since what is worth pinning is the
-// answer rather than the instructions chosen to reach it -- 09§5.1 expects those
+// answer rather than the instructions chosen to reach it -- [debug.dap.machines] expects those
 // to be replaced by specialised ones later.
 
 #include <math.h>
@@ -11,7 +11,7 @@
 #include "code.h"
 #include "fixture.h"
 
-// §14: def^ is the one mechanism for a user-defined type.
+// [syntax.obj]: def^ is the one mechanism for a user-defined type.
 static void test_definitions(void)
 {
     Run r;
@@ -28,7 +28,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 527);
     run_dispose(&r);
 
-    // §14.11: without a new of its own, a definition gets one taking no
+    // [syntax.obj.new]: without a new of its own, a definition gets one taking no
     // arguments that answers what the template says.
     LHAT_TEST("the default new builds an instance from the template");
     run_text(&r,
@@ -38,7 +38,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
-    // §14.3: a method belongs to the definition and is shared; a field belongs
+    // [syntax.obj.methods]: a method belongs to the definition and is shared; a field belongs
     // to the instance and is copied.
     LHAT_TEST("two instances have their own fields");
     run_text(&r,
@@ -50,7 +50,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §14.11: a table written out as a literal is a tree of the instance's
+    // [syntax.obj.new]: a table written out as a literal is a tree of the instance's
     // own -- construction copies it, so two instances never share one.
     // Python's mutable default argument has no counterpart here.
     LHAT_TEST("a literal table default is each instance's own");
@@ -73,7 +73,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §14.11: a definition among the defaults is a public identity, not
+    // [syntax.obj.new]: a definition among the defaults is a public identity, not
     // per-instance data -- the copy leaves it shared.
     LHAT_TEST("a definition among the defaults is shared, not copied");
     run_text(&r,
@@ -85,7 +85,7 @@ static void test_definitions(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // §14.11: a value nothing may share -- a coroutine here -- is refused
+    // [syntax.obj.new]: a value nothing may share -- a coroutine here -- is refused
     // where the values land (SETPROTO).
     LHAT_TEST("a default nothing may share is refused");
     run_text(&r,
@@ -95,7 +95,7 @@ static void test_definitions(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_MUTABLE_DEFAULT);
     run_dispose(&r);
 
-    // §14.11: the seal reaches the whole tree, not only the top table.
+    // [syntax.obj.new]: the seal reaches the whole tree, not only the top table.
     LHAT_TEST("the prototype's inner tables take no writes either");
     run_text(&r,
              "var^ Foo = def^{ self^{ used := { 0, 0 } } }\n"
@@ -104,7 +104,7 @@ static void test_definitions(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SEALED);
     run_dispose(&r);
 
-    // §14.11: baking copies -- a table an initialiser handed over becomes the
+    // [syntax.obj.new]: baking copies -- a table an initialiser handed over becomes the
     // prototype's own tree, and the original stays the writer's, unsealed.
     LHAT_TEST("what the prototype holds is its own copy");
     run_text(&r,
@@ -115,7 +115,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 57);
     run_dispose(&r);
 
-    // §14.11: the spelling for one -- declare the field and make the value
+    // [syntax.obj.new]: the spelling for one -- declare the field and make the value
     // inside new, where it is made per construction.
     LHAT_TEST("a table made inside new is each instance's own");
     run_text(&r,
@@ -130,7 +130,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §14.4: the shape of the signature says it is a method. No modifier does.
+    // [syntax.obj.self]: the shape of the signature says it is a method. No modifier does.
     LHAT_TEST("a method gets the receiver as its self^");
     run_text(&r,
              "var^ Foo = def^{\n"
@@ -164,7 +164,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
-    // §14.4: taking the method out and passing the receiver by hand is the
+    // [syntax.obj.self]: taking the method out and passing the receiver by hand is the
     // same call written differently.
     LHAT_TEST("a method taken out is called with the receiver by hand");
     run_text(&r,
@@ -178,7 +178,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // §14.4: a member with no self^ is a static one, so the receiver is not
+    // [syntax.obj.self]: a member with no self^ is a static one, so the receiver is not
     // passed to it.
     LHAT_TEST("a member without self^ is static");
     run_text(&r,
@@ -187,7 +187,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
-    // §14.7+: what an instance reaches through its definition is what takes a
+    // [syntax.obj.members-order]: what an instance reaches through its definition is what takes a
     // receiver. A static member is the definition's own.
     LHAT_TEST("an instance reaches a member that takes a receiver");
     run_text(&r,
@@ -210,7 +210,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
-    // §14.11: new is the definition's, so an instance is not another way to
+    // [syntax.obj.new]: new is the definition's, so an instance is not another way to
     // make one -- which is what asking a value for its own maker would be.
     LHAT_TEST("and new is out of an instance's reach");
     run_text(&r,
@@ -219,7 +219,7 @@ static void test_definitions(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_NOT_CALLABLE);
     run_dispose(&r);
 
-    // §14.11: new overwrites what it names; the rest keep the copy's defaults.
+    // [syntax.obj.new]: new overwrites what it names; the rest keep the copy's defaults.
     LHAT_TEST("new fills what it names and the copy keeps the rest");
     run_text(&r,
              "var^ Foo = def^{\n"
@@ -231,7 +231,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 82);
     run_dispose(&r);
 
-    // §14.11: an initialiser runs once, as the definition is built -- its
+    // [syntax.obj.new]: an initialiser runs once, as the definition is built -- its
     // value is baked onto the prototype, and construction copies rather
     // than evaluates.
     LHAT_TEST("an initialiser runs once, at the definition");
@@ -248,7 +248,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §14.11+ with §14.12: the default new is a real member from the start, so
+    // [syntax.obj.new-default] with [syntax.obj.override]: the default new is a real member from the start, so
     // an overload^ adds an arm beside it and both spellings construct. Before
     // this, writing one took the default away.
     LHAT_TEST("an overload^ new stands beside the default");
@@ -263,7 +263,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 17);
     run_dispose(&r);
 
-    // §14.12+ with §14.11: super^ inside an override^ new is the hook of the
+    // [syntax.obj.super] with [syntax.obj.new]: super^ inside an override^ new is the hook of the
     // new written before it, run against the same instance. With none
     // written it does nothing, and the copy is what the body starts from.
     LHAT_TEST("super^ inside an override^ new reaches the default hook");
@@ -276,7 +276,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
-    // §14.12+: and down a composition it is the previous part's new, so a
+    // [syntax.obj.super]: and down a composition it is the previous part's new, so a
     // derived new runs the base's adjustments before its own -- against the
     // one instance the machine made.
     LHAT_TEST("super^ chains the hooks against one instance");
@@ -301,7 +301,7 @@ static void test_definitions(void)
     CHECK_STRING(&r, "abc");
     run_dispose(&r);
 
-    // §14.5 with §14.12: composing two written definitions rebuilds the
+    // [syntax.obj.compose] with [syntax.obj.override]: composing two written definitions rebuilds the
     // constructor so it answers with the composed instance. Every arm is
     // rebuilt -- an overloaded new used to lose all of them here, leaving a
     // composition that could only be constructed with no arguments.
@@ -320,8 +320,8 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 52);
     run_dispose(&r);
 
-    // §14.11: the prototype is a member like any other -- App.self^ reads it,
-    // an instance does not (§14.7+: it takes no receiver), and writing it
+    // [syntax.obj.new]: the prototype is a member like any other -- App.self^ reads it,
+    // an instance does not ([syntax.obj.members-order]: it takes no receiver), and writing it
     // meets the seal.
     LHAT_TEST("a definition's self^ is the prototype, readable");
     run_text(&r,
@@ -345,7 +345,7 @@ static void test_definitions(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SEALED);
     run_dispose(&r);
 
-    // §14.11: a written new adjusts the copy; the prototype it was copied
+    // [syntax.obj.new]: a written new adjusts the copy; the prototype it was copied
     // from keeps its defaults.
     LHAT_TEST("what new writes lands on the copy, not the prototype");
     run_text(&r,
@@ -358,7 +358,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 19);
     run_dispose(&r);
 
-    // §14.11: an initialiser cannot see self^, which does not exist yet, but
+    // [syntax.obj.new]: an initialiser cannot see self^, which does not exist yet, but
     // can see def^, which does.
     LHAT_TEST("an initialiser sees def^");
     run_text(&r,
@@ -381,7 +381,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
-    // §14.5: composition is '..' and the order matters.
+    // [syntax.obj.compose]: composition is '..' and the order matters.
     LHAT_TEST("composition brings the base's members along");
     run_text(&r,
              "var^ Foo = def^{ self^{ a := 1 }, one := f^self^ { return^ 1 } }\n"
@@ -391,7 +391,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 1212);
     run_dispose(&r);
 
-    // §14.12: override^ replaces, and the later part is what wins.
+    // [syntax.obj.override]: override^ replaces, and the later part is what wins.
     LHAT_TEST("override^ replaces the member it names");
     run_text(&r,
              "var^ Foo = def^{ self^{ }, tag := f^self^ { return^ 1 } }\n"
@@ -416,7 +416,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §14.12+: super^ is what the override^ wrote over. The parts are walked
+    // [syntax.obj.super]: super^ is what the override^ wrote over. The parts are walked
     // in order, so it is read out of the table before the write.
     LHAT_TEST("super^ reaches the definition an override^ replaced");
     run_text(&r,
@@ -442,7 +442,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 111);
     run_dispose(&r);
 
-    // §14.4: the receiver of super^(…) is the one the body already holds, so
+    // [syntax.obj.self]: the receiver of super^(…) is the one the body already holds, so
     // it is not written. This one reads a field through it.
     LHAT_TEST("super^ takes the receiver without it being written");
     run_text(&r,
@@ -454,7 +454,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 30);
     run_dispose(&r);
 
-    // §14.4 again: named on its own it is a value like any other, and then
+    // [syntax.obj.self] again: named on its own it is a value like any other, and then
     // the receiver is spelled out.
     LHAT_TEST("and spelled out once super^ is taken as a value");
     run_text(&r,
@@ -469,9 +469,9 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
-    // §14.12: an override^ over an overloaded name replaces the one arm it
+    // [syntax.obj.override]: an override^ over an overloaded name replaces the one arm it
     // overlaps, so a plain write would take the whole group with it.
-    // §14.5 with §14.7+2: the machine holds one delegate key per definition,
+    // [syntax.obj.compose] with [syntax.obj.delegate]: the machine holds one delegate key per definition,
     // so a composition answers through the last part to declare one. The
     // type side of this is in test_check_def.c; here is what runs.
     LHAT_TEST("a composition delegates through the last part that said so");
@@ -505,7 +505,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §13.11 with §14.12: the arms of one name are one value, and it is
+    // [syntax.type.fits] with [syntax.obj.override]: the arms of one name are one value, and it is
     // a subroutine -- the checker writes the name's type as one of them, so
     // fits^ has to take the group where that is asked for.
     LHAT_TEST("a group of arms is a subroutine to fits^");
@@ -542,7 +542,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 101);
     run_dispose(&r);
 
-    // §14.15: a declaration puts nothing in the table, and what a composition
+    // [syntax.obj.abstract]: a declaration puts nothing in the table, and what a composition
     // provides goes under the same name. The mixin's own body reaches it.
     LHAT_TEST("what fills an abstract^ is what the mixin calls");
     run_text(&r,
@@ -561,7 +561,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);
 
-    // §11.8: and an operator, which is a member named by the operator.
+    // [syntax.op.define]: and an operator, which is a member named by the operator.
     LHAT_TEST("what fills a declared operator is what the mixin's '+' runs");
     run_checked_text(&r,
              "var^ Twice = def^{ self^{},\n"
@@ -575,7 +575,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 41);
     run_dispose(&r);
 
-    // §14.6: a declared field has no initialiser to run, so the one that fills
+    // [syntax.obj.template]: a declared field has no initialiser to run, so the one that fills
     // it is the only one the construction sees.
     LHAT_TEST("an abstract^ field is initialised by what fills it");
     run_text(&r,
@@ -588,8 +588,8 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 11);
     run_dispose(&r);
 
-    // §14.15+: a mixin written against no base, composed onto one. What its
-    // super^ reaches is settled by §14.2's chain the same as any other.
+    // [syntax.obj.abstract-override]: a mixin written against no base, composed onto one. What its
+    // super^ reaches is settled by [syntax.obj.chain]'s chain the same as any other.
     LHAT_TEST("a mixin written against no base reaches the base it gets");
     run_text(&r,
              "var^ Base = def^{ self^{ n := 0 },\n"
@@ -621,9 +621,9 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 111);
     run_dispose(&r);
 
-    // §14.5+: nothing is written under a name both sides carry, since the
+    // [syntax.obj.compose-ambiguous]: nothing is written under a name both sides carry, since the
     // checker will not read it through the composition -- but the method each
-    // side wrote is still a value, and §14.4 applies it to whatever fits.
+    // side wrote is still a value, and [syntax.obj.self] applies it to whatever fits.
     LHAT_TEST("either side of an ambiguous name is still reachable");
     run_text(&r,
              "var^ A = def^{ self^{},\n"
@@ -662,7 +662,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // §14.2: the chain is settled at the definition, so an instance made
+    // [syntax.obj.chain]: the chain is settled at the definition, so an instance made
     // before a later definition is unaffected by it.
     LHAT_TEST("two definitions of the same shape stay separate");
     run_text(&r,
@@ -684,8 +684,8 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 193);
     run_dispose(&r);
 
-    // §14.12: overload^ adds a way to call without losing the one that was
-    // there, and §14.12's ban on overlapping signatures means the call finds
+    // [syntax.obj.override]: overload^ adds a way to call without losing the one that was
+    // there, and [syntax.obj.override]'s ban on overlapping signatures means the call finds
     // at most one candidate -- a search rather than a choice.
     LHAT_TEST("overload^ keeps the way that was already there");
     run_text(&r,
@@ -711,7 +711,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
-    // §14.4: a candidate that takes self^ is reached as a method, so what was
+    // [syntax.obj.self]: a candidate that takes self^ is reached as a method, so what was
     // given starts past the receiver. The search had been comparing the
     // receiver against the first parameter instead, and no candidate taking
     // self^ ever fitted.
@@ -737,7 +737,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 79);
     run_dispose(&r);
 
-    // §14.5 and §14.12 reach an operator the way they reach any other member.
+    // [syntax.obj.compose] and [syntax.obj.override] reach an operator the way they reach any other member.
     LHAT_TEST("a composition carries an operator in");
     run_text(&r,
              "var^ B = def^{ self^{ t := \"b\" },\n"
@@ -770,7 +770,7 @@ static void test_definitions(void)
     CHECK_STRING(&r, "sn");
     run_dispose(&r);
 
-    // §11.3 judges structurally, so a '..' put on a plain table by §14.14's
+    // [syntax.op.semantic] judges structurally, so a '..' put on a plain table by [syntax.obj.keys]'s
     // computed key answers exactly as a written op^ does.
     LHAT_TEST("a '..' reached by a computed key answers as well");
     run_text(&r,
@@ -789,8 +789,8 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // §11.8 makes an operator a member, so §14.12's overload^ reaches it too --
-    // and §14.4 makes the left operand the receiver, which is the shape the
+    // [syntax.op.define] makes an operator a member, so [syntax.obj.override]'s overload^ reaches it too --
+    // and [syntax.obj.self] makes the left operand the receiver, which is the shape the
     // search has to ask in.
     LHAT_TEST("an operator may be overloaded like any member");
     run_text(&r,
@@ -803,7 +803,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
-    // §11.8: the unary '-'. NEG handles number^ itself and comes here for
+    // [syntax.op.define]: the unary '-'. NEG handles number^ itself and comes here for
     // everything else, which is the same posture the binary instructions take.
     LHAT_TEST("a unary op^- answers '-x'");
     run_text(&r,
@@ -843,7 +843,7 @@ static void test_definitions(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_NO_CANDIDATE);
     run_dispose(&r);
 
-    // §11.3 judges structurally here too, so a '-' put on a plain table
+    // [syntax.op.semantic] judges structurally here too, so a '-' put on a plain table
     // answers exactly as a written op^ does.
     LHAT_TEST("a unary '-' reached by a computed key answers as well");
     run_text(&r,
@@ -873,7 +873,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
-    // §14.10: the judgement is structural, so a candidate taking a shape is
+    // [syntax.obj.structure]: the judgement is structural, so a candidate taking a shape is
     // asked whether the value has those members.
     LHAT_TEST("a structural parameter is judged by its members");
     run_text(&r,
@@ -900,8 +900,8 @@ static void test_definitions(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_NO_CANDIDATE);
     run_dispose(&r);
 
-    // 12§2. The two paths answer differently here, which is the whole
-    // reason the static one exists: a parameter left to inference (03§3.4)
+    // [spec.arms]. The two paths answer differently here, which is the whole
+    // reason the static one exists: a parameter left to inference ([pipeline.infer])
     // is a type the checker knows and the descriptor fits_call reads does not
     // -- lower_type had no annotation to read, and a descriptor that is not
     // there asks nothing. So the search takes the first arm for any argument
@@ -926,7 +926,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
-    // 12§2: an arm index means the same thing on both sides only if
+    // [spec.arms]: an arm index means the same thing on both sides only if
     // the group holds what the checker's type says it holds. An override^
     // over an overloaded name is where that is decided -- the replacement
     // takes the place of the arm it replaces rather than going in front of a
@@ -948,7 +948,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 32);
     run_dispose(&r);
 
-    // §14.12: the ban is pairwise, so a name carries as many ways of
+    // [syntax.obj.override]: the ban is pairwise, so a name carries as many ways of
     // being called as are told apart. Three of them is where an arm index
     // starts being worth checking: the middle one is not reachable by taking
     // either end.
@@ -976,7 +976,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 124);
     run_dispose(&r);
 
-    // 12§2, the case the two orders differ in most: the arm replaced
+    // [spec.arms], the case the two orders differ in most: the arm replaced
     // is neither the first nor the last, so putting the replacement in front
     // instead of in its place would move both of the others.
     LHAT_TEST("an override^ of a middle arm moves none of the others");
@@ -998,7 +998,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 1224);
     run_dispose(&r);
 
-    // §14.12+: super^ is bound from the group as it was before the
+    // [syntax.obj.super]: super^ is bound from the group as it was before the
     // write, so dropping the replaced arm from the new group leaves it
     // reachable -- and the call through it resolves against the old arms.
     LHAT_TEST("super^ still reaches the arm an override^ replaced");
@@ -1017,7 +1017,7 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 31);
     run_dispose(&r);
 
-    // §14.8: number^ is one type, so either representation answers to it.
+    // [syntax.obj.number]: number^ is one type, so either representation answers to it.
     LHAT_TEST("either representation of a number answers to number^");
     run_text(&r,
              "var^ Show = def^{\n"
@@ -1037,15 +1037,15 @@ static void test_definitions(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
-    // §14.13: self^{ … } outside a definition has no fields to name.
+    // [syntax.obj.def-form]: self^{ … } outside a definition has no fields to name.
     LHAT_TEST("self^{ } outside a definition does not compile");
     run_text(&r, "var^ x = self^{ a := 1 }\nreturn^ x\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNSUPPORTED);
     run_dispose(&r);
 }
 
-// §13.11: fits^ against anything that can be written as a type. 04§6.1's
-// error kinds are in test_errors above and 05§8.8's host types in test_io --
+// [syntax.type.fits]: fits^ against anything that can be written as a type. [errors.fits.form]'s
+// error kinds are in test_errors above and [modules.hostdata]'s host types in test_io --
 // the same instruction answers all of them, so what is pinned here is the rest:
 // the builtin names, a structure, a union, and a def^.
 static void test_isa(void)
@@ -1072,7 +1072,7 @@ static void test_isa(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // §14.8: one type, two representations -- so both answer number^.
+    // [syntax.obj.number]: one type, two representations -- so both answer number^.
     LHAT_TEST("a real is a number^ the same way an integer is");
     run_text(&r, "return^ 1.5 fits^ number^\n");
     CHECK_BOOL(&r, true);
@@ -1093,7 +1093,7 @@ static void test_isa(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // §11.7 and 04§11.4: nil^ is a name like the others now, so the question
+    // [syntax.op.default] and [errors.runtime.nil]: nil^ is a name like the others now, so the question
     // reaches the same instruction rather than one of its own.
     LHAT_TEST("nil^");
     run_text(&r, "return^ nil^ fits^ nil^\n");
@@ -1105,7 +1105,7 @@ static void test_isa(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
-    // §14.10: at least these members.
+    // [syntax.obj.structure]: at least these members.
     LHAT_TEST("optional named fields accept nil but still check non-nil values");
     run_text(&r,
              "let^ D = def^{self^{x:number^|nil^ = nil^}}\n"
@@ -1145,7 +1145,7 @@ static void test_isa(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
-    // §13.5: an arm is enough. The parser leaves a union as a tree of two
+    // [syntax.type.union]: an arm is enough. The parser leaves a union as a tree of two
     // sides, so a three-armed one is what pins that every arm is reached.
     LHAT_TEST("a union holds when any arm does");
     run_text(&r, "return^ \"x\" fits^ number^|string^\n");
@@ -1162,7 +1162,7 @@ static void test_isa(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
-    // §13.7: any^ is the top of every value, so the answer is fixed. The
+    // [syntax.type.variadic]: any^ is the top of every value, so the answer is fixed. The
     // checker reports the writing (test_check); a compile that never checked
     // still has to answer, and this is the answer.
     LHAT_TEST("fits^ any^ is true whatever is on the left");
@@ -1179,7 +1179,7 @@ static void test_isa(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §14.9 keeps a definition structural, and §14.2 builds it while the program
+    // [syntax.obj.name] keeps a definition structural, and [syntax.obj.chain] builds it while the program
     // runs -- so the name is loaded as a value and the shape read off it.
     LHAT_TEST("a def^ name asks for the shape the definition holds");
     run_text(&r,
@@ -1202,9 +1202,9 @@ static void test_isa(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
-    // §14.7: composition carries everything the left part carried, so an
+    // [syntax.obj.instance]: composition carries everything the left part carried, so an
     // instance of the composed definition still fits the plain one. This is
-    // what §13.11 wanted conformance rather than exact identity for.
+    // what [syntax.type.fits] wanted conformance rather than exact identity for.
     LHAT_TEST("an instance of a composition fits the definition composed into");
     run_text(&r,
              "var^ Point = def^{ self^{ x := 0 }, m := f^ { return^ 1 } }\n"
@@ -1221,7 +1221,7 @@ static void test_isa(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
-    // §14.15: a field written as a type rather than a value, which is where a
+    // [syntax.obj.abstract]: a field written as a type rather than a value, which is where a
     // definition's shape carries a type at all.
     LHAT_TEST("a declared field asks for its type as well as its name");
     run_text(&r,
@@ -1237,7 +1237,7 @@ static void test_isa(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // §14.15 again: a definition may be annotated with itself, and the walk of
+    // [syntax.obj.abstract] again: a definition may be annotated with itself, and the walk of
     // its shape has to stop descending rather than follow that for ever. The
     // member is left asking for its name alone, which is what makes this
     // answer at all.
@@ -1248,7 +1248,7 @@ static void test_isa(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // 03§5.13: the right side is a type the compiler settles, always. A value
+    // [pipeline.bc.fits]: the right side is a type the compiler settles, always. A value
     // that only arrives while the program runs -- a definition passed as a
     // parameter -- carries no type to ask about: it is a plain table there,
     // and a program that receives one probes it member by member instead.
@@ -1273,7 +1273,7 @@ static void test_isa(void)
     LHAT_CHECK(lhat_check_error_count(&r.checked) > 0, "analysis rejects the unknown type");
     run_dispose(&r);
 
-    // §11.6 with 03§5.13: the same rule holds for as^ -- it promised to
+    // [syntax.op.table] with [pipeline.bc.fits]: the same rule holds for as^ -- it promised to
     // panic on a mismatch, so a cast the compiler cannot lower is refused
     // rather than silently checking nothing.
     LHAT_TEST("as^ against a value-only definition is refused too");
@@ -1283,7 +1283,7 @@ static void test_isa(void)
     LHAT_CHECK(lhat_check_error_count(&r.checked) > 0, "analysis rejects the value-only cast type");
     run_dispose(&r);
 
-    // §11.6: as^ lowers the written type the same way fits^ does, so a
+    // [syntax.op.table]: as^ lowers the written type the same way fits^ does, so a
     // union reaching every one of its arms is one question for both. What
     // this pins is the lowering: a union that kept only its first arm would
     // make the second one panic where it should hold.
@@ -1295,7 +1295,7 @@ static void test_isa(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §11.6+3: and answers the failure for a value no arm admits. The
+    // [syntax.op.as-error]: and answers the failure for a value no arm admits. The
     // lowering is what this still pins -- a union that kept only its first
     // arm would fail here where it should hold, and hold above where it
     // should fail.
@@ -1308,7 +1308,7 @@ static void test_isa(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // §13.11's narrowing is the checker's half; this is the machine's -- the
+    // [syntax.type.fits]'s narrowing is the checker's half; this is the machine's -- the
     // branch taken has to be the one the value actually answers for.
     LHAT_TEST("fits^ decides a branch at run time");
     run_checked_text(&r,
@@ -1322,20 +1322,20 @@ static void test_isa(void)
     run_dispose(&r);
 }
 
-// §14.12+: typeof^ reflects the value itself rather than anything the
-// checker inferred (03§4.2), so this is testing reflect_type's walk of the
+// [syntax.obj.super]: typeof^ reflects the value itself rather than anything the
+// checker inferred ([pipeline.repl.no-fork]), so this is testing reflect_type's walk of the
 // actual runtime object graph.
 static void test_typeof(void)
 {
     Run r;
 
-    // §14.7+2: a delegate is a LINK on the type and not a copy of the
+    // [syntax.obj.delegate]: a delegate is a LINK on the type and not a copy of the
     // delegate's members, which is what keeps a wrapper over a wide host
-    // type cheap to check. §14.16 is where that could have shown: the type
+    // type cheap to check. [syntax.obj.typeof] is where that could have shown: the type
     // written out has to say what an instance may be asked for, so the walk
     // that renders it follows the link the way a lookup does.
     //
-    // The static member is NOT lent -- §14.7 lends what takes a receiver, and
+    // The static member is NOT lent -- [syntax.obj.instance] lends what takes a receiver, and
     // that rule lives in the lookup now rather than in a copying pass.
     LHAT_TEST("14.16: a written-out type carries what a delegate lends");
     run_checked_text(&r,
@@ -1354,8 +1354,8 @@ static void test_typeof(void)
                  "read : f^self^ -> number^; }");
     run_dispose(&r);
 
-    // 03§3.4: a parameter nothing was written for is not nothing known --
-    // inference settles it from what the body asks of it, and §14.16 answers
+    // [pipeline.infer]: a parameter nothing was written for is not nothing known --
+    // inference settles it from what the body asks of it, and [syntax.obj.typeof] answers
     // with what was settled rather than with any^.
     //
     // This pair is the two ways typeof^ is answered. Here the checker
@@ -1371,11 +1371,11 @@ static void test_typeof(void)
     CHECK_STRING(&r, "f^number^ -> number^;");
     run_dispose(&r);
 
-    // 03§4.2: and a compile that never checked is left exactly as it was.
+    // [pipeline.repl.no-fork]: and a compile that never checked is left exactly as it was.
     // There is no settled type to reach for, so the written spelling is all
     // there is -- here none, which is any^. run_text compiles without
     // checking on purpose (fixture.h), which is what makes this the line
-    // 10§4.2 draws: reaching for what the checker settled may sharpen an
+    // [l10n.id.spelling] draws: reaching for what the checker settled may sharpen an
     // answer, never change what runs.
     LHAT_TEST("relaxed preserves the inferred signature too");
     run_text(&r,
@@ -1412,8 +1412,8 @@ static void test_typeof(void)
     CHECK_STRING(&r, "nil^");
     run_dispose(&r);
 
-    // §14.16: typeof^ answers the checker's type for the instance --
-    // fields and methods folded as the checker sees them, with §14.11's new
+    // [syntax.obj.typeof]: typeof^ answers the checker's type for the instance --
+    // fields and methods folded as the checker sees them, with [syntax.obj.new]'s new
     // belonging to the definition rather than to what it makes.
     LHAT_TEST("an instance's signature carries fields and methods");
     run_checked_text(&r,
@@ -1423,9 +1423,9 @@ static void test_typeof(void)
     CHECK_STRING(&r, "t^{ sum : f^self^ -> number^;, x : number^, y : number^ }");
     run_dispose(&r);
 
-    // §14.7+: and the definition's says what it makes, in the self^{ … }
+    // [syntax.obj.members-order]: and the definition's says what it makes, in the self^{ … }
     // section a def^ writes its template as. What follows is its own -- new
-    // and the static members -- and §13.13's Self^ inside is the instance,
+    // and the static members -- and [syntax.type.self]'s Self^ inside is the instance,
     // which is what folds the ring the member's own type would otherwise be.
     LHAT_TEST("a definition's signature carries the instances in a section");
     run_checked_text(&r,
@@ -1438,7 +1438,7 @@ static void test_typeof(void)
                  "new : f^ -> Self^;, origin : f^ -> number^; }");
     run_dispose(&r);
 
-    // §14.4: the receiver is written as a parameter, so a signature with no
+    // [syntax.obj.self]: the receiver is written as a parameter, so a signature with no
     // self^ in it is a plain subroutine and nothing else.
     LHAT_TEST("a function's signature carries its parameters and result");
     run_text(&r,
@@ -1452,9 +1452,9 @@ static void test_typeof(void)
     CHECK_STRING(&r, "p^number^;");
     run_dispose(&r);
 
-    // §15.5: calling a yielding body does not run it -- it makes the coroutine
-    // §13.9 describes, so that is what the signature answers. Reading `result`
-    // alone would print §13.9's T, which is what the body returns rather than
+    // [syntax.sub.no-contagion]: calling a yielding body does not run it -- it makes the coroutine
+    // [syntax.type.coroutine] describes, so that is what the signature answers. Reading `result`
+    // alone would print [syntax.type.coroutine]'s T, which is what the body returns rather than
     // what the caller is handed.
     LHAT_TEST("a yielding body answers the coroutine it makes");
     run_checked_text(&r,
@@ -1463,7 +1463,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^};");
     run_dispose(&r);
 
-    // §13.9's third type is what a written result says, and it stays there.
+    // [syntax.type.coroutine]'s third type is what a written result says, and it stays there.
     LHAT_TEST("and what it returns is the third of the three");
     run_checked_text(&r,
                      "var^ g = p^ x:number^ -> string^ { yield^ x return^ \"z\" }\n"
@@ -1471,7 +1471,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^ -> string^};");
     run_dispose(&r);
 
-    // §13.8+2: a tuple in a result position is written bare -- the same
+    // [syntax.type.tuple-parens]: a tuple in a result position is written bare -- the same
     // reading the parameter side has always had, and the one the coroutine's
     // R already accepted. The parentheses are left to say the one thing they
     // still have to: that a union covers the whole tuple.
@@ -1498,7 +1498,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "f^string^, number^ -> string^, number^|nil^;");
     run_dispose(&r);
 
-    // §13.8+ with 04§8.2: an error stands beside a tuple rather than
+    // [syntax.type.tuple] with [errors.dropped.around-value]: an error stands beside a tuple rather than
     // folding into its positions, so the union is over the whole of it --
     // which is exactly what the parentheses say. Without them the text would
     // read as a union in the last position alone.
@@ -1521,7 +1521,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "f^ -> string^, number^|nil^;");
     run_dispose(&r);
 
-    // 05§8.7: and the bare spelling reads back as the type it names.
+    // [modules.host.import]: and the bare spelling reads back as the type it names.
     LHAT_TEST("the bare spelling round-trips as an annotation");
     run_checked_text(&r,
                      "var^ ny = f^ x:number^ {\n"
@@ -1535,9 +1535,9 @@ static void test_typeof(void)
                  "c^{f^string^, number^ -> string^, number^ -> string^}");
     run_dispose(&r);
 
-    // 05§8.7: typeof^'s answer reads back as a type, so writing that answer
+    // [modules.host.import]: typeof^'s answer reads back as a type, so writing that answer
     // into the literal has to give the same answer again. The three slots the
-    // proto carries are §13.9's three, never the c^{ … } around them -- holding
+    // proto carries are [syntax.type.coroutine]'s three, never the c^{ … } around them -- holding
     // the written form whole would have tag_type (vm.c) wrap it a second time.
     LHAT_TEST("and writing that coroutine back gives the same signature");
     run_checked_text(&r,
@@ -1547,10 +1547,10 @@ static void test_typeof(void)
     CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^ -> string^};");
     run_dispose(&r);
 
-    // §13.9: the three slots each say "none" in their own way, and typeof^
+    // [syntax.type.coroutine]: the three slots each say "none" in their own way, and typeof^
     // writes each one out as what it is -- '-' for a body that cannot end,
     // nothing at all for one that ends without a value or receives nothing.
-    // 05§8.7 wants every one of these to read back as the type it names.
+    // [modules.host.import] wants every one of these to read back as the type it names.
     LHAT_TEST("a body that cannot end writes its third slot '-'");
     run_checked_text(&r,
                      "var^ g = p^ { repeat^ { yield^ 1 } }\n"
@@ -1579,7 +1579,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "p^ -> c^{p^string^ -> number^};");
     run_dispose(&r);
 
-    // 04§2.4 sends a type mentioning an error to the instruction rather
+    // [errors.kind.nominal] sends a type mentioning an error to the instruction rather
     // than resolving it, so this is the path that reads the proto's slots.
     LHAT_TEST("and it holds when an error kind sends it to the instruction");
     run_checked_text(&r,
@@ -1590,7 +1590,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "p^ -> c^{p^ -> number^ -> string^|E.Bad};");
     run_dispose(&r);
 
-    // The two typeof^ paths (03§5.11+2's resolved one and the instruction)
+    // The two typeof^ paths ([pipeline.bc.typeof]'s resolved one and the instruction)
     // answer the same thing about the same value, so the coroutine a call
     // makes is written exactly as the signature promised it.
     LHAT_TEST("the coroutine itself reads the same as the promise");
@@ -1600,7 +1600,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "c^{p^ -> number^ -> string^}");
     run_dispose(&r);
 
-    // 03§3.4: nothing was written, and the body decided it. 03§5.11+2 takes the
+    // [pipeline.infer]: nothing was written, and the body decided it. [pipeline.bc.typeof] takes the
     // checker's answer here rather than walking the closure, which carries no
     // parameter types of its own beyond the written ones.
     LHAT_TEST("an inferred parameter type reaches the signature");
@@ -1610,7 +1610,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "f^number^, number^ -> number^;");
     run_dispose(&r);
 
-    // §14.10: what inference did not decide is written out as UNKNOWN,
+    // [syntax.obj.structure]: what inference did not decide is written out as UNKNOWN,
     // which is deliberately not a type expression -- writing any^ would hide
     // both that it is undecided and which member wants an annotation.
     LHAT_TEST("what inference did not decide is written UNKNOWN");
@@ -1627,9 +1627,9 @@ static void test_typeof(void)
     CHECK_STRING(&r, "f^UNKNOWN -> number^;");
     run_dispose(&r);
 
-    // 03§5.11+2 without the checker: the closure carries only what was written, so
+    // [pipeline.bc.typeof] without the checker: the closure carries only what was written, so
     // the walk answers any^ for the rest. What compiles without checking is
-    // unchanged by any of the above (03§4.2).
+    // unchanged by any of the above ([pipeline.repl.no-fork]).
     LHAT_TEST("relaxed preserves an unresolved parameter in the signature");
     run_text(&r,
              "var^ g = f^ x { 1 }\n"
@@ -1637,7 +1637,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "f^UNKNOWN -> number^;");
     run_dispose(&r);
 
-    // 04§2.4: identity is the declaration, so typeof^ answers with the
+    // [errors.kind.nominal]: identity is the declaration, so typeof^ answers with the
     // kind's own qualified name -- the example 04-errors.md 136 gives.
     LHAT_TEST("an error's signature is its qualified kind name");
     run_text(&r,
@@ -1647,14 +1647,14 @@ static void test_typeof(void)
     CHECK_STRING(&r, "IOError.NotFound");
     run_dispose(&r);
 
-    // §14.10: the sequence half is written as bare types, in order, with no
+    // [syntax.obj.structure]: the sequence half is written as bare types, in order, with no
     // names -- not as members keyed by their position.
     LHAT_TEST("a table literal's positional part has no names");
     run_checked_text(&r, "return^ typeof^({1, \"x\"}).signature\n");
     CHECK_STRING(&r, "t^{ number^, string^ }");
     run_dispose(&r);
 
-    // 02§2811: typeof^(x) = typeof^(y) is §11.3's structural identity, not
+    // 02§2811: typeof^(x) = typeof^(y) is [syntax.op.semantic]'s structural identity, not
     // the identity of the two LhatRuntimeType objects reflect_type built --
     // two separate calls never share one.
     LHAT_TEST("typeof^(x) = typeof^(y) compares structurally");
@@ -1667,7 +1667,7 @@ static void test_typeof(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
-    // §14.9: a name never takes part in identity -- two independently written
+    // [syntax.obj.name]: a name never takes part in identity -- two independently written
     // definitions of the same shape are the same type.
     LHAT_TEST("two unrelated definitions of the same shape are equal");
     run_checked_text(&r,
@@ -1685,7 +1685,7 @@ static void test_typeof(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
-    // §11.3+: which operand the receiver is says which way round the operator
+    // [syntax.op.right]: which operand the receiver is says which way round the operator
     // may be written, so two that differ in nothing else are still two types.
     LHAT_TEST("and an operator taking the other operand is another shape");
     run_checked_text(&r,
@@ -1697,7 +1697,7 @@ static void test_typeof(void)
     CHECK_BOOL(&r, false);
     run_dispose(&r);
 
-    // §14.4 with §14.16: and the signature says which, by where self^ stands.
+    // [syntax.obj.self] with [syntax.obj.typeof]: and the signature says which, by where self^ stands.
     LHAT_TEST("and the signature puts the receiver where it was written");
     run_checked_text(&r,
              "var^ B = def^{ self^{ n := 0 },\n"
@@ -1706,7 +1706,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "t^{ + : f^number^, self^ -> number^;, n : number^ }");
     run_dispose(&r);
 
-    // §14.10's round trip: what typeof^(x).signature answers with has to be
+    // [syntax.obj.structure]'s round trip: what typeof^(x).signature answers with has to be
     // usable as a type annotation.
     LHAT_TEST("the signature parses back as an annotation");
     run_text(&r,
@@ -1716,8 +1716,8 @@ static void test_typeof(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §14.5, §14.12: a multi-dispatched member is callable every way its arms
-    // list, which is what '&' means -- matching §14.12's own example.
+    // [syntax.obj.compose], [syntax.obj.override]: a multi-dispatched member is callable every way its arms
+    // list, which is what '&' means -- matching [syntax.obj.override]'s own example.
     LHAT_TEST("an overload^ed member's signature is an intersection");
     run_checked_text(&r,
              "var^ Foo = def^{ self^{}, foo := p^self^ { } }\n"
@@ -1727,7 +1727,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "t^{ foo : p^self^; & p^self^, string^; }");
     run_dispose(&r);
 
-    // §14.16: a cycle among VALUES is invisible to a static answer -- the
+    // [syntax.obj.typeof]: a cycle among VALUES is invisible to a static answer -- the
     // annotation said t^{}, and that is the type, however the tables ended
     // up holding each other. The walk that once had to survive this is gone.
     LHAT_TEST("a cycle between two tables is no concern of the type");
@@ -1754,7 +1754,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "t^{ next : t^{} }");
     run_dispose(&r);
 
-    // §14.16 with §14.7+: a definition's type carries its instances in the
+    // [syntax.obj.typeof] with [syntax.obj.members-order]: a definition's type carries its instances in the
     // self^{ … } section, so a plain table that happens to spell the same
     // members is not the same type -- what an instance would be is part of
     // what a definition is.
@@ -1776,7 +1776,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "t^{ a : t^{ v : number^ }, b : t^{ v : number^ } }");
     run_dispose(&r);
 
-    // §12.6 with §14.4: a dispose() a def^ wrote declares the receiver,
+    // [syntax.with.coroutine] with [syntax.obj.self]: a dispose() a def^ wrote declares the receiver,
     // so with^ calls it as a method. It used to be called plainly, which no
     // written dispose() could answer -- the coroutine's is a native member
     // and carries its receiver, so nothing caught this.
@@ -1790,7 +1790,7 @@ static void test_typeof(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // §13.4 keeps self^ out of the parameter list, so one written without it
+    // [syntax.type.param-names] keeps self^ out of the parameter list, so one written without it
     // takes no receiver and is called just the same.
     LHAT_TEST("and one written without a self^ is called too");
     run_checked_text(&r,
@@ -1801,8 +1801,8 @@ static void test_typeof(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // §13.12: and the target may be a '_^', which is the shape written when
-    // §12.6's disposal is the whole reason for the form.
+    // [syntax.type.discard]: and the target may be a '_^', which is the shape written when
+    // [syntax.with.coroutine]'s disposal is the whole reason for the form.
     LHAT_TEST("a '_^' target is disposed the same way");
     run_checked_text(&r,
                      "var^ log = { n := 0 }\n"
@@ -1813,9 +1813,9 @@ static void test_typeof(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // §12.1 with §13.2: the block answers for the subroutine around it,
-    // and §12.6's disposal still runs on the way out. Written this way the
-    // whole of 04§5.1's shape holds together -- which the checker refused
+    // [syntax.with.form] with [syntax.type.empty]: the block answers for the subroutine around it,
+    // and [syntax.with.coroutine]'s disposal still runs on the way out. Written this way the
+    // whole of [errors.try.form]'s shape holds together -- which the checker refused
     // to look at until it counted a with^ among the ways a body ends.
     LHAT_TEST("a return^ inside a with^ answers, and still disposes");
     run_checked_text(&r,
@@ -1840,7 +1840,7 @@ static void test_typeof(void)
         LHAT_CHECK_EQ_INT(lhat_takes_receiver((r)->ran.value), (expected));   \
     } while (0)
 
-// §14.7: what an instance may call and what belongs to the definition
+// [syntax.obj.instance]: what an instance may call and what belongs to the definition
 // alone are told apart by one thing -- whether the member takes a receiver.
 // A host reads the same answer through lhat_takes_receiver, which is what
 // lets it say which members are static.
@@ -1866,7 +1866,7 @@ static void test_takes_receiver(void)
     CHECK_TAKES_RECEIVER(&r, false);
     run_dispose(&r);
 
-    // §14.11: the new a definition gets when it writes none takes nothing,
+    // [syntax.obj.new]: the new a definition gets when it writes none takes nothing,
     // so it falls on the same side as a static member.
     LHAT_TEST("the default new takes no receiver");
     run_text(&r,
@@ -1877,7 +1877,7 @@ static void test_takes_receiver(void)
     CHECK_TAKES_RECEIVER(&r, false);
     run_dispose(&r);
 
-    // §11.3+: an op^ may write its self^ last, which says the RIGHT operand
+    // [syntax.op.right]: an op^ may write its self^ last, which says the RIGHT operand
     // is the receiver. It is still a receiver.
     LHAT_TEST("a self^-last op^ takes one all the same");
     run_text(&r,
@@ -1888,7 +1888,7 @@ static void test_takes_receiver(void)
     CHECK_TAKES_RECEIVER(&r, true);
     run_dispose(&r);
 
-    // §14.12: which arm a call means is settled at the call, so a group
+    // [syntax.obj.override]: which arm a call means is settled at the call, so a group
     // answers for the call that would need a receiver arranged.
     LHAT_TEST("an overload^ group answers for any arm that takes one");
     run_text(&r,
@@ -1909,8 +1909,8 @@ static void test_takes_receiver(void)
     run_dispose(&r);
 }
 
-// §14.7+2: delegate^ -- what a definition holds shows through as its
-// own. The machine's half: a third leg of §14.7's walk, and the receiver a
+// [syntax.obj.delegate]: delegate^ -- what a definition holds shows through as its
+// own. The machine's half: a third leg of [syntax.obj.instance]'s walk, and the receiver a
 // delegated member is called with.
 //
 // The receiver is the thing worth pinning. A delegated member belongs to the
@@ -1979,12 +1979,12 @@ static void test_delegate(void)
                      "let^ b = Shared.new()\n"
                      "a.bump()\n"
                      // One value behind both, which is what a definition's
-                     // member is (§14.3).
+                     // member is ([syntax.obj.methods]).
                      "return^ b.read()\n");
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
-    // §14.7's order, reaching through to the delegate last.
+    // [syntax.obj.instance]'s order, reaching through to the delegate last.
     LHAT_TEST("a member written here wins over the delegate's");
     run_checked_text(&r,
                      "let^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
@@ -1998,7 +1998,7 @@ static void test_delegate(void)
     CHECK_INTEGER(&r, 99);
     run_dispose(&r);
 
-    // §14.2 fixes the chain at the definition, not the value in the field --
+    // [syntax.obj.chain] fixes the chain at the definition, not the value in the field --
     // so writing another delegate in is an ordinary field write.
     LHAT_TEST("the field may be written, and the delegation follows it");
     run_checked_text(&r,
@@ -2020,7 +2020,7 @@ static void test_delegate(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // §14.7: what an instance sees is what takes a receiver, and delegation
+    // [syntax.obj.instance]: what an instance sees is what takes a receiver, and delegation
     // does not widen that -- a static member of the delegate stays the
     // delegate's.
     LHAT_TEST("a static member of the delegate is not delegated");
@@ -2036,7 +2036,7 @@ static void test_delegate(void)
     run_dispose(&r);
 }
 
-// §14.15: a declaration reserves the seat -- the key with no value.
+// [syntax.obj.abstract]: a declaration reserves the seat -- the key with no value.
 // The prototype and every clone carry it from birth: the walkers show it as
 // (key, nil^), a read answers nil^ as ever, filling it changes no layout
 // (the member cache survives new), and nil^ over a declared field puts the
@@ -2084,7 +2084,7 @@ static void test_reserved_seats(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     {
         const LhatTable *made = (const LhatTable *)lhat_as_object(r.ran.value);
-        // The whole of what keeps 12§3's member cache standing.
+        // The whole of what keeps [spec.member-cache]'s member cache standing.
         LHAT_CHECK_EQ_INT(made->version, 0);
         LhatValue key = lhat_nil();
         LHAT_CHECK(lhat_machine_make_string(r.machine, "v", 1, &key), "a key");
@@ -2130,7 +2130,7 @@ static void test_reserved_seats(void)
     run_dispose(&r);
 
     // The checker refuses a declaration over a member the same chain
-    // provides (§14.15); compiled unchecked, the seat is dropped at the seal
+    // provides ([syntax.obj.abstract]); compiled unchecked, the seat is dropped at the seal
     // and the member answers as it always did.
     LHAT_TEST("a seat naming what the definition answers is dropped");
     run_text(&r,
@@ -2145,9 +2145,9 @@ static void test_reserved_seats(void)
 }
 
 
-// §14.17+ with §14.7: the two spellings are one member, so what the
+// [syntax.obj.tostring-hat] with [syntax.obj.instance]: the two spellings are one member, so what the
 // wrapper wrote beats what its delegate holds under the other one -- and the
-// machine has to say so too (03§4.2). Walking the whole chain for the
+// machine has to say so too ([pipeline.repl.no-fork]). Walking the whole chain for the
 // spelling asked for before trying the other is what let the delegate answer.
 static void test_two_spellings_are_one_member(void)
 {
@@ -2190,7 +2190,7 @@ static void test_two_spellings_are_one_member(void)
 }
 
 
-// §14.15 with §14.7: a definition that declares a member beside a
+// [syntax.obj.abstract] with [syntax.obj.instance]: a definition that declares a member beside a
 // delegate^ lending it, completed by a composition. The provider answers,
 // not the delegate -- what the checker lets through has to run that way.
 static void test_declared_beside_a_delegate(void)
@@ -2213,7 +2213,7 @@ static void test_declared_beside_a_delegate(void)
 }
 
 
-// §14.7+2 with §14.5: what the checker now lets through after a
+// [syntax.obj.delegate] with [syntax.obj.compose]: what the checker now lets through after a
 // name-form '..' has to be what the machine lends -- and when both parts
 // delegate, the last part's link is the one that answers.
 static void test_composition_keeps_delegation(void)

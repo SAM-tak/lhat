@@ -19,7 +19,7 @@ static LhatTestRan run_source(const char *text)
 }
 
 // One compiled pattern, narrowed, used, disposed. `body` names it `r`.
-// §13.11 is what narrows it: inside the branch `made` is the arm that fitted,
+// [syntax.type.fits] is what narrows it: inside the branch `made` is the arm that fitted,
 // so binding it takes that type and no cast is wanted.
 #define WITH_REGEX(pattern, body)              \
     "import^ std.regex\n"                      \
@@ -91,7 +91,7 @@ static void test_match(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // §14.19's counting: ordinals are characters, so a UTF-8 subject
+    // [syntax.obj.substring]'s counting: ordinals are characters, so a UTF-8 subject
     // answers the same ordinal a substring call would use.
     LHAT_TEST("a class ranges over code points");
     {
@@ -148,7 +148,7 @@ static void test_gsub(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 03§3.4+: the callback's three parameters read off the seat's one func
+    // [pipeline.infer.expected]: the callback's three parameters read off the seat's one func
     // arm, so nothing is written on them.
     LHAT_TEST("a function replacement is handed match, ordinal and captures");
     {

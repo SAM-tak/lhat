@@ -1,4 +1,4 @@
-// L^ (lhat) -- tests for the fixes a diagnostic carries (07§6).
+// L^ (lhat) -- tests for the fixes a diagnostic carries ([lsp.next]).
 //
 // What is pinned is the bargain a quick fix makes: the edits land on the spot
 // the writer would have changed, and applying one answers the diagnostic. A
@@ -43,7 +43,7 @@ static size_t diagnostic_of(const LhatUnit *unit, const char *id)
 }
 
 // Whether `text` checks with nothing to report -- what an applied fix has to
-// leave behind. 03§3.1's strict reading, the one a tool asks for.
+// leave behind. [pipeline.strict.per-unit]'s strict reading, the one a tool asks for.
 static bool is_clean(const char *text)
 {
     LhatProgram program;
@@ -116,7 +116,7 @@ static size_t fix_case(const char *text, const char *id, size_t which,
 }
 
 // ---------------------------------------------------------------------------
-// The parser's one fix (07§6), through the same storage the checker uses.
+// The parser's one fix ([lsp.next]), through the same storage the checker uses.
 
 static void test_parser(void)
 {
@@ -141,7 +141,7 @@ static void test_parser(void)
 }
 
 // ---------------------------------------------------------------------------
-// §8.9: the word a name was bound with, rewritten where it stands.
+// [syntax.stmt.let]: the word a name was bound with, rewritten where it stands.
 
 static void test_words(void)
 {
@@ -162,7 +162,7 @@ static void test_words(void)
         LHAT_CHECK(is_clean(patched), "and the source it makes is clean");
     }
 
-    // §12.1 and §16.3+2 bind without a word being written, so there is none to
+    // [syntax.with.form] and [syntax.for.from] bind without a word being written, so there is none to
     // rewrite -- the same reason the message does not offer var^ either.
     LHAT_TEST("a write to a name a construct bound offers nothing");
     {
@@ -176,7 +176,7 @@ static void test_words(void)
                           0);
     }
 
-    // 05§4: a public^ takes the node's start, so the word is not where
+    // [modules.public]: a public^ takes the node's start, so the word is not where
     // the diagnostic is -- which is why a binding remembers where it stands.
     LHAT_TEST("a published var^ offers the let^ it has to be");
     {
@@ -199,7 +199,7 @@ static void test_words(void)
 
 static void test_spellings(void)
 {
-    // §14.10: the one fix that may be applied without being read -- the word
+    // [syntax.obj.structure]: the one fix that may be applied without being read -- the word
     // is right and only the braces are missing.
     LHAT_TEST("a bare t^ offers its braces, and may be applied unread");
     {
@@ -218,7 +218,7 @@ static void test_spellings(void)
         LHAT_CHECK(is_clean(patched), "and the source it makes is clean");
     }
 
-    // §8.7 with 01§8: the sigil is glued to the name, and what comes off
+    // [syntax.stmt.visible] with [lex.scope]: the sigil is glued to the name, and what comes off
     // is the sigil alone.
     LHAT_TEST("a specifier on a let^ offers its own removal");
     {
@@ -238,7 +238,7 @@ static void test_spellings(void)
 }
 
 // ---------------------------------------------------------------------------
-// §14.12: the marker that says how a member joins the group.
+// [syntax.obj.override]: the marker that says how a member joins the group.
 
 static const char *const BASE =
     "var^ Foo = def^{\n"
@@ -296,7 +296,7 @@ static void test_markers(void)
 }
 
 // ---------------------------------------------------------------------------
-// 04§8.3 and §15.8: a statement that drops what the call answered.
+// [errors.dropped.answer] and [syntax.sub.await]: a statement that drops what the call answered.
 
 static void test_dropped(void)
 {
@@ -345,7 +345,7 @@ static void test_dropped(void)
 }
 
 // ---------------------------------------------------------------------------
-// 07§6: a misspelling, offered the nearest name that is there. The candidates
+// [lsp.next]: a misspelling, offered the nearest name that is there. The candidates
 // are the lists completion offers from the same spot, so a suggestion is
 // never a name the checker would refuse for another reason.
 
@@ -388,7 +388,7 @@ static void test_near(void)
                           0);
     }
 
-    // §14.19: the built-ins are no type's list, so they are asked of the
+    // [syntax.obj.substring]: the built-ins are no type's list, so they are asked of the
     // checker one spelling at a time -- the same way completion asks.
     LHAT_TEST("a member no receiver holds offers a built-in one");
     near_case("let^ s = \"abc\"\nlet^ n : number^ = s.lenght\n",
@@ -406,7 +406,7 @@ static void test_near(void)
         near_case(text, "check.no-member.named", "foo", expected);
     }
 
-    // §14.11: what a construction writes is a field, so a method of the
+    // [syntax.obj.new]: what a construction writes is a field, so a method of the
     // definition is not offered for one.
     LHAT_TEST("a field the template does not hold offers one it does");
     near_case("var^ C = def^{\n"
@@ -430,7 +430,7 @@ static void test_near(void)
 }
 
 // ---------------------------------------------------------------------------
-// 07§6: the fixes that need no reading, all at once -- a machine fix that
+// [lsp.next]: the fixes that need no reading, all at once -- a machine fix that
 // is its diagnostic's only one, in source order.
 
 static void test_all(void)

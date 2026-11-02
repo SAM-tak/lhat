@@ -1,8 +1,8 @@
-// L^ (lhat) -- tests for §13.14: a written type as an expression.
+// L^ (lhat) -- tests for [syntax.type.as-expr]: a written type as an expression.
 //
 // A type spelling standing where a value is wanted is the descriptor
 // typeof^ answers, and the name a let^ binds one to stands for the type in
-// type positions -- the alias. The parse never backtracks (01§4.5): t^{
+// type positions -- the alias. The parse never backtracks ([lex.number.exponent]): t^{
 // and c^{ decide on two tokens, an f^/p^ head is read once and the '{' or
 // the ';' says which it was, and a '|' after a run of names re-reads the
 // run as the type name it already spells.
@@ -179,7 +179,7 @@ static void test_parse_discrimination(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.3: a written signature carries no parameter names.
+    // [syntax.type.semicolon]: a written signature carries no parameter names.
     LHAT_TEST("a named parameter in a signature is refused");
     check_text(&u, "let^ S = f^ x:number^ -> nil^;\n");
     LHAT_CHECK_EQ_INT(syntax_errors(&u), 1);
@@ -198,7 +198,7 @@ static void test_parse_discrimination(void)
     unit_dispose(&u);
 }
 
-// §13.14+: X.ReturnType is what a call of X answers, written where a
+// [syntax.type.return-type]: X.ReturnType is what a call of X answers, written where a
 // type stands or as the descriptor a written type is.
 static void test_return_type(void)
 {
@@ -221,7 +221,7 @@ static void test_return_type(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §15.5: a call of a yielding body answers the coroutine, so that is
+    // [syntax.sub.no-contagion]: a call of a yielding body answers the coroutine, so that is
     // what its ReturnType is -- and c^{ … } is not taken apart further.
     LHAT_TEST("a yielding body's ReturnType is the coroutine");
     check_text(&u,
@@ -240,7 +240,7 @@ static void test_return_type(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // §13.14's rule for the value: a let^ binding it names the type, a var^
+    // [syntax.type.as-expr]'s rule for the value: a let^ binding it names the type, a var^
     // holds a descriptor and names nothing.
     LHAT_TEST("let^ binds a ReturnType as an alias");
     check_text(&u,
@@ -273,7 +273,7 @@ static void test_return_type(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNKNOWN_TYPE);
     unit_dispose(&u);
 
-    // §13.2: no '-> …' is no result, which is not nil^ -- so there is
+    // [syntax.type.empty]: no '-> …' is no result, which is not nil^ -- so there is
     // nothing to name, in either position.
     LHAT_TEST("a signature answering no value has none, as a type");
     check_text(&u,
@@ -316,7 +316,7 @@ static void test_runtime(void)
              "let^ N = number^|nil^\n"
              "let^ one : N = 1\n"
              "if^ typeof^(one) = number^|nil^ { n := n + 1000 }\n"
-             // §13.14+: the fold and the reflection spell the same coroutine.
+             // [syntax.type.return-type]: the fold and the reflection spell the same coroutine.
              "let^ walk = p^ k:number^ { yield^ k }\n"
              "let^ co = walk(1)\n"
              "if^ walk.ReturnType.signature = typeof^(co).signature {"
@@ -325,7 +325,7 @@ static void test_runtime(void)
     CHECK_INTEGER(&r, 11121);
     run_dispose(&r);
 
-    // 03§4.2: nothing checked, so nothing folded -- the machine answers
+    // [pipeline.repl.no-fork]: nothing checked, so nothing folded -- the machine answers
     // the member off the closure's own signature.
     LHAT_TEST("13.14改: unchecked, the machine answers a closure's ReturnType");
     run_text(&r,
