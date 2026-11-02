@@ -189,16 +189,14 @@ void lsp_lton_resolve(LhatProgram *program, LhatUnit *unit)
 {
 #if LHAT_WITH_RESOLUTIONS
     if (unit->parsed.root == NULL) return;
-    const LhatNode *answer = unit->parsed.root->v.list.items;
-    if (answer == NULL || answer->kind != LHAT_NODE_RETURN) return;
-    const LhatNode *call = answer->v.jump.value;
-    if (call == NULL || call->kind != LHAT_NODE_CALL) return;
-    const LhatNode *function = call->v.access.target;
-    if (function == NULL || function->kind != LHAT_NODE_FUNC || function->v.func.body == NULL) return;
     DataNames names = {unit, NULL, 0};
-    for (const LhatNode *s = function->v.func.body->v.list.items; s != NULL; s = s->next) {
+    for (const LhatNode *s = unit->parsed.root->v.list.items; s != NULL; s = s->next) {
         if (s->kind == LHAT_NODE_RETURN) {
-            data_walk(&names, s->v.jump.value);
+            const LhatNode *call = s->v.jump.value;
+            const LhatNode *function = call != NULL && call->kind == LHAT_NODE_CALL ? call->v.access.target : NULL;
+            const LhatNode *body = function != NULL && function->kind == LHAT_NODE_FUNC ? function->v.func.body : NULL;
+            const LhatNode *answer = body != NULL ? body->v.list.items : NULL;
+            if (answer != NULL && answer->kind == LHAT_NODE_RETURN) data_walk(&names, answer->v.jump.value);
             break;
         }
         const LhatNode *expr = s->kind == LHAT_NODE_DEFINE ? s->v.binding.values : s;

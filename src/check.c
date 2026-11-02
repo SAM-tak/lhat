@@ -1004,6 +1004,7 @@ static void resolve_members_into(Checker *c, LhatType *table,
         if (!chk_node_name(c, m->v.entry.key, &name, &length)) {
             continue;
         }
+        chk_check_tostring_shape(c, m, member, name, length, false);
         chk_member_declared_at(
             c, lhat_type_add_member(c->result->types, table, name, length,
                                     member),
@@ -2257,6 +2258,42 @@ void chk_refuse_self_last(Checker *c, const LhatNode *at,
     }
     if (type->kind == LHAT_TYPE_FUNC && type->v.func.self_last) {
         chk_report(c, at, LHAT_CHECK_ERR_SELF_LAST_NOT_OPERATOR);
+    }
+}
+
+// 14.17: tostring is 'f^self^ -> string^'. A hole of 01 の 5.4 calls it on the
+// value's behalf with no call written, so 15.1 has nothing to catch there --
+// what stands under the name is held to that shape where it is written
+// instead. `both` says whether the bare spelling is the same member here
+// (everything but a plain table, 14.17改); every arm of an overload is a
+// candidate a hole may reach, so each has to be an f^.
+static bool tostring_fits(const LhatType *type, const LhatType *shape)
+{
+    if (type->kind == LHAT_TYPE_INTERSECT) {
+        for (const LhatTypeList *arm = type->v.composite.arms; arm != NULL;
+             arm = arm->next) {
+            if (arm->type->kind != LHAT_TYPE_FUNC || !arm->type->v.func.is_function) {
+                return false;
+            }
+        }
+    }
+    return lhat_type_conforms(type, shape);
+}
+
+void chk_check_tostring_shape(Checker *c, const LhatNode *at, const LhatType *type,
+                              const char *name, size_t length, bool both)
+{
+    if (!chk_name_is(name, both ? lhat_member_held_as(name, length) : length,
+                     both ? "tostring" : "tostring^") ||
+        type == NULL || type->kind == LHAT_TYPE_UNKNOWN ||
+        type->kind == LHAT_TYPE_PENDING) {
+        return;
+    }
+    LhatType *shape = lhat_type_func(c->result->types, true);
+    shape->v.func.takes_self = true;
+    shape->v.func.result = chk_simple(c, LHAT_TYPE_STRING);
+    if (!tostring_fits(type, shape)) {
+        chk_report(c, at, LHAT_CHECK_ERR_BAD_TOSTRING);
     }
 }
 
@@ -4902,6 +4939,12 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE] = {"check.function-changes-table",
         "an f^ may change only a table its own body made; this one "
         "came from somewhere else"},
+    [LHAT_CHECK_ERR_FUNCTION_REQUIRES] = {"check.function-requires",
+        "an f^ may not require^: requiring runs the unit's body, "
+        "which nothing holds to an f^'s rules"},
+    [LHAT_CHECK_ERR_BAD_TOSTRING] = {"check.bad-tostring",
+        "tostring is an f^self^ -> string^, since a string hole calls "
+        "it with no call written; this member is not one"},
     [LHAT_CHECK_ERR_PATH_IS_OPAQUE] = {"check.path-is-opaque",
         "this type carries what registered it, so what it holds "
         "cannot be written over"},

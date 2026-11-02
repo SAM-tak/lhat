@@ -307,6 +307,7 @@ static void define_path(Checker *c, const LhatNode *target, LhatType *type,
         chk_expect(c, target, type, found->type, LHAT_CHECK_ERR_MISMATCH);
         return;
     }
+    chk_check_tostring_shape(c, target, type, name, length, false);
     lhat_type_add_member(c->result->types, owner, name, length, type);
 }
 
@@ -1020,6 +1021,9 @@ static void record_required_root(Checker *c, const LhatNode *node,
 static void check_require_stmt(Checker *c, const LhatNode *node)
 {
     const LhatNode *path = node->v.jump.value;
+    if (c->in_function) {
+        chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_REQUIRES);
+    }
     if (path == NULL || c->require.resolve == NULL) {
         return;
     }

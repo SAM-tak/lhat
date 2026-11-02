@@ -238,6 +238,12 @@ typedef enum {
                                            // -- this one is not one the body
                                            // made, so changing it is
                                            // observable from outside
+    LHAT_CHECK_ERR_FUNCTION_REQUIRES,   // 05 の 5.3: require^ runs the unit,
+                                        // a body of its own, which an f^ may
+                                        // not have run on its behalf
+    LHAT_CHECK_ERR_BAD_TOSTRING,        // 14.17: a member under tostring is
+                                        // f^self^ -> string^, since a hole
+                                        // calls it with no call written
     LHAT_CHECK_ERR_PATH_IS_OPAQUE,      // 05 の 8.8: a host type carries what
                                         // the host registered, and 14.16's
                                         // type info what made it; neither is

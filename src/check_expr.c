@@ -4310,6 +4310,7 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
         size_t length = 0;
         chk_refuse_hat_name(c, entry->v.entry.key, true);
         if (chk_node_name(c, entry->v.entry.key, &name, &length)) {
+            chk_check_tostring_shape(c, entry, value, name, length, false);
             // A seeded signature is written over with what the body turned
             // out to be -- one member, never two of one name.
             const LhatTypeMember *already =
@@ -6241,6 +6242,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                     declared = lhat_type_intersect(c->result->types,
                                                   required->type, declared);
                 }
+                chk_check_tostring_shape(c, field, declared, name, length, true);
                 LhatTypeMember *added =
                     set_member_as(c, instance, name, length, declared, true);
                 if (added != NULL) { added->instance_field = true; }
@@ -6276,6 +6278,8 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 chk_report_named(c, field->v.entry.value,
                                  LHAT_CHECK_ERR_MUTABLE_DEFAULT, name, length);
             }
+            chk_check_tostring_shape(c, field, written != NULL ? written : actual,
+                                     name, length, true);
             LhatTypeMember *added = set_member(
                 c, instance, name, length, written != NULL ? written : actual);
             if (added != NULL) { added->instance_field = true; }
@@ -6365,6 +6369,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 } else {
                     chk_refuse_self_last(c, entry, declared);
                 }
+                chk_check_tostring_shape(c, entry, declared, name, length, true);
                 if (hidden != NULL && !hidden->abstract) {
                     // Already provided, so the declaration asks for nothing.
                     chk_report(c, entry, LHAT_CHECK_ERR_ALREADY_PROVIDED);
@@ -6494,6 +6499,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
             } else {
                 chk_refuse_self_last(c, entry, type);
             }
+            chk_check_tostring_shape(c, entry, type, name, length, true);
             // 14.15改: an override^ that found nothing waits for a
             // composition to bring what it replaces. Until then super^ inside
             // it points at nothing, so 14.11's new has to stay out of reach.
@@ -7453,6 +7459,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             // insist the path be written out, so there is text here to hand
             // the resolver rather than an expression to evaluate.
             const LhatNode *path = node->v.jump.value;
+            if (c->in_function) {
+                chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_REQUIRES);
+            }
             if (path == NULL || c->require.resolve == NULL) {
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }

@@ -745,6 +745,8 @@ void chk_dispose_operator_carriers(Checker *c);
 void chk_check_operator_shape(Checker *c, const LhatNode *at,
                               const LhatType *type, const char *name,
                               size_t length);
+void chk_check_tostring_shape(Checker *c, const LhatNode *at, const LhatType *type,
+                              const char *name, size_t length, bool both);
 void chk_refuse_self_last(Checker *c, const LhatNode *at,
                           const LhatType *type);
 LhatType *chk_builtin_operator(Checker *c, LhatTypeKind carrier,

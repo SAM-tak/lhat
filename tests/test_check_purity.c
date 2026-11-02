@@ -654,6 +654,60 @@ static void test_purity(void)
                "var^ f = f^ { o.bar() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
+
+    // 05 の 5.3: requiring runs the unit's body, and nothing holds that body
+    // to an f^'s rules.
+    LHAT_TEST("an f^ may not require^");
+    check_text(&u, "var^ f = f^ -> number^ { let^ m = require^ 'm.lh' return^ 0 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_REQUIRES);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor as a statement");
+    check_text(&u, "var^ f = f^ { require^ 'm.lh' }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_REQUIRES);
+    unit_dispose(&u);
+
+    // 14.17: a hole calls tostring with no call written, so 15.1 cannot
+    // catch a p^ there -- the member is held to f^self^ -> string^ instead.
+    LHAT_TEST("a def^'s tostring may not be a p^");
+    check_text(&u,
+               "var^ P = def^{ self^{}, tostring = p^self^ -> string^ "
+               "{ return^ \"p\" } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_TOSTRING);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor answer anything but a string^");
+    check_text(&u,
+               "var^ P = def^{ self^{}, tostring^ = f^self^ -> number^ "
+               "{ return^ 1 } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_TOSTRING);
+    unit_dispose(&u);
+
+    LHAT_TEST("a plain table's tostring^ is held the same way");
+    check_text(&u, "var^ t = { tostring^ = 5 }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_TOSTRING);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so is one added to it later");
+    check_text(&u,
+               "var^ t = { a = 1 }\n"
+               "var^ t.tostring^ := p^self^ -> string^ { return^ \"x\" }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_TOSTRING);
+    unit_dispose(&u);
+
+    // 14.17改: there the bare spelling is the writer's own name.
+    LHAT_TEST("but a plain table's bare tostring is anything");
+    check_text(&u, "var^ t = { tostring = p^ -> number^ { return^ 1 } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("an f^self^ -> string^ tostring checks clean");
+    check_text(&u,
+               "var^ P = def^{ self^{}, tostring = f^self^ -> string^ "
+               "{ return^ \"ok\" } }\n"
+               "var^ t = { tostring^ = f^self^ -> string^ { return^ \"ok\" } }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
 }
 
 // 8.9: var^ binds a name a ':=' may reach and let^ one it may not. The rule is

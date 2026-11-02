@@ -5472,14 +5472,17 @@ void lhat_parse_lton(LhatLexer *lexer, LhatParseResult *result)
     if (answer && body && function && answers && call && outer_answer &&
         result->root) {
         answer->v.jump.value = table;
-        lhat_node_append(&head, &tail, finish(&p, answer));
-        body->v.list.items = head;
+        body->v.list.items = finish(&p, answer);
         function->v.func.is_function = true;
         function->v.func.return_type = finish(&p, answers);
         function->v.func.body = finish(&p, body);
         call->v.access.target = finish(&p, function);
         outer_answer->v.jump.value = finish(&p, call);
-        result->root->v.list.items = finish(&p, outer_answer);
+        // 02 の 15.1: requiring runs a unit, which no f^ does on its own
+        // behalf -- so the preamble stands at the unit's top, outside the
+        // f^ the data is read in, and the data reaches its names by capture.
+        lhat_node_append(&head, &tail, finish(&p, outer_answer));
+        result->root->v.list.items = head;
         finish(&p, result->root);
         result->root->offset = 0;
         result->root->line = result->root->column = 1;
