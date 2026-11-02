@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """L^ (lhat) -- compile jit/stencils.c and write the stencils as C arrays.
 
-Only someone changing the stencils runs this. What it writes is committed
-(jit/stencils_<target>.h), so building the JIT needs neither Python nor any
-particular Clang -- only the C compiler the rest of the build uses.
+What it writes is committed (jit/stencils_<target>.h), so building the JIT
+needs neither Python nor any particular Clang -- only the C compiler the
+rest of the build uses. The build runs this with --if-stale wherever it
+finds Python, so an edit to a source regenerates the header on the next
+build; without Clang it only says the header is out of date.
 
-    python scripts/gen_stencils.py --clang <path to clang>
-    python scripts/gen_stencils.py --check   # fail if a source changed since
+    python scripts/gen_stencils.py [--clang <path to clang>]
+    python scripts/gen_stencils.py --if-stale  # only when a source changed
+    python scripts/gen_stencils.py --check     # fail if a source changed since
 
-The header records a hash of the sources it was made from (SOURCES below).
---check compares that and nothing else: the bytes themselves depend on
+The header records a hash of the sources it was made from (SOURCES below),
+comments left out: a comment changes no byte. --check compares that and
+nothing else: the bytes themselves depend on
 which Clang made them, so regenerating to compare would fail between two
 machines whose stencils are equally right. What it catches is an edit to
 a source that was never followed by a run of this.
@@ -32,9 +36,11 @@ nothing they could point at would follow.
 """
 
 import argparse
+import glob
 import hashlib
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -50,6 +56,9 @@ PREFIX = "lhat_jit_s_"
 SOURCES = ["jit/stencils.c", "jit/jit.h", "include/lhat/value.h",
            "include/lhat/object.h", "include/lhat/config.h"]
 HASH_LINE = re.compile(r"^// Sources: sha256:([0-9a-f]{64})$", re.M)
+# A comment, or a literal a comment marker inside it must not cut.
+COMMENT = re.compile(rb'//[^\n]*|/\*.*?\*/|("(?:\\.|[^"\\\n])*"|'
+                     rb"'(?:\\.|[^'\\\n])*')", re.S)
 
 # What the stencils read of the layouts they share with the runtime. The ELF
 # compile measures them, and the header asserts the same numbers where the
@@ -124,9 +133,37 @@ def sources_hash():
     digest = hashlib.sha256()
     for path in SOURCES:
         with open(os.path.join(ROOT, path), "rb") as f:
-            # Line endings are a checkout's, not the source's.
-            digest.update(f.read().replace(b"\r\n", b"\n"))
+            text = COMMENT.sub(lambda m: m.group(1) or b" ", f.read())
+        # Line endings are a checkout's, and the blank lines and trailing
+        # space a comment leaves behind are not the source's either.
+        for line in text.splitlines():
+            if line.strip():
+                digest.update(line.rstrip() + b"\n")
     return digest.hexdigest()
+
+
+def recorded_hash():
+    with open(OUTPUT, encoding="utf-8") as f:
+        recorded = HASH_LINE.search(f.read())
+    return recorded and recorded.group(1)
+
+
+def find_clang():
+    """clang on PATH, else LLVM's own install, else Visual Studio's."""
+    found = shutil.which("clang")
+    if found or os.name != "nt":
+        return found
+    candidates = [os.path.join(os.environ.get("ProgramFiles", ""),
+                               "LLVM", "bin", "clang.exe")]
+    vswhere = os.path.join(os.environ.get("ProgramFiles(x86)", ""),
+                           "Microsoft Visual Studio", "Installer", "vswhere.exe")
+    if os.path.isfile(vswhere):
+        install = subprocess.run(
+            [vswhere, "-latest", "-products", "*", "-property",
+             "installationPath"], capture_output=True, text=True).stdout
+        candidates.append(os.path.join(install.strip(), "VC", "Tools", "Llvm",
+                                       "x64", "bin", "clang.exe"))
+    return next((c for c in candidates if os.path.isfile(c)), None)
 
 
 def compile_c(clang, source_path):
@@ -276,22 +313,42 @@ def render(stencils, layout):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--clang", default="clang")
+    parser.add_argument("--clang", help="default: what find_clang finds")
     parser.add_argument("--check", action="store_true",
                         help="fail if a source changed since the header was "
                              "made; needs no Clang, writes nothing")
+    parser.add_argument("--if-stale", action="store_true",
+                        help="regenerate only if a source changed; without "
+                             "Clang, warn instead of failing")
+    parser.add_argument("--sources", action="store_true",
+                        help="print SOURCES, one absolute path a line")
     args = parser.parse_args()
 
-    if args.check:
-        with open(OUTPUT, encoding="utf-8") as f:
-            recorded = HASH_LINE.search(f.read())
-        if recorded is None or recorded.group(1) != sources_hash():
-            sys.exit(f"{os.path.relpath(OUTPUT, ROOT)} is out of date: "
-                     "run scripts/gen_stencils.py")
+    if args.sources:
+        print("\n".join(os.path.join(ROOT, p).replace(os.sep, "/")
+                        for p in SOURCES))
         return
+    stale = recorded_hash() != sources_hash()
+    out_of_date = (f"{os.path.relpath(OUTPUT, ROOT)} is out of date: "
+                   "run scripts/gen_stencils.py")
+    if args.check:
+        if stale:
+            sys.exit(out_of_date)
+        return
+    if args.if_stale and not stale:
+        return
+    clang = args.clang or find_clang()
+    if clang is None:
+        if args.if_stale:
+            print(f"warning: {out_of_date} where Clang is found",
+                  file=sys.stderr)
+            return
+        sys.exit("Clang was not found: install LLVM or Visual Studio's "
+                 "Clang tools, or pass --clang")
+    print(f"Generating JIT stencils with {clang}")
     stencils = extract(*read_elf(compile_c(
-        args.clang, os.path.join(ROOT, "jit", "stencils.c"))))
-    text = render(stencils, measure_layout(args.clang))
+        clang, os.path.join(ROOT, "jit", "stencils.c"))))
+    text = render(stencils, measure_layout(clang))
     with open(OUTPUT, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
 

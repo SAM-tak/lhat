@@ -407,7 +407,7 @@ cmake --build --preset release
 環境変数 `LHAT_JIT=0` を設定すると、同じバイナリのまま JIT を使わずに実行します。
 機械語の型紙 `jit/stencils_x86_64-windows.h` は生成済みのものをリポジトリに含めています。
 [`jit/stencils.c`](jit/stencils.c) や、型紙が参照する値の構造を変更した場合は、
-`python scripts/gen_stencils.py --clang <clang のパス>` で再生成してください。
+Python と Clang が見つかればビルドが再生成します（手動なら `python scripts/gen_stencils.py [--clang <clang のパス>]`）。
 JIT を有効にしたビルド自体に Python は不要です。
 
 ## 拡張DLLの型情報を出力する

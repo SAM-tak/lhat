@@ -267,6 +267,26 @@ if(LHAT_JIT)
     target_compile_definitions(lhat PRIVATE LHAT_WITH_JIT=1)
 endif()
 
+# The stencils are committed, so nothing here needs Python. Where Python is
+# found anyway, an edit to what they are made from regenerates them on the
+# next build, JIT or not -- CI checks the header either way.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    set(LHAT_GEN_STENCILS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_stencils.py)
+    execute_process(COMMAND ${Python3_EXECUTABLE} ${LHAT_GEN_STENCILS} --sources
+        OUTPUT_VARIABLE LHAT_STENCIL_SOURCES OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REPLACE "\n" ";" LHAT_STENCIL_SOURCES "${LHAT_STENCIL_SOURCES}")
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/stencils.stamp
+        COMMAND ${Python3_EXECUTABLE} ${LHAT_GEN_STENCILS} --if-stale
+        COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/stencils.stamp
+        DEPENDS ${LHAT_GEN_STENCILS} ${LHAT_STENCIL_SOURCES}
+        COMMENT "Checking the JIT stencils against their sources"
+        VERBATIM)
+    add_custom_target(lhat_stencils DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/stencils.stamp)
+    add_dependencies(lhat lhat_stencils)
+endif()
+
 # The version and the build knobs live in a generated header rather than in
 # compile definitions: LHAT_WITH_COMMENTS changes the shape of LhatLexer and
 # LhatNode, and a definition an installed consumer forgets to repeat would
