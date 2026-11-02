@@ -1,6 +1,6 @@
 // L^ (lhat) -- tests for std.lton.
 //
-// Two halves. The first is what an LTON text may say: the elements of 02 の
+// Two halves. The first is what an LTON text may say: the elements of
 // [syntax.obj.keys] as they stand, the spelling of the language throughout, and
 // arithmetic rather than only values worked out beforehand.
 //

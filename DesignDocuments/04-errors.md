@@ -418,7 +418,7 @@ let^ v = x as^ T catch^ error^ConfigError.Invalid{ cause = it^ }
 
 ```lhat
 f^ open(p:string^) -> file^|IOError;               # IOError のいずれか
-f^ read(p:string^) -> string^|IOError.NotFound;    # これしか返さない
+p^ read(p:string^) -> string^|IOError.NotFound;    # これしか返さない
 f^ risky() -> number^|error^;                      # どの誤りでもよい
 p^ save(x:number^) -> IOError|nil^;
 ```
@@ -628,7 +628,7 @@ var^ _^ = save(x)        # 誤り。捨てているのは値ではなく失敗�
 > 見つけた誤りは、呼び出し元ではなくその腕へ行く。腕には文を並べられる。**
 
 ```lhat
-f^ read(p:string^) -> string^ {
+p^ read(p:string^) -> string^ {
     do^{
         with^ h = try^ open(p) {
             return^ try^ h.readAll()
@@ -807,7 +807,7 @@ let^ h = try^ open(p)
 誤りでなければ、`try^` 全体の値は誤りを除いた型になる。
 
 ```lhat
-f^ read(p:string^) -> string^|IOError {
+p^ read(p:string^) -> string^|IOError {
     with^ h = try^ open(p) {
         return^ try^ h.readAll()
     }
@@ -821,7 +821,7 @@ f^ read(p:string^) -> string^|IOError {
 `finally^:` より後ろに書いた文はその節の本体になる。
 
 ```lhat
-f^ read(p:string^) -> string^|IOError {
+p^ read(p:string^) -> string^|IOError {
     let^ h = try^ open(p)
     return^ try^ h.readAll()
     finally^: h.dispose()
@@ -860,11 +860,11 @@ try^ save(x)
 `try^` は、**今の手続きの返り値の型が、その誤りを含む場合にのみ書ける**。
 
 ```lhat
-f^ read(p:string^) -> string^|IOError {
+p^ read(p:string^) -> string^|IOError {
     let^ h = try^ open(p)      # open が返すのは IOError のいずれか。含まれる
 }
 
-f^ read(p:string^) -> string^|IOError.NotFound {
+p^ read(p:string^) -> string^|IOError.NotFound {
     let^ h = try^ open(p)      # 誤り。IOError.Denied を返せない
 }
 ```
@@ -1504,7 +1504,7 @@ IOError.NotFound      # この種別
   「`_^` では誤りを捨てられない」の意味だと明記した。手本の Zig が
   `error union is ignored` で塞いでいるのと同じ線
 
-- **[errors.catch.panic]（2026-08-26）: `catch^` の右辺に `panic^` を許す。** 02 の
+- **[errors.catch.panic]（2026-08-26）: `catch^` の右辺に `panic^` を許す。**
   [syntax.op.as-error] で `as^` が合併を答えるようになり、断言（旧 `as^`）が [syntax.type.fits] の
   絞り込みで2行になっていた。`panic^` は**値を答えず、かつ戻ってこない**
   唯一の文なので、値の求められる位置に置いても穴が空かない——それだけを

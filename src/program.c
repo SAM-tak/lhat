@@ -3449,7 +3449,7 @@ static LhatTable *shared_reach(LhatHeap *heap, LhatTable *owner,
     }
 }
 
-// The heap-only twin of lhat_machine_register, overloads included: 02 の
+// The heap-only twin of lhat_machine_register, overloads included:
 // [syntax.obj.override] makes a second registration of one name another arm, and that is a
 // fact about the registrations rather than about any machine.
 static bool shared_register(LhatHeap *heap, LhatTable *root,

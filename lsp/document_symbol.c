@@ -451,7 +451,7 @@ static void walk_statement(Outline *o, const LhatNode *node, cJSON *into,
         }
         // The forms that hold statements without naming anything themselves
         // are looked through, so a let^ inside an if^ is still listed.
-        // [errors.catch.clause]: a catch^ arm is a clause like an if^'s, and 02 の
+        // [errors.catch.clause]: a catch^ arm is a clause like an if^'s, and
         // [syntax.finally.block]'s finally^ on an if^ one like a block's.
         case LHAT_NODE_BLOCK:
         case LHAT_NODE_IF_STMT:

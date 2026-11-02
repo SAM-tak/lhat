@@ -313,7 +313,7 @@ static void write_hostvalue_content(Writer *w, const LhatHostValueTag *tag,
 // [syntax.obj.keys]: a key written as a name is the same key written as a string, so one
 // that spells an identifier is written back in the shorter form.
 //
-// [syntax.obj.tostring-hat]: a member's key keeps its hats ([lex.hat.repeat]'s exception), and 01 の
+// [syntax.obj.tostring-hat]: a member's key keeps its hats ([lex.hat.repeat]'s exception), and
 // [lex.hat.repeat] makes a word with them a name like any other -- so 'new' is written
 // back as 'new' rather than quoted. The hats have to be the tail of it, as
 // the lexer reads them.

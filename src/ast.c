@@ -152,7 +152,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
             visit_list("items", node->v.list.items, visit, context);
             break;
 
-        // [errors.catch.clause]: an if^ statement's arms follow its clauses, and 02 の
+        // [errors.catch.clause]: an if^ statement's arms follow its clauses, and
         // [syntax.finally.block]'s finally^ follows those.
         case LHAT_NODE_IF_STMT:
         case LHAT_NODE_BLOCK:

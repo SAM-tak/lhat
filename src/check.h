@@ -241,6 +241,9 @@ typedef enum {
     LHAT_CHECK_ERR_OWN_LOWERED,         // [syntax.sub.table-write]: this puts something the
                                         // body did not make where the body
                                         // changes things, written elsewhere
+    LHAT_CHECK_ERR_FUNCTION_CLEANUP,    // [syntax.finally.not-in-f]: an f^ has
+                                        // nothing to clean up, so finally^ and
+                                        // with^ are a p^'s
     LHAT_CHECK_ERR_FUNCTION_REQUIRES,   // [modules.require.once]: require^ runs the unit,
                                         // a body of its own, which an f^ may
                                         // not have run on its behalf
@@ -435,8 +438,8 @@ typedef struct {
     bool has_definition;
     // Which unit `definition` is an offset into: NULL for the one this
     // resolution belongs to, and a borrowed path (the member's declared_in,
-    // type.h) for a name whose meaning was written somewhere else -- 05 の
-    // [lsp.next.fixes] publishes a type, and a member of it was written in the unit that
+    // type.h) for a name whose meaning was written somewhere else --
+    // [modules.deps.static] publishes a type, and a member of it was written in the unit that
     // published it. Two more meanings are found the same way and recorded
     // the same way: [errors.kind.errordef]'s error kind and [syntax.enum]'s enum member carry
     // their written place on the type (type.h's v.error), and a require^'s

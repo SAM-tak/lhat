@@ -459,7 +459,7 @@ static void udp_dispose(LhatMachine *machine, void *context, const LhatValue *ar
 }
 
 #define M "std.net"
-// send and sendTo take a string^ or a Bytes: one overload arm each (02 の
+// send and sendTo take a string^ or a Bytes: one overload arm each (
 // [syntax.obj.override]), so a call with a settled argument is bound at compile time.
 #define SEND(DATA) "p^self^, " DATA " -> nil^|std.net.Error;"
 #define SEND_TO(DATA) "p^self^, " DATA ", string^, number^ -> nil^|std.net.Error;"

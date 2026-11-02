@@ -347,7 +347,7 @@ typedef struct {
     // name visible over the whole unit, so where the def^ stands relative to
     // the body using the operator cannot matter.
     //
-    // The types are not kept: a def^'s is rebuilt on every walk (03 の
+    // The types are not kept: a def^'s is rebuilt on every walk (
     // [pipeline.infer.rounds]), so what is held is the name to look up and which operators it
     // writes, one bit per LHAT_OPERATOR_MEMBERS entry.
     OperatorCarrier *operator_carriers;

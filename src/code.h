@@ -569,7 +569,7 @@ struct LhatProto {
     struct LhatRuntimeType *signature; // shared by all closures of this body
 
     // [syntax.sub.yieldable], [syntax.type.coroutine]. What a yielding body's yield^ sites agreed on --
-    // there is no written form for either, so these come only from 03 の
+    // there is no written form for either, so these come only from
     // [pipeline.bc.checked-answers]'s checked_type; NULL when yields is false or the checker never
     // settled one.
     struct LhatRuntimeType *yield_produce_type;  // Y

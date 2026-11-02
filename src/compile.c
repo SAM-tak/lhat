@@ -3097,8 +3097,8 @@ static const Local *forwardable_local(Compiler *c, const LhatNode *node)
     return NULL;
 }
 
-// Whether evaluating this node writes no local: a name, a literal, or (03 の
-// [syntax.if.expr]) an operation the checker found between two numbers -- number^
+// Whether evaluating this node writes no local: a name, a literal, or (
+// [pipeline.bc.generic]) an operation the checker found between two numbers -- number^
 // answers built in, so no operator body runs -- over operands that run
 // nothing either. What makes it safe to read the left operand in place.
 static bool runs_nothing(Compiler *c, const LhatNode *node)

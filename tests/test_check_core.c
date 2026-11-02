@@ -783,12 +783,13 @@ static void test_results(void)
     unit_dispose(&u);
 
     // [syntax.with.form]: a with^ runs its block once and always, so a block that
-    // answers on every path leaves the with^ answering on every path. 04 の
-    // [errors.try.form] writes a whole subroutine in this shape.
+    // answers on every path leaves the with^ answering on every path.
+    // [errors.try.form] writes a whole subroutine in this shape. A p^, since
+    // an f^ has nothing to clean up ([syntax.finally.not-in-f]).
     LHAT_TEST("a with^ whose block always answers answers too");
     check_text(&u,
                "var^ C = def^{ self^{ v := 3 }, dispose := p^self^ { } }\n"
-               "var^ f = f^ -> number^ { with^ c = C.new() { return^ c.v } }\n"
+               "var^ f = p^ -> number^ { with^ c = C.new() { return^ c.v } }\n"
                "var^ n : number^ = f()\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -796,21 +797,21 @@ static void test_results(void)
     LHAT_TEST("and one whose block may fall through still falls out");
     check_text(&u,
                "var^ C = def^{ self^{ v := 3 }, dispose := p^self^ { } }\n"
-               "var^ f = f^ b:bool^ -> number^ {\n"
+               "var^ f = p^ b:bool^ -> number^ {\n"
                "    with^ c = C.new() { if^ b { return^ c.v } }\n"
                "}\n");
-    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_FALLS_OUT);
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT);
     unit_dispose(&u);
 
     // [errors.try.form]'s own example: the error leaves through try^ and the value
-    // through the block, and [l10n.compose.hole-kinds] runs dispose() on both ways out.
+    // through the block, and [syntax.with.every-exit] runs dispose() on both ways out.
     LHAT_TEST("a with^ over a try^ answers on both ways out");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
                "var^ H = def^{ self^{ v := 7 }, dispose := p^self^ { },\n"
                "  read := f^self^ -> number^ { return^ self^.v } }\n"
                "var^ open = f^ -> H|IOError.NotFound { return^ H.new() }\n"
-               "var^ read = f^ -> number^|IOError.NotFound {\n"
+               "var^ read = p^ -> number^|IOError.NotFound {\n"
                "    with^ h = try^ open() { return^ h.read() }\n"
                "}\n");
     CHECK_CLEAN(&u);

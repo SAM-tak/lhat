@@ -95,8 +95,8 @@ static void test_arithmetic(void)
     run_dispose(&r);
 
     // [syntax.obj.number-widen]: the integers hold the answer or they do not, and when they do
-    // not the operation widens the same way a real operand widens it. 04 の
-    // [syntax.op.concat] rules out failing here -- every '+' would return a union.
+    // not the operation widens the same way a real operand widens it.
+    // [errors.runtime.div-zero] rules out failing here -- every '+' would return a union.
     LHAT_TEST("an integer sum too large to hold widens");
     run_text(&r, "return^ 9223372036854775807 + 1\n");
     CHECK_REAL(&r, 9223372036854775808.0);

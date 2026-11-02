@@ -1891,6 +1891,13 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
     if (over->kind == LHAT_TYPE_CORO) {
+        // [syntax.sub.yieldable-f]: walking advances it, as surely as resume() does, so
+        // an f^ asks the two questions await^ asks -- whose kind, and whose.
+        if (c->in_function && !over->v.coroutine.is_function) {
+            chk_report(c, at, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+        } else if (c->in_function && !chk_receiver_is_own_coroutine(c, at)) {
+            chk_report(c, at, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
+        }
         return over->v.coroutine.produce;
     }
 
@@ -1922,6 +1929,16 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
             walks->kind != LHAT_TYPE_CORO) {
             chk_report(c, at, LHAT_CHECK_ERR_NOT_COROUTINE);
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
+        }
+        // [syntax.sub.kinds]: no call of it is written, so the rule that catches
+        // a written one is asked here -- of the call, and of walking what it
+        // answers. Whose that coroutine is goes unasked: a yielding iterate^
+        // makes it with the call, and one that hands back a coroutine it holds
+        // is not told apart from one that builds it.
+        if (c->in_function &&
+            ((!answer->v.func.is_function && !answer->v.func.yields) ||
+             !walks->v.coroutine.is_function)) {
+            chk_report(c, at, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
         }
         return walks->v.coroutine.produce;
     }
@@ -2611,6 +2628,9 @@ static void check_clause(Checker *c, const LhatNode *node, LhatClauseKind kind,
     if (body == NULL) {
         return;
     }
+    if (kind == LHAT_CLAUSE_FINALLY && c->in_function) {
+        chk_report(c, body, LHAT_CHECK_ERR_FUNCTION_CLEANUP);  // [syntax.finally.not-in-f]
+    }
     Scope *held = c->scope;
     Narrowing *saved = c->narrowings;
     if (into != NULL) {
@@ -2628,7 +2648,9 @@ static void check_clause(Checker *c, const LhatNode *node, LhatClauseKind kind,
 static void check_arms(Checker *c, const LhatNode *owner, LhatType *caught,
                        const LhatNode *arms)
 {
-    // [binary.net.api]'s line, one construct over: catching what cannot fail says nothing.
+    // [errors.catch.clause]: an arm with no try^ before it is refused --
+    // [errors.catch.form]'s line, one construct over: catching what cannot
+    // fail says nothing.
     if (caught == NULL) {
         chk_report(c, owner, LHAT_CHECK_ERR_CATCHES_NOTHING);
     }
@@ -2840,7 +2862,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             // the unit was, and a field's and a member's where the def^ is.
             //
             // [syntax.annot.public]: whether it is published is part of the place. A host
-            // reaches a value through the table the unit answers with (05 の
+            // reaches a value through the table the unit answers with (
             // [modules.require.short]), so an annotation about the value has no hold on a name
             // kept private -- and saying so here is what keeps it from being
             // written and quietly doing nothing.
@@ -3171,6 +3193,11 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             // for^'s focus is introduced by let^ written inside it, if any --
             // otherwise a bare ':=' reaches out through this scope to an
             // existing name instead of defining one here ([syntax.stmt.compound], [syntax.for.reuse]).
+            // [syntax.finally.not-in-f]: with^ is the cleanup dispose() does, and an
+            // f^ has none to do.
+            if (node->kind == LHAT_NODE_WITH && c->in_function) {
+                chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CLEANUP);
+            }
             Scope scope;
             chk_scope_open(&scope, c->scope, node, false);
 

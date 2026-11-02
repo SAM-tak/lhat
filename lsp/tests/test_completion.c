@@ -430,8 +430,8 @@ static void test_what_is_never_offered(void)
 {
     Checked c;
 
-    // [syntax.obj.structure-repeat]: a sequence's members are named by their positions, and 01 の
-    // [l10n.scope.shown] spells a name as an identifier -- so "1" is a spelling the
+    // [syntax.obj.structure-repeat]: a sequence's members are named by their positions, and
+    // [lex.ident.chars] spells a name as an identifier -- so "1" is a spelling the
     // language could never accept where a member name goes.
     LHAT_TEST("14.10改: a position is not a name, so it is not offered");
     check_text(&c,

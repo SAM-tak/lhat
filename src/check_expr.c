@@ -203,8 +203,8 @@ static LhatType *without_error_arms(Checker *c, LhatType *type)
 // left operand in its self^ -- so the right operand is its argument and the
 // expression is worth what it answers.
 //
-// NULL means nothing was decided: the operand types said too little (03 の
-// [debug.inspect.eval]), or the answer was already reported. The caller says what to fall back
+// NULL means nothing was decided: the operand types said too little (
+// [pipeline.strict.relaxed]), or the answer was already reported. The caller says what to fall back
 // on, since that differs by operator.
 // The arm of an operator member that takes these arguments, or NULL. [syntax.obj.override]
 // forbids overlapping signatures, so at most one ever does. `self_last` picks
@@ -6102,7 +6102,7 @@ bool chk_takes_receiver(const LhatType *type)
 // looked up again. A copy: the member it was taken from is the one being
 // written over.
 //
-// `inferred` is the type the last walk gave the entry, which is how 03 の
+// `inferred` is the type the last walk gave the entry, which is how
 // [pipeline.infer.rounds] tells a walk that learned something from one that only said the same
 // again.
 typedef struct {
@@ -6730,7 +6730,7 @@ static LhatType *infer_error_construction(Checker *c, const LhatNode *node,
 static LhatType *infer_node(Checker *c, const LhatNode *node,
                             LhatType **named_type);
 
-// The one door every expression's type leaves through. [modules.hostvalue] with 03 の
+// The one door every expression's type leaves through. [modules.hostvalue] with
 // [pipeline.bc.checked-answers]: the compiler is otherwise type-blind, and a host value changes what
 // it has to emit -- how many slots to reserve, how wide a move is -- so every
 // expression whose type is one gets that type stamped on its node, the same
@@ -6991,8 +6991,8 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                                LHAT_CHECK_ERR_HOSTVALUE_ESCAPES);
                 }
                 // [syntax.obj.new]: the template says what a field holds, so what is
-                // written here is held to it -- which is also where 03 の
-                // [syntax.repl.same] reads the type of an unannotated parameter handed
+                // written here is held to it -- which is also where
+                // [pipeline.infer] reads the type of an unannotated parameter handed
                 // straight into a field. A name the template does not have
                 // is not a field at all: [syntax.obj.instance] closes an instance to members
                 // added afterwards.

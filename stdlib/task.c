@@ -402,7 +402,7 @@ static StepResult task_begin(TaskModule *module, Task *task)
         return STEP_DONE;
     }
 
-    // A subroutine is called with nothing; a coroutine carried in (05 の
+    // A subroutine is called with nothing; a coroutine carried in (
     // [modules.hostdata.unstarted]) is already the thing to drive.
     if (lhat_is_object_kind(job, LHAT_OBJECT_SUBROUTINE)) {
         task->ran = lhat_machine_call(task->machine, job, NULL, 0);

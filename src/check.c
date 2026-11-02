@@ -327,7 +327,7 @@ static void record_placed(Checker *c, const LhatNode *at, LhatType *type,
     entry->definition_path = path;
     // Neither question applies to any of these. A member is not what a
     // signature declared, and [syntax.stmt.let]'s let^/var^ is about a name a scope holds
-    // -- what a table's member may be written through is [syntax.sub.table-write] and 05 の
+    // -- what a table's member may be written through is [syntax.sub.table-write] and
     // [modules.host.machine]'s question, asked of the table rather than of the name. Saying
     // "immutable" here would be answering a different question with this
     // one's word.
@@ -467,7 +467,7 @@ void chk_settle_member_sites(LhatCheckResult *result)
 // keeps alive as long as the result -- a copy per diagnostic would be paid
 // for by every program, and almost none of them read one.
 // [lsp.next]: an annotation that was already written, or that another answers, is
-// one to take off. The whole of it goes, and the line's end with it -- 02 の
+// one to take off. The whole of it goes, and the line's end with it --
 // [syntax.annot.where] puts one on its own line, so leaving the line blank would be a second
 // thing for the writer to tidy. Answers how many fixes were worked out, which
 // is none for an annotation the source does not account for.
@@ -3040,7 +3040,7 @@ bool chk_always_exits(const LhatNode *node)
         // [syntax.with.form]: a with^ runs its block once and always. Nothing stands
         // between the bindings and the body, which is why the checker walks
         // it outside c->conditional where a loop's or an if^'s body is
-        // inside. So what the block does is what the with^ does -- and 04 の
+        // inside. So what the block does is what the with^ does -- and
         // [errors.try.form]'s 'with^ h = try^ open(p) { return^ … }' is a body that answers
         // on every path, which is what it was written to be.
         case LHAT_NODE_WITH:
@@ -4940,6 +4940,8 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_OWN_LOWERED] = {"check.own-lowered",
         "this puts something this f^ did not make where the body changes "
         "things elsewhere; that change would reach whoever it came from"},
+    [LHAT_CHECK_ERR_FUNCTION_CLEANUP] = {"check.function-cleanup",
+        "an f^ has nothing to clean up, so finally^ and with^ belong in a p^"},
     [LHAT_CHECK_ERR_FUNCTION_REQUIRES] = {"check.function-requires",
         "an f^ may not require^: requiring runs the unit's body, "
         "which nothing holds to an f^'s rules"},

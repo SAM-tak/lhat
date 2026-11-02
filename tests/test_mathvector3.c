@@ -1,5 +1,5 @@
-// L^ (lhat) -- tests for std.math.vector3, which is the proving ground for 05 の
-// [syntax.stmt.let]'s host values.
+// L^ (lhat) -- tests for std.math.vector3, which is the proving ground for
+// [modules.hostvalue]'s host values.
 //
 // What is pinned here is the machinery rather than the arithmetic: a host
 // value crossing every boundary it is allowed to cross (an operator, a

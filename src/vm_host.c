@@ -1101,7 +1101,7 @@ bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
         return false;
     }
     // Same shape LHAT_BC_NEWERROR builds, and the same field defaults
-    // compile_error_new writes for what a construction left out (04 の
+    // compile_error_new writes for what a construction left out (
     // [errors.kind.made]): every kind has message and cause without either being declared.
     LhatError *error = lhat_error_new(&m->objects, kind);
     if (error == NULL) {

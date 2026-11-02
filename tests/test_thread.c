@@ -217,7 +217,7 @@ static void test_arguments(void)
 
     // A string is the one carried kind that allocates on both sides, so it is
     // what pins the copy rather than the value. A position of '...' is any^
-    //, and the only thing to do with an any^ is narrow it -- 02 の
+    //, and the only thing to do with an any^ is narrow it --
     // [syntax.type.fits]'s fits^ reaches a builtin name now, so the far side reads the
     // bytes it was given rather than counting that something arrived. Joining
     // them is what pins their order as well: the two go out separately and

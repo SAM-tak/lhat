@@ -701,6 +701,77 @@ static void test_purity(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
+    // [syntax.finally.not-in-f]: an f^ has nothing to clean up, so neither form of
+    // cleanup is written in one -- and with^ would run a dispose() no call
+    // of which is written.
+    LHAT_TEST("an f^ may not write with^");
+    check_text(&u,
+               "var^ R = def^{ self^{ v := 1 }, dispose := p^self^ { } }\n"
+               "var^ f = f^ -> number^ { with^ r = R.new() { return^ r.v } }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CLEANUP);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor finally^");
+    check_text(&u,
+               "var^ f = f^ -> number^ {\n"
+               "    do^{\n"
+               "        var^ x = 1\n"
+               "    finally^:\n"
+               "        var^ y = 2\n"
+               "    }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CLEANUP);
+    unit_dispose(&u);
+
+    // [syntax.sub.yieldable-f]: a for^ advances what it walks with no call written, so
+    // it is asked what a written resume() or await^ would be.
+    LHAT_TEST("an f^ may not walk a p^ coroutine");
+    check_text(&u,
+               "var^ gen = p^ { yield^ 1 }\n"
+               "var^ f = f^ -> number^ {\n"
+               "    var^ s = 0\n"
+               "    for^ v in^ gen() { s := s + v }\n"
+               "    return^ s\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor an f^ coroutine that arrived");
+    check_text(&u,
+               "var^ f = f^ co:c^{ f^ -> number^ -> nil^ } -> number^ {\n"
+               "    var^ s = 0\n"
+               "    for^ v in^ co { s := s + v }\n"
+               "    return^ s\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
+    unit_dispose(&u);
+
+    LHAT_TEST("nor a table whose iterate^ is a p^");
+    check_text(&u,
+               "var^ P = def^{ self^{}, iterate^ = p^self^ { yield^ 1 } }\n"
+               "var^ f = f^ o:P -> number^ {\n"
+               "    var^ s = 0\n"
+               "    for^ v in^ o { s := s + v }\n"
+               "    return^ s\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
+    unit_dispose(&u);
+
+    LHAT_TEST("but it walks its own f^ coroutine, a table, and an f^ iterate^");
+    check_text(&u,
+               "var^ walk = f^ t:t^{ number^[] } { for^ v in^ t { yield^ v } }\n"
+               "var^ P = def^{ self^{}, iterate^ = f^self^ { yield^ 1 } }\n"
+               "var^ f = f^ t:t^{ number^[] }, o:P -> number^ {\n"
+               "    var^ s = 0\n"
+               "    for^ v in^ walk(t) { s := s + v }\n"
+               "    for^ v in^ t { s := s + v }\n"
+               "    for^ v in^ o { s := s + v }\n"
+               "    return^ s\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     LHAT_TEST("an f^self^ -> string^ tostring checks clean");
     check_text(&u,
                "var^ P = def^{ self^{}, tostring = f^self^ -> string^ "

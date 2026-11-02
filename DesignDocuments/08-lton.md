@@ -228,8 +228,8 @@ std.task.stop()
 
 ### 7+ 先にコンパイルしたものを読む [lton.load.compiled]
 
-`parse` と `load` は、テキストの代わりに**コンパイル済みのバイト列**（05 の
-[errors.chain]）も受ける。先頭のバイトで見分ける（[syntax.finally.block]）ので、綴りも入口も増えない。
+`parse` と `load` は、テキストの代わりに**コンパイル済みのバイト列**（
+[modules.binary]）も受ける。先頭のバイトで見分ける（[syntax.finally.block]）ので、綴りも入口も増えない。
 
 ```text
 lhat --compile conf.lton -o out      # out/conf.lton にバイト列
