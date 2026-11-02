@@ -2117,7 +2117,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // [modules.host.import]: the host wrote this one in C. [syntax.type.signature] settled how
                 // many arguments there are before anything ran, so they are
                 // handed over as they lie rather than pushed one by one.
-                // 04§12.8 makes an error a value, so what comes back is
+                // [syntax.with.errors] makes an error a value, so what comes back is
                 // one -- there is no unwinding to arrange.
                 if (lhat_is_object_kind(R(a), LHAT_OBJECT_HOST)) {
                     LhatHost *host = (LhatHost *)lhat_as_object(R(a));

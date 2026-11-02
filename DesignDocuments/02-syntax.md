@@ -12363,7 +12363,7 @@ enum^ Mode {
   （「libm 非依存」の注記は floor/nearbyint を使った時点で死文だった）。
   Vector3 は `std.math.vector3`（構築は `new`）へ
 
-- **§15.13+（2026-08-22）: `closed^` は「写すものが無い」の印に。** 捕捉は
+- **（2026-08-22）`closed^` は「写すものが無い」の印に。** 捕捉は
   [modules.hostdata.base] の carry で別の機械へ写しとして渡るようになったので、
   「捕捉のある閉包は渡せない」は撤回。印の意味は「どの機械で走っても
   同じ本体」で、std.thread の spawn は `p^...` を受ける（`closed^` は

@@ -680,7 +680,7 @@ static void test_control(void)
 }
 
 // [syntax.if.spellings]: the callee and its arguments are contiguous, and exactly one value
-// comes back -- 02§13.8 having removed multiple returns is why nothing has
+// comes back -- multiple returns had been dropped when this was written, which is why nothing has
 // to be reconciled here.
 static void test_calls(void)
 {

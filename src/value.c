@@ -101,7 +101,7 @@ bool lhat_value_equal(LhatValue a, LhatValue b)
                 return lhat_string_equal((const LhatString *)a.as.object,
                                          (const LhatString *)b.as.object);
             }
-            // 02§2811: typeof^(x) = typeof^(y) compares structurally
+            // [syntax.obj.typeof]: typeof^(x) = typeof^(y) compares structurally
             // ([syntax.op.semantic], [syntax.obj.name]) -- two calls to typeof^ build separate objects
             // even for the same shape, so pointer identity would say no to
             // the very comparison 2811 exists for.

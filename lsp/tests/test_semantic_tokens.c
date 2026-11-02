@@ -273,7 +273,7 @@ static void test_every_name_is_reached(void)
     // Written to put a name inside each construct that holds one, so that a
     // kind left out of semantic_tokens.c's switch shows up here as a name
     // with nothing on it. [errors.catch.clause]'s catch^ arms, [syntax.loop.next]'s next^, [syntax.for.forms]'s
-    // typed focus and 04§14.4's qualified type name are the four this test
+    // typed focus and [errors.catch.clause]'s qualified type name are the four this test
     // was written for; the rest is here so the check keeps its reach.
     static const char *source =
         "module^ demo.unit\n"
@@ -403,7 +403,7 @@ static void test_catch_arms(void)
     // field of the block the switch has to walk.
     expect_token(&tokens, source, "shout(\"body\")", "function", false);
     expect_token(&tokens, source, "shout(\"arm\")", "function", false);
-    // 04§14.4: the arm's written type is a qualified name, and both
+    // [errors.catch.clause]: the arm's written type is a qualified name, and both
     // segments of it name the kind rather than a table and a member.
     expect_token(&tokens, source, "E.Bad:", "type", false);
     expect_token(&tokens, source, "Bad:", "type", false);
@@ -833,7 +833,7 @@ static void test_an_abstract_field_declares_a_type(void)
 
     expect_token(&tokens, source, "held : number^", "property", false);
     expect_token(&tokens, source, "number^, abstract^", "type", false);
-    // 04§14.4: the qualified form is the one that went uncoloured -- both
+    // [errors.catch.clause]: the qualified form is the one that went uncoloured -- both
     // segments name the kind, and the root is a TYPE_NAME rather than a name
     // an expression could hold.
     expect_token(&tokens, source, "E.Bad },", "type", false);
@@ -989,7 +989,7 @@ static void test_a_type_name_is_coloured_only_where_it_names_a_type(void)
     LHAT_CHECK(token_for(&tokens, source, "number -> ") == NULL,
                "expected no token where the hat was forgotten");
 
-    // 04§14.4's qualified form, one segment at a time: the root names the
+    // [errors.catch.clause]'s qualified form, one segment at a time: the root names the
     // errordef^ and stands, and the kind under it does not exist.
     expect_token(&tokens, source, "E.Bda", "type", false);
     LHAT_CHECK(token_for(&tokens, source, "Bda") == NULL,

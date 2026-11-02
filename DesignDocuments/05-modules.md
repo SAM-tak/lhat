@@ -3595,7 +3595,7 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
 - `import^` が束縛した名前は、入れ子の本体では捕捉せず `L^.modules` を
   辿り直すことにした（[modules.host.import]）。登録は機械ごとの値なので、別の機械で本体を
   走らせる形では捕捉した登録が使えない。`require^` の根は対象外
-- 02§15.13 の `closed^` の本体でも `import^` した名前は書けることを明記（[modules.host.import]）
+- `closed^` の本体でも `import^` した名前は書けることを明記（[modules.host.import]）
 - ホスト値の等値は **既定が**バイト列であることを明記（[modules.hostvalue]）。登録された
   `op^=`・`op^<=>` があればそちらが答える（[syntax.op.compare], [syntax.op.equal]）。`is^` は別
 - **`public^` が型注釈を要求する規則を撤回した（[modules.public.types]）。**

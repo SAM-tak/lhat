@@ -85,7 +85,7 @@ typedef enum {
     LHAT_OBJECT_UPVALUE,     // [lex.string.interp]: never a value, only reached through a
                              // closure -- but allocated and collected alike
     LHAT_OBJECT_HOST,        // [modules.host.import]: a subroutine the host wrote in C.
-                             // 04§12.8 makes an error a value, so it
+                             // [syntax.with.errors] makes an error a value, so it
                              // answers one rather than unwinding
     LHAT_OBJECT_HOSTDATA,    // [modules.hostdata]: something the host made and holds,
                              // reached through a pointer the collector does

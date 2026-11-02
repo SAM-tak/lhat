@@ -12,7 +12,7 @@
 //
 // So nothing here knows what a source, a token or a diagnostic is. It reads
 // bytes and answers what they name; naming the error to a reader is the
-// lexer's, and 04§12.8's is the machine's.
+// lexer's, and [syntax.with.errors]'s is the machine's.
 //
 // The other direction -- a number^ written as text, and a number^ read
 // through a written format -- lives in value.h beside the value it is about.

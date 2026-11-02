@@ -69,7 +69,7 @@ typedef struct {
 // measuring is a call with (NULL, 0), as lhat_program_dump_host_api is.
 //
 // One name written once answers once, even where the tree holds it twice:
-// 02§7.4+ expands 'a[i] += 1' into the reassignment and the 'a[i] + 1' it
+// [lex.op.compound] expands 'a[i] += 1' into the reassignment and the 'a[i] + 1' it
 // stands for, both carrying the same spans, while saying the target is read
 // exactly once.
 //

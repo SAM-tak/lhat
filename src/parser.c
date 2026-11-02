@@ -2132,7 +2132,7 @@ static LhatNode *parse_primary(Parser *p)
                 !p->brace_is_body) {
                 return parse_self_table(p);
             }
-            // 04§14.5: 'error^' followed by a name constructs; on its own
+            // [errors.kind.new]: 'error^' followed by a name constructs; on its own
             // it is the supertype, which only a type position may ask for.
             if (check_hat(p, "error") &&
                 (p->ahead.kind == LHAT_TOKEN_IDENT ||

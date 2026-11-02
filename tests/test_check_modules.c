@@ -302,7 +302,7 @@ static void test_modules(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     check_against_dispose(&u, &lib);
 
-    // [modules.deps.static]: a qualified name works as a type because 04§14.4 already
+    // [modules.deps.static]: a qualified name works as a type because [errors.catch.clause] already
     // made one writable, so the form built for error kinds carries over.
     LHAT_TEST("a required definition is writable as a type");
     memset(&lib, 0, sizeof lib);

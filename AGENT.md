@@ -24,9 +24,7 @@ Lua風の、C言語でコンパイル可能なバイトコードインタプリ�
 
 ### 設計文書はラベルで指す
 
-`[modules.hostdata]`、`[syntax.sub.kinds]` のように、見出しの行末のラベルを角括弧で書く。番号では指さない。
-詳細は [DesignDocuments/README.md](DesignDocuments/README.md) の「見出しとラベル」「参照の書き方」。
-`python scripts/docrefs.py` で、参照が実在するラベルを指しているかを確かめる。
+設計文書は見出しのラベルで指す（`[modules.hostdata]`。番号・`§`・`の`・`改` は使わない）。規則は [DesignDocuments/README.md](DesignDocuments/README.md)、検査は `python scripts/docrefs.py`。
 
 ## その他のリソース
 

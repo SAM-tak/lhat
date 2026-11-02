@@ -1654,7 +1654,7 @@ static void test_typeof(void)
     CHECK_STRING(&r, "t^{ number^, string^ }");
     run_dispose(&r);
 
-    // 02§2811: typeof^(x) = typeof^(y) is [syntax.op.semantic]'s structural identity, not
+    // [syntax.obj.typeof]: typeof^(x) = typeof^(y) is [syntax.op.semantic]'s structural identity, not
     // the identity of the two LhatRuntimeType objects reflect_type built --
     // two separate calls never share one.
     LHAT_TEST("typeof^(x) = typeof^(y) compares structurally");

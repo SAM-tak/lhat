@@ -275,7 +275,7 @@ struct LhatMachine;
 // hand-written x.dispose() from any other call by comparing the two
 // (vm.c). A separate type would make one function look like two.
 //
-// 04§12.8 makes an error a value, so an error is answered like any
+// [syntax.with.errors] makes an error a value, so an error is answered like any
 // other. There is no unwinding to arrange and nothing to catch.
 typedef void (*LhatHostFn)(struct LhatMachine *machine, void *context,
                            const LhatValue *arguments, size_t count,
@@ -1019,7 +1019,7 @@ void lhat_type_rt_sort_members(LhatRuntimeType *type);
 size_t lhat_runtime_type_write(const LhatRuntimeType *type, char *out,
                                size_t capacity);
 
-// 02§2811: typeof^(x) = typeof^(y) compares structurally ([syntax.op.semantic], [syntax.obj.name]), not
+// [syntax.obj.typeof]: typeof^(x) = typeof^(y) compares structurally ([syntax.op.semantic], [syntax.obj.name]), not
 // by the identity of the two LhatRuntimeType objects -- two calls to
 // reflect_type build separate objects even for the same shape.
 bool lhat_runtime_type_equal(const LhatRuntimeType *a,

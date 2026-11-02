@@ -1434,7 +1434,7 @@ size_t lhat_runtime_type_write(const LhatRuntimeType *type, char *out,
 }
 
 // ---------------------------------------------------------------------------
-// Comparing two runtime types (02§2811, [syntax.op.semantic], [syntax.obj.name])
+// Comparing two runtime types ([syntax.obj.typeof], [syntax.op.semantic], [syntax.obj.name])
 // ---------------------------------------------------------------------------
 
 bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)

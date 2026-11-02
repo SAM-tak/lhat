@@ -1366,7 +1366,7 @@ static void test_typeof(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
-    // 02§2811: typeof^(x) = typeof^(y) has to type-check at all, which
+    // [syntax.obj.typeof]: typeof^(x) = typeof^(y) has to type-check at all, which
     // needs both sides to resolve to the very same TypeInfo type.
     LHAT_TEST("two typeof^ results compare with '='");
     check_text(&u, "var^ b : bool^ = typeof^(5) = typeof^(\"x\")\n");

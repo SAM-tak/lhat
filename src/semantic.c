@@ -297,7 +297,7 @@ static void walk_arms(SemCollector *out, const LhatNode *arms)
 // gets `kind` -- there is no receiver/property distinction here the way
 // there is in an ordinary a.b, since the whole path names one thing.
 //
-// 04§14.4's qualified type name (E.Bad) has the same shape with a
+// [errors.catch.clause]'s qualified type name (E.Bad) has the same shape with a
 // TYPE_NAME at its root instead (parse_type_primary, parser.c), so that is
 // a leaf here too and walk_type reaches this for its MEMBER case.
 static void walk_qualified_path(SemCollector *out, const LhatNode *node,
@@ -417,7 +417,7 @@ static void walk_type(SemCollector *out, const LhatNode *node)
                 emit_name(out, node, SEM_TYPE, 0);
             }
             break;
-        // 04§14.4: an error kind is named through the declaration that
+        // [errors.catch.clause]: an error kind is named through the declaration that
         // introduced it, so a type may be a qualified name -- built as a
         // MEMBER chain over a TYPE_NAME rather than as a type node of its
         // own (parse_type_primary, parser.c).

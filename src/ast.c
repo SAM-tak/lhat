@@ -598,7 +598,7 @@ bool lhat_node_name(const LhatNode *node, const char *source_text,
     }
     switch (node->kind) {
         // TYPE_NAME carries a name the same way: [syntax.type.fits]'s is^ writes a type
-        // on the right, and 04§14.4 lets that be a qualified error kind.
+        // on the right, and [errors.catch.clause] lets that be a qualified error kind.
         // [lex.ident.id-hat]: id^name answers the name it was written with, which is the
         // whole of what that form is.
         case LHAT_NODE_IDENT:

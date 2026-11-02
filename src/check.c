@@ -1169,7 +1169,7 @@ LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node)
     return func;
 }
 
-// 04§14.4: a kind is reached through the declaration that introduced it,
+// [errors.catch.clause]: a kind is reached through the declaration that introduced it,
 // so a type may be a qualified name.
 // [modules.env.one] with [syntax.obj.instance]: a name that holds a definition means, as a type, an
 // instance of it -- writing the name asks for the whole structure, and that
@@ -1481,7 +1481,7 @@ static LhatType *resolve_qualified_type(Checker *c, const LhatNode *node)
     }
 
     // [modules.deps.static]: what require^ yields is a structure, so reaching a type out
-    // of it is the same member access a value uses. 04§14.4 already made a
+    // of it is the same member access a value uses. [errors.catch.clause] already made a
     // qualified name writable as a type; this is that form over a unit.
     //
     // [modules.hostvalue]: a host value type carries its members on the same list a

@@ -3929,7 +3929,7 @@ static void test_errors(void)
     LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
     parse_dispose(&p);
 
-    // 04§14.4: an error kind is reached through the declaration that
+    // [errors.catch.clause]: an error kind is reached through the declaration that
     // introduced it, so a type may be a qualified name.
     LHAT_TEST("a type may be a qualified name");
     parse_text(&p,
