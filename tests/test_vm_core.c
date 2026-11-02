@@ -2,7 +2,7 @@
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
 // prefixed. Programs are run end to end, since what is worth pinning is the
-// answer rather than the instructions chosen to reach it -- 5.1 expects those
+// answer rather than the instructions chosen to reach it -- 09§5.1 expects those
 // to be replaced by specialised ones later.
 
 #include <math.h>
@@ -11,7 +11,7 @@
 #include "code.h"
 #include "fixture.h"
 
-// 5.2: the encoding is a shift and a mask, so what goes in comes back out.
+// 10§5.2: the encoding is a shift and a mask, so what goes in comes back out.
 static void test_encoding(void)
 {
     LHAT_TEST("an instruction round trips");
@@ -52,7 +52,7 @@ static void test_encoding(void)
         lhat_chunk_dispose(&chunk);
     }
 
-    // 5.2: 256 registers, and a call's arguments all live at once. A call
+    // 10§5.2: 256 registers, and a call's arguments all live at once. A call
     // written with 300 of them is refused as a whole rather than mis-encoded.
     LHAT_TEST("an expression needing more registers than exist is refused");
     {
@@ -87,16 +87,16 @@ static void test_arithmetic(void)
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
-    // 02 の 14.8: number^ is one type, so an operation with a real in it
+    // §14.8: number^ is one type, so an operation with a real in it
     // widens rather than refusing.
     LHAT_TEST("a real widens the operation");
     run_text(&r, "return^ 1 + 0.5\n");
     CHECK_REAL(&r, 1.5);
     run_dispose(&r);
 
-    // 14.8改: the integers hold the answer or they do not, and when they do
+    // §14.8+: the integers hold the answer or they do not, and when they do
     // not the operation widens the same way a real operand widens it. 04 の
-    // 11.2 rules out failing here -- every '+' would return a union.
+    // §11.2 rules out failing here -- every '+' would return a union.
     LHAT_TEST("an integer sum too large to hold widens");
     run_text(&r, "return^ 9223372036854775807 + 1\n");
     CHECK_REAL(&r, 9223372036854775808.0);
@@ -135,7 +135,7 @@ static void test_arithmetic(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 04 の 11.2: '/' is real division, which is what keeps ordinary
+    // 04§11.2: '/' is real division, which is what keeps ordinary
     // arithmetic out of the unions.
     LHAT_TEST("'/' is real division");
     run_text(&r, "return^ 7 / 2\n");
@@ -157,13 +157,13 @@ static void test_arithmetic(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 04 の 11.2 again: only these two can fail.
+    // 04§11.2 again: only these two can fail.
     LHAT_TEST("'/' by zero does not fail");
     run_text(&r, "return^ 1 / 0\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     run_dispose(&r);
 
-    // 04 の 11.2: like an overflow (14.8改), a zero divisor widens to
+    // 04§11.2: like an overflow (§14.8+), a zero divisor widens to
     // real arithmetic instead of failing -- '//' and '%' answer inf/nan
     // the same way '/' already does.
     LHAT_TEST("'//' by zero widens to real and answers inf");
@@ -180,20 +180,20 @@ static void test_arithmetic(void)
     LHAT_CHECK(isnan(lhat_as_real(r.ran.value)), "expected nan");
     run_dispose(&r);
 
-    // 02 の 11.5 の (2): '**' binds tighter than a unary minus.
+    // §11.5 の (2): '**' binds tighter than a unary minus.
     LHAT_TEST("'-2 ** 2' is minus four");
     run_text(&r, "return^ -2 ** 2\n");
     CHECK_INTEGER(&r, -4);
     run_dispose(&r);
 
-    // 5.1: the generic instruction checks what it was given.
+    // 08§5.1: the generic instruction checks what it was given.
     LHAT_TEST("arithmetic on a bool is refused at run time");
     run_text(&r, "return^ true^ + 1\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 }
 
-// 02 の 14.23: the bitwise words work on 64-bit integers, never widen, and
+// §14.23: the bitwise words work on 64-bit integers, never widen, and
 // stop on a number that is not a whole one within 64 bits.
 static void test_bitwise(void)
 {
@@ -215,7 +215,7 @@ static void test_bitwise(void)
         {"return^ -1 bitshift^ -64\n", 0},
         // A real naming a whole number is that number.
         {"return^ 8.0 bitand^ 12\n", 8},
-        // 11.6: '*''s level, so tighter than '+' and the comparisons.
+        // §11.6: '*''s level, so tighter than '+' and the comparisons.
         {"return^ 2 + 3 bitand^ 1\n", 3},
         {"return^ 6 bitor^ 1 bitand^ 3\n", 3},
     };
@@ -243,8 +243,8 @@ static void test_bitwise(void)
     }
 }
 
-// 02 の 11.6改3: one cast, which answers the value or a failure. What it
-// asks is lhat_value_satisfies, the same question 14.12's overload search
+// §11.6+3: one cast, which answers the value or a failure. What it
+// asks is lhat_value_satisfies, the same question §14.12's overload search
 // puts to a candidate.
 static void test_casts(void)
 {
@@ -257,7 +257,7 @@ static void test_casts(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 11.6改3: and a localerror^.CastFailure where it does not, which the
+    // §11.6+3: and a localerror^.CastFailure where it does not, which the
     // catch^ picks up. The run goes on -- what used to stop it is now an
     // answer the writer has to have said something about.
     LHAT_TEST("and a failure where it does not, which catch^ picks up");
@@ -267,7 +267,7 @@ static void test_casts(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 04 の 4.1改: what 'as^ T' was before 11.6改3 -- the assertion. panic^
+    // 04§4.1+: what 'as^ T' was before §11.6+3 -- the assertion. panic^
     // is the one statement catch^ takes on its right, and it answers
     // nothing, so the whole is the left without its error arm: number^ here,
     // which is what lets the sum be written.
@@ -287,7 +287,7 @@ static void test_casts(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_PANIC);
     run_dispose(&r);
 
-    // 4.2: it^ is the error inside the arm, so what panic^ carries may be
+    // 04§4.2: it^ is the error inside the arm, so what panic^ carries may be
     // built out of it rather than only be it.
     LHAT_TEST("it^ is the caught error inside the panic^ arm");
     run_checked_text(&r,
@@ -317,7 +317,7 @@ static void test_casts(void)
     CHECK_INTEGER(&r, 8);
     run_dispose(&r);
 
-    // 11.6: as^ stays stronger than the binary operators, so the sum is
+    // §11.6: as^ stays stronger than the binary operators, so the sum is
     // around the cast rather than the cast around the sum -- and stronger
     // than catch^, so the alternative is the cast's and not the sum's.
     LHAT_TEST("and as^ still binds tighter than a binary operator");
@@ -327,7 +327,7 @@ static void test_casts(void)
     CHECK_INTEGER(&r, 8);
     run_dispose(&r);
 
-    // 04 の 2.6: what comes back is an error like any other, so fits^ tells
+    // 04§2.6: what comes back is an error like any other, so fits^ tells
     // it apart -- which is how a writer gets at it without a catch^.
     LHAT_TEST("the failure it answers is an error of that kind");
     run_checked_text(&r,
@@ -337,8 +337,8 @@ static void test_casts(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // 2.7: and it is not an error^, which is the disjointness holding at run
-    // time as well as in the checker (03 の 4.2).
+    // 04§2.7: and it is not an error^, which is the disjointness holding at run
+    // time as well as in the checker (03§4.2).
     LHAT_TEST("and it is not an error^");
     run_checked_text(&r,
                      "let^ f = f^ -> any^ { return^ \"t\" }\n"
@@ -352,7 +352,7 @@ static void test_names(void)
 {
     Run r;
 
-    // 02 の 8.6: var^ makes the name, ':=' reaches it.
+    // §8.6: var^ makes the name, ':=' reaches it.
     LHAT_TEST("a name holds its value");
     run_text(&r, "var^ x = 2\nvar^ y = 3\nreturn^ x * y\n");
     CHECK_INTEGER(&r, 6);
@@ -363,8 +363,8 @@ static void test_names(void)
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
-    // 8.6's whole point: the inner statement reaches the outer name.
-    // 7.4: 'target op= value' means 'target := target op value'.
+    // 05§8.6's whole point: the inner statement reaches the outer name.
+    // 05§7.4: 'target op= value' means 'target := target op value'.
     LHAT_TEST("every compound assignment operator");
     run_text(&r, "var^ x = 10\nx += 5\nreturn^ x\n");
     CHECK_INTEGER(&r, 15);
@@ -402,7 +402,7 @@ static void test_names(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // 7.4's whole reason to exist: the target is read once, not twice.
+    // 01§7.4's whole reason to exist: the target is read once, not twice.
     // A path target proves it, since only there does re-evaluating the
     // target run something with a side effect.
     LHAT_TEST("a path target is evaluated once, not twice");
@@ -423,7 +423,7 @@ static void test_names(void)
     CHECK_INTEGER(&r, 17);
     run_dispose(&r);
 
-    // 8.6改3: 13.8 offers 'a, b := b, a' in place of multiple return values,
+    // §8.6+3: 13.8 offers 'a, b := b, a' in place of multiple return values,
     // which it is only if nothing is stored until every value has been read.
     LHAT_TEST("multiple assignment exchanges two values");
     run_text(&r, "var^ a = 1\nvar^ b = 2\na, b := b, a\nreturn^ a * 10 + b\n");
@@ -454,7 +454,7 @@ static void test_names(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 8.6改2: several targets, paired by position with the values.
+    // §8.6+2: several targets, paired by position with the values.
     LHAT_TEST("compound assignment takes several targets");
     run_text(&r,
              "var^ a = 10\nvar^ b = 20\na, b += 1, 2\nreturn^ a * 100 + b\n");
@@ -484,7 +484,7 @@ static void test_names(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 8.6: var^ present means define regardless of which spelling follows --
+    // §8.6: var^ present means define regardless of which spelling follows --
     // ':=' after var^ is accepted as a convenience, not a different meaning.
     LHAT_TEST("var^ also defines with ':='");
     run_text(&r, "var^ x := 1\nreturn^ x\n");
@@ -496,9 +496,9 @@ static void test_names(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // 03 の 3.4改: a literal called where it is written takes its parameter
+    // 03§3.4+: a literal called where it is written takes its parameter
     // types from that call, and a name called anywhere else takes nothing --
-    // which is 3.4's line, kept. Asked of the body itself, since what the
+    // which is 03§3.4's line, kept. Asked of the body itself, since what the
     // parameter ended up as is what the body was checked with.
     LHAT_TEST("a call seeds a literal's parameter, and a name's not at all");
     run_checked_text(&r,
@@ -508,7 +508,7 @@ static void test_names(void)
     CHECK_STRING(&r, "number^|UNKNOWN");
     run_dispose(&r);
 
-    // 03 の 4.2 puts the refusals in the checker, so a compile that stops is
+    // 03§4.2 puts the refusals in the checker, so a compile that stops is
     // a hole in it -- and what closes a hole is knowing where to look. The
     // status alone said only that something somewhere would not compile.
     LHAT_TEST("and says where, and which name");
@@ -522,7 +522,7 @@ static void test_names(void)
                "the name is the one that was written");
     run_dispose(&r);
 
-    // 02 の 9.8: not every status is about a name, and those carry the
+    // §9.8: not every status is about a name, and those carry the
     // position alone rather than an empty one.
     LHAT_TEST("a status about no name carries the position alone");
     run_text(&r, "repeat^ 3 {\n  repeat^ 3 { break^^^ }\n}\n");
@@ -538,7 +538,7 @@ static void test_names(void)
     LHAT_CHECK(r.compile_result.name == NULL, "nothing failed");
     run_dispose(&r);
 
-    // 02 の 13.12: '_^' takes its position out of the run and nothing reads
+    // §13.12: '_^' takes its position out of the run and nothing reads
     // it back, so what is pinned is that the names beside it take theirs.
     LHAT_TEST("'_^' takes a position and the names beside it take theirs");
     run_checked_text(&r,
@@ -558,8 +558,8 @@ static void test_names(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // 13.12 with 15.8: what is thrown away is the name, not the work. The
-    // call still runs, which is why 15.8's "no effect" is unaffected by
+    // §13.12 with §15.8: what is thrown away is the name, not the work. The
+    // call still runs, which is why §15.8's "no effect" is unaffected by
     // writing one.
     LHAT_TEST("the value written into a '_^' is still worked out");
     run_checked_text(&r,
@@ -615,14 +615,14 @@ static void test_control(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
-    // 02 の 5.1: the expression form yields a value.
+    // §5.1: the expression form yields a value.
     LHAT_TEST("the if expression yields a value");
     run_text(&r, "var^ x = if^ 1 < 2: 7 el^: 8 ;\nreturn^ x\n");
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 5.1 with 15.12: what a body may answer with, a return^ may answer
-    // with. 15.12 writes this very expression as a body, so the two
+    // 10§5.1 with §15.12: what a body may answer with, a return^ may answer
+    // with. §15.12 writes this very expression as a body, so the two
     // spellings of one answer have to reach the same value.
     LHAT_TEST("and a return^ answers with one");
     run_text(&r,
@@ -645,7 +645,7 @@ static void test_control(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // 02 の 11.6: and^ and or^ settle without the right side when they can.
+    // §11.6: and^ and or^ settle without the right side when they can.
     LHAT_TEST("or^ leaves the right side alone once it is true");
     run_text(&r, "return^ true^ or^ nowhere\n");
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
@@ -679,8 +679,8 @@ static void test_control(void)
     run_dispose(&r);
 }
 
-// 5.3: the callee and its arguments are contiguous, and exactly one value
-// comes back -- 02 の 13.8 having removed multiple returns is why nothing has
+// §5.3: the callee and its arguments are contiguous, and exactly one value
+// comes back -- 02§13.8 having removed multiple returns is why nothing has
 // to be reconciled here.
 static void test_calls(void)
 {
@@ -698,7 +698,7 @@ static void test_calls(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 02 の 15.12: a function whose body is one expression answers with it,
+    // §15.12: a function whose body is one expression answers with it,
     // with no return^ written. The parser turns it into one, so nothing here
     // or in the checker had to change.
     LHAT_TEST("a function whose body is one expression answers with it");
@@ -716,7 +716,7 @@ static void test_calls(void)
     run_dispose(&r);
 
     // A call too. Whether it answers anything is the checker's question, and
-    // 13.2 already refused a f^ whose body was one call -- so this only makes
+    // §13.2 already refused a f^ whose body was one call -- so this only makes
     // a refused body work.
     LHAT_TEST("and a call that is the whole body is the answer");
     run_text(&r,
@@ -726,7 +726,7 @@ static void test_calls(void)
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
-    // 8.2 again: beside another statement it is a call standing alone, which
+    // §8.2 again: beside another statement it is a call standing alone, which
     // always meant "run this and drop what it answers".
     LHAT_TEST("but beside another statement it drops what it answers");
     run_text(&r,
@@ -744,7 +744,7 @@ static void test_calls(void)
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
-    // 02 の 8.7: a name is visible across its whole scope, so a body reaches
+    // §8.7: a name is visible across its whole scope, so a body reaches
     // itself without anything declared ahead of it.
     LHAT_TEST("a subroutine reaches itself through this^");
     run_text(&r,
@@ -756,7 +756,7 @@ static void test_calls(void)
     CHECK_INTEGER(&r, 120);
     run_dispose(&r);
 
-    // 02 の 8.7改: the right side of a let^ reads the old world -- a shadow
+    // §8.7+: the right side of a let^ reads the old world -- a shadow
     // starts from what it shadows.
     LHAT_TEST("a shadow's initialiser reads the shadowed value");
     run_text(&r,
@@ -770,7 +770,7 @@ static void test_calls(void)
     CHECK_INTEGER(&r, 4210);
     run_dispose(&r);
 
-    // 8.7改: and so does a body written there -- the capture is of what the
+    // §8.7+: and so does a body written there -- the capture is of what the
     // name meant outside, never of the binding being made.
     LHAT_TEST("a body in the initialiser captures the shadowed binding");
     run_text(&r,
@@ -784,7 +784,7 @@ static void test_calls(void)
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
-    // 8.7改: every name the statement binds reads the old world, the whole
+    // §8.7+: every name the statement binds reads the old world, the whole
     // right side over -- one value taken apart included.
     LHAT_TEST("several shadowing names all read the old world");
     run_checked_text(&r,
@@ -801,7 +801,7 @@ static void test_calls(void)
     CHECK_INTEGER(&r, 21);
     run_dispose(&r);
 
-    // 02 の 15.10: a body with no name still has one way to reach itself.
+    // §15.10: a body with no name still has one way to reach itself.
     LHAT_TEST("this^ reaches the subroutine running");
     run_text(&r,
              "var^ fact = f^n {\n"
@@ -853,16 +853,16 @@ static void test_calls(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
-    // Nothing bounds the recursion, so the frames run out. 5.3 wants that
+    // Nothing bounds the recursion, so the frames run out. 03§5.3 wants that
     // reported rather than reached by walking off the array. The call is
-    // written inside an expression on purpose: 5.3's tail call would take the
+    // written inside an expression on purpose: 03§5.3's tail call would take the
     // frame over instead, and then nothing would run out at all.
     LHAT_TEST("frames that go too deep are reported, not walked off");
     run_text(&r, "var^ f = f^ { return^ this^() + 1 }\nreturn^ f()\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_STACK_OVERFLOW);
     run_dispose(&r);
 
-    // 5.2 fixes a frame's width and gc.c walks all of it, so a slot the frame
+    // 10§5.2 fixes a frame's width and gc.c walks all of it, so a slot the frame
     // below left behind is read by the collector -- pointing at something
     // that went away with that frame. Pushing empties the scratch to stop it,
     // and this is the shape that found it: frames pushed and popped often
@@ -885,7 +885,7 @@ static void test_calls(void)
     run_dispose(&r);
 }
 
-// 03 の 5.3: a call standing where its frame has nothing left to do runs in
+// 03§5.3: a call standing where its frame has nothing left to do runs in
 // that frame. Every case here goes deeper than LHAT_MAX_FRAMES, so what is
 // pinned is that the depth does not grow -- and the guards, where it must.
 static void test_tail_calls(void)
@@ -920,7 +920,7 @@ static void test_tail_calls(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 14.4: the receiver is laid out below the arguments, and the window that
+    // §14.4: the receiver is laid out below the arguments, and the window that
     // moves down carries it.
     LHAT_TEST("a method's tail call is one too");
     run_text(&r,
@@ -936,7 +936,7 @@ static void test_tail_calls(void)
     CHECK_INTEGER(&r, 50000);
     run_dispose(&r);
 
-    // 5.3: a bare call standing last in a body is in tail position as well.
+    // 03§5.3: a bare call standing last in a body is in tail position as well.
     // What it answers is thrown away, and the body answers the nil^ of
     // falling off its end -- which is what the drop is for.
     LHAT_TEST("a bare call standing last is a tail call, answering nil^");
@@ -953,8 +953,8 @@ static void test_tail_calls(void)
     CHECK_INTEGER(&r, 50000);
     run_dispose(&r);
 
-    // 5.5: a cleanup runs after the call, so the frame is not free to go.
-    // 12.2's dispose has to run, and run once the call is done.
+    // 03§5.5: a cleanup runs after the call, so the frame is not free to go.
+    // §12.2's dispose has to run, and run once the call is done.
     LHAT_TEST("a call under a with^ is not a tail call");
     run_text(&r,
              "var^ H = def^{ self^{ v := 0 },\n"
@@ -969,7 +969,7 @@ static void test_tail_calls(void)
     run_dispose(&r);
 
     // The same shape deep enough to tell: without the frame, the cleanup
-    // would have nowhere to run, so 5.5 keeps the frames and they run out.
+    // would have nowhere to run, so 03§5.5 keeps the frames and they run out.
     LHAT_TEST("and it still runs out of frames");
     run_text(&r,
              "var^ H = def^{ self^{ v := 0 }, dispose := p^self^ { } }\n"
@@ -981,7 +981,7 @@ static void test_tail_calls(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_STACK_OVERFLOW);
     run_dispose(&r);
 
-    // 5.11: a coroutine's frame is that coroutine's body. Taking it over
+    // 03§5.11: a coroutine's frame is that coroutine's body. Taking it over
     // would leave the resume with nothing to come back to.
     LHAT_TEST("a coroutine's body keeps its frame");
     run_text(&r,
@@ -1009,7 +1009,7 @@ static void test_tail_calls(void)
     run_dispose(&r);
 }
 
-// 5.4: a capture is a place, not a copy. 02 の 8.6 is what forces it -- ':='
+// §5.4: a capture is a place, not a copy. §8.6 is what forces it -- ':='
 // inside a nested body reassigns the outer binding, and a copy would lose the
 // change.
 static void test_closures(void)
@@ -1073,7 +1073,7 @@ static void test_closures(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 5.4's second case: the name is not in the immediate parent either, so
+    // §5.4's second case: the name is not in the immediate parent either, so
     // each level on the way down has to carry it.
     LHAT_TEST("a name is carried down through more than one level");
     run_text(&r,
@@ -1112,7 +1112,7 @@ static void test_closures(void)
     run_dispose(&r);
 }
 
-// 01 の 2.3: the stacked reach. it^^ is the enclosing loop's focus,
+// 01§2.3: the stacked reach. it^^ is the enclosing loop's focus,
 // self^^/def^^ the enclosing def^'s, resolved past the inner binding of
 // the same name; this^^ is the enclosing subroutine, captured as its maker's
 // own closure since no register ever holds one.
@@ -1147,7 +1147,7 @@ static void test_stacked_hats_compile(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 04 の 4.2: catch^'s it^ is a binding like the focus, so the two stack.
+    // 04§4.2: catch^'s it^ is a binding like the focus, so the two stack.
     LHAT_TEST("catch^'s it^ shadows a loop's, and it^^ still reaches it");
     run_text(&r,
              "errordef^ E { Bad }\n"
@@ -1168,7 +1168,7 @@ static void test_stacked_hats_compile(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // 15.10: what the reach is for -- a body with no name of its own
+    // §15.10: what the reach is for -- a body with no name of its own
     // calling the enclosing one, which is recursion written without naming
     // anybody. Lexical, not dynamic: the capture is made where the inner
     // body is written, by whichever instance of the outer one makes it.
@@ -1247,7 +1247,7 @@ static void test_stacked_hats_compile(void)
     run_dispose(&r);
 }
 
-// 01 の 8 章: a scope specifier starts the search further out. What the
+// 01§8: a scope specifier starts the search further out. What the
 // compiler counts as one scope has to be what the checker counts, or the
 // name a program was checked against is not the one it reaches -- so these
 // pin the count from the running side as well.
@@ -1277,7 +1277,7 @@ static void test_scope_specifiers(void)
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
-    // 01 の 8: this is that table -- the same three scopes named from
+    // 01§8: this is that table -- the same three scopes named from
     // either end, and the two numberings meeting in the middle.
     LHAT_TEST("'$' reads the unit's own top level");
     run_text(&r,
@@ -1334,7 +1334,7 @@ static void test_scope_specifiers(void)
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
-    // 5.4: reaching out of a body is a capture, so the specifier has to
+    // §5.4: reaching out of a body is a capture, so the specifier has to
     // count the body as the one scope its parameters are already in.
     LHAT_TEST("and reaches out of a subroutine as a captured place");
     run_text(&r,
@@ -1357,7 +1357,7 @@ static void test_scope_specifiers(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 8.6 with 01 の 8 章: writing through a specifier reaches the binding a
+    // 05§8.6 with 01§8: writing through a specifier reaches the binding a
     // read of the same words would, and leaves the nearer one alone.
     LHAT_TEST("':=' through '$^' writes the outer binding");
     run_text(&r,
@@ -1403,9 +1403,9 @@ static void test_scope_specifiers(void)
     CHECK_INTEGER(&r, 42);
     run_dispose(&r);
 
-    // 14.4 binds def^ into the scope a def^'s '{' opens, so a specifier
+    // §14.4 binds def^ into the scope a def^'s '{' opens, so a specifier
     // written in a method counts that scope -- the same one the checker
-    // pushes there. 01 の 2.3: def^ is its own name now, so the outer
+    // pushes there. 01§2.3: def^ is its own name now, so the outer
     // `class` never collides with it and the specifier spells the hat.
     LHAT_TEST("a def^ body is one scope on this side too");
     run_text(&r,
@@ -1414,7 +1414,7 @@ static void test_scope_specifiers(void)
              "  m := f^self^ -> string^ { return^ typeof^($^def^).signature }\n"
              "}\n"
              "return^ D.new().m()\n");
-    // 14.16: compiled without checking, typeof^ answers the tag -- so the
+    // §14.16: compiled without checking, typeof^ answers the tag -- so the
     // definition reads "t^" where the outer `class` would read "number^",
     // which is still the whole of what the specifier has to prove here.
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_OK);
@@ -1435,7 +1435,7 @@ static void test_scope_specifiers(void)
     run_dispose(&r);
 }
 
-// 02 の 13.7: the variadic collector, compiled and run.
+// §13.7: the variadic collector, compiled and run.
 static void test_variadic(void)
 {
     Run r;
@@ -1473,7 +1473,7 @@ static void test_variadic(void)
     CHECK_INTEGER(&r, 30);
     run_dispose(&r);
 
-    // 13.7's own arity: at least the fixed count, checked at run time when
+    // §13.7's own arity: at least the fixed count, checked at run time when
     // nothing statically caught it -- run_text compiles straight past the
     // checker, so this is the runtime path answering on its own.
     LHAT_TEST("fewer than the fixed count fails at run time");
@@ -1486,7 +1486,7 @@ static void test_variadic(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_ARITY);
     run_dispose(&r);
 
-    // 13.7: 'expr...' forwards the collected tail into another call.
+    // §13.7: 'expr...' forwards the collected tail into another call.
     LHAT_TEST("'...' forwards into another variadic call");
     run_text(&r,
              "var^ sum = f^ ...:number^ -> number^ {\n"
@@ -1513,7 +1513,7 @@ static void test_variadic(void)
     CHECK_INTEGER(&r, 106);
     run_dispose(&r);
 
-    // 13.7: what leads the spread owes the fixed arguments and no more, so
+    // §13.7: what leads the spread owes the fixed arguments and no more, so
     // the values beyond them join the tail the spread continues. Here the
     // callee has no fixed arguments at all -- print's shape.
     LHAT_TEST("values written into the tail may lead the spread");
@@ -1530,7 +1530,7 @@ static void test_variadic(void)
     CHECK_INTEGER(&r, 36);
     run_dispose(&r);
 
-    // 02 の 14.16: typeof^ reconstructs the signature, including the tail.
+    // §14.16: typeof^ reconstructs the signature, including the tail.
     LHAT_TEST("typeof^ reflects a variadic signature");
     run_text(&r,
              "var^ sum = f^ ...:number^ -> number^ { return^ 0 }\n"
@@ -1547,7 +1547,7 @@ static void test_variadic(void)
     CHECK_STRING(&r, "f^string^, ...:number^ -> number^;");
     run_dispose(&r);
 
-    // 14.10's round trip: the printed signature has to parse back.
+    // §14.10's round trip: the printed signature has to parse back.
     LHAT_TEST("the variadic signature parses back as an annotation");
     run_text(&r,
              "var^ sum = f^ ...:number^ -> number^ { return^ 0 }\n"
@@ -1569,7 +1569,7 @@ static const LhatLocalDesc *local_named(const LhatChunk *chunk,
     return NULL;
 }
 
-// 09 の 4 章: the compiler leaves a table of what each register was called
+// 09§4: the compiler leaves a table of what each register was called
 // and for which instructions, beside the line table. Nothing runs on it;
 // what is pinned is that it is there and says where a name starts and stops.
 static void test_names_table(void)
@@ -1624,7 +1624,7 @@ static void test_names_table(void)
 }
 
 // ---------------------------------------------------------------------------
-// 02 の 15.15: the slice
+// §15.15: the slice
 // ---------------------------------------------------------------------------
 //
 // A budget takes a run off the processor at a loop turn and hands it back
@@ -1880,7 +1880,7 @@ static void test_budget(void)
         run_dispose(&r);
     }
 
-    // 15.15: a nested run is never put down -- its caller's C stack is
+    // §15.15: a nested run is never put down -- its caller's C stack is
     // under it. The comparator below is called from inside sort^, which
     // re-enters the loop, and the whole sort has to come back whatever the
     // budget says.
@@ -1908,7 +1908,7 @@ static void test_budget(void)
 }
 
 // ---------------------------------------------------------------------------
-// 03 の 4.3改: the machine's measurements are the caller's
+// 03§4.3+: the machine's measurements are the caller's
 //
 // A machine of the default size is about 160 KiB, over half of it the frame
 // array. A host running many at once -- a task pool giving a job its own --
@@ -1989,7 +1989,7 @@ static void test_measured_machine(void)
         r.machine = lhat_machine_new_with_size(8, 1024);
         r.ran = lhat_run(r.machine, r.proto);
         LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_STACK_OVERFLOW);
-        // 04 の 11.6改: and the frames it stopped on are still readable.
+        // 04§11.6+: and the frames it stopped on are still readable.
         size_t depth = lhat_machine_fault_depth(r.machine);
         LHAT_CHECK(depth > 1 && depth <= 8,
                    "the fault span is the frames it had (%zu)", depth);
@@ -2011,7 +2011,7 @@ static void test_measured_machine(void)
         run_dispose(&r);
     }
 
-    // 4.3改 stated as depth. A call reserves room for the callee's own
+    // 03§4.3+ stated as depth. A call reserves room for the callee's own
     // window rather than for the widest body there could be. Reserving
     // LHAT_MAX_REGISTERS (250) instead would leave a 300-slot machine with
     // under 50 slots to put frames in -- six or so -- and this body goes 20
@@ -2139,7 +2139,7 @@ static void test_static_fits(void)
         LHAT_CHECK_EQ_INT(count_fits(r.proto), cases[i].tests);
         run_dispose(&r);
     }
-    // 16.3: a focus annotation filters, and a walk whose element type
+    // §16.3: a focus annotation filters, and a walk whose element type
     // already fits it pays nothing; T|nil^ against T asks only x?.
     LHAT_TEST("a focus annotation the element type settles emits no test");
     {

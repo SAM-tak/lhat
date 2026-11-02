@@ -1,4 +1,4 @@
-// 10 §4: every coded message has a stable ID. The ID is what a translation is
+// 10§4: every coded message has a stable ID. The ID is what a translation is
 // written against, so each one is well formed, unique across every table, and
 // absent one past the last code -- where the fallback text is answered instead.
 
@@ -100,7 +100,7 @@ static const Table TABLES[] = {
 
 // Every source the library holds and the tables it hands over -- the codes'
 // texts, and the phrases, fixed words and wrapping sentences beside them.
-// The tests build with the front end, so all ten are here (10 §6.2).
+// The tests build with the front end, so all ten are here (10§6.2).
 typedef const LhatMessageTable *(*Tables)(size_t *count);
 
 static const struct {
@@ -131,7 +131,7 @@ static void remember(const char *id)
     }
 }
 
-// 10 §4.2: `source.name`, lower-case ASCII letters and digits, words joined by
+// 10§4.2: `source.name`, lower-case ASCII letters and digits, words joined by
 // '-', and nothing doubled or left dangling at either end.
 static bool well_formed(const char *id, const char *source)
 {
@@ -247,7 +247,7 @@ static void test_ids(void)
 static const char *const NAME_HOLES[] = {"{name}", "{member}", "{field}",
                                          "{annotation}", "{kind}"};
 
-// 10 §5.1 over the checker: a diagnostic's name goes into its text's one
+// 10§5.1 over the checker: a diagnostic's name goes into its text's one
 // hole. A code with a second text for being reported with a name keeps its
 // own free of a hole, and the second text's ID is its own and `.named`.
 static void test_named(void)
@@ -330,7 +330,7 @@ static void test_named(void)
     }
 }
 
-// 10 §6.3: the English of one source, written out for a translation to be
+// 10§6.3: the English of one source, written out for a translation to be
 // made from -- every entry commented out, under a heading that names the
 // source and the version.
 static void test_dump(void)
@@ -440,7 +440,7 @@ static const char *rendered(const char *text, const LhatMessageArg *args,
     LHAT_CHECK(strcmp((actual), (expected)) == 0, "got '%s', want '%s'",     \
                (actual), (expected))
 
-// 10 §5.1 and §6.1: what a hole is, and what is not one.
+// 10§5.1 and 07§6.1: what a hole is, and what is not one.
 static void test_render(void)
 {
     const LhatMessageArg member[] = {{"member", "ping", 4}};

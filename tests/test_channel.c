@@ -1,5 +1,5 @@
 // L^ (lhat) -- tests for the sharing contract stdlib/carry moves hostdata
-// under (05 の 8.8改2), and for std.channel, which is built on it.
+// under (05§8.8+2), and for std.channel, which is built on it.
 //
 // A type that declared it may cross does: the carried tree holds the
 // pointer once, every wrapper rebuilt from it once more, and each is given
@@ -161,7 +161,7 @@ static void test_sharing_contract(void)
 
     // The members table comes up empty on a machine the program was never
     // installed on, but the wrapper is still one of the type: dispose^ is
-    // the tag's (8.8), so the hold it took is given back all the same.
+    // the tag's (05§8.8), so the hold it took is given back all the same.
     LHAT_TEST("a machine the program was not installed on still gives it back");
     {
         shared.holds = 0;
@@ -456,7 +456,7 @@ static void test_one_machine(void)
             "    c.push({ x = 3, y = 4 }) catch^ nil^\n"
             "    var^ n = 0\n"
             "    let^ first = c.pop()\n"
-            // 05 の 8.8改: an integer stays an integer through carry, which
+            // 05§8.8+: an integer stays an integer through carry, which
             // is what a channel of a Variant cannot promise.
             "    if^ first fits^ number^ { n := n + first }\n"
             "    let^ second = c.pop()\n"
@@ -508,7 +508,7 @@ static void test_one_machine(void)
             "   and^ inner fits^ std.channel.Channel {\n"
             "    let^ scale = 7\n"
             "    outer.push(f^ n:number^ -> number^ { return^ n * scale }) catch^ nil^\n"
-            // 8.8改2: the channel itself crosses, so a worker may be handed
+            // 05§8.8+2: the channel itself crosses, so a worker may be handed
             // the one it is to answer on.
             "    outer.push(inner) catch^ nil^\n"
             "    var^ n = 0\n"
@@ -527,7 +527,7 @@ static void test_one_machine(void)
     }
 
     // carry's boundary, answered as a value the way std.thread answers it.
-    // 05 の 8.8改3: a coroutine crosses while it has not started; once it
+    // 05§8.8+3: a coroutine crosses while it has not started; once it
     // has, its frame is the machine's.
     LHAT_TEST("what cannot cross is refused with carry's own reason");
     {
@@ -550,7 +550,7 @@ static void test_one_machine(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 05 の 8.8改3: and the fresh one goes, arguments and captures with it.
+    // 05§8.8+3: and the fresh one goes, arguments and captures with it.
     LHAT_TEST("a coroutine that has not started crosses and runs there");
     {
         LhatTestRan ran = run_source(
@@ -691,7 +691,7 @@ static void test_between_machines(void)
         lhatstdlib_channel_forget_named();
     }
 
-    // 8.8改2 again, over the boundary it was written for: the channel is
+    // 05§8.8+2 again, over the boundary it was written for: the channel is
     // handed to the worker as an argument rather than found by name.
     LHAT_TEST("a channel handed to spawn is the same channel");
     {

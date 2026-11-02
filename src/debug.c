@@ -1,4 +1,4 @@
-// L^ (lhat) -- what a debugger reads off a machine (09 章): the frames a run
+// L^ (lhat) -- what a debugger reads off a machine (09§): the frames a run
 // left standing or is standing on, and what their registers were called.
 //
 // Section numbers refer to DesignDocuments/09-debugger.md unless prefixed.
@@ -19,7 +19,7 @@
 #include "message.h"
 #include "parser.h"
 
-// 04 の 11.6改: which span of frames the walkers read -- the recorded
+// 04§11.6+: which span of frames the walkers read -- the recorded
 // fault's, or, when none is recorded, the frames standing right now.
 static void frame_span(const LhatMachine *m, size_t *base, size_t *depth,
                        bool *have_at)
@@ -115,7 +115,7 @@ static void trace_put(TraceText *w, const char *text)
     w->used += length;
 }
 
-// 10 §5.1: a traceback's fixed words. Where a frame stopped is written the
+// 10§5.1: a traceback's fixed words. Where a frame stopped is written the
 // way a diagnostic's place is, and what it was in follows it. `f^` and
 // `finally^` are the language's own words and are not translated, so a
 // function with no name is `in {function}` like any other, and `(finally^)`
@@ -141,7 +141,7 @@ static const LhatMessageEntry TRACE_PARTS[] = {
 LHAT_MESSAGE_TABLES(lhat_trace_message_tables,
     {TRACE_PARTS, LHAT_MESSAGE_COUNT(TRACE_PARTS)})
 
-// 10 §7.2: drawn in the language of the program that made the machine, the
+// 10§7.2: drawn in the language of the program that made the machine, the
 // English being what every build holds.
 static void trace_say(TraceText *w, const LhatMachine *machine, size_t part,
                       const LhatMessageArg *args, size_t count)
@@ -230,7 +230,7 @@ size_t lhat_run_error_write(const LhatMachine *machine, LhatRunResult ran,
     char *kept[3] = {NULL, NULL, NULL};
     LhatMessageArg message = {"message", "", 0};
     if (ran.status == LHAT_RUN_PANIC) {
-        // 04 の 11.6+: what the program wrote in panic^ EXPR -- a plain
+        // 04§11.6+: what the program wrote in panic^ EXPR -- a plain
         // string is its own text (a message reads oddly in quotes), anything
         // else lhat_value_write's general form.
         if (lhat_is_object_kind(ran.value, LHAT_OBJECT_STRING)) {
@@ -266,7 +266,7 @@ size_t lhat_run_error_write(const LhatMachine *machine, LhatRunResult ran,
         message = trace_wrapped(machine, TRACE_AT_LINE, message, at, &kept[2]);
     }
 
-    // 04 の 11.6+: the unit the fault stopped in, which the line names a
+    // 04§11.6+: the unit the fault stopped in, which the line names a
     // line of -- not the one that was run, when a unit it required stopped.
     LhatFrameInfo frame;
     const char *where = lhat_machine_fault_frame(machine, 0, &frame) &&
@@ -303,7 +303,7 @@ size_t lhat_run_error_write(const LhatMachine *machine, LhatRunResult ran,
 }
 
 // ---------------------------------------------------------------------------
-// 09 の 2 章: the hook. Everything from here down is the debugger proper --
+// 09§2: the hook. Everything from here down is the debugger proper --
 // the watcher, the hook, frame inspection and evaluation -- and compiles
 // away in a shipping build (LHAT_WITH_DEBUGGER 0). The traceback readers
 // above stay: a fault report is not a debugger.
@@ -344,7 +344,7 @@ bool lhat_machine_debug_pause_point(LhatMachine *machine)
 
 #if LHAT_WITH_DEBUGGER
 
-// 09 の 5.1. Written here, read by vm.c at the two points every machine
+// 09§5.1. Written here, read by vm.c at the two points every machine
 // passes. The install/remove windows debug.h asks for are what stand in for
 // a lock: no other thread is making machines at either moment.
 LhatMachineWatcher lhat_machine_watcher;
@@ -371,10 +371,10 @@ void lhat_machine_set_debug_hook(LhatMachine *machine, LhatDebugHook hook,
 }
 
 // ---------------------------------------------------------------------------
-// 09 の 3.2: the names of a frame
+// 09§3.2: the names of a frame
 // ---------------------------------------------------------------------------
 
-// 09 の 4 章: how many names are live at `at` -- declared no later than it
+// 09§4: how many names are live at `at` -- declared no later than it
 // and not closed by it -- and, when `picked` is asked for, the `index`th of
 // them. A frame that has run no instruction (SIZE_MAX) has its parameters
 // and whatever else is live at 0.
@@ -419,7 +419,7 @@ bool lhat_frame_local(const LhatMachine *machine, size_t level, size_t index,
     size_t slot = frame->base + local->reg;
     LhatValue value = lhat_slots_get(machine->slots, slot);
     out->name = local->name;
-    // 05 の 8.9: a host value is handed out the way an argument is -- as a
+    // 05§8.9: a host value is handed out the way an argument is -- as a
     // pointer aimed at its slots, whatever its width.
     out->value = lhat_is_hostvalue(value)
                      ? hostvalue_argument(machine->slots, slot)
@@ -445,8 +445,8 @@ bool lhat_frame_upvalue(const LhatMachine *machine, size_t level,
         index >= frame->closure->upvalue_count) {
         return false;
     }
-    // 03 の 5.4: open or closed, the place is read through its reference --
-    // and a suspended coroutine's slot the same way (5.11).
+    // 03§5.4: open or closed, the place is read through its reference --
+    // and a suspended coroutine's slot the same way (03§5.11).
     const LhatUpvalue *place = frame->closure->upvalues[index];
     out->name = frame->closure->proto->upvalues[index].name;
     out->value = place != NULL ? lhat_ref_get(place->location) : lhat_nil();
@@ -494,7 +494,7 @@ bool lhat_frame_set_upvalue(LhatMachine *machine, size_t level, size_t index,
 }
 
 // ---------------------------------------------------------------------------
-// 09 の 3.5: evaluation
+// 09§3.5: evaluation
 // ---------------------------------------------------------------------------
 
 static void say(char *error, size_t capacity, const char *what, uint32_t line)
@@ -514,7 +514,7 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
                            char *error, size_t error_capacity)
 {
 #if !LHAT_WITH_FRONTEND
-    // 05 の 10.8: an expression is text, and nothing here reads text. The
+    // 05§10.8: an expression is text, and nothing here reads text. The
     // frames are still readable; only evaluation is not.
     (void)machine;
     (void)level;
@@ -625,13 +625,13 @@ bool lhat_machine_evaluate(LhatMachine *machine, size_t level,
             lhat_proto_free(proto);
         } else {
             // The machine takes the tree: a closure the evaluation leaves
-            // behind (in a written global, say) keeps it alive (05 の 5.6).
+            // behind (in a written global, say) keeps it alive (05§5.6).
             LhatValue script = lhat_nil();
             if (!lhat_machine_adopt_script(machine, proto, &script)) {
                 lhat_proto_free(proto);
                 say(error, error_capacity, "out of memory", 0);
             } else {
-                // 2.4's silence, by hand: the evaluation's own lines are not
+                // 09§2.4's silence, by hand: the evaluation's own lines are not
                 // the hook's to hear -- and the hook is usually what called.
                 LhatDebugHook live = machine->hook_live;
                 machine_set_hook_live(machine, NULL);

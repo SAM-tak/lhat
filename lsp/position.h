@@ -2,7 +2,7 @@
 //
 // lhat's line/column count Unicode code points (src/lexer.c). LSP's
 // Position.character counts UTF-16 code units. 03-compilation-pipeline.md's
-// 1.3節 already keeps two counts of a column apart -- what a diagnostic
+// 03§1.3節 already keeps two counts of a column apart -- what a diagnostic
 // names (code points) and where a terminal's mark lands (cells, UAX #11).
 // This is the third, and every byte offset the server hands out passes
 // through it.

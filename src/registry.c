@@ -21,7 +21,7 @@ typedef struct {
     size_t hostvalue_count;
     size_t hostvalue_capacity;
 
-    // 04 の 2.4: what one errordef^-shaped declaration made. Kept whole
+    // 04§2.4: what one errordef^-shaped declaration made. Kept whole
     // because a second declaration of the same name has to be compared
     // against the list it was made with, not only against its name.
     struct Declared {
@@ -42,11 +42,11 @@ typedef struct {
     LhatHeap heap;
     bool heap_ready;
 
-    // 04 の 2.7 with 11.6改3: localerror^.CastFailure, which no host
+    // 04§2.7 with §11.6+3: localerror^.CastFailure, which no host
     // registers and no unit declares -- the language's own. It lives here
     // rather than on a program or a chunk for the reason every other
-    // identity does (05 の 8.7改): two programs asking for it have to come
-    // away with the same object, or 2.4's comparison by declaration would
+    // identity does (05§8.7+): two programs asking for it have to come
+    // away with the same object, or 04§2.4's comparison by declaration would
     // answer false between them.
     const LhatErrorKind *cast_failure;
 } Registry;
@@ -68,7 +68,7 @@ const LhatErrorKind *lhat_registry_cast_failure(void)
         return one.cast_failure;
     }
     LhatHeap *heap = registry_heap();
-    // 2.4 spells a kind qualified. There is no group above this one, so what
+    // 04§2.4 spells a kind qualified. There is no group above this one, so what
     // typeof^ answers is the whole of the name a writer would put in a
     // catch^ arm.
     const LhatString *name =
@@ -96,7 +96,7 @@ static bool same(const char *a, const char *b)
 }
 
 // ---------------------------------------------------------------------------
-// 05 の 8.8: hostdata
+// 05§8.8: hostdata
 // ---------------------------------------------------------------------------
 
 const LhatHostDataTag *lhat_registry_hostdata(const char *module,
@@ -150,7 +150,7 @@ bool lhat_registry_set_hostdata_base(const LhatHostDataTag *tag,
     }
     LhatHostDataTag *mine = (LhatHostDataTag *)tag;
     if (mine->base != NULL) {
-        // 8.8改: the same rule set_release keeps. A name stands for one
+        // 05§8.8+: the same rule set_release keeps. A name stands for one
         // declaration across the process, and what it is under is part of
         // that declaration -- a second program saying something else is
         // two types wearing one name.
@@ -168,7 +168,7 @@ bool lhat_registry_set_release(const LhatHostDataTag *tag, LhatHostFn release,
     }
     LhatHostDataTag *mine = (LhatHostDataTag *)tag;
     if (mine->release != NULL) {
-        // 8.8: the declaration says one way to hand a value back. A second
+        // 05§8.8: the declaration says one way to hand a value back. A second
         // program registering the same dispose^ is that same declaration
         // made twice; a different one would be two types under one name.
         return mine->release == release && mine->release_context == context;
@@ -186,7 +186,7 @@ bool lhat_registry_set_hold(const LhatHostDataTag *tag, LhatHostHoldFn retain,
     }
     LhatHostDataTag *mine = (LhatHostDataTag *)tag;
     if (mine->shared) {
-        // 8.8改2: as with the release above -- one declaration, however
+        // 05§8.8+2: as with the release above -- one declaration, however
         // many programs make it.
         return mine->retain == retain && mine->let_go == let_go &&
                mine->hold_context == context;
@@ -212,7 +212,7 @@ bool lhat_registry_set_type_arguments(const LhatHostDataTag *tag,
 }
 
 // ---------------------------------------------------------------------------
-// 05 の 8.9: host values
+// 05§8.9: host values
 // ---------------------------------------------------------------------------
 
 const LhatHostValueTag *lhat_registry_hostvalue(const char *module,
@@ -301,7 +301,7 @@ size_t lhat_registry_hostvalue_count(void)
 }
 
 // ---------------------------------------------------------------------------
-// 04 の 2.4: error kinds
+// 04§2.4: error kinds
 // ---------------------------------------------------------------------------
 
 // Whether a declaration already here was made with this very list.
@@ -361,9 +361,9 @@ bool lhat_registry_error_kind(const char *module, const char *name,
             continue;
         }
         if (!variants_match(was, variant_names, variant_count)) {
-            return false;  // 2.4: a different list is a different declaration
+            return false;  // 04§2.4: a different list is a different declaration
         }
-        // 04 の 2.7: and so is the same list under the other top. What a name
+        // 04§2.7: and so is the same list under the other top. What a name
         // stands for has to be one thing across the process, family included.
         if (was->group->local != local) {
             return false;

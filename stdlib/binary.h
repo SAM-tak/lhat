@@ -1,11 +1,11 @@
-// L^ (lhat) -- sample standard library: std.binary (11 章).
+// L^ (lhat) -- sample standard library: std.binary (01§11).
 //
 // Packs a table into bits by a format written once, and reads it back.
-// What is packed travels as a string^ (11 の 2), or in a std.binary.Bytes
+// What is packed travels as a string^ (11§2), or in a std.binary.Bytes
 // a program keeps and writes over, so that a frame's worth of encoding makes
 // no new string.
 //
-// One function a host calls once, before lhat_program_check (05 の 8.7).
+// One function a host calls once, before lhat_program_check (05§8.7).
 // Calling it again on the same program is harmless.
 
 #ifndef LHATSTDLIB_BINARY_H

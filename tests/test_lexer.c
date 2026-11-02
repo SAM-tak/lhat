@@ -80,7 +80,7 @@ static void test_identifiers(void)
     LHAT_CHECK_EQ_STR(token_text(&s, 2), token_length(&s, 2), "baz9");
     scan_dispose(&s);
 
-    // Section 2.1: the lexer has no keyword table, so if^ and if are simply an
+    // 01§2.1: the lexer has no keyword table, so if^ and if are simply an
     // identifier with and without the suffix.
     LHAT_TEST("hat suffix marks a hat identifier");
     scan_text(&s, "if if^");
@@ -89,14 +89,14 @@ static void test_identifiers(void)
     LHAT_CHECK_EQ_INT(s.tokens[1].v.hats, 1);
     scan_dispose(&s);
 
-    // Section 2.3.
+    // §2.3.
     LHAT_TEST("repeated hats are counted");
     scan_text(&s, "super^^^");
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_HAT_IDENT);
     LHAT_CHECK_EQ_INT(s.tokens[0].v.hats, 3);
     scan_dispose(&s);
 
-    // Section 2.4: no whitespace may separate the identifier from the hat.
+    // §2.4: no whitespace may separate the identifier from the hat.
     LHAT_TEST("a detached hat is an error");
     scan_text(&s, "if ^");
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
@@ -110,7 +110,7 @@ static void test_identifiers(void)
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_IDENT);
     scan_dispose(&s);
 
-    // 01 の 3.2: '?' and '!' are operators and terminate an identifier.
+    // 01§3.2: '?' and '!' are operators and terminate an identifier.
     LHAT_TEST("a question mark terminates an identifier");
     scan_text(&s, "foo?.bar");
     LHAT_CHECK_EQ_INT(token_count(&s), 3);
@@ -120,7 +120,7 @@ static void test_identifiers(void)
     scan_dispose(&s);
 }
 
-// Section 3.3.
+// §3.3.
 static void test_name_literals(void)
 {
     Scan s;
@@ -128,7 +128,7 @@ static void test_name_literals(void)
     const char *bytes = NULL;
 
     // The point of the form: a name may hold characters the bare identifier
-    // rules exclude, such as the trailing '?' dropped in 3.2.
+    // rules exclude, such as the trailing '?' dropped in 09§3.2.
     LHAT_TEST("a name may contain a question mark");
     scan_text(&s, "`foo?`");
     LHAT_CHECK_EQ_INT(token_count(&s), 1);
@@ -159,7 +159,7 @@ static void test_name_literals(void)
     LHAT_CHECK_EQ_STR(bytes, length, "\xE7\xA9\xBA\xE3\x81\x8B?");
     scan_dispose(&s);
 
-    // 3.1: the form is a way of spelling an identifier, so `a` and a are the
+    // 10§3.1: the form is a way of spelling an identifier, so `a` and a are the
     // same name and the same kind of token. What differs is where the
     // spelling is: a is its own source slice, `a` was decoded.
     LHAT_TEST("a name literal is an ordinary identifier");
@@ -257,7 +257,7 @@ static void test_numbers(void)
     LHAT_CHECK(fabs(s.tokens[2].v.real - 0.2) < 1e-12, "2.0E-1");
     scan_dispose(&s);
 
-    // Section 4.2: C style octal is not supported, so 0777 is just decimal.
+    // 10§4.2: C style octal is not supported, so 0777 is just decimal.
     LHAT_TEST("a leading zero does not mean octal");
     scan_text(&s, "0777");
     LHAT_CHECK_EQ_INT(s.tokens[0].v.integer.value, 777);
@@ -274,7 +274,7 @@ static void test_lexical_hazards(void)
 {
     Scan s;
 
-    // Section 10.1. A naive scanner reads ".0.0" as the float 0.0.
+    // 01§10.1. A naive scanner reads ".0.0" as the float 0.0.
     LHAT_TEST("10.1 a.0.0 is a chain of integer keys");
     scan_text(&s, "a.0.0");
     LHAT_CHECK_EQ_INT(token_count(&s), 5);
@@ -286,7 +286,7 @@ static void test_lexical_hazards(void)
     LHAT_CHECK_EQ_INT(s.tokens[4].kind, LHAT_TOKEN_INT);
     scan_dispose(&s);
 
-    // Section 7.5: '...' must beat '..' at maximal munch, or a variadic
+    // 01§7.5: '...' must beat '..' at maximal munch, or a variadic
     // marker would scan as a concatenation followed by a dot.
     LHAT_TEST("13.7 ... beats ..");
     scan_text(&s, "...:number^ a..b");
@@ -296,7 +296,7 @@ static void test_lexical_hazards(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
     scan_dispose(&s);
 
-    // Section 10.2. A naive scanner reads "1." as a float.
+    // §10.2. A naive scanner reads "1." as a float.
     LHAT_TEST("10.2 1..2 is integer concat integer");
     scan_text(&s, "1..2");
     LHAT_CHECK_EQ_INT(token_count(&s), 3);
@@ -305,7 +305,7 @@ static void test_lexical_hazards(void)
     LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_INT);
     scan_dispose(&s);
 
-    // Section 10.3.
+    // §10.3.
     LHAT_TEST("10.3 1to^3 is rejected");
     scan_text(&s, "1to^3");
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_ERROR);
@@ -323,7 +323,7 @@ static void test_lexical_hazards(void)
     LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_INT);
     scan_dispose(&s);
 
-    // 01 の 4.5: 10.3 removes the need to backtrack here, so this is an error
+    // 01§4.5: 01§10.3 removes the need to backtrack here, so this is an error
     // rather than "1" followed by "e^" followed by "3".
     LHAT_TEST("4.5 1e^3 is a malformed exponent");
     scan_text(&s, "1e^3");
@@ -331,7 +331,7 @@ static void test_lexical_hazards(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_MALFORMED_EXPONENT);
     scan_dispose(&s);
 
-    // Section 10.5.
+    // §10.5.
     LHAT_TEST("10.5 \"\"\" wins over an empty string");
     scan_text(&s, "\"\"\"to the end");
     LHAT_CHECK_EQ_INT(token_count(&s), 1);
@@ -350,7 +350,7 @@ static void test_lexical_hazards(void)
     LHAT_CHECK_EQ_INT(s.tokens[0].v.string.length, 0);
     scan_dispose(&s);
 
-    // Section 10.9: the sole newline-sensitive rule in the language.
+    // 01§10.9: the sole newline-sensitive rule in the language.
     LHAT_TEST("10.9 a call paren on the same line is not flagged");
     scan_text(&s, "foo(a)");
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_LPAREN), "expected (");
@@ -418,7 +418,7 @@ static void test_strings(void)
     LHAT_CHECK_EQ_INT(s.tokens[0].v.string.kind, LHAT_STRING_RAW);
     scan_dispose(&s);
 
-    // Section 5.2.
+    // §5.2.
     LHAT_TEST("a doubled quote inside a raw string");
     scan_text(&s, "'it''s'");
     bytes = lhat_lexer_string(&s.lexer, &s.tokens[0], &length);
@@ -447,7 +447,7 @@ static void test_strings(void)
 
 }
 
-// Section 5.4. The hole contents are scanned by the ordinary rules, so the
+// §5.4. The hole contents are scanned by the ordinary rules, so the
 // checks below are mostly about the boundaries between the two modes.
 static void test_interpolation(void)
 {
@@ -559,7 +559,7 @@ static void test_interpolation(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_UNTERMINATED_STRING);
     scan_dispose(&s);
 
-    // 01 の 5.4: interpolation requires double quotes.
+    // 01§5.4: interpolation requires double quotes.
     LHAT_TEST("$'...' is rejected with a specific message");
     scan_text(&s, "$'no'");
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_ERROR);
@@ -567,7 +567,7 @@ static void test_interpolation(void)
                       LHAT_ERR_INTERPOLATION_NEEDS_QUOTES);
     scan_dispose(&s);
 
-    // Section 10.6: '$' followed by a name is still a scope specifier.
+    // §10.6: '$' followed by a name is still a scope specifier.
     LHAT_TEST("a scope specifier is unaffected");
     scan_text(&s, "$name");
     LHAT_CHECK_EQ_INT(s.tokens[0].kind, LHAT_TOKEN_SCOPE);
@@ -579,7 +579,7 @@ static void test_comments(void)
 {
     Scan s;
 
-    // Section 6.1.
+    // 01§6.1.
     LHAT_TEST("hash starts a line comment");
     scan_text(&s, "a # this is ignored\nb");
     LHAT_CHECK_EQ_INT(token_count(&s), 2);
@@ -594,7 +594,7 @@ static void test_comments(void)
     LHAT_CHECK_EQ_STR(token_text(&s, 0), token_length(&s, 0), "foo");
     scan_dispose(&s);
 
-    // Section 6.2.
+    // §6.2.
     LHAT_TEST("block comments nest");
     scan_text(&s, "a #[ outer #[ inner ]# still outer ]# b");
     LHAT_CHECK_EQ_INT(token_count(&s), 2);
@@ -651,7 +651,7 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_CONCAT), "expected ..");
     scan_dispose(&s);
 
-    // 7.4: each compound spelling has to precede its plain operator, or
+    // 01§7.4: each compound spelling has to precede its plain operator, or
     // maximal munch would take the shorter one and leave a stray '='.
     LHAT_TEST("compound assignment operators");
     scan_text(&s, "+= -= *= /= %= //= **= ..=");
@@ -666,7 +666,7 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(token_count(&s), 8);
     scan_dispose(&s);
 
-    // 8.6.4: ':=' with a '?' in front, which is one token and not two. The
+    // §8.6.4: ':=' with a '?' in front, which is one token and not two. The
     // table is longest-first, so the three characters win over the two.
     LHAT_TEST("the nil-safe plain assignment is one token");
     scan_text(&s, "t[k] ?:= 1  a := 2  x ? : y");
@@ -684,7 +684,7 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(token_count(&s), 3);
     scan_dispose(&s);
 
-    // 8.6.4: the same eight with a '?' in front. Longer than everything they
+    // §8.6.4: the same eight with a '?' in front. Longer than everything they
     // could be mistaken for, so each has to precede both its own plain
     // compound and the '?' forms -- "?..=" before "?.", "?**=" before "?*=".
     LHAT_TEST("nil-safe compound assignment operators");
@@ -712,7 +712,7 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
     scan_dispose(&s);
 
-    // 02 の 11.7. The one member of the '?' family that is not a postfix
+    // §11.7. The one member of the '?' family that is not a postfix
     // access, so it has to stay distinct from '?.' and from a bare '?'.
     LHAT_TEST("?? is distinct from the nil-propagating accesses");
     scan_text(&s, "t[k] ?? 0 a?.b ?? c");
@@ -738,7 +738,7 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[7], LHAT_OP_GE), "expected >=");
     scan_dispose(&s);
 
-    // 02 の 11.9: and '<=>' must win over both of those, or the '>'
+    // §11.9: and '<=>' must win over both of those, or the '>'
     // would be left stray the way an '=' would be after a compound spelling.
     LHAT_TEST("<=> wins over <= and <");
     scan_text(&s, "a <=> b a <= b a < b");
@@ -762,7 +762,7 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_ARROW), "expected ->");
     scan_dispose(&s);
 
-    // Section 7.2: the preferred spellings are multi-byte UTF-8.
+    // 01§7.2: the preferred spellings are multi-byte UTF-8.
     LHAT_TEST("unicode comparison operators");
     scan_text(&s, "a \xE2\x89\xA0 b \xE2\x89\xA6 c \xE2\x89\xA7 d");
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_NE), "expected the unicode form of !=");
@@ -789,13 +789,13 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(s.tokens[2].kind, LHAT_TOKEN_IDENT);
     scan_dispose(&s);
 
-    // Section 7.1: '=' compares, it does not assign, and '==' does not exist.
+    // 01§7.1: '=' compares, it does not assign, and '==' does not exist.
     LHAT_TEST("= is a single comparison operator");
     scan_text(&s, "a = b");
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_EQ), "expected =");
     scan_dispose(&s);
 
-    // Section 7.3: '<-' is not a token, so this is a comparison against
+    // 01§7.3: '<-' is not a token, so this is a comparison against
     // a negative number.
     LHAT_TEST("a<-2 is a comparison, not a reassignment");
     scan_text(&s, "a<-2");
@@ -830,7 +830,7 @@ static void test_operators(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
     scan_dispose(&s);
 
-    // 11.7改2: a lone '?' is the postfix "not absent" operator, so it lexes
+    // §11.7+2: a lone '?' is the postfix "not absent" operator, so it lexes
     // like any other. The two-character members of the family ('?.' '?(' '?[')
     // win by longest match, which leaves the lone one only where they cannot go.
     LHAT_TEST("a lone question mark is the postfix operator");
@@ -856,7 +856,7 @@ static void test_operators(void)
     LHAT_CHECK(is_op(&s.tokens[2], LHAT_OP_LBRACE), "expected {");
     scan_dispose(&s);
 
-    // 5.1's if-expression form puts a ':' straight after the condition, and
+    // 09§5.1's if-expression form puts a ':' straight after the condition, and
     // '?:' is not a spelling of anything, so the two split.
     LHAT_TEST("'?:' splits into the postfix form and the colon");
     scan_text(&s, "t?:");
@@ -870,7 +870,7 @@ static void test_scope_specifiers(void)
 {
     Scan s;
 
-    // Section 8: two ways of counting. Repeating '$' counts inwards from the
+    // 09§8: two ways of counting. Repeating '$' counts inwards from the
     // outermost scope, so the depth is an absolute index with the unit at 0;
     // repeating '^' counts outwards from here.
     LHAT_TEST("the absolute form counts inwards from the unit");
@@ -923,7 +923,7 @@ static void test_positions(void)
     LHAT_CHECK_EQ_INT(s.tokens[2].column, 4);
     scan_dispose(&s);
 
-    // Section 10.9: columns count code points, not bytes, so a Japanese comment
+    // §10.9: columns count code points, not bytes, so a Japanese comment
     // does not shift the reported position of what follows it.
     LHAT_TEST("columns count code points, not bytes");
     scan_text(&s, "# \xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E\nx");
@@ -942,7 +942,7 @@ static void test_positions(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostics[0].code, LHAT_ERR_UNEXPECTED_CHARACTER);
     scan_dispose(&s);
 
-    // 02 の 18.2: '@' and the name glued to it are one token, and the '@' is
+    // §18.2: '@' and the name glued to it are one token, and the '@' is
     // a mark on it rather than a character of the name -- so what comes back
     // spells the name alone and a reader never strips anything.
     LHAT_TEST("'@name' is one token spelling the name");
@@ -953,7 +953,7 @@ static void test_positions(void)
     LHAT_CHECK_EQ_INT(s.lexer.diagnostic_count, 0);
     scan_dispose(&s);
 
-    // The name has to be glued to it: 18.2 makes them one token, and one
+    // The name has to be glued to it: §18.2 makes them one token, and one
     // token is not written with a space in the middle.
     LHAT_TEST("and '@' on its own is not");
     scan_text(&s, "var^ x = @ 1");

@@ -1,8 +1,8 @@
-// L^ (lhat) -- LSP server: code switched off with '#[~ ... ]#' (01 の 6.5).
+// L^ (lhat) -- LSP server: code switched off with '#[~ ... ]#' (01§6.5).
 //
 // The lexer sees a block comment there, and the language never looks inside.
 // The tools do: lhat/ast lists what one holds among the statements around it
-// (06 の 4.1), and lhat/toggleDisabledCode writes the markers and takes them
+// (06§4.1), and lhat/toggleDisabledCode writes the markers and takes them
 // away again.
 
 #ifndef LSP_DISABLED_CODE_H

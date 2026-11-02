@@ -1,6 +1,6 @@
 // L^ (lhat) -- a compiled unit written out as bytes and read back.
 //
-// 05 の 10 章. Internal to the library: program.c reads a unit through
+// 05§10. Internal to the library: program.c reads a unit through
 // this when the loader hands it bytes that begin with the magic, and
 // lhat_unit_write_binary (program.h) is the host's way in to the writer.
 
@@ -25,7 +25,7 @@ LhatWriteStatus lhat_serialize_write(const LhatUnit *unit,
                                      size_t *length);
 
 // What a read answers: the root body, the module name (owned, or NULL),
-// and the export descriptors a host asks for (8.7's lhat_unit_export_*),
+// and the export descriptors a host asks for (05§8.7's lhat_unit_export_*),
 // as parallel arrays the unit takes over.
 typedef struct {
     LhatProto *proto;
@@ -33,7 +33,7 @@ typedef struct {
     char **export_names;
     struct LhatRuntimeType **export_rt;
     size_t export_count;
-    // 10.6: what the declarations said, for the reflection API to answer.
+    // 05§10.6: what the declarations said, for the reflection API to answer.
     LhatReflection *reflection;
 } LhatBinaryUnit;
 
@@ -45,7 +45,7 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
                          const uint8_t *bytes, size_t length,
                          LhatBinaryUnit *out);
 
-// 10.7: the signature table. Writes one record per distinct signature text
+// 05§10.7: the signature table. Writes one record per distinct signature text
 // the program's registrations carry -- the descriptor install builds for
 // the entry -- under the same header a unit has.
 bool lhat_serialize_write_signatures(const LhatProgram *program,

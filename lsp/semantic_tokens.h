@@ -2,7 +2,7 @@
 //
 // TextMate (syntaxes/lhat.tmLanguage.json) already colours everything a
 // regular expression over the raw text can tell apart -- keywords, strings,
-// numbers, the punctuation of 01-lexical-structure.md 2章's '^'-suffixed
+// numbers, the punctuation of 01-lexical-structure.md 07§2's '^'-suffixed
 // words. What it cannot do is tell a declaration from a use, a variable
 // from a function call, or a type name from an ordinary one, because that
 // needs the syntax tree and what the checker made of it.

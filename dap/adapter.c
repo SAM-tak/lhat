@@ -1,7 +1,7 @@
 // L^ (lhat) -- the debug adapter: every machine's line hook on one side, DAP
 // over a socket on the other.
 //
-// The shape is all-stop with one reader (09 の 5.1). A single thread owns
+// The shape is all-stop with one reader (09§5.1). A single thread owns
 // the socket's reading and answers every request; a machine that decides to
 // stop parks its own thread on the session's condition and stays frozen
 // until the debugger resumes -- which is what makes it safe for the reader
@@ -97,11 +97,11 @@ struct DapSession {
     LhatMutex write_lock;
     LhatSocket listener;
     LhatSocket socket;
-    // 10 §7.4: what to do when the debugger says which language it reads.
+    // 10§7.4: what to do when the debugger says which language it reads.
     // Zeroed when nobody offered, and then the English stands.
     DapLanguage language;
 
-    // 09 の 5.2: the host's spelling map, zeroed when none was given --
+    // 09§5.2: the host's spelling map, zeroed when none was given --
     // both sides are filesystem paths then, and are normalized to compare.
     DapPathMap paths;
     // D8: compiled, before the DAP handshake starts, and alive until after
@@ -338,7 +338,7 @@ static char *resolve_links(const wchar_t *path)
 // What _wfullpath settles for the Windows branch: an absolute path with '.'
 // and '..' taken out, decided by reading the spelling. realpath does that
 // and follows links besides, but answers only for a path that is on this
-// disk -- and 09 の 5.2 asks for two spellings of one file to compare equal
+// disk -- and 09§5.2 asks for two spellings of one file to compare equal
 // whether or not either is. This is what stands in when realpath declines.
 static char *absolute_textual(const char *path)
 {
@@ -472,7 +472,7 @@ uint32_t dap_column_of_line(const char *text, size_t length, uint32_t line)
 
 // The text of the unit `path` names. `path` is the runtime's own spelling --
 // proto->source_name, stamped from the unit's path by program.c -- so the
-// two compare directly, and 5.2's map does not come into it: that one is for
+// two compare directly, and 10§5.2's map does not come into it: that one is for
 // showing a file to the editor. NULL when the program holds no such unit, or
 // it came from bytecode with no text behind it.
 static const LhatSource *text_of(const DapSession *s, const char *path)
@@ -547,7 +547,7 @@ static bool at_breakpoint(DapSession *s, LhatMachine *machine,
     if (s->break_count == 0 || where->source == NULL) {
         return false;
     }
-    // 09 の 5.2: with a path map the breakpoint keys are unit spellings --
+    // 09§5.2: with a path map the breakpoint keys are unit spellings --
     // the very thing the frame's source is -- and match exactly. With none
     // they are normalized filesystem paths, so the source is normalized
     // (cached) to meet them.
@@ -671,7 +671,7 @@ static void stack_trace(DapSession *s, DapThread *t, cJSON *body)
             cJSON_AddNumberToObject(frame, "id", frame_ref(t, level));
             cJSON_AddStringToObject(frame, "name", frame_name(&info));
             if (info.source != NULL) {
-                // 09 の 5.2: reported in the editor's spelling when the
+                // 09§5.2: reported in the editor's spelling when the
                 // host's map has one, so the debugger can open the file.
                 const char *shown = info.source;
                 char mapped[512];
@@ -685,7 +685,7 @@ static void stack_trace(DapSession *s, DapThread *t, cJSON *body)
                 cJSON_AddItemToObject(frame, "source", source);
             }
             cJSON_AddNumberToObject(frame, "line", info.line);
-            // 09 の 5.3: the column is read off the source rather than kept
+            // 09§5.3: the column is read off the source rather than kept
             // per instruction. One pass over the text per frame -- this runs
             // when a person asked where they are, never at an instruction,
             // so the scan is not worth a cache.
@@ -857,7 +857,7 @@ static void send_stopped(DapSession *s, int thread_id, const char *reason,
     lhat_mutex_unlock(&s->write_lock);
 }
 
-// 10 §4: what the adapter tells the debugger, with what goes into it in holes
+// 10§4: what the adapter tells the debugger, with what goes into it in holes
 // (§5.1). The reason a stop gives is the protocol's word, and the line that
 // says the socket is up is read by the editor that started this process, so
 // neither is one of these.
@@ -904,7 +904,7 @@ const LhatMessageEntry *dap_messages(size_t *count)
     return DAP_MESSAGES;
 }
 
-// 10 §7.2: the text of `id` in the language of the program the session was
+// 10§7.2: the text of `id` in the language of the program the session was
 // given, which is what its messages come out in.
 static const char *dap_text(const LhatProgram *program, size_t id)
 {
@@ -1031,7 +1031,7 @@ static void set_breakpoints(DapSession *s, const cJSON *arguments, cJSON *body)
     const cJSON *source = cJSON_GetObjectItem(arguments, "source");
     const cJSON *path = cJSON_GetObjectItem(source, "path");
     // The key a line event will be matched against: the unit spelling the
-    // host's map answers (09 の 5.2), or the normalized filesystem path
+    // host's map answers (09§5.2), or the normalized filesystem path
     // with no map. A file the map does not know binds no breakpoints.
     char *key = NULL;
     if (cJSON_IsString(path)) {
@@ -1097,7 +1097,7 @@ static void dispatch(DapSession *s, const cJSON *request)
     const cJSON *arguments = dap_arguments(request);
 
     if (strcmp(command, "initialize") == 0) {
-        // 10 §7.4: the editor's language, before anything is answered in it.
+        // 10§7.4: the editor's language, before anything is answered in it.
         const cJSON *locale = cJSON_GetObjectItem(arguments, "locale");
         if (cJSON_IsString(locale) && s->language.to_language != NULL) {
             s->language.to_language(s->language.context, locale->valuestring);
@@ -1490,14 +1490,14 @@ bool dap_session_begin(DapSession **out, LhatMachine *machine,
     lhat_condition_init(&s->changed);
 
     if (lhat_socket_listen(&s->listener, port)) {
-        // 09 の 7 章: whoever started this process has no other way to know
+        // 09§7: whoever started this process has no other way to know
         // when to connect. The socket goes up after the program is loaded
         // and checked, which takes as long as the program is large, and the
         // accept below then blocks until a debugger arrives -- so an editor
         // that guessed the moment would guess wrong on a big program and
         // race on a small one. One line, on the stream the protocol does not
         // use, before anything can block. The editor finds it by its words,
-        // so it is not a text a translation replaces (10 §3.2).
+        // so it is not a text a translation replaces (10§3.2).
         fprintf(stderr, "lhat: dap listening on %u\n", (unsigned)port);
         fflush(stderr);
     }

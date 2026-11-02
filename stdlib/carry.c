@@ -19,8 +19,8 @@ typedef enum {
     NODE_TABLE,
     NODE_CLOSURE,
     NODE_CELL,     // a captured place; held by one or more closures
-    NODE_HOSTDATA, // 05 の 8.8改2: a pointer of a type declared shared
-    NODE_COROUTINE // 05 の 8.8改3: one whose body has not started
+    NODE_HOSTDATA, // 05§8.8+2: a pointer of a type declared shared
+    NODE_COROUTINE // 05§8.8+3: one whose body has not started
 } NodeKind;
 
 typedef struct {
@@ -52,7 +52,7 @@ typedef struct {
     size_t of_closure;
 } Node;
 
-// 05 の 8.8改2: one more hold, or one given back, for a type that counts.
+// 05§8.8+2: one more hold, or one given back, for a type that counts.
 static void hold(const LhatHostDataTag *tag, void *pointer)
 {
     if (tag->retain != NULL) {
@@ -282,7 +282,7 @@ static bool carry_closure(Carrier *c, LhatValue closure, size_t *index)
     if (proto == NULL) {
         return refuse(c, "not a closure");
     }
-    // 05 の 5.6: a loaded script's body is its machine's heap's, not the
+    // 05§5.6: a loaded script's body is its machine's heap's, not the
     // program's, so the proto a copy would share goes with that machine.
     if (lhat_proto_is_owned(proto)) {
         return refuse(c, "a loaded script's body stays on its machine");
@@ -302,7 +302,7 @@ static bool carry_closure(Carrier *c, LhatValue closure, size_t *index)
         size_t cell = 0;
         if (!memo_find(&c->memo, place, &cell)) {
             // A new place: the cell node first, memoised, then what it
-            // holds -- which may be this very closure (15.10's this^).
+            // holds -- which may be this very closure (§15.10's this^).
             if (!add_node(c, NODE_CELL, &cell) ||
                 !memo_put(&c->memo, place, cell)) {
                 lhat_free(cells);
@@ -324,8 +324,8 @@ static bool carry_closure(Carrier *c, LhatValue closure, size_t *index)
     return true;
 }
 
-// 05 の 8.8改3: a coroutine whose body has not started is the closure it was
-// made from plus the arguments already laid into its frame -- 02 の 15.5
+// 05§8.8+3: a coroutine whose body has not started is the closure it was
+// made from plus the arguments already laid into its frame -- §15.5
 // runs nothing at the call, so there is no progress to move and no frame to
 // belong to a machine. One that HAS started keeps the refusal, and so do a
 // table's walk and a walk the host wrote: those are the machine's own state.
@@ -421,7 +421,7 @@ static bool carry_value(Carrier *c, LhatValue value, size_t *index)
     if (lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE)) {
         return carry_coroutine(c, value, index);
     }
-    // 05 の 8.8改2: a host type that declared it may cross does, as its
+    // 05§8.8+2: a host type that declared it may cross does, as its
     // pointer with one hold taken for the tree. A value already given back
     // has no pointer to share and stays refused below.
     if (lhat_is_object_kind(value, LHAT_OBJECT_HOSTDATA)) {
@@ -578,7 +578,7 @@ static bool build(Builder *b, size_t index, LhatValue *out)
         case NODE_CLOSURE: {
             // Every cell exists (holding nil^) before the closure is made,
             // the closure is memoised, and only then are the cells filled
-            // -- a cell holding this closure (15.10's this^) finds it.
+            // -- a cell holding this closure (§15.10's this^) finds it.
             LhatUpvalue **cells =
                 node->cell_count > 0
                     ? (LhatUpvalue **)lhat_calloc(node->cell_count,
@@ -653,7 +653,7 @@ static bool build(Builder *b, size_t index, LhatValue *out)
             break;
         }
         case NODE_HOSTDATA:
-            // 05 の 8.8改2: a wrapper of its own on this machine, holding
+            // 05§8.8+2: a wrapper of its own on this machine, holding
             // the pointer once more -- given back through dispose^ as any
             // wrapper's is (the tag's, so on a machine the program was
             // never installed on as well). Only memory fails this, and

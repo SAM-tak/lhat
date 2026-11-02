@@ -1,4 +1,4 @@
-// L^ (lhat) -- tests for 03 の 3.4改4: instantiation checking.
+// L^ (lhat) -- tests for 03§3.4+4: instantiation checking.
 //
 // A let^-bound literal whose parameters nothing was written on is checked
 // once under each shape its call sites hand it, so strict passes with no
@@ -100,7 +100,7 @@ static void test_shapes_decide(void)
     unit_dispose(&u);
 
     // The 24.lh specimen: an INDEX-only body demands nothing, so before
-    // 3.4改4 this was two LHAT_CHECK_ERR_PARAM_UNDECIDED under strict.
+    // 03§3.4+4 this was two LHAT_CHECK_ERR_PARAM_UNDECIDED under strict.
     LHAT_TEST("one call shape checks the body and strict passes unannotated");
     check_text(&u,
                "let^ same = f^ want, used {\n"
@@ -144,7 +144,7 @@ static void test_shapes_decide(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 15.10: recursion goes through this^, which is no call site of the
+    // §15.10: recursion goes through this^, which is no call site of the
     // binding -- the one recorded shape carries the body to its fixpoint.
     LHAT_TEST("a recursive body settles under its one shape");
     check_text(&u,
@@ -197,7 +197,7 @@ static void test_still_undecided(void)
 {
     Unit u;
 
-    // No call, no shape -- the reports 3.1③ always made stand.
+    // No call, no shape -- the reports 10§3.1③ always made stand.
     LHAT_TEST("an uncalled unannotated body is still undecided");
     check_text(&u,
                "let^ f = f^ x { return^ x }\n"
@@ -214,7 +214,7 @@ static void test_still_undecided(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
-    // 05 の 4.3 at the unit's edge: an exported name's callers live in units
+    // 05§4.3 at the unit's edge: an exported name's callers live in units
     // checked after this one, so nothing ever hands it a shape -- a
     // published signature still does not depend on who uses it.
     LHAT_TEST("an exported unannotated body is still undecided");
@@ -244,7 +244,7 @@ static void test_still_undecided(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
     unit_dispose(&u);
 
-    // 3.5: relaxed reports none of the undecided trio, before or after --
+    // 03§3.5: relaxed reports none of the undecided trio, before or after --
     // the shapes only remove reports, never add ones relaxed would show.
     LHAT_TEST("relaxed stays silent about an uncalled body");
     check_relaxed_text(&u,

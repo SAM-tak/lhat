@@ -1,10 +1,10 @@
 // L^ (lhat) -- a prompt: one session of each stage answering many inputs.
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
-// prefixed. 4 章 is the read-eval-print loop: an input that stopped early is
-// carried until it is whole (02 の 3.1), the names one input binds are there
-// for the next (4.3), a bare expression is a statement here and nowhere else
-// (02 の 8.2), and an input that is refused leaves the session as it was.
+// prefixed. 07§4 is the read-eval-print loop: an input that stopped early is
+// carried until it is whole (§3.1), the names one input binds are there
+// for the next (04§4.3), a bare expression is a statement here and nowhere else
+// (§8.2), and an input that is refused leaves the session as it was.
 //
 // All of that is the library's. What is the host's is everything around it:
 // where the lines come from, what is printed before each one, where answers
@@ -75,7 +75,7 @@ LhatPromptResult lhat_prompt_feed(LhatPrompt *prompt, const char *text,
 // there was anything to throw away.
 bool lhat_prompt_drop(LhatPrompt *prompt);
 
-// What the last feed was told, in the program's language (10 §7.1): every
+// What the last feed was told, in the program's language (10§7.1): every
 // diagnostic its input met, each with the line it points into, and a run
 // error with its traceback (lhat_run_error_write). Empty when it was told
 // nothing, as a feed answering LHAT_PROMPT_MORE always is -- warnings under

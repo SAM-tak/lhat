@@ -6,7 +6,7 @@
 // A host compiles a program (lhat/program.h) and runs what it gets back
 // (lhat/vm.h); this is the shape that travels between the two. The body is
 // opaque here -- the chunk, the instruction word and the opcodes are the
-// machine's own business, and 05 の 8.7 asks a host to name none of them.
+// machine's own business, and 05§8.7 asks a host to name none of them.
 
 #ifndef LHAT_MODULE_H
 #define LHAT_MODULE_H
@@ -27,14 +27,14 @@ void lhat_proto_free(LhatProto *proto);
 
 // The calling shape of a body, for a host holding one and deciding what it
 // may do with it -- std.thread's spawn asks all four before it hands a
-// closure to another machine. 02 の 15.2 makes a yieldable body answer a
-// coroutine rather than run; 03 の 5.4's captured places belong to the
-// machine that made them; 13.7's variadic makes `parameters` a floor.
+// closure to another machine. §15.2 makes a yieldable body answer a
+// coroutine rather than run; 03§5.4's captured places belong to the
+// machine that made them; §13.7's variadic makes `parameters` a floor.
 bool lhat_proto_yields(const LhatProto *proto);
 size_t lhat_proto_upvalue_count(const LhatProto *proto);
 size_t lhat_proto_parameters(const LhatProto *proto);
 bool lhat_proto_has_variadic(const LhatProto *proto);
-// 05 の 5.6: whether a machine owns the body (lhat_machine_adopt_script)
+// 05§5.6: whether a machine owns the body (lhat_machine_adopt_script)
 // rather than a program -- then it goes with that machine's heap, and a
 // closure of it cannot be handed to another.
 bool lhat_proto_is_owned(const LhatProto *proto);
@@ -54,17 +54,17 @@ uint32_t lhat_proto_next_instruction_line(const LhatProto *proto,
 typedef enum {
     LHAT_COMPILE_OK,
     LHAT_COMPILE_UNSUPPORTED,   // a form the compiler does not cover yet
-    LHAT_COMPILE_TOO_COMPLEX,   // out of registers or constants (5.2)
+    LHAT_COMPILE_TOO_COMPLEX,   // out of registers or constants (10§5.2)
     LHAT_COMPILE_UNDEFINED,     // a name with no binding
-    // 02 の 9.8: a break^ naming more loops than stand around it, or one
+    // §9.8: a break^ naming more loops than stand around it, or one
     // written outside any. Not the same as UNSUPPORTED above -- nothing is
     // waiting to be implemented here, the count is simply wrong.
     LHAT_COMPILE_BREAK_TOO_FAR,
-    // 01 の 8 章: a '$^' counting more scopes out than are open here. The
+    // 01§8: a '$^' counting more scopes out than are open here. The
     // same kind of miscount as BREAK_TOO_FAR, and not a form still waiting
     // on the compiler.
     LHAT_COMPILE_SCOPE_TOO_FAR,
-    // 05 の 4 章 と 02 の 14.2: a definition composed out of another unit is
+    // 05§4 と §14.2: a definition composed out of another unit is
     // flattened where it is written, so what its body names has to be
     // reachable from anywhere -- what that unit published, or an import^
     // root, both of which live under L^.modules. A name of that unit's own
@@ -74,13 +74,13 @@ typedef enum {
 } LhatCompileStatus;
 
 const char *lhat_compile_status_message(LhatCompileStatus status);
-// 10 §4: the stable ID of that message, which a host draws its own language's
+// 10§4: the stable ID of that message, which a host draws its own language's
 // text from (lhat_program_text). NULL for a status the table does not hold.
 const char *lhat_compile_status_id(LhatCompileStatus status);
 
 // What a compile answers: the status above and where it stopped.
 //
-// 03 の 4.2 puts the refusals in the checker, so a form that reaches the
+// 03§4.2 puts the refusals in the checker, so a form that reaches the
 // compiler and will not compile is a hole in the checker rather than the
 // writer's mistake. Saying only which status was reached leaves whoever has
 // to close that hole with nothing to look at, which is what this carries.
@@ -101,7 +101,7 @@ typedef struct {
 } LhatCompileResult;
 
 // lhat/program.h writes the message one of these makes: a compile result is
-// read in the language of the program the compile was for (10 §7.1).
+// read in the language of the program the compile was for (10§7.1).
 
 #ifdef __cplusplus
 }

@@ -11,7 +11,7 @@
 // Unsupported otherwise), and a space after each colon. An empty object
 // stays `{}`. Decoding either text answers the same table.
 //
-// 14 章 gives L^ one table that serves as both a sequence and a mapping,
+// §14 gives L^ one table that serves as both a sequence and a mapping,
 // and JSON has two shapes for that, so a rule has to say which. It is read
 // off the halves of the table itself:
 //
@@ -41,18 +41,18 @@
 // spelt out. A key of any other kind is Unsupported.
 //
 // **An object's keys are written in order**, by the key as it is spelt --
-// so "10" stands before "2". 02 の 14.16 answered the same question the same
+// so "10" stands before "2". §14.16 answered the same question the same
 // way and for the same reason: a table's own order is the hash's, which is
 // neither the writer's nor stable, so what is written is put in a canonical
 // order instead. It follows that two equal tables write the same text, and
 // that a decode and a second encode answer the text they started from.
 //
-// 04 の 11.3 spells "not there" nil^, and that has two sides here.
+// 04§11.3 spells "not there" nil^, and that has two sides here.
 //
 // Reading: JSON's null puts no key. So `[1, null, 3]` answers a table with
 // nothing at 1 -- and encoding that back answers an object, since the table
 // is no longer only a dense part. This is the one place the round trip does
-// not close, and it closes as far as 11.3 lets it.
+// not close, and it closes as far as 04§11.3 lets it.
 //
 // Writing: storing nil^ in a table is how a key goes, so **a table never
 // holds one** and an encode never writes a null. The row above is what a
@@ -71,7 +71,7 @@
 // contents are read by index and not by name:
 //
 //   let^ back = try^ std.json.decode(text)
-//   print(back["name"])          # and not back.name, which 03 の 3.1 refuses
+//   print(back["name"])          # and not back.name, which 03§3.1 refuses
 //
 // A program that knows the shape can say so and narrow to it, which is
 // where the type it wanted comes back.

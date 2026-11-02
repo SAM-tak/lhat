@@ -41,7 +41,7 @@ static bool worth_rechecking(LspServer *server, const char *path)
 // instead of the disk -- which is the whole of what this store is for
 // (document_store.h).
 //
-// 05 の 10 章: except for a compiled unit. One is a *.lh like any other and
+// 05§10: except for a compiled unit. One is a *.lh like any other and
 // an editor will happily show it, but what it shows has been through a
 // decoder and the magic -- a byte no UTF-8 text can start on -- does not
 // survive it. Kept, that text would reach the front end as a source file

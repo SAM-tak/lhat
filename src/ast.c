@@ -123,7 +123,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_TYPE_NAME:
             break;
 
-        // 07 の 4 章: the expression a statement position refused, when the
+        // 07§4: the expression a statement position refused, when the
         // parser had one to keep (parser.c's `refused`). NULL for every
         // other way an ERROR is made, which visit_one passes over.
         case LHAT_NODE_ERROR:
@@ -140,7 +140,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
             break;
 
         // Braced lists. BLOCK and WITH carry a second one; for a BLOCK that
-        // is 9 章's clauses, for a WITH the body it guards.
+        // is §9's clauses, for a WITH the body it guards.
         case LHAT_NODE_INTERP:
         case LHAT_NODE_TABLE:
         case LHAT_NODE_DEF:
@@ -148,12 +148,12 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_IF_EXPR:
         case LHAT_NODE_TYPE_TABLE:
         case LHAT_NODE_TYPE_TUPLE:
-        case LHAT_NODE_TUPLE:  // 13.8改: the positions, in order
+        case LHAT_NODE_TUPLE:  // §13.8+: the positions, in order
             visit_list("items", node->v.list.items, visit, context);
             break;
 
-        // 04 の 4.5: an if^ statement's arms follow its clauses, and 02 の
-        // 10.1's finally^ follows those.
+        // 04§4.5: an if^ statement's arms follow its clauses, and 02 の
+        // §10.1's finally^ follows those.
         case LHAT_NODE_IF_STMT:
         case LHAT_NODE_BLOCK:
             visit_list("items", node->v.list.items, visit, context);
@@ -179,7 +179,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
         case LHAT_NODE_ERROR_KIND:
         case LHAT_NODE_ENUMDEF:
         case LHAT_NODE_ENUM_MEMBER:
-        case LHAT_NODE_ANNOTATION:  // 02 の 18: the name and its arguments
+        case LHAT_NODE_ANNOTATION:  // §18: the name and its arguments
             visit_one("name", node->v.named.name, visit, context);
             visit_list("members", node->v.named.members, visit, context);
             break;
@@ -208,10 +208,10 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
             visit_one("value", node->v.jump.value, visit, context);
             break;
 
-        // 13.8改: return^ may carry several values -- 'return^ a, b' answers
+        // §13.8+: return^ may carry several values -- 'return^ a, b' answers
         // a tuple. They hang off `value` as a list, and one value is a list
         // of one, so this reads every return^ ever written.
-        // 13.8改: yield^ answers several values as a statement, the same way.
+        // §13.8+: yield^ answers several values as a statement, the same way.
         case LHAT_NODE_RETURN:
         case LHAT_NODE_YIELD:
             visit_list("value", node->v.jump.value, visit, context);
@@ -228,7 +228,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
             visit_one("right", node->v.binary.right, visit, context);
             break;
 
-        // 11.5 の (5): the operators stand between the operands, but they are
+        // §11.5 の (5): the operators stand between the operands, but they are
         // held as two lists rather than interleaved. Operands first keeps the
         // walk in source order for everything that reads a whole subtree.
         case LHAT_NODE_COMPARE_CHAIN:
@@ -307,7 +307,7 @@ static void least_offset(void *context, const char *field, bool in_list,
 
 static void least_offset_of(const LhatNode *node, uint32_t *least)
 {
-    // 16.2: a FOCUS carries no span at all -- it^ need not appear in the
+    // §16.2: a FOCUS carries no span at all -- it^ need not appear in the
     // source -- so its zero would drag the whole subtree back to the top of
     // the file.
     if (node->kind != LHAT_NODE_FOCUS && node->offset < *least) {
@@ -353,11 +353,11 @@ static void doc_put(DocWriter *w, const char *text, size_t length)
     }
 }
 
-// 01 の 6.4: whether a blank line stands between two places, which is what
-// ends a block. Go draws the line there and 6.4 names Go.
+// 01§6.4: whether a blank line stands between two places, which is what
+// ends a block. Go draws the line there and 01§6.4 names Go.
 //
 // A line has to be empty to be one. Counting newlines alone would take
-// 18.4's annotation for a gap: it is written between the block and what the
+// §18.4's annotation for a gap: it is written between the block and what the
 // block is about, and lhat_node_visit_children does not walk one, so the
 // span begins under it and the '@' line stands in between.
 static bool blank_line_between(const char *source, uint32_t from, uint32_t to)
@@ -455,7 +455,7 @@ size_t lhat_node_documentation(const LhatNode *node, const char *source,
         if (c->end > head) {
             break;  // written after the construct began: a trailing one
         }
-        // 01 の 6.5: code switched off is not prose. It stands between what
+        // 01§6.5: code switched off is not prose. It stands between what
         // is above it and the node the way a statement would, so it ends the
         // block rather than joining it.
         if (lhat_comment_is_disabled_code(c, source, source_length)) {
@@ -586,7 +586,7 @@ const char *lhat_node_kind_name(LhatNodeKind kind)
     return "?";
 }
 
-// 01 の 2.3: the canonical name -- the word plus one hat at most, with the
+// 01§2.3: the canonical name -- the word plus one hat at most, with the
 // extra hats counted on the node rather than kept in the spelling. One
 // definition, because what the checker looks a member up under is the
 // string the machine will use as a key.
@@ -597,15 +597,15 @@ bool lhat_node_name(const LhatNode *node, const char *source_text,
         return false;
     }
     switch (node->kind) {
-        // TYPE_NAME carries a name the same way: 13.11's is^ writes a type
-        // on the right, and 04 の 14.4 lets that be a qualified error kind.
-        // 3.3: id^name answers the name it was written with, which is the
+        // TYPE_NAME carries a name the same way: §13.11's is^ writes a type
+        // on the right, and 04§14.4 lets that be a qualified error kind.
+        // 01§3.3: id^name answers the name it was written with, which is the
         // whole of what that form is.
         case LHAT_NODE_IDENT:
         case LHAT_NODE_HAT_IDENT:
         case LHAT_NODE_TYPE_NAME:
         case LHAT_NODE_NAME: {
-            // 3.1: written with backticks, so the spelling is the decoded one
+            // 09§3.1: written with backticks, so the spelling is the decoded one
             // rather than the span -- delimiters left out and a doubled
             // backtick made one.
             if (node->v.name.text_length > 0) {
@@ -629,13 +629,13 @@ bool lhat_node_name(const LhatNode *node, const char *source_text,
             return true;
         }
         case LHAT_NODE_FOCUS:
-            // 16.2: the focus with no name written is called it^, and the
+            // §16.2: the focus with no name written is called it^, and the
             // source need not contain the word for that to be its name.
             *text = "it^";
             *length = 3;
             return true;
         case LHAT_NODE_SCOPE:
-            // 01 の 8 章: the sigil says where to look, and the name is what
+            // 01§8: the sigil says where to look, and the name is what
             // to look for -- a specifier answers with the name it is glued
             // to.
             return lhat_node_name(node->v.scope.name, source_text, strings,
@@ -651,12 +651,12 @@ bool lhat_name_is(const char *text, size_t length, const char *literal)
     return length == n && memcmp(text, literal, n) == 0;
 }
 
-// 02 の 14.8改2: the constants number^ carries as static members. One
+// §14.8+2: the constants number^ carries as static members. One
 // table read by the checker (the name is a member) and the compiler (its
 // value), so the two cannot disagree.
 // An array rather than a run of tests, so that the one table can be read
 // three ways rather than two: which name is one (the checker), what its
-// value is (the compiler), and what they all are (07 の 4 章, listing what
+// value is (the compiler), and what they all are (07§4, listing what
 // may stand after 'number^.').
 static const struct {
     const char *name;

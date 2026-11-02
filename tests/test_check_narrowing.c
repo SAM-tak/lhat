@@ -3,7 +3,7 @@
 // Section numbers refer to DesignDocuments/02-syntax.md unless prefixed with
 // "03" or "04". The cases pinned here are the ones a decision in the
 // specification produces and that would otherwise be invisible: the scope
-// rule of 8.7, the result inference of 03 の 3.4, and the way catch^, ?? and
+// rule of §8.7, the result inference of 03§3.4, and the way catch^, ?? and
 // try^ each drop one arm of a union.
 
 #include <stdio.h>
@@ -12,7 +12,7 @@
 
 #include "fixture.h"
 
-// 13.11, and 04 の 7 章 which rests entirely on it.
+// §13.11, and 04§7 which rests entirely on it.
 static void test_narrowing(void)
 {
     Unit u;
@@ -44,7 +44,7 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 13.11 with 04 の 11.3: a comparison against the nil^ literal narrows the
+    // §13.11 with 04§11.3: a comparison against the nil^ literal narrows the
     // way fits^ does. Without it 'if^ t != nil^ { … }' passed the condition and
     // then reported against the *use* inside the branch -- a diagnostic
     // nowhere near its cause, on the first form anyone reaches for.
@@ -73,7 +73,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // nil^ has one value, so 13.11's closing rule makes 'is^' and '=' agree
+    // nil^ has one value, so §13.11's closing rule makes 'is^' and '=' agree
     // -- leaving is^ out would be a gap with nothing behind it.
     LHAT_TEST("'is^ nil^' narrows the same as '= nil^'");
     check_text(&u,
@@ -92,7 +92,7 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 11.7改2: 'x?' is '!(x fits^ nil^)' written short, so it narrows
+    // §11.7+2: 'x?' is '!(x fits^ nil^)' written short, so it narrows
     // to exactly what that would -- the same machinery, one more spelling.
     LHAT_TEST("'?' narrows the true branch");
     check_text(&u,
@@ -125,7 +125,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 11.7改 takes the same posture for a '?.' whose target cannot be
+    // §11.7+ takes the same posture for a '?.' whose target cannot be
     // absent: the answer is known, and saying so is not this checker's job.
     LHAT_TEST("'?' on something that cannot be absent is let through");
     check_text(&u,
@@ -134,7 +134,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04 の 6.1: narrowing to a kind is what makes its declared field visible.
+    // 04§6.1: narrowing to a kind is what makes its declared field visible.
     LHAT_TEST("a narrowed error kind shows its fields");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
@@ -153,7 +153,7 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 04 の 6.1 is written in the early-return style, so a branch that never
+    // 04§6.1 is written in the early-return style, so a branch that never
     // falls through has to leave its narrowing behind.
     LHAT_TEST("an exiting branch narrows what follows it");
     check_text(&u,
@@ -179,7 +179,7 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_OPERATOR);
     unit_dispose(&u);
 
-    // 04 の 7 章: handling every kind is ordinary narrowing, so the success
+    // 04§7: handling every kind is ordinary narrowing, so the success
     // type is what is left in the last clause.
     LHAT_TEST("an exhausted union leaves the success type");
     check_text(&u,
@@ -223,7 +223,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.11: and^ tells us both held; or^ says nothing when it is true.
+    // §13.11: and^ tells us both held; or^ says nothing when it is true.
     LHAT_TEST("and^ narrows both sides");
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
@@ -236,7 +236,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.11's "the right side of and^": it runs only where the left held, so
+    // §13.11's "the right side of and^": it runs only where the left held, so
     // what the left tested is known there. Without it the one condition has
     // to be written as two nested if^, which is what anyone tries first.
     LHAT_TEST("and^ narrows its own right side");
@@ -285,7 +285,7 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 13.11 with 9.2: a conditional loop tests before every turn, so the body
+    // §13.11 with 01§9.2: a conditional loop tests before every turn, so the body
     // runs where the condition held -- the same ground an if^ body stands on.
     LHAT_TEST("a while^ loop narrows its body");
     check_text(&u,
@@ -313,8 +313,8 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.11: the write that ends a narrowing is not itself a mistake -- what
-    // may be written is what the name holds. 13.11's own example does this,
+    // §13.11: the write that ends a narrowing is not itself a mistake -- what
+    // may be written is what the name holds. §13.11's own example does this,
     // and a loop that advances the value it tested does nothing else.
     LHAT_TEST("the write that ends a narrowing is allowed to widen it");
     check_text(&u,
@@ -342,7 +342,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.11: a loop advancing the value its own condition tested is the
+    // §13.11: a loop advancing the value its own condition tested is the
     // shape all of this has to hold up under.
     LHAT_TEST("which is what lets a loop advance what it tested");
     check_text(&u,
@@ -355,7 +355,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 9.2: first^ runs after the test, so it stands where main^ does.
+    // §9.2: first^ runs after the test, so it stands where main^ does.
     LHAT_TEST("first^ is on the far side of the test too");
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
@@ -364,7 +364,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 9.10: pre^ runs before the condition is tested, and runs once even
+    // §9.10: pre^ runs before the condition is tested, and runs once even
     // where it never holds -- so the condition says nothing there.
     LHAT_TEST("pre^ runs before the test and is not narrowed");
     check_text(&u,
@@ -374,7 +374,7 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 9.1: last^ runs once the loop is over, which for a while^ is where the
+    // §9.1: last^ runs once the loop is over, which for a while^ is where the
     // condition has just failed.
     LHAT_TEST("nor is last^, which runs once the condition failed");
     check_text(&u,
@@ -384,10 +384,10 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 02 の 9.4: the body has two layers of lifetime, and the walk follows
-    // 9.2's order rather than the order the parser stored the clauses in.
+    // §9.4: the body has two layers of lifetime, and the walk follows
+    // §9.2's order rather than the order the parser stored the clauses in.
     // main^ used to be walked before every clause, so nothing it read could
-    // see what prolog^ had declared -- 9.4's own example did not check.
+    // see what prolog^ had declared -- §9.4's own example did not check.
     LHAT_TEST("main^ sees what prolog^ declared");
     check_text(&u,
                "repeat^ 3 { prolog^: var^ total = 0  main^: total += 1 }\n");
@@ -400,14 +400,14 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 9.4 puts pre^ and main^ in one layer, and 9.2 runs pre^ first.
+    // §9.4 puts pre^ and main^ in one layer, and §9.2 runs pre^ first.
     LHAT_TEST("and what pre^ declared, which runs in the same turn");
     check_text(&u,
                "repeat^ 3 { pre^: var^ total = 0  main^: total += 1 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 9.4: prolog^ and first^ last the whole loop, so the clauses that run
+    // §9.4: prolog^ and first^ last the whole loop, so the clauses that run
     // once it is over still reach them.
     LHAT_TEST("last^ and epilog^ see the whole-loop layer");
     check_text(&u,
@@ -416,7 +416,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // And the other half of 9.4: what main^ declares lives one iteration, so
+    // And the other half of §9.4: what main^ declares lives one iteration, so
     // it is gone by the time last^ and epilog^ run. The compiler has always
     // refused this; the checker used to let it through.
     LHAT_TEST("but not what main^ declared, which lives one iteration");
@@ -438,7 +438,7 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
     unit_dispose(&u);
 
-    // 01 の 8 章: the writer put down one '{', so '$^' finds one step out of
+    // 01§8: the writer put down one '{', so '$^' finds one step out of
     // the body whether or not clauses were written in it. The layer holding
     // prolog^ is not a scope anyone wrote, and compile.c counts one too.
     LHAT_TEST("'$^' counts the body once, clauses or not");
@@ -449,7 +449,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 9.8: a break^ leaves from anywhere, so what ended the loop is not
+    // §9.8: a break^ leaves from anywhere, so what ended the loop is not
     // known after it.
     LHAT_TEST("and the narrowing does not outlive the loop");
     check_text(&u,
@@ -468,7 +468,7 @@ static void test_narrowing(void)
     LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 1);
     unit_dispose(&u);
 
-    // 13.11: only a name or a dot path from one, since a call may give a
+    // §13.11: only a name or a dot path from one, since a call may give a
     // different value the second time.
     LHAT_TEST("a call is not narrowed");
     check_text(&u,
@@ -488,7 +488,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.11: reassigning ends it, since the claim was about what was examined.
+    // §13.11: reassigning ends it, since the claim was about what was examined.
     LHAT_TEST("a reassignment ends the narrowing");
     check_text(&u,
                "var^ f = f^ -> number^|string^ { return^ 0 }\n"
@@ -500,7 +500,7 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 13.11: only the written path ends; its prefix keeps its narrowing.
+    // §13.11: only the written path ends; its prefix keeps its narrowing.
     LHAT_TEST("writing a member leaves the receiver narrowed");
     check_text(&u,
                "var^ f = f^ -> t^{ y : number^ }|nil^ { return^ nil^ }\n"
@@ -543,7 +543,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 11.6改: as^ is sound -- a pair no value can inhabit both sides of is
+    // 04§11.6+: as^ is sound -- a pair no value can inhabit both sides of is
     // refused at check time, not left to panic.
     LHAT_TEST("as^ between disjoint types is refused at check time");
     check_text(&u,
@@ -552,9 +552,9 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_AS_IMPOSSIBLE);
     unit_dispose(&u);
 
-    // 11.6改3: as^ answers T|localerror^.CastFailure, so what it hands back
+    // §11.6+3: as^ answers T|localerror^.CastFailure, so what it hands back
     // has a failure arm to deal with -- catch^ is the spelling, as for every
-    // other union with an error in it (04 の 4.1).
+    // other union with an error in it (04§4.1).
     LHAT_TEST("as^ answers T with a failure arm beside it");
     check_text(&u,
                "var^ f = f^ -> any^ { return^ 1 }\n"
@@ -569,9 +569,9 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 04 の 2.7改: and the arm cannot be handed upwards, which is what keeps
+    // 04§2.7+: and the arm cannot be handed upwards, which is what keeps
     // the union from spreading into every signature above the cast. This is
-    // the whole reason 11.6改3 could reverse 11.6改2's refusal to make as^
+    // the whole reason §11.6+3 could reverse 04§11.6+2's refusal to make as^
     // answer an error at all.
     LHAT_TEST("the failure arm cannot be passed to the caller");
     check_text(&u,
@@ -580,7 +580,7 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES);
     unit_dispose(&u);
 
-    // 04 の 4.1改: panic^ answers nothing, so nothing joins what the left is
+    // 04§4.1+: panic^ answers nothing, so nothing joins what the left is
     // worth without its error arm -- the whole is T, and that is what makes
     // this the assertion rather than a way of writing T|something.
     LHAT_TEST("catch^ panic^ leaves the type at T");
@@ -590,7 +590,7 @@ static void test_narrowing(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 4.1's own rule is untouched: a left that cannot fail has nothing for
+    // 11§4.1's own rule is untouched: a left that cannot fail has nothing for
     // any arm to take, panic^ included.
     LHAT_TEST("and a left that cannot fail is still refused");
     check_text(&u,
@@ -599,7 +599,7 @@ static void test_narrowing(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_CANNOT_FAIL);
     unit_dispose(&u);
 
-    // 04 の 11.3 makes absence no failure, so panicking on one asserts
+    // 04§11.3 makes absence no failure, so panicking on one asserts
     // something else in kind. '??' takes an expression and panic^ is not
     // one, which is where that lands.
     LHAT_TEST("'?\?' does not take a panic^ arm");
@@ -644,8 +644,8 @@ static void test_relaxed_nil_reference(void)
     unit_dispose(&u);
 }
 
-// 04 の 11.4 with 01 の 7.1: the written spelling for reaching through
-// a T|nil^, which 11.4 names beside narrowing. The target is read without
+// 04§11.4 with 01§7.1: the written spelling for reaching through
+// a T|nil^, which 04§11.4 names beside narrowing. The target is read without
 // its nil^ arm and the answer gains one, so what these pin is both halves --
 // the access is admitted under strict, and its result still says it may be
 // absent.
@@ -669,7 +669,7 @@ static void test_nil_propagation(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 11.7: which is what '??' is for -- the pair is the whole idiom.
+    // §11.7: which is what '??' is for -- the pair is the whole idiom.
     LHAT_TEST("'?\?' takes the nil^ back off again");
     check_text(&u,
                "var^ f = f^ -> t^{ a : number^ }|nil^ { return^ nil^ }\n"
@@ -693,7 +693,7 @@ static void test_nil_propagation(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 11.7改2: the first '?' guards the rest of the run, so the links after
+    // §11.7+2: the first '?' guards the rest of the run, so the links after
     // it are written plain. The nil^ arm goes on once, at the end.
     LHAT_TEST("one '?' guards the rest of the chain");
     check_text(&u,
@@ -778,7 +778,7 @@ static void test_nil_propagation(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.11: `narrowable` refuses a '?.' path, so a narrowing recorded for
+    // §13.11: `narrowable` refuses a '?.' path, so a narrowing recorded for
     // one name never leaks onto the nil-safe reach through it.
     LHAT_TEST("a '?.' path is not narrowed");
     check_text(&u,
@@ -789,9 +789,9 @@ static void test_nil_propagation(void)
     unit_dispose(&u);
 }
 
-// 04 の 11.3 makes everything a key reads out of a table a 'T|nil^', so the
+// 04§11.3 makes everything a key reads out of a table a 'T|nil^', so the
 // commonest reason an operator finds nothing is the nil^ arm. What that asks
-// of the writer is a narrowing, and 11.3改's rule -- which is what the plain
+// of the writer is a narrowing, and §11.3+'s rule -- which is what the plain
 // refusal recites -- reads as a demand for an operator instead. Every entrance
 // to the refusal is pinned here, since one left saying the old thing is one
 // the writer will meet.
@@ -806,7 +806,7 @@ static void test_operator_on_maybe_nil(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
-    // 11.3改 hands this one to the right operand, which is where a built-in
+    // §11.3+ hands this one to the right operand, which is where a built-in
     // on the left leaves it -- the same mistake read from the other end.
     LHAT_TEST("the argument may be nil^");
     check_text(&u, "var^ f = f^ -> t^{ number^[] } { return^ { 1 } }\n"
@@ -829,7 +829,7 @@ static void test_operator_on_maybe_nil(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL);
     unit_dispose(&u);
 
-    // 11.2's '..' is carried by string^ rather than by 14.8's number^, so it
+    // 04§11.2's '..' is carried by string^ rather than by §14.8's number^, so it
     // reaches the refusal by a different road and has to be asked separately.
     LHAT_TEST("'..' is the same mistake");
     check_text(&u, "var^ f = f^ -> t^{ string^[] } { return^ { \"a\" } }\n"
@@ -854,7 +854,7 @@ static void test_operator_on_maybe_nil(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.11 excludes an index from what may be narrowed, which is why the
+    // §13.11 excludes an index from what may be narrowed, which is why the
     // message says to bind it first -- without that line a writer tries this
     // and meets the same refusal a second time.
     LHAT_TEST("narrowing the index where it stands does not do it");
@@ -880,7 +880,7 @@ static void test_operator_on_maybe_nil(void)
     unit_dispose(&u);
 }
 
-// 01 の 2.3: the stacked reach, typed. The checker walks the same
+// 01§2.3: the stacked reach, typed. The checker walks the same
 // bindings the machine resolves, so it^^ carries the outer focus's type and
 // this^^ the enclosing subroutine's own.
 static void test_stacked_hats(void)
@@ -941,7 +941,7 @@ static void test_stacked_hats(void)
     unit_dispose(&u);
 }
 
-// 13.8改: (A, B) is a type. What keeps 13.8's four propagations from coming
+// §13.8+: (A, B) is a type. What keeps 13.8's four propagations from coming
 // back is where it may be written rather than what it is -- a result and
 // nowhere else. These cases are that confinement.
 //
@@ -957,7 +957,7 @@ static void test_tuple_positions(void)
     CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 
-    // 13.7's expansion rule -- Lua's "truncate to one except in tail
+    // §13.7's expansion rule -- Lua's "truncate to one except in tail
     // position" -- is what 13.8 named as the worst of the four. It has
     // nothing to expand once an argument cannot hold a tuple.
     LHAT_TEST("but not as an argument");
@@ -981,7 +981,7 @@ static void test_tuple_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 
-    // 04 の 3.1: the error goes around the values, never among them.
+    // 04§3.1: the error goes around the values, never among them.
     LHAT_TEST("a union with an error is how a failing one is written");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
@@ -989,14 +989,14 @@ static void test_tuple_positions(void)
     CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_UNION);
     unit_dispose(&u);
 
-    // 04 の 8.2: an error among the values is the shape Go's 'v, err := f()'
+    // 04§8.2: an error among the values is the shape Go's 'v, err := f()'
     // needs, and it stays unwritable.
     LHAT_TEST("and a union with anything else is refused");
     check_text(&u, "var^ g : f^ -> (number^, string^)|number^; = 0\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
     unit_dispose(&u);
 
-    // Multi-value return brings back the second value 8.2 relies on not
+    // Multi-value return brings back the second value §8.2 relies on not
     // existing among the values, so that rule is stated outright.
     LHAT_TEST("an error written among the values is refused");
     check_text(&u,
@@ -1012,7 +1012,7 @@ static void test_tuple_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
     unit_dispose(&u);
 
-    // 13.9 with 15.3改: Y and T are results, R is an input.
+    // §13.9 with §15.3+: Y and T are results, R is an input.
     LHAT_TEST("a coroutine yields and answers tuples");
     check_text(&u,
                "var^ c : c^{ p^number^ -> (number^, string^) -> "
@@ -1020,7 +1020,7 @@ static void test_tuple_positions(void)
     CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 
-    // 13.8改: and R may be a tuple too -- resume(a, b) sends that many, and
+    // §13.8+: and R may be a tuple too -- resume(a, b) sends that many, and
     // the yield^'s own binding takes them apart. Both spellings of R name
     // the same type: '(A, B)' as one parameter, or the parameters written
     // out.
@@ -1036,11 +1036,11 @@ static void test_tuple_positions(void)
     CHECK_NOT_REPORTED(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 
-    // 04 の 4.1: catch^'s right side is one expression, and 13.8改 leaves no
+    // 04§4.1: catch^'s right side is one expression, and §13.8+ leaves no
     // expression that is a tuple. So a failing subroutine answering several
     // values cannot be given a replacement here -- the union of the tuple
     // with whatever was written is what gets reported.
-    // 13.8改 (S48): the literal is what a failing multi-value operation is
+    // §13.8+ (S48): the literal is what a failing multi-value operation is
     // given as a replacement. Before it there was no expression that was a
     // tuple, so catch^ had nothing to offer one.
     LHAT_TEST("catch^ supplies a replacement tuple");
@@ -1059,7 +1059,7 @@ static void test_tuple_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
     unit_dispose(&u);
 
-    // 04 の 4.1改: the panic^ arm has no width to be wrong about. It offers
+    // 04§4.1+: the panic^ arm has no width to be wrong about. It offers
     // the operation no replacement because it offers nothing -- the run
     // ends -- so the width question is not asked of it.
     LHAT_TEST("and the panic^ arm has no width to answer for");
@@ -1078,8 +1078,8 @@ static void test_tuple_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
     unit_dispose(&u);
 
-    // 11.7: '??' is the same shape as catch^, so it takes the same
-    // replacement -- 04 の 4.1 pairs them, and nothing here tells them apart.
+    // §11.7: '??' is the same shape as catch^, so it takes the same
+    // replacement -- 04§4.1 pairs them, and nothing here tells them apart.
     LHAT_TEST("?? takes a replacement tuple too");
     check_text(&u,
                "var^ f = f^ -> (number^, number^)|nil^ { return^ nil^ }\n"
@@ -1094,7 +1094,7 @@ static void test_tuple_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_UNION);
     unit_dispose(&u);
 
-    // 13.8改: two tuples of the same width fold position by position, so the
+    // §13.8+: two tuples of the same width fold position by position, so the
     // answer stays a tuple and can be taken apart. Where both sides are the
     // same type the arm folding already collapsed them -- these are the
     // cases that showed the fold was missing.
@@ -1115,7 +1115,7 @@ static void test_tuple_positions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // The grouping parentheses 13.1's grammar already had. This is what
+    // The grouping parentheses §13.1's grammar already had. This is what
     // leaves a one-position tuple unwritable without inventing '(T,)'.
     LHAT_TEST("'(T)' is still the grouping it always was");
     check_text(&u, "var^ x : (number^) = 1\n");
@@ -1128,14 +1128,14 @@ static void test_tuple_positions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.8改: a literal is a tuple wherever it stands, so every rule about
+    // §13.8+: a literal is a tuple wherever it stands, so every rule about
     // where one may be written applies to it without being restated.
     LHAT_TEST("a literal may not be bound to a name");
     check_text(&u, "var^ t = (1, 2)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 
-    // 13.7's expansion rule is what this keeps from arising.
+    // §13.7's expansion rule is what this keeps from arising.
     LHAT_TEST("nor passed as an argument");
     check_text(&u,
                "var^ g = p^ x:number^ { var^ y = x }\n"
@@ -1154,7 +1154,7 @@ static void test_tuple_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_MISPLACED);
     unit_dispose(&u);
 
-    // 04 の 8.2, asked of a literal the way it is asked of 'return^ a, b'.
+    // 04§8.2, asked of a literal the way it is asked of 'return^ a, b'.
     LHAT_TEST("nor carrying an error in a position");
     check_text(&u,
                "errordef^ E { X }\n"
@@ -1163,7 +1163,7 @@ static void test_tuple_positions(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_ERROR_POSITION);
     unit_dispose(&u);
 
-    // 13.8改: the names on the left take every position or the checker
+    // §13.8+: the names on the left take every position or the checker
     // refuses -- strict never leaves the count to the machine.
     LHAT_TEST("destructuring must take every position");
     check_text(&u,
@@ -1173,10 +1173,10 @@ static void test_tuple_positions(void)
     unit_dispose(&u);
 }
 
-// 13.11改: a branch knows which whole numbers a name may hold, the way it
-// knows which arms of a union it may be. 14.10 makes a table type "at least
+// §13.11+: a branch knows which whole numbers a name may hold, the way it
+// knows which arms of a union it may be. §14.10 makes a table type "at least
 // these", so a key that cannot leave the declared positions cannot find
-// nothing -- and 04 の 11.3's nil^ does not come with the answer.
+// nothing -- and 04§11.3's nil^ does not come with the answer.
 //
 // Two forms say it and no others: the driven for^ and an ordering against a
 // number written out. Nothing carries a bound through arithmetic, which is
@@ -1217,7 +1217,7 @@ static void test_bounded_keys(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 11.5 の (5): the chain is the two links written as one, and the operand
+    // §11.5 の (5): the chain is the two links written as one, and the operand
     // they share is bounded at both ends at once.
     LHAT_TEST("a chain bounds the name between its ends");
     check_text(&u,
@@ -1282,7 +1282,7 @@ static void test_bounded_keys(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 13.11: a write ends what the branch established, bounds as much as
+    // §13.11: a write ends what the branch established, bounds as much as
     // arms -- chk_drop_narrowings_for reaches both by the path.
     LHAT_TEST("nor after the name is written to");
     check_text(&u,
@@ -1341,7 +1341,7 @@ static void test_bounded_keys(void)
         unit_dispose(&u);
     }
 
-    // A limit read off a name says no number here. 14.10's width subtyping
+    // A limit read off a name says no number here. §14.10's width subtyping
     // puts no ceiling on a length either, so there is nothing to read.
     LHAT_TEST("and an end that is not written out is no end");
     check_text(&u,
@@ -1361,7 +1361,7 @@ static void test_bounded_keys(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 8.6.4's spelling is what a place with a nil^ arm needs; a bounded one
+    // §8.6.4's spelling is what a place with a nil^ arm needs; a bounded one
     // has none, so the plain compound assignment is written.
     LHAT_TEST("a bounded place takes a plain compound assignment");
     check_text(&u,
@@ -1383,7 +1383,7 @@ static void test_bounded_keys(void)
     unit_dispose(&u);
 }
 
-// 17.2 with 13.11: a match arm is the if-chain it desugars to, so an fits^
+// §17.2 with §13.11: a match arm is the if-chain it desugars to, so an fits^
 // pattern narrows what the arm reads -- the bare-name subject by its own
 // name, a wider subject through it^. (Neither narrowed at all before this
 // was pinned: the desugar tested a FOCUS node the narrowing machinery did

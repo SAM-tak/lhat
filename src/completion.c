@@ -9,8 +9,8 @@
 // None of it works out a lookup for itself. lhat_type_find_member decides
 // which member a receiver answers with, lhat_check_builtin_members decides
 // which built-ins it carries, and lhat_check_bindings_at decides what is in
-// scope; reading 02 の 14.10 or 8 章 a second time here would disagree with
-// the checker exactly where the rules are hard, which is what 07 の 4 章
+// scope; reading §14.10 or §8 a second time here would disagree with
+// the checker exactly where the rules are hard, which is what 07§4
 // already refused for hover.
 
 #include "lhat/completion.h"
@@ -32,7 +32,7 @@
 // It would be smaller to write straight into the caller's array and count
 // past the end of it, the way lhat_unit_semantic_names does. It would also
 // be wrong here: three of the four sources drop a name another already
-// offered (02 の 14.17改 has a written member beat a built-in, 8 章 has an
+// offered (§14.17+ has a written member beat a built-in, 08§8 has an
 // inner binding shadow an outer, a word yields to a name of its spelling),
 // and a measuring call with no array to read has nothing to compare against.
 // Measuring would count the duplicates and filling would drop them, so the
@@ -90,9 +90,9 @@ static bool already(const Fill *fill, const char *label, size_t length)
     return false;
 }
 
-// 14.10 with 13.4: a member that takes a receiver is reached through a value
+// §14.10 with §13.4: a member that takes a receiver is reached through a value
 // and is written as a call on it; one that does not is reached through the
-// definition. 13.14 names a type instead, and 05 の 8.7's module tables are
+// definition. §13.14 names a type instead, and 05§8.7's module tables are
 // namespaces rather than values.
 static LhatCompletionKind kind_of_member(const LhatTypeMember *m)
 {
@@ -121,13 +121,13 @@ static void offer_written(void *context, const LhatTypeMember *m)
     Fill *fill = (Fill *)context;
     char written[LHAT_COMPLETION_DETAIL];
     lhat_type_write(m->type, written, sizeof written);
-    // 01 の 2.3: the hat is part of the name, so the label is the spelling
+    // 01§2.3: the hat is part of the name, so the label is the spelling
     // the member was written with and nothing is inserted in its place.
     add(fill, m->name, m->name_length, kind_of_member(m), written);
 }
 
 
-// The built-in half (02 の 14.19, 15.6改). Nothing holds these as members:
+// The built-in half (§14.19, §15.6+). Nothing holds these as members:
 // they are what the checker answers, so the checker is asked -- once per
 // spelling it knows of, with the conditions (which receiver, bare or hatted,
 // whether a written member won first) staying where they were written.
@@ -135,7 +135,7 @@ static void offer_builtin(void *context, const char *name, size_t length,
                           LhatType *type)
 {
     Fill *fill = (Fill *)context;
-    // 14.17改: a written member wins, and it has already been added. Adding
+    // §14.17+: a written member wins, and it has already been added. Adding
     // the built-in of the same spelling would show one member twice.
     if (already(fill, name, length)) {
         return;
@@ -150,7 +150,7 @@ static void offer_builtin(void *context, const char *name, size_t length,
         written);
 }
 
-// 13.14 with 05 の 8.7 and 13.4: what the name holds is what says how to draw
+// §13.14 with 05§8.7 and §13.4: what the name holds is what says how to draw
 // it. A binding that names a type is the one the type cannot say for itself.
 static LhatCompletionKind kind_of_binding(const LhatBindingSite *site)
 {
@@ -169,8 +169,8 @@ static LhatCompletionKind kind_of_binding(const LhatBindingSite *site)
 }
 
 
-// 07 の 4 章: a name some scope around the cursor holds. The checker walks
-// the record innermost first, so the first of any spelling is the one 8 章's
+// 07§4: a name some scope around the cursor holds. The checker walks
+// the record innermost first, so the first of any spelling is the one 08§8's
 // lookup would have found and every later one is shadowed.
 static void offer_binding(void *context, const LhatBindingSite *site)
 {
@@ -179,7 +179,7 @@ static void offer_binding(void *context, const LhatBindingSite *site)
         already(fill, site->name, site->name_length)) {
         return;
     }
-    // 13.7: the collector a script's top level takes. It is a name no one
+    // §13.7: the collector a script's top level takes. It is a name no one
     // writes as one -- 'p^...' spells it -- so offering it offers nothing.
     if (site->name_length == 3 && memcmp(site->name, "...", 3) == 0) {
         return;
@@ -194,7 +194,7 @@ static void offer_binding(void *context, const LhatBindingSite *site)
 // Where the cursor stands
 // ---------------------------------------------------------------------------
 
-// 01 の 3.1 with 2.3: what a module path is made of. The hat is here because
+// 01§3.1 with 04§2.3: what a module path is made of. The hat is here because
 // a segment may carry one, and the dot because the path is what is being
 // written.
 static bool is_path_byte(unsigned char c)
@@ -266,7 +266,7 @@ static bool import_prefix(const char *text, size_t length,
     while (at > start && is_path_byte((unsigned char)text[at - 1])) {
         at--;
     }
-    // 01 の 2.3: the hat is part of a name, so the walk above runs straight
+    // 01§2.3: the hat is part of a name, so the walk above runs straight
     // through `import^` where nothing separates it from the path --
     // 'import^godot' is one run of name bytes and reads as a name being
     // written. The word is a fixed spelling, so where the run begins with it
@@ -314,7 +314,7 @@ static bool require_prefix(const char *text, size_t length,
     return true;
 }
 
-// 01 の 3.1 with 2.3: what a word is made of. A '.' is not here -- it ends
+// 01§3.1 with 01§2.3: what a word is made of. A '.' is not here -- it ends
 // the word and begins a member, which is a different question.
 static bool is_word_byte(unsigned char c)
 {
@@ -334,11 +334,11 @@ static bool word_prefix(const char *text, size_t length,
     }
     // A member name is written in a word too, and the receiver decides what
     // may stand there -- so the dot hands the question on rather than
-    // answering it. 11.7改2's '?.' ends in the same byte.
+    // answering it. §11.7+2's '?.' ends in the same byte.
     if (at > 0 && text[at - 1] == '.') {
         return false;
     }
-    // 01 の 3.1: a name never begins with a digit, so what does is a number
+    // 01§3.1: a name never begins with a digit, so what does is a number
     // being written and no word can follow it.
     if (at < offset && isdigit((unsigned char)text[at])) {
         return false;
@@ -355,7 +355,7 @@ static bool word_prefix(const char *text, size_t length,
 // The words of the language
 // ---------------------------------------------------------------------------
 
-// 01 の 2.1: the lexer keeps no keyword table -- every hatted word is the one
+// 01§2.1: the lexer keeps no keyword table -- every hatted word is the one
 // token kind and the parser decides which of them each is (parser.c's
 // is_statement_keyword carries its own half of that knowledge for the same
 // reason). So there is no list anywhere to read, and this is one.
@@ -372,12 +372,12 @@ typedef struct {
 } Word;
 
 static const Word WORDS[] = {
-    // 8.9 with 12 章: what binds a name.
+    // §8.9 with §12: what binds a name.
     {"let^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"var^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"with^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
 
-    // 6 章 and 9 章: the shapes a body takes. The else marker is written six
+    // §6 and §9: the shapes a body takes. The else marker is written six
     // ways, and which of them a writer likes is not the server's to decide.
     {"if^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"el^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
@@ -394,14 +394,14 @@ static const Word WORDS[] = {
     {"repeat^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"until^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
 
-    // 16.3: the clauses of a for^ -- what it walks and how far.
+    // §16.3: the clauses of a for^ -- what it walks and how far.
     {"in^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"from^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"to^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"downto^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"step^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
 
-    // 9.4: the parts a loop body divides into.
+    // §9.4: the parts a loop body divides into.
     {"prolog^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"prologue^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"pre^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
@@ -412,7 +412,7 @@ static const Word WORDS[] = {
     {"epilog^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"epilogue^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
 
-    // 9.11 with 15.8 and 15.14: what leaves, and what suspends.
+    // §9.11 with §15.8 and §15.14: what leaves, and what suspends.
     {"return^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"break^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"next^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
@@ -423,7 +423,7 @@ static const Word WORDS[] = {
     {"_yield^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"await^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
 
-    // 04 の 2 章: what an error is declared and caught with. 2.7 has two
+    // 04§2: what an error is declared and caught with. 04§2.7 has two
     // tops, so it has two of the word that declares one.
     {"try^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"catch^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
@@ -432,7 +432,7 @@ static const Word WORDS[] = {
     {"new^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"localerrordef^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
 
-    // 13 章 with 14 章: what makes a subroutine and what makes a definition.
+    // §13 with §14: what makes a subroutine and what makes a definition.
     {"f^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"p^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"def^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
@@ -451,12 +451,12 @@ static const Word WORDS[] = {
     {"box^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"constbox^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
 
-    // 05 の 6.1 and 8.7: what brings another unit or a host's module in.
+    // 05§6.1 and 05§8.7: what brings another unit or a host's module in.
     {"import^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"require^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"module^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
 
-    // 4.1 with 13.11: the operators that are words.
+    // 01§4.1 with §13.11: the operators that are words.
     {"and^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"or^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
     {"is^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
@@ -470,7 +470,7 @@ static const Word WORDS[] = {
     {"bitnot^", LHAT_COMPLETION_WORD_OF_LANGUAGE},
 
     // The types a name is not needed for (check.c's builtin_type), with
-    // 13.13's word for the literal being written inside.
+    // §13.13's word for the literal being written inside.
     {"number^", LHAT_COMPLETION_CLASS},
     {"int^", LHAT_COMPLETION_CLASS},
     {"float^", LHAT_COMPLETION_CLASS},
@@ -490,8 +490,8 @@ static const Word WORDS[] = {
     {"true^", LHAT_COMPLETION_CONSTANT},
     {"false^", LHAT_COMPLETION_CONSTANT},
 
-    // 14 章 with 05 の 8.6: the names a construct puts there, and the one the
-    // language itself carries. 8.1 keeps them out of what a host can bind,
+    // §14 with 05§8.6: the names a construct puts there, and the one the
+    // language itself carries. 12§8.1 keeps them out of what a host can bind,
     // so no scope holds them and nothing else would offer them.
     {"self^", LHAT_COMPLETION_VARIABLE},
     {"this^", LHAT_COMPLETION_VARIABLE},
@@ -668,7 +668,7 @@ static void member_items(Fill *fill, const LhatUnit *unit, uint32_t offset)
         return;
     }
     LhatCheckResult *result = (LhatCheckResult *)&unit->checked;
-    // 02 の 14.8改2: 'number^.' is the word, and the constants are the whole
+    // §14.8+2: 'number^.' is the word, and the constants are the whole
     // of what stands there -- not members of a number, which is a different
     // question with a different answer.
     if (site->number_word) {

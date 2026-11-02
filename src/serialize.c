@@ -1,6 +1,6 @@
 // L^ (lhat) -- a compiled unit written out as bytes and read back.
 //
-// 05 の 10 章. What a proto tree holds is the machine's own: instructions
+// 05§10. What a proto tree holds is the machine's own: instructions
 // whose operands are indices, constants, descriptors. The only pointers that
 // leave a chunk go to things a name finds again -- another unit, a host type
 // or kind the program registered, an enum declaration -- and those travel as
@@ -30,7 +30,7 @@
 
 // 0x89 is a UTF-8 continuation byte, which no text begins with.
 static const uint8_t MAGIC[4] = { 0x89, 'L', 'H', '^' };
-// 10.7: the signature table's, told apart from a unit's by the last byte.
+// 05§10.7: the signature table's, told apart from a unit's by the last byte.
 static const uint8_t TABLE_MAGIC[4] = { 0x89, 'L', 'H', 'S' };
 #define FORMAT_VERSION 10u
 #define FLAG_DEBUG_NAMES 1u
@@ -217,14 +217,14 @@ static const char *get_text(In *in, size_t *length)
 
 typedef enum {
     EXT_UNIT,         // a unit this one's require^s reach, by relative path
-    EXT_HOSTDATA,     // 8.8: a registered type, by module and name
-    EXT_HOSTVALUE,    // 8.9: the same, with the width the frames were laid
+    EXT_HOSTDATA,     // 05§8.8: a registered type, by module and name
+    EXT_HOSTVALUE,    // §8.9: the same, with the width the frames were laid
                       // out against
-    EXT_HOSTKIND,     // 8.7: a registered error kind -- the group, or one
+    EXT_HOSTKIND,     // 05§8.7: a registered error kind -- the group, or one
                       // variant of it
-    EXT_CASTFAILURE,  // 04 の 2.7: the language's own kind
-    EXT_HOSTENUM,     // 8.7改2: a registered enum's declaration
-    EXT_ENUMDECL      // 02 の 19 章: an enum^ this unit or one it requires
+    EXT_CASTFAILURE,  // 04§2.7: the language's own kind
+    EXT_HOSTENUM,     // 05§8.7+2: a registered enum's declaration
+    EXT_ENUMDECL      // §19: an enum^ this unit or one it requires
                       // declared -- the identity fits^ compares
 } ExtKind;
 
@@ -479,7 +479,7 @@ static uint32_t ext_of_kind(Writer *w, const LhatErrorKind *kind)
 }
 
 // The declaration behind an enum descriptor. Three places declare one: the
-// host (8.7改2), this unit (02 の 19 章, anywhere a statement stands), and a
+// host (05§8.7+2), this unit (§19, anywhere a statement stands), and a
 // unit this one requires (through its exports).
 typedef struct {
     const void *decl;
@@ -972,7 +972,7 @@ static void seal_header(Out *o)
 
 #if LHAT_WITH_FRONTEND
 // ---------------------------------------------------------------------------
-// 10.6: the reflection records, collected
+// 05§10.6: the reflection records, collected
 // ---------------------------------------------------------------------------
 //
 // Gathered through the public API itself rather than by a second walk of
@@ -1215,7 +1215,7 @@ LhatWriteStatus lhat_serialize_write(const LhatUnit *unit,
     }
     intern_cstring(&w, unit->module_name);
     intern_proto(&w, unit->proto);
-    // 8.7: the export descriptors, built onto the root heap by the same
+    // 05§8.7: the export descriptors, built onto the root heap by the same
     // call a host makes -- so they travel as the objects they are.
     size_t exports = lhat_unit_export_count(unit);
     for (size_t i = 0; i < exports; i++) {
@@ -1287,7 +1287,7 @@ LhatWriteStatus lhat_serialize_write(const LhatUnit *unit,
 #endif  // LHAT_WITH_FRONTEND
 
 // ---------------------------------------------------------------------------
-// 10.7: the signature table, written
+// 05§10.7: the signature table, written
 // ---------------------------------------------------------------------------
 
 // What install builds for an entry, as one descriptor: the parameters as
@@ -1563,7 +1563,7 @@ static const void *resolve_ext(Reader *r, ExtKind kind, uint32_t module_ref,
                 fail(r, LHAT_PROGRAM_ERR_CANNOT_READ);
                 return NULL;
             }
-            // 05 の 10 章: a binary unit's require^s reach binary units.
+            // 05§10: a binary unit's require^s reach binary units.
             if (other->state == LHAT_UNIT_DONE && !other->binary) {
                 lhat_program_report(program, LHAT_PROGRAM_ERR_MIXED,
                                     other->path);
@@ -2039,7 +2039,7 @@ static bool read_header(In *in, const uint8_t *magic, const uint8_t *bytes,
 }
 
 // ---------------------------------------------------------------------------
-// 10.6: the reflection records, read
+// 05§10.6: the reflection records, read
 // ---------------------------------------------------------------------------
 
 static void free_about(LhatReflectedAbout *about)
@@ -2265,7 +2265,7 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
                 memcpy(out->module_name, module_name, n + 1);
             }
         }
-        // 8.7: the export descriptors, for lhat_unit_export_* to answer.
+        // 05§8.7: the export descriptors, for lhat_unit_export_* to answer.
         uint32_t exports = get_u32(in);
         if (!in->failed && exports > 0) {
             out->export_names =
@@ -2294,7 +2294,7 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
             memcpy(out->export_names[i], name, n + 1);
             out->export_rt[i] = type;
         }
-        // 10.6: what the declarations said, for the reflection API.
+        // 05§10.6: what the declarations said, for the reflection API.
         if (!in->failed) {
             out->reflection = read_reflection(&r);
         }
@@ -2312,7 +2312,7 @@ bool lhat_serialize_load(LhatProgram *program, LhatUnit *unit,
 }
 
 // ---------------------------------------------------------------------------
-// 10.7: the signature table, read
+// 05§10.7: the signature table, read
 // ---------------------------------------------------------------------------
 
 static int compare_index(const void *a, const void *b)

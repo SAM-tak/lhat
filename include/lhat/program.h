@@ -2,15 +2,15 @@
 //
 // Section numbers refer to DesignDocuments/05-modules.md unless prefixed.
 //
-// 6.2 adds the unit graph to the staging of 03 の 1.1: a unit cannot be type
+// 10§6.2 adds the unit graph to the staging of 03§1.1: a unit cannot be type
 // checked until the units it requires have been, so this walks the graph in
 // dependency order. It also holds everything alive -- the sources, the trees
-// and one shared type arena -- because 6 章 has a unit keep pointing at the
+// and one shared type arena -- because 09§6 has a unit keep pointing at the
 // types its imports published.
 //
-// A program and its units are opaque here: 8.7's contract is register,
+// A program and its units are opaque here: 05§8.7's contract is register,
 // check, compile, run and read reports. Reading reports walks the units --
-// 6.2 makes the graph the thing to show -- but never into one: what a stage
+// 10§6.2 makes the graph the thing to show -- but never into one: what a stage
 // built stays the library's own, and its diagnostics come out as positions
 // and text. The library's own tools read the results themselves, through
 // program_internal.h; a host never needs to.
@@ -23,9 +23,9 @@
 #include <stdint.h>
 #include "lhat/instantiation.h"
 
-#include "lhat/error.h"   // 10 §6.3: the entries a catalog is checked against
+#include "lhat/error.h"   // 10§6.3: the entries a catalog is checked against
 #include "lhat/module.h"  // what a compile answers with, and why one stopped
-#include "lhat/object.h"  // 05 の 8.7: LhatHostFn
+#include "lhat/object.h"  // 05§8.7: LhatHostFn
 #include "lhat/source.h"  // what a diagnostic's position indexes
 #include "lhat/vm.h"
 
@@ -45,23 +45,23 @@ bool lhat_program_set_project_root(LhatProgram *program, const char *path);
 
 typedef enum {
     LHAT_PROGRAM_ERR_CANNOT_READ,  // no such unit
-    LHAT_PROGRAM_ERR_CYCLE,        // 6.3
-    // 05 の 10 章: a binary unit that is not one this library wrote -- the
+    LHAT_PROGRAM_ERR_CYCLE,        // 10§6.3
+    // 05§10: a binary unit that is not one this library wrote -- the
     // magic, the format, the build's fingerprint or the hash disagree.
     LHAT_PROGRAM_ERR_BAD_BINARY,
-    // 10 章: the binary names a host type, kind or enum this program did
+    // 04§10: the binary names a host type, kind or enum this program did
     // not register the same way (a host value type of another width among
     // them).
     LHAT_PROGRAM_ERR_HOST_MISMATCH,
-    // 10 章: a text unit required a binary one or the other way round. A
+    // 05§10: a text unit required a binary one or the other way round. A
     // program is one or the other.
     LHAT_PROGRAM_ERR_MIXED,
-    // 10.7: a registration's signature that the signature table does not
+    // 05§10.7: a registration's signature that the signature table does not
     // hold, in a build that has no front end to read the text with.
     LHAT_PROGRAM_ERR_NO_SIGNATURE,
-    // 10.8: a text unit met by a build without the front end.
+    // 05§10.8: a text unit met by a build without the front end.
     LHAT_PROGRAM_ERR_NO_FRONTEND,
-    // 05 § 5.3: the unit at `path` is named under another unit, which
+    // 05§5.3: the unit at `path` is named under another unit, which
     // publishes the name it would stand at. Both are members of one table in
     // L^.modules, so one would be written over the other.
     LHAT_PROGRAM_ERR_MODULE_COLLIDES
@@ -73,10 +73,10 @@ typedef struct {
 } LhatProgramDiagnostic;
 
 typedef enum {
-    LHAT_UNIT_CHECKING,  // 6.3: meeting it again while in this state is a cycle
+    LHAT_UNIT_CHECKING,  // 10§6.3: meeting it again while in this state is a cycle
     LHAT_UNIT_DONE,
     LHAT_UNIT_FAILED,
-    // 05 の 5.7: lhat_program_invalidate retired what was made of it. The
+    // 05§5.7: lhat_program_invalidate retired what was made of it. The
     // unit is still the program's -- the path it stands for has not gone --
     // but nothing of it is checked or compiled, and the next
     // lhat_program_check reads it again.
@@ -88,14 +88,14 @@ typedef enum {
 typedef char *(*LhatProgramLoader)(void *context, const char *path,
                                    size_t *length);
 
-// 05 の 8.9: the loader is handed over rather than defaulted to, so nothing
+// 05§8.9: the loader is handed over rather than defaulted to, so nothing
 // embedded reaches a file system without having been told to. `load` may be
 // NULL, and then no unit can be read -- which is what a host wants when the
 // only units are ones it hands over itself.
 //
 // port.h's lhat_load_file is written in this shape, for a host that does want
 // the file system. NULL when out of memory.
-// 05 の 8.11: the lock every write to this program takes, for a host that
+// 05§8.11: the lock every write to this program takes, for a host that
 // reaches it from more than one thread. std.thread starts a machine per
 // worker (lhat_program_install), and a host may go on checking, compiling
 // and loading while those run -- an editor's save, std.load, a worker
@@ -109,7 +109,7 @@ typedef char *(*LhatProgramLoader)(void *context, const char *path,
 // anything runs, alongside the registrations.
 //
 // The running side needs nothing: a machine runs off protos, which no write
-// moves (05 の 5.7 retires bodies rather than freeing them).
+// moves (05§5.7 retires bodies rather than freeing them).
 typedef void (*LhatProgramLockFn)(void *context);
 void lhat_program_set_lock(LhatProgram *program, LhatProgramLockFn lock,
                            LhatProgramLockFn unlock, void *context);
@@ -122,11 +122,11 @@ LhatProgram *lhat_program_new(bool strict, LhatProgramLoader load,
 void lhat_program_free(LhatProgram *program);
 
 // Checks the unit at `path` and, first, everything it requires. `path` is
-// taken as written; a require^ inside a unit is relative to that unit (5.1).
+// taken as written; a require^ inside a unit is relative to that unit (05§5.1).
 // Returns NULL when the unit itself could not be read.
 const LhatUnit *lhat_program_check(LhatProgram *program, const char *path);
 
-// 05 の 5.3: compiles every checked unit that is not compiled yet. The
+// 05§5.3: compiles every checked unit that is not compiled yet. The
 // program owns what it makes, and each unit's proto carries its own table of
 // the units its require^s reach -- so a machine is given nothing, and this
 // may be called again after a later lhat_program_check, under machines
@@ -143,7 +143,7 @@ bool lhat_program_compile(LhatProgram *program);
 LhatCompileStatus lhat_program_compile_status(const LhatProgram *program);
 
 // ---------------------------------------------------------------------------
-// 05 の 5.7: a unit changed under the program
+// 05§5.7: a unit changed under the program
 // ---------------------------------------------------------------------------
 
 // The text at `path` may have changed. Retires what was checked and compiled
@@ -184,7 +184,7 @@ size_t lhat_program_invalidate(LhatProgram *program, const char *path);
 // lhat_machine_gc_collect, and then check
 // lhat_machine_pending_disposals is zero. The collection is what takes the
 // closures nothing holds any more; the second is the one thing a collection
-// cannot finish on its own -- 02 の 10.7 keeps a dropped coroutine alive
+// cannot finish on its own -- §10.7 keeps a dropped coroutine alive
 // until its finally^ has run, and that coroutine holds the closure it was
 // suspended in. Free a body under one of those and the cleanup runs freed
 // bytecode the next time the machine runs anything.
@@ -208,7 +208,7 @@ bool lhat_program_discard_unheld(LhatProgram *program,
                                  LhatMachine *const *machines,
                                  size_t machine_count);
 
-// 05 の 5.7, whole: the one call an editor's save becomes. Invalidates
+// 05§5.7, whole: the one call an editor's save becomes. Invalidates
 // `path`, forgets every retired unit's module on every machine handed in,
 // rechecks every retired unit (the requirers too -- a shell left staled
 // would be a NULL proto to whoever runs it) and recompiles -- and then
@@ -217,7 +217,7 @@ bool lhat_program_discard_unheld(LhatProgram *program,
 // the same waiting a host that never discards pays, never worse.
 //
 // `machines` is every machine the program was installed on -- the program
-// keeps no list of its own (8.7 has registration done before anything
+// keeps no list of its own (05§8.7 has registration done before anything
 // runs, and a list written to at machine birth would end that). Answers as
 // lhat_program_invalidate does: how many units retired, 0 for text that
 // reads as it did, SIZE_MAX for a path no unit sits at. When the reread no
@@ -226,7 +226,7 @@ bool lhat_program_discard_unheld(LhatProgram *program,
 size_t lhat_reload(LhatProgram *program, const char *path,
                    LhatMachine *const *machines, size_t machine_count);
 
-// 05 の 5.6: a script brought in while the program runs -- what std.load
+// 05§5.6: a script brought in while the program runs -- what std.load
 // is built on. The text is checked and compiled as a unit of its own and
 // then forgotten: what it requires joins the program as any unit does
 // (checked, compiled, registered once it first runs), but the script itself
@@ -234,13 +234,13 @@ size_t lhat_reload(LhatProgram *program, const char *path,
 // second compile. The proto answered is the caller's -- lhat_proto_free,
 // or lhat_machine_adopt_script to have a machine own it.
 //
-// A script (no module^) compiles to 'p^...' (3.2) and answers its return^;
-// a module^ unit compiles without 5.3's guard and registry write and
+// A script (no module^) compiles to 'p^...' (05§3.2) and answers its return^;
+// a module^ unit compiles without 10§5.3's guard and registry write and
 // answers its public^ table to whoever calls it -- so loading one twice
 // makes two tables, and import^ sees neither.
 //
 // `name` is what diagnostics call it and what a require^ inside it is
-// relative to (5.1). `_file` reads through the program's loader
+// relative to (05§5.1). `_file` reads through the program's loader
 // (lhat_program_new), and answers CANNOT_READ when there is none or it has
 // nothing for the path. REJECTED leaves what the checker or the compiler
 // said in lhat_program_load_failure: every diagnostic the load raised, one
@@ -252,7 +252,7 @@ typedef enum {
     LHAT_LOAD_OUT_OF_MEMORY
 } LhatLoadStatus;
 
-// 05 の 8.9: the bytes at `path`, read through the loader the program was
+// 05§8.9: the bytes at `path`, read through the loader the program was
 // given and through nothing else -- so a host that handed none over reads
 // nothing here either. NULL when there is no loader or it has nothing for
 // the path; otherwise a buffer the caller frees with lhat_free.
@@ -266,7 +266,7 @@ char *lhat_program_read(LhatProgram *program, const char *path,
 // 08: how a text that is data rather than a program is read. What differs is
 // only what its names may reach.
 typedef struct {
-    // 05 の 8.2: whether the initial bindings the host set are in scope.
+    // 05§8.2: whether the initial bindings the host set are in scope.
     //
     // They are the host's convenience for a program it means to run, and a
     // configuration file is not that: what the host bound for its own units
@@ -290,14 +290,14 @@ LhatLoadStatus lhat_program_load_file(LhatProgram *program, const char *path,
                                       LhatProto **out);
 const char *lhat_program_load_failure(const LhatProgram *program);
 
-// 10 §7.1: the language this program's messages come out in, and the
+// 10§7.1: the language this program's messages come out in, and the
 // catalogs they are drawn from -- one per source, per language tag. Held per
 // program rather than anywhere global, since two programs in one process may
-// be read by people in different languages (10 §2.3).
+// be read by people in different languages (10§2.3).
 //
 // `lhat_program_load_language` takes the bytes of one catalog and answers how
 // many entries it holds. Which source they are for is the caller's to say:
-// the file name is the host's to read (10 §6.1), and a host with no files
+// the file name is the host's to read (10§6.1), and a host with no files
 // still has bytes. Reading the same language and source again replaces what
 // was held.
 size_t lhat_program_load_language(LhatProgram *program, const char *tag,
@@ -305,7 +305,7 @@ size_t lhat_program_load_language(LhatProgram *program, const char *tag,
                                   size_t length);
 // The same for a source whose English the caller holds itself -- a tool's or
 // a host's own texts, which is what the names and the holes in the catalog
-// are checked against (10 §6.3).
+// are checked against (10§6.3).
 size_t lhat_program_load_catalog(LhatProgram *program, const char *tag,
                                  const char *source,
                                  const LhatMessageEntry *english,
@@ -313,10 +313,10 @@ size_t lhat_program_load_catalog(LhatProgram *program, const char *tag,
                                  size_t length);
 // The language to draw in. `en` is the default and needs no catalog; a tag
 // with no catalog of its own falls back to the language alone (`ja-JP` to
-// `ja`), and then to the English the build holds (10 §2.2).
+// `ja`), and then to the English the build holds (10§2.2).
 bool lhat_program_set_language(LhatProgram *program, const char *tag);
 const char *lhat_program_language(const LhatProgram *program);
-// 10 §2.2: the text `id` is drawn from in this program's language, or
+// 10§2.2: the text `id` is drawn from in this program's language, or
 // `english` where that language holds nothing for it. Every message written
 // about this program goes through it, and a host drawing its own texts in
 // the same language asks it too. A NULL program answers the English.
@@ -331,17 +331,17 @@ size_t lhat_compile_message_write(const LhatProgram *program,
                                   const LhatCompileResult *result, char *out,
                                   size_t capacity);
 
-// 05 の 10 章 with 08 の 7改: whether `bytes` begin the way a compiled unit
+// 05§10 with 08§7+: whether `bytes` begin the way a compiled unit
 // does -- the one reading that tells the two apart, since the extension
-// does not (10.1). The loaders above ask it themselves, so a script or an
+// does not (05§10.1). The loaders above ask it themselves, so a script or an
 // LTON file a full build wrote out loads through the same entries as its
-// text would, front end or no (10.8); what holds something that may be
+// text would, front end or no (05§10.8); what holds something that may be
 // either can ask here before choosing how to present it.
 bool lhat_program_is_binary_unit(const char *bytes, size_t length);
 
 // The same reading lhat_program_load_text_with makes of a text, written out
 // as the bytes those entries read back rather than handed over as a proto
-// -- what `lhat --compile` does for a .lton (08 の 7改), and what a host
+// -- what `lhat --compile` does for a .lton (08§7+), and what a host
 // does for a script it ships to a build without the front end. `out` is
 // lhat_alloc'd and the caller's to free. Answers as the load would; a build
 // without the front end refuses (LHAT_LOAD_REJECTED), having nothing to
@@ -366,8 +366,8 @@ LhatCompileResult lhat_program_compile_failure(const LhatProgram *program,
 // until that ran, or when the unit would not compile.
 const LhatProto *lhat_unit_proto(const LhatUnit *unit);
 
-// 05 の 3 章: the path the unit declared with module^, or NULL when it
-// declared none (3.2) -- a script, whose body is a run of statements.
+// 05§3: the path the unit declared with module^, or NULL when it
+// declared none (05§3.2) -- a script, whose body is a run of statements.
 const char *lhat_unit_module_name(const LhatUnit *unit);
 
 const char *lhat_unit_path(const LhatUnit *unit);
@@ -387,8 +387,8 @@ const LhatProgramDiagnostic *lhat_program_diagnostic(const LhatProgram *program,
 // What the stages reported
 // ---------------------------------------------------------------------------
 //
-// 03 の 1.1 gives each stage its own codes and each unit its own results, and
-// 6.2 makes the graph the thing to show rather than one file -- a unit fails
+// 03§1.1 gives each stage its own codes and each unit its own results, and
+// 05§6.2 makes the graph the thing to show rather than one file -- a unit fails
 // on what one of its imports says as readily as on its own text. So this is
 // a walk over the units and a question to each, not one flat list keyed to
 // the path that was asked for.
@@ -440,13 +440,13 @@ size_t lhat_unit_diagnostic_message(const LhatUnit *unit, size_t index,
 // -- and with `rich`, the line it happened on and a caret beneath. The same
 // convention, and what a host wants unless it is placing the position
 // itself, as a language server does.
-// 10 §7.3: the ID of the text this diagnostic's message was drawn from --
+// 10§7.3: the ID of the text this diagnostic's message was drawn from --
 // what a tool puts in the `code` an editor shows, and what a host looks up
 // to draw the message itself. NULL for a unit that reports nothing of its
 // own (a binary one) or an index past the last.
 const char *lhat_unit_diagnostic_id(const LhatUnit *unit, size_t index);
 
-// 07 §6: the fixes this diagnostic knows how to make, and what one of them
+// 07§6: the fixes this diagnostic knows how to make, and what one of them
 // is. A tool shows the title and applies the edits in the order they come.
 // A unit that reports nothing of its own (a binary one) answers none.
 //
@@ -457,13 +457,13 @@ const char *lhat_unit_diagnostic_id(const LhatUnit *unit, size_t index);
 size_t lhat_unit_diagnostic_fix_count(const LhatUnit *unit, size_t index);
 bool lhat_unit_diagnostic_fix(const LhatUnit *unit, size_t index, size_t which,
                               LhatFix *out);
-// The title a fix is offered under, in the program's language (10 §7.1),
+// The title a fix is offered under, in the program's language (10§7.1),
 // drawn with what its first edit writes. Follows lhat_report_write.
 size_t lhat_unit_diagnostic_fix_title(const LhatUnit *unit, size_t index,
                                       size_t which, char *out,
                                       size_t capacity);
 
-// 07 §6: every edit of the fixes that may be applied without being read --
+// 07§6: every edit of the fixes that may be applied without being read --
 // a diagnostic's fix when it is machine-applicable and the only one it has,
 // the same one an editor may put first -- in source order. No two meet: a
 // fix with an edit meeting one already taken is left out whole, for the next
@@ -480,25 +480,25 @@ size_t lhat_unit_fix_all_title(const LhatUnit *unit, char *out,
 size_t lhat_unit_diagnostic_write(const LhatUnit *unit, size_t index,
                                   bool rich, char *out, size_t capacity);
 
-// 03 の 3.1: true when this is one of the three the checker reports only
+// 03§3.1: true when this is one of the three the checker reports only
 // under strict -- a gap inference left in a result, a parameter, or a
 // binding, reaching a place with nothing else to say about it. relaxed
 // would not have reported it at all, since it treats the gap as dynamic
-// and waves it through (03 の 3.5) -- so a host that builds this unit
+// and waves it through (03§3.5) -- so a host that builds this unit
 // relaxed will not stop on it either. For a tool showing both what strict
 // would say and what the host actually builds with (a language server,
 // say): this is the one it may show as advisory rather than fatal.
 bool lhat_unit_diagnostic_relaxed_ok(const LhatUnit *unit, size_t index);
 
 // ---------------------------------------------------------------------------
-// 02 の 18: what a unit wrote as annotations
+// §18: what a unit wrote as annotations
 // ---------------------------------------------------------------------------
 //
-// 18.1 makes an annotation information for the host, so this is the one place
+// §18.1 makes an annotation information for the host, so this is the one place
 // the language hands something back rather than being told it. What a
 // registration meant is the host's to know; what is here is what was written.
 
-// Which of 18.3's four an argument is. A name is not resolved -- it arrives
+// Which of §18.3's four an argument is. A name is not resolved -- it arrives
 // as its spelling, and what it means is the host's to decide.
 typedef enum {
     LHAT_ANNOTATION_ARG_NUMBER,
@@ -509,7 +509,7 @@ typedef enum {
 
 typedef struct {
     LhatAnnotationArgumentKind kind;
-    LhatReal number;   // NUMBER, with 18.3's leading '-' already applied
+    LhatReal number;   // NUMBER, with §18.3's leading '-' already applied
     bool boolean;    // BOOL
     // STRING and NAME. Borrowed from the unit, which has to outlive it.
     const char *text;
@@ -545,7 +545,7 @@ LhatAnnotationArgument lhat_annotation_argument(LhatAnnotation annotation,
                                                 size_t at);
 
 // As much of a written type as a host can act on. Nothing else in a host's
-// world is shaped like L^'s types, so this is the same coarse reading 18.3
+// world is shaped like L^'s types, so this is the same coarse reading §18.3
 // gives an annotation's arguments rather than a second type system.
 typedef enum {
     LHAT_UNIT_TYPE_OTHER,
@@ -555,13 +555,13 @@ typedef enum {
 } LhatUnitTypeKind;
 
 // What a definition declares, in the order it was written. An annotation says
-// what a member is for (18.1), and acting on that takes knowing its shape --
+// what a member is for (§18.1), and acting on that takes knowing its shape --
 // which the tree holds whether or not the member has a value at run time.
 typedef struct {
     const char *name;  // borrowed; NULL when there is no such one
     size_t name_length;
-    bool declared;  // 14.15: written with a type and no value
-    // 18.7改: written as an f^ or p^ whose body holds no statement. Not a
+    bool declared;  // §14.15: written with a type and no value
+    // §18.7+: written as an f^ or p^ whose body holds no statement. Not a
     // declaration -- there is a value, and its type is read off the
     // signature the same way as any other member's. It is the one spelling a
     // writer has for "there is nothing here for the language to run", which
@@ -569,10 +569,10 @@ typedef struct {
     // what was written going quietly unrun.
     bool empty_body;
     // How many parameters it wrote, read off a written signature or off the
-    // f^ / p^ the member holds. 13.4 makes self^ none of them, so a receiver
+    // f^ / p^ the member holds. §13.4 makes self^ none of them, so a receiver
     // is not counted -- what is here is what a call writes.
     size_t parameter_count;
-    // 14.6: the type of 'name : type = value', and where only a value was
+    // §14.6: the type of 'name : type = value', and where only a value was
     // written, what that value is written as. A host showing a field in an
     // editor has to put a widget on it before anything has run, and the tree
     // is all there is to go on then.
@@ -580,7 +580,7 @@ typedef struct {
 } LhatUnitMember;
 
 // The members of the definition `definition` holds, its template's fields
-// included -- 18.4 puts an annotation on both, and a host asking what a
+// included -- §18.4 puts an annotation on both, and a host asking what a
 // class declares does not care which it was written as.
 size_t lhat_unit_member_count(const LhatUnit *unit, const char *definition);
 LhatUnitMember lhat_unit_member(const LhatUnit *unit, const char *definition,
@@ -594,7 +594,7 @@ typedef struct {
     const char *name;  // borrowed; NULL when it was written without one
     size_t name_length;
     LhatUnitTypeKind type;
-    bool variadic;  // 13.7's '...' tail
+    bool variadic;  // §13.7's '...' tail
 } LhatUnitParameter;
 
 LhatUnitParameter lhat_unit_member_parameter(const LhatUnit *unit,
@@ -602,11 +602,11 @@ LhatUnitParameter lhat_unit_member_parameter(const LhatUnit *unit,
                                              size_t member, size_t at);
 
 // The plain names the member's body writes as a call argument, in written
-// order. A string and an id^ (01 の 3.3) are the same thing here, and an
+// order. A string and an id^ (01§3.3) are the same thing here, and an
 // argument the call works out is not one at all.
 //
 // This is what lets a host check a body against the meaning it gave the
-// member: 18.1 leaves that meaning entirely to the host, so the language
+// member: §18.1 leaves that meaning entirely to the host, so the language
 // cannot say a body disagrees with it -- but it can hand over the names the
 // body wrote and let the host say so.
 typedef struct {
@@ -621,7 +621,7 @@ LhatUnitText lhat_unit_member_written_name(const LhatUnit *unit,
                                            const char *definition,
                                            size_t member, size_t at);
 
-// 05 の 4.5: what the unit published (public^), as the checker settled it
+// 05§4.5: what the unit published (public^), as the checker settled it
 // -- not the coarse reading above, the type itself. For a host holding a
 // contract the unit is meant to keep -- a game's update is 'p^number^;' --
 // and wanting the break found before the first frame, with what the unit
@@ -639,23 +639,23 @@ LhatUnitText lhat_unit_export_name(const LhatUnit *unit, size_t index);
 const struct LhatRuntimeType *lhat_unit_export_type(const LhatUnit *unit,
                                                     const char *name);
 
-// The same type in 02 の 14.10's spelling -- what typeof^(x).signature
+// The same type in §14.10's spelling -- what typeof^(x).signature
 // answers. lhat_report_write's convention: measures with (NULL, 0), fills
 // up to `capacity` including the NUL. SIZE_MAX when nothing of that name
 // was published.
 size_t lhat_unit_export_type_text(const LhatUnit *unit, const char *name,
                                   char *out, size_t capacity);
 
-// Whether the export conforms to `signature` -- 02 の 13.5's conformance,
+// Whether the export conforms to `signature` -- §13.5's conformance,
 // the question a call asks of its argument. The text may name what the
-// program registered before the check, as a registration's own may (8.7).
+// program registered before the check, as a registration's own may (05§8.7).
 // False when nothing of that name was published, or the text does not read
 // as a type.
 bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
                                const char *signature);
 
 // ---------------------------------------------------------------------------
-// 05 の 10 章: a unit as bytes
+// 05§10: a unit as bytes
 // ---------------------------------------------------------------------------
 //
 // Writes a checked and compiled unit out as the bytes a loader may hand back
@@ -663,7 +663,7 @@ bool lhat_unit_export_conforms(const LhatUnit *unit, const char *name,
 // lhat_program_check -- the file's first bytes say which it is, so no name
 // changes. What runs is what the compiler left; nothing is checked again.
 // `with_debug_names` keeps the local and captured names a debugger reads
-// (09 の 4 章); the lines a traceback needs stay either way. The bytes are
+// (09§4); the lines a traceback needs stay either way. The bytes are
 // lhat_alloc'd and the caller's to lhat_free.
 //
 // A program is text or binary throughout (LHAT_PROGRAM_ERR_MIXED), and a
@@ -682,9 +682,9 @@ LhatWriteStatus lhat_unit_write_binary(const LhatUnit *unit,
                                         bool with_debug_names,
                                         uint8_t **bytes, size_t *length);
 
-// 10.7: the signature table. A registration's signature is text
+// 05§10.7: the signature table. A registration's signature is text
 // ("f^number^ -> number^;"), and reading it takes the front end -- the
-// parser and the checker. A build without one (10.8) registers by looking
+// parser and the checker. A build without one (05§10.8) registers by looking
 // the text up in a table a full build wrote from the same registrations:
 // what the table holds for each text is the descriptor the machine's
 // overload search reads, exactly as install would have built it.
@@ -704,10 +704,10 @@ bool lhat_program_read_signatures(LhatProgram *program, const uint8_t *bytes,
                                   size_t length);
 
 // ---------------------------------------------------------------------------
-// 01 の 6.4: what a unit says about itself
+// 01§6.4: what a unit says about itself
 // ---------------------------------------------------------------------------
 
-// The comment block written directly above one thing, as prose. 6.4 settles
+// The comment block written directly above one thing, as prose. 10§6.4 settles
 // that L^ has no spelling for a description -- every comment is kept alike,
 // and the block above a thing is what it says about it, the way Go has it.
 // So this is where a host reads one, and there is nothing to write.
@@ -730,7 +730,7 @@ size_t lhat_unit_documentation(const LhatUnit *unit, const char *definition,
 
 
 // ---------------------------------------------------------------------------
-// 05 の 8.7: what the host provides
+// 05§8.7: what the host provides
 // ---------------------------------------------------------------------------
 //
 // All of these belong before lhat_program_check: the checker has to know what
@@ -738,19 +738,19 @@ size_t lhat_unit_documentation(const LhatUnit *unit, const char *definition,
 // checking is too late and answers false.
 //
 // A module is made by the first registration under its path. A signature is
-// written in the type grammar of 13 章 and may name the builtins and any type
+// written in the type grammar of §13 and may name the builtins and any type
 // registered before it -- so a pair that name each other is registered as two
 // bare types first, then given their members.
 
-// An opaque type of its own. 05 の 7.3's rule holds for it: identity is the
+// An opaque type of its own. 05§7.3's rule holds for it: identity is the
 // declaration, not the shape, so two host types with the same members are
 // still different types and a pointer cannot be handed to the wrong C code.
 bool lhat_register_type(LhatProgram *program, const char *module,
                         const char *name);
 
-// 05 の 8.8: the same, and answers the tag a value of it carries. Registering
+// 05§8.8: the same, and answers the tag a value of it carries. Registering
 // a `dispose` member on it is what makes it the host's to hand over and L^'s
-// to give back -- 02 の 12.5 reads that off the type the way it does for
+// to give back -- §12.5 reads that off the type the way it does for
 // anything else. Without one the host keeps the lifetime and L^ holds a
 // pointer it never frees.
 //
@@ -760,7 +760,7 @@ const LhatHostDataTag *lhat_register_hostdata_type(LhatProgram *program,
                                                    const char *module,
                                                    const char *name);
 
-// 05 の 8.8改: the same, under a type registered earlier. A host whose own
+// 05§8.8+: the same, under a type registered earlier. A host whose own
 // model is a class tree -- an engine's ClassDB, a widget toolkit -- writes
 // the tree here instead of flattening it into one opaque type and losing
 // every boundary the checker could have held.
@@ -785,7 +785,7 @@ const LhatHostDataTag *lhat_register_hostdata_subtype(LhatProgram *program,
                                                       const char *base_module,
                                                       const char *base_name);
 
-// 05 の 8.8改2: declares that a pointer of this type may cross machines --
+// 05§8.8+2: declares that a pointer of this type may cross machines --
 // that stdlib/carry may move a value of it as its pointer and make a
 // wrapper of the same type on the far side (std.thread's arguments and
 // answers, std.channel's contents). What the language could not decide on
@@ -815,16 +815,16 @@ bool lhat_register_hostdata_type_arguments(LhatProgram *program, const char *mod
                                           void *context);
 
 // A member of a type registered earlier. `signature` describes it; a p^ or f^
-// whose first parameter is written self^ is an instance method (14.4).
+// whose first parameter is written self^ is an instance method (§14.4).
 //
-// 8.8改: a derived type inherits what its base registered. Registering the
+// 05§8.8+: a derived type inherits what its base registered. Registering the
 // same name on the derived one is what replaces it there.
 bool lhat_register_member(LhatProgram *program, const char *module,
                           const char *type, const char *name,
                           const char *signature, LhatHostFn call,
                           void *context);
 
-// 05 の 8.9: a host-defined value type -- `size` bytes the machine keeps in
+// 05§8.9: a host-defined value type -- `size` bytes the machine keeps in
 // consecutive stack slots rather than behind a pointer. Nominal like a
 // hostdata type, and additionally barred by the checker from every place
 // that outlives a frame (a table, a capture, an any^): boxing into a
@@ -838,7 +838,7 @@ const LhatHostValueTag *lhat_register_hostvalue_type(LhatProgram *program,
 
 // A member of a host value type: an operator ("+", "-", ...) or a method.
 // `signature` names the value type by its full written path
-// ("std.math.Vector3"); a first parameter of self^ is the receiver (14.4).
+// ("std.math.Vector3"); a first parameter of self^ is the receiver (§14.4).
 bool lhat_register_hostvalue_member(LhatProgram *program, const char *module,
                                     const char *type, const char *name,
                                     const char *signature, LhatHostFn call,
@@ -853,8 +853,8 @@ bool lhat_register_hostvalue_field(LhatProgram *program, const char *module,
                                    const char *type, const char *field,
                                    size_t offset, LhatHostValueFieldKind kind);
 
-// 02 の 18: an annotation the host understands. A program may write no
-// others -- 18.5 makes an unregistered name an error rather than something
+// §18: an annotation the host understands. A program may write no
+// others -- §18.5 makes an unregistered name an error rather than something
 // carried in silence, since a misspelling that vanishes costs more than it
 // saves. `targets` is where it may be written and how many times.
 //
@@ -863,19 +863,19 @@ bool lhat_register_hostvalue_field(LhatProgram *program, const char *module,
 // that grew a parameter for every one would make every caller carry the
 // ones it has no use for.
 //
-// Belongs before lhat_program_check, with every other registration (8.7).
+// Belongs before lhat_program_check, with every other registration (05§8.7).
 bool lhat_register_annotation(LhatProgram *program, const char *module,
                               const char *name, uint32_t targets);
 
-// 18.3: what the arguments have to look like, written in 13 章's grammar as
+// §18.3: what the arguments have to look like, written in 04§13's grammar as
 // a p^ -- they are what it takes and there is nothing for it to answer.
-// Without this nothing is asked of them. 18.3 keeps an argument a literal,
+// Without this nothing is asked of them. §18.3 keeps an argument a literal,
 // and a bare name arrives as a string^: what the name means is the host's.
 bool lhat_register_annotation_signature(LhatProgram *program,
                                         const char *name,
                                         const char *signature);
 
-// 18.5.1: two names that are two answers to one question -- @game and @tool
+// §18.5.1: two names that are two answers to one question -- @game and @tool
 // on a Godot class, where one says a node wears it and the other says the
 // same and that it runs while a scene is being edited. A file carries one of
 // them or the other and never both.
@@ -889,16 +889,16 @@ bool lhat_register_annotation_signature(LhatProgram *program,
 // was written first changes nothing. Saying it from both is how the pair
 // reads as a pair to somebody looking at the registrations.
 //
-// Neither of the two takes a module: 18.2 keeps the annotation namespace
+// Neither of the two takes a module: §18.2 keeps the annotation namespace
 // flat, so a name is the whole of an address and a second registration of
 // one is refused whatever module asked for it.
 bool lhat_register_annotation_exclusive(LhatProgram *program,
                                         const char *name, const char *other);
 
-// 18.5.2: a name that means nothing on its own -- @icon on a Godot class,
+// §18.5.2: a name that means nothing on its own -- @icon on a Godot class,
 // which the engine hangs on a global class name and so on the @export_class
 // that asks for one. Writing it without that one is writing a mark that
-// quietly does nothing, which is the loss 18.4改 refused.
+// quietly does nothing, which is the loss §18.4+ refused.
 //
 // Read on the declaration the annotation is written above, not over the
 // file: standing beside something is standing beside it, and an @icon over
@@ -922,13 +922,13 @@ bool lhat_register_instantiation_check_handler(
     LhatProgram *program, const char *module, const char *type, const char *name,
     size_t arm, LhatInstantiationCheckHandler handler, void *context);
 
-// 05 の 8.7改: a value rather than a subroutine -- an enum's number, a
+// 05§8.7+: a value rather than a subroutine -- an enum's number, a
 // limit, a name a host wants readable as itself. `type` is NULL for a
-// member of the module itself, or a registered type's name (8.8's and
-// 8.9's both) for a static member read off the type -- and, the type
+// member of the module itself, or a registered type's name (05§8.8's and
+// §8.9's both) for a static member read off the type -- and, the type
 // table being the members table, off a value of the type as well.
 // Installed once per machine as the plain value; writing over one is
-// refused the way 8.6 refuses every write under L^.modules. A name
+// refused the way 05§8.6 refuses every write under L^.modules. A name
 // already registered -- constant or subroutine -- is refused outright:
 // a constant is no overload arm. Called before lhat_program_check, as
 // every registration is. The string constant's text is copied.
@@ -945,8 +945,8 @@ bool lhat_register_const_string(LhatProgram *program, const char *module,
                                 const char *type, const char *name,
                                 const char *text);
 
-// 05 の 8.7改2: an enum the host declares -- godot.Mode with its members,
-// read as 02 の 19 章's enum^: the members are singleton values under
+// 05§8.7+2: an enum the host declares -- godot.Mode with its members,
+// read as §19's enum^: the members are singleton values under
 // module.Name, a when^ naming them all proves exhaustive, and fits^
 // compares the declaration. `values` gives each member its integer;
 // without it (lhat_register_enum) they count from 0. A name already
@@ -955,11 +955,11 @@ bool lhat_register_const_string(LhatProgram *program, const char *module,
 // program's: enum values do not cross programs.
 //
 // `type` is NULL for an enum of the module itself, or a registered type's
-// name (8.8's and 8.9's alike) for one declared under it -- godot.Node's
+// name (05§8.8's and §8.9's alike) for one declared under it -- godot.Node's
 // own Mode, read as godot.Node.Mode.Idle. A host type is nominal, so a
 // name it carries never collides with the module's; the constants take
-// their `type` the same way. 02 の 19 章 has no nesting of its own -- an
-// L^ unit writes enum^ at the top of a scope -- and this is 8.8's
+// their `type` the same way. §19 has no nesting of its own -- an
+// L^ unit writes enum^ at the top of a scope -- and this is 05§8.8's
 // namespace lending one, not a second spelling of the declaration.
 bool lhat_register_enum(LhatProgram *program, const char *module,
                         const char *type, const char *name,
@@ -969,14 +969,14 @@ bool lhat_register_enum_valued(LhatProgram *program, const char *module,
                                const char *const *members,
                                const LhatInteger *values, size_t count);
 
-// 04 の 2.2/12.4 の host 版: an errordef^ the host declares in C rather than
+// 04§2.2/04§12.4 の host 版: an errordef^ the host declares in C rather than
 // in an L^ unit -- "L^ has its own errordef^-shaped things without writing
-// errordef^" (04 の 12.4 が撤回しなかった経路)。v1 は付随フィールドを持たな
+// errordef^" (04§12.4 が撤回しなかった経路)。v1 は付随フィールドを持たな
 // い variant のみ対応(std.io の IOError{NotFound,Denied,Eof} のようなもの)。
 // module/name/variant_names の文字列は program と同じだけ生きねばならない
 // (register_func 同様、通常は文字列リテラルを渡す)。
 //
-// lhat_program_check より前に呼ぶこと(8.7 と同じ制約 -- 検査器が型を知る
+// lhat_program_check より前に呼ぶこと(05§8.7 と同じ制約 -- 検査器が型を知る
 //必要がある)。out_group/out_variants はどちらも NULL でよく、後から
 // lhat_lookup_error_kind で引ける。out_variants は variant_count 個分の
 // 領域を呼び出し側が用意する。
@@ -987,13 +987,13 @@ bool lhat_register_error_kind(LhatProgram *program, const char *module,
                               const LhatErrorKind **out_group,
                               const LhatErrorKind **out_variants);
 
-// 04 の 2.7: the same, under the other top -- what localerrordef^ declares.
+// 04§2.7: the same, under the other top -- what localerrordef^ declares.
 // A caller of one of these may not return it, so the checker refuses a try^
 // that would and refuses a signature written to admit one: what a host
 // registers here is a failure the calling code has to settle where it is.
 //
 // Registering the same module/name under a different top than an earlier
-// program did is refused, as a different variant list is (05 の 8.7改): one
+// program did is refused, as a different variant list is (05§8.7+): one
 // name stands for one declaration across the process.
 bool lhat_register_local_error_kind(LhatProgram *program, const char *module,
                                     const char *name,
@@ -1005,7 +1005,7 @@ bool lhat_register_local_error_kind(LhatProgram *program, const char *module,
 // 登録済みの誤り種別を module・name・variant の完全一致で引く。variant が
 // NULL なら宣言全体(lhat_register_error_kind の out_group 相当)を返す。
 // 見つからなければ NULL。
-// 05 の 8.7: the `context` a registration was handed, found by what it was
+// 05§8.7: the `context` a registration was handed, found by what it was
 // registered under -- `type` is NULL for a member of the module itself. What
 // a library's own C needs when something outside a call has to reach the
 // state it registered: stdlib/async.c's completions are pushed by a host
@@ -1021,19 +1021,19 @@ const LhatErrorKind *lhat_lookup_error_kind(const LhatProgram *program,
                                             const char *name,
                                             const char *variant);
 
-// 05 の 8.6: a member of L^ itself rather than of a module under it. Reserved
-// for what a program cannot provide for itself -- 8.6 keeps that list short,
-// and 8.1 sends everything else through require^.
+// 05§8.6: a member of L^ itself rather than of a module under it. Reserved
+// for what a program cannot provide for itself -- 05§8.6 keeps that list short,
+// and 05§8.1 sends everything else through require^.
 bool lhat_register_global(LhatProgram *program, const char *name,
                           const char *signature, LhatHostFn call,
                           void *context);
 
-// 05 の 8.2: bind `name` to a member of L^, so that a program may write it
+// 05§8.2: bind `name` to a member of L^, so that a program may write it
 // without any qualification. `member` is spelled "L^.<member>" -- the only
-// form for now, since 8.6's table is where a host puts what it wants seen
+// form for now, since 05§8.6's table is where a host puts what it wants seen
 // without a require^.
 //
-// 8.1 is unaffected. The language hands out no names; a host that binds none
+// 05§8.1 is unaffected. The language hands out no names; a host that binds none
 // leaves a program seeing nothing. A let^ of the same spelling shadows the
 // binding, and L^.<member> still reaches what it named.
 bool lhat_bind_initial(LhatProgram *program, const char *name,
@@ -1041,7 +1041,7 @@ bool lhat_bind_initial(LhatProgram *program, const char *name,
 
 // Puts what was registered into the machine's L^.modules, so that an import^
 // finds it. Belongs before the run.
-// 05 の 8.7: something a registration made, given back when the program is.
+// 05§8.7: something a registration made, given back when the program is.
 //
 // A module that registers functions almost always keeps a little state of
 // its own beside them -- the error kinds and tags its functions read, which
@@ -1064,11 +1064,11 @@ bool lhat_program_on_dispose(LhatProgram *program, LhatProgramDisposeFn call,
                              void *context);
 
 // ---------------------------------------------------------------------------
-// 05 の 8.7: what a declaration is, is the C call that makes it
+// 05§8.7: what a declaration is, is the C call that makes it
 // ---------------------------------------------------------------------------
 //
-// 7.3 makes a registered type its own type by its declaration and not by its
-// members, and 04 の 2.4 says the same of an error kind. That declaration is
+// 10§7.3 makes a registered type its own type by its declaration and not by its
+// members, and 04§2.4 says the same of an error kind. That declaration is
 // the register call itself -- so registering std.io.File into two programs
 // is one declaration made twice, and both come away with the SAME identity.
 // The run time compares tags by address, and a second tag would make one
@@ -1100,7 +1100,7 @@ bool lhat_program_install(const LhatProgram *program, LhatMachine *machine);
 bool lhat_program_has_errors(const LhatProgram *program);
 
 const char *lhat_program_error_message(LhatProgramErrorCode code);
-// 10 §4: the stable ID of that message, which a host draws its own language's
+// 10§4: the stable ID of that message, which a host draws its own language's
 // text from (lhat_program_text). NULL for a code the table does not hold.
 const char *lhat_program_error_id(LhatProgramErrorCode code);
 
@@ -1115,18 +1115,18 @@ const char *lhat_program_error_id(LhatProgramErrorCode code);
 // Two arrays, "types" then "functions", so a reader registering in that
 // order never meets a signature naming a type it has not seen -- type
 // declarations carry no signatures, so they cannot refer to each other and
-// their relative order within the array is free. "bindings" last, for 8.2's
+// their relative order within the array is free. "bindings" last, for 05§8.2's
 // initial names.
 //
 // A top-level "strict" boolean names the value this program was made with
-// (03 の 3.1) -- what this host actually passes to lhat_program_init or
+// (03§3.1) -- what this host actually passes to lhat_program_init or
 // lhat_check_unit when it is not a tool reading the dump. A reader checking
 // the same units for a different purpose (a language server, wanting the
 // most it can say) may check strict regardless and use this only to soften
 // what lhat_unit_diagnostic_relaxed_ok marks: a host that builds relaxed
 // will not stop on those.
 //
-// An annotation's places (18.5) are written as an object keyed by name --
+// An annotation's places (§18.5) are written as an object keyed by name --
 // {"field": true, "public": true} -- rather than as the mask this API takes
 // them as. A mask reads as a mask only to something holding the same enum,
 // and the reader is a tool that cannot run this C and does not have one. The

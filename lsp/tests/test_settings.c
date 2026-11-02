@@ -132,7 +132,7 @@ static void test_an_absolute_path(void)
     lsp_settings_free(settings);
 }
 
-// 8.1: a few files inside an excluded directory are sources after all.
+// 12§8.1: a few files inside an excluded directory are sources after all.
 // Named rather than matched -- so nothing has to be searched for in a
 // directory the scan was told to skip, which is the caveat gitignore's `!`
 // carries and this does not.

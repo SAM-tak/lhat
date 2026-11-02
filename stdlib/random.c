@@ -1,6 +1,6 @@
 // L^ (lhat) -- sample standard library: std.random.
 //
-// std.random.new(seed) answers a std.random.Random hostdata (05 の 8.8),
+// std.random.new(seed) answers a std.random.Random hostdata (05§8.8),
 // one xorshift64* stream per instance. No module-wide mutable state here,
 // so no lock either -- a program sharing one Random across std.thread
 // spawns is on its own for keeping next()/rangeint()/reseed() from racing on
@@ -12,7 +12,7 @@
 //
 // std.random.new answers std.random.Random|std.sys.Error.OutOfMemory -- read
 // it with try^/catch^, or narrow with fits^ against std.random.Random
-// (05 の 8.8's hostdata path). See sys.h for why OutOfMemory lives in
+// (05§8.8's hostdata path). See sys.h for why OutOfMemory lives in
 // std.sys rather than a std.random.RandomError of its own.
 
 #include "sys.h"
@@ -30,7 +30,7 @@
 #endif
 
 // What lhatstdlib_random_register made, threaded through as every
-// registration's `context` (05 § 8.7) -- see stdlib/io.c's IoModule
+// registration's `context` (05§8.7) -- see stdlib/io.c's IoModule
 // comment for why this isn't a file-scope static instead.
 typedef struct {
     const LhatErrorKind *out_of_memory;
@@ -217,7 +217,7 @@ static void random_next(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-// An integer in [lo, hi], both ends inclusive -- 04 § 11.3's "no such thing
+// An integer in [lo, hi], both ends inclusive -- 04§11.3's "no such thing
 // as out of range" does not apply here, this is an ordinary argument.
 static void random_rangeint(LhatMachine *machine, void *context,
                          const LhatValue *arguments, size_t count,
@@ -313,7 +313,7 @@ static void random_normal(LhatMachine *machine, void *context,
     answers[0] = lhat_real(mean + deviation * (radius * cos(angle)));
 }
 
-// 05 § 8.8: registering this is what makes a Random the host's to hand
+// 05§8.8: registering this is what makes a Random the host's to hand
 // over and L^'s to give back.
 static void random_dispose(LhatMachine *machine, void *context,
                            const LhatValue *arguments, size_t count,
@@ -329,14 +329,14 @@ static void random_dispose(LhatMachine *machine, void *context,
 
 bool lhatstdlib_random_register(LhatProgram *program)
 {
-    // 05 § 8.7: registration precedes checking -- ensure std.sys.Error.OutOfMemory
+    // 05§8.7: registration precedes checking -- ensure std.sys.Error.OutOfMemory
     // exists before this module uses it. lhatstdlib_sys_register is
     // idempotent, so another stdlib module may already have called it.
     if (!lhatstdlib_sys_register(program)) {
         return false;
     }
 
-    // 05 § 8.7: every field of this is an identity, and an identity
+    // 05§8.7: every field of this is an identity, and an identity
     // belongs to the process rather than to a program -- one declaration,
     // one tag and one error kind, however many programs declare them. So
     // one of these serves them all, and a second registration writes the

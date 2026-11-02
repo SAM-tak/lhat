@@ -1,5 +1,5 @@
 // L^ (lhat) -- LSP server tests: the type at a position, as text to keep
-// (signature.c). 07 の 4 章.
+// (signature.c). 07§4.
 
 #include <stdlib.h>
 #include <string.h>

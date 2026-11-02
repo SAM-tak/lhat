@@ -1,18 +1,18 @@
 // L^ (lhat) -- tests for std.lton.
 //
 // Two halves. The first is what an LTON text may say: the elements of 02 の
-// 14.14 as they stand, the spelling of the language throughout, and
+// §14.14 as they stand, the spelling of the language throughout, and
 // arithmetic rather than only values worked out beforehand.
 //
 // The second is what it may not, which is the whole of what makes reading
-// one safe. The text is read as the body of an f^, so 15.1 refuses a p^
+// one safe. The text is read as the body of an f^, so §15.1 refuses a p^
 // call -- and since everything with an effect is a p^, an LTON text cannot
-// have one. 05 の 8.2's initial bindings are left out of scope on top of
+// have one. 05§8.2's initial bindings are left out of scope on top of
 // that, so a host's own conveniences are not a configuration file's to
 // name. Both are asserted rather than assumed: they are the reason this
 // module can be pointed at a file somebody else wrote.
 //
-// std.lton.load reads through the program's loader (8.9), so the cases that
+// std.lton.load reads through the program's loader (§8.9), so the cases that
 // use it drive a program with a table of files behind it, the way
 // test_load.c does. The rest go through parse, which touches no file at all.
 
@@ -180,7 +180,7 @@ static void test_text_output(void)
     LHAT_CHECK_RAN_INTEGER(ran, 1);
     lhat_test_ran_dispose(&ran);
 
-    // 02 の 14.10: the sequence is written whole, nil^ positions included,
+    // §14.10: the sequence is written whole, nil^ positions included,
     // so it reads back the same length.
     LHAT_TEST("LTON writes nil^ positions and reads the same length back");
     ran = run_source("import^std.lton\n"
@@ -260,12 +260,12 @@ static void test_what_may_be_written(void)
 {
     LHAT_TEST("the three element forms of 14.14, as they stand");
     {
-        // A name and a value. `=` is the spelling 14.14改 recommends.
+        // A name and a value. `=` is the spelling §14.14+ recommends.
         LhatTestRan ran = run_source(PARSING("a = 1, b = 2", "t[\"a\"] + t[\"b\"]"));
         LHAT_CHECK_RAN_INTEGER(ran, 3);
         lhat_test_ran_dispose(&ran);
 
-        // `:=` is read as well -- 14.14改 keeps both and calls `=` the one.
+        // `:=` is read as well -- §14.14+ keeps both and calls `=` the one.
         ran = run_source(PARSING("a := 7", "t[\"a\"]"));
         LHAT_CHECK_RAN_INTEGER(ran, 7);
         lhat_test_ran_dispose(&ran);
@@ -332,7 +332,7 @@ static void test_what_may_be_written(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 04 の 11.3, as in std.json: a table does not hold nil^, so writing one
+    // 04§11.3, as in std.json: a table does not hold nil^, so writing one
     // puts no key rather than putting an empty one.
     LHAT_TEST("nil^ puts no key");
     {
@@ -350,7 +350,7 @@ static void test_what_may_be_written(void)
 // refused by a rule written for LTON.
 static void test_what_may_not(void)
 {
-    // 02 の 15.1: an f^ may call only an f^. The text is read as the body of
+    // §15.1: an f^ may call only an f^. The text is read as the body of
     // one, so a call to anything with an effect is a type error before
     // anything runs.
     //
@@ -378,7 +378,7 @@ static void test_what_may_not(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 05 の 8.2: and the host's initial bindings are not even names here, so
+    // 05§8.2: and the host's initial bindings are not even names here, so
     // there is nothing to reach for in the first place. `print` is one the
     // cli binds; naming it inside an LTON text finds nothing.
     LHAT_TEST("an initial binding is not a name an LTON text can reach");
@@ -416,7 +416,7 @@ static void test_what_may_not(void)
 }
 
 // ---------------------------------------------------------------------------
-// load, which reads through the program's loader (8.9)
+// load, which reads through the program's loader (§8.9)
 // ---------------------------------------------------------------------------
 
 typedef struct {
@@ -510,7 +510,7 @@ static void test_load(void)
         lhat_program_free(program);
     }
 
-    // 05 の 5.6: the script that answered the table is gone once nothing
+    // 05§5.6: the script that answered the table is gone once nothing
     // holds its closure, but the table has the script's own strings for
     // keys and values. They are the machine's from then on, not the body's
     // -- read after a collection, which is when the body goes.
@@ -535,7 +535,7 @@ static void test_load(void)
         lhat_program_free(program);
     }
 
-    // 8.9: through the loader and nothing else, so a path the host does not
+    // §8.9: through the loader and nothing else, so a path the host does not
     // serve is not there however the file system feels about it.
     LHAT_TEST("a path the loader does not serve cannot be read");
     {
@@ -851,7 +851,7 @@ static void test_from_c(void)
         LHAT_CHECK_EQ_INT(lhat_as_integer(field(machine, window, "width")),
                           480);
         LHAT_CHECK_EQ_INT(lhat_as_integer(field(machine, window, "vsync")), 0);
-        // A key that is not there answers nil^ rather than failing (11.3),
+        // A key that is not there answers nil^ rather than failing (§11.3),
         // which is what lets a host keep its own default.
         LHAT_CHECK(lhat_is_nil(field(machine, window, "height")),
                    "a field the file left out is nil^");
@@ -897,7 +897,7 @@ static void test_from_c(void)
         lhat_program_free(program);
     }
 
-    // 15.1 is the language's rule and not this module's, so it does not care
+    // §15.1 is the language's rule and not this module's, so it does not care
     // which side of the boundary asked.
     LHAT_TEST("a p^ call is refused from C as it is from L^");
     {
@@ -915,7 +915,7 @@ static void test_from_c(void)
         lhat_program_free(program);
     }
 
-    // 8.9: through the loader and nothing else. A program given none reads
+    // §8.9: through the loader and nothing else. A program given none reads
     // nothing whatever the file system holds.
     LHAT_TEST("a path the loader does not serve answers CANNOT_READ");
     {
@@ -940,9 +940,9 @@ static void test_from_c(void)
     }
 }
 
-// 08 の 7改: the same text compiled ahead reads back as the same table
+// 08§7+: the same text compiled ahead reads back as the same table
 // through the same entry -- which is how a build without the front end
-// (05 の 10.8) reads a configuration at all.
+// (05§10.8) reads a configuration at all.
 static void test_compiled(void)
 {
     LHAT_TEST("an LTON file compiled ahead parses back as the same table");

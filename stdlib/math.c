@@ -3,7 +3,7 @@
 // Thin wrappers over <math.h>. Every argument is read as a double through
 // lhat_number_as_real, and every answer is a real -- except min and max,
 // which hand back the argument they chose as it came, so an integer stays
-// one (02 の 14.8改). A wrong argument answers nil^, which is what the
+// one (§14.8+). A wrong argument answers nil^, which is what the
 // checker already ruled out; nothing here can fail otherwise.
 
 #include "math.h"
@@ -99,7 +99,7 @@ static void math_lerp(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-// 13.7: one required, the rest variadic -- the tail reaches a host
+// §13.7: one required, the rest variadic -- the tail reaches a host
 // function uncollected, so the arguments are simply the whole array.
 static LhatValue extreme(const LhatValue *arguments, size_t count, bool most)
 {
@@ -148,7 +148,7 @@ static void math_min(LhatMachine *machine, void *context,
 
 bool lhatstdlib_math_register(LhatProgram *program)
 {
-    // 13.4: registration signatures take no parameter names. Every
+    // §13.4: registration signatures take no parameter names. Every
     // function here is an f^: a number in, a number out, nothing touched.
 #define ONE "f^number^ -> number^;"
 #define TWO "f^number^, number^ -> number^;"
@@ -165,7 +165,7 @@ bool lhatstdlib_math_register(LhatProgram *program)
         {"sqrt", ONE, sqrt_of, NULL},
         {"cbrt", ONE, cbrt_of, NULL},
         {"exp", ONE, exp_of, NULL},
-        // 02 の 14.12: a name registered twice gains an arm, and the two
+        // §14.12: a name registered twice gains an arm, and the two
         // are told apart by their counts.
         {"log", ONE, log_of, NULL},
         {"log", TWO, NULL, log_base},

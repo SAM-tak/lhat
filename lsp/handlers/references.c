@@ -259,7 +259,7 @@ cJSON *lsp_handle_rename(LspServer *server, const cJSON *params)
     if (!cJSON_IsString(fresh) ||
         !lsp_references_is_name(fresh->valuestring,
                                 strlen(fresh->valuestring))) {
-        return NULL;  // 01 の 3.1: not a name the lexer would read back
+        return NULL;  // 01§3.1: not a name the lexer would read back
     }
     Asked asked;
     char *path = NULL;

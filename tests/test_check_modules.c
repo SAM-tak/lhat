@@ -3,7 +3,7 @@
 // Section numbers refer to DesignDocuments/02-syntax.md unless prefixed with
 // "03" or "04". The cases pinned here are the ones a decision in the
 // specification produces and that would otherwise be invisible: the scope
-// rule of 8.7, the result inference of 03 の 3.4, and the way catch^, ?? and
+// rule of §8.7, the result inference of 03§3.4, and the way catch^, ?? and
 // try^ each drop one arm of a union.
 
 #include <stdio.h>
@@ -29,9 +29,9 @@ static LhatType *library_resolve(void *context, const char *path, size_t length,
     lib->asked = true;
     if (strlen(lib->expected_path) != length ||
         memcmp(lib->expected_path, path, length) != 0) {
-        return NULL;  // 6.3 reports a unit that could not be had
+        return NULL;  // 05§6.3 reports a unit that could not be had
     }
-    // 05 の 3 章: what the provider declared, which 5.5 binds it under.
+    // 05§3: what the provider declared, which 05§5.5 binds it under.
     if (module_name != NULL) {
         *module_name = lib->provider.checked.module_name;
     }
@@ -44,7 +44,7 @@ static LhatType *library_resolve(void *context, const char *path, size_t length,
 static void check_against(Unit *u, Library *lib, const char *provider,
                           const char *text)
 {
-    // The provider is checked first and into the same arena, since 6 章 has
+    // The provider is checked first and into the same arena, since 05§6 has
     // the units requiring it hold on to the types it publishes.
     lhat_source_init_from_string(&lib->provider.source, "<lib>", provider,
                                  strlen(provider));
@@ -71,7 +71,7 @@ static void check_against_dispose(Unit *u, Library *lib)
     unit_dispose(&lib->provider);
 }
 
-// 02 の 13.14 with 05 の 6.1: an exported alias carries what it names, so
+// §13.14 with 05§6.1: an exported alias carries what it names, so
 // a reader in another unit writes m.T where a type stands -- an f^ one
 // included, which only the declaration flag lets through the shape reading.
 static void test_exported_alias(void)
@@ -90,7 +90,7 @@ static void test_exported_alias(void)
                   "let^ v : m.Vec = {1, 2}\n"
                   "let^ g : m.Op = f^ x { return^ x + 1 }\n"
                   "let^ n : number^ = g(1)\n"
-                  // 13.14改: an export's ReturnType, of a value and of an
+                  // §13.14+: an export's ReturnType, of a value and of an
                   // alias.
                   "let^ d : m.dist.ReturnType = \"d\"\n"
                   "let^ o : m.Op.ReturnType = 2\n");
@@ -175,7 +175,7 @@ static void test_modules(void)
         "var^ secret = 1\n"
         "public^ let^ dist = f^ a:number^, b:number^ -> number^ { return^ a }\n";
 
-    // 05 の 4 章: what a unit publishes is read from its declarations, so a
+    // 05§4: what a unit publishes is read from its declarations, so a
     // require^ of it yields exactly the public^ names.
     LHAT_TEST("public^ names cross and private ones do not");
     memset(&lib, 0, sizeof lib);
@@ -187,7 +187,7 @@ static void test_modules(void)
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
 
-    // 05 の 3.1: the path module^ declared is kept, which is what 5.5
+    // 05§3.1: the path module^ declared is kept, which is what 05§5.5
     // reads to decide where the short form binds.
     LHAT_TEST("the path module^ declared is recorded");
     memset(&lib, 0, sizeof lib);
@@ -209,7 +209,7 @@ static void test_modules(void)
     LHAT_CHECK(lib.provider.checked.module_name == NULL, "3.2 allows none");
     check_against_dispose(&u, &lib);
 
-    // 02 の 13.7 with 05 の 3.2: a script's top level is 'p^...'; a module^
+    // §13.7 with 05§3.2: a script's top level is 'p^...'; a module^
     // unit is brought in by require^ and takes nothing, so '...' is no name
     // there.
     LHAT_TEST("a script has '...' at its top level and a module^ unit has not");
@@ -229,7 +229,7 @@ static void test_modules(void)
                "the module^ unit's '...' is an unknown name");
     check_against_dispose(&u, &lib);
 
-    // 05 の 8.6: what require^ answers is the machine's record of what
+    // 05§8.6: what require^ answers is the machine's record of what
     // the unit published, not a table the requiring unit adds to.
     LHAT_TEST("a module table is the machine's own");
     memset(&lib, 0, sizeof lib);
@@ -240,7 +240,7 @@ static void test_modules(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TABLE_IS_SEALED);
     check_against_dispose(&u, &lib);
 
-    // 4.2 publishes names. A table one of them holds is as mutable as it was,
+    // 05§4.2 publishes names. A table one of them holds is as mutable as it was,
     // which is what leaves room for deciding that separately later.
     LHAT_TEST("but what it published stays as writable as it was");
     memset(&lib, 0, sizeof lib);
@@ -251,8 +251,8 @@ static void test_modules(void)
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
 
-    // 05 の 5.5: without a var^ the unit goes under the path it declared.
-    // 8.8 makes the tables on the way, so only the root is a new name.
+    // 05§5.5: without a var^ the unit goes under the path it declared.
+    // 05§8.8 makes the tables on the way, so only the root is a new name.
     LHAT_TEST("the short form binds under the declared path");
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/geometry.lh";
@@ -272,7 +272,7 @@ static void test_modules(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     check_against_dispose(&u, &lib);
 
-    // 8.7 on the last segment: two units may not claim one path, and one
+    // 05§8.7 on the last segment: two units may not claim one path, and one
     // written twice is the same clash.
     LHAT_TEST("and claiming one path twice is a redefinition");
     memset(&lib, 0, sizeof lib);
@@ -283,7 +283,7 @@ static void test_modules(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_REDEFINED);
     check_against_dispose(&u, &lib);
 
-    // 3.2 lets a unit declare no path, and then there is nothing to bind it
+    // 05§3.2 lets a unit declare no path, and then there is nothing to bind it
     // under.
     LHAT_TEST("and a unit with no module^ cannot be bound this way");
     memset(&lib, 0, sizeof lib);
@@ -302,7 +302,7 @@ static void test_modules(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     check_against_dispose(&u, &lib);
 
-    // 05 の 6.1: a qualified name works as a type because 04 の 14.4 already
+    // 05§6.1: a qualified name works as a type because 04§14.4 already
     // made one writable, so the form built for error kinds carries over.
     LHAT_TEST("a required definition is writable as a type");
     memset(&lib, 0, sizeof lib);
@@ -323,7 +323,7 @@ static void test_modules(void)
     CHECK_CLEAN(&u);
     check_against_dispose(&u, &lib);
 
-    // 05 の 6.1: the arguments of a required procedure are checked like any
+    // 05§6.1: the arguments of a required procedure are checked like any
     // other, which is the point of following the import at all.
     LHAT_TEST("a required procedure checks its arguments");
     memset(&lib, 0, sizeof lib);
@@ -334,7 +334,7 @@ static void test_modules(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     check_against_dispose(&u, &lib);
 
-    // 6.3: a unit that could not be had is reported where it was required.
+    // 05§6.3: a unit that could not be had is reported where it was required.
     LHAT_TEST("a unit that cannot be had is reported");
     memset(&lib, 0, sizeof lib);
     lib.expected_path = "lib/geometry.lh";
@@ -343,7 +343,7 @@ static void test_modules(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_REQUIRE_FAILED);
     check_against_dispose(&u, &lib);
 
-    // 05 の 5.4: require^ binds one name and the importer picks it, so two
+    // 05§5.4: require^ binds one name and the importer picks it, so two
     // units of the same shape sit side by side without colliding.
     LHAT_TEST("the importer chooses the name");
     memset(&lib, 0, sizeof lib);
@@ -355,7 +355,7 @@ static void test_modules(void)
     check_against_dispose(&u, &lib);
 }
 
-// 03 の 4.3: a REPL checks many inputs as one running program, so a name one
+// 03§4.3: a REPL checks many inputs as one running program, so a name one
 // input bound keeps its type in the next.
 static void test_session(void)
 {
@@ -384,8 +384,8 @@ static void test_session(void)
         lhat_check_session_dispose(s);
     }
 
-    // 15.8 refuses a call that makes a coroutine and does nothing with it,
-    // because the statement provably has no effect. 03 の 4.3 makes the last
+    // §15.8 refuses a call that makes a coroutine and does nothing with it,
+    // because the statement provably has no effect. 03§4.3 makes the last
     // statement of an input the answer, and showing the answer is an effect.
     LHAT_TEST("the statement an input answers with may make a coroutine");
     {
@@ -421,8 +421,8 @@ static void test_session(void)
         lhat_check_session_dispose(s);
     }
 
-    // 03 の 4.3: at the top level of a session a name written again is the
-    // same place written again, not the clash 8.7 makes of two var^ in one
+    // 03§4.3: at the top level of a session a name written again is the
+    // same place written again, not the clash §8.7 makes of two var^ in one
     // scope. A prompt is for writing a line again.
     LHAT_TEST("a name written again is a redefinition, not a clash");
     {
@@ -448,7 +448,7 @@ static void test_session(void)
         lhat_check_session_dispose(s);
     }
 
-    // 8.7 still holds within one input.
+    // 05§8.7 still holds within one input.
     LHAT_TEST("but twice in one input is still a clash");
     {
         LhatCheckSession *s = lhat_check_session_new();
@@ -472,7 +472,7 @@ static void test_session(void)
         lhat_check_session_dispose(s);
     }
 
-    // 8.7 keeps a name visible before its var^ runs, so a redefinition may
+    // §8.7 keeps a name visible before its var^ runs, so a redefinition may
     // read what the name already holds.
     LHAT_TEST("a redefinition may read what is already there");
     {
@@ -486,7 +486,7 @@ static void test_session(void)
     }
 }
 
-// 03 の 1.3: a code that is about a name says which. The codes stay as they
+// 03§1.3: a code that is about a name says which. The codes stay as they
 // are and the diagnostic carries what they cannot.
 static void test_named_diagnostics(void)
 {

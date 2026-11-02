@@ -93,7 +93,7 @@ static void test_surrogate_pair_position(void)
     LHAT_TEST("a supplementary-plane character counts as two UTF-16 units");
     // U+1F600 (a face emoji) is one Unicode code point but a UTF-16
     // surrogate pair -- two code units. DesignDocuments/03-compilation-
-    // pipeline.md's 1.3節 already keeps a code-point column apart from a
+    // pipeline.md's 03§1.3節 already keeps a code-point column apart from a
     // terminal-cell one; this is the LSP server's own third count.
     Pos pos;
     bool found = first_diagnostic_start(
@@ -165,7 +165,7 @@ static void test_compile_failure(void)
     lhat_source_dispose(&source);
 }
 
-// 03 の 3.1 with lhat_unit_diagnostic_relaxed_ok: a gap strict alone
+// 03§3.1 with lhat_unit_diagnostic_relaxed_ok: a gap strict alone
 // reports is Warning under a relaxed project and Error otherwise -- an
 // ordinary mismatch is Error either way.
 static void test_relaxed_severity(void)

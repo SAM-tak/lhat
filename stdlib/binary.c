@@ -1,4 +1,4 @@
-// L^ (lhat) -- sample standard library: std.binary (11 章).
+// L^ (lhat) -- sample standard library: std.binary (01§11).
 //
 // A kind (std.binary.Kind) is a width and a rule for turning a value into
 // that many bits; a format (std.binary.Format, a Kind itself) is an ordered
@@ -7,9 +7,9 @@
 // another and each is freed whole by its own dispose^.
 //
 // Bits go in from the low end of each byte, and a value spanning bytes puts
-// its low byte first (11 の 3.4). A table handed to encode that does not fit
+// its low byte first (11§3.4). A table handed to encode that does not fit
 // the format is the writer's mistake and panics; bytes handed to decode came
-// from outside and answer std.binary.Error (11 の 3.5).
+// from outside and answer std.binary.Error (11§3.5).
 
 #include "binary.h"
 
@@ -78,7 +78,7 @@ typedef struct {
     const LhatErrorKind *malformed;
 } BinaryModule;
 
-// 05 の 8.7: the tags and kinds are the process's, so one of these serves
+// 05§8.7: the tags and kinds are the process's, so one of these serves
 // every program that registers the module.
 static BinaryModule shared;
 
@@ -450,7 +450,7 @@ static LhatRuntimeType *decoded_type(LhatHeap *heap, const Kind *kind)
     return NULL;
 }
 
-// 11 の 3.1: the rows are read once, here, and every mistake in them is the
+// 11§3.1: the rows are read once, here, and every mistake in them is the
 // writer's.
 static void binary_format(LhatMachine *machine, void *context,
                           const LhatValue *arguments, size_t count,
@@ -956,7 +956,7 @@ static bool fail(LhatMachine *machine, const LhatErrorKind *kind, const char *me
     return false;
 }
 
-// 11 の 3.3: reads the format from byte `arguments[2]` on, and answers where
+// 11§3.3: reads the format from byte `arguments[2]` on, and answers where
 // the next one starts -- the table first when `answer_table`, then that
 // position. A start that is not a whole number from 0 up is the writer's
 // mistake; one past what the bytes hold is the bytes', and reads Truncated.
@@ -976,7 +976,7 @@ static void decode(LhatMachine *machine, const LhatValue *arguments, LhatValue r
     }
     uint64_t start = (uint64_t)lhat_as_integer(arguments[2]);
     uint64_t size = (format->bits + 7) / 8;
-    // 11 の 3.5: longer is not wrong; what follows the format is left alone.
+    // 11§3.5: longer is not wrong; what follows the format is left alone.
     if (start > (uint64_t)length || (uint64_t)length - start < size) {
         fail(machine, shared.truncated, "shorter than the format", answers, answer_count);
         return;

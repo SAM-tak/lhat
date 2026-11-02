@@ -34,7 +34,7 @@ typedef struct {
 } Parse;
 
 void parse_text(Parse *p, const char *text);
-// 02 の 8.2: one input of an interactive session.
+// §8.2: one input of an interactive session.
 void parse_interactive_text(Parse *p, const char *text);
 void parse_dispose(Parse *p);
 
@@ -49,13 +49,13 @@ typedef struct {
 } Unit;
 
 void check_text(Unit *u, const char *text);
-// The same, relaxed (03 の 3.1). The few rules that differ by strictness are
+// The same, relaxed (03§3.1). The few rules that differ by strictness are
 // pinned through this -- most of the suite is strictness-independent and
 // stays on check_text above.
 void check_relaxed_text(Unit *u, const char *text);
-// The same, as the next input of a session (03 の 4.3).
+// The same, as the next input of a session (03§4.3).
 void check_next_text(Unit *u, LhatCheckSession *s, const char *text);
-// The same again, read the way a prompt reads it (02 の 8.2).
+// The same again, read the way a prompt reads it (§8.2).
 void check_asked_text(Unit *u, LhatCheckSession *s, const char *text);
 void unit_dispose(Unit *u);
 
@@ -99,7 +99,7 @@ typedef struct {
     // cases that pin that.
     LhatCompileStatus compiled;
     LhatCompileResult compile_result;
-    // 03 の 4.3: the machine owns what the program allocates, so the answer
+    // 03§4.3: the machine owns what the program allocates, so the answer
     // is only good while it is. One test, one machine.
     LhatMachine *machine;
     LhatRunResult ran;
@@ -107,7 +107,7 @@ typedef struct {
 
 // Everything up to the run, for a test driving a machine of its own.
 void compile_text(Run *r, const char *text);
-// The same, as the next input of a session (03 の 4.3).
+// The same, as the next input of a session (03§4.3).
 typedef struct {
     LhatCheckSession *checks;
     LhatCompileSession *compiles;
@@ -115,8 +115,8 @@ typedef struct {
 TestSession *test_session_new(void);
 void test_session_dispose(TestSession *session);
 void compile_next_text(Run *r, TestSession *s, const char *text);
-// The same again, read the way a prompt reads it (02 の 8.2), so a bare
-// expression is a statement and the last one is the answer (03 の 4.3).
+// The same again, read the way a prompt reads it (§8.2), so a bare
+// expression is a statement and the last one is the answer (03§4.3).
 void compile_asked_text(Run *r, TestSession *s, const char *text);
 void compiled_dispose(Run *r);
 

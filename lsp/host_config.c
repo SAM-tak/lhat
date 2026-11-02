@@ -121,7 +121,7 @@ bool lsp_host_config_strict(const LspHostConfig *config, bool fallback)
     return cJSON_IsBool(item) ? cJSON_IsTrue(item) : fallback;
 }
 
-// 02 の 18.5's places, as lhat_program_dump_host_api writes them: an object
+// §18.5's places, as lhat_program_dump_host_api writes them: an object
 // keyed by name rather than a mask, since nothing outside C holds the enum.
 //
 // A name written false is passed over, and so is one this does not know --
@@ -200,7 +200,7 @@ void lsp_host_config_counts(const LspHostConfig *config, size_t *types,
     }
 }
 
-// 05 の 8.7: a module is not an entry of its own -- every registration names
+// 05§8.7: a module is not an entry of its own -- every registration names
 // the module it belongs to, so the set of them is read off those names. The
 // nested ones come with it: "std.math.vector3" names three, and what
 // completion offers is a segment at a time (lsp/completion.h).
@@ -286,7 +286,7 @@ static void apply_type(const cJSON *entry, LhatProgram *program)
         return;
     }
 
-    // 05 の 8.7改2: a declaration the signatures name, dumped among the
+    // 05§8.7+2: a declaration the signatures name, dumped among the
     // types -- after the host type it may stand under, before the first
     // signature that names it. A dump from before the section moved keeps
     // its enums in "functions", where nothing reads them any more; the
@@ -328,7 +328,7 @@ static void apply_type(const cJSON *entry, LhatProgram *program)
     }
 
     if (strcmp(kind, "hostdata") == 0) {
-        // 05 の 8.8改: under the type it was declared under, where the dump
+        // 05§8.8+: under the type it was declared under, where the dump
         // says there is one. What the derived type inherits is reached
         // through that link and is registered nowhere else, so a replay that
         // dropped it would hand the checker a type with only its own
@@ -474,7 +474,7 @@ void lsp_host_config_apply(const LspHostConfig *config, LhatProgram *program)
         apply_function(entry, program);
     }
 
-    // 02 の 18.5: without these every @name a unit writes is one the checker
+    // §18.5: without these every @name a unit writes is one the checker
     // has never heard of, which is a red line under correct code.
     const cJSON *annotations =
         cJSON_GetObjectItemCaseSensitive(config->root, "annotations");
@@ -492,7 +492,7 @@ void lsp_host_config_apply(const LspHostConfig *config, LhatProgram *program)
         if (signature != NULL) {
             lhat_register_annotation_signature(program, name, signature);
         }
-        // 18.5.1: the names it was registered as an alternative to, handed
+        // §18.5.1: the names it was registered as an alternative to, handed
         // back one at a time -- the same way they were said.
         const cJSON *exclusives =
             cJSON_GetObjectItemCaseSensitive(entry, "exclusives");
@@ -503,7 +503,7 @@ void lsp_host_config_apply(const LspHostConfig *config, LhatProgram *program)
                                                    other->valuestring);
             }
         }
-        // 18.5.2: and the names one of which has to stand beside it.
+        // §18.5.2: and the names one of which has to stand beside it.
         const cJSON *requisites =
             cJSON_GetObjectItemCaseSensitive(entry, "requisites");
         cJSON_ArrayForEach(other, requisites) {

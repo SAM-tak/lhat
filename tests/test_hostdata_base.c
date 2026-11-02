@@ -1,15 +1,15 @@
-// L^ (lhat) -- tests for 05 の 8.8改: a host type declared under another.
+// L^ (lhat) -- tests for 05§8.8+: a host type declared under another.
 //
 // A host whose own model is a class tree writes the tree here instead of
-// flattening it into one opaque type. 8.8's nominal rule is not loosened --
+// flattening it into one opaque type. 05§8.8's nominal rule is not loosened --
 // what changes is that a declaration may say what it is under, and the host
 // promises the pointer may be read as the base's.
 //
 // Two things are pinned above all. The first is that the two sides agree:
-// the checker walks the tag chain and so does the machine, because 03 の 4.2
+// the checker walks the tag chain and so does the machine, because 03§4.2
 // does not let what runs depend on whether checking ran. The second is that
 // a derived type inherits BOTH halves of a dispose^ -- the member the checker
-// reads for 12.5, and the tag field the collector reads. Inheriting only the
+// reads for §12.5, and the tag field the collector reads. Inheriting only the
 // member would make with^ check as disposable and then release nothing:
 // silent, which is worse than refused.
 
@@ -123,7 +123,7 @@ static void node_id(LhatMachine *machine, void *context,
     (void)context;
     (void)count;
     // Asked for the BASE's tag off a value that may be of any type under it.
-    // 8.8改 is what makes this answer rather than NULL, and it is the whole
+    // 05§8.8+ is what makes this answer rather than NULL, and it is the whole
     // of what the host gets out of declaring the relation.
     SceneNode *self = (SceneNode *)lhat_hostdata_pointer(arguments[0], node_tag);
     answers[0] = self != NULL ? lhat_integer(self->id) : lhat_nil();
@@ -143,7 +143,7 @@ static void node2d_x(LhatMachine *machine, void *context,
     *answer_count = 1;
 }
 
-// The same name the base declares, on the leaf. 8.8改 says the nearest
+// The same name the base declares, on the leaf. 05§8.8+ says the nearest
 // declaration answers, and this is what says which one ran.
 static void sprite_id(LhatMachine *machine, void *context,
                       const LhatValue *arguments, size_t count,
@@ -271,7 +271,7 @@ static void test_the_relation(void)
         lhat_program_dispose(&program);
     }
 
-    // The regression that matters: two types with no relation are what 8.8
+    // The regression that matters: two types with no relation are what 05§8.8
     // was written to keep apart, and they stay apart.
     LHAT_TEST("two unrelated host types are still separate");
     {
@@ -287,7 +287,7 @@ static void test_the_relation(void)
         lhat_program_dispose(&program);
     }
 
-    // 8.8改 walks the whole chain, not one step of it.
+    // 05§8.8+ walks the whole chain, not one step of it.
     LHAT_TEST("the chain is walked to its root");
     {
         static const File files[] = {
@@ -336,7 +336,7 @@ static void test_inherited_members(void)
         lhat_program_dispose(&program);
     }
 
-    // 12 の 3: one site asked of two types in turn -- one overriding the
+    // 12§3: one site asked of two types in turn -- one overriding the
     // member, one inheriting it from two steps up. What the site remembers
     // from the one must not answer for the other.
     LHAT_TEST("one call site keeps an override and an inherited member apart");
@@ -369,14 +369,14 @@ static void test_inherited_members(void)
 }
 
 // ---------------------------------------------------------------------------
-// fits^, which is where the two sides have to agree (03 の 4.2)
+// fits^, which is where the two sides have to agree (03§4.2)
 
 static void test_fits(void)
 {
     LhatProgram program;
     Disk disk;
 
-    // 8.8改 with 14.7: the nearest declaration of a name answers. The
+    // 05§8.8+ with §14.7: the nearest declaration of a name answers. The
     // members table a derived type carries is LINKED to its base's rather
     // than holding a copy of it, so which one is met first is the walk's
     // answer and not a comparison somebody had to write.
@@ -400,7 +400,7 @@ static void test_fits(void)
         LhatRunResult ran = run_program(&program);
         LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
         // 7 from the derived member both times: the annotation says Node,
-        // but 8.8 makes the VALUE what decides, and the value is a Sprite2D.
+        // but 05§8.8 makes the VALUE what decides, and the value is a Sprite2D.
         LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 77);
         lhat_program_dispose(&program);
     }
@@ -425,7 +425,7 @@ static void test_fits(void)
         lhat_program_dispose(&program);
     }
 
-    // 02 の 13.11: fits^ asks the question the checker asks of an annotation,
+    // §13.11: fits^ asks the question the checker asks of an annotation,
     // so the two have to answer alike. A host value's members are its type's,
     // not its own -- a reading that lives in one place and that the run time
     // used to skip, answering no to every structure while the checker was
@@ -451,7 +451,7 @@ static void test_fits(void)
         lhat_program_dispose(&program);
     }
 
-    // 05 の 8.7 with 02 の 14.12: a registered C function is a subroutine of
+    // 05§8.7 with §14.12: a registered C function is a subroutine of
     // the language, and so is a group -- both are written f^/p^ where the
     // checker reads them, so both have to stand where one is asked for.
     LHAT_TEST("a registered function is a subroutine to fits^");
@@ -471,9 +471,9 @@ static void test_fits(void)
         lhat_program_dispose(&program);
     }
 
-    // 02 の 14.7改2: the delegate walk and the reading above are the same
+    // §14.7+2: the delegate walk and the reading above are the same
     // reading, so what shows through as a member shows through to fits^ too
-    // -- while the host type itself stays nominal (05 の 8.8), which is the
+    // -- while the host type itself stays nominal (05§8.8), which is the
     // whole point of the distinction.
     LHAT_TEST("what a delegate shows answers a structure, not the host type");
     {
@@ -521,7 +521,7 @@ static void test_inherited_dispose(void)
     LhatProgram program;
     Disk disk;
 
-    // 12.5 reads a lifetime off whether a `dispose` member is there, and the
+    // §12.5 reads a lifetime off whether a `dispose` member is there, and the
     // collector reads tag->release. A derived type given one and not the
     // other checks as disposable and then releases nothing -- so this asserts
     // the release actually ran, not that the program compiled.
@@ -570,7 +570,7 @@ static void test_inherited_dispose(void)
 }
 
 // ---------------------------------------------------------------------------
-// 02 の 14.16 from C: lhat_value_type
+// §14.16 from C: lhat_value_type
 //
 // A host wrapping its own objects in a def^ has to know which of its types a
 // wrapper takes. The truth is in the constructor's signature; writing the
@@ -629,7 +629,7 @@ static void test_value_type(void)
     Disk disk;
 
     // Two wrappers over the same host type: one saying what its new takes,
-    // one leaving it to inference (03 の 3.4 settles it from the field the
+    // one leaving it to inference (03§3.4 settles it from the field the
     // body writes). A host cannot be asked to care which way it was written,
     // so both have to answer the same.
     static const File files[] = {
@@ -701,7 +701,7 @@ static void test_registration(void)
         lhat_program_dispose(&program);
     }
 
-    // 05 の 8.7改: a name stands for one declaration across the process, and
+    // 05§8.7+: a name stands for one declaration across the process, and
     // what it is under is part of that declaration.
     LHAT_TEST("the same name under a different base is refused");
     {
@@ -743,11 +743,11 @@ static void test_registration(void)
     }
 }
 
-// 02 の 14.7改2 over a host type, which is the arrangement delegate^ was
+// §14.7+2 over a host type, which is the arrangement delegate^ was
 // written for: an L^ wrapper holding what the host made, showing the host's
 // members as its own.
 //
-// 05 の 8.8改's flatten is what makes the base's members come along, so this
+// 05§8.8+'s flatten is what makes the base's members come along, so this
 // also says the two features meet.
 static void test_delegate_to_host(void)
 {
@@ -764,8 +764,8 @@ static void test_delegate_to_host(void)
              "    override^new = f^ { self^{ gdobj = scene.makeSprite() } },\n"
              "    delegate^ self^.gdobj\n"
              "}\n"
-             // id() is scene.Node's, reached through Sprite2D by 8.8改's
-             // flatten and then through the delegation by 14.7改2.
+             // id() is scene.Node's, reached through Sprite2D by 05§8.8+'s
+             // flatten and then through the delegation by §14.7+2.
              "return^ Sprite.new().id()\n"},
         };
         program_with(&program, &disk, files, 1);
@@ -777,7 +777,7 @@ static void test_delegate_to_host(void)
         lhat_program_dispose(&program);
     }
 
-    // 12 の 3: one site asked of wrappers lending to two host types in turn,
+    // 12§3: one site asked of wrappers lending to two host types in turn,
     // one overriding the member and one inheriting it -- and of a wrapper
     // whose delegate is swapped under it. What the site remembers of a lent
     // answer must follow what is lent to, not the wrapper.
@@ -818,7 +818,7 @@ static void test_delegate_to_host(void)
         lhat_program_dispose(&program);
     }
 
-    // 05 の 8.8: and the wrapper is still not one. A host type is where 11.3
+    // 05§8.8: and the wrapper is still not one. A host type is where §11.3
     // gives way, so delegating to one lends its members and not its identity
     // -- the C behind scene.Node would otherwise be handed a table.
     LHAT_TEST("but the wrapper does not stand where the host type is asked");
@@ -840,7 +840,7 @@ static void test_delegate_to_host(void)
         lhat_program_dispose(&program);
     }
 
-    // 05 の 8.8改: the wrapper's descriptor names the host type it holds
+    // 05§8.8+: the wrapper's descriptor names the host type it holds
     // rather than copying its members -- a class tree's whole API, twice --
     // and fits^ follows delegation to the held value, including its base tag.
     LHAT_TEST("the wrapper's type names the host type instead of copying it");
@@ -895,7 +895,7 @@ static void test_delegate_to_host(void)
         LhatValue sprite = field_of(machine, ran.value, "sprite");
         LhatValue plain = field_of(machine, ran.value, "plain");
         LhatValue raw = field_of(machine, ran.value, "raw");
-        // 14.16: the run does not build a deep shape out of data, so the
+        // §14.16: the run does not build a deep shape out of data, so the
         // descriptor holding the tag is the checker's -- what the export
         // answers, and what a compiled fits^ carries.
         const LhatRuntimeType *sprite_type = instance_type(root, "Sprite");
@@ -980,7 +980,7 @@ static void test_delegate_chain_to_host(void)
     lhat_program_dispose(&program);
 }
 
-// 05 の 8.8 with 8.8改: every value of a registered type answers through
+// 05§8.8 with 05§8.8+: every value of a registered type answers through
 // the type's own members table, which lhat_machine_make_hostdata reaches by
 // walking L^.modules by name -- once per value. A walk that answered "not
 // there" would put a fresh empty table in its place, and from then on new
@@ -1020,7 +1020,7 @@ static void test_values_keep_their_members(void)
     }
 }
 
-// 05 の 8.8改 with 8.7: what a value answers and what the host may ask
+// 05§8.8+ with 05§8.7: what a value answers and what the host may ask
 // about the type are one question. A member the type inherits is reached by
 // a call on the value, so lhat_machine_registered has to find it too --
 // which takes the read that climbs the chain rather than the one that sees
@@ -1063,7 +1063,7 @@ static void test_registered_sees_the_chain(void)
 }
 
 // ---------------------------------------------------------------------------
-// 05 の 8.12: what a host remembers about its own objects
+// 05§8.12: what a host remembers about its own objects
 //
 // The cache a binding wants and cannot write for itself. What makes it
 // unsound in a host's own map is that the collection is incremental: between
@@ -1199,7 +1199,7 @@ static void test_the_weak_cache(void)
         LhatRunResult ran = run_program(&program);
         LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
         // Not "mostly the same": the same, every turn. is^ is what tells two
-        // wrappers of one pointer apart (8.8 makes them equal under '=').
+        // wrappers of one pointer apart (05§8.8 makes them equal under '=').
         LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 200);
         LHAT_CHECK_EQ_INT(cache_misses, 1);
         LHAT_CHECK_EQ_INT(cache_hits, 200);
@@ -1269,7 +1269,7 @@ static void test_the_weak_cache(void)
                                                wrapper),
                    "remembered");
 
-        // 05 の 8.7改5 made a machine's heap small enough that a whole
+        // 05§8.7+5 made a machine's heap small enough that a whole
         // cycle passes inside one step (stepsize * stepmul%), and then
         // the loop below would never SEE the marking. So give the marking
         // enough to walk -- REACHABLE objects, since unreachable ones are
@@ -1322,7 +1322,7 @@ static void test_the_weak_cache(void)
 }
 
 // ---------------------------------------------------------------------------
-// 05 の 8.7改5: the registrations are the program's
+// 05§8.7+5: the registrations are the program's
 //
 // What install used to build per machine is built once on the program's own
 // heap, born black, and hung off each machine's L^.modules by name. What is
@@ -1364,7 +1364,7 @@ static void test_registrations_are_shared(void)
         LHAT_CHECK(lhat_is_object(here) && lhat_is_object(there) &&
                        lhat_as_object(here) == lhat_as_object(there),
                    "and it is one object, not two");
-        // 8.8改's base link is built once too, so the walk still climbs it.
+        // 05§8.8+'s base link is built once too, so the walk still climbs it.
         LHAT_CHECK(lhat_machine_registered(second, "scene", "Sprite2D", "id",
                                            &there),
                    "a derived type still reaches through its base");

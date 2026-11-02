@@ -31,7 +31,7 @@
 typedef struct {
     int line;
     int character;
-    // 05 の 5.5: what the other units of this workspace publish, taken
+    // 05§5.5: what the other units of this workspace publish, taken
     // before the fresh check because both walks want the same lock.
     const LspUnitExports *others;
     size_t other_count;

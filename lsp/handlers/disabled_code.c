@@ -1,4 +1,4 @@
-// L^ (lhat) -- LSP server: lhat/toggleDisabledCode (01 の 6.5).
+// L^ (lhat) -- LSP server: lhat/toggleDisabledCode (01§6.5).
 //
 // Answered from the editor's own text, the way document_symbol.c answers:
 // the command may be pressed on the keystroke after an edit, before the
@@ -58,7 +58,7 @@ cJSON *lsp_handle_toggle_disabled_code(LspServer *server, const cJSON *params)
     }
 
     char *path = lsp_uri_to_absolute_path(uri_item->valuestring);
-    // 08 章: an LTON file is data, with no statements to switch off.
+    // 08§: an LTON file is data, with no statements to switch off.
     if (path == NULL || lsp_lton_is_path(path)) {
         free(path);
         return NULL;

@@ -51,7 +51,7 @@ const char *lhat_op_name(LhatOpKind op)
         case LHAT_OP_MOD_ASSIGN:      return "%=";
         case LHAT_OP_POW_ASSIGN:      return "**=";
         case LHAT_OP_CONCAT_ASSIGN:   return "..=";
-        // 8.6.4: named so that "expected ':='" does not read "expected '?'"
+        // §8.6.4: named so that "expected ':='" does not read "expected '?'"
         // where one of these was written.
         case LHAT_OP_NIL_REASSIGN:        return "?:=";
         case LHAT_OP_NIL_ADD_ASSIGN:      return "?+=";
@@ -66,7 +66,7 @@ const char *lhat_op_name(LhatOpKind op)
         case LHAT_OP_NE:         return "!=";
         case LHAT_OP_LE:         return "<=";
         case LHAT_OP_GE:         return ">=";
-        case LHAT_OP_SPACESHIP:  return "<=>";  // 11.9
+        case LHAT_OP_SPACESHIP:  return "<=>";  // §11.9
         case LHAT_OP_LT:         return "<";
         case LHAT_OP_GT:         return ">";
         case LHAT_OP_ADD:        return "+";

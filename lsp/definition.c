@@ -65,7 +65,7 @@ uint32_t lsp_definition_name_start(const LhatSource *source, uint32_t offset)
 uint32_t lsp_definition_name_end(const char *text, size_t length,
                                  uint32_t offset)
 {
-    // 01 の 3.1: the lexer takes any non-ASCII that is neither space nor a
+    // 01§3.1: the lexer takes any non-ASCII that is neither space nor a
     // reserved mark as part of a name, so this does too -- the same walk
     // resolution.c makes backwards, made forwards.
     uint32_t at = offset <= length ? offset : (uint32_t)length;

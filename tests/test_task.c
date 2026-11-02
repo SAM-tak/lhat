@@ -1,8 +1,8 @@
 // L^ (lhat) -- tests for std.task, a pool of worker machines.
 //
 // What is pinned here is the shape Memo's sketch asked for: a job written
-// as the call of a yieldable procedure (which 02 の 15.5 makes a coroutine
-// that has not started, and 05 の 8.8改3 lets cross), handed to a pool, and
+// as the call of a yieldable procedure (which §15.5 makes a coroutine
+// that has not started, and 05§8.8+3 lets cross), handed to a pool, and
 // waited for -- with the jobs actually running side by side rather than one
 // after the other.
 //
@@ -169,7 +169,7 @@ static void test_side_by_side(void)
     }
 
     // And a job that neither waits nor ends does not starve one that does.
-    // 02 の 15.15's slice is the quantum now: the spinner is taken off after
+    // §15.15's slice is the quantum now: the spinner is taken off after
     // TASK_SLICE turns and the waiter gets the worker. Under a pool that ran
     // one job to its end this could not return at all.
     LHAT_TEST("a spinning job does not hold the only worker");
@@ -217,7 +217,7 @@ static void test_side_by_side(void)
     }
 
     // await^ inside a job: the worker drives the coroutine and waits for
-    // the very wait it yielded (05 の 8.7改's take by id), so a delay is a
+    // the very wait it yielded (05§8.7+'s take by id), so a delay is a
     // delay rather than a resume that came back early.
     LHAT_TEST("a job may wait inside itself, and the wait is kept");
     {
@@ -264,7 +264,7 @@ static void test_answers(void)
             "}\n"
             "std.task.stop()\n"
             "return^ said\n");
-        // 04 の 11.6改: what it panicked with and where, not just the
+        // 04§11.6+: what it panicked with and where, not just the
         // word `panic^`.
         LHAT_CHECK(ran.ok && ran.text != NULL &&
                        strstr(ran.text, "boom") != NULL &&
@@ -323,7 +323,7 @@ static void test_answers(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 15.14改: the push a scheduler parks on rather than asking done().
+    // §15.14: the push a scheduler parks on rather than asking done().
     LHAT_TEST("a task hands out a wait that its end completes");
     {
         LhatTestRan ran = run_source(
@@ -354,7 +354,7 @@ static const LhatTestRegister with_channel[] = {lhatstdlib_task_register,
 
 static void test_task_crosses(void)
 {
-    // 05 の 8.8改2: a Task is a shared type, so one job may be handed
+    // 05§8.8+2: a Task is a shared type, so one job may be handed
     // another's -- which is what a pipeline is written with.
     LHAT_TEST("a Task may be pushed into a channel and read on a worker");
     {
@@ -538,7 +538,7 @@ static void test_channel_without_holding(void)
     }
 }
 
-// 02 の 15.15: the slice. A job that neither yields nor ends used to hold
+// §15.15: the slice. A job that neither yields nor ends used to hold
 // its worker for ever, and a stop would wait for it -- which is to say the
 // program hung. The budget is what gets the worker's attention back.
 static void test_runaway(void)
@@ -1001,7 +1001,7 @@ static void test_await_transfer(void)
     LHAT_CHECK_RAN_INTEGER(ran, 95);
     lhat_test_ran_dispose(&ran);
 
-    // 05 の 8.6: a task's machine collects the way the spawner's did when
+    // 05§8.6: a task's machine collects the way the spawner's did when
     // it spawned -- read then, on the spawner's thread.
     LHAT_TEST("a task's machine takes the spawner's collector settings");
     ran = run_source(

@@ -8,7 +8,7 @@
 //
 // The program's front end parses the preamble and table entries directly.
 // It lowers the body to a pure function returning a table. That is what makes the spelling L^'s -- the comments, the
-// escapes, the shapes of a number -- and what makes 02 の 15.1 do the
+// escapes, the shapes of a number -- and what makes §15.1 do the
 // keeping: read as the body of an f^, a text that calls a p^ is refused by
 // the checker, with no rule written here for it.
 
@@ -87,7 +87,7 @@ static LhatLtonStatus status_of(LhatLoadStatus status)
     return LHAT_LTON_OUT_OF_MEMORY;
 }
 
-// 05 の 8.2: as data, so the host's initial bindings are not in scope.
+// 05§8.2: as data, so the host's initial bindings are not in scope.
 static LhatLoadOptions as_data(void)
 {
     LhatLoadOptions options = {0};
@@ -144,7 +144,7 @@ LhatLtonStatus lhatstdlib_lton_load(LhatMachine *machine, LhatProgram *program,
 {
     *out = lhat_nil();
 
-    // 05 の 8.9: through the program's loader and not through the file
+    // 05§8.9: through the program's loader and not through the file
     // system directly, so a host that handed none over reads nothing.
     size_t length = 0;
     char *text = lhat_program_read(program, path, &length);
@@ -161,7 +161,7 @@ LhatLtonStatus lhatstdlib_lton_load(LhatMachine *machine, LhatProgram *program,
 // The same two, as L^ sees them
 // ---------------------------------------------------------------------------
 
-// 08 § 7: the two reading errors distinguish missing text from rejection. A
+// 08§7: the two reading errors distinguish missing text from rejection. A
 // text that would not compile and
 // one that ran and stopped both answer Rejected. What differs is the
 // message -- which is the distinction C keeps, since the two are read from
@@ -489,7 +489,7 @@ static void text_table(LtonWriter *w, const LhatTable *table, size_t depth)
         write_fail(w, LHAT_LTON_UNSUPPORTED, "only plain data tables can be written as LTON"); return;
     }
     w->ancestors[depth] = table;
-    // 02 の 14.10: the sequence is written whole, nil^ positions included,
+    // §14.10: the sequence is written whole, nil^ positions included,
     // so it reads back the same length; the keyed half follows, sorted.
     size_t total = table->entry_count;
     if (total > SIZE_MAX / sizeof(LhatTableEntry)) {
@@ -699,7 +699,7 @@ static void lton_save(LhatMachine *machine, void *context,
 
 bool lhatstdlib_lton_register(LhatProgram *program)
 {
-    // 05 の 8.7: registration before checking -- std.sys.Error.OutOfMemory has to
+    // 05§8.7: registration before checking -- std.sys.Error.OutOfMemory has to
     // exist before this module's signatures name it. The call is idempotent.
     if (!lhatstdlib_sys_register(program)) {
         return false;
@@ -732,7 +732,7 @@ bool lhatstdlib_lton_register(LhatProgram *program)
     module->cannot_write = kinds[5];
 
     // Both are f^: reading a text as data has no effect of its own, and the
-    // text cannot have one either (15.1, lton.h).
+    // text cannot have one either (§15.1, lton.h).
     return lhat_register_func(
                program, "std.lton", "parse",
                "f^string^ -> t^{}|std.lton.LtonError|std.sys.Error.OutOfMemory;",

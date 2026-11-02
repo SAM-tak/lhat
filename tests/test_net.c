@@ -1,8 +1,8 @@
-// L^ (lhat) -- tests for std.net (11 章).
+// L^ (lhat) -- tests for std.net (01§11).
 //
 // Everything travels over the loopback: one socket binds to port 0, asks
 // which port it got, and another sends to it. A datagram on the loopback is
-// there as soon as the send returns, but receive never waits (11 の 4.2), so
+// there as soon as the send returns, but receive never waits (11§4.2), so
 // each case polls a bounded number of times rather than assuming.
 
 #include "stdlibutil.h"

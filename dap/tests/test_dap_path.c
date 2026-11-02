@@ -1,5 +1,5 @@
 // L^ (lhat) -- how the adapter compares two spellings of one file
-// (09 の 5.2 with D6).
+// (09§5.2 with D6).
 //
 // Without a host's path map, a breakpoint's file and a unit's source are both
 // filesystem paths and are normalised before being compared. What is pinned

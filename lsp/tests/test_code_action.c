@@ -155,7 +155,7 @@ int main(void)
         dispose(&c);
     }
 
-    // 07 §6: every fix that needs no reading, as the one action an editor
+    // 07§6: every fix that needs no reading, as the one action an editor
     // applies on save. The write to a let^ is a guess, so it stays out.
     LHAT_TEST("the fixes that need no reading come as one source.fixAll");
     {

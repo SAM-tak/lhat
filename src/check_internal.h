@@ -15,16 +15,16 @@
 #include "environment.h"
 #include "lhat/config.h"
 #include "grow.h"
-#include "message.h"  // 07 § 6: the titles the fixes are offered under
+#include "message.h"  // 07§6: the titles the fixes are offered under
 #include "operators.h"
 #include "lhat/port.h"
 
-// 05 § 8.7: a host writes a type out as text, so the checker reads the type
-// grammar of § 13 back through the parser it came from.
+// 05§8.7: a host writes a type out as text, so the checker reads the type
+// grammar of §13 back through the parser it came from.
 #include "parser.h"
 #include "lhat/source.h"
 
-// § 15.1+: how many levels of what a place holds the body being checked made.
+// §15.1+: how many levels of what a place holds the body being checked made.
 // 0 is none -- it arrived from somewhere else; 1 is the table itself but not
 // what it holds; LHAT_OWN_DEEP is everything it reaches. Changing what sits n
 // levels down asks for more than n. Read off every value the place is given,
@@ -36,7 +36,7 @@ typedef struct ChkOwnership {
     uint8_t relied;
 } ChkOwnership;
 
-// A name bound in a scope. `offset` is where its let^ stands, which 8.7 needs
+// A name bound in a scope. `offset` is where its let^ stands, which §8.7 needs
 // to tell a use before the definition from one after it.
 typedef struct Binding {
     const char *name;
@@ -45,67 +45,67 @@ typedef struct Binding {
     const LhatNode *declaration;
     const LhatDefinition *definition;
     const LhatModuleRoot *module_root;
-    // 03 の 3.4改2: what the walk before this one left under the name, which
+    // 03§3.4+2: what the walk before this one left under the name, which
     // is what this walk started from. NULL until a second walk is run, and
     // read only to tell a walk that learned something from one that answered
     // what the last one already had.
     LhatType *seed;
     uint32_t offset;
     bool reached;  // its let^ has been walked past
-    // § 15.1+: what the name holds and how much of it the body made.
+    // §15.1+: what the name holds and how much of it the body made.
     ChkOwnership owned;
-    // § 15.1+: the name was bound to something read out of what `alias` is the
+    // §15.1+: the name was bound to something read out of what `alias` is the
     // ownership of, `alias_depth` levels down -- 'let^ r = rows[0]' or a for^
     // focus. Then `alias` is what a write leans on and what a store lowers;
     // `owned` above only caps it, and drops when the name is written again.
     ChkOwnership *alias;
     uint8_t alias_depth;
-    // 03 の 4.3: bound by an earlier input of a session. Writing the name
-    // again is a redefinition rather than the clash 8.7 makes of two let^ in
+    // 03§4.3: bound by an earlier input of a session. Writing the name
+    // again is a redefinition rather than the clash §8.7 makes of two let^ in
     // one scope -- it is the same place, written again.
     bool from_session;
-    // 8.9: introduced by a let^ rather than a var^, so nothing written after
-    // it may reassign the name. 12 章's with^ and 16.3's in^ focus bind this
+    // §8.9: introduced by a let^ rather than a var^, so nothing written after
+    // it may reassign the name. §12's with^ and §16.3's in^ focus bind this
     // way too -- the first because the block disposes of whatever the name
     // still holds, the second because each turn binds it afresh.
     //
     // This says nothing about the value: a table a let^ holds is still the
-    // table it was, and 8.8's members of it are still written through 15.1改
-    // and 05 の 8.6. What it refuses is the name coming to mean something
+    // table it was, and 05§8.8's members of it are still written through §15.1+
+    // and 05§8.6. What it refuses is the name coming to mean something
     // else.
     bool immutable;
-    // 8.9 with 12.1 and 16.3改2: the construct bound it, not a word the writer
+    // §8.9 with §12.1 and §16.3+2: the construct bound it, not a word the writer
     // chose -- a with^, or the focus of a counted or walking for^. Writing
     // var^ instead is not open to them, so the diagnostic must not offer it.
     bool bound_by_form;
-    // 07 §6: where the let^ or var^ that introduced it stands, so a
+    // 07§6: where the let^ or var^ that introduced it stands, so a
     // diagnostic about a write to this name can offer the other word. Empty
     // for every binding no word of the source made -- a parameter, an
-    // import^ root, a construct's own focus (8.9 with 12.1 and 16.3改2).
+    // import^ root, a construct's own focus (§8.9 with §12.1 and §16.3+2).
     LhatSpan keyword;
-    // 05 の 8.7: the root an import^ bound. A name under it is read off
+    // 05§8.7: the root an import^ bound. A name under it is read off
     // L^.modules wherever it is written, so naming one captures nothing. A
     // require^ landing on the same root clears this, the same way
     // compile.c's Local does.
     bool import_root;
-    // 13.1: declared by a signature rather than bound by a let^ or var^.
-    // Nothing in the checker reads it -- 07 の 4 章 does, since where a use
+    // §13.1: declared by a signature rather than bound by a let^ or var^.
+    // Nothing in the checker reads it -- 07§4 does, since where a use
     // stands says only that there is a name, and the type says only what it
     // holds. Which of the two declared it is known here and nowhere else.
     bool is_parameter;
-    // 02 Section 13.14: a let^ binding a written type or an existing alias
+    // §13.14: a let^ binding a written type or an existing alias
     // names that type in annotations. `named_type` is what it stands for
     // there; `type` above stays the value's own (the typeinfo table), so a
     // read of the name as a value keeps answering the descriptor.
     bool names_type;
     LhatType *named_type;
     LhatType *seed_named_type;  // The preceding inference round's alias target.
-    // 03 の 3.4改4: the f^ literal this let^ bound, when it bound one --
+    // 03§3.4+4: the f^ literal this let^ bound, when it bound one --
     // what lets a call site say which body its argument shapes belong to.
     // NULL for every other value, and for a var^, whose name may come to
     // mean some other subroutine.
     const LhatNode *value_node;
-    // 8.7改: its own let^'s value is being walked right now. A name read
+    // §8.7+: its own let^'s value is being walked right now. A name read
     // there -- anywhere there, a deferred body included -- resolves past
     // this binding to whatever the name meant outside; the binding itself
     // is unreadable from its own initialiser. Set and cleared around the
@@ -118,31 +118,31 @@ typedef struct Scope {
     Binding *bindings;
     Binding *tail;
     struct Scope *parent;
-    // 02 の 9.4 with 01 の 8 章: a layer that holds names without being a '{'
+    // §9.4 with 01§8: a layer that holds names without being a '{'
     // anyone wrote. The loop clauses lasting the whole loop (prolog^, first^)
     // live in one of these, around the layer main^ binds into -- so a name
     // outlives the iteration without '$^' finding an extra step on the way
     // out. compile.c counts the same one scope for a loop body.
     bool transparent;
-    // 07 の 4 章: the source the scope covers, taken from the construct it
+    // 07§4: the source the scope covers, taken from the construct it
     // belongs to. Both zero for a layer that is a lookup table rather than a
     // piece of a program -- a def^'s members while its entries are read, a
     // session's one scope across many inputs -- and nothing is recorded for
     // those. What is recorded is every binding, as the scope closes
     // (chk_scope_close): a tool asked what names may stand at a position
-    // reads the record rather than reading 8 章 a second time.
+    // reads the record rather than reading 08§8 a second time.
     uint32_t from;
     uint32_t to;
 } Scope;
 
-// 13.11. What a branch knows about a value that the binding does not: inside
+// §13.11. What a branch knows about a value that the binding does not: inside
 // 'if^ r is^ T', r is only the arms of its union that conform to T. Held as
-// the path it was written with rather than as a binding, since 13.11 admits
+// the path it was written with rather than as a binding, since §13.11 admits
 // a dot path as well as a plain name.
 typedef struct Narrowing {
     const LhatNode *path;
     LhatType *type;
-    // 13.11改: what a branch knows about a whole number the type does not --
+    // §13.11+: what a branch knows about a whole number the type does not --
     // 'for^ i from^ 1 to^ 9' and '1 <= d <= 9' both say which values reach
     // the body. Both ends are always held; INT64_MIN and INT64_MAX are how a
     // side that nothing bounded is written. A record carries this or a type,
@@ -153,7 +153,7 @@ typedef struct Narrowing {
     struct Narrowing *next;
 } Narrowing;
 
-// 03 の 3.4: a parameter written without a type, while the body that decides
+// 03§3.4: a parameter written without a type, while the body that decides
 // it is being read. `slot` is the pending^ object infer_func made, and the
 // binding and the signature both hold that very pointer -- settling one writes
 // through to both, which is what keeps this to a single walk of the body.
@@ -161,7 +161,7 @@ typedef struct Narrowing {
 // A member reached off such a parameter gets one of these too, so that
 // 'x.foo(1)' can demand t^{ foo : p^number^; } rather than only the name.
 // Its slot is the member's type inside the demand its parent is collecting.
-// 03 の 3.4改: a top-level name this unit binds to a def^ that writes an op^.
+// 03§3.4+: a top-level name this unit binds to a def^ that writes an op^.
 // Held by name rather than by type, since a def^'s type is made afresh on
 // every walk -- the name is looked up through the scope where the demand is
 // wanted, which is also what makes a walk that reads it too early ask for
@@ -169,7 +169,7 @@ typedef struct Narrowing {
 typedef struct {
     const char *name;
     size_t name_length;
-    // 05 の 8.7: a host registration is the other kind of carrier, and its
+    // 05§8.7: a host registration is the other kind of carrier, and its
     // type is the program's rather than this walk's -- built once at
     // registration and never remade -- so it is held directly. NULL for a
     // def^ of this unit, which is looked up by the name above.
@@ -179,17 +179,17 @@ typedef struct {
 
 typedef struct ParamVar {
     LhatType *slot;
-    // Where the parameter was written, so 03 の 3.1 can say which one nothing
+    // Where the parameter was written, so 03§3.1 can say which one nothing
     // decided. NULL where there is no such place to point at.
     const LhatNode *node;
     // What positions that always run have asked of it, and what the ones
-    // under a branch have. Kept apart because 3.4 settles them differently:
+    // under a branch have. Kept apart because 03§3.4 settles them differently:
     // the first is a requirement, the second is only added when it does not
     // contradict.
     LhatType *demanded;
     LhatType *conditional;
     // Two demands from under branches ruled each other out, so the branches
-    // disagree and nothing here is decided (3.4 leaves that unknown^ rather
+    // disagree and nothing here is decided (§3.4 leaves that unknown^ rather
     // than reporting -- the uses report for themselves).
     bool conditional_dropped;
     // Reassigned, self-referential, or two unconditional demands ruled each
@@ -198,7 +198,7 @@ typedef struct ParamVar {
     struct ParamVar *next;
 } ParamVar;
 
-// 03 の 3.4改4: one call shape of a literal whose parameters nothing was
+// 03§3.4+4: one call shape of a literal whose parameters nothing was
 // written on -- the argument types one call site handed it. infer_func walks
 // the body once under each shape recorded for it (the expectation path, so
 // no demands are collected and nothing is reported undecided), keeps what
@@ -224,7 +224,7 @@ typedef struct Instantiation {
     struct Instantiation *next;
 } Instantiation;
 
-// 03 の 3.4改2: the bookkeeping of a walk that is one iteration of a least
+// 03§3.4+2: the bookkeeping of a walk that is one iteration of a least
 // fixpoint. Two walks are run that way -- a def^'s entries and a statement
 // list -- and what they share is only this: where to roll back to, how many
 // walks are allowed, and whether the last one changed any answer.
@@ -232,7 +232,7 @@ typedef struct Instantiation {
 // What each of them seeds the next walk with, and what has to be put back
 // before it, is their own -- see chk_infer_def and chk_check_statements.
 typedef struct {
-    // 07 の 4 章: both channels are arrays that only ever grow, so a count is
+    // 07§4: both channels are arrays that only ever grow, so a count is
     // the whole of a mark. What a walk said is dropped when the next one
     // starts: it walks the same ground and says all of it again.
     size_t diagnostics;
@@ -263,7 +263,7 @@ typedef struct {
     const LhatNode *unit;
     LhatCheckResult *result;
 
-    // 05 の 8.3: resolving a registered host signature (lhat_type_of_text).
+    // 05§8.3: resolving a registered host signature (lhat_type_of_text).
     // Such a type only describes what the host hands over, so the written
     // tuple-position escape is judged where L^ consumes it instead.
     bool hosted_signature;
@@ -271,39 +271,39 @@ typedef struct {
     LhatType *argument_signature;
     bool receiver_type_expression;
 
-    // 05 の 6.1: how an import is answered. Absent when a unit is checked on
+    // 05§6.1: how an import is answered. Absent when a unit is checked on
     // its own, in which case a require^ cannot be followed.
     LhatRequire require;
 
-    // 02 の 18.5: which of the registered annotations this file has already
+    // §18.5: which of the registered annotations this file has already
     // used, for the ones registered LHAT_ANNOTATION_FILEUNIQUE. One flag per
     // registration, indexed the way `require.annotations` is -- annotations
     // are checked at the unit's head, at each binding and inside each def^,
     // so counting them takes something that outlives one list. NULL when
     // nothing was registered, or when there was no room.
-    // 18.5: which node claimed each file-unique annotation. A node rather
-    // than a flag because 3.4改2's rounds walk the same statements again --
+    // §18.5: which node claimed each file-unique annotation. A node rather
+    // than a flag because 03§3.4+2's rounds walk the same statements again --
     // the same node seen twice is one writing, only a different node is a
     // second one.
     const LhatNode **annotation_seen;
 
     Scope *scope;
-    // 05 の 2.2: one environment. A name means a value, a type, or both.
+    // 05§2.2: one environment. A name means a value, a type, or both.
 
     // Innermost first. A branch pushes and pops around its body, so the list
     // is a stack rather than something scopes own.
     Narrowing *narrowings;
 
-    // 13.11: the target of the write being checked, if any. What a branch
+    // §13.11: the target of the write being checked, if any. What a branch
     // narrowed *it* to says nothing about what may be written -- the write
     // is what ends that claim -- so the type is asked of the name itself.
     // Set around that one reading only: the value on the right runs before
     // the write, where the claim still holds ('x := x + 1').
     const LhatNode *writing_to;
 
-    // 13.11 with 9.2: what a loop condition established. It holds in the
+    // §13.11 with §9.2: what a loop condition established. It holds in the
     // clauses that run after the test -- main^, which is the block's own
-    // statements (9.3), and first^ -- and nowhere else: prolog^ and pre^ run
+    // statements (§9.3), and first^ -- and nowhere else: prolog^ and pre^ run
     // before the test, last^ and epilog^ once the loop is over, where for a
     // while^ the condition is what ended it. Set by the loop around the walk
     // of its body and taken by that block on entry, so a block written inside
@@ -312,19 +312,19 @@ typedef struct {
         Narrowing *before;  // where the list is cut back to for the rest
     } *loop_test;
 
-    // 13.11: reading something that was read already, which is what
+    // §13.11: reading something that was read already, which is what
     // chk_narrow_from does to the path a condition tested. Nothing reports
     // while this stands, so one mistake stays one diagnostic. A counter
     // rather than a flag, for the same reason `deferred` is one.
     size_t rereading;
 
-    // 03 の 3.4: the parameters whose types the bodies now open are deciding.
+    // 03§3.4: the parameters whose types the bodies now open are deciding.
     // Innermost first, and a nested body's are pushed in front of the enclosing
     // one's -- a demand made inside one still reaches an outer parameter, since
     // the value it names came from out there.
     ParamVar *param_vars;
 
-    // 03 の 3.4改4: the call shapes this unit's walks have recorded, one
+    // 03§3.4+4: the call shapes this unit's walks have recorded, one
     // list across every round -- the rounds roll back what a walk said, and
     // these are what it learned. `instantiating` is the literal whose shapes
     // are being walked right now, so the walk under one shape does not open
@@ -334,28 +334,28 @@ typedef struct {
     size_t template_depth;
     const LhatNode *instantiating;
 
-    // 02 の 13.14: inside the spelling of a type-as-value right now -- what
+    // §13.14: inside the spelling of a type-as-value right now -- what
     // scopes the old-world rule to the alias: only there does a name
     // reaching its own being-defined binding refuse to mean it. Elsewhere a
-    // type position keeps reading the collecting pass's seed, which 14.9's
+    // type position keeps reading the collecting pass's seed, which §14.9's
     // neighbours pin.
     bool in_type_value;
 
-    // 03 の 3.4改: what this unit writes an op^ for, so that an operator used
-    // on a parameter demands the candidates rather than 11.8's built-in
-    // alone. Read off the syntax before anything is walked -- 8.7 makes a
+    // 03§3.4+: what this unit writes an op^ for, so that an operator used
+    // on a parameter demands the candidates rather than §11.8's built-in
+    // alone. Read off the syntax before anything is walked -- §8.7 makes a
     // name visible over the whole unit, so where the def^ stands relative to
     // the body using the operator cannot matter.
     //
     // The types are not kept: a def^'s is rebuilt on every walk (03 の
-    // 3.4改2), so what is held is the name to look up and which operators it
+    // 03§3.4+2), so what is held is the name to look up and which operators it
     // writes, one bit per LHAT_OPERATOR_MEMBERS entry.
     OperatorCarrier *operator_carriers;
     size_t operator_carrier_count;
     size_t operator_carrier_capacity;
     uint16_t unit_operators;  // the union of the bits below, to test in one go
 
-    // 8.7: inside a subroutine body nothing runs where it is written, so the
+    // §8.7: inside a subroutine body nothing runs where it is written, so the
     // ordering rule does not apply. A counter rather than a flag, since
     // bodies nest.
     size_t deferred;
@@ -363,45 +363,45 @@ typedef struct {
     // inside an if^ clause, a for^ body or a repeat^ body, nothing
     // guarantees this specific piece of code runs at all before some later
     // point reads what it wrote -- unlike `deferred` above, this still runs
-    // immediately if it runs, so 8.7's own rule does not read this one.
+    // immediately if it runs, so §8.7's own rule does not read this one.
     // A counter, the same way and for the same reason as `deferred`.
     size_t conditional;
 
-    // 8.6.4: the place a '?op=' reads. It answers without its nil^ arm --
+    // §8.6.4: the place a '?op=' reads. It answers without its nil^ arm --
     // the form is written to say the write is skipped when the place is
     // absent, so what the operator is asked of is what is there. One node
     // rather than a depth: the very same shape standing in the right-hand
     // side is nobody's place, and goes on carrying its nil^.
     const LhatNode *nil_safe_place;
 
-    // The result type of the subroutine being checked, for 04 の 5.3 and for
-    // collecting return^ when 03 の 3.4 has to infer one.
+    // The result type of the subroutine being checked, for 04§5.3 and for
+    // collecting return^ when 03§3.4 has to infer one.
     LhatType *declared_result;
     LhatType *inferred_result;
     bool saw_self_call;
-    // 03 の 3.4: a return^ whose value goes through the subroutine itself.
+    // 03§3.4: a return^ whose value goes through the subroutine itself.
     // Its type is the one being worked out, so it is left out of the union.
     bool recursive_return;
-    // 03 の 3.4 counts every exit. A bare return^ is one that produces no
+    // 03§3.4 counts every exit. A bare return^ is one that produces no
     // value, exactly like reaching the end of the body -- and it leaves the
     // same nil^ behind at run time.
     bool valueless_return;
 
-    // 13.8改: whether the type about to be resolved may be a tuple. Consumed
+    // §13.8+: whether the type about to be resolved may be a tuple. Consumed
     // by resolve_type on entry, so every nested resolve refuses one unless it
     // deliberately sets this again -- which only a signature's result, a
     // coroutine's Y and T, and the arms of a union do. Refusing everywhere
     // else is the whole of what confines a tuple to a result position, and
     // that confinement is what keeps 13.8's four propagations from coming
-    // back: an argument cannot hold one, so 13.7's expansion rule has nothing
+    // back: an argument cannot hold one, so §13.7's expansion rule has nothing
     // to expand; a name cannot, so there is nothing to compose further.
     bool tuple_allowed;
 
-    // 02 の 15.10: the type of the subroutine whose body is being checked,
+    // §15.10: the type of the subroutine whose body is being checked,
     // which is what this^ names. NULL outside any body.
     LhatType *this_type;
 
-    // 15.10: the bodies enclosing this one, outermost last -- what
+    // §15.10: the bodies enclosing this one, outermost last -- what
     // this^^ walks. Links live on the C stack of the infer that pushed them,
     // the same way the saved this_type does.
     struct ThisLink {
@@ -410,14 +410,14 @@ typedef struct {
         const LhatNode *body;
     } *this_link;
 
-    // 13.13: the written type literals enclosing this point, innermost
+    // §13.13: the written type literals enclosing this point, innermost
     // first -- what Self^ names, and what a second hat counts outwards. Only
     // t^{ … } and def^{ … } bind one: a signature and a coroutine type are
     // written around a type rather than being a structure of their own, so
     // 'f^Self^ -> Self^;' inside a def^ still names the definition's instance,
     // which is what makes a method able to say its own type at all.
     //
-    // A def^ binds the instance (14.7), the same object self^ is bound to --
+    // A def^ binds the instance (§14.7), the same object self^ is bound to --
     // self^ is one value of that type, Self^ is the type. Links live on the C
     // stack of the resolve/infer that pushed them, like this_link above.
     struct SelfLink {
@@ -425,15 +425,15 @@ typedef struct {
         struct SelfLink *outer;
     } *self_link;
 
-    // 14.9 with 8.7: the definitions being built and the names they are on
+    // §14.9 with §8.7: the definitions being built and the names they are on
     // their way into. A def^ writing its own name inside itself reached the
     // pending^ seed the collecting pass leaves for every let^, and pending^
     // conforms to everything -- so 'x:T' inside T asked nothing at all, while
     // the same annotation outside asked for the whole structure.
     //
     // Only resolve_type reads this. The *value* is genuinely not assigned yet
-    // at that point, which is 8.7's own business and stays as it was; what a
-    // name means as a type is settled by the def^ itself (14.7's instance),
+    // at that point, which is §8.7's own business and stays as it was; what a
+    // name means as a type is settled by the def^ itself (§14.7's instance),
     // and that exists from the first line of infer_def onwards.
     struct DefLink {
         const Binding *binding;
@@ -442,13 +442,13 @@ typedef struct {
         struct DefLink *outer;
     } *def_link;
 
-    // 02 の 15.1: f^ may call only f^, never p^. True inside an f^ body
+    // §15.1: f^ may call only f^, never p^. True inside an f^ body
     // (and nested f^ literals within it), false everywhere else -- outside
     // any body (top level) and inside a p^ both allow either kind, so
     // false is the right default with no body open at all.
     bool in_function;
 
-    // 15.1's other half: an f^ assigns to local variables only. This is the
+    // §15.1's other half: an f^ assigns to local variables only. This is the
     // scope its parameters were bound in, which is the outermost one its body
     // made -- a name found at or inside it is the body's own, and one found
     // past it belongs to whoever called. NULL outside any body. Saved and
@@ -457,7 +457,7 @@ typedef struct {
     Scope *body_scope;
 
 
-    // 04 の 4.5: the statements with catch^ arms being checked, if any. A
+    // 04§4.5: the statements with catch^ arms being checked, if any. A
     // try^ written in them hands its errors here rather than to the
     // subroutine's result -- what no arm takes is what goes on out
     // (check_arms). A subroutine body written inside them clears it: a try^
@@ -467,81 +467,81 @@ typedef struct {
         struct CatchFrame *outer;
     } *catch_frame;
 
-    // 02 の 14.12改: what an override^ is writing over, which is what super^
-    // names. NULL anywhere else, so 14.12's marker is what makes it a name.
+    // §14.12+: what an override^ is writing over, which is what super^
+    // names. NULL anywhere else, so §14.12's marker is what makes it a name.
     LhatType *super_type;
     const LhatNode *super_binding; // Override entry introducing the replaced value.
 
-    // 02 の 14.11: the written new whose literal chk_infer_def is walking.
+    // §14.11: the written new whose literal chk_infer_def is walking.
     // chk_infer_func reads it to know the body it opens is a constructor's:
     // the machine makes the instance, the body only adjusts it.
     const LhatNode *new_func;
     // And true exactly while that body's own statements are walked -- a
     // literal nested inside it is an ordinary body again. return^ (refused
-    // there) and 15.1's write rules (self^ is the body's to write) read it.
+    // there) and §15.1's write rules (self^ is the body's to write) read it.
     bool in_new_body;
 
-    // 15.1改2: the body being walked is an f^ whose receiver is mutable, so
+    // §15.1+2: the body being walked is an f^ whose receiver is mutable, so
     // a write through self^ -- direct, or another mutable^self^ call on it
     // -- is what its own signature promised. Saved and restored around each
     // literal, as in_new_body above is.
     bool receiver_mutable;
-    // § 15.1+: self^'s ownership while either of the two above holds -- whole
+    // §15.1+: self^'s ownership while either of the two above holds -- whole
     // on entry, by the signature's word (or the copy the machine just made),
     // and lowered by what the body stores into it. Saved and restored with
     // them.
     ChkOwnership self_owned;
 
-    // 15.1改3: the body being walked wrote '-> fresh^T', so every exit owes
+    // §15.1+3: the body being walked wrote '-> fresh^T', so every exit owes
     // a value this body made. Saved and restored the same way.
     bool must_answer_fresh;
 
-    // 03 の 3.4改2: something answered before it was inferred -- a def^ member
-    // read before its own body was walked (14.7改2's seed), or a name whose
-    // let^ this walk has not reached yet (8.7). Both say the same thing: this
+    // 03§3.4+2: something answered before it was inferred -- a def^ member
+    // read before its own body was walked (§14.7+2's seed), or a name whose
+    // let^ this walk has not reached yet (§8.7). Both say the same thing: this
     // walk read ahead, so walking again from what it learned may answer
     // better. Set by the member search and by the name search, read by the
     // two round loops below.
     bool read_provisional;
 
-    // 03 の 3.4改2: this is a second or later walk over the same statements.
+    // 03§3.4+2: this is a second or later walk over the same statements.
     // What the first walk bound is already bound, so the statements that bind
-    // (import^) or grow a table (8.8's path) would otherwise report their own
+    // (import^) or grow a table (§8.8's path) would otherwise report their own
     // first walk as a redefinition.
     bool rewalking;
 
-    // 03 の 3.4改: the signature a subroutine literal is expected to have, or
+    // 03§3.4+: the signature a subroutine literal is expected to have, or
     // NULL where nothing expects one. Set around the one chk_infer() that
     // reaches the literal, the way super_type and yield_bound_type are, and
     // read by chk_infer_func for the parameters nothing was written on.
     // What it supplies stands exactly where a written annotation would.
     LhatType *expected_func;
 
-    // 03 の 4.3: the statement whose value the input answers with, when the
+    // 03§4.3: the statement whose value the input answers with, when the
     // input is one of a session. NULL for a file, where nothing answers.
     const LhatNode *answering;
 
-    // 03 の 4.3 with 05 の 8.9: checking one input of a session. A session's
+    // 03§4.3 with 05§8.9: checking one input of a session. A session's
     // top-level names keep their one-slot places across inputs, which a
     // host value's width does not fit -- so the top level of a prompt
     // refuses one where a unit's top level (one ordinary frame) does not.
     bool session;
 
-    // 05 の 8.6: the type L^ answers. One per check, since 8.8 lets a path
+    // 05§8.6: the type L^ answers. One per check, since 05§8.8 lets a path
     // add to it and every mention has to see the same table. A session hands
     // its own in, so what one input registers is there for the next.
     LhatType *environment;
 
-    // 02 の 14.16: what every typeof^(...) answers with. Nominal (8.8's
+    // §14.16: what every typeof^(...) answers with. Nominal (§8.8's
     // reason applies the same way: what it carries is fixed and comparing two
     // by shape would say nothing), so every mention has to be the very same
     // object -- kept here and handed forward by a session the way
     // `environment` is.
     LhatType *typeinfo_type;
-    // 04 の 2.7: localerror^.CastFailure, interned for the same reason.
+    // 04§2.7: localerror^.CastFailure, interned for the same reason.
     LhatType *cast_failure_type;
 
-    // 15.2: what the yield^/await^ sites seen so far in this body agree
+    // §15.2: what the yield^/await^ sites seen so far in this body agree
     // on. infer_func saves and resets these around a nested body the same
     // way it does declared_result/inferred_result, so a nested p^{...} does
     // not pollute the enclosing one.
@@ -555,14 +555,14 @@ typedef struct {
     // chk_infer() recurses into to produce a yield^'s own value -- that value is
     // never itself the direct target of a binding.
 #if LHAT_WITH_RESOLUTIONS
-    // 07 の 4 章: the member chk_infer_member answered from, for the record it
+    // 07§4: the member chk_infer_member answered from, for the record it
     // makes on the way back out. Held here rather than handed back: that
     // function returns from thirty-odd places and only two of them have a
     // member record in hand. Cleared as it is entered and read immediately
     // after it returns, so the one that mattered is the last one written --
     // the target of a member access is inferred before its own lookup runs.
     const LhatTypeMember *resolved_member;
-    // The same, for 02 の 19 章's enum member read in value position: what
+    // The same, for §19's enum member read in value position: what
     // is answered is the wide ENUM type, so the singleton the name reached
     // -- and with it the place it was written -- is left here instead.
     const LhatType *resolved_kind;
@@ -590,7 +590,7 @@ void chk_check_task_initialization(Checker *c);
 
 void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code);
 
-// 07 §6: the name nearest one that was written, among names offered one at a
+// 07§6: the name nearest one that was written, among names offered one at a
 // time -- a misspelling's likeliest meaning. Near is an edit distance
 // (adjacent swaps count once, ASCII case not at all) of at most a third of
 // what was written and at least one; of two equally near, the first offered
@@ -617,7 +617,7 @@ void chk_nearest_member(void *context, const LhatTypeMember *member);
 void chk_nearest_builtin(void *context, const char *name, size_t length,
                          LhatType *type);
 // Every name `c` can read from where it stands: its scopes innermost first,
-// then what the host bound (05 の 8.2).
+// then what the host bound (05§8.2).
 void chk_nearest_in_scope(Checker *c, ChkNearest *near);
 
 // Reports as chk_report_named does, offering the nearest name as the fix --
@@ -627,7 +627,7 @@ void chk_report_near(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
                      const char *name, size_t length, const LhatNode *spelt,
                      const ChkNearest *near);
 
-// 07 §6 with the above: the whole of a report -- the name the diagnostic is
+// 07§6 with the above: the whole of a report -- the name the diagnostic is
 // about (NULL for the codes that name none) and the fixes it knows how to
 // make (NULL for none, at most LHAT_FIX_SLOTS of them). chk_report and
 // chk_report_named are this with one or both left out.
@@ -635,14 +635,14 @@ void chk_report_fix(Checker *c, const LhatNode *at, LhatCheckErrorCode code,
                     const char *name, size_t name_length,
                     const LhatFixSlot *fixes, size_t count);
 #if LHAT_WITH_RESOLUTIONS
-// 07 の 4 章: for the language server, not for the language -- see check.h's
+// 07§4: for the language server, not for the language -- see check.h's
 // LhatResolution. Every call site carries this same guard.
 void chk_record_resolution(Checker *c, const LhatNode *at, const Binding *b);
 void chk_record_narrowed_resolution(Checker *c, const LhatNode *at,
                                     const Binding *b, LhatType *type);
 void chk_record_typed_resolution(Checker *c, const LhatNode *at,
                                  LhatType *type);
-// The same, for a member: 14.10 finds one in a type rather than in a
+// The same, for a member: §14.10 finds one in a type rather than in a
 // scope, and the type knows where it was written (type.h's declared_at).
 // `member` may be NULL, which is the typed record above.
 // `builtin` says the language answered rather than anything written or
@@ -650,7 +650,7 @@ void chk_record_typed_resolution(Checker *c, const LhatNode *at,
 void chk_record_member_resolution(Checker *c, const LhatNode *at,
                                   LhatType *type,
                                   const LhatTypeMember *member, bool builtin);
-// The same, for 04 の 2.2's error kind and 19 章's enum member: found in
+// The same, for 04§2.2's error kind and §19's enum member: found in
 // the set that declared them, and the type carries the place (type.h's
 // v.error.declared_at). `type` is what the name answers there -- the kind
 // itself in type position, the wide ENUM in value position.
@@ -662,7 +662,7 @@ void chk_record_kind_resolution(Checker *c, const LhatNode *at, LhatType *type,
 void chk_record_unit_resolution(Checker *c, const LhatNode *at,
                                 LhatType *exports, const char *unit_path);
 
-// 07 の 4 章: the '.' of a member access and what stands to its left.
+// 07§4: the '.' of a member access and what stands to its left.
 // Made where the receiver is inferred rather than where the answer comes
 // back -- see check.h's LhatMemberSite.
 void chk_record_member_site(Checker *c, const LhatNode *node,
@@ -709,43 +709,43 @@ Binding *chk_scope_add(Scope *scope, const char *name, size_t length,
 void chk_scope_open(Scope *scope, Scope *parent, const LhatNode *node,
                     bool transparent);
 
-// Closes it, recording what it held (07 の 4 章) before freeing it.
+// Closes it, recording what it held (07§4) before freeing it.
 void chk_scope_close(Checker *c, Scope *scope);
 LhatType *chk_simple(Checker *c, LhatTypeKind kind);
 
-// 04 の 2.7: 'error^|localerror^' -- what the operators mean by "an error"
+// 04§2.7: 'error^|localerror^' -- what the operators mean by "an error"
 // now that there are two disjoint families. catch^ takes either, and so does
 // a bare catch^: arm; only try^ tells them apart, by refusing one.
 LhatType *chk_any_error(Checker *c);
 
-// 04 の 2.7改: does this type touch localerror^ anywhere a caller could see
+// 04§2.7+: does this type touch localerror^ anywhere a caller could see
 // it? Walks unions, tuple positions, t^{} members and a subroutine's result,
 // and treats a nominal type (def^, an error kind, a host type) as an atom --
 // see the comment on the definition for why the atom matters.
 bool chk_type_touches_local(const LhatType *type, unsigned depth);
 
-// 02 の 18.5: what a run of annotations is asked, where `target` is the one
+// §18.5: what a run of annotations is asked, where `target` is the one
 // LhatAnnotationTarget the place they were written is.
 void chk_check_annotations(Checker *c, const LhatNode *list, uint32_t target);
 int chk_self_marker_at(const Checker *c, const LhatNode *params,
                        const LhatNode *param);
 LhatType *chk_resolve_func_type(Checker *c, const LhatNode *node);
 
-// 14.7改 with 14.4: whether an instance carries a member of this type. What
+// §14.7+ with §14.4: whether an instance carries a member of this type. What
 // may be reached through one is what is handed a receiver, which its signature
 // says; new, a static member and a value are the definition's alone.
 bool chk_takes_receiver(const LhatType *type);
 
-// 04 の 5.3 with 3.4: an error leaving the body being checked, through a try^
+// 04§5.3 with 03§3.4: an error leaving the body being checked, through a try^
 // or through catch^ arms that did not take it.
 void chk_error_leaves(Checker *c, const LhatNode *at, LhatType *escaping);
 
 bool chk_may_stand_beside_tuple(const LhatType *type);
 bool chk_contains_error(const LhatType *type);
 
-// 13.8改: what every position of a tuple has to satisfy, wherever the tuple
+// §13.8+: what every position of a tuple has to satisfy, wherever the tuple
 // came from -- 'return^ a, b', 'yield^ a, b', or the literal '(a, b)'. An
-// error among the values rather than around them (04 の 8.2), a position
+// error among the values rather than around them (04§8.2), a position
 // that is itself a run, and a host value that would not fit one slot are all
 // refused here so the three spellings cannot drift apart.
 void chk_check_tuple_position(Checker *c, const LhatNode *at,
@@ -774,10 +774,10 @@ LhatType *chk_operator_member(Checker *c, const LhatType *type,
                               const char *name, size_t length);
 bool chk_operator_undecided(const LhatType *type);
 bool chk_narrowable(const LhatNode *node);
-// 13.11改: a whole number written down, which is what a bound is read off.
+// §13.11+: a whole number written down, which is what a bound is read off.
 bool chk_whole_literal(const LhatNode *node, LhatInteger *value);
 LhatType *chk_narrowed_type(Checker *c, const LhatNode *path);
-// 13.11改: the whole numbers this path may hold here, or false where nothing
+// §13.11+: the whole numbers this path may hold here, or false where nothing
 // bounded it. Both ends come back, INT64_MIN and INT64_MAX standing for a
 // side nothing said anything about.
 bool chk_narrowed_bounds(Checker *c, const LhatNode *path, LhatInteger *lo,
@@ -799,8 +799,8 @@ void chk_constrain_member(Checker *c, LhatType *target, const char *name,
 ParamVar *chk_push_param_var(Checker *c, LhatType *slot, const LhatNode *node);
 void chk_settle_param_vars(Checker *c, ParamVar *mark);
 
-// 03 の 3.4改4. Finds the record of this shape for this literal, adding one
-// when it is new -- two shapes are the same when their types are (11.3, so
+// 03§3.4+4. Finds the record of this shape for this literal, adding one
+// when it is new -- two shapes are the same when their types are (§11.3, so
 // lhat_type_equal). NULL only when memory refuses.
 Instantiation *chk_instantiation_add(Checker *c, const LhatNode *func,
                                      LhatType *const *args, size_t count);
@@ -820,13 +820,13 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node);
 LhatType *chk_table_walk_tuple(Checker *c, const LhatType *over);
 LhatType *chk_table_element_type(Checker *c, const LhatType *over);
 LhatType *chk_without_nil_arm(Checker *c, LhatType *target);
-// 14.19: the bare spellings the built-in cascade answers to, for the one
+// §14.19: the bare spellings the built-in cascade answers to, for the one
 // caller that lists them rather than looking one up. See check_expr.c, where
 // it stands next to the cascade it belongs to.
 extern const char *const chk_builtin_words[];
 extern const size_t chk_builtin_word_count;
 
-// 14.10 with 14.19: what a type answers for a member of this name, asked
+// §14.10 with §14.19: what a type answers for a member of this name, asked
 // rather than walked into. `node` NULL asks it quietly -- see check_expr.c.
 LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
                         size_t length, const LhatNode *node,
@@ -838,7 +838,7 @@ void chk_unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
 LhatType *chk_infer_func(Checker *c, const LhatNode *node);
 const LhatTypeMember *chk_members_search(const LhatTypeMember *members,
                                          const char *name, size_t length);
-// 04 の 2.3: the kind this errordef^ declares under `name`, or NULL. Asked
+// 04§2.3: the kind this errordef^ declares under `name`, or NULL. Asked
 // from the type side, where it is the answer, and from the value side, where
 // finding one is what tells a type written in the wrong place from a name
 // nothing declares.
@@ -860,7 +860,7 @@ LhatType *chk_infer_with_named_type(Checker *c, const LhatNode *node,
 LhatType *chk_environment_type(Checker *c);
 LhatType *chk_typeinfo_type(Checker *c);
 LhatType *chk_typeinfo_of(Checker *c, LhatType *represented);
-// 15.5 with 13.2: what a call of this signature answers -- the coroutine a
+// §15.5 with §13.2: what a call of this signature answers -- the coroutine a
 // yielding body makes, its result, or NONE where it answers no value.
 LhatType *chk_call_answer(Checker *c, const LhatType *callee);
 LhatType *chk_cast_failure_type(Checker *c);
@@ -869,7 +869,7 @@ LhatType *chk_module_root_table(Checker *c);
 void chk_register_module_type(Checker *c, const char *module_name,
                               LhatType *exports);
 LhatType *chk_hosted_module(Checker *c, const LhatNode *path);
-// § 15.1+: what the body being checked owns (ChkOwnership).
+// §15.1+: what the body being checked owns (ChkOwnership).
 uint8_t chk_made_depth(const Checker *c, const LhatNode *value,
                        const LhatType *type);
 bool chk_lean_on(Checker *c, const LhatNode *place, bool whole);

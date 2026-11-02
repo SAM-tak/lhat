@@ -2,7 +2,7 @@
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
 // prefixed. Programs are run end to end, since what is worth pinning is the
-// answer rather than the instructions chosen to reach it -- 5.1 expects those
+// answer rather than the instructions chosen to reach it -- 09§5.1 expects those
 // to be replaced by specialised ones later.
 
 #include <math.h>
@@ -13,7 +13,7 @@
 #include "machine.h"
 #include "gc.h"
 
-// 03 の 4 章: a REPL is one machine answering many inputs, so the machine has
+// 03§4: a REPL is one machine answering many inputs, so the machine has
 // to be an object a caller keeps rather than something a run owns.
 static void test_machine(void)
 {
@@ -55,7 +55,7 @@ static void test_machine(void)
         compiled_dispose(&text);
     }
 
-    // 02 の 13.7 with 05 の 3.2: a script's top level is 'p^...', and what
+    // §13.7 with 05§3.2: a script's top level is 'p^...', and what
     // lhat_run_arguments hands over is its '...'. With nothing handed over
     // the collector is there and empty.
     LHAT_TEST("a script's top level collects what it is run with");
@@ -79,7 +79,7 @@ static void test_machine(void)
         compiled_dispose(&text);
     }
 
-    // 03 の 4.3: the top-level names of one input are still there for the
+    // 03§4.3: the top-level names of one input are still there for the
     // next, which is what a session is for.
     LHAT_TEST("a session carries top-level names between inputs");
     {
@@ -119,7 +119,7 @@ static void test_machine(void)
         compiled_dispose(&two);
     }
 
-    // 03 の 4.3: a name written again keeps the slot it had, so a prompt does
+    // 03§4.3: a name written again keeps the slot it had, so a prompt does
     // not run out of registers however many times a line is rewritten.
     LHAT_TEST("a name written again keeps its slot");
     {
@@ -152,7 +152,7 @@ static void test_machine(void)
         test_session_dispose(s);
     }
 
-    // 8.7 keeps a name visible before its var^ runs, and the slot still holds
+    // §8.7 keeps a name visible before its var^ runs, and the slot still holds
     // what the last input put there.
     LHAT_TEST("and a redefinition reads what is already in it");
     {
@@ -176,7 +176,7 @@ static void test_machine(void)
         compiled_dispose(&two);
     }
 
-    // 03 の 4.3: an input answers with the value of its last statement, when
+    // 03§4.3: an input answers with the value of its last statement, when
     // that statement is an expression -- so a prompt shows a call's result
     // without a return^ written by hand.
     LHAT_TEST("an input answers with its last expression");
@@ -223,7 +223,7 @@ static void test_machine(void)
         compiled_dispose(&one);
     }
 
-    // 02 の 14.2 and 04 の 2.4: what a def^ composes onto and what an
+    // §14.2 and 04§2.4: what a def^ composes onto and what an
     // errordef^ declared are worked out while compiling and never reach the
     // machine, so an input that needs them needs what an earlier one found.
     LHAT_TEST("a def^ from an earlier input can be composed onto");
@@ -301,7 +301,7 @@ static void test_machine(void)
         compiled_dispose(&three);
     }
 
-    // 03 の 4.3 with 5.4: the session's top level goes on holding its slots
+    // 03§4.3 with 03§5.4: the session's top level goes on holding its slots
     // between inputs, so a place a closure captured in one input is the very
     // place a later one reads and writes. Which is what makes a prompt agree
     // with a file: the same three lines in one unit answer 2 as well.
@@ -353,7 +353,7 @@ static void test_machine(void)
         compiled_dispose(&four);
     }
 
-    // 5.4's sharing is of one binding, not of the slot it happens to sit in.
+    // 05§5.4's sharing is of one binding, not of the slot it happens to sit in.
     // A var^ writing the name again is a new binding -- it reuses the slot,
     // so what captured the earlier one has to stop sharing it there. That is
     // the difference from the ':=' above, which writes the same binding.
@@ -405,7 +405,7 @@ static void test_machine(void)
         compiled_dispose(&four);
     }
 
-    // One proto, several runs: 5.2 and 5.4 make the registers and the frames
+    // One proto, several runs: 09§5.2 and 09§5.4 make the registers and the frames
     // the run's, so nothing of one is left over in the next.
     LHAT_TEST("and one proto may be run again");
     {
@@ -421,7 +421,7 @@ static void test_machine(void)
     }
 }
 
-// 03 の 1.2 keeps Lua's incremental collector as something to borrow later.
+// 03§1.2 keeps Lua's incremental collector as something to borrow later.
 // What is pinned here is that the working form reclaims what a program lets
 // go of and keeps what it does not.
 static void test_collection(void)
@@ -442,7 +442,7 @@ static void test_collection(void)
 
     // The same loop, holding on to every table. Nothing may be freed.
     //
-    // 5.12: this is also where a missing write barrier on a table shows up.
+    // 03§5.12: this is also where a missing write barrier on a table shows up.
     // The loop runs long enough for `kept` to be black by the time most of
     // these are written into it, so without the barrier they are never
     // reached and the sweep takes them while the program still holds them.
@@ -455,7 +455,7 @@ static void test_collection(void)
     LHAT_CHECK(r.ran.live > 2000, "every table held is still there");
     run_dispose(&r);
 
-    // 5.4: a closure keeps the place it captured, so what that place holds
+    // §5.4: a closure keeps the place it captured, so what that place holds
     // has to survive the collection too.
     LHAT_TEST("a captured place keeps its value alive");
     run_text(&r,
@@ -485,7 +485,7 @@ static void test_collection(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 5.12: the same for a coroutine that suspends after the collector has
+    // 03§5.12: the same for a coroutine that suspends after the collector has
     // already looked at it. `kept` is what makes that possible -- a heap big
     // enough that the marking cannot finish inside one step, so the cycle is
     // really left half done while the program runs. The coroutine is black
@@ -513,7 +513,7 @@ static void test_collection(void)
     CHECK_INTEGER(&r, 11);
     run_dispose(&r);
 
-    // 5.12: and a closed upvalue, which is the other place a value goes that
+    // 03§5.12: and a closed upvalue, which is the other place a value goes that
     // no register holds. While the upvalue is open the place is a stack slot
     // and the roots cover it; closed, the upvalue is the only way to what it
     // holds, and a write to a black one needs the forward barrier. `kept` is
@@ -537,9 +537,9 @@ static void test_collection(void)
     CHECK_INTEGER(&r, 1999);
     run_dispose(&r);
 
-    // 14.12: an overload^ adds an arm to the group already in the definition
+    // §14.12: an overload^ adds an arm to the group already in the definition
     // it composes with, and that group has been sitting in a table since
-    // long before. 5.12 puts a barrier on that write for the same reason as
+    // long before. 03§5.12 puts a barrier on that write for the same reason as
     // the three above -- though unlike them nothing here can make the group
     // be black at the moment the arm arrives, since a composition happens
     // once and not in a loop. This pins the composition, not the barrier.
@@ -562,9 +562,9 @@ static void test_collection(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 5.12: gc.collect() answers for the heap as it is when it is
+    // 03§5.12: gc.collect() answers for the heap as it is when it is
     // called, which a cycle already half run does not. So it finishes that
-    // one and then runs another from a standing start -- and 02 の 10.7's
+    // one and then runs another from a standing start -- and §10.7's
     // holding back happens in the second, where the drop is visible. Without
     // the second cycle this coroutine's finally^ would wait for whenever the
     // collector next came round.
@@ -604,7 +604,7 @@ static void test_collection(void)
 
     // A cycle is unreachable but points at itself, so reference counting
     // would keep it. Marking from the roots does not. Asked
-    // with an explicit collection: 5.12改 gated the run's own final
+    // with an explicit collection: 03§5.12 gated the run's own final
     // sweep, so this pins the marking, not the run's timing.
     LHAT_TEST("a cycle the program dropped is reclaimed");
     run_text(&r,
@@ -622,7 +622,7 @@ static void test_collection(void)
     LHAT_CHECK(r.ran.live < 500, "the cycles went");
     run_dispose(&r);
 
-    // 14.2's link from an instance to its definition is a reference like any
+    // §14.2's link from an instance to its definition is a reference like any
     // other, and the definition outlives the instances.
     LHAT_TEST("a definition outlives the instances that read it");
     run_text(&r,
@@ -633,7 +633,7 @@ static void test_collection(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 05 の 8.6 の host 版: lhat_machine_gc_collect is the same cycle
+    // 05§8.6 の host 版: lhat_machine_gc_collect is the same cycle
     // asked for from C, for a host that has a machine and no L^ code it
     // wants to run to reach one.
     //
@@ -660,7 +660,7 @@ static void test_collection(void)
     run_dispose(&r);
 
     // L^ itself is a root, so a machine that has run nothing still has what
-    // 8.6 built -- and collecting it is not an error.
+    // 05§8.6 built -- and collecting it is not an error.
     LHAT_TEST("a machine that ran nothing keeps what L^ carries");
     {
         LhatMachine *m = lhat_machine_new();
@@ -674,7 +674,7 @@ static void test_collection(void)
     LHAT_CHECK_EQ_INT(lhat_machine_gc_collect(NULL), 0);
     LHAT_CHECK_EQ_INT(lhat_machine_pending_disposals(NULL), 0);
 
-    // 02 の 10.7 の host 版. A coroutine still suspended when the run ends
+    // §10.7 の host 版. A coroutine still suspended when the run ends
     // was reachable from the frame that was leaving, so the run's own last
     // collection did not hold it back. Once the frame has gone nothing
     // reaches it -- and a collection asked for from C is then the one that
@@ -685,7 +685,7 @@ static void test_collection(void)
     // from -- which is exactly what a host retiring compiled bodies is about
     // to free. So the cycle runs them itself.
     //
-    // 10.7 keeps a dropped coroutine alive until its cleanups have run, so
+    // §10.7 keeps a dropped coroutine alive until its cleanups have run, so
     // what says they ran is that it is gone: nothing is left waiting, and
     // the machine is back to what one that ran nothing carries.
     LHAT_TEST("a host's cycle runs the cleanups the collection held back");
@@ -752,7 +752,7 @@ static void test_collection(void)
     run_dispose(&r);
 }
 
-// 02 の 14.4 の host 版: an instance's members are shared and take self^, so
+// §14.4 の host 版: an instance's members are shared and take self^, so
 // without this a host holding an object of the language's could call nothing
 // on it. What is pinned here is that the receiver arrives where the member
 // asked for it.
@@ -774,7 +774,7 @@ static LhatValue member_of(const LhatValue owner, const char *name)
     return found;
 }
 
-// 12 の 3: a built-in member read only to be called is the machine's
+// 12§3: a built-in member read only to be called is the machine's
 // shared copy, bound at the call to the receiver laid out after it -- so a
 // call allocates nothing for the member. Read as a value it is bound as
 // before, and stays bound to what it was read off.
@@ -817,7 +817,7 @@ static void test_builtin_call_allocates_nothing(void)
     run_dispose(&r);
 }
 
-// 02 の 11.1: an operator is found by the name 11.8 gives it, which the
+// §11.1: an operator is found by the name §11.8 gives it, which the
 // machine spells in C -- asked for by its bytes, so the lookup leaves no
 // string behind on each evaluation.
 static void test_operator_allocates_nothing(void)
@@ -876,11 +876,11 @@ static void test_call_member(void)
              "}\n");
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_OK);
     {
-        // 05 の 8.6: nothing roots what a run answered once its frame is
+        // 05§8.6: nothing roots what a run answered once its frame is
         // gone, so the definition goes into L^ before anything else runs.
         LHAT_CHECK(lhat_machine_set_global(r.machine, "Held", r.ran.value),
                    "the definition is rooted");
-        // 14.9's `new` is an ordinary closure the definition carries, so the
+        // §14.9's `new` is an ordinary closure the definition carries, so the
         // plain entry point reaches it and nothing new is needed for that.
         LhatValue make = member_of(r.ran.value, "new");
         LhatRunResult made = lhat_machine_call(r.machine, make, NULL, 0);
@@ -918,7 +918,7 @@ static void test_call_member(void)
         LHAT_CHECK_EQ_INT(again.status, LHAT_RUN_OK);
         LHAT_CHECK_EQ_INT((long long)again.live, (long long)got.live);
 
-        // 14.4: a member that takes no self^ is a static one -- it belongs to
+        // §14.4: a member that takes no self^ is a static one -- it belongs to
         // the definition, and an instance does not see it. `d.plain()` is a
         // type error written in L^, and this is the same refusal reached
         // from C.
@@ -926,7 +926,7 @@ static void test_call_member(void)
                                                        "plain", 5, NULL, 0);
         LHAT_CHECK_EQ_INT(plain.status, LHAT_RUN_NOT_CALLABLE);
 
-        // 13.7: the tail collects the same way a compiled call collects it,
+        // §13.7: the tail collects the same way a compiled call collects it,
         // with the receiver not counted among what was written.
         LhatValue rest[3] = {lhat_integer(1), lhat_integer(2), lhat_integer(3)};
         LhatRunResult all = lhat_machine_call_member(r.machine, instance,
@@ -941,7 +941,7 @@ static void test_call_member(void)
         LHAT_CHECK_EQ_INT(through.status, LHAT_RUN_OK);
         LHAT_CHECK_EQ_INT(lhat_as_integer(through.value), 99);
 
-        // 14.7: what an instance does see through its definition is the
+        // §14.7: what an instance does see through its definition is the
         // shared member it reaches with self^ -- which every call above is.
 
         LHAT_TEST("and what it refuses, it refuses the way an instruction does");
@@ -949,7 +949,7 @@ static void test_call_member(void)
                                                        "add", 3, NULL, 0);
         LHAT_CHECK_EQ_INT(wrong.status, LHAT_RUN_ARITY);
 
-        // 04 の 11.3: a key that is not there answers nil^, and nil^ is not
+        // 04§11.3: a key that is not there answers nil^, and nil^ is not
         // callable.
         LhatRunResult missing = lhat_machine_call_member(r.machine, instance,
                                                          "nope", 4, NULL, 0);
@@ -961,7 +961,7 @@ static void test_call_member(void)
     }
     run_dispose(&r);
 
-    // 02 の 14.12: one name, several signatures -- the search a call site
+    // §14.12: one name, several signatures -- the search a call site
     // makes is the search this makes.
     LHAT_TEST("an overloaded member picks the arm that fits");
     run_text(&r,
@@ -1006,7 +1006,7 @@ static void test_call_member(void)
 }
 
 
-// 5.12: a host writing into a table the machine already holds is the one
+// 03§5.12: a host writing into a table the machine already holds is the one
 // write the collector never sees coming. A cycle only steps inside the
 // interpreter loop, so a run can end with the marking half done -- and a
 // table marked before it ended is black. object.h's lhat_table_set knows
@@ -1074,7 +1074,7 @@ static void test_host_table_write(void)
                    "rooted");
         LhatTable *table = (LhatTable *)lhat_as_object(r.ran.value);
         bool refused = false;
-        // 04 の 11.3: nil^ means "not there", so it cannot also be a key.
+        // 04§11.3: nil^ means "not there", so it cannot also be a key.
         LHAT_CHECK(lhat_machine_table_set(r.machine, table, lhat_nil(),
                                           lhat_integer(1), &refused),
                    "a nil^ key is refused rather than failed");
@@ -1085,7 +1085,7 @@ static void test_host_table_write(void)
     }
     run_dispose(&r);
 
-    // 05 の 8.12: what only the host names, held by the machine's root for
+    // 05§8.12: what only the host names, held by the machine's root for
     // the host rather than by anything L^ can reach -- and let go by
     // writing nil^ over it.
     LHAT_TEST("the host's root keeps what it holds");
@@ -1162,7 +1162,7 @@ static void set_host(LhatMachine *m, const char *name, LhatHostFn call,
     LHAT_CHECK(lhat_machine_set_global(m, name, host), "and its name");
 }
 
-// 04 の 11.6改: the span of frames a fault leaves readable is bounded by
+// 04§11.6+: the span of frames a fault leaves readable is bounded by
 // where the run began -- and a run is what a host calling back in starts
 // too, so the bound has to be the outer run's again once the nested one is
 // over, and a run has to begin with no span left over from the last.
@@ -1333,7 +1333,7 @@ static size_t churn_peak(uint32_t growth)
     return peak;
 }
 
-// 16.3: a for^ loop over a table keeps its walk in its own registers, and one
+// §16.3: a for^ loop over a table keeps its walk in its own registers, and one
 // over a generator it made gives the coroutine back to be made again -- so a
 // loop that has run once allocates nothing for its walk after that.
 static void test_loop_walks(void)
@@ -1401,7 +1401,7 @@ static void test_loop_walks(void)
     run_dispose(&r);
 }
 
-// 05 の 8.6: L^.gc and the host's lhat_machine_gc_*, one set of controls.
+// 05§8.6: L^.gc and the host's lhat_machine_gc_*, one set of controls.
 static void test_gc_controls(void)
 {
     Run r;

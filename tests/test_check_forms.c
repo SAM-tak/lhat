@@ -3,7 +3,7 @@
 // Section numbers refer to DesignDocuments/02-syntax.md unless prefixed with
 // "03" or "04". The cases pinned here are the ones a decision in the
 // specification produces and that would otherwise be invisible: the scope
-// rule of 8.7, the result inference of 03 の 3.4, and the way catch^, ?? and
+// rule of §8.7, the result inference of 03§3.4, and the way catch^, ?? and
 // try^ each drop one arm of a union.
 
 #include <stdio.h>
@@ -12,7 +12,7 @@
 
 #include "fixture.h"
 
-// 01 の 8 章: a scope specifier says which scope to start looking in. What
+// 01§8: a scope specifier says which scope to start looking in. What
 // counts as one is what a '{' opens when names become visible in it, which
 // is exactly where this pushes a Scope -- so the compiler counting the same
 // braces reaches the same binding.
@@ -110,8 +110,8 @@ static void test_scope_specifiers(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.4 binds def^ into the scope a def^'s '{' opens, so that scope is
-    // one for a specifier to count. 01 の 2.3: def^ is its own name, so
+    // §14.4 binds def^ into the scope a def^'s '{' opens, so that scope is
+    // one for a specifier to count. 01§2.3: def^ is its own name, so
     // the outer `class` never collides and the specifier spells the hat.
     LHAT_TEST("a def^ body is one scope too");
     check_text(&u,
@@ -127,7 +127,7 @@ static void test_scope_specifiers(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SCOPE_TOO_FAR);
     unit_dispose(&u);
 
-    // 8.7: a var^ makes a name where it is written, so there is no other
+    // §8.7: a var^ makes a name where it is written, so there is no other
     // scope for a specifier to name. ':=' is what reaches an existing one.
     LHAT_TEST("a var^ takes no specifier");
     check_text(&u, "var^ x = 1\ndo^{ var^ $^x = 2 }\n");
@@ -155,8 +155,8 @@ static void test_scope_specifiers(void)
     unit_dispose(&u);
 }
 
-// 02 の 14.17: every value carries tostring, and a number^ carries a second
-// signature taking a format. 14.12 makes the two an intersection.
+// §14.17: every value carries tostring, and a number^ carries a second
+// signature taking a format. §14.12 makes the two an intersection.
 static void test_tostring(void)
 {
     Unit u;
@@ -188,9 +188,9 @@ static void test_tostring(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 14.20: the comparison '=' makes, with the error term written down.
+    // §14.20: the comparison '=' makes, with the error term written down.
     // Only a number^ carries it -- it is the one value arithmetic error
-    // accumulates in -- and the bare word alone (14.18改).
+    // accumulates in -- and the bare word alone (§14.18+).
     LHAT_TEST("a number^ answers eq with both of its arguments");
     check_text(&u, "var^ a : bool^ = (1).eq(1.0, 0.1)\n");
     CHECK_CLEAN(&u);
@@ -211,14 +211,14 @@ static void test_tostring(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 14.18改: the hat is there to keep a built-in off a name a writer may
+    // §14.18+: the hat is there to keep a built-in off a name a writer may
     // mean for something else, and nothing can be written on a number^.
     LHAT_TEST("nor is there a hat spelling of it");
     check_text(&u, "var^ a : bool^ = (1).eq^(1.0, 0.1)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 14.21: the three roundings, carried by a number^ for the same reasons.
+    // §14.21: the three roundings, carried by a number^ for the same reasons.
     LHAT_TEST("a number^ answers the three roundings");
     check_text(&u,
                "var^ a : number^ = (2.7).floor()\n"
@@ -242,15 +242,15 @@ static void test_tostring(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 11.1's reason for keeping an operator pure holds here too: writing a
-    // value down changes nothing, so 15.1 lets an f^ reach it.
+    // §11.1's reason for keeping an operator pure holds here too: writing a
+    // value down changes nothing, so §15.1 lets an f^ reach it.
     LHAT_TEST("an f^ may call it");
     check_text(&u,
                "var^ show = f^ n:number^ -> string^ { return^ n.tostring() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 16.3's rule for iterate, which 14.17 follows.
+    // §16.3's rule for iterate, which §14.17 follows.
     LHAT_TEST("a written tostring is what the type says");
     check_text(&u,
                "var^ t = { tostring := f^self^ -> number^ { return^ 1 } }\n"
@@ -258,7 +258,7 @@ static void test_tostring(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.17改: on a table the writer wrote, the bare name is the writer's
+    // §14.17+: on a table the writer wrote, the bare name is the writer's
     // and holds nothing until something is written under it. The checker has
     // to say the same as the machine, or it would pass what the machine
     // answers nil^ for.
@@ -287,14 +287,14 @@ static void test_tostring(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 16.3改: the same split, for the name in^ asks for.
+    // §16.3+: the same split, for the name in^ asks for.
     LHAT_TEST("a plain table holds no bare iterate either");
     check_text(&u, "var^ t = { 1, 2 }\nvar^ w = t.iterate()\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 }
 
-// 02 の 14.18: how much of a value there is, answered as a number^ with no
+// §14.18: how much of a value there is, answered as a number^ with no
 // call written. What the checker owes here is the type and which value
 // carries which spelling -- the counts themselves are the machine's, and
 // test_vm_data pins those.
@@ -311,7 +311,7 @@ static void test_counting(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.18 with 14.17改: nothing can be written on a string^, so the bare
+    // §14.18 with §14.17+: nothing can be written on a string^, so the bare
     // word takes nothing from anyone.
     LHAT_TEST("and a string^ answers its length and its bytes");
     check_text(&u,
@@ -321,7 +321,7 @@ static void test_counting(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.18改: and the hat spelling is not a second way of writing it. What
+    // §14.18+: and the hat spelling is not a second way of writing it. What
     // the hat does is keep a built-in off a name the writer may mean for
     // something else, which on a string^ is nothing.
     LHAT_TEST("a string^ has no hat spelling of them");
@@ -329,7 +329,7 @@ static void test_counting(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 14.18: each spelling is a reading of one kind of value. Bytes are a
+    // §14.18: each spelling is a reading of one kind of value. Bytes are a
     // reading of a string^, and elements of a table.
     LHAT_TEST("a table has no size^");
     check_text(&u, "var^ t = { 1 }\nvar^ n : number^ = t.size^\n");
@@ -341,8 +341,8 @@ static void test_counting(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 14.18: on a table the hat is not optional, even where 14.17改 would let
-    // the bare word through. 14 章 reserves new, tostring and dispose on a
+    // §14.18: on a table the hat is not optional, even where §14.17+ would let
+    // the bare word through. §14 reserves new, tostring and dispose on a
     // def^ and these are not among them.
     LHAT_TEST("the bare word is the writer's on a table");
     check_text(&u, "var^ t = { 1 }\nvar^ n : number^ = t.length\n");
@@ -356,14 +356,14 @@ static void test_counting(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 01 の 2.3: length^ is the language's, so no table writes one of its own.
+    // 01§2.3: length^ is the language's, so no table writes one of its own.
     LHAT_TEST("a written length^ is refused");
     check_text(&u, "var^ t = { 1, length^ := \"nine\" }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_HAT_NAME_RESERVED);
     unit_dispose(&u);
 }
 
-// 02 の 14.19: a run of a string^'s characters, under three names. What the
+// §14.19: a run of a string^'s characters, under three names. What the
 // checker owes is the two shapes and the answer -- a plain string^, since a
 // range that does not stand is empty rather than absent.
 static void test_substring(void)
@@ -379,13 +379,13 @@ static void test_substring(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.18改: three names and no hat spelling of any of them.
+    // §14.18+: three names and no hat spelling of any of them.
     LHAT_TEST("and no fourth spelling with a hat");
     check_text(&u, "var^ a : string^ = \"xyz\".sub^(1, -1)\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 14.12 tells the two apart by how many arguments arrive, so neither a
+    // §14.12 tells the two apart by how many arguments arrive, so neither a
     // third nor none at all is one of them.
     LHAT_TEST("no ordinal at all is neither form");
     check_text(&u, "var^ a : string^ = \"xyz\".substr()\n");
@@ -404,7 +404,7 @@ static void test_substring(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 14.19 answers a string^ and nothing else -- there is no nil^ arm, so
+    // §14.19 answers a string^ and nothing else -- there is no nil^ arm, so
     // what comes back is usable without narrowing.
     LHAT_TEST("the answer needs no narrowing");
     check_text(&u, "var^ n : number^ = \"xyz\".substr(1).length\n");
@@ -416,7 +416,7 @@ static void test_substring(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 14.19改: one character, which is that run with both ends at the same
+    // §14.19+: one character, which is that run with both ends at the same
     // ordinal -- so it answers a string^ too, there being no character type
     // for it to answer instead.
     LHAT_TEST("at takes one ordinal and answers a string^");
@@ -424,7 +424,7 @@ static void test_substring(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // One signature rather than 14.19's intersection, so a call that does not
+    // One signature rather than §14.19's intersection, so a call that does not
     // fit is short or long rather than "no arm of it".
     LHAT_TEST("and one is the whole of its shape");
     check_text(&u,
@@ -439,7 +439,7 @@ static void test_substring(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 14.19改 takes the name only where 14.19's member is. `at` is a word a
+    // §14.19+ takes the name only where §14.19's member is. `at` is a word a
     // writer reaches for -- sample/24.lh's reading position is one -- and on
     // a table it stays theirs.
     LHAT_TEST("at on a table is the writer's own");
@@ -455,8 +455,8 @@ static void test_substring(void)
     unit_dispose(&u);
 }
 
-// 02 の 16.3改2: the two projections of a table's walk. What the checker owes
-// is the type each yields -- the halves of the pair 16.3 hands over -- and
+// §16.3+2: the two projections of a table's walk. What the checker owes
+// is the type each yields -- the halves of the pair §16.3 hands over -- and
 // that a loop written with two names over one of them is refused.
 static void test_projections(void)
 {
@@ -479,7 +479,7 @@ static void test_projections(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 13.8改: a projection yields one value, so two names have nothing to
+    // §13.8+: a projection yields one value, so two names have nothing to
     // take apart. Caught here rather than left to the machine.
     LHAT_TEST("two names over a projection are refused");
     check_text(&u,
@@ -497,7 +497,7 @@ static void test_projections(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_TUPLE_ARITY);
     unit_dispose(&u);
 
-    // 13.10: a walk yielding a table is still taken apart by position, so
+    // §13.10: a walk yielding a table is still taken apart by position, so
     // the refusal above must not reach it.
     LHAT_TEST("but a walk yielding a table still comes apart");
     check_text(&u,
@@ -506,20 +506,20 @@ static void test_projections(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 16.3改2 with 14.18: the hat is not optional on a table.
+    // §16.3+2 with §14.18: the hat is not optional on a table.
     LHAT_TEST("the bare word is the writer's");
     check_text(&u, "var^ t = { 1 }\nfor^ k in^ t.keys { }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 }
 
-// 02 の 14.17改2: the same two signatures the other way round, on the one
+// §14.17+2: the same two signatures the other way round, on the one
 // value a number^ can be read out of.
 static void test_tonumber(void)
 {
     Unit u;
 
-    // The nil^ arm is the type saying what 14.17改2 says: a string^ holding
+    // The nil^ arm is the type saying what §14.17+2 says: a string^ holding
     // no number^ is data, so the answer is a number^ or nothing.
     LHAT_TEST("a string^ answers a number^ or nil^");
     check_text(&u,
@@ -528,7 +528,7 @@ static void test_tonumber(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 14.18改: what only a string^ carries has the bare spelling and no
+    // §14.18+: what only a string^ carries has the bare spelling and no
     // other. Nothing can be written on one for a hat to be keeping this off.
     LHAT_TEST("and carries no hat spelling of it");
     check_text(&u, "var^ c : number^|nil^ = \"1\".tonumber^()\n");
@@ -540,7 +540,7 @@ static void test_tonumber(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 11.7's '??' is one of the two ways of dealing with it; 04 の 11.4's
+    // §11.7's '??' is one of the two ways of dealing with it; 04§11.4's
     // narrowing is the other.
     LHAT_TEST("'?\?' is one way of dealing with it");
     check_text(&u, "var^ a : number^ = \"1\".tonumber() ?? 0\n");
@@ -552,7 +552,7 @@ static void test_tonumber(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 14.12: a call fitting no arm of the intersection is a mismatch, which
+    // §14.12: a call fitting no arm of the intersection is a mismatch, which
     // is where both of these land -- there is no arm taking two, and none
     // taking a number^.
     LHAT_TEST("and a third argument is neither signature");
@@ -561,7 +561,7 @@ static void test_tonumber(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // Reading a value changes nothing, the same as 14.17's tostring.
+    // Reading a value changes nothing, the same as §14.17's tostring.
     LHAT_TEST("an f^ may call it");
     check_text(&u,
                "var^ read = f^ s:string^ -> number^ {\n"
@@ -587,8 +587,8 @@ static void test_tonumber(void)
     unit_dispose(&u);
 }
 
-// 02 の 13.7: the variadic collector. '...' inside the body names it, typed
-// as 14.10's unbounded tail -- a table whose sequence half is one element
+// §13.7: the variadic collector. '...' inside the body names it, typed
+// as §14.10's unbounded tail -- a table whose sequence half is one element
 // type repeated, nothing fixed.
 static void test_variadic(void)
 {
@@ -603,8 +603,8 @@ static void test_variadic(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 16.3: two names over an in^ walk take the index and the element, the
-    // same as walking any other table -- 13.7 does not special-case this.
+    // §16.3: two names over an in^ walk take the index and the element, the
+    // same as walking any other table -- §13.7 does not special-case this.
     LHAT_TEST("for^ i, x in^ ... gives x the element type");
     check_text(&u,
                "var^ f = f^ ...:number^ -> number^ {\n"
@@ -619,7 +619,7 @@ static void test_variadic(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 04 の 11.3: a dynamic key may be out of range, and this one really can
+    // 04§11.3: a dynamic key may be out of range, and this one really can
     // be -- the count is unbounded, unlike a table with listed members.
     LHAT_TEST("a dynamic index into ... may be nil^");
     check_text(&u,
@@ -631,7 +631,7 @@ static void test_variadic(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 13.7: at least the fixed count, any number beyond it.
+    // §13.7: at least the fixed count, any number beyond it.
     LHAT_TEST("fewer than the fixed count is refused");
     check_text(&u,
                "var^ f = f^ a:number^, b:number^, ...:number^ -> number^ {\n"
@@ -657,7 +657,7 @@ static void test_variadic(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 13.7: 'expr...' spreads a collected table back into a variadic tail.
+    // §13.7: 'expr...' spreads a collected table back into a variadic tail.
     LHAT_TEST("'...' forwards into another variadic call");
     check_text(&u,
                "var^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
@@ -718,7 +718,7 @@ static void test_variadic(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARITY);
     unit_dispose(&u);
 
-    // 13.8改: the same spelling over a tuple. Unlike a table, whose tail is
+    // §13.8+: the same spelling over a tuple. Unlike a table, whose tail is
     // one element type, each position is matched against the variadic type on
     // its own -- so a mixed tuple is refused at the position that does not fit
     // rather than wholesale.
@@ -742,7 +742,7 @@ static void test_variadic(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 13.8改: a tuple's width is its type's, so it is as many arguments as
+    // §13.8+: a tuple's width is its type's, so it is as many arguments as
     // it has positions wherever it is written -- fixed parameters included,
     // and with more arguments after it.
     LHAT_TEST("a tuple spreads into fixed parameters");
@@ -796,7 +796,7 @@ static void test_variadic(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_SPREAD_NOT_SEQUENCE);
     unit_dispose(&u);
 
-    // 13.8改 keeps the two readings apart: a tuple reaches a variadic tail
+    // §13.8+ keeps the two readings apart: a tuple reaches a variadic tail
     // only where '...' is written, never because the callee happens to take
     // one. Without the spelling it is a value in an argument position, which
     // is where a tuple cannot stand.
@@ -820,12 +820,12 @@ static void test_variadic(void)
     unit_dispose(&u);
 }
 
-// 16.3: the forms of for^ that answer with a value rather than iterate.
+// §16.3: the forms of for^ that answer with a value rather than iterate.
 static void test_for_expressions(void)
 {
     Unit u;
 
-    // 13.8改 keeps a tuple out of an argument list, so the focus is where the
+    // §13.8+ keeps a tuple out of an argument list, so the focus is where the
     // names for its positions go, and do^: answers with what they build.
     LHAT_TEST("do^: takes the type of its body");
     check_text(&u,
@@ -853,7 +853,7 @@ static void test_for_expressions(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 16.7: the focus does not leave, whichever form was written.
+    // §16.7: the focus does not leave, whichever form was written.
     LHAT_TEST("but the focus does not leave the construct");
     check_text(&u,
                "var^ f = f^ -> (number^, number^) { return^ 0, 1 }\n"
@@ -863,13 +863,13 @@ static void test_for_expressions(void)
     unit_dispose(&u);
 }
 
-// 17 章. Nothing here is checked by machinery of its own -- 17.9 lowers a
-// pattern to a condition, so what runs is 13.11's narrowing.
+// §17. Nothing here is checked by machinery of its own -- §17.9 lowers a
+// pattern to a condition, so what runs is §13.11's narrowing.
 static void test_patterns(void)
 {
     Unit u;
 
-    // 16.2: the focus with no name written is called it^, and it is bound.
+    // §16.2: the focus with no name written is called it^, and it is bound.
     LHAT_TEST("the subject is in scope as it^");
     check_text(&u,
                "var^ f = f^ -> number^ { return^ 0 }\n"
@@ -884,7 +884,7 @@ static void test_patterns(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 17.5: an expression match may leave other^ out only when the checker
+    // §17.5: an expression match may leave other^ out only when the checker
     // can show the arms exhaust the subject -- bool^ met both ways is the
     // one provable case, since no other type's values can be spelled out.
     LHAT_TEST("bool^ covered both ways needs no other^");
@@ -912,7 +912,7 @@ static void test_patterns(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
     unit_dispose(&u);
 
-    // 02 の 19 章 (17.5改2): an enum is the other type whose values can
+    // §19 (§17.5): an enum is the other type whose values can
     // all be spelled out.
     LHAT_TEST("naming every member proves an enum match");
     check_text(&u,
@@ -1008,7 +1008,7 @@ static void test_patterns(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
     unit_dispose(&u);
 
-    // 03 の 3.1: what cannot be decided statically is relaxed's to leave to
+    // 03§3.1: what cannot be decided statically is relaxed's to leave to
     // the run, where the arm nothing fits is a panic (compile.c's tail).
     LHAT_TEST("relaxed also reports a missing match arm");
     check_relaxed_text(&u,
@@ -1018,13 +1018,13 @@ static void test_patterns(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE);
     unit_dispose(&u);
 
-    // 16.2 applies to every form of for^, not only to a match.
+    // §16.2 applies to every form of for^, not only to a match.
     LHAT_TEST("it^ is bound in a loop too");
     check_text(&u, "for^ 1 to^ 3 { var^ n : number^ = it^ }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 17.9: narrowing is what makes a declared field visible, exactly as in
+    // §17.9: narrowing is what makes a declared field visible, exactly as in
     // an if-chain.
     LHAT_TEST("a type pattern narrows the subject");
     check_text(&u,
@@ -1050,7 +1050,7 @@ static void test_patterns(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_NO_MEMBER);
     unit_dispose(&u);
 
-    // 04 の 7 章: exhaustiveness needed no mechanism of its own, and it keeps
+    // 04§7: exhaustiveness needed no mechanism of its own, and it keeps
     // working through the sugar.
     LHAT_TEST("an exhausted union leaves the success type");
     check_text(&u,
@@ -1081,7 +1081,7 @@ static void test_patterns(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
-    // 17.3: a value pattern is a comparison, so the subject and the value
+    // §17.3: a value pattern is a comparison, so the subject and the value
     // have to be comparable at all.
     LHAT_TEST("a pattern the subject can never match is reported");
     check_text(&u, "for^ \"text\" { when^ 1 to^ 3: other^: }\n");
@@ -1093,7 +1093,7 @@ static void test_patterns(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_INCOMPARABLE);
     unit_dispose(&u);
 
-    // 17.2: the expression form has a type, taken from its clauses.
+    // §17.2: the expression form has a type, taken from its clauses.
     LHAT_TEST("the expression form yields the union of its clauses");
     check_text(&u,
                "var^ n = 1\n"

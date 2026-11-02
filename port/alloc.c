@@ -27,7 +27,7 @@ static bool have_allocated;
 
 bool lhat_set_allocator(const LhatAllocator *allocator)
 {
-    // 05 の 8.9: what is already held was taken from somewhere else, and
+    // 05§8.9: what is already held was taken from somewhere else, and
     // handing it to a different free is worse than refusing.
     if (have_allocated) {
         return false;

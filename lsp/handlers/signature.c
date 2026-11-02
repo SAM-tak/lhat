@@ -1,4 +1,4 @@
-// L^ (lhat) -- LSP server: lhat/signature (07 の 4 章).
+// L^ (lhat) -- LSP server: lhat/signature (07§4).
 
 #include "signature.h"
 

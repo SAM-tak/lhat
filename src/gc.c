@@ -3,7 +3,7 @@
 //
 // Two halves meet here. The first is the object graph -- what one object
 // refers to. The second is
-// the roots, which only the machine knows, and 02 の 10.7's holding back of a
+// the roots, which only the machine knows, and §10.7's holding back of a
 // coroutine that still owes its cleanups. Neither half collects anything
 // without the other, so both are here.
 
@@ -50,7 +50,7 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
         case LHAT_OBJECT_STRING:
             return;
 
-        // 05 の 8.9: a box is bytes -- every registered field kind is
+        // 05§8.9: a box is bytes -- every registered field kind is
         // numeric, so there is nothing in one for the collector to follow.
         case LHAT_OBJECT_HOSTVALUE_BOX:
             return;
@@ -64,10 +64,10 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
                 lhat_gc_reach(gray, table->entries[i].key);
                 lhat_gc_reach(gray, table->entries[i].value);
             }
-            // 14.2 fixes this when the instance is made, so it is a plain
+            // §14.2 fixes this when the instance is made, so it is a plain
             // reference like any other.
             reach(gray, (LhatObject *)(void *)table->definition);
-            // 14.7改2: the name a delegate^ was written with. A chunk
+            // §14.7+2: the name a delegate^ was written with. A chunk
             // constant as things stand, so this reaches a black object and
             // does nothing -- reached anyway, because what may be put there
             // is not the collector's to assume.
@@ -110,7 +110,7 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             for (size_t i = 0; i < closure->upvalue_count; i++) {
                 reach(gray, (LhatObject *)closure->upvalues[i]);
             }
-            // 05 の 5.6: a loaded script's body lives as long as a closure
+            // 05§5.6: a loaded script's body lives as long as a closure
             // of it does. NULL for a program's unit, which outlives the heap.
             reach(gray, (LhatObject *)closure->proto->owner);
             return;
@@ -120,13 +120,13 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             return;  // owns bytes only; nothing on the heap hangs off it
 
         case LHAT_OBJECT_UPVALUE: {
-            // 5.4: while it is open the place is a stack slot, and the stack
+            // 01§5.4: while it is open the place is a stack slot, and the stack
             // is a root of its own. Closed, the value is here.
             const LhatUpvalue *upvalue = (const LhatUpvalue *)object;
             if (upvalue->location.value != NULL) {
                 lhat_gc_reach(gray, lhat_ref_get(upvalue->location));
             }
-            // 15.4: while the owning frame is suspended, the place is a slot
+            // §15.4: while the owning frame is suspended, the place is a slot
             // of that coroutine's saved registers -- so the coroutine has to
             // live as long as this capture does, even once nothing else
             // holds it.
@@ -141,13 +141,13 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             }
             reach(gray, (LhatObject *)(void *)co->frame.closure);
             reach(gray, (LhatObject *)(void *)co->cursor.walking);
-            // 05 の 8.8: what a host's walk asked kept -- the hostdata being
+            // 05§8.8: what a host's walk asked kept -- the hostdata being
             // walked, usually. nil^ on every other source.
             lhat_gc_reach(gray, co->held);
             return;
         }
 
-        // 02 § 15.16: everything a saved frame would hand back to its
+        // §15.16: everything a saved frame would hand back to its
         // coroutine -- which has to outlive the save, or load() would write
         // into one that was collected.
         case LHAT_OBJECT_COSTATE: {
@@ -170,13 +170,13 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             lhat_gc_reach(gray, ((const LhatNative *)object)->bound);
             return;
 
-        // 05 の 8.7: `context` is the host's, and the collector cannot see
+        // 05§8.7: `context` is the host's, and the collector cannot see
         // into it. What is reachable from here is the receiver alone.
         case LHAT_OBJECT_HOST: {
             const LhatHost *host = (const LhatHost *)object;
             reach(gray, (LhatObject *)host->signature);
             lhat_gc_reach(gray, host->bound);
-            // 02 の 14.12: the parameter types a registration built. Nothing
+            // §14.12: the parameter types a registration built. Nothing
             // else holds them -- a proto's live in its chunk, but a host has
             // no chunk, so these are on the heap and reached from here.
             for (size_t i = 0; host->parameter_types != NULL &&
@@ -187,7 +187,7 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             return;
         }
 
-        // 05 の 8.8: the same for the pointer. The members are the registered
+        // 05§8.8: the same for the pointer. The members are the registered
         // type's table, which the registry holds anyway -- reached here so
         // that a value handed to L^ keeps what answers its calls.
         case LHAT_OBJECT_HOSTDATA:
@@ -209,7 +209,7 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
             reach(gray, (LhatObject *)type->variadic);
             reach(gray, (LhatObject *)type->index_key);
             reach(gray, (LhatObject *)type->index_value);
-            reach(gray, (LhatObject *)type->instance);  // 02 の 14.7改
+            reach(gray, (LhatObject *)type->instance);  // §14.7+
             reach(gray, (LhatObject *)(void *)type->error_kind);
             reach(gray, (LhatObject *)(void *)type->enum_name);
             reach(gray, (LhatObject *)(void *)type->enum_owner_name);
@@ -238,13 +238,13 @@ void lhat_gc_children(LhatObject **gray, LhatObject *object)
 // open list -- there is no half-built object to miss.
 static void mark_roots(Machine *m)
 {
-    // 05 の 8.6: L^ is reachable from anywhere without being held anywhere,
+    // 05§8.6: L^ is reachable from anywhere without being held anywhere,
     // so the machine is what keeps it and what it carries alive.
     lhat_gc_reach(&m->gray, lhat_object((LhatObject *)m->environment));
-    // 02 の 14.11: the machine's own key to a definition's prototype. No
+    // §14.11: the machine's own key to a definition's prototype. No
     // frame holds it, so the machine is its root too.
     lhat_gc_reach(&m->gray, lhat_object((LhatObject *)m->self_key));
-    // 05 の 8.7: L^.modules, and the members table of every registered host
+    // 05§8.7: L^.modules, and the members table of every registered host
     // value type. Both are reached through the environment TODAY, and both
     // are also held as raw pointers the machine reads without looking them
     // up again -- lhat_machine_register and lhat_machine_make_hostdata walk
@@ -255,7 +255,7 @@ static void mark_roots(Machine *m)
     // forget_unit over a type's path would otherwise leave a pointer the
     // sweep has freed.
     lhat_gc_reach(&m->gray, lhat_object((LhatObject *)m->modules));
-    // 05 の 8.12: the host's own, held by nothing else.
+    // 05§8.12: the host's own, held by nothing else.
     lhat_gc_reach(&m->gray, lhat_object((LhatObject *)m->host_root));
     for (size_t i = 0; i < m->hostvalue_member_count; i++) {
         lhat_gc_reach(&m->gray,
@@ -271,7 +271,7 @@ static void mark_roots(Machine *m)
                       lhat_object((LhatObject *)(void *)frame->closure));
         lhat_gc_reach(&m->gray, lhat_object((LhatObject *)frame->coroutine));
         lhat_gc_reach(&m->gray, frame->answer);
-        // 02 の 13.8改: a tuple answer rides the frame's own room through the
+        // §13.8+: a tuple answer rides the frame's own room through the
         // drain, so its positions are roots the way a register is -- and they
         // are invisible to the line above, which reaches one value. A host
         // value in the same room needs nothing here: its continuation slots
@@ -287,7 +287,7 @@ static void mark_roots(Machine *m)
                 lhat_gc_reach(&m->gray, held);
             }
         }
-        // 5.2 fixed the frame's width at compile time, and the scratch above
+        // 10§5.2 fixed the frame's width at compile time, and the scratch above
         // the names is inside it, so this covers the values a half-finished
         // expression is holding.
         const LhatProto *proto = frame->closure->proto;
@@ -296,15 +296,15 @@ static void mark_roots(Machine *m)
             lhat_gc_reach(&m->gray, lhat_slots_get(m->slots, frame->base + r));
         }
     }
-    // 02 の 13.8改: the several values a host is answering with, held in the
+    // §13.8+: the several values a host is answering with, held in the
     // machine's own room until the call returns and the run is laid down.
     // A host may allocate in between -- build a table, call back into L^ --
     // so these are roots for as long as the count says they are there. The
     // host-value scratch beside them needs nothing: it is bytes.
-    // 04 の 11.6改: what the last fault carried, held until the next run
+    // 04§11.6+: what the last fault carried, held until the next run
     // resets it -- a host may still be routing it out.
     lhat_gc_reach(&m->gray, m->fault_value);
-    // 02 の 14.22: what running built-ins are holding while written L^ code
+    // §14.22: what running built-ins are holding while written L^ code
     // runs inside them -- every level of the chain, since a clone's policy
     // may itself be cloning.
     for (const struct LhatNativeHold *hold = m->native_hold; hold != NULL;
@@ -317,7 +317,7 @@ static void mark_roots(Machine *m)
     for (LhatUpvalue *open = m->open; open != NULL; open = open->next_open) {
         lhat_gc_reach(&m->gray, lhat_object((LhatObject *)open));
     }
-    // 02 の 10.7: one already waiting to have its cleanups run is alive
+    // §10.7: one already waiting to have its cleanups run is alive
     // until they have -- it was unreachable to the program when it was put
     // here, and the sweep would take it back if this did not hold it.
     for (LhatCoroutine *co = m->pending_dispose; co != NULL;
@@ -349,7 +349,7 @@ static void follow_gray(Machine *m)
     }
 }
 
-// 02 の 10.7: a coroutine the program can no longer reach may still owe its
+// §10.7: a coroutine the program can no longer reach may still owe its
 // pending finally^ bodies. Running them here is out of the question -- they
 // are L^ code and the heap is about to be swept -- so this holds one back
 // instead: it is reached (which keeps the sweep off it for this cycle) and
@@ -371,7 +371,7 @@ static void hold_pending_disposals(Machine *m)
             continue;
         }
         LhatCoroutine *co = (LhatCoroutine *)object;
-        // 16.3's walk of a table has no body and so no cleanups, and holds
+        // §16.3's walk of a table has no body and so no cleanups, and holds
         // neither closure nor registers -- entering a frame for one would
         // read through NULL. Said outright rather than left to the count.
         if (co->source != LHAT_COROUTINE_BODY ||
@@ -385,7 +385,7 @@ static void hold_pending_disposals(Machine *m)
 }
 
 #ifdef LHAT_GC_PARANOID
-// The whole of 5.12's invariant, asked outright: no black object refers to a
+// The whole of 03§5.12's invariant, asked outright: no black object refers to a
 // white one. A missing barrier breaks exactly this and breaks it silently --
 // the object is freed while live and the program reads freed memory some
 // time later, somewhere else. So it is worth a pass over the heap in a build
@@ -432,7 +432,7 @@ static void atomic(Machine *m)
 {
     mark_roots(m);
     follow_gray(m);
-    // 02 の 10.7: held back before the sweep, and what they reach followed
+    // §10.7: held back before the sweep, and what they reach followed
     // after -- a coroutine kept for its cleanups keeps its registers too.
     hold_pending_disposals(m);
     follow_gray(m);
@@ -441,7 +441,7 @@ static void atomic(Machine *m)
     check_invariant(m);
 #endif
 
-    // 05 の 8.12: the weak cache, emptied of what the marking decided
+    // 05§8.12: the weak cache, emptied of what the marking decided
     // against -- HERE, while "white" still means "nothing reached it", and
     // before the sweep frees any of it. This is the guarantee a host's own
     // map cannot give itself: from this instant a get answers nil^ rather
@@ -505,12 +505,12 @@ static size_t sweep_some(Machine *m, size_t budget)
             continue;
         }
         *m->sweep = object->next;
-        // 05 の 8.8: what the host made is the host's to free, and this is
-        // 10.7's last resort for one nothing disposed of by hand. A host
+        // 05§8.8: what the host made is the host's to free, and this is
+        // 05§10.7's last resort for one nothing disposed of by hand. A host
         // walk's state goes back the same way.
         lhat_hostdata_release(object, m);
         lhat_coroutine_release(object, m);
-        // 05 の 5.6: a script's body goes with its last closure, but what
+        // 05§5.6: a script's body goes with its last closure, but what
         // its constants named may have got out -- the table std.lton
         // answered has the script's own strings for keys. Those become the
         // machine's here rather than going with the body, wearing the colour
@@ -608,7 +608,7 @@ bool lhat_gc_advance(Machine *m, size_t budget)
     return finished;
 }
 
-// 03 の 1.2: Lua's incremental collector, borrowed. A step's worth of
+// 03§1.2: Lua's incremental collector, borrowed. A step's worth of
 // whichever phase the cycle is in, and then back to the program. The ratio
 // of work to the allocations between steps is what decides whether the
 // collector keeps up, so a step does stepsize * stepmul% of it.
@@ -672,7 +672,7 @@ void lhat_gc_barrier_back(Machine *m, LhatObject *parent, LhatValue value)
     m->gray = parent;
 }
 
-// 02 の 10.7: the next coroutine waiting to have its cleanups run, or NULL.
+// §10.7: the next coroutine waiting to have its cleanups run, or NULL.
 LhatCoroutine *lhat_gc_take_pending(Machine *m)
 {
     LhatCoroutine *co = m->pending_dispose;

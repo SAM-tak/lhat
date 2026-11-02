@@ -1,14 +1,14 @@
 // L^ (lhat) -- sample standard library: std.io.
 //
 // One function a host calls once, before lhat_program_check, the same as any
-// of program.h's own registrations (05 の 8.7). Nothing here is required --
+// of program.h's own registrations (05§8.7). Nothing here is required --
 // a host that never calls this never sees an "io" module.
 //
 // std.io.open answers std.io.File|std.io.IOError.NotFound|std.io.IOError.
 // Denied|std.sys.Error.OutOfMemory -- read it with try^/catch^, or narrow with
 // fits^ against std.io.File or an error kind (both supported). Naming
 // std.sys.Error.OutOfMemory in an fits^ needs its own `import^ std.sys` --
-// 8.1's "the language hands out no names" applies to a name reached
+// 05§8.1's "the language hands out no names" applies to a name reached
 // through another module's registration too.
 
 #ifndef LHATSTDLIB_IO_H

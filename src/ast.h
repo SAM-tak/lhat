@@ -22,13 +22,13 @@ typedef enum {
     LHAT_NODE_INT,
     LHAT_NODE_FLOAT,
     LHAT_NODE_STRING,
-    LHAT_NODE_NAME,          // 01 § 3.3: id^name -- the spelling as a value
+    LHAT_NODE_NAME,          // 01§3.3: id^name -- the spelling as a value
     LHAT_NODE_IDENT,
     LHAT_NODE_HAT_IDENT,     // used as a value: true^, nil^, self^ ...
-    // 16.2: the focus for^ introduced when no name was written. Carries no
+    // §16.2: the focus for^ introduced when no name was written. Carries no
     // span, since 'it^' need not appear in the source for it to be there.
     LHAT_NODE_FOCUS,
-    LHAT_NODE_SCOPE,         // $x, $$x, $^x  (01 §  8). Repeating '$'
+    LHAT_NODE_SCOPE,         // $x, $$x, $^x  (01§8). Repeating '$'
                              // counts inwards from the unit and '^' outwards
                              // from here. The sigil is glued to the name and
                              // nothing may come between, so '$.x' is not
@@ -42,28 +42,28 @@ typedef enum {
                              // grammar's own rule: a ',' inside the
                              // parentheses makes a tuple, none leaves the
                              // grouping '(x)' was always read as
-    LHAT_NODE_DEF,           // def^{ ... }                  (§ 14)
-    LHAT_NODE_SELF_TABLE,    // self^{ ... }                 (§ 14.6, § 14.11)
-    LHAT_NODE_ERROR_NEW,     // error^Kind{ ... }            (04 § 2.5)
+    LHAT_NODE_DEF,           // def^{ ... }                  (§14)
+    LHAT_NODE_SELF_TABLE,    // self^{ ... }                 (§14.6, §14.11)
+    LHAT_NODE_ERROR_NEW,     // error^Kind{ ... }            (04§2.5)
     LHAT_NODE_NEW,           // new^Type{ ... }; named.name is a type syntax
-    LHAT_NODE_TRY,           // try^ expr                    (04 § 5)
-    LHAT_NODE_TYPEOF,        // typeof^(expr)                (§ 14.16)
-    LHAT_NODE_TYPE_VALUE,    // type^ <written type>         (13.14)
-    LHAT_NODE_SPREAD,        // expr...  as the last call argument (13.7)
-    LHAT_NODE_REQUIRE,       // require^ "path"              (05 § 5)
-    LHAT_NODE_REQUIRE_STMT,  // require^ "path" on its own   (05 § 5.5)
-    LHAT_NODE_IMPORT,        // import^ a.b.c                (05 § 8.7)
-    LHAT_NODE_IMPORT_STMT,   // import^ a.b.c on its own     (05 § 8.7)
+    LHAT_NODE_TRY,           // try^ expr                    (04§5)
+    LHAT_NODE_TYPEOF,        // typeof^(expr)                (§14.16)
+    LHAT_NODE_TYPE_VALUE,    // type^ <written type>         (§13.14)
+    LHAT_NODE_SPREAD,        // expr...  as the last call argument (§13.7)
+    LHAT_NODE_REQUIRE,       // require^ "path"              (05§5)
+    LHAT_NODE_REQUIRE_STMT,  // require^ "path" on its own   (05§5.5)
+    LHAT_NODE_IMPORT,        // import^ a.b.c                (05§8.7)
+    LHAT_NODE_IMPORT_STMT,   // import^ a.b.c on its own     (05§8.7)
     LHAT_NODE_UNARY,
     LHAT_NODE_BINARY,
-    LHAT_NODE_COMPARE_CHAIN, // a < b < c  ((5) of § 11.5)
+    LHAT_NODE_COMPARE_CHAIN, // a < b < c  ((5) of §11.5)
     LHAT_NODE_MEMBER,        // a.b   a?.b
     LHAT_NODE_INDEX,         // a[i]  a?[i]
     LHAT_NODE_CALL,          // f(x)  f?(x)
     LHAT_NODE_AS,            // expr as^ Type
-    LHAT_NODE_PACK,          // pack^ expr            (§ 13.8+): the one bridge
+    LHAT_NODE_PACK,          // pack^ expr            (§13.8+): the one bridge
                              // from a tuple to a table a name can hold
-    LHAT_NODE_BOX,           // box^ expr             (05 § 8.9): a host value
+    LHAT_NODE_BOX,           // box^ expr             (05§8.9): a host value
                              // put in the box the heap can hold
     LHAT_NODE_FUNC,          // f^... { ... } / p^... { ... }
     LHAT_NODE_IF_EXPR,       // if^c: e el^c: e el^: e ;
@@ -76,22 +76,22 @@ typedef enum {
     LHAT_NODE_IF_STMT,
     LHAT_NODE_RETURN,
     LHAT_NODE_BREAK,
-    LHAT_NODE_NEXT,          // next^ / skip^ / continue^          (§ 9.11)
-    LHAT_NODE_PANIC,         // panic^ expr                 (04 § 11.6)
+    LHAT_NODE_NEXT,          // next^ / skip^ / continue^          (§9.11)
+    LHAT_NODE_PANIC,         // panic^ expr                 (04§11.6)
     LHAT_NODE_YIELD,
-    LHAT_NODE_AWAIT,         // await^ expr                  (§ 15.8, § 15.14)
-    LHAT_NODE_WITH,          // with^ x = e  ... { ... }    (§ 12)
-    LHAT_NODE_FOR,           // for^ ...                    (§ 16)
-    LHAT_NODE_REPEAT,        // repeat^ ...                 (§ 16.5)
-    LHAT_NODE_LOOP_CLAUSE,   // prolog^: first^: last^: ... (§ 9)
-    LHAT_NODE_ERRORDEF,      // errordef^ Name { ... }      (04 § 2.2)
+    LHAT_NODE_AWAIT,         // await^ expr                  (§15.8, §15.14)
+    LHAT_NODE_WITH,          // with^ x = e  ... { ... }    (§12)
+    LHAT_NODE_FOR,           // for^ ...                    (§16)
+    LHAT_NODE_REPEAT,        // repeat^ ...                 (§16.5)
+    LHAT_NODE_LOOP_CLAUSE,   // prolog^: first^: last^: ... (08§9)
+    LHAT_NODE_ERRORDEF,      // errordef^ Name { ... }      (04§2.2)
     LHAT_NODE_ERROR_KIND,    // one kind inside an errordef^
-    LHAT_NODE_ENUMDEF,       // enum^ Name { ... }          (02 § 19)
+    LHAT_NODE_ENUMDEF,       // enum^ Name { ... }          (§19)
     LHAT_NODE_ENUM_MEMBER,   // one member inside an enum^; `members` is its
                              // written value expression, NULL for the
                              // numbered kind
-    LHAT_NODE_MODULE,        // module^ a.b.c               (05 § 3)
-    // 02 § 18: '@name' or '@name(a, b)'. `v.named.name` is the name it was
+    LHAT_NODE_MODULE,        // module^ a.b.c               (05§3)
+    // §18: '@name' or '@name(a, b)'. `v.named.name` is the name it was
     // written with, `v.named.members` the arguments -- literals only, so
     // nothing here has to be run to be read.
     LHAT_NODE_ANNOTATION,
@@ -101,19 +101,19 @@ typedef enum {
     LHAT_NODE_PARAM,         // name:type = default, or ...:type
     LHAT_NODE_MEMBER_DECL,   // name : type   inside t^{ ... }
 
-    // ---- types (§ 13) ----
+    // ---- types (04§13) ----
     LHAT_NODE_TYPE_NAME,     // number^, FooBar
     LHAT_NODE_TYPE_FUNC,     // f^A, B -> C;
-    LHAT_NODE_TYPE_CORO,     // c^{ f^recv -> yield -> ret }  (§ 13.9, § 15.3+)
+    LHAT_NODE_TYPE_CORO,     // c^{ f^recv -> yield -> ret }  (§13.9, §15.3+)
     LHAT_NODE_TYPE_APPLY,    // nominal<arguments>; access target and argument list
     LHAT_NODE_TYPE_TABLE,    // t^{ member : type }
-    LHAT_NODE_TYPE_TUPLE,    // (A, B)  (13.8改). Two positions or more: '(T)'
+    LHAT_NODE_TYPE_TUPLE,    // (A, B)  (§13.8+). Two positions or more: '(T)'
                              // is the grouping the type grammar already had
     LHAT_NODE_TYPE_UNION,    // A | B
     LHAT_NODE_TYPE_INTERSECT,// A & B
 
     // What a parse function leaves where it could not build the construct.
-    // 07 § 4: where the construct failed but an expression under it had
+    // 07§4: where the construct failed but an expression under it had
     // already been read, that expression stays in `v.jump.value` -- the
     // borrowed slot CALL_STMT and RETURN use, and NULL when there was
     // nothing to keep. Everything downstream refuses this node either way;
@@ -124,21 +124,21 @@ typedef enum {
     LHAT_NODE_KIND_COUNT
 } LhatNodeKind;
 
-// § 16.1: what the clause after the focus does with it.
+// §16.1: what the clause after the focus does with it.
 typedef enum {
     LHAT_FOR_TO,      // to^ limit [step^ n]
     LHAT_FOR_DOWNTO,  // downto^ limit [step^ n]
     LHAT_FOR_IN,      // in^ iterable
     LHAT_FOR_WHILE,   // while^ cond [next^ stmt]
     LHAT_FOR_UNTIL,   // until^ cond [next^ stmt]
-    LHAT_FOR_IF,      // if^ cond -- not a loop at all (§ 16.3)
-    LHAT_FOR_WHEN,    // when^ patterns -- not a loop either (§ 17)
-    LHAT_FOR_ONCE     // do^: expr, and the outer one of a run of for^ (§ 16.3):
+    LHAT_FOR_IF,      // if^ cond -- not a loop at all (§16.3)
+    LHAT_FOR_WHEN,    // when^ patterns -- not a loop either (§17)
+    LHAT_FOR_ONCE     // do^: expr, and the outer one of a run of for^ (§16.3):
                       // a focus with no clause to drive it, so the body is
                       // reached once
 } LhatForKind;
 
-// § 16.5: repeat^ carries no focus.
+// §16.5: repeat^ carries no focus.
 typedef enum {
     LHAT_REPEAT_FOREVER,
     LHAT_REPEAT_COUNT,
@@ -146,22 +146,22 @@ typedef enum {
     LHAT_REPEAT_UNTIL
 } LhatRepeatKind;
 
-// § 14.12. Marks a member that replaces or extends an inherited one; without
+// §14.12. Marks a member that replaces or extends an inherited one; without
 // a marker, a member of the same name is an error.
 typedef enum {
     LHAT_DEF_PLAIN,
     LHAT_DEF_OVERRIDE,
     LHAT_DEF_OVERLOAD,
-    LHAT_DEF_ABSTRACT,  // 14.15: declared, and left for a composition to give
-    // 14.7改2: not a member at all, the way the template is not. What follows
+    LHAT_DEF_ABSTRACT,  // §14.15: declared, and left for a composition to give
+    // §14.7+2: not a member at all, the way the template is not. What follows
     // is the name this definition delegates to -- 'self^.field' for one of
     // the template's, a bare name for one of the definition's own. The entry
     // carries that name in `value` and no key.
     LHAT_DEF_DELEGATE
 } LhatDefModifier;
 
-// § 9.2, in the order they must be written -- which is also the order they run
-// in. § 9.10's pre^ is the one that runs before the condition is tested, so it
+// §9.2, in the order they must be written -- which is also the order they run
+// in. §9.10's pre^ is the one that runs before the condition is tested, so it
 // stands between prolog^ and first^.
 typedef enum {
     LHAT_CLAUSE_PROLOG = 0,
@@ -173,13 +173,13 @@ typedef enum {
     LHAT_CLAUSE_FINALLY = 6
 } LhatClauseKind;
 
-// § 9.3: the clauses that are the loop's body. At least one has to be there,
+// §9.3: the clauses that are the loop's body. At least one has to be there,
 // and an unheaded statement list is an implicit main^.
 #define LHAT_CLAUSE_IS_BODY(k)                                                \
     ((k) == LHAT_CLAUSE_PRE || (k) == LHAT_CLAUSE_FIRST ||                    \
      (k) == LHAT_CLAUSE_MAIN || (k) == LHAT_CLAUSE_LAST)
 
-// 06 § 4.2: a stretch of the source text, for a tool that shows or rewrites
+// 06§4.2: a stretch of the source text, for a tool that shows or rewrites
 // it. A `length` of 0 means nothing was written there -- the construct bound
 // the name itself, and there is no word to rewrite.
 typedef struct {
@@ -187,7 +187,7 @@ typedef struct {
     uint32_t length;
 } LhatSpan;
 
-// 02 § 15.1+: an ownership depth with no bottom -- every level is the
+// §15.1+: an ownership depth with no bottom -- every level is the
 // body's own. See LhatNode.checked_own and the checker's Binding.own.
 #define LHAT_OWN_DEEP 255
 
@@ -203,7 +203,7 @@ struct LhatNode {
 
     // One past the last byte the construct consumed, so [offset, end) is the
     // whole of it. Diagnostics only ever needed the start, but a tool that
-    // shows or replaces the source of one node needs the span (06 § 4.2).
+    // shows or replaces the source of one node needs the span (06§4.2).
     //
     // A node built from a single token gets this from that token. Anything
     // longer sets it on the way out of the construct, so a parse function
@@ -216,7 +216,7 @@ struct LhatNode {
     LhatNode *next;  // next sibling when this node sits in a list
 
 #if LHAT_WITH_COMMENTS
-    // 01 § 6.4: the comments written against this node, in source order,
+    // 01§6.4: the comments written against this node, in source order,
     // threaded through their own `next_for_node`. They live in the lexer's
     // table, so the lexer has to outlive the tree -- as it already must for
     // a string's bytes.
@@ -262,7 +262,7 @@ struct LhatNode {
     void *display_type;
 #endif
 
-    // 12 § 2: which arm of an overloaded member (02 § 14.12) the checker
+    // 12§2: which arm of an overloaded member (§14.12) the checker
     // settled on, as the index into that member's arms plus one -- zero means
     // it settled nothing, which is what an unchecked compile always sees.
     //
@@ -272,14 +272,14 @@ struct LhatNode {
     //
     // TABLE_ENTRY marked override^: the arm it replaces, written whatever the
     // strictness -- it decides the shape of the group rather than how a call
-    // reads one, and 03 § 4.2 keeps that the same either way.
+    // reads one, and 03§4.2 keeps that the same either way.
     uint16_t checked_arm;
-    // § 15.1+3: this CALL's resolved callee promised '-> fresh^T', so what
+    // §15.1+3: this CALL's resolved callee promised '-> fresh^T', so what
     // it answers is something nobody held before -- which is what lets the
-    // origin rules (§ 15.1+2, § 15.3+) count the answer as the body's own.
+    // origin rules (§15.1+2, §15.3+) count the answer as the body's own.
     // Stamped by the checker beside checked_arm.
     bool call_answers_fresh;
-    // § 15.1+: TABLE, NEW and CALL -- how many levels of what this answers the
+    // §15.1+: TABLE, NEW and CALL -- how many levels of what this answers the
     // expression itself made: 1 for a table holding something that arrived,
     // LHAT_OWN_DEEP when everything it reaches was made here. A call counts
     // as a table built around its arguments, which is what a new() is.
@@ -307,7 +307,7 @@ struct LhatNode {
             uint32_t length;
             uint32_t hats;
 
-            // 01 § 3.1: a name written with backticks is spelled by neither
+            // 01§3.1: a name written with backticks is spelled by neither
             // the delimiters nor a doubled backtick, so its spelling is not
             // the span above -- the lexer decoded it into its string storage
             // and this is where. Zero length everywhere else, which is every
@@ -316,7 +316,7 @@ struct LhatNode {
             uint32_t text_length;
         } name;
 
-        // 01 § 8: the sigil is glued to a name, so the two are one node.
+        // 01§8: the sigil is glued to a name, so the two are one node.
         struct {
             LhatScopeKind kind;
             uint32_t depth;
@@ -346,12 +346,12 @@ struct LhatNode {
             LhatNode *target;
             LhatNode *argument;  // member name, index expression, or arg list
             bool nil_safe;
-            // § 11.7+2: the last access of a postfix run that a '?' guarded.
+            // §11.7+2: the last access of a postfix run that a '?' guarded.
             // What the run answers gains the nil^ arm here and nowhere else,
             // so an arm met before this one came from the writer's own type
             // and is refused as ever.
             bool nil_chain_end;
-            // 02 § 13.14+: the checker read this MEMBER as a type spelling
+            // §13.14+: the checker read this MEMBER as a type spelling
             // (X.ReturnType) and stamped what it names on `argument`. The
             // compiler folds it into a descriptor constant, and a let^
             // binding it names a type.
@@ -363,27 +363,27 @@ struct LhatNode {
             LhatNode *type;
         } ascription;
 
-        // FUNC and TYPE_FUNC. `is_function` separates f^ from p^ (§ 15).
+        // FUNC and TYPE_FUNC. `is_function` separates f^ from p^ (§15).
         struct {
             LhatNode *params;
             LhatNode *return_type;  // NULL when nothing is returned
             LhatNode *body;         // NULL for a type
             bool is_function;
-            bool yields;            // 15.2: inferred from the body
+            bool yields;            // §15.2: inferred from the body
             bool is_template;
-            // 15.1改3: written '-> fresh^T', so what a call answers is new
+            // §15.1+3: written '-> fresh^T', so what a call answers is new
             // -- nothing could reach it before the call. A promise, written
             // on the result's seat.
             bool answers_fresh;
         } func;
 
-        // PARAM. `variadic` marks the '...' form (13.7).
+        // PARAM. `variadic` marks the '...' form (§13.7).
         struct {
             LhatNode *name;     // NULL for a variadic or an unnamed type slot
             LhatNode *type;     // NULL when not annotated
             LhatNode *fallback; // default value, NULL when absent
             bool variadic;
-            // § 15.1+2: written 'mutable^self^' -- the one parameter this may
+            // §15.1+2: written 'mutable^self^' -- the one parameter this may
             // decorate is the receiver marker, and it says the body writes
             // through it.
             bool mutable_receiver;
@@ -394,59 +394,59 @@ struct LhatNode {
         struct {
             LhatNode *key;    // NULL for a positional entry or the template
             LhatNode *value;
-            LhatDefModifier modifier; // § 14.12, def^ entries only
-            // 14.14改: the key was written '[ ... ]', so it is an expression
+            LhatDefModifier modifier; // §14.12, def^ entries only
+            // §14.14+: the key was written '[ ... ]', so it is an expression
             // rather than the name it would otherwise be read as.
             bool computed;
             // MEMBER_DECL: computed means '[key type]:value type'.
-            // 14.15: written 'abstract^ name : type', so `value` is a type
+            // §14.15: written 'abstract^ name : type', so `value` is a type
             // and the definition provides nothing under the name. What is
             // composed onto it has to. Set on a template field too, where
-            // § 14.12's modifier has no place.
+            // §14.12's modifier has no place.
             bool declared;
-            // § 14.6 / § 14.14 with § 8.6: a keyed entry written 'name : type = value'.
-            // The type is what the field holds; the value is what § 14.11
+            // §14.6 / §14.14 with 05§8.6: a keyed entry written 'name : type = value'.
+            // The type is what the field holds; the value is what §14.11
             // bakes onto the prototype. NULL when only a value was written,
             // and for positional entries.
             LhatNode *type;
-            // § 14.10+2: MEMBER_DECL only. Written 'type[]' in a t^{ ... }
+            // §14.10: MEMBER_DECL only. Written 'type[]' in a t^{ ... }
             // -- the unbounded run past the fixed positions. `value` is the
             // element type, `key` is unused.
             bool variadic;
-            // § 14.10+: MEMBER_DECL only, and only on a positional entry.
+            // §14.10+: MEMBER_DECL only, and only on a positional entry.
             // 'type[n]' is n positions of that type, which is what a run of
             // them written out means -- so this is a count of positions to
             // make, one without the brackets.
             uint32_t repeat;
-            // 02 § 18.4: a def^ member and a self^{ … } field both take one.
+            // §18.4: a def^ member and a self^{ … } field both take one.
             LhatNode *annotations;
         } entry;
 
         // DEFINE / REASSIGN take a list of targets and a list of values;
-        // LET takes a list of targets and a single value (§ 13.10).
+        // LET takes a list of targets and a single value (§13.10).
         struct {
             LhatNode *targets;
             LhatNode *values;
-            bool exported; // 05 § 4: written public^
-            // § 8.9. DEFINE only: written let^ (or with^) rather than var^, so
+            bool exported; // 05§4: written public^
+            // §8.9. DEFINE only: written let^ (or with^) rather than var^, so
             // the names it introduces refuse a later ':='. What the machine
-            // does to a slot is not a write in this sense -- § 16.4's to^ and
-            // downto^ advance their focus themselves, and § 8.7's LOADNIL seeds
+            // does to a slot is not a write in this sense -- §16.4's to^ and
+            // downto^ advance their focus themselves, and §8.7's LOADNIL seeds
             // one before its own definition runs; both leave the name still
             // one nothing written in the source may reassign.
             bool immutable;
-            // § 8.9 with § 12.1 and § 16.3+2: the construct bound it, not a word
+            // §8.9 with §12.1 and §16.3+2: the construct bound it, not a word
             // the writer chose -- a with^, or the focus of a counted for^.
             // There is no var^ to write instead, so the diagnostic for a ':='
             // on one of these must not offer it.
             bool bound_by_form;
-            // § 8.8+. DEFINE only, and only from let^: written ':=' rather
-            // than '='. For a plain name this changes nothing (§ 8.6 already
+            // 05§8.8+. DEFINE only, and only from let^: written ':=' rather
+            // than '='. For a plain name this changes nothing (05§8.6 already
             // makes the two spellings the same there); for a path target
             // whose last segment already exists it makes this a reassignment
-            // instead of the redefinition error 8.7 would otherwise report.
+            // instead of the redefinition error §8.7 would otherwise report.
             bool via_reassign_op;
-            // § 7.4. REASSIGN only, and only from 'target op= value': the
+            // 05§7.4. REASSIGN only, and only from 'target op= value': the
             // plain operator the compound spelling stands for (e.g. '+=' ->
             // LHAT_OP_ADD). `values` holds just the right-hand side, not the
             // expanded 'target op value' -- target is evaluated once, and
@@ -454,7 +454,7 @@ struct LhatNode {
             // concern, not a parse-time expansion.
             bool has_compound_op;
             LhatOpKind compound_op;
-            // § 8.6.4. The '?' spellings: an absent place is left as it is,
+            // §8.6.4. The '?' spellings: an absent place is left as it is,
             // and the right-hand side is not evaluated either. Set on '?:='
             // too, where `has_compound_op` above is false -- a plain
             // assignment stands for no operator, and what the '?' adds is
@@ -462,14 +462,14 @@ struct LhatNode {
             // written is all the two forms share, so nothing else here has
             // to tell them apart.
             bool compound_nil_safe;
-            // 02 § 18.4: what was written above this declaration. NULL when
+            // §18.4: what was written above this declaration. NULL when
             // nothing was. A list of LHAT_NODE_ANNOTATION.
             LhatNode *annotations;
-            // § 8.9: where the let^ or var^ itself stands. The node begins at
+            // §8.9: where the let^ or var^ itself stands. The node begins at
             // the word only when nothing was written before it -- a public^
-            // takes the start over (05 § 4) -- and § 12.1's with^ and
-            // § 16.3+2's focus are bound by their construct, with no word to
-            // point at. Empty in both of those, so 07 §6's fixes can tell.
+            // takes the start over (05§4) -- and §12.1's with^ and
+            // §16.3+2's focus are bound by their construct, with no word to
+            // point at. Empty in both of those, so 07§6's fixes can tell.
             LhatSpan keyword;
         } binding;
 
@@ -477,30 +477,30 @@ struct LhatNode {
         // INTERP, CALL argument lists, WITH bindings.
         //
         // For BLOCK, `items` holds the unlabelled statements, which are the
-        // main clause, and `extra` holds the other clauses of 9 章 as a list
+        // main clause, and `extra` holds the other clauses of 08§9 as a list
         // of LHAT_NODE_LOOP_CLAUSE. A block with no clause markers keeps
         // `extra` empty, so the common case is unchanged.
         struct {
             LhatNode *items;
             // WITH: body. BLOCK: clause list. IF_STMT: its finally^ (02
-            // § 10.1), the one clause it may carry.
+            // §10.1), the one clause it may carry.
             LhatNode *extra;
-            // 04 § 4.5: BLOCK and IF_STMT -- the catch^ arms written at the
+            // 04§4.5: BLOCK and IF_STMT -- the catch^ arms written at the
             // end of the braces, as IF_CLAUSE nodes whose `condition` is the
             // written type (NULL on the bare one, which takes what is left).
             // A try^ in the block's main^, or in any of the if^'s bodies,
             // leaves for them. NULL when none was written.
             LhatNode *arms;
-            // 02 § 18.4: the unit's own, written at its head. Only the root
+            // §18.4: the unit's own, written at its head. Only the root
             // block of a unit ever carries these.
             LhatNode *annotations;
-            // 02 § 15.2 with 05 § 3.2: the unit's own top level holds a
+            // §15.2 with 05§3.2: the unit's own top level holds a
             // yield^ or an await^ -- a script's 'p^...' is then yieldable.
             // Only the root block of a unit ever sets it.
             bool yields;
         } list;
 
-        // § 16.3. `focus` is a list: bindings, destructuring targets, or one
+        // §16.3. `focus` is a list: bindings, destructuring targets, or one
         // expression when the focus is unnamed and reached through it^.
         struct {
             LhatForKind kind;
@@ -509,7 +509,7 @@ struct LhatNode {
             LhatNode *step;     // step^, absent for every kind but to^/downto^
             LhatNode *advance;  // next^ statements
             LhatNode *body;
-            // § 5.2 and § 17.2: written in the form opened by ':' rather than
+            // §5.2 and §17.2: written in the form opened by ':' rather than
             // by '{', so it answers a value. Only if^ and the when^ clauses
             // have that form; the driving clauses iterate and answer nothing.
             bool is_expression;
@@ -526,7 +526,7 @@ struct LhatNode {
             LhatNode *body;
         } loop_clause;
 
-        // ERRORDEF / ERROR_KIND / ERROR_NEW (04 § 2.2, § 2.5). A name and the
+        // ERRORDEF / ERROR_KIND / ERROR_NEW (04§2.2, 04§2.5). A name and the
         // list it introduces: kinds for a declaration, MEMBER_DECL fields for
         // a kind -- the same shape t^{ ... } already uses -- and TABLE_ENTRY
         // values for a construction. ERROR_NEW's name is a qualified path;
@@ -534,8 +534,8 @@ struct LhatNode {
         struct {
             LhatNode *name;
             LhatNode *members;  // NULL when a kind declares no fields
-            bool exported;      // 05 § 4: written public^
-            // 04 § 2.7: ERRORDEF only -- written localerrordef^, so what it
+            bool exported;      // 05§4: written public^
+            // 04§2.7: ERRORDEF only -- written localerrordef^, so what it
             // declares is under localerror^ rather than under error^. The
             // declaration is the unit, not the kind: the two tops are
             // disjoint, and one set's kinds cannot span both.
@@ -548,45 +548,45 @@ struct LhatNode {
             LhatNode *body;
         } clause;
 
-        // INTERP_HOLE. `format` is the raw text after ':' (5.4).
+        // INTERP_HOLE. `format` is the raw text after ':' (01§5.4).
         struct {
             LhatNode *value;
             LhatNode *format;
         } hole;
 
-        // 02 § 9.8: how many loops a break^ leaves, counting the innermost
+        // §9.8: how many loops a break^ leaves, counting the innermost
         // as 1. Written either as the hats on the word (break^^^) or in
         // brackets after it (break^[3]); the parser settles the two into
         // this. Unused by the other jumps.
         //
         // BREAK only: `value` holds what was bracketed when it was not a
-        // count -- § 9.8's label form, which nothing labels a loop for yet.
+        // count -- §9.8's label form, which nothing labels a loop for yet.
         //
         // RETURN / YIELD carry an optional value; BREAK carries a level;
         // PANIC's value is required (`phantom` unused).
         struct {
             LhatNode *value;
-            // YIELD only. 15.11: written '_yield^', which types exactly as a
+            // YIELD only. §15.11: written '_yield^', which types exactly as a
             // yield^ does and makes the body yieldable, but never suspends.
             bool phantom;
-            // BOX only. 05 § 8.9+: written 'constbox^', which makes the
+            // BOX only. 05§8.9+: written 'constbox^', which makes the
             // sealed, get-only box -- the keyable one.
             bool sealing;
             // BREAK: the number of loops to leave, and never zero -- a plain
             // break^ is one.
             //
-            // RETURN / YIELD (§ 13.8+): how many values are written, when
+            // RETURN / YIELD (§13.8+): how many values are written, when
             // several are. They hang off `value` as a list. 0 and 1 both mean
             // one, which is every return^ and yield^ written before tuples.
             uint32_t level;
-            // RETURN only. 15.12: made by the parser out of a body that is
-            // one expression, rather than written return^. 02 § 14.11 reads
+            // RETURN only. §15.12: made by the parser out of a body that is
+            // one expression, rather than written return^. §14.11 reads
             // it: a new body answers nothing of its own, so a written
             // return^ is refused there -- and a sole expression is not one.
             bool implicit;
         } jump;
 
-        // TYPE_CORO: the three types of § 13.9. A NULL `receive` or `result` is
+        // TYPE_CORO: the three types of §13.9. A NULL `receive` or `result` is
         // an empty slot, written by leaving it out -- "nothing is sent in",
         // "the body ends without a value". `endless` is the third slot's other
         // absence, written '-': a body that cannot end has no last resume for
@@ -598,8 +598,8 @@ struct LhatNode {
             LhatNode *result;
             bool receive_any, produce_any, result_any, kind_any;
             bool endless;
-            // § 15.3+: which kind of body it came from, written as the front
-            // half of § 13.9's form ('c^{ f^R -> Y -> T }'). What may advance a
+            // §15.3+: which kind of body it came from, written as the front
+            // half of §13.9's form ('c^{ f^R -> Y -> T }'). What may advance a
             // coroutine, and where it may be held, follows from this.
             bool is_function;
         } coroutine;
@@ -655,7 +655,7 @@ void lhat_node_visit_children(const LhatNode *node, LhatNodeVisitor visit,
 // construct while [n->offset, n->end) is only the part from the operator on.
 uint32_t lhat_node_span_start(const LhatNode *node);
 
-// 01 § 6.5: a block comment whose body opens with '~' -- '#[~ ... ]#' -- is
+// 01§6.5: a block comment whose body opens with '~' -- '#[~ ... ]#' -- is
 // code switched off rather than prose. The language reads it as the comment
 // it lexes as; the tools read what it holds as statements. Only a closed one
 // counts, since an unterminated comment has no ']#' to take away.
@@ -664,11 +664,11 @@ bool lhat_comment_is_disabled_code(const LhatComment *comment,
                                    const char *source, size_t source_length);
 #endif
 
-// 01 § 6.4: the comment block written directly above this node -- what the
+// 01§6.4: the comment block written directly above this node -- what the
 // language calls the thing's description, with the markers stripped so it
 // reads as prose and the lines joined by newlines.
 //
-// A blank line ends the block, which is Go's rule and the one § 6.4 names: a
+// A blank line ends the block, which is Go's rule and the one 01§6.4 names: a
 // comment with a gap under it was written about whatever came before the
 // gap. A comment left at the end of the construct's own last line is not
 // part of it either -- split_comments hands a node both, and only what
@@ -682,7 +682,7 @@ size_t lhat_node_documentation(const LhatNode *node, const char *source,
                                size_t source_length, char *out,
                                size_t capacity);
 
-// 01 § 2.3: the hat is part of the name. A hat identifier's name is the
+// 01§2.3: the hat is part of the name. A hat identifier's name is the
 // word plus one hat -- 'self^' is a different name from 'self' -- and a
 // spelling with more hats than one is that same name reached further out:
 // this^^^ is the this^ two levels up, its name still 'this^' with the count
@@ -693,7 +693,7 @@ size_t lhat_node_documentation(const LhatNode *node, const char *source,
 // agreeing byte for byte. The operator name in op^:: is canonicalized to
 // the literal ".."; its source offsets still describe the written spelling.
 //
-// § 3.1: a name written with backticks is spelled in `strings` instead -- the
+// 10§3.1: a name written with backticks is spelled in `strings` instead -- the
 // lexer's decoded storage, since the delimiters are not part of the name.
 // Both bases are handed over and the node says which one it is spelled in.
 bool lhat_node_name(const LhatNode *node, const char *source_text,
@@ -701,17 +701,17 @@ bool lhat_node_name(const LhatNode *node, const char *source_text,
 
 bool lhat_name_is(const char *text, size_t length, const char *literal);
 
-// 02 § 14.8+2: the constant number^ carries under `name` as a static
+// §14.8+2: the constant number^ carries under `name` as a static
 // member (inf, nan), or NULL. The checker asks whether there is
 // one and the compiler what it is, off this one table.
 const LhatReal *lhat_number_constant(const char *name, size_t length);
 
 // The same table read as a list: the name at `index`, or NULL past the end.
-// 07 § 4 lists them, since 'number^' is a word rather than a type and
+// 07§4 lists them, since 'number^' is a word rather than a type and
 // nothing else can be asked what it carries.
 const char *lhat_number_constant_at(size_t index, size_t *length);
 
-// 05 § 8.6: L^ names the machine's own table. Only the hatted spelling
+// 05§8.6: L^ names the machine's own table. Only the hatted spelling
 // means it, so an ordinary name `L` is untouched.
 bool lhat_node_is_environment(const LhatNode *node, const char *source_text,
                               const char *strings);
@@ -719,7 +719,7 @@ bool lhat_node_is_environment(const LhatNode *node, const char *source_text,
 // The name a let^ target carries, whether or not it was annotated.
 const LhatNode *lhat_define_target_name(const LhatNode *target);
 
-// § 8.8: 'let^ a.b.c = v' introduces c inside a table reached through a and
+// 05§8.8: 'let^ a.b.c = v' introduces c inside a table reached through a and
 // b. Only the root is a name a scope holds; the rest are members.
 const LhatNode *lhat_define_target_root(const LhatNode *target);
 bool lhat_define_target_is_path(const LhatNode *target);

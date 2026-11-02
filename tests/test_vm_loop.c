@@ -2,7 +2,7 @@
 //
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
 // prefixed. Programs are run end to end, since what is worth pinning is the
-// answer rather than the instructions chosen to reach it -- 5.1 expects those
+// answer rather than the instructions chosen to reach it -- 09§5.1 expects those
 // to be replaced by specialised ones later.
 
 #include <math.h>
@@ -12,7 +12,7 @@
 #include "code.h"
 #include "fixture.h"
 
-// 16.5: repeat^ is the one that carries no focus.
+// §16.5: repeat^ is the one that carries no focus.
 static void test_array_index(void)
 {
     Run r;
@@ -43,7 +43,7 @@ static void test_array_index(void)
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);
 
-    // 14.10: a nil^ position is part of the sequence, so the walk visits it
+    // §14.10: a nil^ position is part of the sequence, so the walk visits it
     // as nil^ and goes on; index^ counts it like any other.
     LHAT_TEST("a nil^ position is visited, and the walk goes on past it");
     run_text(&r, "var^sum = 0\nvar^nils = 0\n"
@@ -54,7 +54,7 @@ static void test_array_index(void)
     CHECK_INTEGER(&r, 90 * 10 + 2);
     run_dispose(&r);
 
-    // 16.3: an annotated focus filters. What its type does not take -- nil^
+    // §16.3: an annotated focus filters. What its type does not take -- nil^
     // or another shape -- is skipped, and index^ still names the position.
     LHAT_TEST("an annotated focus skips what it does not take, keeping index^");
     run_text(&r, "let^t:t^{any^[]} = {{n = 1}, nil^, \"x\", {n = 3}}\n"
@@ -113,7 +113,7 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 16.5: until^ is while^ negated, tested in the same place.
+    // §16.5: until^ is while^ negated, tested in the same place.
     LHAT_TEST("repeat^ until^ is while^ negated");
     run_text(&r,
              "var^ i = 0\n"
@@ -122,7 +122,7 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
-    // 14.14改: '[ ... ] :=' builds an entry under a key that is not a name.
+    // §14.14+: '[ ... ] :=' builds an entry under a key that is not a name.
     LHAT_TEST("a computed key lands where it says");
     run_text(&r, "var^ t = { [0] := 7 }\nreturn^ t[0]\n");
     CHECK_INTEGER(&r, 7);
@@ -136,7 +136,7 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 5);
     run_dispose(&r);
 
-    // 14 章 follows Lua here: t.a and t["a"] are one key.
+    // §14 follows Lua here: t.a and t["a"] are one key.
     LHAT_TEST("a string key and a name are the same entry");
     run_text(&r, "var^ t = { [\"a\"] := 1 }\nreturn^ t.a\n");
     CHECK_INTEGER(&r, 1);
@@ -163,7 +163,7 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 20);
     run_dispose(&r);
 
-    // 04 の 11.3: what the checker cannot see coming, the machine refuses.
+    // 04§11.3: what the checker cannot see coming, the machine refuses.
     LHAT_TEST("a key that turns out to be nil^ is a fault");
     run_text(&r,
              "var^ x : number^|nil^ = nil^\n"
@@ -181,7 +181,7 @@ static void test_repeat(void)
     run_dispose(&r);
 
     // Or a return^, which leaves the body and the loop with it. The checker
-    // reads this as a body whose end is unreachable (03 の 3.4), so what it
+    // reads this as a body whose end is unreachable (03§3.4), so what it
     // blesses has to run.
     LHAT_TEST("a return^ leaves an endless repeat^ too");
     run_text(&r,
@@ -200,7 +200,7 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // 9.8: one loop to leave and none around it is the same mistake as
+    // §9.8: one loop to leave and none around it is the same mistake as
     // naming more than are there, so it is the same diagnostic -- not the
     // "does not compile yet" a form still waiting on the compiler gets.
     LHAT_TEST("break^ outside a loop is a break^ reaching too far");
@@ -208,7 +208,7 @@ static void test_repeat(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_BREAK_TOO_FAR);
     run_dispose(&r);
 
-    // 02 の 9.8: the hats count the loops to leave, so break^ is one and
+    // §9.8: the hats count the loops to leave, so break^ is one and
     // break^^ is two. Written this way the level is read off the word
     // itself, which is why a plain break^ needs nothing added to it.
     LHAT_TEST("break^^ leaves two loops");
@@ -222,7 +222,7 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 02 の 9.8: the bracketed form says the same number, so the two
+    // §9.8: the bracketed form says the same number, so the two
     // spellings are one thing and neither is the primary one.
     LHAT_TEST("and break^[2] says the same");
     run_text(&r,
@@ -266,7 +266,7 @@ static void test_repeat(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_BREAK_TOO_FAR);
     run_dispose(&r);
 
-    // 9.11: next^ ends the turn rather than the loop, so the rest of the
+    // §9.11: next^ ends the turn rather than the loop, so the rest of the
     // body is skipped and the next turn runs.
     LHAT_TEST("next^ skips the rest of the turn");
     run_text(&r,
@@ -300,7 +300,7 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 9.6: three spellings, one meaning.
+    // §9.6: three spellings, one meaning.
     LHAT_TEST("skip^ and continue^ are the same word");
     run_text(&r,
              "var^ total = 0\n"
@@ -313,7 +313,7 @@ static void test_repeat(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 9.11 with 9.8: the hats count the loop to go on with, so next^^ ends
+    // §9.11 with §9.8: the hats count the loop to go on with, so next^^ ends
     // the inner turn and the outer one together.
     LHAT_TEST("next^^ advances the loop two out");
     run_text(&r,
@@ -348,7 +348,7 @@ static void test_repeat(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_BREAK_TOO_FAR);
     run_dispose(&r);
 
-    // 12 章: reaching the step is a way out of the block the with^ opened,
+    // §12: reaching the step is a way out of the block the with^ opened,
     // so what it holds is disposed of before the turn ends.
     LHAT_TEST("a with^ inside the turn disposes before next^ takes it");
     run_text(&r,
@@ -365,7 +365,7 @@ static void test_repeat(void)
     CHECK_STRING(&r, "idid");
     run_dispose(&r);
 
-    // 9.8: the loop the level names ends the way it would have ended on its
+    // §9.8: the loop the level names ends the way it would have ended on its
     // own, so its epilog^ runs. The ones passed through are left rather than
     // ended, and theirs do not.
     LHAT_TEST("the loop named ends normally, the ones passed through do not");
@@ -400,7 +400,7 @@ static void test_repeat(void)
     CHECK_STRING(&r, "in,out,");
     run_dispose(&r);
 
-    // 9.8 with 10.7: what a loop is only passed through still has to give
+    // §9.8 with §10.7: what a loop is only passed through still has to give
     // back what it took, so its finally^ runs where its epilog^ does not.
     LHAT_TEST("a finally^ passed through still runs");
     run_text(&r,
@@ -418,7 +418,7 @@ static void test_repeat(void)
     CHECK_STRING(&r, "fin,out,");
     run_dispose(&r);
 
-    // 16.5: an endless repeat^ ends the statements around it unless
+    // §16.5: an endless repeat^ ends the statements around it unless
     // something leaves it, and a break^ from inside a nested loop is one --
     // which is what the level is for.
     LHAT_TEST("a level reaching out of an endless repeat^ is a way out");
@@ -432,7 +432,7 @@ static void test_repeat(void)
     run_dispose(&r);
 }
 
-// 16.1: for^ is where the value being looked at is defined. Whether it
+// §16.1: for^ is where the value being looked at is defined. Whether it
 // repeats is up to the clause that follows.
 static void test_for(void)
 {
@@ -446,7 +446,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 10);
     run_dispose(&r);
 
-    // 16.4: the direction is not inferred, so this is empty rather than
+    // §16.4: the direction is not inferred, so this is empty rather than
     // counting down.
     LHAT_TEST("a limit below the start runs none");
     run_text(&r,
@@ -464,7 +464,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 321);
     run_dispose(&r);
 
-    // 14.8: integers order exactly. Through doubles, neighbours past 2^53
+    // §14.8: integers order exactly. Through doubles, neighbours past 2^53
     // are one value and the loop below would not have been entered; the
     // last advance overflows, which ends it rather than wrapping.
     LHAT_TEST("integers near the top order exactly");
@@ -477,7 +477,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 61);
     run_dispose(&r);
 
-    // 16.4: step^ is a positive amount either way; the sign belongs to the
+    // §16.4: step^ is a positive amount either way; the sign belongs to the
     // clause.
     LHAT_TEST("step^ is a positive amount for both directions");
     run_text(&r,
@@ -494,7 +494,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 963);
     run_dispose(&r);
 
-    // 16.4: the bound says how far the loop goes, so it is read before the
+    // §16.4: the bound says how far the loop goes, so it is read before the
     // loop starts and cannot move while it runs.
     LHAT_TEST("the bound is read once");
     run_text(&r,
@@ -531,7 +531,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 16.2: a focus with no name written is still a focus.
+    // §16.2: a focus with no name written is still a focus.
     LHAT_TEST("an unnamed focus is reached through it^");
     run_text(&r,
              "var^ total = 0\n"
@@ -571,7 +571,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 12);
     run_dispose(&r);
 
-    // 16.3: `in^ e` asks e for the coroutine to walk. A table answers with
+    // §16.3: `in^ e` asks e for the coroutine to walk. A table answers with
     // one over its keys, so the dense part comes back in index order.
     LHAT_TEST("in^ walks a table's dense part in order");
     run_text(&r,
@@ -600,7 +600,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 13.10: one name takes the value whole, several take it apart by
+    // §13.10: one name takes the value whole, several take it apart by
     // position. in^ is the marker, so no other mark is needed.
     LHAT_TEST("one name takes what was yielded whole");
     run_text(&r,
@@ -648,7 +648,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 9);
     run_dispose(&r);
 
-    // 15.5: the same thing written the short way -- the member yields for
+    // §15.5: the same thing written the short way -- the member yields for
     // itself instead of handing back a coroutine it made. Run checked, since
     // what this pins is that the checker's answer and the machine's agree.
     LHAT_TEST("and one that yields for itself walks the same way");
@@ -660,7 +660,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // 16.3 with 03 の 3.1③: an annotated focus -- the form strict asks for
+    // §16.3 with 03§3.1③: an annotated focus -- the form strict asks for
     // where the walk cannot say the type itself. What this pins is that the
     // annotation compiles: the PARAM wrapping the name is unwrapped, not
     // refused as an unsupported form.
@@ -673,7 +673,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 60);
     run_dispose(&r);
 
-    // 16.3改: what in^ asks for is the hat spelling, so a bare iterate on a
+    // §16.3+: what in^ asks for is the hat spelling, so a bare iterate on a
     // table the writer wrote is a member like any other and the walk is
     // still the built-in one.
     LHAT_TEST("a bare iterate on a plain table is not what in^ asks for");
@@ -685,7 +685,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 6);
     run_dispose(&r);
 
-    // 16.3 puts a table's iterate() on the same footing as any other
+    // §16.3 puts a table's iterate() on the same footing as any other
     // coroutine, so it is drivable by hand and not only by the loop -- which
     // emits BC_RESUME rather than going through the members. The answer is
     // the tuple every walk yields, so a checked call reserves its width even
@@ -703,7 +703,7 @@ static void test_for(void)
     run_dispose(&r);
 
     // An unchecked compile reserved one slot, and the pair coming back has
-    // nowhere to land -- 03 の 5.3's mismatch, dropped rather than
+    // nowhere to land -- 03§5.3's mismatch, dropped rather than
     // reconciled.
     LHAT_TEST("a one-slot hand drive is refused when the pair arrives");
     run_text(&r,
@@ -714,7 +714,7 @@ static void test_for(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TUPLE_UNEXPECTED);
     run_dispose(&r);
 
-    // 15.2 applies to a walk unchanged: nothing about having no body makes
+    // §15.2 applies to a walk unchanged: nothing about having no body makes
     // the first resume mean something on its own.
     LHAT_TEST("resuming a walk that has not started is a fault");
     run_text(&r,
@@ -735,7 +735,7 @@ static void test_for(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_COROUTINE_ALREADY_STARTED);
     run_dispose(&r);
 
-    // 10.7: a walk has nothing pending, so disposal is only the state.
+    // §10.7: a walk has nothing pending, so disposal is only the state.
     LHAT_TEST("a walk in progress can be disposed");
     run_checked_text(&r,
                      "var^ t = { 10, 20, 30 }\n"
@@ -746,7 +746,7 @@ static void test_for(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    // 16.3改2: keys^ and values^ are the two projections of that same walk,
+    // §16.3+2: keys^ and values^ are the two projections of that same walk,
     // reached without a call being written. The order is the walk's -- the
     // dense half by index, then the keyed half -- so the nth key and the nth
     // value are the two halves of one step.
@@ -778,7 +778,7 @@ static void test_for(void)
     CHECK_STRING(&r, "0=10 1=20 a=9 ");
     run_dispose(&r);
 
-    // 16.3: the single-name loop is the sequence reading and stays what it
+    // §16.3: the single-name loop is the sequence reading and stays what it
     // was -- the dense half alone. values^ is the mapping reading.
     LHAT_TEST("the single-name loop is still the dense half alone");
     run_checked_text(&r,
@@ -798,7 +798,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 16.3改2 with 14.18: the hat is not optional on a table, so the bare
+    // §16.3+2 with §14.18: the hat is not optional on a table, so the bare
     // word is a member like any other and holds nothing until written.
     LHAT_TEST("a bare keys on a table is the writer's name");
     run_text(&r, "var^ t = { 1 }\nreturn^ t.keys fits^ nil^\n");
@@ -845,7 +845,7 @@ static void test_for(void)
     LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_TYPE_ERROR);
     run_dispose(&r);
 
-    // 16.3 and 16.1: this one does not repeat. It is the do^ block written
+    // §16.3 and §16.1: this one does not repeat. It is the do^ block written
     // without the extra nesting.
     LHAT_TEST("if^ uses the focus once and does not repeat");
     run_text(&r,
@@ -856,7 +856,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // 16.3 with 8.6: a focus binding reads a value list the way any let^
+    // §16.3 with 05§8.6: a focus binding reads a value list the way any let^
     // does -- one binding, several names, several values.
     LHAT_TEST("a focus binding takes a value list");
     run_text(&r,
@@ -871,8 +871,8 @@ static void test_for(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // 5.2: '{' opens the statement form and ':' the expression one, here as
-    // anywhere -- 16.1 has for^ take the form its clause does.
+    // 10§5.2: '{' opens the statement form and ':' the expression one, here as
+    // anywhere -- §16.1 has for^ take the form its clause does.
     LHAT_TEST("and it answers a value when written with ':'");
     run_text(&r,
              "var^ x = for^ var^ i := 1\n"
@@ -881,7 +881,7 @@ static void test_for(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // 16.7 is not against it: the name still does not leave, only the value
+    // §16.7 is not against it: the name still does not leave, only the value
     // built from it, which is what an expression is.
     LHAT_TEST("and the focus still does not escape");
     run_text(&r,
@@ -890,10 +890,10 @@ static void test_for(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // 16.3: do^: makes the focus and answers with what follows it. 13.8改
+    // §16.3: do^: makes the focus and answers with what follows it. §13.8+
     // keeps a tuple out of an argument list, so this is the shape that opens
     // one straight into the next call.
-    // 16.3: do^: makes the focus and answers with what follows it. 13.8改
+    // §16.3: do^: makes the focus and answers with what follows it. §13.8+
     // keeps a tuple out of an argument list, so this is the shape that opens
     // one straight into the next call. The width comes off the signature, so
     // these run the checker first as every other tuple test does.
@@ -943,7 +943,7 @@ static void test_for(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // 14 章 の table with 16: what a loop is mostly for.
+    // §14 の table with 16: what a loop is mostly for.
     LHAT_TEST("a loop fills a table");
     run_text(&r,
              "var^ t = { }\n"
@@ -953,13 +953,13 @@ static void test_for(void)
     run_dispose(&r);
 }
 
-// 9 章: the five clauses, and 9.8's three strengths of exit.
+// §9: the five clauses, and §9.8's three strengths of exit.
 static void test_loop_clauses(void)
 {
     Run r;
 
-    // 9.11: which clauses a next^ meets. It ends the turn, so the next one
-    // begins at the top -- pre^ runs again (9.10 puts it at every head),
+    // §9.11: which clauses a next^ meets. It ends the turn, so the next one
+    // begins at the top -- pre^ runs again (§9.10 puts it at every head),
     // first^ does not (it is the first turn's alone), and last^ and epilog^
     // wait for the loop to actually end.
     LHAT_TEST("next^ meets pre^ again, and not first^, last^ or epilog^");
@@ -983,8 +983,8 @@ static void test_loop_clauses(void)
     CHECK_STRING(&r, "pfmxpmpmxpLE");
     run_dispose(&r);
 
-    // 9.4: what prolog^ declares lives as long as the loop, without leaking
-    // out of it. Checked as well as run: this is 9.4's own example, and the
+    // §9.4: what prolog^ declares lives as long as the loop, without leaking
+    // out of it. Checked as well as run: this is §9.4's own example, and the
     // checker used to refuse it while the machine ran it (main^ was walked
     // before the clauses, so nothing prolog^ declared was in reach yet).
     LHAT_TEST("prolog^ runs once and its names last the whole loop");
@@ -1002,7 +1002,7 @@ static void test_loop_clauses(void)
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
-    // 9.1: prolog^ runs whether the condition ever holds or not.
+    // §9.1: prolog^ runs whether the condition ever holds or not.
     LHAT_TEST("prolog^ and epilog^ run even when the body does not");
     run_text(&r,
              "var^ seen = 0\n"
@@ -1018,7 +1018,7 @@ static void test_loop_clauses(void)
     CHECK_INTEGER(&r, 11);
     run_dispose(&r);
 
-    // 9.10: pre^ runs at the head of every turn, before the condition is
+    // §9.10: pre^ runs at the head of every turn, before the condition is
     // tested -- so the body runs once however the condition comes out. This
     // is the shape C spells do ... while.
     LHAT_TEST("pre^ runs even when the condition never holds");
@@ -1071,7 +1071,7 @@ static void test_loop_clauses(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 9.1 is unchanged: first^ and last^ belong to the turns the condition
+    // §9.1 is unchanged: first^ and last^ belong to the turns the condition
     // accepted, and pre^ does not make one of those.
     LHAT_TEST("a turn that only ran pre^ is not one first^ or last^ counts");
     run_text(&r,
@@ -1088,7 +1088,7 @@ static void test_loop_clauses(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 9.8: break^ leaves from inside pre^ like from anywhere else.
+    // §9.8: break^ leaves from inside pre^ like from anywhere else.
     LHAT_TEST("break^ leaves a loop from inside pre^");
     run_text(&r,
              "var^ n = 0\n"
@@ -1102,7 +1102,7 @@ static void test_loop_clauses(void)
     run_dispose(&r);
 
     // The declaration goes in prolog^, which is what makes reading before the
-    // test writable at all -- 9.4 gives prolog^ names the whole loop.
+    // test writable at all -- §9.4 gives prolog^ names the whole loop.
     LHAT_TEST("prolog^ and pre^ together are the loop-and-a-half");
     run_text(&r,
              "var^ out = 0\n"
@@ -1134,7 +1134,7 @@ static void test_loop_clauses(void)
     CHECK_INTEGER(&r, 103);
     run_dispose(&r);
 
-    // 9.1: first^ and last^ do not run when the condition never holds.
+    // §9.1: first^ and last^ do not run when the condition never holds.
     LHAT_TEST("first^ and last^ stay away when nothing ran");
     run_text(&r,
              "var^ n = 0\n"
@@ -1150,7 +1150,7 @@ static void test_loop_clauses(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 9.7: the whole reason last^ keeps a copy. Naively it would see 5.
+    // §9.7: the whole reason last^ keeps a copy. Naively it would see 5.
     LHAT_TEST("last^ sees the value the condition last accepted");
     run_text(&r,
              "var^ seen = 0\n"
@@ -1162,7 +1162,7 @@ static void test_loop_clauses(void)
     CHECK_INTEGER(&r, 4);
     run_dispose(&r);
 
-    // 9.8: break^ is a normal end, so last^ and epilog^ both run, and the
+    // §9.8: break^ is a normal end, so last^ and epilog^ both run, and the
     // copy taken at the head of the iteration is the right one.
     LHAT_TEST("break^ leaves last^ looking at the current iteration");
     run_text(&r,
@@ -1190,7 +1190,7 @@ static void test_loop_clauses(void)
     CHECK_INTEGER(&r, 7);
     run_dispose(&r);
 
-    // 9.8: return^ is not a normal end for the loop, so neither runs.
+    // §9.8: return^ is not a normal end for the loop, so neither runs.
     LHAT_TEST("return^ runs neither last^ nor epilog^");
     run_text(&r,
              "var^ out = { n := 0 }\n"
@@ -1210,7 +1210,7 @@ static void test_loop_clauses(void)
     CHECK_INTEGER(&r, 0);
     run_dispose(&r);
 
-    // 9.4: a name made in main^ lives one iteration, so the next one starts
+    // §9.4: a name made in main^ lives one iteration, so the next one starts
     // over rather than seeing the last.
     LHAT_TEST("what main^ declares lasts one iteration");
     run_text(&r,
@@ -1236,7 +1236,7 @@ static void test_loop_clauses(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // 5.4 with 9.4: the focus is one place per loop, not per iteration, so a
+    // §5.4 with §9.4: the focus is one place per loop, not per iteration, so a
     // closure made inside sees where it ended up.
     LHAT_TEST("a closure made in a loop captures the place, not the moment");
     run_text(&r,
@@ -1249,7 +1249,7 @@ static void test_loop_clauses(void)
     run_dispose(&r);
 }
 
-// 02 の 17 章. 17.9 makes a match sugar over an if-chain, so what is worth
+// §17. §17.9 makes a match sugar over an if-chain, so what is worth
 // pinning is that the chain comes out right -- not the instructions.
 static void test_patterns(void)
 {
@@ -1264,7 +1264,7 @@ static void test_patterns(void)
     CHECK_INTEGER(&r, 20);
     run_dispose(&r);
 
-    // 17.5: a bool^ subject met both ways needs no other^, and what runs is
+    // §17.5: a bool^ subject met both ways needs no other^, and what runs is
     // the same either way; unchecked, the arm nothing fits is a panic
     // rather than a silent nothing.
     LHAT_TEST("a bool^ match without other^ answers both ways");
@@ -1293,7 +1293,7 @@ static void test_patterns(void)
     CHECK_INTEGER(&r, 30);
     run_dispose(&r);
 
-    // 17.3: to^ includes both ends, as 16.4 has it.
+    // §17.3: to^ includes both ends, as §16.4 has it.
     LHAT_TEST("a range pattern includes both ends");
     run_text(&r,
              "var^ seen = 0\n"
@@ -1304,7 +1304,7 @@ static void test_patterns(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // 17.3: several on one arm, which 17.9 makes an or^.
+    // §17.3: several on one arm, which §17.9 makes an or^.
     LHAT_TEST("patterns separated by commas share an arm");
     run_text(&r,
              "var^ hits = 0\n"
@@ -1315,8 +1315,8 @@ static void test_patterns(void)
     CHECK_INTEGER(&r, 3);
     run_dispose(&r);
 
-    // 17.2: the subject is evaluated once, which is the point of for^ being
-    // where a focus is defined (16.1).
+    // §17.2: the subject is evaluated once, which is the point of for^ being
+    // where a focus is defined (§16.1).
     LHAT_TEST("the subject is evaluated once");
     run_text(&r,
              "var^ calls = { n := 0 }\n"
@@ -1326,7 +1326,7 @@ static void test_patterns(void)
     CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
-    // 16.2 and 17.2: unnamed, the subject is it^; named, it is the name.
+    // §16.2 and §17.2: unnamed, the subject is it^; named, it is the name.
     LHAT_TEST("the subject is reached through it^");
     run_text(&r,
              "var^ x = 0\n"
@@ -1348,7 +1348,7 @@ static void test_patterns(void)
     LHAT_CHECK_EQ_INT(r.compiled, LHAT_COMPILE_UNDEFINED);
     run_dispose(&r);
 
-    // 8.6改・16.3改: without var^, the subject's name reaches an existing
+    // §8.6+・§16.3+: without var^, the subject's name reaches an existing
     // outer one instead of a fresh one -- the pattern itself still has to
     // compile against it, not just the body.
     LHAT_TEST("a bare name reuses an outer subject, patterns included");
@@ -1356,7 +1356,7 @@ static void test_patterns(void)
     CHECK_INTEGER(&r, 100);
     run_dispose(&r);
 
-    // 17.4: a type pattern writes fits^, since a bare name could be either.
+    // §17.4: a type pattern writes fits^, since a bare name could be either.
     LHAT_TEST("a type pattern uses fits^");
     run_text(&r,
              "errordef^ E { A, B }\n"
@@ -1370,7 +1370,7 @@ static void test_patterns(void)
     CHECK_INTEGER(&r, 2);
     run_dispose(&r);
 
-    // 17.2 の 式形. 17.6: only the ':' of for^ opens, and ';' closes it all.
+    // §17.2 の 式形. §17.6: only the ':' of for^ opens, and ';' closes it all.
     LHAT_TEST("the expression form answers a value");
     run_text(&r,
              "var^ n = 2\n"
@@ -1386,7 +1386,7 @@ static void test_patterns(void)
     CHECK_INTEGER(&r, 300);
     run_dispose(&r);
 
-    // 17.8: no guards. The arm's body is where a further test goes.
+    // §17.8: no guards. The arm's body is where a further test goes.
     LHAT_TEST("a further test goes inside the arm");
     run_text(&r,
              "var^ x = 0\n"

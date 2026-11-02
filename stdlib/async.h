@@ -2,7 +2,7 @@
 //
 // The two things a scheduler cannot write for itself: a wait, and a way to
 // know what is ready. Everything else -- the task table, whose turn it is,
-// when to sleep -- is written in L^ over these, the way 02 の 15.14 says it
+// when to sleep -- is written in L^ over these, the way §15.14 says it
 // should be: the language knows what await^ means and nothing about who
 // resumes.
 //

@@ -13,7 +13,7 @@
 
 bool lhat_value_close(LhatValue a, LhatValue b, LhatReal tolerance)
 {
-    // 14.8: only a real carries an error term. Two integers name themselves
+    // §14.8: only a real carries an error term. Two integers name themselves
     // exactly, and admitting a band around one would put a key, an index and
     // a count inside it -- so they go the exact way, as does everything that
     // is not a pair of numbers at all.
@@ -27,7 +27,7 @@ bool lhat_value_close(LhatValue a, LhatValue b, LhatReal tolerance)
     // An infinity is this far from itself and no distance from anything else:
     // the difference below would be a NaN, which is under no bound at all.
     // A NaN reaches neither this nor the bound, which is what makes it equal
-    // to nothing including itself (03 の 5.8 keeps one out of a key for that
+    // to nothing including itself (03§5.8 keeps one out of a key for that
     // very reason).
     if (x == y) {
         return true;
@@ -57,9 +57,9 @@ bool lhat_value_close(LhatValue a, LhatValue b, LhatReal tolerance)
 
 bool lhat_value_equal(LhatValue a, LhatValue b)
 {
-    // 02 の 14.8: number^ is one type, so 1 and 1.0 are the same number even
-    // though 2.2 gives them different tags. Comparing the tags first would
-    // make the representation visible, which is exactly what 14.8 says it is
+    // §14.8: number^ is one type, so 1 and 1.0 are the same number even
+    // though 03§2.2 gives them different tags. Comparing the tags first would
+    // make the representation visible, which is exactly what §14.8 says it is
     // not.
     if (lhat_is_number(a) && lhat_is_number(b)) {
         if (lhat_is_integer(a) && lhat_is_integer(b)) {
@@ -93,7 +93,7 @@ bool lhat_value_equal(LhatValue a, LhatValue b)
         case LHAT_VALUE_OBJECT:
             // A string is what it says, so two of them are equal when they
             // spell the same bytes. Everything else is equal only to itself:
-            // 14.2 makes a table's identity what it is, and comparing two of
+            // §14.2 makes a table's identity what it is, and comparing two of
             // them member by member would follow a cycle for ever.
             if (a.as.object != NULL && b.as.object != NULL &&
                 a.as.object->kind == LHAT_OBJECT_STRING &&
@@ -101,8 +101,8 @@ bool lhat_value_equal(LhatValue a, LhatValue b)
                 return lhat_string_equal((const LhatString *)a.as.object,
                                          (const LhatString *)b.as.object);
             }
-            // 02 の 2811: typeof^(x) = typeof^(y) compares structurally
-            // (11.3, 14.9) -- two calls to typeof^ build separate objects
+            // 02§2811: typeof^(x) = typeof^(y) compares structurally
+            // (§11.3, §14.9) -- two calls to typeof^ build separate objects
             // even for the same shape, so pointer identity would say no to
             // the very comparison 2811 exists for.
             if (a.as.object != NULL && b.as.object != NULL &&
@@ -112,7 +112,7 @@ bool lhat_value_equal(LhatValue a, LhatValue b)
                     (const LhatRuntimeType *)a.as.object,
                     (const LhatRuntimeType *)b.as.object);
             }
-            // 05 の 8.9改: a box is its bytes, as the value it holds is on
+            // 05§8.9+: a box is its bytes, as the value it holds is on
             // the stack -- same tag, same bytes, whatever `sealed` says (the
             // prototype's sealed box equals its unsealed copies). is^ still
             // asks for the object itself.
@@ -129,9 +129,9 @@ bool lhat_value_equal(LhatValue a, LhatValue b)
                        memcmp(left->run + 1, right->run + 1,
                               (tag->width - 1) * sizeof(LhatValueUnion)) == 0;
             }
-            // 05 の 8.8: a hostdata stands for what the host made, so two
+            // 05§8.8: a hostdata stands for what the host made, so two
             // wrappers of one host object are equal -- the tag first, since
-            // 7.3 is what makes the pointers comparable at all. Never after
+            // 05§7.3 is what makes the pointers comparable at all. Never after
             // a release: the pointer may have been given back and reused,
             // and a wrapper whose object is gone is equal only to itself.
             if (a.as.object != b.as.object && a.as.object != NULL &&
@@ -180,7 +180,7 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
         case LHAT_OBJECT_TYPE:       return "a type";
         case LHAT_OBJECT_OVERLOAD:   return "an overloaded member";
         case LHAT_OBJECT_UPVALUE:    return "upvalue";
-        // 05 の 8.7 and 8.8: what the host wrote and what the host made.
+        // 05§8.7 and 05§8.8: what the host wrote and what the host made.
         // Neither has anything to show past what it is.
         case LHAT_OBJECT_HOST:       return "a host subroutine";
         case LHAT_OBJECT_HOSTDATA:   return "host data";
@@ -191,7 +191,7 @@ const char *lhat_object_kind_name(LhatObjectKind kind)
 }
 
 // ---------------------------------------------------------------------------
-// Writing a value down (03 の 4 章)
+// Writing a value down (03§4)
 // ---------------------------------------------------------------------------
 
 // snprintf into a moving cursor. `used` is how long the whole text is, which
@@ -230,7 +230,7 @@ static void put_number(Writer *w, const char *format, ...)
     }
 }
 
-// 02 の 14.8: a real is written so that it cannot be read back as an integer.
+// §14.8: a real is written so that it cannot be read back as an integer.
 // '%g' already gives a '.' or an exponent to everything but a small whole
 // number, and inf and nan are words -- so what needs the '.0' is a spelling
 // made of digits and a sign alone.
@@ -261,7 +261,7 @@ static void put_real(Writer *w, LhatReal real)
     }
 }
 
-// 01 の 5 章 spells these in a string literal, so writing one back out spells
+// 01§5 spells these in a string literal, so writing one back out spells
 // them the same way.
 static void put_quoted(Writer *w, const LhatString *string)
 {
@@ -282,7 +282,7 @@ static void put_quoted(Writer *w, const LhatString *string)
 
 static void write_value(Writer *w, LhatValue value, size_t depth);
 
-// 05 の 8.9: 'module.Name(1, 2, 3)' -- the registered fields in their
+// 05§8.9: 'module.Name(1, 2, 3)' -- the registered fields in their
 // registration order, decoded off the data run. The name alone when no
 // field was registered; the bytes have no other reading.
 static void write_hostvalue_content(Writer *w, const LhatHostValueTag *tag,
@@ -310,11 +310,11 @@ static void write_hostvalue_content(Writer *w, const LhatHostValueTag *tag,
 }
 
 
-// 14.14: a key written as a name is the same key written as a string, so one
+// §14.14: a key written as a name is the same key written as a string, so one
 // that spells an identifier is written back in the shorter form.
 //
-// 14.17改: a member's key keeps its hats (01 の 2.3's exception), and 01 の
-// 2.3 makes a word with them a name like any other -- so 'new' is written
+// §14.17+: a member's key keeps its hats (01§2.3's exception), and 01 の
+// 01§2.3 makes a word with them a name like any other -- so 'new' is written
 // back as 'new' rather than quoted. The hats have to be the tail of it, as
 // the lexer reads them.
 static bool spells_a_name(const LhatString *string)
@@ -343,7 +343,7 @@ static void write_table(Writer *w, const LhatTable *table, size_t depth)
     put_text(w, "{");
     bool first = true;
 
-    // 14 章: the sequence half in index order, then the rest. 16.3 promises
+    // §14: the sequence half in index order, then the rest. §16.3 promises
     // that order for a walk, and there is no reason to write one differently.
     for (size_t i = 0; i < table->array_count; i++) {
         put_text(w, first ? " " : ", ");
@@ -366,7 +366,7 @@ static void write_table(Writer *w, const LhatTable *table, size_t depth)
             write_value(w, key, depth + 1);
             put_text(w, "]");
         }
-        // 02 の 14.14改: an element is an introduction, so '=' is the spelling.
+        // §14.14+: an element is an introduction, so '=' is the spelling.
         // ':=' is still read, but writing one out here would be showing the
         // form the chapter calls the unintended one.
         put_text(w, " = ");
@@ -389,7 +389,7 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
             put_number(w, "%lld", (long long)value.as.integer);
             return;
         case LHAT_VALUE_REAL:
-            // 14.8 makes one number type of two representations, so a real
+            // §14.8 makes one number type of two representations, so a real
             // that happens to be whole still says which one it is.
             //
             // Read off the spelling rather than the value: what has to be
@@ -400,12 +400,12 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
             put_real(w, value.as.real);
             return;
         case LHAT_VALUE_HOSTVALUE:
-            // 05 の 8.9: outside the stack an LhatValue host value is the
+            // 05§8.9: outside the stack an LhatValue host value is the
             // pointer form -- a host's argument aiming at the run (the head
             // form never leaves the machine; vm.c's tostring writes its
             // name itself). The spelling is the type's name over the field
             // values, read straight off the bytes. A library that wants its
-            // values written its own way registers a tostring, which 14.17
+            // values written its own way registers a tostring, which §14.17
             // lets win over this.
             if (value.as.hostvalue_run != NULL &&
                 value.as.hostvalue_run[0].hostvalue != NULL) {
@@ -418,8 +418,8 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
             return;
         case LHAT_VALUE_CONT:
         case LHAT_VALUE_RUN:
-            // Neither is ever a value in its own right: 8.9's continuation
-            // slots are read through their head, and 13.8改 confines a run
+            // Neither is ever a value in its own right: §8.9's continuation
+            // slots are read through their head, and §13.8+ confines a run
             // to a result the next few instructions take apart.
             put_text(w, "<");
             put_text(w, value.tag == LHAT_VALUE_CONT ? "cont" : "run");
@@ -459,7 +459,7 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
             put_text(w, "costate^");
             return;
         case LHAT_OBJECT_ERROR: {
-            // 04 の 2.3: a kind plus the fields the construction gave it.
+            // 04§2.3: a kind plus the fields the construction gave it.
             const LhatError *error = (const LhatError *)object;
             put_text(w, "error^");
             if (error->kind != NULL && error->kind->name != NULL) {
@@ -474,7 +474,7 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
             }
             return;
         }
-        // 02 の 19 章: a member writes as its name -- what tostring^
+        // §19: a member writes as its name -- what tostring^
         // answers -- and the enum as its declaration's.
         case LHAT_OBJECT_ENUMERATOR: {
             const LhatEnumerator *e = (const LhatEnumerator *)object;
@@ -499,7 +499,7 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
             }
             return;
         }
-        // 05 の 8.9: the box written as what it holds -- its type's name,
+        // 05§8.9: the box written as what it holds -- its type's name,
         // which flavour of box it is, and the field values off the bytes.
         case LHAT_OBJECT_HOSTVALUE_BOX: {
             const LhatHostValueBox *box = (const LhatHostValueBox *)object;
@@ -514,7 +514,7 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
             return;
         }
         default:
-            // 05 の 8.5's natives, 14.12's overload groups and 13.11's runtime
+            // 05§8.5's natives, §14.12's overload groups and §13.11's runtime
             // types are reached through something else and never stand alone
             // as an answer, so naming the kind is as much as is wanted.
             put_text(w, "<");
@@ -538,7 +538,7 @@ size_t lhat_value_write(LhatValue value, char *out, size_t capacity)
 }
 
 // ---------------------------------------------------------------------------
-// tostring (02 の 14.17)
+// tostring (§14.17)
 // ---------------------------------------------------------------------------
 
 size_t lhat_value_text(LhatValue value, char *out, size_t capacity)
@@ -548,7 +548,7 @@ size_t lhat_value_text(LhatValue value, char *out, size_t capacity)
     w.capacity = capacity;
     w.used = 0;
 
-    // 14.17: the text a reader reads, where lhat_value_write gives the
+    // §14.17: the text a reader reads, where lhat_value_write gives the
     // spelling L^ would read back. A string^ is already its own text; nil^
     // and bool^ are words rather than the hatted literals that name them.
     // Only the value itself is read this way -- one inside a table is
@@ -687,7 +687,7 @@ bool lhat_number_format(LhatValue value, const char *format,
         if (lhat_is_integer(value)) {
             whole = lhat_as_integer(value);
         } else {
-            // 14.8: the conversion decides the reading, so a real asked for
+            // §14.8: the conversion decides the reading, so a real asked for
             // as an integer is read as one -- but only where it names one.
             // Outside that range the conversion is undefined in C, which is
             // not an answer this may give.
@@ -848,7 +848,7 @@ bool lhat_number_scan(const char *text, size_t length, const char *format,
         }
     } else if (unsigned_read) {
         unsigned long long magnitude = 0;
-        // A number^ is an int64_t (14.8), so one written past its range names
+        // A number^ is an int64_t (§14.8), so one written past its range names
         // no number^ this can answer with.
         if (sscanf(text, rebuilt, &magnitude, &consumed) == 1 &&
             consumed == (int)length &&

@@ -17,7 +17,7 @@
 //     "strict": true
 //   }
 //
-// `exclude` decides which files become roots (05 の 5 章's graph is still
+// `exclude` decides which files become roots (05§5's graph is still
 // followed: a file another root require^s is read whether or not it is
 // excluded). `force_include_files` names the few inside an excluded
 // directory that are real sources after all. `strict` overrides the same

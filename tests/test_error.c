@@ -108,7 +108,7 @@ static void test_rich(void)
         }
     }
 
-    // '~' and not '^': 01 の 2.2 makes a hat a letter, so a mark of them
+    // '~' and not '^': 01§2.2 makes a hat a letter, so a mark of them
     // under a line of them would read as more of the line.
     LHAT_TEST("the mark is a tilde");
     {

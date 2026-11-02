@@ -8,7 +8,7 @@
 // operands, constants, where to go next.
 //
 // Everything a stencil touches lives where the interpreter keeps it -- the
-// frame's slots, payloads and tags apart (03 の 2.2) -- so leaving compiled
+// frame's slots, payloads and tags apart (03§2.2) -- so leaving compiled
 // code for the interpreter at any instruction costs nothing: a stencil that
 // meets what it was not written for answers that instruction's pc, and the
 // interpreter runs it from there. Nothing is held in a machine register
@@ -29,7 +29,7 @@
 
 // What the code runs against, beside the frame's slots. `steps_left` and
 // `traps` are the two questions the interpreter's slice poll asks at a jump
-// back (02 § 15.15 and the traps word). A call or a return made in the code
+// back (§15.15 and the traps word). A call or a return made in the code
 // moves to another frame: the helper that made it (jit.c) writes that
 // frame's slots and closure here, and the stencil goes on with them. When
 // it cannot go on in compiled code it writes `leave_pc` instead -- the pc
@@ -43,7 +43,7 @@ typedef struct LhatJitContext {
     const void *closure;
     uintptr_t leave_pc;
     bool moved;  // a helper changed the frame on top
-    const void *environment;  // 05 の 8.6: the machine's one table
+    const void *environment;  // 05§8.6: the machine's one table
 } LhatJitContext;
 
 // The holes a stencil may leave, by the name of the symbol it refers to.

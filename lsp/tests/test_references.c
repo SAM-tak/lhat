@@ -1,10 +1,10 @@
 // L^ (lhat) -- LSP server tests: every place one name was written
-// (references.c). 07 の 5 章.
+// (references.c). 07§5.
 //
 // What is pinned is the identity a reference has: a name is the place it was
 // declared, not the way it is spelt. Two `count`s in two scopes are two
 // names and must not answer for each other, and one name reached from two
-// files is one name. Nothing here reads 8 章's scoping -- the checker's own
+// files is one name. Nothing here reads 08§8's scoping -- the checker's own
 // record is what says which is which, and these tests are what keep that
 // reading honest.
 
@@ -148,7 +148,7 @@ static void test_two_names_of_one_spelling(void)
     Checked c;
     bool found = false;
 
-    // 8 章: the inner one is a name of its own. A search that matched on the
+    // 08§8: the inner one is a name of its own. A search that matched on the
     // spelling would rename both, which is the mistake this whole design is
     // shaped to make impossible.
     LHAT_TEST("8 章: two scopes' names of one spelling are two names");
@@ -179,7 +179,7 @@ static void test_what_has_nowhere_to_edit(void)
     Checked c;
     bool found = false;
 
-    // 01 の 2.3: a hatted word is the language's own. None was declared
+    // 01§2.3: a hatted word is the language's own. None was declared
     // anywhere a rename could reach, and answering a range for one would put
     // an editor's box over something bound to fail.
     LHAT_TEST("01 の 2.3: a hatted word is not a name that was declared");
@@ -216,7 +216,7 @@ static void test_a_member_is_a_name_too(void)
     Checked c;
     bool found = false;
 
-    // 14.10: a member is looked up in a type rather than in a scope, and a
+    // §14.10: a member is looked up in a type rather than in a scope, and a
     // def^'s carries its written place all the same -- so the same reading
     // answers for it.
     LHAT_TEST("14.10: a member of a def^ is a declaration with uses");
@@ -236,7 +236,7 @@ static void test_a_member_is_a_name_too(void)
     }
     check_dispose(&c);
 
-    // 05 の 8.7 and 14.19 declare nothing this source could edit, and a
+    // 05§8.7 and §14.19 declare nothing this source could edit, and a
     // plain table literal's member is the third of the same kind: the
     // checker records no place for it, and go-to-definition answers
     // nothing there either. What must not happen is this taking the use

@@ -1,7 +1,7 @@
 // L^ (lhat) -- command line driver.
 //
 // With a file it stops after parsing or checking and prints what it found.
-// With nothing to read it is the prompt of 03 § 4, where a machine and a
+// With nothing to read it is the prompt of 03§4, where a machine and a
 // session of each stage answer one input after another.
 
 #include <stdio.h>
@@ -9,7 +9,7 @@
 #include <string.h>
 #ifdef _WIN32
 #include <direct.h>
-// 10 §7.4: GetUserPreferredUILanguages, for the language the user reads.
+// 10§7.4: GetUserPreferredUILanguages, for the language the user reads.
 #include <windows.h>
 #else
 #include <sys/stat.h>
@@ -200,7 +200,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             break;
         case LHAT_NODE_YIELD:
             if (node->v.jump.phantom) {
-                printf(" phantom");  // 15.11
+                printf(" phantom");  // §15.11
             }
             break;
         case LHAT_NODE_DEFINE:
@@ -305,13 +305,13 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
             print_node(lexer, node->v.hole.value, depth + 1);
             print_node(lexer, node->v.hole.format, depth + 1);
             break;
-        // 13.8改: return^ may carry several values, and one is a list of one.
+        // §13.8+: return^ may carry several values, and one is a list of one.
         case LHAT_NODE_RETURN:
         case LHAT_NODE_YIELD:
             print_list(lexer, "values", node->v.jump.value, depth + 1);
             break;
         case LHAT_NODE_BREAK:
-        case LHAT_NODE_NEXT:  // 9.11, and 9.8's level or label as break^ has
+        case LHAT_NODE_NEXT:  // §9.11, and §9.8's level or label as break^ has
         case LHAT_NODE_CALL_STMT:
         case LHAT_NODE_PACK:
         case LHAT_NODE_REQUIRE:
@@ -333,7 +333,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
         case LHAT_NODE_BLOCK:
         case LHAT_NODE_IF_STMT:
             print_list(lexer, "items", node->v.list.items, depth + 1);
-            print_list(lexer, "arms", node->v.list.arms, depth + 1);  // 04 § 4.5
+            print_list(lexer, "arms", node->v.list.arms, depth + 1);  // 04§4.5
             print_list(lexer, "clauses", node->v.list.extra, depth + 1);
             break;
         case LHAT_NODE_ANNOTATION:
@@ -349,7 +349,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
         case LHAT_NODE_IF_EXPR:
         case LHAT_NODE_INTERP:
         case LHAT_NODE_TYPE_TABLE:
-        case LHAT_NODE_TYPE_TUPLE:  // 13.8改: the positions, in order
+        case LHAT_NODE_TYPE_TUPLE:  // §13.8+: the positions, in order
         case LHAT_NODE_TUPLE:
             print_list(lexer, "items", node->v.list.items, depth + 1);
             break;
@@ -378,7 +378,7 @@ static void print_node(const LhatLexer *lexer, const LhatNode *node, int depth)
 
 #endif  // LHAT_WITH_FRONTEND
 
-// 10 §7.4: the language this driver says things in, and where the catalogs
+// 10§7.4: the language this driver says things in, and where the catalogs
 // for it are. The tag is the OS's unless --language said otherwise, and the
 // directory is --messages or `messages/<tag>` beside the executable.
 static const char *said_language;
@@ -393,7 +393,7 @@ static LhatProgram driver;
 static bool driver_ready;
 static const LhatProgram *said_in;
 
-// 10 §4: the cli's own texts. Each is a line it prints -- or, for the usage
+// 10§4: the cli's own texts. Each is a line it prints -- or, for the usage
 // and the prompt's greeting, the lines it prints together -- with what goes
 // into it in holes (§5.1).
 enum {
@@ -594,7 +594,7 @@ static void say_version(void)
     cli_say(stdout, CLI_VERSION, &arg, 1);
 }
 
-// 10 §7.4: `ja_JP.UTF-8` is the language `ja-JP`; `C` and `POSIX` are the
+// 10§7.4: `ja_JP.UTF-8` is the language `ja-JP`; `C` and `POSIX` are the
 // English. Written into `out`, or NULL when there is nothing to make of it.
 static const char *language_of(const char *value, char *out, size_t capacity)
 {
@@ -649,7 +649,7 @@ static const char *os_language(void)
 #endif
 }
 
-// 10 §7.1: one source's catalog for a language, read out of the file the
+// 10§7.1: one source's catalog for a language, read out of the file the
 // directory holds. A source with no file there stays in English.
 static void read_catalog(LhatProgram *program, const char *tag,
                          const char *directory, const char *source,
@@ -698,7 +698,7 @@ static void speak(LhatProgram *program)
 }
 
 #ifdef LHAT_CLI_WITH_DAP
-// 10 §7.4: the debugger said which language it reads, which is not this
+// 10§7.4: the debugger said which language it reads, which is not this
 // driver's to argue with. Its catalogs are where this driver's are, under
 // that tag -- unless --messages named a directory outright, which is an
 // answer for whatever language is asked for.
@@ -749,7 +749,7 @@ static void find_catalogs(const char *argv0)
 static bool rich_reports = true;
 
 // error.h fills a buffer rather than a stream, so the driver decides where it
-// goes -- 05 § 8.9 keeps the language away from stdio.
+// goes -- 05§8.9 keeps the language away from stdio.
 static void say(const LhatProgram *program, const LhatReport *report,
                 const LhatSource *source, const char *name)
 {
@@ -834,7 +834,7 @@ static void say_check_error(const LhatProgram *program,
 
 #endif  // LHAT_WITH_FRONTEND
 
-// 03 § 4.2 puts the refusals in the checker, so a compile that stops is a
+// 03§4.2 puts the refusals in the checker, so a compile that stops is a
 // hole in it -- and whoever has to close that hole is told where, the same
 // way the checker's own diagnostics tell them. Falls back to the one-line
 // form where there is no source to point into: a failure before any unit was
@@ -925,16 +925,16 @@ static int dump_tokens(const LhatSource *source)
 
 #endif  // LHAT_WITH_FRONTEND
 
-// 05 § 8.2's example, and the only name this driver hands out. 02 § 10.6
+// 05§8.2's example, and the only name this driver hands out. §10.6
 // calls this the one exception the f^ constraints allow: what it changes is
 // the host's, not the machine's, so nothing a program can read afterwards
-// tells it apart from having done nothing. 13.2 has an f^ answer on every
-// path, so it answers nil^ -- which 04 § 11.3 already spells "nothing here".
+// tells it apart from having done nothing. §13.2 has an f^ answer on every
+// path, so it answers nil^ -- which 04§11.3 already spells "nothing here".
 //
-// 13.7's '...', so what was handed over is written in the order it came,
-// separated by a space and closed by one newline. The reading is 02 § 14.17's
+// §13.7's '...', so what was handed over is written in the order it came,
+// separated by a space and closed by one newline. The reading is §14.17's
 // tostring, lhat_value_text -- a string^ is its own bytes, without the quotes
-// that let 1 and "1" be read apart (those belong to 03 § 4 章's prompt, not to
+// that let 1 and "1" be read apart (those belong to 03§4's prompt, not to
 // a writer). The same print stdlib/io.c registers as std.io.print, and the
 // reasoning for the separator is written there.
 static void host_print(LhatMachine *machine, void *context,
@@ -968,8 +968,8 @@ static void host_print(LhatMachine *machine, void *context,
     }
 }
 
-// 05 § 8.2: the host decides what a program sees without a require^. This
-// driver binds print -- the mechanism that reaches 8.6's own L^ members too.
+// 05§8.2: the host decides what a program sees without a require^. This
+// driver binds print -- the mechanism that reaches 05§8.6's own L^ members too.
 static bool bind_host_names(LhatProgram *program)
 {
     lhat_register_global(program, "print", "f^...->nil^;", host_print, NULL);
@@ -995,7 +995,7 @@ static bool bind_host_names(LhatProgram *program)
         !lhatstdlib_stream_register(program)) {
         return false;
     }
-    // 05 § 10.8 with 08 § 7+: text through the front end, bytes without
+    // 05§10.8 with 08§7+: text through the front end, bytes without
     // it -- so both are here in every build.
     if (!lhatstdlib_lton_register(program) ||
         !lhatstdlib_load_register(program)) {
@@ -1011,7 +1011,7 @@ static bool bind_host_names(LhatProgram *program)
     return true;
 }
 
-// 05 § 8.7 with 10.7: a registration that answered false has usually said
+// 05§8.7 with 05§10.7: a registration that answered false has usually said
 // why on the program (a signature the table does not hold, a name it does
 // not know); memory is the last reason, not the first.
 static void say_registration_failure(const LhatProgram *program)
@@ -1031,7 +1031,7 @@ static void say_registration_failure(const LhatProgram *program)
     }
 }
 
-// 03 § 1.1's three stages, each with its own codes and one shape to show
+// 03§1.1's three stages, each with its own codes and one shape to show
 // them in -- program.h renders the shape, and this only decides where it
 // goes.
 static void say_unit_diagnostic(const LhatUnit *unit, size_t index)
@@ -1078,7 +1078,7 @@ static size_t say_unit_diagnostics(const LhatProgram *program)
     return units;
 }
 
-// 05 § 10 : the directories above `path`, made as needed.
+// 05§10 : the directories above `path`, made as needed.
 static bool make_directories(const char *path)
 {
     size_t length = strlen(path);
@@ -1103,7 +1103,7 @@ static bool make_directories(const char *path)
     return true;
 }
 
-// 05 § 10 : checks and compiles the program the way --run does, then
+// 05§10 : checks and compiles the program the way --run does, then
 static bool write_bytes(const char *out_path, const uint8_t *bytes,
                         size_t length)
 {
@@ -1117,7 +1117,7 @@ static bool write_bytes(const char *out_path, const uint8_t *bytes,
     return true;
 }
 
-// 10 §6.3: one source's catalog, written under the directory --dump-messages
+// 10§6.3: one source's catalog, written under the directory --dump-messages
 // was pointed at. `entries` is a table this driver holds itself; NULL asks
 // the library for the source it holds.
 static bool write_catalog(const char *dir, const char *source,
@@ -1158,7 +1158,7 @@ static bool is_lton_path(const char *path)
     return n > 5 && strcmp(path + n - 5, ".lton") == 0;
 }
 
-// 08 § 7+: an LTON file compiles on its own -- nothing requires one, it is
+// 08§7+: an LTON file compiles on its own -- nothing requires one, it is
 // read at run time -- and lands under `out_dir` by its own name.
 static char *project_output_path(const char *directory, const char *root, const char *source)
 {
@@ -1351,12 +1351,12 @@ static int compile_program(const char *path, const char *out_dir,
     return failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
-// 03 § 1.1's third stage, over the unit graph of 05 § 6.2: a unit cannot be
+// 03§1.1's third stage, over the unit graph of 05§6.2: a unit cannot be
 // checked before the units it requires, so the whole graph is walked rather
 // than the one file named on the command line.
-// `arguments` is what follows the path on the command line: 02 § 13.7 with
-// 05 § 3.2 make a script's top level 'p^...', and these are its '...'.
-// 10.7: the table read before anything registers, when one was named.
+// `arguments` is what follows the path on the command line: §13.7 with
+// 05§3.2 make a script's top level 'p^...', and these are its '...'.
+// 05§10.7: the table read before anything registers, when one was named.
 static const char *signatures_file;  // --signatures FILE, or NULL
 
 static bool read_signatures(LhatProgram *program)
@@ -1389,7 +1389,7 @@ static int check_program(const char *path, bool run, bool strict,
     (void)lhat_program_set_project_root(&program, project_root);
     speak(&program);
     if (!read_signatures(&program) || !bind_host_names(&program)) {
-        // 05 § 8.2, before checking (8.3)
+        // 05§8.2, before checking (05§8.3)
         say_registration_failure(&program);
         lhat_program_dispose(&program);
         return EXIT_FAILURE;
@@ -1407,7 +1407,7 @@ static int check_program(const char *path, bool run, bool strict,
         cli_say(stdout, CLI_NO_TYPE_ERRORS, args, 2);
     }
 
-    // 05 § 5.3: every unit compiles, each carrying the units its require^s
+    // 05§5.3: every unit compiles, each carrying the units its require^s
     // reach, so the machine is given nothing.
     if (!failed && run) {
         LhatMachine *machine =
@@ -1429,7 +1429,7 @@ static int check_program(const char *path, bool run, bool strict,
             }
             failed = true;
         } else {
-            // 05 § 8.7: what was registered reaches the machine here, which
+            // 05§8.7: what was registered reaches the machine here, which
             // is what makes the names bound above answer something.
             lhat_program_install(&program, machine);
 
@@ -1440,7 +1440,7 @@ static int check_program(const char *path, bool run, bool strict,
             DapSession *dap = NULL;
             if (dap_port != 0) {
                 // NULL: the cli's units are files, so the debugger's paths
-                // and the program's are the same thing (09 § 5.2). The
+                // and the program's are the same thing (09§5.2). The
                 // language is not the same thing: what the editor shows is
                 // its own, so it says so and this loads the catalogs.
                 const DapLanguage language = {dap_speak, &program};
@@ -1465,7 +1465,7 @@ static int check_program(const char *path, bool run, bool strict,
                                          handed, made)
                     : (LhatRunResult){.status = LHAT_RUN_OUT_OF_MEMORY};
             free(handed);
-            // 02 § 15.2: a script that yields answers its coroutine. Nothing
+            // §15.2: a script that yields answers its coroutine. Nothing
             // else runs here between resumes, so it is driven to its end and
             // what it ends with is the run's answer; what it yields on the
             // way has no one to go to.
@@ -1533,9 +1533,9 @@ static int dump_tree(const LhatSource *source, bool typed, bool command)
 #endif  // LHAT_WITH_FRONTEND
 
 // One compiled body, then the bodies written inside it, one step deeper --
-// the shape 03 § 5.2 gives a unit. lhat_chunk_print writes the instruction;
+// the shape 03§5.2 gives a unit. lhat_chunk_print writes the instruction;
 // what is added here is the line column, since a chunk keeps one source line
-// per instruction (04 § 11).
+// per instruction (04§11).
 static void print_proto(const LhatProto *proto, size_t number, int depth)
 {
     printf("%*sbody %zu: %u registers", depth * 2, "", number,
@@ -1560,9 +1560,9 @@ static void print_proto(const LhatProto *proto, size_t number, int depth)
 
 // The compiled form of the whole program: the same graph walk as
 // check_program, ending at the instructions instead of the run. Checking
-// comes first because 05 § 5.3 compiles every unit the root requires, and
+// comes first because 05§5.3 compiles every unit the root requires, and
 // the graph is only known once it has been walked -- relaxed, since the dump
-// is after the instructions, not the diagnoses (03 § 4.2 emits the same
+// is after the instructions, not the diagnoses (03§4.2 emits the same
 // ones either way).
 static int dump_bytecode(const char *path)
 {
@@ -1570,7 +1570,7 @@ static int dump_bytecode(const char *path)
     lhat_program_init(&program, false, lhat_load_file, NULL);
     (void)lhat_program_set_project_root(&program, project_root);
     speak(&program);
-    if (!bind_host_names(&program)) {  // 05 § 8.2, before checking (8.3)
+    if (!bind_host_names(&program)) {  // 05§8.2, before checking (05§8.3)
         say_registration_failure(&program);
         lhat_program_dispose(&program);
         return EXIT_FAILURE;
@@ -1608,12 +1608,12 @@ static int dump_bytecode(const char *path)
 }
 
 #if LHAT_WITH_FRONTEND
-// 03 § 4 is the library's (lhat/prompt.h); what is the driver's is where
+// 03§4 is the library's (lhat/prompt.h); what is the driver's is where
 // the lines come from, the two prompts, and an empty line as the way out.
 static int repl(bool strict)
 {
-    // 05 § 8.7: a prompt has no program driving it, so it is given one that
-    // holds nothing but the registrations -- with no loader, since 5.3 gives a
+    // 05§8.7: a prompt has no program driving it, so it is given one that
+    // holds nothing but the registrations -- with no loader, since 05§5.3 gives a
     // require^ here nowhere to go regardless. That is what lets a prompt see
     // exactly what a file sees: the same bind_host_names, hence the same
     // stdlib.
@@ -1623,7 +1623,7 @@ static int repl(bool strict)
     speak(&program);
     LhatMachine *machine = lhat_machine_new();
     LhatPrompt *prompt = NULL;
-    if (machine == NULL || !bind_host_names(&program) ||  // 05 § 8.2 and 8.7
+    if (machine == NULL || !bind_host_names(&program) ||  // 05§8.2 and 05§8.7
         !lhat_program_install(&program, machine) ||
         (prompt = lhat_prompt_new(&program, machine, "stdin")) == NULL) {
         cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
@@ -1636,7 +1636,7 @@ static int repl(bool strict)
     cli_say(stdout, CLI_GREETING, NULL, 0);
 
     char line[4096];
-    bool carrying = false;  // the input so far stopped early (02 § 3.1)
+    bool carrying = false;  // the input so far stopped early (§3.1)
     for (;;) {
         printf(carrying ? ". " : "> ");
         fflush(stdout);
@@ -1729,18 +1729,18 @@ int main(int argc, char **argv)
     bool run_program = false;
     bool command_form = false;
     bool dump_host_api = false;
-    bool compile_out = false;      // 05 § 10
+    bool compile_out = false;      // 05§10
     const char *out_dir = NULL;
     bool strip_debug = false;
-    const char *dump_signatures_path = NULL;  // 10.7
-    const char *dump_messages_dir = NULL;     // 10 §6.3
-    const char *language = NULL;              // --language, 10 §7.4
+    const char *dump_signatures_path = NULL;  // 05§10.7
+    const char *dump_messages_dir = NULL;     // 10§6.3
+    const char *language = NULL;              // --language, 10§7.4
     const char *messages_dir = NULL;          // --messages DIR
     const char *signatures_path = NULL;
     bool show_help = false;
     bool show_version = false;
     unsigned dap_port = 0;  // 09: --dap=PORT runs under a debugger
-    // 03 § 3.1: a file defaults to strict, the prompt to relaxed. Writing
+    // 03§3.1: a file defaults to strict, the prompt to relaxed. Writing
     // the other one out overrides whichever default the mode below picks.
     enum { STRICTNESS_DEFAULT, STRICTNESS_STRICT, STRICTNESS_RELAXED }
         strictness = STRICTNESS_DEFAULT;
@@ -1799,7 +1799,7 @@ int main(int argc, char **argv)
                    strcmp(argv[i], "--version") == 0) {
             show_version = true;
         } else if (strncmp(argv[i], "--dap=", 6) == 0) {
-            // 09 章: run under a debugger on the named loopback port. Implies
+            // 09§: run under a debugger on the named loopback port. Implies
             // --run: there is nothing to debug about a tree or a token dump.
             dap_port = (unsigned)strtoul(argv[i] + 6, NULL, 10);
             run_program = true;
@@ -1807,7 +1807,7 @@ int main(int argc, char **argv)
             path = argv[i];
         } else {
             // The first bare argument is the file; the rest are the
-            // script's (02 § 13.7 with 05 § 3.2), and the options are
+            // script's (§13.7 with 05§3.2), and the options are
             // read from among them no further.
             arguments = &argv[i];
             argument_count = (size_t)(argc - i);
@@ -1838,7 +1838,7 @@ int main(int argc, char **argv)
         }
     }
 
-    // 10 §7.4: what to say things in, before anything is said. The OS's
+    // 10§7.4: what to say things in, before anything is said. The OS's
     // language unless --language named one; the catalogs beside the
     // executable unless --messages pointed elsewhere.
     said_language = language != NULL ? language : os_language();
@@ -1877,7 +1877,7 @@ int main(int argc, char **argv)
     // without one it goes to stdout.
     if (dump_host_api) {
         LhatProgram program;
-        // 03 § 3.1: the dump says which strictness this host runs under,
+        // 03§3.1: the dump says which strictness this host runs under,
         // and lsp/host_config.c reads it back -- so --relaxed writes
         // "strict": false rather than always claiming strict.
         lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL,
@@ -1920,7 +1920,7 @@ int main(int argc, char **argv)
         return status;
     }
 
-    // 10.7: the signature table this driver's registrations make.
+    // 05§10.7: the signature table this driver's registrations make.
     if (dump_signatures_path != NULL) {
         LhatProgram program;
         lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL,
@@ -1948,7 +1948,7 @@ int main(int argc, char **argv)
         return EXIT_SUCCESS;
     }
 
-    // 10 §6.3: the English this build holds, as the catalogs a translation
+    // 10§6.3: the English this build holds, as the catalogs a translation
     // is made from -- the library's sources, and the texts this driver and
     // the debug adapter hold themselves.
     if (dump_messages_dir != NULL) {
@@ -1970,7 +1970,7 @@ int main(int argc, char **argv)
         return ok ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
-    // 03 § 4: with nothing to read, read from the prompt.
+    // 03§4: with nothing to read, read from the prompt.
     if (path == NULL && !ast_only && !tokens_only && !bytecode_only && !check_only &&
         !run_program && !command_form) {
 #if LHAT_WITH_FRONTEND
@@ -1986,7 +1986,7 @@ int main(int argc, char **argv)
         return EXIT_SUCCESS;
     }
 
-    // Checking is a question about a program, not about a file: 05 § 6.2
+    // Checking is a question about a program, not about a file: 05§6.2
     // puts the units a file requires ahead of it. The bytecode dump walks
     // the same graph, so it reads its own input the same way.
     signatures_file = signatures_path;

@@ -3,7 +3,7 @@
 // Section numbers refer to DesignDocuments/02-syntax.md unless prefixed with
 // "03" or "04". The cases pinned here are the ones a decision in the
 // specification produces and that would otherwise be invisible: the scope
-// rule of 8.7, the result inference of 03 の 3.4, and the way catch^, ?? and
+// rule of §8.7, the result inference of 03§3.4, and the way catch^, ?? and
 // try^ each drop one arm of a union.
 
 #include <stdio.h>
@@ -12,7 +12,7 @@
 
 #include "fixture.h"
 
-// 02 の 15.1: f^ may call only f^, never p^ -- a p^ may run side effects an
+// §15.1: f^ may call only f^, never p^ -- a p^ may run side effects an
 // f^ is not allowed to.
 static void test_purity(void)
 {
@@ -46,7 +46,7 @@ static void test_purity(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 15.5: calling a yieldable p^ makes a coroutine and runs none of the
+    // §15.5: calling a yieldable p^ makes a coroutine and runs none of the
     // body yet, so this one call stays referentially transparent even
     // inside an f^ -- what would actually run the body (start()) is itself
     // a p^, caught the same as any other below.
@@ -90,7 +90,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
-    // 15.3改: an f^ may yield^. What it may not do is let the coroutine out,
+    // §15.3+: an f^ may yield^. What it may not do is let the coroutine out,
     // since advancing one is only unobservable while it stays inside.
     LHAT_TEST("an f^ may yield^ and walk what it made");
     check_text(&u,
@@ -103,15 +103,15 @@ static void test_purity(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 15.5: a yieldable body answers a coroutine whatever else it does, so
-    // 13.2 is satisfied without a return^ reaching the end.
+    // §15.5: a yieldable body answers a coroutine whatever else it does, so
+    // §13.2 is satisfied without a return^ reaching the end.
     LHAT_TEST("a yieldable f^ needs no value-returning exit");
     check_text(&u, "var^ gen = f^ { yield^ 1 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 16.3: the built-in walk of a table changes nothing, so it is an f^
-    // coroutine -- which is the case 15.3改 was reopened for.
+    // §16.3: the built-in walk of a table changes nothing, so it is an f^
+    // coroutine -- which is the case §15.3+ was reopened for.
     LHAT_TEST("an f^ may walk a table with for^ in^");
     check_text(&u,
                "var^ count = f^ t:t^{ number^[] } -> number^ {\n"
@@ -122,7 +122,7 @@ static void test_purity(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 15.6改: start()/resume()/dispose() carry the body's kind, so 15.1's
+    // §15.6+: start()/resume()/dispose() carry the body's kind, so §15.1's
     // calling rule is what refuses a p^ coroutine here. Nothing about yield^
     // has to be said again.
     LHAT_TEST("but not a p^ coroutine, which is an ordinary p^ call");
@@ -137,7 +137,7 @@ static void test_purity(void)
     unit_dispose(&u);
 
     // The kind alone would let a body advance one it was handed. A nested f^
-    // measures against its own body, the same way 15.1改 does for a table.
+    // measures against its own body, the same way §15.1+ does for a table.
     LHAT_TEST("a nested f^ may not advance what the enclosing one made");
     check_text(&u,
                "var^ gen = f^ { yield^ 1 }\n"
@@ -168,9 +168,9 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_ESCAPES);
     unit_dispose(&u);
 
-    // 13.9 with 15.3改: the front half is a signature, and its kind is the
+    // §13.9 with §15.3+: the front half is a signature, and its kind is the
     // body's. Written out, an f^ coroutine can be taken as an argument --
-    // which is the one thing 15.3改 allows without letting it be advanced.
+    // which is the one thing §15.3+ allows without letting it be advanced.
     LHAT_TEST("an f^ coroutine may be taken as an argument");
     check_text(&u,
                "var^ hold = f^ co:c^{ f^nil^ -> number^ -> nil^ } -> number^ {\n"
@@ -218,9 +218,9 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
-    // 15.8 with 15.3改: delegating runs the inner body, which is what makes
+    // §15.8 with §15.3+: delegating runs the inner body, which is what makes
     // its yield^ reach out here -- so it advances, and the same two questions
-    // apply. No start()/resume() is written for 15.1 to catch, so the rule
+    // apply. No start()/resume() is written for §15.1 to catch, so the rule
     // reaches through await^ itself.
     LHAT_TEST("await^ to a p^ coroutine is an f^ running a p^");
     check_text(&u,
@@ -260,9 +260,9 @@ static void test_purity(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 15.7改: not because an operator is an f^ -- 15.3改 lets one suspend --
-    // but because 11.8's signature answers T and a yieldable call answers a
-    // coroutine (15.5).
+    // §15.7+: not because an operator is an f^ -- §15.3+ lets one suspend --
+    // but because §11.8's signature answers T and a yieldable call answers a
+    // coroutine (§15.5).
     LHAT_TEST("an operator may not be yieldable");
     check_text(&u,
                "var^ V = def^{\n"
@@ -273,7 +273,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_OPERATOR);
     unit_dispose(&u);
 
-    // A p^ coroutine leaving a p^ is what 15.5 is for; nothing here applies.
+    // A p^ coroutine leaving a p^ is what §15.5 is for; nothing here applies.
     LHAT_TEST("a p^ hands its coroutines out as before");
     check_text(&u,
                "var^ gen = p^ { yield^ 1 }\n"
@@ -281,7 +281,7 @@ static void test_purity(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 15.1's other half: assignment reaches local variables only. 10.6 reads
+    // §15.1's other half: assignment reaches local variables only. §10.6 reads
     // it twice over -- a body with nothing writable outside it has nothing a
     // finally^ could restore.
     LHAT_TEST("an f^ may not assign to a name bound outside it");
@@ -304,7 +304,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
     unit_dispose(&u);
 
-    // 01 の 8 章: a specifier says where to start looking, so reaching out
+    // 01§8: a specifier says where to start looking, so reaching out
     // with one is the same write as reaching out without one.
     LHAT_TEST("a scope specifier does not open a way out");
     check_text(&u,
@@ -380,7 +380,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_WRITES_OUT);
     unit_dispose(&u);
 
-    // 15.1改: the same rule for a table. What the body made is its own;
+    // §15.1+: the same rule for a table. What the body made is its own;
     // what arrived belongs to whoever passed it, and writing there is what
     // makes the call observable from outside.
     LHAT_TEST("an f^ may change a table it made itself");
@@ -404,7 +404,7 @@ static void test_purity(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 8.8: adding a member changes the table as much as writing over one.
+    // §8.8: adding a member changes the table as much as writing over one.
     LHAT_TEST("adding a member to its own table is fine too");
     check_text(&u,
                "var^ f = f^ -> number^ {\n"
@@ -436,7 +436,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
     unit_dispose(&u);
 
-    // 05 の 8.6: L^ is the machine's own table, which no body made.
+    // 05§8.6: L^ is the machine's own table, which no body made.
     LHAT_TEST("L^ is not a table any body made");
     check_text(&u,
                "var^ f = f^ -> number^ {\n"
@@ -446,7 +446,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
     unit_dispose(&u);
 
-    // 14.4: the receiver is the instance the caller handed over.
+    // §14.4: the receiver is the instance the caller handed over.
     LHAT_TEST("nor is the receiver of an f^ method");
     check_text(&u,
                "var^ P = def^{\n"
@@ -456,7 +456,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
     unit_dispose(&u);
 
-    // 15.1改: an indexed write reaches the table exactly as a member write
+    // §15.1+: an indexed write reaches the table exactly as a member write
     // does. (This once slipped through -- the path test read only the '.'
     // spelling.)
     LHAT_TEST("an indexed write is the same change");
@@ -468,7 +468,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
     unit_dispose(&u);
 
-    // 15.1改2: a receiver seat written mutable^self^ is the one thing the
+    // §15.1+2: a receiver seat written mutable^self^ is the one thing the
     // body may write through -- and staying an f^ elsewhere is the point.
     LHAT_TEST("a mutable^self^ body writes through its receiver");
     check_text(&u,
@@ -525,7 +525,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MUTATES_OUTSIDE);
     unit_dispose(&u);
 
-    // 14.4: written out, the receiver is the first argument, and the same
+    // §14.4: written out, the receiver is the first argument, and the same
     // question is asked of it.
     LHAT_TEST("the written-out receiver is measured the same way");
     check_text(&u,
@@ -544,7 +544,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MUTATES_OUTSIDE);
     unit_dispose(&u);
 
-    // 15.1改2: a permission goes one way. A body that never writes stands
+    // §15.1+2: a permission goes one way. A body that never writes stands
     // where writing was allowed for; one that writes may not stand where
     // none was.
     LHAT_TEST("a mutable method does not fit a non-mutable seat");
@@ -568,7 +568,7 @@ static void test_purity(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 15.1改3: '-> fresh^T' promises the answer is new, and the body is
+    // §15.1+3: '-> fresh^T' promises the answer is new, and the body is
     // held to it -- every exit has to answer something this body made.
     LHAT_TEST("a fresh^ body answering its own table checks clean");
     check_text(&u,
@@ -638,8 +638,8 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
     unit_dispose(&u);
 
-    // 14.12: an overloaded member is an intersection of signatures, and
-    // whichever arm the call resolves to still answers to 15.1.
+    // §14.12: an overloaded member is an intersection of signatures, and
+    // whichever arm the call resolves to still answers to §15.1.
     LHAT_TEST("and through whichever overload^ arm the call resolves to");
     check_text(&u,
                "var^ A = def^{\n"
@@ -655,7 +655,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
-    // 05 の 5.3: requiring runs the unit's body, and nothing holds that body
+    // 05§5.3: requiring runs the unit's body, and nothing holds that body
     // to an f^'s rules.
     LHAT_TEST("an f^ may not require^");
     check_text(&u, "var^ f = f^ -> number^ { let^ m = require^ 'm.lh' return^ 0 }\n");
@@ -667,7 +667,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_REQUIRES);
     unit_dispose(&u);
 
-    // 14.17: a hole calls tostring with no call written, so 15.1 cannot
+    // §14.17: a hole calls tostring with no call written, so §15.1 cannot
     // catch a p^ there -- the member is held to f^self^ -> string^ instead.
     LHAT_TEST("a def^'s tostring may not be a p^");
     check_text(&u,
@@ -695,7 +695,7 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_BAD_TOSTRING);
     unit_dispose(&u);
 
-    // 14.17改: there the bare spelling is the writer's own name.
+    // §14.17+: there the bare spelling is the writer's own name.
     LHAT_TEST("but a plain table's bare tostring is anything");
     check_text(&u, "var^ t = { tostring = p^ -> number^ { return^ 1 } }\n");
     CHECK_CLEAN(&u);
@@ -710,7 +710,7 @@ static void test_purity(void)
     unit_dispose(&u);
 }
 
-// 15.1改: how far down a place is the body's own. A name owns the least of
+// §15.1+: how far down a place is the body's own. A name owns the least of
 // everything it was given, and a table owns only what lies above whatever
 // arrived from outside.
 static void test_ownership_depth(void)
@@ -834,7 +834,7 @@ static void test_ownership_depth(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_OWN_LOWERED);
     unit_dispose(&u);
 
-    // 14.22's push^ changes its receiver and nothing below it.
+    // §14.22's push^ changes its receiver and nothing below it.
     LHAT_TEST("push^ gathers arguments without giving up the levels above");
     check_text(&u,
                "var^ f = f^ xs:t^{ t^{ x:number^ }[] } -> number^ {\n"
@@ -856,7 +856,7 @@ static void test_ownership_depth(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
     unit_dispose(&u);
 
-    // 15.1改2: self^ is whole on entry, and what the body stores into it
+    // §15.1+2: self^ is whole on entry, and what the body stores into it
     // is not.
     LHAT_TEST("a mutable^self^ body may not write through what it stored");
     check_text(&u,
@@ -871,9 +871,9 @@ static void test_ownership_depth(void)
     unit_dispose(&u);
 }
 
-// 8.9: var^ binds a name a ':=' may reach and let^ one it may not. The rule is
+// §8.9: var^ binds a name a ':=' may reach and let^ one it may not. The rule is
 // about the name and not about the value, which is what keeps it apart from
-// 15.1改's question about a table and 05 の 8.6's about the machine's own.
+// §15.1+'s question about a table and 05§8.6's about the machine's own.
 static void test_immutable_bindings(void)
 {
     Unit u;
@@ -901,28 +901,28 @@ static void test_immutable_bindings(void)
     }
     unit_dispose(&u);
 
-    // 7.4: a compound assignment is a ':=' spelled shorter, so it meets the
+    // 05§7.4: a compound assignment is a ':=' spelled shorter, so it meets the
     // same rule rather than slipping past it.
     LHAT_TEST("a compound assignment is a reassignment too");
     check_text(&u, "let^ n = 1\nn += 1\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
     unit_dispose(&u);
 
-    // 8.7 makes the name visible throughout the scope, so a write standing
+    // §8.7 makes the name visible throughout the scope, so a write standing
     // before the definition is judged by the same rule as one after it.
     LHAT_TEST("a write before the definition is refused as well");
     check_text(&u, "do^{ x := 2\nlet^ x = 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
     unit_dispose(&u);
 
-    // Shadowing is a second name, not a write to the first (8.7).
+    // Shadowing is a second name, not a write to the first (§8.7).
     LHAT_TEST("but shadowing in a nested scope is not a write");
     check_text(&u, "let^ i = 0\ndo^{ var^ i = 1\ni := 2 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 8.9: what let^ holds is still the value it was. A table it names keeps
-    // its members writable -- that axis is 15.1改's and 05 の 8.6's.
+    // §8.9: what let^ holds is still the value it was. A table it names keeps
+    // its members writable -- that axis is §15.1+'s and 05§8.6's.
     LHAT_TEST("a let^ table still has writable members");
     check_text(&u, "let^ t = { a := 1 }\nt.a := 2\n");
     CHECK_CLEAN(&u);
@@ -933,7 +933,7 @@ static void test_immutable_bindings(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
     unit_dispose(&u);
 
-    // 15.1: a parameter is a name the body made, and 8.9 leaves it a var^ --
+    // §15.1: a parameter is a name the body made, and §8.9 leaves it a var^ --
     // writing it is closed inside the frame and the caller never sees it.
     LHAT_TEST("a parameter is a var^");
     check_text(&u, "var^ f = f^ n:number^ -> number^ { n := n + 1\n"
@@ -941,14 +941,14 @@ static void test_immutable_bindings(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // 01 の 8 章: a specifier says where to start looking, not what the name
+    // 01§8: a specifier says where to start looking, not what the name
     // may be written as.
     LHAT_TEST("a scope specifier does not get round it");
     check_text(&u, "let^ i = 0\ndo^{ $^i := 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
     unit_dispose(&u);
 
-    // 12 章: with^ holds a resource for the life of the block, and 12.2
+    // §12: with^ holds a resource for the life of the block, and §12.2
     // disposes of what the name still holds at the end of it.
     LHAT_TEST("a with^ binding is a let^");
     check_text(&u,
@@ -961,7 +961,7 @@ static void test_immutable_bindings(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_FORM);
     unit_dispose(&u);
 
-    // 16.3改2 with 16.4: to^ and downto^ advance the focus themselves, so the
+    // §16.3+2 with §16.4: to^ and downto^ advance the focus themselves, so the
     // header writes neither word -- from^ opens the range and the name it
     // introduces is a let^.
     LHAT_TEST("a from^ focus is a let^");
@@ -971,13 +971,13 @@ static void test_immutable_bindings(void)
 
     LHAT_TEST("and the body may not write it");
     check_text(&u, "for^ i from^ 1 to^ 10 { i := 0 }\n");
-    // 16.3改2 leaves no var^ to write here either, so this is the diagnostic
+    // §16.3+2 leaves no var^ to write here either, so this is the diagnostic
     // that does not offer one.
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_FORM);
     unit_dispose(&u);
 
     // And it says so without pointing at a spelling that is itself refused:
-    // 'for^ var^ i = 1 to^ 10' is an error of its own (16.3改2).
+    // 'for^ var^ i = 1 to^ 10' is an error of its own (§16.3+2).
     LHAT_TEST("and the message offers no var^");
     check_text(&u, "for^ i from^ 1 to^ 10 { i := 0 }\n");
     if (u.checked.diagnostic_count > 0) {
@@ -989,7 +989,7 @@ static void test_immutable_bindings(void)
     }
     unit_dispose(&u);
 
-    // 16.3: while^ asks the writer for the step, which a let^ focus refuses
+    // §16.3: while^ asks the writer for the step, which a let^ focus refuses
     // -- the diagnostic lands on the next^ that cannot happen.
     LHAT_TEST("a while^ focus has to be a var^");
     check_text(&u, "for^ var^ i = 1 while^ i < 3 next^ i := i + 1 { }\n");
@@ -1001,14 +1001,14 @@ static void test_immutable_bindings(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_LET);
     unit_dispose(&u);
 
-    // 16.3: in^ binds its focus afresh each turn from what the walk yields,
+    // §16.3: in^ binds its focus afresh each turn from what the walk yields,
     // which is the walk's to say and not the body's.
     LHAT_TEST("an in^ focus is a let^");
     check_text(&u, "var^ t = { a := 1 }\nfor^ k, v in^ t { v := 2 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_ASSIGN_TO_FORM);
     unit_dispose(&u);
 
-    // 05 の 4 章 with 01 の 8.3: a name another unit could see change is the
+    // 05§4 with 01§8.3: a name another unit could see change is the
     // global variable the language does not have.
     LHAT_TEST("public^ binds with let^");
     check_text(&u, "module^ m\npublic^ let^ answer = 42\n");
@@ -1020,7 +1020,7 @@ static void test_immutable_bindings(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE);
     unit_dispose(&u);
 
-    // 03 の 4.3: a session redefinition is the same place written again, so
+    // 03§4.3: a session redefinition is the same place written again, so
     // what the new input says about the name is what holds from there.
     LHAT_TEST("a session redefinition says which it is now");
     {

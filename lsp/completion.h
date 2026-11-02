@@ -1,6 +1,6 @@
 // L^ (lhat) -- LSP server: what may stand where the cursor is.
 //
-// 07 の 4 章. Four questions wear one request, and they are told apart by
+// 07§4. Four questions wear one request, and they are told apart by
 // what is written to the left of the cursor:
 //
 //   foo.            the members of whatever foo answers
@@ -11,9 +11,9 @@
 // Two of them ask the checker, and neither works anything out for itself.
 // The receiver of a dot is read off the record the checker left as it
 // settled it (check.h's LhatMemberSite); the names in scope are read off the
-// record each scope left as it closed (LhatBindingSite). Reading 14.10's
-// lookup or 8 章's scoping a second time here would disagree with the
-// checker exactly where the rules are hard, which is what 4 章 already
+// record each scope left as it closed (LhatBindingSite). Reading §14.10's
+// lookup or 08§8's scoping a second time here would disagree with the
+// checker exactly where the rules are hard, which is what 07§4 already
 // refused for hover.
 //
 // The other two are text alone. A half-written module path resolves to
@@ -69,10 +69,10 @@ bool lsp_completion_word_prefix(const char *text, size_t length,
 //
 // Three sources, in the order a writer wants them:
 //
-//   the names in scope  -- asked of lhat_check_bindings_at, so 8 章's
+//   the names in scope  -- asked of lhat_check_bindings_at, so 08§8's
 //                          lookup is read once and not twice
 //   the words           -- WORDS (completion.c), which no other list holds
-//   what could be taken in -- 05 の 8.7's registered modules and 5.5's
+//   what could be taken in -- 05§8.7's registered modules and 05§5.5's
 //                          other units, offered with the import^ or
 //                          require^ line that would reach them
 //

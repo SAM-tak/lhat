@@ -1,4 +1,4 @@
-// L^ (lhat) -- tests for the coroutine at the host boundary (05 の 8.8).
+// L^ (lhat) -- tests for the coroutine at the host boundary (05§8.8).
 //
 // Section numbers refer to DesignDocuments/05-modules.md unless prefixed.
 // What is pinned: a coroutine whose body the host wrote in C
@@ -102,7 +102,7 @@ static bool range_step(LhatMachine *machine, void *context,
 {
     (void)machine;
     RangeWalk *walk = (RangeWalk *)context;
-    // 13.8改: a resume may send several; what this remembers is the first,
+    // §13.8+: a resume may send several; what this remembers is the first,
     // and last_sent_count says how many there were.
     last_sent = sent_count > 0 ? sent[0] : lhat_nil();
     last_sent_count = sent_count;
@@ -120,7 +120,7 @@ static bool range_step(LhatMachine *machine, void *context,
     return true;
 }
 
-// 13.9: walks while it can, then ends WITH a value -- the T a body
+// §13.9: walks while it can, then ends WITH a value -- the T a body
 // coroutine writes with return^. Before the boundary could say both,
 // a host had to answer the last value on one call and end on the next.
 static bool ending_step(LhatMachine *machine, void *context,
@@ -171,7 +171,7 @@ static LhatValue make_walk(LhatMachine *machine, LhatValue over,
     walk->ordinal = 1;
     LhatValue out = lhat_nil();
     // `over` rides along as `held`, so the collector keeps the hostdata for
-    // as long as the walk lives -- 8.8's recipe.
+    // as long as the walk lives -- 05§8.8's recipe.
     if (!lhat_machine_make_coroutine(machine, range_step, walk, walk_release,
                                      over, &out)) {
         free(walk);
@@ -273,7 +273,7 @@ static LhatRunResult run_program(LhatProgram *program, LhatMachine **keep)
 }
 
 // ---------------------------------------------------------------------------
-// 8.8: `for^ x in^ value` walks what a registered iterate^ answers.
+// 05§8.8: `for^ x in^ value` walks what a registered iterate^ answers.
 
 static void test_walks_hostdata(void)
 {
@@ -308,7 +308,7 @@ static void test_walks_hostdata(void)
     }
     lhat_program_dispose(&program);
 
-    // 02 の 14 章 (ハットは名前の一部): everywhere but a plain table the two
+    // §14 (ハットは名前の一部): everywhere but a plain table the two
     // spellings reach the same member, so a bare registration is the same
     // declaration -- checked and run alike.
     LHAT_TEST("and a bare `iterate` registration reads the same");
@@ -337,7 +337,7 @@ static void test_walks_hostdata(void)
     }
     lhat_program_dispose(&program);
 
-    // 02 の 13.8改: a step may answer lhat_make_tuple's tuple, which is what
+    // §13.8+: a step may answer lhat_make_tuple's tuple, which is what
     // a `for^ k, v` walk takes apart.
     LHAT_TEST("and a step yielding a tuple feeds for^ k, v");
     {
@@ -370,7 +370,7 @@ static void test_walks_hostdata(void)
     }
     lhat_program_dispose(&program);
 
-    // 02 の 14.17改: everywhere but a plain table the two spellings are one
+    // §14.17+: everywhere but a plain table the two spellings are one
     // member, in both directions -- the bare call reaches the hatted
     // registration too.
     LHAT_TEST("and the bare .iterate() reaches a hatted registration");
@@ -513,7 +513,7 @@ static void test_driven_from_c(void)
         LHAT_CHECK(lhat_is_nil(over.value), "the end answers nil^");
         LHAT_CHECK(lhat_machine_coroutine_done(co), "done");
         LHAT_CHECK_EQ_INT(walk_releases, 1);
-        // 15.2: a finished coroutine faults, at this boundary as anywhere.
+        // §15.2: a finished coroutine faults, at this boundary as anywhere.
         LhatRunResult dead = lhat_machine_resume(m, co, NULL, 0);
         LHAT_CHECK_EQ_INT(dead.status, LHAT_RUN_DEAD_COROUTINE);
         lhat_machine_dispose(m);
@@ -541,7 +541,7 @@ static void test_driven_from_c(void)
         LHAT_CHECK_EQ_INT(walk_releases, 1);
     }
 
-    // 02 の 13.8改: a resume may send several, and until the boundary took
+    // §13.8+: a resume may send several, and until the boundary took
     // an array it handed the step the first of them and dropped the rest.
     LHAT_TEST("and it reaches the step however many were sent");
     {
@@ -566,7 +566,7 @@ static void test_driven_from_c(void)
         LHAT_CHECK_EQ_INT(walk_releases, 1);
     }
 
-    // 13.9: a walk may end WITH a value -- that is T, the slot a body
+    // §13.9: a walk may end WITH a value -- that is T, the slot a body
     // coroutine fills by writing return^. Answering while saying the
     // walk is over is how a step says it, and a resume from C reads it
     // the way it reads a yield.
@@ -595,7 +595,7 @@ static void test_driven_from_c(void)
         lhat_machine_dispose(m);
     }
 
-    // 02 の 13.8改: a tuple crosses the boundary as positions, `value`
+    // §13.8+: a tuple crosses the boundary as positions, `value`
     // standing as position 1 the way lhat_run already answers one.
     LHAT_TEST("and a tuple-yielding step crosses as positions");
     {
@@ -620,7 +620,7 @@ static void test_driven_from_c(void)
         lhat_machine_dispose(m);
     }
 
-    // 16.3: a table's walk is a coroutine too, so the same call drives one.
+    // §16.3: a table's walk is a coroutine too, so the same call drives one.
     LHAT_TEST("and a table's walk is drivable the same way");
     {
         Run r;
@@ -651,7 +651,7 @@ static void test_driven_from_c(void)
 }
 
 // ---------------------------------------------------------------------------
-// 02 の 15.5 at the boundary: calling a yieldable procedure answers its
+// §15.5 at the boundary: calling a yieldable procedure answers its
 // coroutine (lua_newthread's shape), and resume drives the body on the
 // machine's own frames.
 
@@ -683,7 +683,7 @@ static void test_yieldable_call(void)
         LhatRunResult two = lhat_machine_resume(r.machine, co, NULL, 0);
         LHAT_CHECK_EQ_INT(lhat_as_integer(two.value), 6);
         LHAT_CHECK(!lhat_machine_coroutine_done(co), "still suspended");
-        // 13.9: the last answer is the return's -- union(Y, T), told apart
+        // §13.9: the last answer is the return's -- union(Y, T), told apart
         // by done() and nothing else.
         LhatRunResult three = lhat_machine_resume(r.machine, co, NULL, 0);
         LHAT_CHECK_EQ_INT(three.status, LHAT_RUN_OK);
@@ -722,7 +722,7 @@ static void test_yieldable_call(void)
         run_dispose(&r);
     }
 
-    // 13.8改: and a resume may send several -- the run arrives whole at the
+    // §13.8+: and a resume may send several -- the run arrives whole at the
     // yield^'s own binding, from C exactly as from a written resume(a, b).
     LHAT_TEST("and a several-send crosses the boundary");
     {
@@ -747,7 +747,7 @@ static void test_yieldable_call(void)
         LHAT_CHECK_EQ_INT(lhat_as_integer(two.value), 304);
         LHAT_CHECK(lhat_machine_coroutine_done(co), "done");
 
-        // 13.9: the count a resume sends is the R's, at this boundary too.
+        // §13.9: the count a resume sends is the R's, at this boundary too.
         LhatRunResult again =
             lhat_machine_call(r.machine, r.ran.value, NULL, 0);
         LhatValue other = again.value;
@@ -797,7 +797,7 @@ static void test_call_member_hostdata(void)
 }
 
 // ---------------------------------------------------------------------------
-// 8.9 meets 8.8: a walk whose steps answer host values. Each is written out
+// §8.9 meets 05§8.8: a walk whose steps answer host values. Each is written out
 // whole into the focus, so two elements alive at once cannot share the one
 // scratch the boundary owns -- which is exactly what this pins.
 
@@ -942,7 +942,7 @@ static void test_walk_yields_host_values(void)
 
     LHAT_TEST("a host value in a tuple position is refused as an escape");
     {
-        // 8.9: a tuple crosses as copied values, and a host value among them
+        // §8.9: a tuple crosses as copied values, and a host value among them
         // would arrive as a pointer into scratch the next step overwrites.
         static const File files[] = {
             {"main.lh",
@@ -971,7 +971,7 @@ static void test_walk_yields_host_values(void)
 }
 
 // ---------------------------------------------------------------------------
-// 8.9改2: the C boundary passes host values whole -- resume's answers as the
+// §8.9: the C boundary passes host values whole -- resume's answers as the
 // pointer form aimed at the machine's scratch (the tuple positions'
 // lifetime), and resume's sends expanded into the suspended frame.
 
@@ -1039,7 +1039,7 @@ static void test_boundary_host_values(void)
         LHAT_CHECK(first == NULL || float_at(first) == 1.5f, "its bytes");
         LHAT_CHECK(!lhat_machine_coroutine_done(co), "still suspended");
 
-        // 13.9: the return's T crosses the same way, done() telling it
+        // §13.9: the return's T crosses the same way, done() telling it
         // apart. The scratch is one room -- the earlier pointer now reads
         // the later value, which is the "copy it out to keep it" contract
         // the tuple positions already have.
@@ -1133,7 +1133,7 @@ static void test_boundary_host_values(void)
     lhat_program_dispose(&program);
 }
 
-// 15.3改 with 05 の 8.8: what a host type declares is not what this body
+// §15.3+ with 05§8.8: what a host type declares is not what this body
 // made, so the walk that keeps an f^ coroutine from leaving stops at one.
 //
 // It has to. A registered member's type is settled in C before any body
@@ -1195,7 +1195,7 @@ static void test_host_type_is_an_atom(void)
 
     // The same stop is in the walk that keeps an inference demand from
     // naming the very slot it is settling (check.c's demand_mentions), and
-    // for a reason stronger still: 05 の 8.7 resolves every registration
+    // for a reason stronger still: 05§8.7 resolves every registration
     // before the first check, so a type the registrations built cannot hold
     // a node this check has only just made. What the stop must not do is
     // stop the inference itself -- so it is asked for here.

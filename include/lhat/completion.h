@@ -1,6 +1,6 @@
 // L^ (lhat) -- what may stand where the cursor is.
 //
-// 07 の 4 章. Four questions wear one request, told apart by what is written
+// 07§4. Four questions wear one request, told apart by what is written
 // to the left of the cursor:
 //
 //   foo.            the members of whatever foo answers
@@ -11,7 +11,7 @@
 // The first two ask the checker and work nothing out for themselves. The
 // receiver of a dot is read off the record the checker left as it settled it;
 // the names in scope are read off the record each scope left as it closed.
-// Reading 02 の 14.10's lookup or 8 章's scoping a second time outside the
+// Reading §14.10's lookup or 08§8's scoping a second time outside the
 // checker would disagree with it exactly where the rules are hard.
 //
 // Public because a host cannot compute it, which is lhat/semantic.h's reason
@@ -61,15 +61,15 @@ typedef enum {
 typedef enum {
     LHAT_COMPLETION_VARIABLE = 0,
     LHAT_COMPLETION_FIELD,
-    LHAT_COMPLETION_METHOD,    // 02 の 14.10: reached through a value
+    LHAT_COMPLETION_METHOD,    // §14.10: reached through a value
     LHAT_COMPLETION_FUNCTION,  // reached through the definition
-    LHAT_COMPLETION_CLASS,     // 14.1: what a def^ made, and a registered type
+    LHAT_COMPLETION_CLASS,     // §14.1: what a def^ made, and a registered type
     LHAT_COMPLETION_MODULE_NAME,
     LHAT_COMPLETION_WORD_OF_LANGUAGE,
     LHAT_COMPLETION_CONSTANT
 } LhatCompletionKind;
 
-// A name is a name: 01 の 2.3's hats are part of it and a qualified path is
+// A name is a name: 01§2.3's hats are part of it and a qualified path is
 // never offered whole, so this is the widest a single segment plus its marks
 // can be. A type written out is cut with an ellipsis past its room, as
 // lhat_type_write does everywhere else -- past that a reader is helped by
@@ -118,8 +118,8 @@ LhatCompletionAsk lhat_completion_ask_text(const char *text, size_t length,
 //
 // MEMBER answers the members of the receiver -- every one the checker would
 // accept and no other, from the type's own members (so shadowing and
-// 14.7改2's delegation are the one search a member access uses) and from
-// 14.19's built-ins, which no list holds and which are asked of the checker
+// §14.7+2's delegation are the one search a member access uses) and from
+// §14.19's built-ins, which no list holds and which are asked of the checker
 // one spelling at a time.
 //
 // WORD answers the names in scope innermost first, then the words of the
@@ -139,7 +139,7 @@ size_t lhat_unit_completion_items(const LhatUnit *unit, uint32_t offset,
 //
 // A buffer with nothing in it yet has no unit to ask and still has these to
 // offer, which is why they are reachable without one. They are also the one
-// part of an answer that no list anywhere else holds: 01 の 2.1 keeps no
+// part of an answer that no list anywhere else holds: 01§2.1 keeps no
 // keyword table -- every hatted word is the one token kind and the parser
 // decides which of them each is -- so a host writing its own would be
 // writing the first.
@@ -161,7 +161,7 @@ size_t lhat_completion_words(LhatCompletionItem *into, size_t capacity);
 // the top segment of every module is what comes back.
 //
 // Answers what the program was registered with rather than what a machine
-// ended up holding: a host asks this while editing, and 05 の 8.7 puts every
+// ended up holding: a host asks this while editing, and 05§8.7 puts every
 // registration before anything runs.
 size_t lhat_program_completion_modules(const LhatProgram *program,
                                        const char *prefix,

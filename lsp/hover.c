@@ -1,8 +1,8 @@
-// L^ (lhat) -- LSP server: textDocument/hover (07 の 4 章).
+// L^ (lhat) -- LSP server: textDocument/hover (07§4).
 //
 // Shows the definition a name reaches. The checker recorded where each name
 // it resolved was bound (check.h's LhatResolution), so this reads that answer
-// rather than working 8 章's scoping out again -- a second implementation
+// rather than working 08§8's scoping out again -- a second implementation
 // would be one more thing to keep in step, and would disagree exactly where
 // the rules are hard.
 //
@@ -11,7 +11,7 @@
 // preview and inferred type. Documentation follows either form.
 //
 // The line and the comments are cut from the unit that holds the definition,
-// which 05 の 6.1 lets be another unit than the one the cursor is in. So the
+// which 05§6.1 lets be another unit than the one the cursor is in. So the
 // answer is made in two halves (hover.h): what this unit knows, then what the
 // defining one shows -- and the search for the declaring form only ever runs
 // over the tree the offset belongs to.
@@ -251,9 +251,9 @@ static void search(const LhatNode *node, DefinitionSearch *state)
     if (binds_a_name(node)) {
         state->best = node;
     }
-    // 8.6 with 13.1: 'let^ x:number^ = 1' spells its target as a PARAM, but
+    // §8.6 with §13.1: 'let^ x:number^ = 1' spells its target as a PARAM, but
     // the form that declares x is the let^ -- its first line is what the
-    // reader wants, and 01 の 6.4's comment above it is attached to it, not
+    // reader wants, and 01§6.4's comment above it is attached to it, not
     // to the annotation. So a definition's targets are not descended into;
     // what it binds the name *to* still is, since a def^ or an f^ standing
     // there declares members and parameters of its own.
@@ -284,7 +284,7 @@ typedef struct {
     const LhatNode *best;
 } NameSearch;
 
-// A hat identifier is not among these. 01 の 2.1 makes it the spelling every
+// A hat identifier is not among these. 01§2.1 makes it the spelling every
 // keyword takes, and no form declares one -- there is no 'let^ true^ = …' --
 // so a position on one has no declaration to find. Where a hat identifier
 // does name something bound (self^, class^), it is a use and the checker
@@ -415,12 +415,12 @@ static void describe_node(const LhatUnit *unit, const LhatNode *node,
     }
 }
 
-// 14.15: the member that is still a hole, in italics above the block. The
-// name is the one 14.11's refusal would name (LHAT_CHECK_ERR_STILL_ABSTRACT
+// §14.15: the member that is still a hole, in italics above the block. The
+// name is the one §14.11's refusal would name (LHAT_CHECK_ERR_STILL_ABSTRACT
 // reports this same member), so a reader who goes on to write new() meets the
 // same word rather than a second account of the same fact.
 //
-// Asterisks rather than underscores: a name may begin with '_' (01 の 3.1),
+// Asterisks rather than underscores: a name may begin with '_' (01§3.1),
 // and '_(abstract: _want)_' is not the emphasis it looks like.
 static char *abstract_note_for(const LhatTypeMember *unfilled)
 {
@@ -507,7 +507,7 @@ bool lsp_hover_locate(const LhatUnit *unit, uint32_t offset, LspHoverPart *out)
     const LhatResolution *resolved =
         lhat_check_resolution_at(&unit->checked, offset);
 
-    // 05 の 6.1: a definition in another unit is an offset into that unit's
+    // 05§6.1: a definition in another unit is an offset into that unit's
     // text, and nothing in this tree stands at it -- searching here would
     // find whatever happens to cover the same number.
     bool elsewhere = resolved != NULL && resolved->has_definition &&
@@ -538,7 +538,7 @@ bool lsp_hover_locate(const LhatUnit *unit, uint32_t offset, LspHoverPart *out)
                                       ? resolved
                                       : lsp_resolution_at(unit, offset);
 
-    // A member resolves in a type rather than in a scope (14.10), so there
+    // A member resolves in a type rather than in a scope (§14.10), so there
     // may be no place in this source to show -- and for a host registration
     // there is none anywhere. What it is is still known, and that is the
     // answer.
@@ -554,9 +554,9 @@ bool lsp_hover_locate(const LhatUnit *unit, uint32_t offset, LspHoverPart *out)
                                    ? resolved->call_signature : typed->type;
         out->type = type_text(shown);
         out->callable = callable_parts(shown);
-        // 14.15 with 14.11: a definition still holding a member nothing has
+        // §14.15 with §14.11: a definition still holding a member nothing has
         // provided is one to compose onto, not one to make anything of --
-        // and 14.11 refuses its new. The written form does not say so
+        // and §14.11 refuses its new. The written form does not say so
         // anywhere the reader is looking: 'Node' and 'Sprite2D' are the same
         // three words until the self^{ } section is read line by line.
         const LhatTypeMember *unfilled =
@@ -609,7 +609,7 @@ void lsp_hover_describe(const LhatUnit *defining, LspHoverPart *part)
     // A require^'s path points at the unit's start (check.h), and a unit that
     // opens with a comment or a blank line has nothing standing at byte 0.
     // What there is to show of it is its first statement -- the module^ when
-    // it declares one, whose comment is the unit's own description (07 の 4
+    // it declares one, whose comment is the unit's own description (07§4
     // 章).
     if (node == NULL && part->definition == 0) {
         const LhatNode *root = defining->parsed.root;

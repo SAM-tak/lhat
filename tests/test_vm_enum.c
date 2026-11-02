@@ -1,9 +1,9 @@
-// L^ (lhat) -- tests for 02 の 19 章: enum^.
+// L^ (lhat) -- tests for §19: enum^.
 //
 // The declaration builds singletons where it stands; what is pinned here is
 // the value side -- numbering, written values of any kind, identity,
 // fits^ against the declaration and a member, the built-in members -- and
-// the match that 19.5 lets stand without other^.
+// the match that §19.5 lets stand without other^.
 
 #include "fixture.h"
 
@@ -47,7 +47,7 @@ static void test_enums(void)
     CHECK_INTEGER(&r, 111111);
     run_dispose(&r);
 
-    // 14.16: the run spells an enum and a member as the checker does. A
+    // §14.16: the run spells an enum and a member as the checker does. A
     // member read in a value position is the wide type; the narrow one is
     // what a written annotation asks for.
     LHAT_TEST("typeof^ writes an enum and a member by name");

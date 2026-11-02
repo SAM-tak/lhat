@@ -1,4 +1,4 @@
-// L^ (lhat) -- tests for std.load (05 の 5.6).
+// L^ (lhat) -- tests for std.load (05§5.6).
 //
 // The text cases go through stdlibutil's one-file runner; the ones that
 // need a second file on disk (a require^ from inside loaded text, a file
@@ -29,7 +29,7 @@ static LhatTestRan run_source(const char *text)
 
 static void test_text(void)
 {
-    // 3.2: a script's top level is 'p^...', and the call's arguments are
+    // 09§3.2: a script's top level is 'p^...', and the call's arguments are
     // what it reads as '...'.
     LHAT_TEST("loaded text runs as a script, its '...' the call's arguments");
     {
@@ -183,7 +183,7 @@ static LhatRunResult run_files(const File *files, LhatProgram **out_program,
 
 static void test_files(void)
 {
-    // 5.1: a require^ inside loaded text is relative to the name the load
+    // 05§5.1: a require^ inside loaded text is relative to the name the load
     // was given; what it brings in joins the program -- loaded once, so the
     // main unit's own require^ of the same file finds it already there.
     LHAT_TEST("a require^ inside loaded text is relative to its name, and loads once");

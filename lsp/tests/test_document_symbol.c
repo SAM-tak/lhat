@@ -215,7 +215,7 @@ static void test_a_class(void)
         LHAT_CHECK(strcmp(detail_of(peek), "p^self^ -> string^") == 0,
                    "detail was \"%s\"", detail_of(peek));
     }
-    // 14.15: declared and given nothing, still a member -- typed as written.
+    // §14.15: declared and given nothing, still a member -- typed as written.
     cJSON *close = expect(members, 5, "close", METHOD);
     if (close != NULL) {
         LHAT_CHECK(strcmp(detail_of(close), "p^self^;") == 0,
@@ -245,7 +245,7 @@ static void test_a_class(void)
                    count_of(entries));
         expect(entries, 0, "x", PROPERTY);
         expect(entries, 1, "y", PROPERTY);
-        // 01 の 2.3: the hat is part of the name.
+        // 01§2.3: the hat is part of the name.
         expect(entries, 2, "tostring^", FUNCTION);
     }
     outline_dispose(&o);

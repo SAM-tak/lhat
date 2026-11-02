@@ -1,11 +1,11 @@
 // L^ (lhat) -- the type checking stage.
 //
 // Section numbers refer to DesignDocuments/02-syntax.md unless prefixed with
-// "03" or "04". This is the third stage of 03 の 1.1: it walks the tree the
+// "03" or "04". This is the third stage of 03§1.1: it walks the tree the
 // parser produced, resolves written annotations into types, infers the rest,
 // and reports what does not fit.
 //
-// It never rewrites the tree. 03 の 4.2 requires the shape of the tree and
+// It never rewrites the tree. 03§4.2 requires the shape of the tree and
 // the meaning at run time to be the same whatever the strictness, so the
 // setting only decides diagnostic severity and whether execution may proceed.
 
@@ -17,7 +17,7 @@
 #include <stdint.h>
 
 #include "ast.h"
-#include "lhat/error.h"  // 07 §6: the fixes a diagnostic carries
+#include "lhat/error.h"  // 07§6: the fixes a diagnostic carries
 #include "lhat/lexer.h"
 #include "hosted.h"
 #include "type.h"
@@ -26,25 +26,25 @@ typedef enum {
     LHAT_CHECK_ERR_NONE,
 
     LHAT_CHECK_ERR_UNDEFINED,           // no such name in scope
-    LHAT_CHECK_ERR_USED_BEFORE_DEFINED, // 8.7
-    LHAT_CHECK_ERR_REDEFINED,           // 8.7: twice in one scope
+    LHAT_CHECK_ERR_USED_BEFORE_DEFINED, // §8.7
+    LHAT_CHECK_ERR_REDEFINED,           // §8.7: twice in one scope
     LHAT_CHECK_ERR_UNKNOWN_TYPE,        // an annotation names nothing, or
-                                        // names a value -- 05 の 2.2 gives a
+                                        // names a value -- 05§2.2 gives a
                                         // type to a definition and an
                                         // errordef^, and to nothing else
 
-    LHAT_CHECK_ERR_MISMATCH,            // 13.11: the value does not fit
+    LHAT_CHECK_ERR_MISMATCH,            // §13.11: the value does not fit
     LHAT_CHECK_ERR_TEMPLATE_CONTEXT,
     LHAT_CHECK_ERR_UNINITIALIZED_TASK_CAPTURE,
     LHAT_CHECK_ERR_CAPTURE_INITIALIZER,
-    LHAT_CHECK_ERR_SHAPE_REFUSED,       // 03 の 3.4改3: the body cannot
+    LHAT_CHECK_ERR_SHAPE_REFUSED,       // 03§3.4+3: the body cannot
                                         // take this call's argument types
     LHAT_CHECK_ERR_NOT_NUMBER,          // unary '-' on something else. The
                                         // binary arithmetic goes through
-                                        // 11.3's question instead (11.8)
+                                        // §11.3's question instead (§11.8)
     LHAT_CHECK_ERR_NOT_BOOL,            // a condition, and^ / or^ / '!'
     LHAT_CHECK_ERR_BAD_STEP,            // step^ must be greater than zero
-    LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE, // 17.5: an expression match left
+    LHAT_CHECK_ERR_MATCH_NOT_EXHAUSTIVE, // §17.5: an expression match left
                                          // other^ out, and its arms do not
                                          // provably cover the subject (only
                                          // bool^ met both ways can)
@@ -52,249 +52,249 @@ typedef enum {
     LHAT_CHECK_ERR_CALL_UNION_NARROW,
     LHAT_CHECK_ERR_FUNCTION_CALLS_UNION,
     LHAT_CHECK_ERR_ACCESS_ON_MAYBE_NIL,
-    LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE, // 15.1: f^ may call only f^;
+    LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE, // §15.1: f^ may call only f^;
                                               // this callee is a p^
     LHAT_CHECK_ERR_ARITY,               // too few or too many arguments
                                         // a call, and the two read differently
     LHAT_CHECK_ERR_ARITY_SPREAD,        // the same, with a spread tuple among
                                         // the arguments -- each of its
                                         // positions counts as one
-    LHAT_CHECK_ERR_NOT_VARIADIC,        // 13.7: an 'expr...' that is not a
+    LHAT_CHECK_ERR_NOT_VARIADIC,        // §13.7: an 'expr...' that is not a
                                         // tuple continues a variadic tail,
                                         // and this callee has none
-    LHAT_CHECK_ERR_SPREAD_NOT_LAST,     // 13.7: an 'expr...' that is not a
+    LHAT_CHECK_ERR_SPREAD_NOT_LAST,     // §13.7: an 'expr...' that is not a
                                         // tuple with arguments after it --
                                         // its length is not known until it
                                         // runs
-    LHAT_CHECK_ERR_SPREAD_NOT_SEQUENCE, // 13.7: '...' of something that is
+    LHAT_CHECK_ERR_SPREAD_NOT_SEQUENCE, // §13.7: '...' of something that is
                                         // neither a tuple nor a table whose
                                         // type says what its sequence holds
-    LHAT_CHECK_ERR_NO_MEMBER,           // 14.10: the structure lacks it
-    LHAT_CHECK_ERR_NO_RESULT_TYPE,      // 13.14改: X.ReturnType of a
-                                        // signature answering no value (13.2)
-    LHAT_CHECK_ERR_KIND_AS_VALUE,       // 04 の 2.3: a kind of the errordef^
+    LHAT_CHECK_ERR_NO_MEMBER,           // §14.10: the structure lacks it
+    LHAT_CHECK_ERR_NO_RESULT_TYPE,      // §13.14+: X.ReturnType of a
+                                        // signature answering no value (§13.2)
+    LHAT_CHECK_ERR_KIND_AS_VALUE,       // 04§2.3: a kind of the errordef^
                                         // written where a value was wanted.
                                         // The declaration makes types and no
-                                        // values, so 2.5's error^ is the only
+                                        // values, so 04§2.5's error^ is the only
                                         // way to one
 
-    LHAT_CHECK_ERR_CANNOT_FAIL,         // 04 の 4.1: catch^ on what cannot fail
-    LHAT_CHECK_ERR_CANNOT_BE_NIL,       // 11.7, the same for '??'
-    LHAT_CHECK_ERR_TRY_OUTSIDE,         // 04 の 5.3
-    LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES, // 04 の 2.7改: a localerror^ on its
+    LHAT_CHECK_ERR_CANNOT_FAIL,         // 04§4.1: catch^ on what cannot fail
+    LHAT_CHECK_ERR_CANNOT_BE_NIL,       // §11.7, the same for '??'
+    LHAT_CHECK_ERR_TRY_OUTSIDE,         // 04§5.3
+    LHAT_CHECK_ERR_LOCAL_ERROR_ESCAPES, // 04§2.7+: a localerror^ on its
                                         // way out of the frame that raised it
-    LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN, // 2.7改: localerror^ written where a
+    LHAT_CHECK_ERR_LOCAL_ERROR_WRITTEN, // 04§2.7+: localerror^ written where a
                                         // caller would receive it
-    LHAT_CHECK_ERR_NEVER_RETURNS,       // 03 の 3.4: every way out of the body
+    LHAT_CHECK_ERR_NEVER_RETURNS,       // 03§3.4: every way out of the body
                                         // goes through the subroutine itself
-    LHAT_CHECK_ERR_RESULT_UNDECIDED,    // 03 の 3.1: the body did not decide
+    LHAT_CHECK_ERR_RESULT_UNDECIDED,    // 03§3.1: the body did not decide
                                         // the result type, so every caller
                                         // would be promised a gap
-    LHAT_CHECK_ERR_PARAM_UNDECIDED,     // 03 の 3.1: nothing in the body
+    LHAT_CHECK_ERR_PARAM_UNDECIDED,     // 03§3.1: nothing in the body
                                         // demanded anything of this parameter,
                                         // and nothing was written -- so its
                                         // place in the signature is a hole
-    LHAT_CHECK_ERR_TYPE_UNDECIDED,      // 03 の 3.1: a gap reached a name
+    LHAT_CHECK_ERR_TYPE_UNDECIDED,      // 03§3.1: a gap reached a name
                                         // being bound, so what that name
                                         // holds was never decided
-    LHAT_CHECK_ERR_FUNCTION_FALLS_OUT,  // 13.2: an f^ that can reach its end
+    LHAT_CHECK_ERR_FUNCTION_FALLS_OUT,  // §13.2: an f^ that can reach its end
     LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT, // the value-less exit does not fit the
                                         // result that was written
-    LHAT_CHECK_ERR_THIS_OUTSIDE,        // 15.10: this^ where no body is running
-    LHAT_CHECK_ERR_SUPER_OUTSIDE,       // 14.12改: super^ outside an override^
-    LHAT_CHECK_ERR_NOT_DISPOSABLE,      // 12.5: with^ needs a dispose()
-    LHAT_CHECK_ERR_DISCARD_READ,        // 13.12: '_^' is not a name, so there
+    LHAT_CHECK_ERR_THIS_OUTSIDE,        // §15.10: this^ where no body is running
+    LHAT_CHECK_ERR_SUPER_OUTSIDE,       // §14.12+: super^ outside an override^
+    LHAT_CHECK_ERR_NOT_DISPOSABLE,      // §12.5: with^ needs a dispose()
+    LHAT_CHECK_ERR_DISCARD_READ,        // §13.12: '_^' is not a name, so there
                                         // is nothing there to read back
-    LHAT_CHECK_ERR_HAT_NAME_RESERVED,   // 01 の 2.3: a hat name is the
+    LHAT_CHECK_ERR_HAT_NAME_RESERVED,   // 01§2.3: a hat name is the
                                         // language's, so a writer declares
                                         // none but tostring^ and iterate^
-    LHAT_CHECK_ERR_ERROR_DROPPED,      // 04 の 8.3: the answer carries a
+    LHAT_CHECK_ERR_ERROR_DROPPED,      // 04§8.3: the answer carries a
                                         // failure and nothing was done with it
 
-    LHAT_CHECK_ERR_MEMBER_EXISTS,       // 14.12: same name, no marker
+    LHAT_CHECK_ERR_MEMBER_EXISTS,       // §14.12: same name, no marker
     LHAT_CHECK_ERR_FIELD_METHOD_COLLISION, // field and shared method share a name
-    LHAT_CHECK_ERR_COMPOSE_COLLIDES,    // 14.5: and no marker can be written
-    LHAT_CHECK_ERR_CONCAT_COLLIDES,     // 11.2改: both tables carry the key,
+    LHAT_CHECK_ERR_COMPOSE_COLLIDES,    // §14.5: and no marker can be written
+    LHAT_CHECK_ERR_CONCAT_COLLIDES,     // §11.2+: both tables carry the key,
                                         // so the concatenation holds no one
                                         // value for it
-    LHAT_CHECK_ERR_AMBIGUOUS_MEMBER,    // 14.5改: both sides carry it, so the
+    LHAT_CHECK_ERR_AMBIGUOUS_MEMBER,    // §14.5+: both sides carry it, so the
                                         // composition reaches no one answer
-    LHAT_CHECK_ERR_STILL_ABSTRACT,      // 14.15: new on a definition with a
+    LHAT_CHECK_ERR_STILL_ABSTRACT,      // §14.15: new on a definition with a
                                         // member nothing has provided yet
-    LHAT_CHECK_ERR_FIELD_UNPROVIDED,    // 14.15改3: the same for a template
+    LHAT_CHECK_ERR_FIELD_UNPROVIDED,    // §14.15+3: the same for a template
                                         // field, which a written new may also
                                         // give a value to
-    LHAT_CHECK_ERR_LENT_DOES_NOT_PROVIDE,  // 14.15: new where the declared
+    LHAT_CHECK_ERR_LENT_DOES_NOT_PROVIDE,  // §14.15: new where the declared
                                            // member is one the delegate^ lends
-    LHAT_CHECK_ERR_LENT_IS_NOT_REPLACED,   // 14.15改: new where a waiting
+    LHAT_CHECK_ERR_LENT_IS_NOT_REPLACED,   // §14.15+: new where a waiting
                                            // override^ has only a lent member
                                            // under it
-    LHAT_CHECK_ERR_ALREADY_PROVIDED,    // 14.15: abstract^ over a member that
+    LHAT_CHECK_ERR_ALREADY_PROVIDED,    // §14.15: abstract^ over a member that
                                         // something in the chain provides
-    LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE, // 14.15改2: abstract^ over one this
+    LHAT_CHECK_ERR_ABSTRACT_PROVIDED_HERE, // §14.15+2: abstract^ over one this
                                         // same def^ writes a value for
-    LHAT_CHECK_ERR_MUTABLE_DEFAULT,     // 14.11: a template initialiser's
+    LHAT_CHECK_ERR_MUTABLE_DEFAULT,     // §14.11: a template initialiser's
                                         // value sits on the prototype and is
                                         // shared by every instance, so it has
                                         // to be immutable -- a mutable one is
                                         // made inside new
     LHAT_CHECK_ERR_NEW_TARGET,         // new^ needs a constructible type
     LHAT_CHECK_ERR_NEW_CONSTRUCTOR,    // default new was overridden
-    LHAT_CHECK_ERR_NEW_RETURNS,         // 14.11: construction answers the
+    LHAT_CHECK_ERR_NEW_RETURNS,         // §14.11: construction answers the
                                         // copy, so a new body has no
                                         // return^ of its own
-    LHAT_CHECK_ERR_SELF_TABLE_OUTSIDE_NEW,  // 14.11: self^{ … } is the
+    LHAT_CHECK_ERR_SELF_TABLE_OUTSIDE_NEW,  // §14.11: self^{ … } is the
                                         // construction notation, and only a
                                         // written new constructs
-    LHAT_CHECK_ERR_PROTOTYPE_SEALED,    // 14.11: the prototype is read
+    LHAT_CHECK_ERR_PROTOTYPE_SEALED,    // §14.11: the prototype is read
                                         // through self^ and written by no one
-    LHAT_CHECK_ERR_MUTABLE_KEY,         // 05 の 8.9改: a key hashes its
+    LHAT_CHECK_ERR_MUTABLE_KEY,         // 05§8.9+: a key hashes its
                                         // bytes, so only a sealed box
                                         // (constbox^) may be one
-    LHAT_CHECK_ERR_BOX_FIELD_WRITE,     // 05 の 8.9改: a box's field is read
+    LHAT_CHECK_ERR_BOX_FIELD_WRITE,     // 05§8.9+: a box's field is read
                                         // off the bytes; writing goes
                                         // through set()
-    LHAT_CHECK_ERR_NOT_BOXABLE,         // 05 の 8.9: box^ takes a host value
+    LHAT_CHECK_ERR_NOT_BOXABLE,         // 05§8.9: box^ takes a host value
                                         // -- everything else already lives
                                         // on the heap and needs no box
     LHAT_CHECK_ERR_NOTHING_TO_OVERRIDE, // a marker with nothing under it
-    LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,   // 14.12: override^ has to fit
-    LHAT_CHECK_ERR_OVERLOAD_OVERLAPS,   // 14.12: signatures must stay apart
-    LHAT_CHECK_ERR_OPERATOR_UNSETTLED,  // 03 の 3.4改: several types here
+    LHAT_CHECK_ERR_NOT_SUBSTITUTABLE,   // §14.12: override^ has to fit
+    LHAT_CHECK_ERR_OVERLOAD_OVERLAPS,   // §14.12: signatures must stay apart
+    LHAT_CHECK_ERR_OPERATOR_UNSETTLED,  // 03§3.4+: several types here
                                         // carry it and nothing says which
     LHAT_CHECK_ERR_INCOMPARABLE,        // no value inhabits both sides
     LHAT_CHECK_ERR_NO_IDENTITY,         // value types have no object identity
-    LHAT_CHECK_ERR_AS_IMPOSSIBLE,       // 11.6: as^ between two types
+    LHAT_CHECK_ERR_AS_IMPOSSIBLE,       // §11.6: as^ between two types
                                         // no value inhabits both of
-    LHAT_CHECK_ERR_BAD_KEY,             // 04 の 11.3: nil^ spells absence, so
+    LHAT_CHECK_ERR_BAD_KEY,             // 04§11.3: nil^ spells absence, so
                                         // it cannot also be a key
     LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_ERROR,
     LHAT_CHECK_ERR_TYPE_ARGUMENT_REFERENCE,
     LHAT_CHECK_ERR_TYPE_ATTRIBUTE,
     LHAT_CHECK_ERR_TYPE_SPECIALIZATION,
     LHAT_CHECK_ERR_TYPE_ARGUMENT_RUNTIME,
-    LHAT_CHECK_ERR_NO_OPERATOR,         // 11.3: an operator is answered by
+    LHAT_CHECK_ERR_NO_OPERATOR,         // §11.3: an operator is answered by
                                         // the left operand, and this one
                                         // carries no answer for it
-    LHAT_CHECK_ERR_BAD_OPERATOR,        // 11.8: an op^ is an f^ taking self^
+    LHAT_CHECK_ERR_BAD_OPERATOR,        // §11.8: an op^ is an f^ taking self^
                                         // and one argument, and this is not
-    LHAT_CHECK_ERR_ISA_ALWAYS_TRUE,     // 13.7: any^ holds of every value, so
+    LHAT_CHECK_ERR_ISA_ALWAYS_TRUE,     // §13.7: any^ holds of every value, so
                                         // asking it of one asks nothing
-    LHAT_CHECK_ERR_MISSING_FIELD,       // 04 の 2.5: no default to fall back to
-    LHAT_CHECK_ERR_REQUIRE_FAILED,      // 05 の 6 章: the unit could not be had
-    LHAT_CHECK_ERR_COROUTINE_DROPPED,   // 15.8: a call that makes a coroutine
+    LHAT_CHECK_ERR_MISSING_FIELD,       // 04§2.5: no default to fall back to
+    LHAT_CHECK_ERR_REQUIRE_FAILED,      // 05§6: the unit could not be had
+    LHAT_CHECK_ERR_COROUTINE_DROPPED,   // §15.8: a call that makes a coroutine
                                         // and does nothing with it
-    LHAT_CHECK_ERR_NOT_COROUTINE,       // 16.3: in^ walks whatever
+    LHAT_CHECK_ERR_NOT_COROUTINE,       // §16.3: in^ walks whatever
                                         // iterate() answers with, and this
                                         // is what it says when that is not
                                         // a coroutine
-    LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE, // 15.8 with 15.14: what is awaited
+    LHAT_CHECK_ERR_AWAIT_NOT_COROUTINE, // §15.8 with §15.14: what is awaited
                                         // is something that finishes, and
                                         // only a coroutine does -- which is
                                         // also the whole of what delegating
                                         // asks of it
-    LHAT_CHECK_ERR_YIELD_AT_TOP,        // 15.2 with 05 の 3.2: only a
+    LHAT_CHECK_ERR_YIELD_AT_TOP,        // §15.2 with 05§3.2: only a
                                         // script's top level ('p^...') may
                                         // suspend; a module^ unit's and a
                                         // session's have nobody to resume
                                         // them
-    LHAT_CHECK_ERR_COROUTINE_MISMATCH,  // 13.9 with 15.2: a c^{ … } written in
+    LHAT_CHECK_ERR_COROUTINE_MISMATCH,  // §13.9 with §15.2: a c^{ … } written in
                                         // the result position says what a call
                                         // answers, and the yield^ sites say it
                                         // too. The two disagreed
 
-    LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION, // 15.2: a yield^ that is bound
+    LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION, // §15.2: a yield^ that is bound
                                             // (directly, by a let^) needs a
                                             // written type there to fix R
-    LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH,    // 15.2: two yield^/await^ sites
-    LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS,    // 15.11: a _yield^ never runs, so
+    LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH,    // §15.2: two yield^/await^ sites
+    LHAT_CHECK_ERR_PHANTOM_YIELD_BINDS,    // §15.11: a _yield^ never runs, so
                                            // a name cannot take its answer --
                                            // only _^ stands on the left
-    LHAT_CHECK_ERR_NOT_INDEXABLE,          // 04 の 11.3: only a table holds
+    LHAT_CHECK_ERR_NOT_INDEXABLE,          // 04§11.3: only a table holds
                                            // keys -- a string^'s characters
                                            // answer at(i) instead
                                             // in one body disagree on Y or R
 
-    LHAT_CHECK_ERR_PATH_NOT_TABLE,      // 8.8: everything before the last
+    LHAT_CHECK_ERR_PATH_NOT_TABLE,      // 05§8.8: everything before the last
                                         // segment holds the one after it, so
                                         // it has to be a table
-    LHAT_CHECK_ERR_PATH_IS_DEFINITION,  // 8.8: 14 章 fixes what an instance
+    LHAT_CHECK_ERR_PATH_IS_DEFINITION,  // 05§8.8: §14 fixes what an instance
                                         // of a def^ carries, so a member
                                         // cannot be added to one
-    LHAT_CHECK_ERR_MODULE_UNNAMED,      // 05 の 5.5: the short form binds a
+    LHAT_CHECK_ERR_MODULE_UNNAMED,      // 05§5.5: the short form binds a
                                         // unit under the path it declared,
-                                        // and this one declared none (3.2)
-    LHAT_CHECK_ERR_NOT_HOSTED,          // 05 の 8.7: import^ reaches what the
+                                        // and this one declared none (11§3.2)
+    LHAT_CHECK_ERR_NOT_HOSTED,          // 05§8.7: import^ reaches what the
                                         // host registered, and nothing here
-    LHAT_CHECK_ERR_SCOPE_TOO_FAR,       // 01 の 8 章: '$^' naming more scopes
+    LHAT_CHECK_ERR_SCOPE_TOO_FAR,       // 01§8: '$^' naming more scopes
                                         // out than are open here
-    LHAT_CHECK_ERR_SCOPE_ON_DEFINE,     // 01 の 8 章 with 8.7: a let^ makes a
+    LHAT_CHECK_ERR_SCOPE_ON_DEFINE,     // 01§8 with 05§8.7: a let^ makes a
                                         // name where it is written, so there
                                         // is no other scope for one to name
-    LHAT_CHECK_ERR_FUNCTION_WRITES_OUT,  // 15.1: an f^ assigns to local
+    LHAT_CHECK_ERR_FUNCTION_WRITES_OUT,  // §15.1: an f^ assigns to local
                                          // variables only, and this name was
                                          // bound outside its body
-    LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE, // 15.1改: the same rule for a table
+    LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE, // §15.1+: the same rule for a table
                                            // -- this one is not one the body
                                            // made, so changing it is
                                            // observable from outside
-    LHAT_CHECK_ERR_OWN_LOWERED,         // 15.1改: this puts something the
+    LHAT_CHECK_ERR_OWN_LOWERED,         // §15.1+: this puts something the
                                         // body did not make where the body
                                         // changes things, written elsewhere
-    LHAT_CHECK_ERR_FUNCTION_REQUIRES,   // 05 の 5.3: require^ runs the unit,
+    LHAT_CHECK_ERR_FUNCTION_REQUIRES,   // 05§5.3: require^ runs the unit,
                                         // a body of its own, which an f^ may
                                         // not have run on its behalf
-    LHAT_CHECK_ERR_BAD_TOSTRING,        // 14.17: a member under tostring is
+    LHAT_CHECK_ERR_BAD_TOSTRING,        // §14.17: a member under tostring is
                                         // f^self^ -> string^, since a hole
                                         // calls it with no call written
-    LHAT_CHECK_ERR_PATH_IS_OPAQUE,      // 05 の 8.8: a host type carries what
-                                        // the host registered, and 14.16's
+    LHAT_CHECK_ERR_PATH_IS_OPAQUE,      // 05§8.8: a host type carries what
+                                        // the host registered, and §14.16's
                                         // type info what made it; neither is
                                         // written over from L^
-    LHAT_CHECK_ERR_ADVANCES_OUTSIDE,    // 15.3改: an f^ advancing a coroutine
+    LHAT_CHECK_ERR_ADVANCES_OUTSIDE,    // §15.3+: an f^ advancing a coroutine
                                         // its own body did not make, whose
                                         // progress the caller can see
-    LHAT_CHECK_ERR_MUTATES_OUTSIDE,     // 15.1改2: an f^ calling a
+    LHAT_CHECK_ERR_MUTATES_OUTSIDE,     // §15.1+2: an f^ calling a
                                         // mutable^self^ method on a table
                                         // its own body did not make
-    LHAT_CHECK_ERR_ANSWER_NOT_FRESH,    // 15.1改3: a '-> fresh^T' body
+    LHAT_CHECK_ERR_ANSWER_NOT_FRESH,    // §15.1+3: a '-> fresh^T' body
                                         // returning something it did not
                                         // make on the spot
-    LHAT_CHECK_ERR_COROUTINE_ESCAPES,   // 15.3改: an f^ coroutine reaching the
+    LHAT_CHECK_ERR_COROUTINE_ESCAPES,   // §15.3+: an f^ coroutine reaching the
                                         // outside, where advancing it is what
                                         // makes the call observable
-    LHAT_CHECK_ERR_TABLE_IS_SEALED,     // 05 の 8.6: L^, its registry
+    LHAT_CHECK_ERR_TABLE_IS_SEALED,     // 05§8.6: L^, its registry
                                         // and what require^/import^ answers
                                         // are the machine's own; the host
                                         // writes them through its API
-    LHAT_CHECK_ERR_ASSIGN_TO_LET,       // 8.9: the name was bound by a let^,
+    LHAT_CHECK_ERR_ASSIGN_TO_LET,       // §8.9: the name was bound by a let^,
                                         // which a ':=' may not reach. Writing
                                         // var^ instead is open here
-    LHAT_CHECK_ERR_ASSIGN_TO_FORM,      // 8.9 with 12.1 and 16.3改2: bound by
+    LHAT_CHECK_ERR_ASSIGN_TO_FORM,      // §8.9 with §12.1 and §16.3+2: bound by
                                         // the construct rather than a word --
                                         // a with^, or a for^ focus -- so
                                         // there is no var^ to offer
-    LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE, // 05 の 4 章 with 8.9: a public^ var^
+    LHAT_CHECK_ERR_PUBLIC_IS_IMMUTABLE, // 05§4 with §8.9: a public^ var^
                                         // is a name another unit could see
-                                        // change, which 01 の 8.3 refused
-    LHAT_CHECK_ERR_COMPARE_NOT_NUMBER,  // 11.9: an op^<=> answers a number^,
+                                        // change, which 01§8.3 refused
+    LHAT_CHECK_ERR_COMPARE_NOT_NUMBER,  // §11.9: an op^<=> answers a number^,
                                         // which is what the orderings read
-    LHAT_CHECK_ERR_EQUAL_NOT_BOOL,      // 11.9改: an op^= answers a bool^,
+    LHAT_CHECK_ERR_EQUAL_NOT_BOOL,      // §11.9+: an op^= answers a bool^,
                                         // which '=' takes as it stands and
                                         // '≠' negates
-    LHAT_CHECK_ERR_NOT_ORDERED,         // 11.9: an ordering is read off '<=>',
+    LHAT_CHECK_ERR_NOT_ORDERED,         // §11.9: an ordering is read off '<=>',
                                         // and neither side carries one taking
                                         // the other
-    LHAT_CHECK_ERR_SELF_LAST_NOT_OPERATOR, // 11.3改: a self^ written last says
+    LHAT_CHECK_ERR_SELF_LAST_NOT_OPERATOR, // §11.3+: a self^ written last says
                                            // the right operand is the
                                            // receiver, which only an op^ has
-                                           // any use for (14.4)
-    LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE,   // 13.13: Self^ names the type literal
+                                           // any use for (§14.4)
+    LHAT_CHECK_ERR_SELF_TYPE_OUTSIDE,   // §13.13: Self^ names the type literal
                                         // around it, and here there is none --
                                         // no t^ or def^ encloses it, or a
                                         // second hat counted past the
                                         // outermost one
-    LHAT_CHECK_ERR_TUPLE_MISPLACED,     // 13.8改: a tuple is written in a
+    LHAT_CHECK_ERR_TUPLE_MISPLACED,     // §13.8+: a tuple is written in a
                                         // result and nowhere else -- not
                                         // bound to a name, passed as an
                                         // argument, held in a table, or
@@ -302,40 +302,40 @@ typedef enum {
                                         // it there is what keeps 13.8's four
                                         // propagations from coming back. Use
                                         // pack^ to make a table of it
-    LHAT_CHECK_ERR_TUPLE_UNION,         // 13.8改 with 04 の 3.1: the only
+    LHAT_CHECK_ERR_TUPLE_UNION,         // §13.8+ with 04§3.1: the only
                                         // thing a tuple may be written in a
                                         // union with is an error
-    LHAT_CHECK_ERR_HOSTVALUE_UNION,     // 05 の 8.9改: a host value takes
+    LHAT_CHECK_ERR_HOSTVALUE_UNION,     // 05§8.9+: a host value takes
                                         // several slots, so what stands
                                         // beside it in a union has to be
                                         // told apart by the head slot --
-                                        // the family 13.8改 gives a tuple
-    LHAT_CHECK_ERR_TUPLE_ARITY,         // 13.8改: the names taking the values
+                                        // the family §13.8+ gives a tuple
+    LHAT_CHECK_ERR_TUPLE_ARITY,         // §13.8+: the names taking the values
                                         // apart and the values answered are
                                         // not the same count. A tuple has exactly its
                                         // positions, since each one is a slot
-                                        // the caller reserved -- 14.10's width
+                                        // the caller reserved -- §14.10's width
                                         // subtyping never applies here
-    LHAT_CHECK_ERR_TUPLE_ERROR_POSITION,// 13.8改 with 04 の 8.2: the error
+    LHAT_CHECK_ERR_TUPLE_ERROR_POSITION,// §13.8+ with 04§8.2: the error
                                         // goes around the values, never among
                                         // them. '(number^, IOError)' is the
                                         // shape Go's 'v, err := f()' needs --
                                         // one value to use and one to drop --
-                                        // and 8.2 kept it unwritable by
+                                        // and 05§8.2 kept it unwritable by
                                         // having no second value at all.
                                         // Multi-value return brings the
                                         // second value back, so the rule has
                                         // to be said out loud instead. Write
                                         // '(A, B)|IOError'
-    LHAT_CHECK_ERR_CATCHES_NOTHING,     // 04 の 4.5: arms after statements
+    LHAT_CHECK_ERR_CATCHES_NOTHING,     // 04§4.5: arms after statements
                                         // that write no try^ have nothing to
-                                        // catch, the same as 4.1's catch^ on
+                                        // catch, the same as 11§4.1's catch^ on
                                         // an expression that cannot fail
-    LHAT_CHECK_ERR_HOSTVALUE_ESCAPES,   // 05 の 8.9: a host value lives in
+    LHAT_CHECK_ERR_HOSTVALUE_ESCAPES,   // 05§8.9: a host value lives in
                                         // stack slots and nowhere else, so a
                                         // table, a capture, an any^, a
                                         // tuple's position and the program's
-                                        // answer all refuse one. 8.9改: what
+                                        // answer all refuse one. 05§8.9+: what
                                         // each of them refuses is the width,
                                         // so a union carrying one is refused
                                         // there too -- while the union
@@ -346,29 +346,29 @@ typedef enum {
                                         // Refused even under relaxed: a
                                         // runtime check cannot make room
                                         // where the representation has none
-    LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL,  // 04 の 11.3: what a key reads out
+    LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL,  // 04§11.3: what a key reads out
                                         // of a table is 'T|nil^', and no
                                         // operator is on the nil^ side.
-                                        // 11.3改's rule sends the writer
+                                        // §11.3+'s rule sends the writer
                                         // looking for an operator to write
                                         // when what is missing is a narrowing
-                                        // -- and 13.11 does not narrow an
+                                        // -- and §13.11 does not narrow an
                                         // index where it stands
-    // 02 の 18.5: an annotation the host did not register, one written where
+    // §18.5: an annotation the host did not register, one written where
     // its registration does not allow, and arguments that do not fit what it
     // declared. Three failures rather than one: what to change differs.
     LHAT_CHECK_ERR_NO_SUCH_ANNOTATION,
     LHAT_CHECK_ERR_ANNOTATION_MISPLACED,
     LHAT_CHECK_ERR_ANNOTATION_ARGUMENTS,
-    LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE,// 18.5.1: registered as one of two
+    LHAT_CHECK_ERR_ANNOTATION_EXCLUSIVE,// §18.5.1: registered as one of two
                                         // answers to one question, and the
                                         // other is in this file already
-    LHAT_CHECK_ERR_ANNOTATION_REQUISITE,// 18.5.2: registered as half of
+    LHAT_CHECK_ERR_ANNOTATION_REQUISITE,// §18.5.2: registered as half of
                                         // something, and the other half is
                                         // not on this declaration
-    LHAT_CHECK_ERR_ANNOTATION_REPEATED, // 18.5: registered FILEUNIQUE, and
+    LHAT_CHECK_ERR_ANNOTATION_REPEATED, // §18.5: registered FILEUNIQUE, and
                                         // the file already had one
-    LHAT_CHECK_ERR_BARE_TABLE_TYPE      // 14.10: t^ is written with the
+    LHAT_CHECK_ERR_BARE_TABLE_TYPE      // §14.10: t^ is written with the
                                         // members it asks for, and the top of
                                         // tables is the one asking for none
                                         // -- 't^{}'. Bare, the '{' that
@@ -405,21 +405,21 @@ typedef struct LhatCheckDiagnostic {
     const char *left_type;
     const char *right_type;
 
-    // 07 §6: the fixes this diagnostic knows how to make, read through
+    // 07§6: the fixes this diagnostic knows how to make, read through
     // lhat_fix_slot_read. The stage that refused is the one that knows what
     // would have been right, so they are worked out here and not in a tool.
     LhatFixSlot fixes[LHAT_FIX_SLOTS];
 } LhatCheckDiagnostic;
 
 #if LHAT_WITH_RESOLUTIONS
-// 07 の 4 章: where a name that was written got its meaning.
+// 07§4: where a name that was written got its meaning.
 //
 // Recorded as each use is resolved, so that a tool answering "what is this"
 // reads what the checker decided rather than resolving names a second time.
-// A second implementation of 8 章's scoping would be one more thing to keep
+// A second implementation of 08§8's scoping would be one more thing to keep
 // in step, and it would disagree in exactly the cases that are hard.
 //
-// **Nothing in the language reads this.** 03 の 1.1's later stages compile
+// **Nothing in the language reads this.** 03§1.1's later stages compile
 // and run the same tree whether it was recorded or not; it is here for the
 // language server, and LHAT_WITH_RESOLUTIONS takes it out for a host that
 // embeds the language without any tooling.
@@ -428,7 +428,7 @@ typedef struct {
     uint32_t use_end;  // one past it, so a position within the name matches
     uint32_t definition;  // where the name it reaches was bound
     // False when there is no such place to point at: a member is looked up
-    // in a type rather than in a scope (14.10), and the type may have come
+    // in a type rather than in a scope (§14.10), and the type may have come
     // from another unit or from a host registration, where nothing in this
     // source declares it. The type is still known, which is what a reader
     // asking "what is this" wants most.
@@ -436,25 +436,25 @@ typedef struct {
     // Which unit `definition` is an offset into: NULL for the one this
     // resolution belongs to, and a borrowed path (the member's declared_in,
     // type.h) for a name whose meaning was written somewhere else -- 05 の
-    // 6.1 publishes a type, and a member of it was written in the unit that
+    // 07§6.1 publishes a type, and a member of it was written in the unit that
     // published it. Two more meanings are found the same way and recorded
-    // the same way: 04 の 2.2's error kind and 19 章's enum member carry
+    // the same way: 04§2.2's error kind and §19's enum member carry
     // their written place on the type (type.h's v.error), and a require^'s
     // path names a whole unit, whose `definition` is 0 -- its start.
     const char *definition_path;
-    // 14.19 and 14.17改 with 15.6改: the language answered this member
+    // §14.19 and §14.17+ with §15.6+: the language answered this member
     // itself. Nothing wrote it and no host registered it -- `length` on a
     // string, `resume` on a coroutine, `message` on an error -- so a reader
     // asking where it is gets nothing, and an editor drawing it wants to
     // draw it as the library's rather than as the program's.
     bool builtin;
-    // 13.1: declared by a signature rather than bound by a let^ or var^.
+    // §13.1: declared by a signature rather than bound by a let^ or var^.
     // Where a use stands says only that there is a name, and the type says
     // only what it holds -- which of the two declared it is something only
     // the checker knows.
     bool is_parameter;
-    // 8.9: bound by a let^ (or by a form that binds like one -- 12 章's
-    // with^, 16.3's walking focus), so nothing written after it reassigns
+    // §8.9: bound by a let^ (or by a form that binds like one -- §12's
+    // with^, §16.3's walking focus), so nothing written after it reassigns
     // the name.
     bool immutable;
     // What the name holds there. Belongs to the result's type arena, so it
@@ -465,7 +465,7 @@ typedef struct {
     const LhatType *call_signature;
 } LhatResolution;
 
-// 07 の 4 章: a place a member name may stand -- the '.' of an access, with
+// 07§4: a place a member name may stand -- the '.' of an access, with
 // the type of whatever stands to its left.
 //
 // Kept apart from LhatResolution because a resolution is keyed by a name's
@@ -473,7 +473,7 @@ typedef struct {
 // a member with nothing under it for a dot at the end of what has been typed
 // so far (parser.c), and a tool asked what may stand there needs the
 // receiver rather than the answer. Working the receiver out from the names
-// around it would be a second reading of 14.10's lookup, which is the thing
+// around it would be a second reading of §14.10's lookup, which is the thing
 // this file exists to avoid.
 typedef struct {
     uint32_t dot;  // where the '.' or '?.' stands: the member node's own
@@ -481,8 +481,8 @@ typedef struct {
     uint32_t end;  // one past the member name, or one past the dot when
                    // nothing was written -- so a cursor inside a half-typed
                    // name finds the site the same way
-    bool nil_safe;  // 11.7改2: written '?.'
-    // 02 の 14.8改2: the receiver was written as the WORD number^, which is
+    bool nil_safe;  // §11.7+2: written '?.'
+    // §14.8+2: the receiver was written as the WORD number^, which is
     // no value of its own -- what stands after the dot there is one of the
     // constants and nothing else. `receiver` is number^ either way, so this
     // is the only thing that tells the two apart.
@@ -494,15 +494,15 @@ typedef struct {
     LhatType *receiver;
 } LhatMemberSite;
 
-// 07 の 4 章: a name a scope held, and the source that scope covered.
+// 07§4: a name a scope held, and the source that scope covered.
 //
 // A resolution says where a name that was written got its meaning, which
 // answers "what is this" and nothing else. This answers the other question a
 // tool asks -- "what may I write here" -- for which no name has been written
-// yet. Reading 8 章 a second time to work it out is what this file exists to
+// yet. Reading 08§8 a second time to work it out is what this file exists to
 // avoid, so the scope says what it held as it is disposed of.
 //
-// 8.7 makes a name visible throughout the scope that binds it, so the span
+// §8.7 makes a name visible throughout the scope that binds it, so the span
 // is the scope's own and not the part of it after the let^.
 typedef struct {
     uint32_t from;  // where the construct the scope belongs to begins
@@ -515,14 +515,14 @@ typedef struct {
     // valid for as long as the result is. NULL where the scope closed before
     // anything settled it.
     LhatType *type;
-    bool is_parameter;  // 13.1: declared by a signature rather than bound
-    bool immutable;     // 8.9: a let^ rather than a var^
-    bool names_type;    // 13.14: the name stands for a type in annotations
+    bool is_parameter;  // §13.1: declared by a signature rather than bound
+    bool immutable;     // §8.9: a let^ rather than a var^
+    bool names_type;    // §13.14: the name stands for a type in annotations
     LhatType *named_type; // Meaning in type position (aliases differ from values).
 } LhatBindingSite;
 #endif  // LHAT_WITH_RESOLUTIONS
 
-// 05 の 8.7: a host registers what it provides by writing the type out, so
+// 05§8.7: a host registers what it provides by writing the type out, so
 // there has to be a way from written text to a type without a unit around
 // it. `named` stands for the names a type may mention -- a table type whose
 // members are what the host has registered so far, so that one registration
@@ -531,15 +531,15 @@ typedef struct {
 // Answers NULL when the text is not a type, or names something `named` does
 // not hold. The type belongs to `arena`.
 //
-// `self` is what 13.13's Self^ names in the text -- the type a member is
-// being registered on (05 の 8.7), so 'f^self^, Self^ -> Self^;' reads as
+// `self` is what §13.13's Self^ names in the text -- the type a member is
+// being registered on (05§8.7), so 'f^self^, Self^ -> Self^;' reads as
 // the long spelling would. NULL leaves Self^ an error, as outside any
 // structure.
 LhatType *lhat_type_of_text(const char *text, size_t length,
                             LhatTypeArena *arena, LhatType *named,
                             LhatType *self);
 
-// 05 の 6 章: a unit's exports are types that the units requiring it hold on
+// 05§6: a unit's exports are types that the units requiring it hold on
 // to, so the arena has to outlive any one result. The caller may pass its own
 // and share it across a whole program; without one, the result keeps its own.
 typedef struct {
@@ -576,16 +576,16 @@ typedef struct {
     size_t binding_site_capacity;
 #endif
 
-    // 05 の 4 章: the structure of what this unit publishes, or NULL when it
+    // 05§4: the structure of what this unit publishes, or NULL when it
     // publishes nothing. What a require^ of it yields.
     LhatType *exports;
 
-    // 05 の 3 章: the path module^ declared, written out with its dots and
-    // owned by the result. NULL when the unit declared none, which 3.2
-    // allows. 5.5 needs it to say what the short form of require^ binds.
+    // 05§3: the path module^ declared, written out with its dots and
+    // owned by the result. NULL when the unit declared none, which 05§3.2
+    // allows. 05§5.5 needs it to say what the short form of require^ binds.
     char *module_name;
 
-    // 07 §6: the text of the fixes that write something the source does not
+    // 07§6: the text of the fixes that write something the source does not
     // hold -- a name found near the one written. Each is its own allocation
     // on this chain, so what a diagnostic points at stays where it is however
     // many more are kept, and a diagnostic a later round took back leaves
@@ -612,23 +612,23 @@ const LhatMemberSite *lhat_check_member_site_at(const LhatCheckResult *result,
 
 #endif  // LHAT_WITH_RESOLUTIONS
 
-// 07 の 4 章 and 07 §6: the members `receiver` holds as written -- every one
+// 07§4 and 07§6: the members `receiver` holds as written -- every one
 // a lookup answers with, and no other. The search a member access uses is
 // what decides, so a member a nearer type shadows and one a delegate does
-// not lend (14.7改2) are left out; so are 14.5改's ambiguous ones, which
-// reaching is refused, and 14.10改's positions, which no name spells. What a
+// not lend (§14.7+2) are left out; so are §14.5+'s ambiguous ones, which
+// reaching is refused, and §14.10+'s positions, which no name spells. What a
 // tool offers after a '.' and what a fix offers instead of a misspelling
 // are the one list.
 typedef void (*LhatMemberSink)(void *context, const LhatTypeMember *member);
 void lhat_check_written_members(const LhatType *receiver, LhatMemberSink sink,
                                 void *context);
 
-// 07 の 4 章 with 14.19: the built-in members `receiver` answers -- `length`
+// 07§4 with §14.19: the built-in members `receiver` answers -- `length`
 // on a string, `push^` on a plain table, `resume` on a coroutine. No member
 // list holds them; they are the checker's own answers, and this asks the
 // checker for each of them rather than describing them a second time.
 //
-// The sink gets the spelling that answered (bare or hatted -- 01 の 2.3 makes
+// The sink gets the spelling that answered (bare or hatted -- 01§2.3 makes
 // those different names) and the type the access would have. Written members
 // are NOT included: those are the type's own, and
 // lhat_check_written_members above is what lists them.
@@ -642,7 +642,7 @@ typedef void (*LhatBuiltinSink)(void *context, const char *name, size_t length,
 void lhat_check_builtin_members(LhatCheckResult *result, LhatType *receiver,
                                 LhatBuiltinSink sink, void *context);
 
-// 02 の 14.8改2: the constants number^ carries, for a site written as the
+// §14.8+2: the constants number^ carries, for a site written as the
 // word (LhatMemberSite's number_word). Nothing else stands there, so this is
 // the whole answer rather than an addition to the one above.
 void lhat_check_number_constants(LhatCheckResult *result,
@@ -654,27 +654,27 @@ typedef void (*LhatBindingSink)(void *context, const LhatBindingSite *site);
 
 // Every name in scope at `offset`, innermost first: a name that shadows
 // another is passed on before the one it shadows, so a reader keeping the
-// first of each name is left with what 8 章's lookup would have found.
+// first of each name is left with what 08§8's lookup would have found.
 //
 // The scopes a host or a session opened are not among them -- those cover no
 // source and so contain no position. What a tool wants beside these is the
-// names the language itself carries, which no scope holds either (05 の 8.6).
+// names the language itself carries, which no scope holds either (05§8.6).
 void lhat_check_bindings_at(const LhatCheckResult *result, uint32_t offset,
                             LhatBindingSink sink, void *context);
 
 #endif
 
-// 05 の 5 章. Asked for the unit at `path`, relative to whatever the resolver
+// 05§5. Asked for the unit at `path`, relative to whatever the resolver
 // considers the requiring unit. Returns its export structure, or NULL when it
-// could not be had -- a missing file or a cycle (6.3), which the resolver
+// could not be had -- a missing file or a cycle (10§6.3), which the resolver
 // reports in its own terms.
 //
-// `module_name` is filled with the path 3 章 had that unit declare, or left
-// NULL when it declared none (3.2). 5.5 binds the short form under it, so
+// `module_name` is filled with the path 12§3 had that unit declare, or left
+// NULL when it declared none (§3.2). 05§5.5 binds the short form under it, so
 // the text has to outlive the call -- the unit owns it.
 //
 // `unit_path` is filled with the path the resolver holds the unit under, or
-// left NULL when it has none to give. 07 の 4 章 records it against the
+// left NULL when it has none to give. 07§4 records it against the
 // written path, so that a reader standing on `"lib.lh"` can be sent to the
 // file; it too has to outlive the call, and the unit owns it likewise.
 typedef LhatType *(*LhatRequireResolver)(void *context, const char *path,
@@ -685,21 +685,21 @@ typedef LhatType *(*LhatRequireResolver)(void *context, const char *path,
 typedef struct {
     LhatRequireResolver resolve;
     void *context;
-    // 05 の 8.7: what the host registered, as one nested table type keyed by
+    // 05§8.7: what the host registered, as one nested table type keyed by
     // module path. import^ resolves against this alone, so its answer does
     // not depend on the order units happen to be checked in.
     LhatType *hosted;
 
-    // 05 の 8.6: what the host put in L^ itself, as a table type whose members
-    // are those. NULL when it put nothing there. What 8.6 lists is carried by
+    // 05§8.6: what the host put in L^ itself, as a table type whose members
+    // are those. NULL when it put nothing there. What 05§8.6 lists is carried by
     // the checker regardless; this is what a host added on top.
     LhatType *globals;
 
-    // 05 の 8.2: the names the host bound before anything ran, each to a
-    // member of L^ (8.6). A name no scope holds is looked up here before it
+    // 05§8.2: the names the host bound before anything ran, each to a
+    // member of L^ (05§8.6). A name no scope holds is looked up here before it
     // is reported missing, and its type is the member's.
     //
-    // 8.1 is unchanged by this. The language hands out no names; a host does,
+    // 05§8.1 is unchanged by this. The language hands out no names; a host does,
     // and one that binds none leaves the program seeing nothing. What a name
     // reaches stays readable as L^.<member> whatever a let^ later shadows.
     //
@@ -709,15 +709,15 @@ typedef struct {
     const char *const *initial_members;
     size_t initial_count;
 
-    // 02 の 18.5: the annotations the host registered, which are the only
+    // §18.5: the annotations the host registered, which are the only
     // ones a program may write. NULL/0 when it registered none, and then
     // every annotation written is one the checker refuses.
     const LhatAnnotationDecl *annotations;
     size_t annotation_count;
 } LhatRequire;
 
-// 03 の 3.1. `strict` is a setting of the compilation unit, not a dialect:
-// 3.2 keeps the source text identical either way, and 3.5 limits what
+// 03§3.1. `strict` is a setting of the compilation unit, not a dialect:
+// 03§3.2 keeps the source text identical either way, and 03§3.5 limits what
 // relaxed defers to places where inference could not decide.
 //
 // `lexer` has to be the one the tree was parsed from: names are spans into
@@ -734,7 +734,7 @@ void lhat_check_unit(const LhatNode *unit, const LhatLexer *lexer,
 
 void lhat_check_result_dispose(LhatCheckResult *result);
 
-// 03 の 4.3: a REPL checks many inputs as one running program, so a name one
+// 03§4.3: a REPL checks many inputs as one running program, so a name one
 // input bound has to still have its type in the next. The session carries
 // them, along with the arena their types live in -- the types outlive any one
 // input, and so must the names, which are copied out of the source each was
@@ -751,21 +751,21 @@ const LhatNode *lhat_check_session_seed(LhatCheckSession *session, const char *n
 // read out of a result checked in it stays valid.
 void lhat_check_session_dispose(LhatCheckSession *session);
 
-// 05 の 8.6: a member of L^ the host provides, its type written in 13 章's
-// grammar the way 8.7's registration writes one. A prompt has no LhatProgram
+// 05§8.6: a member of L^ the host provides, its type written in §13's
+// grammar the way 05§8.7's registration writes one. A prompt has no LhatProgram
 // to hold these, so the session does -- what a file gets through LhatRequire.
 // Resolved in the session's own arena, so the caller keeps no type.
 bool lhat_check_session_global(LhatCheckSession *session, const char *name,
                                const char *signature);
 
-// 05 の 8.2: the names the host bound to members of L^. The arrays belong to
+// 05§8.2: the names the host bound to members of L^. The arrays belong to
 // the caller and have to outlive the session; setting them again replaces
 // what was there.
 void lhat_check_session_bind(LhatCheckSession *session,
                              const char *const *names,
                              const char *const *members, size_t count);
 
-// 05 の 8.7: the host registry a prompt's import^ resolves against, and 8.6's
+// 05§8.7: the host registry a prompt's import^ resolves against, and 05§8.6's
 // L^ members alongside it -- the LhatRequire fields a file gets from its
 // LhatProgram. A prompt has no program of its own, so a host that wants
 // import^ to answer at a prompt makes one, registers into it, and hands the
@@ -785,25 +785,25 @@ void lhat_check_next(LhatCheckSession *session, const LhatNode *unit,
                      const LhatLexer *lexer, bool strict,
                      LhatCheckResult *result);
 
-// 14.15 with 14.11: the first member of `type` that nothing has provided --
-// declared by an abstract^, or left waiting by 14.15改's override^ -- or NULL
+// §14.15 with §14.11: the first member of `type` that nothing has provided --
+// declared by an abstract^, or left waiting by §14.15+'s override^ -- or NULL
 // when every one is filled. A definition still holding one cannot be
 // instantiated, which is what makes it worth saying out loud: it is the
 // difference between a type to compose onto and a type to make one of, and
 // nothing in the written form says which.
 //
-// The rule is the checker's (this is the very predicate 14.11 refuses new
+// The rule is the checker's (this is the very predicate §14.11 refuses new
 // with), so it is asked here rather than read off the type a second time.
 const LhatTypeMember *lhat_check_unimplemented_member(const LhatType *type);
 
 // The text of a code, holes unfilled: a code only ever reported with a name
-// has the hole for it here (10 §5.1).
+// has the hole for it here (10§5.1).
 const char *lhat_check_error_message(LhatCheckErrorCode code);
-// 10 §4: the stable ID of the same message; NULL for a code the table
+// 10§4: the stable ID of the same message; NULL for a code the table
 // does not hold.
 const char *lhat_check_error_id(LhatCheckErrorCode code);
 
-// 10 §7.1: a message is written in the language of the program it is about.
+// 10§7.1: a message is written in the language of the program it is about.
 // lhat/program.h is where that is declared; naming it here asks for nothing
 // else.
 struct LhatProgram;
@@ -818,7 +818,7 @@ struct LhatProgram;
 size_t lhat_check_message_write(const struct LhatProgram *program,
                                 const LhatCheckDiagnostic *diagnostic,
                                 char *out, size_t capacity);
-// 10 §4: the ID of the text that message is drawn from; NULL for a code no
+// 10§4: the ID of the text that message is drawn from; NULL for a code no
 // table holds.
 const char *lhat_check_message_id(const LhatCheckDiagnostic *diagnostic);
 

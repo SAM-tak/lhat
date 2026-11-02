@@ -8,16 +8,16 @@
 #include "grapheme.h"
 #include "lhat/port.h"
 
-// 02 の 14.21: the whole number `toward` picks -- floor, ceil or nearbyint.
+// §14.21: the whole number `toward` picks -- floor, ceil or nearbyint.
 //
-// 14.8改: an integer while it can be one. Past what an int64 names, the real
+// §14.8+: an integer while it can be one. Past what an int64 names, the real
 // is already whole (every double that large is), so it answers as itself --
 // and an infinity or a NaN falls out of the same test rather than wanting one
 // of its own, since neither is inside the range.
 //
 // nearbyint reads the rounding mode, whose default is to nearest with a half
 // going to the even side. printf's "%.0f" reads the same mode, which is why
-// 14.21's round and 14.17's format agree on a half -- one setting, not two
+// §14.21's round and §14.17's format agree on a half -- one setting, not two
 // implementations that happen to match.
 static LhatValue whole_of(LhatValue value, LhatReal (*toward)(LhatReal))
 {
@@ -31,7 +31,7 @@ static LhatValue whole_of(LhatValue value, LhatReal (*toward)(LhatReal))
     return lhat_real(whole);
 }
 
-// 02 の 14.19: an ordinal as written. 14.8 makes number^ one type of two
+// §14.19: an ordinal as written. §14.8 makes number^ one type of two
 // representations, so 3 and 3.0 name the same character -- and a value that
 // came out of a division is rounded rather than refused, since a real is the
 // ordinary answer there.
@@ -57,7 +57,7 @@ bool vm_ordinal_of(LhatValue value, LhatInteger *out)
     return true;
 }
 
-// 14.19: a written ordinal as a position counting from 0. A negative one
+// §14.19: a written ordinal as a position counting from 0. A negative one
 // counts from the end, so -1 is the last character. What still falls
 // outside 0..count-1 is the caller's to refuse.
 LhatInteger vm_resolve_ordinal(LhatInteger written, size_t count)
@@ -68,7 +68,7 @@ LhatInteger vm_resolve_ordinal(LhatInteger written, size_t count)
     return written;
 }
 // ---------------------------------------------------------------------------
-// 02 の 14.19改3: the plain string searches
+// §14.19+3: the plain string searches
 // ---------------------------------------------------------------------------
 
 // Literal matches must cover complete grapheme clusters. `from` is a
@@ -348,18 +348,18 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
 {
     LhatValue sent = b > 0 ? lhat_slots_get(m->slots, first) : lhat_nil();
 
-    // 05 の 8.6: the collector's controls -- the one thing a program
+    // 05§8.6: the collector's controls -- the one thing a program
     // cannot arrange for itself.
     if (native->kind >= LHAT_NATIVE_GC &&
         native->kind <= LHAT_NATIVE_GC_STATS) {
         return gc_native(m, native->kind, into, sent, b);
     }
 
-    // 05 の 8.9: the box's two members. get answers the value
+    // 05§8.9: the box's two members. get answers the value
     // whole -- the box's run is head-shaped, so the placement
     // a host's answer takes lays it down unchanged. set
     // writes a value of the same tag over the bytes.
-    // 02 の 14.22: the table operations, through one door.
+    // §14.22: the table operations, through one door.
     // The arguments are copied out of the window first -- a
     // sort's comparator runs nested L^ code over this frame
     // -- and the answer lands over R(a) afterwards.
@@ -412,7 +412,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
             lhat_as_hostvalue_tag(sent) != box_tag) {
             return LHAT_RUN_TYPE_ERROR;
         }
-        // 14.11: a prototype's box takes no writes.
+        // §14.11: a prototype's box takes no writes.
         if (box->sealed) {
             return LHAT_RUN_SEALED;
         }
@@ -423,9 +423,9 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
-    // 02 の 14.17: the value written down. Takes nothing, or
+    // §14.17: the value written down. Takes nothing, or
     // a format when what it is bound to is a number^ -- the
-    // two signatures 14.12 makes an intersection of, told
+    // two signatures §14.12 makes an intersection of, told
     // apart here by how many arguments arrived.
     if (native->kind == LHAT_NATIVE_TOSTRING) {
         if (b > 1) {
@@ -459,7 +459,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
                                spelt->length, text, needed + 1,
                                &needed);
         } else {
-            // 05 の 8.9: a bound host value is the head
+            // 05§8.9: a bound host value is the head
             // alone -- the tag, no bytes -- so the name is
             // all there is to write. lhat_value_text reads
             // the pointer form (a host's argument) and must
@@ -502,8 +502,8 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
-    // 02 の 14.20: the comparison '=' makes, with the error
-    // term written down instead of taken from 14.8. The same
+    // §14.20: the comparison '=' makes, with the error
+    // term written down instead of taken from §14.8. The same
     // predicate either way, so what a writer chooses is the
     // width of the band and never a different question.
     if (native->kind == LHAT_NATIVE_EQ) {
@@ -516,7 +516,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
             !lhat_is_number(width)) {
             return LHAT_RUN_TYPE_ERROR;
         }
-        // Written as a distance rather than as 14.8's factor:
+        // Written as a distance rather than as §14.8's factor:
         // a writer asking for one says how far apart two may
         // be, which is the number they have in hand. Scaled
         // the same way all the same, so the answer does not
@@ -527,7 +527,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
-    // 02 の 14.21: the whole number below, above or nearest.
+    // §14.21: the whole number below, above or nearest.
     // Nothing to take: which of the three it is was settled
     // by the name the member was reached through.
     if (native->kind == LHAT_NATIVE_FLOOR ||
@@ -545,8 +545,8 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
-    // 02 の 14.21改: abs and sign take nothing; clamp takes
-    // its two bounds. An integer stays an integer (14.8改)
+    // §14.21+: abs and sign take nothing; clamp takes
+    // its two bounds. An integer stays an integer (§14.8+)
     // -- only the one integer with no negative widens.
     if (native->kind == LHAT_NATIVE_ABS ||
         native->kind == LHAT_NATIVE_SIGN) {
@@ -586,7 +586,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
-    // 02 の 14.23: isinteger is asked by value and never stops;
+    // §14.23: isinteger is asked by value and never stops;
     // the other three read bits, so both sides must be whole
     // numbers within 64 bits, the bitwise operators' own rule.
     if (native->kind == LHAT_NATIVE_ISINTEGER) {
@@ -619,9 +619,9 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
-    // 02 の 14.17改2: the number^ a string^ names, or nil^
+    // §14.17+2: the number^ a string^ names, or nil^
     // where it names none. Takes nothing, or a format -- the
-    // same two signatures 14.17's takes, told apart the same
+    // same two signatures §14.17's takes, told apart the same
     // way, by how many arguments arrived.
     if (native->kind == LHAT_NATIVE_TONUMBER) {
         if (b > 1) {
@@ -631,7 +631,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         const LhatString *subject =
             (const LhatString *)lhat_as_object(native->bound);
         if (b == 0) {
-            // 01 の 10 章's own grammar, so what tonumber
+            // 01§10's own grammar, so what tonumber
             // reads and what L^ reads cannot drift apart.
             bool is_real = false;
             LhatInteger whole = 0;
@@ -656,7 +656,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         if (!lhat_number_scan(subject->text, subject->length,
                               spelt->text, spelt->length,
                               &number, &got)) {
-            // 14.17 draws the line in the same place: the
+            // §14.17 draws the line in the same place: the
             // format is the writer's and a bad one is an
             // error, where the text is data and a text that
             // does not match is simply not a number^.
@@ -702,13 +702,13 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
-    // 02 の 14.19: a run of the subject's characters, named
+    // §14.19: a run of the subject's characters, named
     // by ordinals that start at 0 and count from the end
     // when negative. A range that does not stand answers the
     // empty string -- what is not there is not an error, the
-    // way 04 の 11.3 has a missing key answer nil^.
+    // way 04§11.3 has a missing key answer nil^.
     //
-    // 14.19改: at(i) is that run with both ends at i, so it
+    // §14.19+: at(i) is that run with both ends at i, so it
     // comes through here -- the ordinal is resolved, rounded
     // and refused in exactly the same places.
     if (native->kind == LHAT_NATIVE_SUBSTRING ||
@@ -725,7 +725,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
             (b == 2 && !vm_ordinal_of(lhat_slots_get(m->slots, first + 1), &to))) {
             // Handing over something that is not a number is
             // the writer's mistake, not a range that came out
-            // empty -- 14.17改2 draws the same line.
+            // empty -- §14.17+2 draws the same line.
             return LHAT_RUN_TYPE_ERROR;
         }
         size_t count = subject->characters;
@@ -768,7 +768,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
-    // 02 の 14.19改3: the ASCII case swaps. The rest of the
+    // §14.19+3: the ASCII case swaps. The rest of the
     // bytes pass through as they are -- no Unicode case
     // tables -- and a string nothing changed in answers
     // itself, substring's whole-of-it economy.
@@ -815,7 +815,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
-    // 02 の 14.19改3: join^'s inverse, so the law decides
+    // §14.19+3: join^'s inverse, so the law decides
     // the details -- s.split(sep).join^(sep) = s, which is
     // what keeps every empty piece. The 0-argument form is
     // the other reading, "the words": runs of whitespace
@@ -834,7 +834,7 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
             return LHAT_RUN_OUT_OF_MEMORY;
         }
         // The table under construction is a root while the
-        // strings are made (14.22's chain).
+        // strings are made (§14.22's chain).
         LhatNativeHold hold;
         hold.held = lhat_object((LhatObject *)pieces);
         hold.outer = m->native_hold;
@@ -919,10 +919,10 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
-    // 02 の 14.19改3: the plain searches. The needle is a
+    // §14.19+3: the plain searches. The needle is a
     // literal string -- what a pattern would ask for lives
     // in std.regex -- and what is not there answers nil^
-    // (04 の 11.3), never a sentinel.
+    // (04§11.3), never a sentinel.
     if (native->kind == LHAT_NATIVE_FIND ||
         native->kind == LHAT_NATIVE_FINDALL ||
         native->kind == LHAT_NATIVE_REPLACE) {
@@ -1053,9 +1053,9 @@ LhatRunStatus vm_call_native(Machine *m, const LhatNative *native,
         return LHAT_RUN_OK;
     }
 
-    // 16.3: what `in^` walks. A table answers with a walk of
+    // §16.3: what `in^` walks. A table answers with a walk of
     // its keys; a coroutine is already one.
-    // 16.3改2: the projections are made the same way and at
+    // §16.3+2: the projections are made the same way and at
     // the same moment -- one call, one walk -- which is what
     // the parentheses are saying.
     if (native->kind == LHAT_NATIVE_ITERATE ||

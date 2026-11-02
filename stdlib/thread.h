@@ -1,7 +1,7 @@
 // L^ (lhat) -- sample standard library: std.thread.
 //
 // One function a host calls once, before lhat_program_check, the same as any
-// of program.h's own registrations (05 の 8.7). Nothing here is required --
+// of program.h's own registrations (05§8.7). Nothing here is required --
 // a host that never calls this never sees a "thread" module.
 //
 // Needs an OS thread implementation: port/thread.h, the same one lsp/ uses in
@@ -48,7 +48,7 @@
 // stdlib module -- read the result with try^/catch^, or narrow with fits^
 // against std.thread.ThreadHandle or an error kind (both supported).
 // Naming std.sys.Error.OutOfMemory in an fits^ needs its own
-// `import^ std.sys` -- 8.1's "the language hands out no names" applies
+// `import^ std.sys` -- 12§8.1's "the language hands out no names" applies
 // to a name reached through another module's registration too.
 
 #ifndef LHATSTDLIB_THREAD_H

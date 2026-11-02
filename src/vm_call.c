@@ -5,7 +5,7 @@
 #include "lhat/config.h"
 #include "lhat/port.h"
 
-// 15.4 with 5.4: the inverse of the move a yield^ makes. The frame is back
+// §15.4 with 09§5.4: the inverse of the move a yield^ makes. The frame is back
 // on the stack at `base` -- always as the new top frame, so its slots are
 // the highest addresses in use -- and every vm_capture that traveled with the
 // saved registers points back into the live slots and rejoins the machine's
@@ -25,13 +25,13 @@ static void reattach_upvalues(Machine *m, LhatCoroutine *co, size_t base)
     }
 }
 
-// 5.11 with 02 の 10.7: puts a suspended coroutine's one saved frame back on
+// 03§5.11 with §10.7: puts a suspended coroutine's one saved frame back on
 // the stack so that what it still owes can be run. The caller has already
 // made room (the frame array and the stack's own end) and picked where the
 // frame goes: `next_base` is its first register and `result` the slot in the
 // caller's frame the answer lands in.
 //
-// 5.2 fixes a frame's width at compile time and gc.c's mark_roots walks all
+// 10§5.2 fixes a frame's width at compile time and gc.c's mark_roots walks all
 // of it -- it has to, since the scratch above the names is where a
 // half-finished expression keeps what it is holding. So every slot inside the
 // width is read by the collector whether or not this frame ever wrote it, and
@@ -42,8 +42,8 @@ static void reattach_upvalues(Machine *m, LhatCoroutine *co, size_t base)
 // Emptying the scratch here is what keeps the walk seeing nil^ instead. Lua
 // clears a new frame's stack for the same reason.
 //
-// 05 の 8.9: where the parameters end is `parameter_slots` and not the count
-// -- a host value parameter is one parameter and several slots. 13.7's
+// 05§8.9: where the parameters end is `parameter_slots` and not the count
+// -- a host value parameter is one parameter and several slots. §13.7's
 // collector is a parameter of its own and is inside it too, so everything the
 // caller laid down is below this and only the scratch is emptied.
 void vm_clear_scratch(Machine *m, size_t base, const LhatProto *proto)
@@ -51,7 +51,7 @@ void vm_clear_scratch(Machine *m, size_t base, const LhatProto *proto)
     vm_clear_scratch_inline(m, base, proto);
 }
 
-// The frame comes back marked `disposing`, which 10.7 needs -- a yield^ from
+// The frame comes back marked `disposing`, which §10.7 needs -- a yield^ from
 // inside a cleanup has nothing to suspend into -- and set to drain rather
 // than to run: every cleanup, innermost first, and then the coroutine is
 // finished. What the caller does with `frame`/`registers`/`chunk`/`pc` after
@@ -71,9 +71,9 @@ void vm_enter_disposal_frame(Machine *m, LhatCoroutine *co,
     called->pc = co->frame.pc;
     called->base = next_base;
     called->result = result;
-    called->prepared = 1;  // 13.8改: a dispose answers nothing to take apart
+    called->prepared = 1;  // §13.8+: a dispose answers nothing to take apart
     called->coroutine = co;
-    called->drop_answer = false;  // 5.3
+    called->drop_answer = false;  // §5.3
     called->disposing = true;
     called->returning = true;
     called->drain_target = 0;
@@ -84,7 +84,7 @@ void vm_enter_disposal_frame(Machine *m, LhatCoroutine *co,
         called->cleanups[i] = co->frame.cleanups[i];
     }
     if (co->frame.state == LHAT_COROUTINE_SUSPENDED && co->frame.cleanup_count > 0) {
-        m->cleanup_carriers--;  // 10.7: its cleanups are the frame's now
+        m->cleanup_carriers--;  // §10.7: its cleanups are the frame's now
     }
     co->frame.state = LHAT_COROUTINE_RUNNING;
 
@@ -94,7 +94,7 @@ void vm_enter_disposal_frame(Machine *m, LhatCoroutine *co,
     *pc = called->pc;
 }
 
-// 5.4: one place per slot, so two closures capturing the same name share it.
+// 05§5.4: one place per slot, so two closures capturing the same name share it.
 // The machine's list only ever holds captures of live stack slots, so the
 // payload pointer alone orders it -- the tag pointer travels alongside.
 LhatUpvalue *vm_capture(Machine *m, size_t slot)
@@ -127,7 +127,7 @@ static void close_into_cell(Machine *m, LhatUpvalue *upvalue)
     upvalue->closed_value = held.as;
     upvalue->closed_tag = (uint8_t)held.tag;
     upvalue->location = lhat_upvalue_closed_ref(upvalue);
-    // 5.12: what was a stack slot the roots covered is now a place the
+    // 03§5.12: what was a stack slot the roots covered is now a place the
     // upvalue itself holds, so a black upvalue has just gained a reference
     // the collector has not seen.
     lhat_gc_barrier(m, (LhatObject *)upvalue, held);
@@ -147,7 +147,7 @@ void vm_close_upvalues(Machine *m, size_t above)
     }
 }
 
-// The same for one place rather than a frame's worth. 03 の 4.3: a session's
+// The same for one place rather than a frame's worth. 03§4.3: a session's
 // top level puts every let^ of a name back in the one slot, so severing that
 // binding's sharing must leave the names above it -- other bindings, still
 // live -- shared as they were.
@@ -168,9 +168,9 @@ void vm_close_one_upvalue(Machine *m, size_t slot)
 }
 
 // What a host function left behind when it returned, read by the three
-// places one is called from. 05 の 8.7改: a nested lhat_machine_call that
+// places one is called from. 05§8.7+: a nested lhat_machine_call that
 // faulted leaves its frames standing (nothing unwinds), so frames past
-// `frames_before` mean the outer run ends with the same fault. 8.7改2: and
+// `frames_before` mean the outer run ends with the same fault. 05§8.7+2: and
 // lhat_machine_panic asks for the same end with a value of the host's own.
 // True when the run is over, with what to end it with.
 bool vm_host_faulted(Machine *m, size_t frames_before,
@@ -216,20 +216,20 @@ static void hook_fault(Machine *m)
 LhatRunResult vm_finish(Machine *m, const LhatChunk *chunk,
                             LhatRunStatus status, LhatValue value, size_t at)
 {
-    // 03 の 4.3: what the program allocated belongs to the machine, not to
+    // 03§4.3: what the program allocated belongs to the machine, not to
     // the run -- the answer may be a table or a string, and a REPL's next
     // input has to be able to reach it. So a result owns nothing and the
     // answer is good for as long as the machine is.
     LhatRunResult result;
     result.status = status;
     result.value = value;
-    // 02 の 13.8改: the positions of a tuple answer, which the pop copied
+    // §13.8+: the positions of a tuple answer, which the pop copied
     // into the machine's room before coming here. Everything else leaves the
     // count at zero, so an ordinary answer reads as it always did.
     result.positions = m->tuple_scratch_count > 0 ? m->tuple_scratch : NULL;
     result.position_count = m->tuple_scratch_count;
     result.at = at;
-    // 04 の 11.6改: the frames of this run are still standing (nothing
+    // 04§11.6+: the frames of this run are still standing (nothing
     // here unwinds), so remember which they were and where the top one
     // stopped -- lhat_machine_fault_* walks them until the next run.
     if (status != LHAT_RUN_OK && status != LHAT_RUN_SUSPENDED) {
@@ -246,8 +246,8 @@ LhatRunResult vm_finish(Machine *m, const LhatChunk *chunk,
         m->fault_status = LHAT_RUN_OK;
         m->fault_value = lhat_nil();
     }
-    // 04 の 11 章: named from the chunk's own line table (03 の 5.11a-style
-    // parallel array) and 02 の 11.8's operator names -- both silently
+    // 04§11: named from the chunk's own line table (03§5.11+-style
+    // parallel array) and §11.8's operator names -- both silently
     // answer nothing usable when `at` is out of range, which only happens
     // for the one fault raised before the first instruction runs.
     result.line = at < chunk->count ? chunk->lines[at] : 0;
@@ -261,8 +261,8 @@ LhatRunResult vm_finish(Machine *m, const LhatChunk *chunk,
     result.collected = m->collected;
     result.live = m->objects.count;
 
-    // 5.4: an upvalue points into the stack, and the frames are about to go
-    // -- but the list is not emptied here. 03 の 4.3: a session's top-level
+    // 03§5.4: an upvalue points into the stack, and the frames are about to go
+    // -- but the list is not emptied here. 03§4.3: a session's top-level
     // slots outlive the run, and what points into them has to stay listed as
     // open, or the next input could neither find it to close (a let^ writing
     // that name again) nor find it to share (a second closure over the same
@@ -276,7 +276,7 @@ LhatRunResult vm_finish(Machine *m, const LhatChunk *chunk,
 WalkStep vm_step_walk(Machine *m, LhatWalkCursor *cursor, WalkMode mode,
                       size_t at, Frame *frame)
 {
-    // 16.3改2: a projection walks the whole table and hands over one half of
+    // §16.3+2: a projection walks the whole table and hands over one half of
     // each step, so the mode says nothing here -- there is one slot to fill
     // whichever way the caller asked. A caller that reserved a run is refused
     // above; this is only ever reached with a slot to write.
@@ -302,7 +302,7 @@ WalkStep vm_step_walk(Machine *m, LhatWalkCursor *cursor, WalkMode mode,
             return WALK_TOOK;
         }
         // Only the dense half, by index -- lhat_table_walk would go on into
-        // the keyed half, which this form does not visit. 14.10: it ends at
+        // the keyed half, which this form does not visit. §14.10: it ends at
         // the sequence's length, and a nil^ position is visited as nil^.
         const LhatTable *table = cursor->walking;
         if (table == NULL || cursor->at_array >= table->array_count) {
@@ -321,7 +321,7 @@ WalkStep vm_step_walk(Machine *m, LhatWalkCursor *cursor, WalkMode mode,
     }
 
     if (mode == WALK_AS_RUN) {
-        // 13.8改: the pair as a tuple, laid into the caller's reserved slots.
+        // §13.8+: the pair as a tuple, laid into the caller's reserved slots.
         lhat_slots_set(m->slots, at, lhat_run_head(2));
         lhat_slots_set(m->slots, at + 1, key);
         lhat_slots_set(m->slots, at + 2, value);
@@ -329,7 +329,7 @@ WalkStep vm_step_walk(Machine *m, LhatWalkCursor *cursor, WalkMode mode,
     }
 
     // WALK_AS_ANSWER: the positions ride the frame's answer room and only
-    // the head sits in the slot, which is what the YIELD of 15.8's
+    // the head sits in the slot, which is what the YIELD of §15.8's
     // delegation loop forwards. They stay reachable while they sit there
     // through the table being walked, which the walk holds and the loop
     // holds in a register -- not through the room itself, which gc.c walks
@@ -351,7 +351,7 @@ WalkStep vm_step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
     return step;
 }
 
-// 05 の 8.8: the same step for a walk the host wrote -- its body is one C
+// 05§8.8: the same step for a walk the host wrote -- its body is one C
 // call rather than a frame, so this is vm_step_table_walk's twin with the value
 // already picked by the host. `sent` is what the resume handed in (nil^ from
 // the loops, which send nothing). `expected` is the positions a WALK_AS_RUN
@@ -359,7 +359,7 @@ WalkStep vm_step_table_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
 // value (0 when it could only be one). A step that answers a shape
 // the call site did not reserve puts the mismatch in *fault, LHAT_RUN_OK
 // otherwise -- the same refusals a yield^'s placement makes.
-// 02 の 13.8改: the boundary's answer, in the shape the machine carries one
+// §13.8+: the boundary's answer, in the shape the machine carries one
 // in. Defined below, where the room itself is.
 static bool boundary_answer(Machine *m, int written, LhatValue *answered);
 bool vm_call_host_fn(Machine *m, LhatHostFn call, void *context,
@@ -390,11 +390,11 @@ WalkStep vm_step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
         return WALK_ENDED;
     }
     if (!more) {
-        // 02 の 10.7: the walk is over, so its state goes back now rather
+        // §10.7: the walk is over, so its state goes back now rather
         // than waiting on a collection.
         co->frame.state = LHAT_COROUTINE_DONE;
         lhat_coroutine_release((LhatObject *)co, m);
-        // 13.9: what a walk wrote as it ended is T -- the slot a body
+        // §13.9: what a walk wrote as it ended is T -- the slot a body
         // coroutine fills by writing return^. It is placed like any
         // other answer, so a hand-written resume() reads it; `for^`
         // does not, because the loop asks ISDONE after the resume and
@@ -414,7 +414,7 @@ WalkStep vm_step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
     }
 
     if (!lhat_is_run(out)) {
-        // 05 の 8.9: a host value is written out whole on the spot, exactly
+        // 05§8.9: a host value is written out whole on the spot, exactly
         // as a host call's answer is -- the scratch it lives in belongs to
         // whoever crosses the boundary next, and the next step is exactly
         // such a crossing. Only into room its width fits, whichever mode
@@ -452,7 +452,7 @@ WalkStep vm_step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
         return WALK_ENDED;
     }
     if (mode == WALK_AS_VALUE) {
-        // One slot reserved and a tuple came out -- 13.8改's refusal.
+        // One slot reserved and a tuple came out -- §13.8+'s refusal.
         *fault = LHAT_RUN_TUPLE_UNEXPECTED;
         return WALK_ENDED;
     }
@@ -480,12 +480,12 @@ WalkStep vm_step_host_walk(Machine *m, LhatCoroutine *co, WalkMode mode,
     return more ? WALK_TOOK : WALK_ENDED;
 }
 
-// 5.11: one frame, put back where it left off -- shared by the natives'
+// 03§5.11: one frame, put back where it left off -- shared by the natives'
 // resume, LHAT_BC_RESUME and the host boundary (lhat_machine_resume), which
 // all restore a BODY coroutine the same way. `prepared` is what the call
-// site reserved for the answer (13.8改) and `result_slot` is where it lands
+// site reserved for the answer (§13.8+) and `result_slot` is where it lands
 // in the resumer's window. `sent`/`sent_count` is what the resume sends --
-// none, one, or 13.8改's several. The caller has checked the frame and slot
+// none, one, or §13.8+'s several. The caller has checked the frame and slot
 // bounds (a several-send against sent_into included) and saved its own pc.
 Frame *vm_enter_resume_frame(Machine *m, LhatCoroutine *co,
                                  size_t next_base, uint8_t result_slot,
@@ -506,7 +506,7 @@ Frame *vm_enter_resume_frame(Machine *m, LhatCoroutine *co,
     called->prepared = prepared;
     called->coroutine = co;
     called->disposing = false;
-    called->drop_answer = false;  // 5.3
+    called->drop_answer = false;  // §5.3
     // The room is a root while the frame lives (mark_roots), so it starts
     // empty rather than as whatever the slot held before.
     called->answer = lhat_nil();
@@ -519,12 +519,12 @@ Frame *vm_enter_resume_frame(Machine *m, LhatCoroutine *co,
         called->cleanups[i] = co->frame.cleanups[i];
     }
     if (resuming && co->frame.cleanup_count > 0) {
-        m->cleanup_carriers--;  // 10.7: its cleanups are the frame's now
+        m->cleanup_carriers--;  // §10.7: its cleanups are the frame's now
     }
     co->frame.state = LHAT_COROUTINE_RUNNING;
     if (resuming) {
-        // 15.4: what the resume sent arrives where the yield^ put out what
-        // it sent. 13.8改: several arrive as a run -- head in that slot and
+        // §15.4: what the resume sent arrives where the yield^ put out what
+        // it sent. §13.8+: several arrive as a run -- head in that slot and
         // the positions after it, which the yield^'s own binding reserved.
         if (sent_count > 1) {
             lhat_slots_set(m->slots, next_base + co->frame.sent_into,
@@ -534,7 +534,7 @@ Frame *vm_enter_resume_frame(Machine *m, LhatCoroutine *co,
                                sent[i]);
             }
         } else if (sent_count == 1 && lhat_is_hostvalue(sent[0])) {
-            // 05 の 8.9: the pointer form the gather built, written out
+            // 05§8.9: the pointer form the gather built, written out
             // whole where the yield^ receives -- the callers checked the
             // width against the frame already.
             vm_place_hostvalue_answer(m, next_base + co->frame.sent_into, sent[0]);
@@ -545,7 +545,7 @@ Frame *vm_enter_resume_frame(Machine *m, LhatCoroutine *co,
     }
     return called;
 }
-// 02 の 13.8改 with 05 の 8.7: the boundary's answer, put into the shape the
+// §13.8+ with 05§8.7: the boundary's answer, put into the shape the
 // machine already carries one in. A host writes its values into the room
 // and says how many; from here on a single value travels as itself and
 // several travel as a run head with the positions in tuple_scratch --
@@ -600,25 +600,25 @@ LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
 {
     const LhatChunk *chunk = &proto->chunk;
 
-    // 02 の 13.8改: whatever the last answer left in the room is not this
+    // §13.8+: whatever the last answer left in the room is not this
     // run.s, and holding it would keep those values from being collected.
-    // 8.7改2: a panic asked for outside any host call belongs to no run.
+    // 05§8.7+2: a panic asked for outside any host call belongs to no run.
     m->host_panicked = false;
     m->tuple_scratch_count = 0;
 
-    // 5.4 and 5.2: the frames and the registers belong to the run, so each
+    // 09§5.4 and 09§5.2: the frames and the registers belong to the run, so each
     // starts with neither. What the heap holds is the machine's and stays.
     //
-    // 03 の 4.3: except the registers the unit says are already spoken for.
+    // 03§4.3: except the registers the unit says are already spoken for.
     // A REPL's second input finds the top-level names of the first there,
     // and clearing them would be clearing the session.
-    // 5.4: what an earlier run left sharing a slot this one is about to
+    // 09§5.4: what an earlier run left sharing a slot this one is about to
     // clear takes its value away first. The slots below `reserved` are the
     // session's and survive, so what points into them stays open and shared
     // -- that is what lets a closure an earlier input made go on naming the
     // very place a later one reads and writes.
     m->frame_count = 0;
-    // 04 の 11.6改: and what the last run's fault left readable goes with
+    // 04§11.6+: and what the last run's fault left readable goes with
     // them -- a host asked "where am I" in this run must be answered with
     // this run's frames, not the span the last one recorded.
     m->fault_depth = m->fault_base = 0;
@@ -635,7 +635,7 @@ LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
     }
     entry->proto = proto;
 
-    // 02 の 15.2 with 15.5: a script whose top level yields is a yieldable
+    // §15.2 with §15.5: a script whose top level yields is a yieldable
     // 'p^...', so running it runs nothing -- it answers the coroutine, built
     // and handed its '...' exactly as a host's call of a yieldable closure
     // would be, for the host to drive with lhat_machine_resume.
@@ -646,7 +646,7 @@ LhatRunResult lhat_run_arguments(LhatMachine *m, const LhatProto *proto,
 
     vm_push_frame(m, entry, 0, 0, 1);
 
-    // 02 の 13.7 with 05 の 3.2: a script's '...' is register 0, and what was
+    // §13.7 with 05§3.2: a script's '...' is register 0, and what was
     // handed over is collected into it the way a CALL collects. A module^
     // unit (or a session's input) has no '...' to take anything.
     if (proto->has_variadic) {
@@ -694,8 +694,8 @@ LhatCoroutine *vm_coroutine_new(Machine *m, const LhatClosure *closure,
     return lhat_coroutine_new(&m->objects, closure, registers);
 }
 
-// 02 の 15.16: the coroutine an await^ in this suspended body is driving, or
-// NULL. 15.8's loop is the one place a RESUME of no width is emitted
+// §15.16: the coroutine an await^ in this suspended body is driving, or
+// NULL. §15.8's loop is the one place a RESUME of no width is emitted
 // (compile.c), and it suspends on the YIELD four instructions after it -- so
 // a frame stopped just past such a YIELD is inside one, and the RESUME names
 // the register the inner coroutine is in.
@@ -723,7 +723,7 @@ static LhatCoroutine *awaited_by(const LhatCoroutine *co)
                : NULL;
 }
 
-// 02 の 15.16: a body's frame, and the frames of the await^ chain under it.
+// §15.16: a body's frame, and the frames of the await^ chain under it.
 // Only a body has a frame to keep -- a walk of a table or the host's has
 // state the machine does not own -- and a running one is on the stack, not
 // in the coroutine.
@@ -781,7 +781,7 @@ static bool captured_then(const LhatCostateEntry *entry, const LhatUpvalue *up)
     return false;
 }
 
-// 02 の 15.16: puts every frame `state` kept back into its own coroutine.
+// §15.16: puts every frame `state` kept back into its own coroutine.
 // Only into the one it was saved from, and only while each still runs the
 // closure it ran then -- a for^ loop's coroutine given back to the spares and
 // made again for another body is not the one the frame belongs to.
@@ -804,7 +804,7 @@ LhatRunStatus vm_coroutine_load(Machine *m, LhatCoroutine *co, LhatValue saved)
     for (size_t i = 0; i < state->count; i++) {
         const LhatCostateEntry *entry = &state->entries[i];
         LhatCoroutine *at = entry->coroutine;
-        // 10.7: the cleanups the abandoned frame still owed go with it,
+        // §10.7: the cleanups the abandoned frame still owed go with it,
         // unrun -- the same as a fault leaves them.
         if (at->frame.state == LHAT_COROUTINE_SUSPENDED &&
             at->frame.cleanup_count > 0) {
@@ -870,7 +870,7 @@ LhatRunResult lhat_run(LhatMachine *m, const LhatProto *proto)
 // empty the way vm_finish() already leaves them for `at` out of range.
 static LhatRunResult call_fault(Machine *m, LhatRunStatus status)
 {
-    // 04 の 11.6改: a boundary fault happened before any frame went on, so
+    // 04§11.6+: a boundary fault happened before any frame went on, so
     // the recorded span is empty -- lhat_machine_fault_depth answers 0.
     if (status != LHAT_RUN_OK) {
         m->fault_base = m->fault_depth = m->frame_count;
@@ -892,8 +892,8 @@ static LhatRunResult call_fault(Machine *m, LhatRunStatus status)
 
 // The body of both host entry points below. `receiver` means something only
 // when `as_method`, and then the callee is a member reached through it
-// (14.4) -- which is the whole of the difference between them.
-// 05 の 8.9改: one boundary value into consecutive slots. A host value
+// (§14.4) -- which is the whole of the difference between them.
+// 05§8.9+: one boundary value into consecutive slots. A host value
 // widens to its head and continuation slots -- the in-frame shape every
 // instruction reads -- and anything else takes one slot. Answers how many
 // slots it took.
@@ -919,15 +919,15 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
                                size_t count)
 {
     size_t base = m->frame_count;
-    m->tuple_scratch_count = 0;  // 13.8改, as in lhat_run
+    m->tuple_scratch_count = 0;  // §13.8+, as in lhat_run
 
-    // 05 の 8.7: a member the host registered in C, called back the way an
+    // 05§8.7: a member the host registered in C, called back the way an
     // instruction calls one -- flat arguments, no spread. Without this a
-    // host holding a hostdata value could call nothing on it, since 8.8
+    // host holding a hostdata value could call nothing on it, since 05§8.8
     // registers every member of one this way.
     if (lhat_is_object_kind(callee, LHAT_OBJECT_HOST)) {
         const LhatHost *host = (const LhatHost *)lhat_as_object(callee);
-        // 13.4 keeps self^ out of the count, as at a compiled call site.
+        // §13.4 keeps self^ out of the count, as at a compiled call site.
         if (host->has_variadic ? count < host->parameters
                                : count != host->parameters) {
             return call_fault(m, LHAT_RUN_ARITY);
@@ -945,8 +945,8 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         for (size_t i = 0; i < count; i++) {
             gathered[into++] = arguments[i];
         }
-        // 05 の 8.8: a dispose^ called by hand is the same giving-back the
-        // collection would do, so it is marked here and 10.7 keeps the
+        // 05§8.8: a dispose^ called by hand is the same giving-back the
+        // collection would do, so it is marked here and 05§10.7 keeps the
         // sweep from doing it again -- as at a compiled call site.
         if (receiver_first &&
             lhat_is_object_kind(gathered[0], LHAT_OBJECT_HOSTDATA)) {
@@ -962,7 +962,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
                           &answered)) {
             return call_fault(m, LHAT_RUN_TUPLE_ARITY);
         }
-        // 05 の 8.7改2: the host's own fault comes back to the host that
+        // 05§8.7+2: the host's own fault comes back to the host that
         // called it, as it would to an instruction. The span is empty
         // (call_fault) -- no frame of this machine's was involved.
         LhatRunStatus left = LHAT_RUN_OK;
@@ -972,7 +972,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
             faulted.value = left_with;
             return faulted;
         }
-        // 05 の 8.9: a host value cannot cross this boundary -- its bytes
+        // 05§8.9: a host value cannot cross this boundary -- its bytes
         // live in slots the boundary does not have -- so it goes the way a
         // return's base already sends one.
         if (lhat_is_hostvalue(answered)) {
@@ -980,7 +980,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         }
         LhatRunResult made = call_fault(m, LHAT_RUN_OK);
         if (lhat_is_run(answered)) {
-            // 02 の 13.8改: the positions already sit in the machine's room
+            // §13.8+: the positions already sit in the machine's room
             // (the boundary's own room), which is where the result aims anyway.
             size_t positions = lhat_run_width(answered);
             if (positions != m->tuple_scratch_count) {
@@ -996,7 +996,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         return made;
     }
 
-    // 05 の 8.7's LhatHostFn has no shape for a spread; a host calling back in
+    // 05§8.7's LhatHostFn has no shape for a spread; a host calling back in
     // already has its arguments as a flat array, so this is the plain-call
     // subset of what LHAT_BC_CALL does (vm.c's CALL case).
     if (!lhat_is_object_kind(callee, LHAT_OBJECT_SUBROUTINE)) {
@@ -1007,7 +1007,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         return call_fault(m, LHAT_RUN_NOT_CALLABLE);
     }
 
-    // 14.4: a member that takes self^ is handed the receiver in a slot of its
+    // §14.4: a member that takes self^ is handed the receiver in a slot of its
     // own, and one that does not is a static member -- the receiver is then
     // simply not passed, the same way LHAT_BC_CALLMETHOD steps over it.
     bool pass_self = as_method && closure->proto->takes_self;
@@ -1015,7 +1015,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
     size_t declared_slots = closure->proto->parameters;
     size_t required =
         closure->proto->has_variadic ? declared_slots - 1 : declared_slots;
-    // 13.4 keeps self^ out of the parameter list a call writes, and
+    // §13.4 keeps self^ out of the parameter list a call writes, and
     // proto->parameters counts the slot it occupies -- so what the host
     // handed over is compared after the receiver is added back in.
     size_t written = count + (pass_self ? 1 : 0);
@@ -1024,7 +1024,7 @@ static LhatRunResult host_call(Machine *m, LhatValue callee, LhatValue receiver,
         return call_fault(m, LHAT_RUN_ARITY);
     }
 
-    // 02 の 11.3改: an op^ may write self^ last instead, which says the right
+    // §11.3+: an op^ may write self^ last instead, which says the right
     // operand is the receiver. The slot it occupies moves with it, so where
     // the receiver lands is read off the proto rather than assumed.
     size_t self_at =
@@ -1106,7 +1106,7 @@ LhatRunResult lhat_machine_run_seeded(Machine *m, const LhatClosure *closure,
                                       const LhatValue *seed, size_t count)
 {
     size_t base = m->frame_count;
-    m->tuple_scratch_count = 0;  // 13.8改, as in lhat_run
+    m->tuple_scratch_count = 0;  // §13.8+, as in lhat_run
     if (closure == NULL || closure->proto == NULL ||
         count > closure->proto->chunk.registers) {
         return call_fault(m, LHAT_RUN_NOT_CALLABLE);
@@ -1119,7 +1119,7 @@ LhatRunResult lhat_machine_run_seeded(Machine *m, const LhatClosure *closure,
                   : m->frames[base - 1].base +
                         m->frames[base - 1].closure->proto->chunk.registers;
     if (next_base + closure->proto->chunk.registers >=
-        m->slot_capacity) {  // 4.3改
+        m->slot_capacity) {  // 03§4.3+
         return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
     }
     for (size_t i = 0; i < count; i++) {
@@ -1156,7 +1156,7 @@ static size_t waiting_disposals(const Machine *m)
     return waiting;
 }
 
-// 02 の 10.7: runs the cleanups of one dropped coroutine, from C. The frame
+// §10.7: runs the cleanups of one dropped coroutine, from C. The frame
 // goes just past whatever is on top -- the same measure host_call takes, and
 // base == 0 (nothing running) is as good a case as any -- and the loop is
 // entered at the drain, since a disposal frame has no instructions of its
@@ -1175,7 +1175,7 @@ static bool run_one_disposal(Machine *m, LhatRunStatus *status)
                   : m->frames[base - 1].base +
                         m->frames[base - 1].closure->proto->chunk.registers;
     if (next_base + m->pending_dispose->frame.closure->proto->chunk.registers >=
-        m->slot_capacity) {  // 4.3改
+        m->slot_capacity) {  // 03§4.3+
         return false;
     }
 
@@ -1187,12 +1187,12 @@ static bool run_one_disposal(Machine *m, LhatRunStatus *status)
     const LhatChunk *chunk = NULL;
     size_t pc = 0;
     vm_enter_disposal_frame(m, co, next_base, 0, &frame, &rbase, &chunk, &pc);
-    // 15.4: same as an explicit dispose -- the slot a yield^ answers into
+    // §15.4: same as an explicit dispose -- the slot a yield^ answers into
     // gets nil^, since nothing sent anything in.
     lhat_slots_set(m->slots, rbase + co->frame.sent_into, lhat_nil());
     *status = vm_run_frames(m, base, true).status;
 
-    // 04 の 11.6改: a fault leaves its frames standing so that a traceback
+    // 04§11.6+: a fault leaves its frames standing so that a traceback
     // can be read off them. There is no caller here to read one -- the
     // machine was tidying up after itself, and the run that dropped this
     // coroutine is long over -- and leaving them would be worse than
@@ -1201,7 +1201,7 @@ static bool run_one_disposal(Machine *m, LhatRunStatus *status)
     // lhat_machine_pending_disposals -- which is what it asks before freeing
     // -- would read zero. So the cleanup is abandoned and its frames go.
     //
-    // 5.4: closed first, or a place captured inside the cleanup would be
+    // 09§5.4: closed first, or a place captured inside the cleanup would be
     // left pointing at slots the next call reuses.
     if (*status != LHAT_RUN_OK) {
         vm_close_upvalues(m, next_base);
@@ -1220,7 +1220,7 @@ size_t lhat_machine_gc_collect(LhatMachine *machine)
     }
     lhat_gc_collect(m);
 
-    // 02 の 10.7: and here the cleanups the collection held back get to run,
+    // §10.7: and here the cleanups the collection held back get to run,
     // which inside a run is what an instruction boundary does for them. A
     // host calling this has no loop under it to do that, and the difference
     // matters: until they have run, a dropped coroutine still holds the
@@ -1325,9 +1325,9 @@ LhatRunResult lhat_machine_call_member(LhatMachine *machine,
     if (name == NULL || count > LHAT_MAX_REGISTERS) {
         return call_fault(m, LHAT_RUN_TYPE_ERROR);
     }
-    // 14.4 reaches a member through a table; a value that is not one has no
+    // §14.4 reaches a member through a table; a value that is not one has no
     // members to reach, which is the same refusal an instruction makes.
-    // 05 の 8.8: a hostdata value reads its members through the registered
+    // 05§8.8: a hostdata value reads its members through the registered
     // type's table, exactly as an instruction's read does -- which is why
     // this is vm_readable_table rather than vm_table_of.
     const LhatTable *table = vm_readable_table(receiver);
@@ -1338,7 +1338,7 @@ LhatRunResult lhat_machine_call_member(LhatMachine *machine,
     // Keep the resolved receiver together with the member, as GETMEMBER does.
     LhatValue member = vm_lookup_named(table, name, length, &receiver);
 
-    // 14.12: at most one candidate fits, so this is a search and not a
+    // §14.12: at most one candidate fits, so this is a search and not a
     // choice. The lineup is what an instruction has lying in its registers:
     // the callee, the receiver, then what the call wrote.
     if (lhat_is_object_kind(member, LHAT_OBJECT_OVERLOAD)) {
@@ -1388,7 +1388,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
                                   const LhatValue *sent, size_t sent_count)
 {
     Machine *m = (Machine *)machine;
-    m->tuple_scratch_count = 0;  // 13.8改, as in host_call
+    m->tuple_scratch_count = 0;  // §13.8+, as in host_call
     if (sent == NULL) {
         sent_count = 0;
     }
@@ -1397,7 +1397,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
         return call_fault(m, LHAT_RUN_TYPE_ERROR);
     }
     LhatCoroutine *co = (LhatCoroutine *)lhat_as_object(coroutine);
-    // 15.2's guards as the instructions make them -- resume subsumes start
+    // §15.2's guards as the instructions make them -- resume subsumes start
     // here (lua_resume's shape): a fresh body runs from the top, and that
     // first `sent` is discarded, since no yield^ awaits it yet.
     if (co->frame.state == LHAT_COROUTINE_DONE ||
@@ -1405,9 +1405,9 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
         return call_fault(m, LHAT_RUN_DEAD_COROUTINE);
     }
 
-    // 16.3: a table's walk has no body, so one step is the whole of the
+    // §16.3: a table's walk has no body, so one step is the whole of the
     // resume -- no frame entered. The pair crosses the boundary as the
-    // positions of a tuple (13.8改), the way any tuple crosses it.
+    // positions of a tuple (§13.8+), the way any tuple crosses it.
     if (co->source == LHAT_COROUTINE_TABLE) {
         LhatValue key, value;
         if (!lhat_table_walk(&co->cursor, &key, &value)) {
@@ -1429,8 +1429,8 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
         return made;
     }
 
-    // 05 の 8.8: and a host's walk is one step of its own C body. RUNNING
-    // above already refuses a step resuming its own coroutine. 13.8改:
+    // 05§8.8: and a host's walk is one step of its own C body. RUNNING
+    // above already refuses a step resuming its own coroutine. §13.8+:
     // everything the resume sent goes over, the way it does to a body.
     if (co->source == LHAT_COROUTINE_HOST) {
         LhatValue out = lhat_nil();
@@ -1455,7 +1455,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
         if (!more) {
             co->frame.state = LHAT_COROUTINE_DONE;
             lhat_coroutine_release((LhatObject *)co, machine);
-            // 13.9: what it wrote as it ended is T, and a resume from C
+            // §13.9: what it wrote as it ended is T, and a resume from C
             // reads it the way a written one does. Nothing written is a
             // walk that ended with nothing.
         } else {
@@ -1464,7 +1464,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
                 return call_fault(m, LHAT_RUN_TUPLE_ARITY);
             }
         }
-        // 05 の 8.9改2: a host value passes through whole -- the step wrote
+        // 05§8.9: a host value passes through whole -- the step wrote
         // it into the machine's scratch itself (lhat_make_hostvalue), which
         // is exactly where the caller reads the pointer form.
         LhatRunResult made = call_fault(m, LHAT_RUN_OK);
@@ -1490,12 +1490,12 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
     if (co->frame.closure == NULL || co->frame.closure->proto == NULL) {
         return call_fault(m, LHAT_RUN_NOT_CALLABLE);
     }
-    // 13.8改: the count a resume sends is the R's -- checked here the way
+    // §13.8+: the count a resume sends is the R's -- checked here the way
     // the natives check it, with the same tolerance for a proto the checker
     // never reached, and the same stop for a run that would not fit the
     // suspended frame. A fresh body's first send is discarded, so any count
     // passes there.
-    // 05 の 8.9改2: a host value rides the send whole -- the pointer form
+    // 05§8.9: a host value rides the send whole -- the pointer form
     // the host already holds (lhat_make_hostvalue's scratch, or an argument
     // echoed back), one seat, never mixed into a run. The lay-down side
     // expands it (vm_enter_resume_frame), and unlike a compiled resume the
@@ -1543,7 +1543,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
         base == 0 ? 0
                   : m->frames[base - 1].base +
                         m->frames[base - 1].closure->proto->chunk.registers;
-    if (next_base + co->frame.register_count >= m->slot_capacity) {  // 4.3改
+    if (next_base + co->frame.register_count >= m->slot_capacity) {  // 03§4.3+
         return call_fault(m, LHAT_RUN_STACK_OVERFLOW);
     }
     // prepared = 1: the host boundary takes one value, as host_call says.
@@ -1552,7 +1552,7 @@ LhatRunResult lhat_machine_resume(LhatMachine *machine, LhatValue coroutine,
     return vm_run_frames(m, base, false);
 }
 
-// 05 の 8.8改3: what a carry reads of a coroutine that has not started, and
+// 05§8.8+3: what a carry reads of a coroutine that has not started, and
 // the maker that puts one back together.
 static const LhatCoroutine *fresh_body(LhatValue coroutine)
 {

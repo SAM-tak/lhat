@@ -11,7 +11,7 @@
 #include "../jit/jit.h"
 #endif
 
-// 02 の 14.8改: the three that can leave the integers. Answers false when the
+// §14.8+: the three that can leave the integers. Answers false when the
 // result does not fit, and then the caller redoes it in reals.
 //
 // Computed through the unsigned type: signed overflow is undefined in C11, so
@@ -63,10 +63,10 @@ static bool multiply_exact(LhatInteger x, LhatInteger y, LhatInteger *out)
     return true;
 }
 
-// 5.1: the generic form checks. 02 の 14.8 makes number^ one type with two
+// §5.1: the generic form checks. §14.8 makes number^ one type with two
 // representations, so an operation stays in integers when both sides are and
 // widens when one of them is real -- or when the integers no longer hold the
-// answer (14.8改).
+// answer (§14.8+).
 static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
                        LhatValue *out, LhatRunStatus *status)
 {
@@ -105,15 +105,15 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
             return true;
         }
         case LHAT_BC_DIV:
-            // 04 の 11.2: real division, so a zero divisor gives inf rather
+            // 04§11.2: real division, so a zero divisor gives inf rather
             // than failing. That is what keeps ordinary arithmetic out of the
             // unions.
             *out = lhat_real(a / b);
             return true;
         case LHAT_BC_IDIV:
         case LHAT_BC_MOD: {
-            // 04 の 11.2: a zero divisor does not fail -- like an
-            // overflow (14.8改), it widens to real arithmetic instead,
+            // 04§11.2: a zero divisor does not fail -- like an
+            // overflow (§14.8+), it widens to real arithmetic instead,
             // which already answers inf/nan for this the same way '/'
             // does, so ordinary arithmetic stays out of a union either way.
             if (exact && b != 0) {
@@ -181,7 +181,7 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
                 }
             }
             // A negative base under a fractional exponent is NaN -- not a
-            // fault, the same line 04 の 11.2 draws for a zero divisor.
+            // fault, the same line 04§11.2 draws for a zero divisor.
             *out = lhat_real(pow(a, b));
             return true;
         default:
@@ -190,14 +190,14 @@ static bool arithmetic(LhatOpcode op, LhatValue left, LhatValue right,
     }
 }
 
-// 02 の 11.9: which of the two comes first, for the types that order
+// §11.9: which of the two comes first, for the types that order
 // their own. Negative, zero or positive -- the shape every '<=>' answers in,
 // and what the four orderings read against zero. False when neither number^
 // nor string^ is what is being asked about, which sends the question to the
-// member 11.8 names.
+// member §11.8 names.
 bool vm_three_way(LhatValue left, LhatValue right, int *out)
 {
-    // 14.8: two integers name themselves exactly. Through doubles, two
+    // §14.8: two integers name themselves exactly. Through doubles, two
     // neighbours past 2^53 would round to one value and order as equal.
     if (lhat_is_integer(left) && lhat_is_integer(right)) {
         LhatInteger x = lhat_as_integer(left);
@@ -206,9 +206,9 @@ bool vm_three_way(LhatValue left, LhatValue right, int *out)
         return true;
     }
     if (lhat_is_number(left) && lhat_is_number(right)) {
-        // 14.8: one type over integers and reals, and the same question '='
+        // §14.8: one type over integers and reals, and the same question '='
         // asks -- so two numbers within the error a real carries order as
-        // one. Reading '=' off '<=>' the way 11.9 does then answers what '='
+        // one. Reading '=' off '<=>' the way §11.9 does then answers what '='
         // answers, rather than 'equal' and 'less' both holding.
         if (lhat_value_close(left, right, LHAT_NUMBER_TOLERANCE)) {
             *out = 0;
@@ -219,7 +219,7 @@ bool vm_three_way(LhatValue left, LhatValue right, int *out)
     }
     if (lhat_is_object_kind(left, LHAT_OBJECT_STRING) &&
         lhat_is_object_kind(right, LHAT_OBJECT_STRING)) {
-        // The bytes, in order. 01 の 1 章 fixes the encoding at UTF-8, which
+        // The bytes, in order. 01§1 fixes the encoding at UTF-8, which
         // orders code points the same way their bytes order.
         const LhatString *a = (const LhatString *)lhat_as_object(left);
         const LhatString *b = (const LhatString *)lhat_as_object(right);
@@ -237,7 +237,7 @@ bool vm_three_way(LhatValue left, LhatValue right, int *out)
     return false;
 }
 
-// 16.3: ITERPREP's question -- whether what it read into `at` is the
+// §16.3: ITERPREP's question -- whether what it read into `at` is the
 // built-in walk of the table at `at + 1`. If so the walk is laid in the four
 // registers from `at` (code.h) and no coroutine is made for it: what the
 // call would have built, held where the loop already keeps its own state.
@@ -285,7 +285,7 @@ static bool read_walk_inline(Machine *m, size_t at, LhatWalkCursor *cursor)
     return true;
 }
 
-// 11.9: every ordering is read off a three-way answer, whether the
+// §11.9: every ordering is read off a three-way answer, whether the
 // answer came from a type that orders its own or from a written op^<=>. False
 // when neither side is one of those, which is what sends the question on.
 static bool ordering(LhatOpcode op, LhatValue left, LhatValue right,
@@ -306,11 +306,11 @@ static bool ordering(LhatOpcode op, LhatValue left, LhatValue right,
             return false;
     }
 }
-// 13.7: the i-th effective argument of a call, whether it sits in an
+// §13.7: the i-th effective argument of a call, whether it sits in an
 // ordinary register or comes from what a spread ('expr...') unpacked -- the
 // two are not contiguous in memory, so nothing beyond this reads registers
 // directly once a spread is in play. Only a table spreads here: a tuple's
-// positions were laid as ordinary arguments by the compiler (13.8改).
+// positions were laid as ordinary arguments by the compiler (§13.8+).
 static LhatValue call_arg(LhatSlots regs, size_t rbase, uint8_t a, size_t skip,
                           const LhatTable *spread, size_t before_spread,
                           size_t i)
@@ -320,13 +320,13 @@ static LhatValue call_arg(LhatSlots regs, size_t rbase, uint8_t a, size_t skip,
     }
     return lhat_slots_get(regs, rbase + a + skip + i);
 }
-// 03 の 5.12改2: the collector's poll, beside the instructions that can have
+// 03§5.12: the collector's poll, beside the instructions that can have
 // allocated -- Lua places its checkGC against the allocating opcodes the same
 // way. Instructions that never allocate never ask; the paranoid build (debug)
 // keeps the every-boundary poll in the run loop instead, since its purpose is
 // exercising the barriers, not pacing.
 #define LHAT_GC_POLL() do { if (m->objects.count >= m->threshold) { frame->pc = pc; lhat_gc_step(m); } } while (0)
-// 09 の 2.1: whether the instruction at `at` begins a line the hook should
+// 09§2.1: whether the instruction at `at` begins a line the hook should
 // be told about, and, when it is, the hook is called here. `frame->pc` is
 // already `at + 1`, so lhat_machine_fault_frame reads this instruction.
 //
@@ -384,8 +384,8 @@ LhatRunStatus vm_make_closure(Machine *m, const Frame *frame, uint8_t a,
             return LHAT_RUN_OUT_OF_MEMORY;
         }
     }
-    // 5.4: a register of this frame, one of its own upvalues when the name
-    // came from further out, or -- 15.10's this^^ -- this frame's own
+    // §5.4: a register of this frame, one of its own upvalues when the name
+    // came from further out, or -- §15.10's this^^ -- this frame's own
     // closure, boxed closed on the spot: nothing on the stack holds it, so
     // there is nothing to keep open.
     for (size_t i = 0; i < nested->upvalue_count; i++) {
@@ -419,12 +419,12 @@ LhatRunStatus vm_make_closure(Machine *m, const Frame *frame, uint8_t a,
     return LHAT_RUN_OK;
 }
 
-// NEWINSTANCE: 14.11's construction is the machine's -- a copy of the
+// NEWINSTANCE: §14.11's construction is the machine's -- a copy of the
 // prototype the definition in register `b` holds under self^, which is where
 // every field starts as its default. A table held in a field is copied as
-// its own tree; a definition among the values is shared. 14.3 and 14.7: the
+// its own tree; a definition among the values is shared. §14.3 and §14.7: the
 // copy holds its own fields and reads the shared members through the link;
-// 14.2 fixes it here and gives no way to change it afterwards. Shared with
+// §14.2 fixes it here and gives no way to change it afterwards. Shared with
 // the JIT, as vm_make_closure is.
 LhatRunStatus vm_make_instance(Machine *m, size_t rbase, uint8_t a, uint8_t b)
 {
@@ -459,7 +459,7 @@ LhatRunStatus vm_make_instance(Machine *m, size_t rbase, uint8_t a, uint8_t b)
 // callable pushed as one more frame). "the run is over" means the frame
 // count has drained back down to base_depth, not to zero -- 0 stays right
 // for lhat_run because nothing was on the machine before it pushed frame 0.
-// 2.2: the frame's registers, read and written through the machine's two
+// 11§2.2: the frame's registers, read and written through the machine's two
 // parallel runs. `m` and `rbase` are vm_run_frames' own locals; nothing outside
 // it may use these.
 #if !defined(LHAT_WITH_JIT) && !defined(LHAT_GC_PARANOID)
@@ -523,13 +523,13 @@ static size_t vm_hot_leave(Machine *m, size_t initialized_depth, size_t pc)
 static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                      bool draining);
 
-// 04 の 11.6改: a nested run -- a host calling back in -- borrows run_base
+// 04§11.6+: a nested run -- a host calling back in -- borrows run_base
 // for as long as it runs and hands it back, so a fault in the run it came
 // out of still bounds that run's own frames rather than the nested one's.
 LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
 {
     size_t outer = m->run_base;
-    // 02 § 15.15: the slice belongs to the outermost run. A nested one --
+    // §15.15: the slice belongs to the outermost run. A nested one --
     // a host calling back, sort^'s comparator, clone^'s policy -- has its
     // caller's C stack under it and roots on it (machine.h's native_hold),
     // so it cannot be left standing; it runs with no budget and gives the
@@ -548,7 +548,7 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
     return result;
 }
 
-// 02 § 15.15: the slice, counted where a run turns back on itself and where
+// §15.15: the slice, counted where a run turns back on itself and where
 // a body is entered -- a run that neither loops nor calls ends by its own
 // length. At an entry the new frame is the one left standing, at its top.
 // Reads the loop's own `frame`, `pc`, `chunk`, `at` and `base_depth`, so it
@@ -610,7 +610,7 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
 #define VM_ENTER_HOT() ((void)0)
 #endif
 
-// 12 の 5: how the loop gets from one instruction to the next. GCC and
+// 12§5: how the loop gets from one instruction to the next. GCC and
 // Clang can take the address of a label, which lets every instruction end
 // with its own jump to the next one. The branch predictor then keeps a
 // history per opcode instead of one shared by every instruction in the
@@ -653,7 +653,7 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
 #endif
 
 // What must be looked at before an instruction can run: a coroutine the
-// collector held back (02 の 10.7), the debugger's line hook, and the drain
+// collector held back (§10.7), the debugger's line hook, and the drain
 // that ends a run. Rare, all of them, so they are asked as one test and
 // answered by going back to the top of the loop, which is where they are
 // written out.
@@ -698,7 +698,7 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
 #define VM_NEXT() continue
 #endif
 
-// 12 の 4.2: the fast paths. Bare `if`s rather than do/while(0) on
+// 12§4.2: the fast paths. Bare `if`s rather than do/while(0) on
 // purpose -- under the switch VM_NEXT is the loop's `continue`, which a
 // do/while would catch. Each falls through when it cannot answer.
 //
@@ -716,7 +716,7 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
         VM_NEXT();                                                          \
     }
 
-// Two integers order exactly (02 の 14.8); a real asks with tolerance.
+// Two integers order exactly (§14.8); a real asks with tolerance.
 #define VM_ORDER_FAST(oper, right)                                          \
     if (lhat_is_integer(R(b)) && lhat_is_integer(right)) {                  \
         ordered = lhat_as_integer(R(b)) oper lhat_as_integer(right);        \
@@ -743,13 +743,13 @@ LhatRunResult vm_run_frames(Machine *m, size_t base_depth, bool draining)
 static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                      bool draining)
 {
-    m->run_base = base_depth;  // 04 の 11.6改: so vm_finish can bound a fault
+    m->run_base = base_depth;  // 04§11.6+: so vm_finish can bound a fault
     Frame *frame = &m->frames[m->frame_count - 1];
     const LhatChunk *chunk = &frame->closure->proto->chunk;
     size_t rbase = frame->base;
     size_t pc = frame->pc;
 
-    // 02 の 10.7: the last collection of the run, and what it found. See the
+    // §10.7: the last collection of the run, and what it found. See the
     // drain, which is where both are decided. `at` is hoisted out of the
     // loop only so that `ending` can jump to the drain without stepping over
     // its initialiser -- which is what lets `draining` jump there too.
@@ -757,7 +757,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
     bool ending = false;
     size_t at = 0;
 
-    // 5.2改: the instruction being run, and what it decodes to. Out here
+    // §5.2: the instruction being run, and what it decodes to. Out here
     // rather than in the loop because a computed goto lands on a label
     // inside it -- a jump may not cross a declaration that initialises.
     LhatInstruction instruction = 0;
@@ -765,7 +765,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
     uint8_t b = 0;
     uint8_t cc = 0;
     LhatOpcode op = LHAT_BC_LOADK;
-    // 02 の 11.9: the comparison that sent control to call_operator, when one
+    // §11.9: the comparison that sent control to call_operator, when one
     // did. `op` becomes SPACESHIP there -- that is the member to look for --
     // and this is what the answer gets read against zero with.
     LhatOpcode derive_from = LHAT_FRAME_NO_DERIVE;
@@ -775,7 +775,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
     // An ordering's answer, settled by either of its two paths before the
     // shared tail that writes it and takes the jump reading it.
     bool ordered = false;
-    // 12 の 3: what GETINDEX and GETMEMBER share. Declared out here
+    // 12§3: what GETINDEX and GETMEMBER share. Declared out here
     // because the second jumps into the first's body having settled them
     // -- the key it asks by, and the cache to fill on the way out (NULL
     // for a GETINDEX, which remembers nothing).
@@ -902,7 +902,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         // roots do not name yet -- which is also why a write made in the same
         // instruction that made the object it goes into needs no barrier.
         //
-        // 5.12: a step, not a collection. What this costs is bounded by
+        // 03§5.12: a step, not a collection. What this costs is bounded by
         // the machine's step settings whatever the heap has grown to.
 #ifdef LHAT_GC_PARANOID
         // The paranoid build polls at every boundary on purpose: its point
@@ -915,14 +915,14 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         }
 #endif
 
-        // 02 の 10.7: and here is where what the collector held back gets to
+        // §10.7: and here is where what the collector held back gets to
         // run. The heap is whole again and this is an ordinary place to call
         // L^ code, which is exactly what a finally^ body is. One coroutine
         // per boundary -- the rest keep, so a long list never becomes one
         // long pause.
         //
         // Never on top of a disposal already under way (`disposing`): a
-        // cleanup is 10.7's own unwinding and another coroutine's cleanups
+        // cleanup is §10.7's own unwinding and another coroutine's cleanups
         // cutting into it would interleave two unwindings that have nothing
         // to do with each other. The queue waits; it is in no hurry.
         if (m->pending_dispose != NULL && !frame->disposing) {
@@ -934,7 +934,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             // return still lands somewhere and this is somewhere harmless.
             uint8_t into = chunk->registers;
             size_t next_base = rbase + (into) + 1;
-            // 4.3改: the queued one's own width. gc.c holds back only a
+            // 03§4.3+: the queued one's own width. gc.c holds back only a
             // suspended BODY coroutine, so the closure is there to ask.
             if (next_base +
                     m->pending_dispose->frame.closure->proto->chunk.registers >=
@@ -945,13 +945,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             frame->pc = pc;
             vm_enter_disposal_frame(m, co, next_base, into, &frame, &rbase,
                                  &chunk, &pc);
-            // 15.4: same as an explicit dispose -- the slot a yield^ answers
+            // §15.4: same as an explicit dispose -- the slot a yield^ answers
             // into gets nil^, since nothing sent anything in.
             SET_R(co->frame.sent_into, lhat_nil());
             goto drain;
         }
 
-        // 02 の 10.7: the run already ended and only the queue was holding
+        // §10.7: the run already ended and only the queue was holding
         // it open. It is empty now, so back to the frame that was leaving.
         // Only once that frame is on top again -- while a cleanup of its
         // own is running there is a frame above it with instructions left.
@@ -962,7 +962,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         instruction = chunk->code[pc];
         at = pc++;
 
-        // 09 の 2 章: the debugger's line hook, at the same boundary as the
+        // 09§2: the debugger's line hook, at the same boundary as the
         // GC step above -- every live value is in a register, a frame or the
         // open list. `frame->pc` is written first (to `at + 1`), so a
         // traceback the hook reads names this instruction, not the last.
@@ -1022,7 +1022,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             VM_CASE(LHAT_BC_DOT_PRODUCT)
                 goto call_operator;
 
-            // 5.1改6: a pair of one representation answers here, each
+            // §5.1: a pair of one representation answers here, each
             // instruction with its own operation; a mixed pair, an
             // overflow and everything that is not a number go on below.
             VM_CASE(LHAT_BC_ADD)
@@ -1046,15 +1046,15 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     SET_R(a, out);
                     VM_NEXT();
                 }
-                // 02 の 11.3: numbers answer built in; anything else answers
-                // with the member 11.8 names, or not at all.
+                // §11.3: numbers answer built in; anything else answers
+                // with the member §11.8 names, or not at all.
                 //
-                // 11.3改: the right operand is reason enough to go on.
+                // §11.3+: the right operand is reason enough to go on.
                 // '1 + v' is the case the rule exists for -- number^ carries
                 // the arithmetic and takes only its own kind, so the answer
                 // can only be on the other side.
-                // 05 の 8.9: a host value carries its registered operators
-                // the same way a table carries 11.8's members.
+                // 05§8.9: a host value carries its registered operators
+                // the same way a table carries §11.8's members.
                 if (status != LHAT_RUN_TYPE_ERROR ||
                     (vm_table_of(R(b)) == NULL && vm_table_of(R(cc)) == NULL &&
                      !lhat_is_hostvalue(R(b)) && !lhat_is_hostvalue(R(cc)))) {
@@ -1094,13 +1094,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
 
             VM_CASE(LHAT_BC_NEG) {
-                // 02 の 11.8改: number^ carries its own negation and pays
+                // §11.8: number^ carries its own negation and pays
                 // nothing for the search, the same posture the binary
                 // instructions take. Anything else asks for the member.
                 if (!lhat_is_number(R(b))) {
                     goto call_operator;
                 }
-                // 14.8改: INT64_MIN is the one integer whose negation is not
+                // §14.8+: INT64_MIN is the one integer whose negation is not
                 // an integer, so it widens like any other overflow.
                 LhatInteger negated = 0;
                 SET_R(a,
@@ -1113,7 +1113,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
 
             VM_CASE(LHAT_BC_NOT) {
-                // 02 の 5.4's condition rule: only a bool is a truth value,
+                // §5.4's condition rule: only a bool is a truth value,
                 // so this refuses anything else rather than inventing one.
                 if (!lhat_is_bool(R(b))) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
@@ -1122,7 +1122,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 02 の 14.23: a whole number within 64 bits, whichever
+            // §14.23: a whole number within 64 bits, whichever
             // representation holds it, or the run stops -- these never widen
             // and nothing overloads them.
             VM_CASE(LHAT_BC_BNOT) {
@@ -1165,11 +1165,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 11.9 with 11.9改: a type saying what equals what is asked
+            // §11.9 with §11.9+: a type saying what equals what is asked
             // before the default answer is taken. The member is looked for
             // as '=' first and as '<=>' second, and whatever neither answers
-            // falls back on what the value was already the same as -- 14.2's
-            // identity for a table, 05 の 8.9's bytes for a host value. That
+            // falls back on what the value was already the same as -- §14.2's
+            // identity for a table, 05§8.9's bytes for a host value. That
             // is what leaves every other value exactly as it was.
             VM_CASE(LHAT_BC_EQ)
             VM_CASE(LHAT_BC_NE)
@@ -1179,10 +1179,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     op = LHAT_BC_EQ;  // the name to look for; '≠' has none
                     goto call_operator;
                 }
-                // 14.8: two numbers within the error a real carries are one
+                // §14.8: two numbers within the error a real carries are one
                 // number here. A key and a constant go on asking the
                 // exact question -- lhat_value_close is only what '=' and
-                // 11.9's orderings read.
+                // §11.9's orderings read.
                 ordered = lhat_value_close(R(b), R(cc),
                                            LHAT_NUMBER_TOLERANCE) ==
                           (op == LHAT_BC_EQ);
@@ -1211,7 +1211,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 5.1改6: two integers order exactly (14.8), so they need
+            // §5.1: two integers order exactly (§14.8), so they need
             // neither the three-way answer nor the tolerance behind it.
             VM_CASE(LHAT_BC_LT)
                 VM_ORDER_FAST(<, R(cc));
@@ -1225,7 +1225,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             VM_CASE(LHAT_BC_GE)
                 VM_ORDER_FAST(>=, R(cc));
                 goto ordering_slow;
-            // 5.1改7: the same four with the right operand a constant.
+            // §5.1: the same four with the right operand a constant.
             VM_CASE(LHAT_BC_LTK)
                 VM_ORDER_FAST(<, chunk->constants[cc]);
                 op = LHAT_BC_LT;
@@ -1250,7 +1250,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 LhatRunStatus status = LHAT_RUN_OK;
                 if (!ordering(op, R(b), k_right ? chunk->constants[cc] : R(cc),
                               &ordered, &status)) {
-                    // 11.9: numbers order themselves; anything else says
+                    // §11.9: numbers order themselves; anything else says
                     // how it orders with a '<=>', and this reads the answer.
                     derive_from = op;
                     op = LHAT_BC_SPACESHIP;
@@ -1259,7 +1259,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
             ordering_held: {
                 SET_R(a, lhat_bool(ordered));
-                // 12 の 4.3: the JUMP_FALSE that reads this answer,
+                // 12§4.3: the JUMP_FALSE that reads this answer,
                 // consumed on the spot when it stands right here --
                 // one turn for the pair. Any jump that lands on it
                 // still runs it as itself.
@@ -1279,8 +1279,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 11.9: written out. number^ and string^ each order their
-            // own; anything else answers with the member 11.8 names.
+            // §11.9: written out. number^ and string^ each order their
+            // own; anything else answers with the member §11.8 names.
             VM_CASE(LHAT_BC_SPACESHIP) {
                 int outcome = 0;
                 if (!vm_three_way(R(b), R(cc), &outcome)) {
@@ -1290,7 +1290,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 02 の 15.15: a jump back is where every loop turns, and a
+            // §15.15: a jump back is where every loop turns, and a
             // run that does not end has to turn -- straight-line code is as
             // long as the body and recursion runs out of frames. So this is
             // the one place a slice has to be counted, and an instruction
@@ -1330,7 +1330,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 12 の 2: strict already found the one arm that fits (14.12
+            // 12§2: strict already found the one arm that fits (§14.12
             // leaves at most one), so the call ahead takes it instead of
             // asking every candidate again. Nothing else is touched: a value
             // that is not a group reached here some way the checker did not
@@ -1352,7 +1352,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
 
             VM_CASE(LHAT_BC_SETUPVAL) {
-                // 5.12: an open upvalue's place is a stack slot and the
+                // 03§5.12: an open upvalue's place is a stack slot and the
                 // stack is a root, so only a closed one gains anything the
                 // collector has not seen. The barrier asks which it is by
                 // asking whether the upvalue is black.
@@ -1362,8 +1362,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 02 の 11.2: '..' is concatenation in general, and strings are
-            // the case that is settled. 11.3 leaves the rest to the
+            // §11.2: '..' is concatenation in general, and strings are
+            // the case that is settled. §11.3 leaves the rest to the
             // operator's own definition, which needs op^.
             VM_CASE(LHAT_BC_CONCAT) {
                 LHAT_GC_POLL();  // this case allocates
@@ -1382,9 +1382,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     VM_NEXT();
                 }
 
-                // 02 の 11.2改: two plain tables concatenate, built in the
+                // §11.2+: two plain tables concatenate, built in the
                 // way two strings do. A definition never comes through here
-                // (14.2 settles composition at compile time), and a table
+                // (§14.2 settles composition at compile time), and a table
                 // that carries an op^.. of its own is not plain -- it is an
                 // instance, and falls through to the search below.
                 if (vm_plain_table(R(b)) && vm_plain_table(R(cc))) {
@@ -1402,9 +1402,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     VM_NEXT();
                 }
 
-                // 02 の 11.3: a string answers above, built in. Anything else
-                // answers with the member 11.8 names, or not at all -- and
-                // 11.3改 reads the right operand for one too.
+                // §11.3: a string answers above, built in. Anything else
+                // answers with the member §11.8 names, or not at all -- and
+                // §11.3+ reads the right operand for one too.
                 if (vm_table_of(R(b)) == NULL && vm_table_of(R(cc)) == NULL) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
@@ -1419,19 +1419,19 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (m->open != NULL) vm_close_one_upvalue(m, rbase + a);
                 VM_NEXT();
 
-            // 02 の 15.10: the frame already holds it, so naming it costs a
+            // §15.10: the frame already holds it, so naming it costs a
             // move rather than a vm_capture.
             VM_CASE(LHAT_BC_THIS)
                 SET_R(a,
                     lhat_object((LhatObject *)(void *)frame->closure));
                 VM_NEXT();
 
-            // 05 の 8.6: one table per machine, so naming it is a move too.
+            // 05§8.6: one table per machine, so naming it is a move too.
             VM_CASE(LHAT_BC_ENV)
                 SET_R(a, lhat_object((LhatObject *)m->environment));
                 VM_NEXT();
 
-            // 05 の 5.3: a unit is a body like any other, so requiring it is
+            // 05§5.3: a unit is a body like any other, so requiring it is
             // making a closure of it and calling that. What makes it load
             // once is the guard the unit itself begins with, not this.
             VM_CASE(LHAT_BC_UNIT) {
@@ -1463,12 +1463,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (table == NULL) {
                     return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
-                table->is_definition = b != 0;  // 14.9
+                table->is_definition = b != 0;  // §14.9
                 SET_R(a, lhat_object((LhatObject *)table));
                 VM_NEXT();
             }
 
-            // 05 の 8.6: what require^ answers is the machine's record
+            // 05§8.6: what require^ answers is the machine's record
             // of what a unit published. Sealed once it is built, so that a
             // requiring unit cannot add to it or write over it -- not even by
             // passing it to a p^ whose parameter is written t^{ … }, which is
@@ -1496,20 +1496,20 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 04 の 11.3: a key that is not there answers nil^, so the only
+            // 04§11.3: a key that is not there answers nil^, so the only
             // way this fails is being asked of something that is not a table.
-            // An error answers from its fields: 2.3 gives every kind message
+            // An error answers from its fields: 04§2.3 gives every kind message
             // and cause, and they are reached the same way as a member.
-            // 12 の 3: a written member name, which is the same key every
+            // 12§3: a written member name, which is the same key every
             // time this site runs. What it remembers is where the answer was
             // last found, and a hit is two comparisons -- against a walk of
-            // the 14.7 chain and a probe with a full key equality in it.
+            // the §14.7 chain and a probe with a full key equality in it.
             //
             // A miss falls into the body below having settled `key` from the
             // cache and `filling` to the cache, so the ordinary read answers
             // and fills it on the way out. That way there is one place that
             // decides what a member read means, and this is only about how
-            // long it takes (4.2).
+            // long it takes (10§4.2).
             VM_CASE(LHAT_BC_GETMEMBER)
             VM_CASE(LHAT_BC_GETMETHOD) {
                 LhatValue own;
@@ -1529,7 +1529,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 goto member_body;
             }
 
-            // 12 の 3.1: GETMEMBER fused with its call. A hit loads
+            // 12§3.1: GETMEMBER fused with its call. A hit loads
             // the member and walks straight into the paired call
             // instruction; a miss is GETMEMBER to the letter, and the pair
             // runs as itself on the next turn.
@@ -1552,7 +1552,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 goto member_body;
             }
 
-            // 16.3: a for^ loop's head (code.h). The read is GETMETHOD's,
+            // §16.3: a for^ loop's head (code.h). The read is GETMETHOD's,
             // so the member a table carries is what decides -- and only the
             // built-in walk is laid inline.
             VM_CASE(LHAT_BC_ITERPREP) {
@@ -1593,19 +1593,19 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 02 の 13.10: the position a destructuring bind just read.
-            // 04 の 11.3 spells absence nil^, so a position answering nil^
-            // is a position the value does not have, and 13.10 makes a count
+            // §13.10: the position a destructuring bind just read.
+            // 04§11.3 spells absence nil^, so a position answering nil^
+            // is a position the value does not have, and §13.10 makes a count
             // that does not agree an error rather than Lua's list
             // adjustment. Under strict the checker has already said so and
             // the compiler leaves this out; this is where relaxed and an
             // unchecked compile land.
-            // 02 の 13.8改: what stands between an error (or a plain value)
+            // §13.8+: what stands between an error (or a plain value)
             // arriving where a run was expected and the slots after it being
             // read as positions that were never written.
             VM_CASE(LHAT_BC_CHECKRUN) {
                 LhatValue head = R(a);
-                // 13.8改: the short side of a widened fold arrives narrow --
+                // §13.8+: the short side of a widened fold arrives narrow --
                 // one value, or a run of fewer positions -- and the missing
                 // positions are nil^, which is exactly what the folded type
                 // said of them ('(A, B)|C' is '(A|C, B|nil^)'). They are
@@ -1647,7 +1647,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 02 の 13.8改: a tuple written as a value. The positions are in
+            // §13.8+: a tuple written as a value. The positions are in
             // the slots above already -- the head goes down over them, and
             // from here the run is the one every other path produces.
             VM_CASE(LHAT_BC_MAKERUN) {
@@ -1660,8 +1660,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 02 の 13.8改: pack^ -- the one bridge from a tuple to a table.
-            // 14.10 numbers positions from 0, which is what a destructuring
+            // §13.8+: pack^ -- the one bridge from a tuple to a table.
+            // §14.10 numbers positions from 0, which is what a destructuring
             // and 't[0]' both read.
             VM_CASE(LHAT_BC_PACK) {
                 LHAT_GC_POLL();  // this case allocates
@@ -1676,7 +1676,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 }
                 for (size_t i = 0; i < (size_t)b; i++) {
                     // The key is a non-negative integer every time, so
-                    // `refused` (04 の 11.3's nil^, a NaN) cannot come back set.
+                    // `refused` (04§11.3's nil^, a NaN) cannot come back set.
                     bool refused = false;
                     if (!vm_set_key(m, packed, lhat_integer((LhatInteger)i),
                                  R(a + 1 + i), &refused)) {
@@ -1688,7 +1688,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 02 の 14.15: the declaration's seat -- the key, no value.
+            // §14.15: the declaration's seat -- the key, no value.
             VM_CASE(LHAT_BC_RESERVE) {
                 LhatTable *table = vm_table_of(R(a));
                 if (table == NULL) {
@@ -1705,10 +1705,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
 
             VM_CASE(LHAT_BC_SETINDEX) {
             set_index:;
-                // 05 の 8.9: 'v.x := n' writes the field's bytes in place --
+                // 05§8.9: 'v.x := n' writes the field's bytes in place --
                 // the owner register IS the value, so the write lands in the
                 // very slots the name holds. Only a registered field takes a
-                // write; the members are the host's (8.8's rule holds).
+                // write; the members are the host's (05§8.8's rule holds).
                 if (lhat_is_hostvalue(R(a))) {
                     const LhatHostValueField *field = vm_hostvalue_field_named(
                         lhat_as_hostvalue_tag(R(a)), R(b));
@@ -1727,7 +1727,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (table == NULL) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                // 05 の 8.6: the machine's own tables are written by
+                // 05§8.6: the machine's own tables are written by
                 // the host, not by an instruction. check.c refuses the ones it
                 // can name, but a t^{ … } parameter carries no mark of this,
                 // so the same question is asked once more where the write
@@ -1766,7 +1766,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (!vm_set_key(m, table, R(b), R(cc), &refused)) {
                     return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
-                // nil^ is how 11.3 spells "not there", so it cannot also be
+                // nil^ is how §11.3 spells "not there", so it cannot also be
                 // a key. Neither can a NaN, which is not equal to itself.
                 if (refused) {
                     return vm_finish(m, chunk, LHAT_RUN_BAD_KEY, lhat_nil(), at);
@@ -1774,7 +1774,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 14.12: the name keeps what it had and gains another way to be
+            // §14.12: the name keeps what it had and gains another way to be
             // called. What was there may already be a group, or the first of
             // two, or nothing when the base did not define it.
             VM_CASE(LHAT_BC_ADDOVERLOAD) {
@@ -1803,14 +1803,14 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (!lhat_overload_add(group, R(cc))) {
                     return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                 }
-                // 5.12: `group` may be one already in the table, black since
+                // 03§5.12: `group` may be one already in the table, black since
                 // an earlier step. A group gains arms one at a time, so the
                 // forward barrier is the cheaper of the two.
                 lhat_gc_barrier(m, (LhatObject *)group, R(cc));
                 VM_NEXT();
             }
 
-            // 14.12: an override^ replaces the one arm it overlaps, and the
+            // §14.12: an override^ replaces the one arm it overlaps, and the
             // arms an overload^ put there are otherwise untouched. A plain
             // write would take the whole group with them.
             VM_CASE(LHAT_BC_OVERRIDEINDEX) {
@@ -1839,7 +1839,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 goto set_index;
             }
 
-            // 12 の 2: the same write with the arm named. What it replaces
+            // 12§2: the same write with the arm named. What it replaces
             // is dropped rather than shadowed, so the arms left are the arms
             // the checker's type says the name carries -- which is what makes
             // an arm index mean the same thing on both sides. super^ is
@@ -1857,7 +1857,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         &m->objects, group, cc, R(b + 1));
                     if (made == NULL) {
                         // No such arm. The group is not the one the checker
-                        // read, so the honest answer is 14.12's own: put the
+                        // read, so the honest answer is §14.12's own: put the
                         // replacement in front and let the search sort it out.
                         made = lhat_overload_with_first(&m->objects, group,
                                                         R(b + 1));
@@ -1904,7 +1904,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 04 の 2.6: an error satisfies no type but an error's, so asking
+            // 04§2.6: an error satisfies no type but an error's, so asking
             // whether a value is one is a question about the value alone.
             VM_CASE(LHAT_BC_ISERROR)
                 SET_R(a,
@@ -1912,7 +1912,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                                   LHAT_OBJECT_ERROR)));
                 VM_NEXT();
 
-            // 02 の 13.11 with 03 の 5.13: R[C] is always a type the
+            // §13.11 with 03§5.13: R[C] is always a type the
             // compiler lowered -- a written type, never a runtime value --
             // and lhat_value_satisfies answers, the same relation ASCAST and
             // vm_fits_call already trust. (A fallback that read a shape off a
@@ -1934,7 +1934,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 SET_R(a, lhat_bool(lhat_is_nil(R(b))));
                 VM_NEXT();
 
-            // 14.11: construction is the machine's (vm_make_instance).
+            // §14.11: construction is the machine's (vm_make_instance).
             VM_CASE(LHAT_BC_NEWINSTANCE) {
                 LHAT_GC_POLL();  // this case allocates
                 LhatRunStatus status = vm_make_instance(m, rbase, a, b);
@@ -1944,15 +1944,15 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 14.11: the prototype goes under the definition's self^, sealed
-            // -- what it holds is every instance's starting point, and 8.8
+            // §14.11: the prototype goes under the definition's self^, sealed
+            // -- what it holds is every instance's starting point, and 05§8.8
             // closes a definition to writes -- and linked, so its own reads
             // reach the members the way any instance's do. The values are
             // baked here because this is where they actually are: a table
             // becomes the prototype's own sealed tree, whatever expression
             // produced it, and what nothing may share is refused -- the same
             // answer the checker gives where it ran.
-            // 14.7改2: what the definition delegates to. The key is a chunk
+            // §14.7+2: what the definition delegates to. The key is a chunk
             // constant, so nothing is written into the machine's heap here
             // and no barrier is owed.
             VM_CASE(LHAT_BC_SETDELEGATE) {
@@ -1973,10 +1973,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (table == NULL || proto == NULL) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
-                // 02 の 14.15 with 03 の 4.2: a seat the definition itself
+                // §14.15 with 03§4.2: a seat the definition itself
                 // answers as a member is dropped before the seal -- filled,
                 // it would shadow that member with the clone's version still
-                // 0, the one hole in 5.1改's guard. The checker refuses the
+                // 0, the one hole in §5.1's guard. The checker refuses the
                 // clash first; this is the unchecked run's backstop.
                 lhat_table_prune_seats(proto, table);
                 for (size_t i = 0; i < proto->array_count; i++) {
@@ -2020,12 +2020,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 05 の 8.9: the host value at R[B..], boxed. The head slot
+            // 05§8.9: the host value at R[B..], boxed. The head slot
             // carries the tag, and the tag the width, so the copy is the
             // whole run.
             VM_CASE(LHAT_BC_BOX) {
                 LHAT_GC_POLL();  // this case allocates
-                // 8.9改: C bit 0 seals the box (constbox^); bit 1 reads
+                // 05§8.9+: C bit 0 seals the box (constbox^); bit 1 reads
                 // R[B] as a box to copy rather than a value laid out.
                 const LhatValueUnion *from;
                 const LhatHostValueTag *tag;
@@ -2065,8 +2065,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             VM_CASE(LHAT_BC_TAILCALL)
             VM_CASE(LHAT_BC_TAILCALLMETHOD) {
             call_entry:;
-                // 14.4: whether the receiver was laid out below the arguments.
-                // 5.3: and whether the call may take this frame over rather
+                // §14.4: whether the receiver was laid out below the arguments.
+                // 03§5.3: and whether the call may take this frame over rather
                 // than push one -- which only the closure path below can do,
                 // so everything up to it reads the same either way.
                 bool as_method = op == LHAT_BC_CALLMETHOD ||
@@ -2079,11 +2079,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // native dispatch below. Keep all arity/window checks shared.
                 if (lhat_is_object_kind(R(a), LHAT_OBJECT_SUBROUTINE)) goto script_call;
 
-                // 14.12: at most one candidate fits, so this is a search and
+                // §14.12: at most one candidate fits, so this is a search and
                 // not a choice -- no ranking, no ambiguity to report. It ends
                 // at the first that takes what it was given.
                 //
-                // Settled before anything else looks at the callee: 05 の 8.7
+                // Settled before anything else looks at the callee: 05§8.7
                 // lets a registration be one of the arms, so what is chosen
                 // may be a host function, and every path below has to see
                 // what was chosen rather than the group it came out of.
@@ -2091,7 +2091,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     const LhatOverload *group =
                         (const LhatOverload *)lhat_as_object(R(a));
                     size_t picked_skip = 1;
-                    // 2.2: vm_fits_call reads the callee and arguments as one
+                    // 03§2.2: vm_fits_call reads the callee and arguments as one
                     // LhatValue run, which the stack is not -- so the
                     // slots are gathered once and every candidate reads the
                     // same copy.
@@ -2114,23 +2114,23 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     SET_R(a, chosen);
                 }
 
-                // 05 の 8.7: the host wrote this one in C. 13.1 settled how
+                // 05§8.7: the host wrote this one in C. §13.1 settled how
                 // many arguments there are before anything ran, so they are
                 // handed over as they lie rather than pushed one by one.
-                // 04 の 12.8 makes an error a value, so what comes back is
+                // 04§12.8 makes an error a value, so what comes back is
                 // one -- there is no unwinding to arrange.
                 if (lhat_is_object_kind(R(a), LHAT_OBJECT_HOST)) {
                     LhatHost *host = (LhatHost *)lhat_as_object(R(a));
                     size_t skip = as_method ? 2 : 1;
 
-                    // 13.7: 'expr...' wrote a table in the last slot instead
+                    // §13.7: 'expr...' wrote a table in the last slot instead
                     // of an ordinary argument. The closure path below unpacks
                     // one into the frame it is about to push; there is no
                     // frame to push here, so it is unpacked into an array of
                     // its own further down.
                     const LhatTable *spread_table = NULL;
                     size_t written = b;
-                    // 13.8改: C carries the reserved-slot count too, so the
+                    // §13.8+: C carries the reserved-slot count too, so the
                     // spread is the low bit rather than the whole byte.
                     if ((cc & LHAT_CALL_SPREAD) != 0) {
                         if (b == 0) {
@@ -2145,29 +2145,29 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         written = (size_t)b - 1 + spread_table->array_count;
                     }
 
-                    // 13.4 keeps self^ out of the parameter list, so what the
+                    // §13.4 keeps self^ out of the parameter list, so what the
                     // call wrote is compared against the list and the
-                    // receiver is handed over besides it. 13.7 makes that
+                    // receiver is handed over besides it. §13.7 makes that
                     // comparison a floor once the signature ended in '...'.
                     if (host->has_variadic ? written < host->parameters
                                            : written != host->parameters) {
                         return vm_finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
                     }
 
-                    // 14.4: the receiver comes first, and sits just below the
+                    // §14.4: the receiver comes first, and sits just below the
                     // arguments the call wrote.
                     bool receiver_first =
                         host->takes_self && as_method;
                     size_t given = written + (receiver_first ? 1 : 0);
-                    // 05 の 8.9: a host value receiver holds its width of
+                    // 05§8.9: a host value receiver holds its width of
                     // slots, so a skipped receiver is skipped whole.
                     size_t receiver_width =
                         as_method && lhat_is_hostvalue(R(a + 1))
                             ? lhat_as_hostvalue_tag(R(a + 1))->width
                             : 1;
-                    // 2.2: the stack holds no LhatValue run any more, so
+                    // 03§2.2: the stack holds no LhatValue run any more, so
                     // the arguments a host receives are gathered into one.
-                    // 05 の 8.9: walked by slot rather than by value -- a
+                    // 05§8.9: walked by slot rather than by value -- a
                     // host value argument is one argument, its head handed
                     // over aiming into the stack, and its width of slots
                     // stepped past.
@@ -2218,15 +2218,15 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         arguments = packed;
                     }
 
-                    // 05 の 8.8: a dispose^ written by hand is the same
+                    // 05§8.8: a dispose^ written by hand is the same
                     // giving-back the collection would do, so it is marked
-                    // here and 10.7 keeps the sweep from doing it again.
+                    // here and 05§10.7 keeps the sweep from doing it again.
                     if (host->takes_self && given > 0 &&
                         lhat_is_object_kind(arguments[0],
                                             LHAT_OBJECT_HOSTDATA)) {
                         LhatHostData *data =
                             (LhatHostData *)lhat_as_object(arguments[0]);
-                        // 8.8改: the nearest release on the chain, since an
+                        // 05§8.8+: the nearest release on the chain, since an
                         // inherited dispose^ is the type's own way back.
                         const LhatHostDataTag *by =
                             lhat_hostdata_releaser(data->tag);
@@ -2234,7 +2234,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             data->released = true;
                         }
                     }
-                    // 04 の 11.6改: the host may read the frames while it
+                    // 04§11.6+: the host may read the frames while it
                     // runs, and this frame's line is read off its saved pc.
                     frame->pc = pc;
                     size_t frames_before = m->frame_count;
@@ -2246,7 +2246,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
                                       lhat_nil(), at);
                     }
-                    // 05 の 8.7改 and 8.7改2: a nested run that faulted, or
+                    // 05§8.7+ and 05§8.7+2: a nested run that faulted, or
                     // a panic the host asked for, ends this run here --
                     // running on would stack this frame's own calls over
                     // the standing ones, and the traceback keeps the chain.
@@ -2255,12 +2255,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     if (vm_host_faulted(m, frames_before, &left, &left_with)) {
                         return vm_finish(m, chunk, left, left_with, at);
                     }
-                    // 05 の 8.9: a host value answer arrives as a
+                    // 05§8.9: a host value answer arrives as a
                     // head-shaped run and is written out whole on the spot,
                     // before anything else can touch the scratch it may live
                     // in.
                     if (lhat_is_hostvalue(answered)) {
-                        // 05 の 8.9: the call site said the width it made
+                        // 05§8.9: the call site said the width it made
                         // room for (compile's prepared); a site that could
                         // not know the type reserved one slot, and writing
                         // past it would eat the neighbours -- refused, as
@@ -2275,7 +2275,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         }
                         VM_NEXT();
                     }
-                    // 02 の 13.8改: and the several values a host answers
+                    // §13.8+: and the several values a host answers
                     // with go down the same way. Until this, the host path
                     // was the one caller that never read C's reserved count
                     // -- a registration saying '-> (A, B)' compiled to a
@@ -2292,7 +2292,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     // Whatever the host may have staged, it did not answer
                     // with it, so the room is free again.
                     m->tuple_scratch_count = 0;
-                    // 13.8改 with 04 の 3.1, and 05 の 8.9改: room past one
+                    // §13.8+ with 04§3.1, and 05§8.9+: room past one
                     // slot says the site reserved for something wide -- a
                     // run ('-> (A, B)'), or a host value's own width
                     // ('-> Vector3|nil^'). One value coming back fills it
@@ -2311,7 +2311,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     VM_NEXT();
                 }
 
-                // 02 の 12.6 and 15.6: resume and dispose are the runtime's,
+                // §12.6 and §15.6: resume and dispose are the runtime's,
                 // not the program's, so they are performed rather than called.
                 if (lhat_is_object_kind(R(a), LHAT_OBJECT_NATIVE)) {
                     const LhatNative *native =
@@ -2355,7 +2355,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     LhatCoroutine *co =
                         (LhatCoroutine *)lhat_as_object(native->bound);
 
-                    // 15.6改: the two questions, answered before any of the
+                    // §15.6+: the two questions, answered before any of the
                     // guards below. Neither runs the body, so both hold on a
                     // finished coroutine, where everything else faults, and
                     // on a fresh one, where resume does.
@@ -2371,7 +2371,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         VM_NEXT();
                     }
 
-                    // 15.16: neither runs the body, so like the two above
+                    // §15.16: neither runs the body, so like the two above
                     // they hold in every state but running.
                     if (native->kind == LHAT_NATIVE_SAVE ||
                         native->kind == LHAT_NATIVE_LOAD) {
@@ -2388,13 +2388,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         VM_NEXT();
                     }
 
-                    // 15.2: the machine holds this itself rather than
+                    // §15.2: the machine holds this itself rather than
                     // trusting the checker to have (vm.h's opening comment).
                     // start takes none, since nothing has been yield^ed yet to
-                    // send a value to. 13.9: a resume takes one where R is
+                    // send a value to. §13.9: a resume takes one where R is
                     // there and none where it is empty -- a body no var^ of
                     // which receives a yield^ has nothing being sent in.
-                    // 16.3's built-in walk is one of those; nothing sends it
+                    // §16.3's built-in walk is one of those; nothing sends it
                     // anything either.
                     if (native->kind == LHAT_NATIVE_START && b != 0) {
                         return vm_finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(), at);
@@ -2405,8 +2405,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                     co->frame.closure != NULL
                                 ? co->frame.closure->proto
                                 : NULL;
-                        // 16.3's built-in walk receives nothing either, and
-                        // has no proto to say so. 13.8改: a tuple R takes
+                        // §16.3's built-in walk receives nothing either, and
+                        // has no proto to say so. §13.8+: a tuple R takes
                         // that many arguments -- but only a checked body has
                         // reserved the run's slots for the yield^'s binding,
                         // so an unknown proto keeps the old ceiling of one:
@@ -2420,7 +2420,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                           at);
                         }
                         // And the run still has to fit the suspended frame
-                        // (5.1's stop, never a scribble past it).
+                        // (09§5.1's stop, never a scribble past it).
                         if (b > 1 && co->frame.state == LHAT_COROUTINE_SUSPENDED &&
                             (size_t)co->frame.sent_into + b >= co->frame.register_count) {
                             return vm_finish(m, chunk, LHAT_RUN_ARITY, lhat_nil(),
@@ -2428,7 +2428,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         }
                     }
 
-                    // 15.2: start and resume split the two jobs, so each has
+                    // §15.2: start and resume split the two jobs, so each has
                     // to be called on the state that makes it meaningful.
                     if (native->kind == LHAT_NATIVE_START &&
                         co->frame.state != LHAT_COROUTINE_FRESH) {
@@ -2441,7 +2441,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                       lhat_nil(), at);
                     }
 
-                    // 02 の 10.7: disposal runs what is still pending and
+                    // §10.7: disposal runs what is still pending and
                     // never runs the same cleanup twice, so a coroutine that
                     // has finished simply has nothing left to do.
                     bool dispose = native->kind == LHAT_NATIVE_DISPOSE;
@@ -2449,7 +2449,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         (dispose && co->frame.state == LHAT_COROUTINE_FRESH)) {
                         if (dispose) {
                             co->frame.state = LHAT_COROUTINE_DONE;
-                            // 05 の 8.8: a host walk's state goes back with
+                            // 05§8.8: a host walk's state goes back with
                             // the disposal. Nothing on any other source.
                             lhat_coroutine_release((LhatObject *)co, m);
                             SET_R(a, lhat_nil());
@@ -2461,7 +2461,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         return vm_finish(m, chunk, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
                     }
 
-                    // 16.3: a walk of a table has no body, so nothing below
+                    // §16.3: a walk of a table has no body, so nothing below
                     // applies to it -- no frame to enter and nothing pending
                     // to drain. The guards above leave start() on a fresh
                     // walk and resume() on a suspended one, and one step is
@@ -2473,7 +2473,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                             VM_NEXT();
                         }
                         unsigned room = lhat_call_prepared(cc);
-                        // 16.3改2: a projection yields one value, so one slot
+                        // §16.3+2: a projection yields one value, so one slot
                         // is what it wants and a run has nothing to put in
                         // the second position.
                         if (lhat_walk_is_projection(co->cursor.part)) {
@@ -2485,12 +2485,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                             frame);
                             VM_NEXT();
                         }
-                        // 16.3 with 13.8改: hand-driven start()/resume()
+                        // §16.3 with §13.8+: hand-driven start()/resume()
                         // answer the pair as the tuple every walk yields.
                         // The call's reservation says whether the run has
                         // anywhere to land; a checked call reserved the
                         // width (the stamp on a discarded one included),
-                        // and a mismatch is refused the way 03 の 5.3
+                        // and a mismatch is refused the way 03§5.3
                         // refuses any tuple answer.
                         if (room > 1 && room != 3) {
                             return vm_finish(m, chunk, LHAT_RUN_TUPLE_ARITY,
@@ -2520,7 +2520,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                       lhat_nil(), at);
                     }
 
-                    // 05 の 8.8: a host's walk is the same shape -- no body,
+                    // 05§8.8: a host's walk is the same shape -- no body,
                     // no frame, one step per call. The step itself says what
                     // shape it yields, so the reservation is judged inside
                     // rather than up front the way a table's part allows.
@@ -2538,7 +2538,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                           lhat_nil(), at);
                         }
                         LhatRunStatus fault = LHAT_RUN_OK;
-                        // 13.8改: everything the resume sent, not the
+                        // §13.8+: everything the resume sent, not the
                         // first of it. The body path below gathers the
                         // same way; a walk is no less entitled to it.
                         LhatValue walk_sent[LHAT_MAX_TUPLE];
@@ -2566,7 +2566,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
 
                     size_t next_base = rbase + (a) + 1;
-                    // 4.3改: a suspension's saved registers are its body's
+                    // 03§4.3+: a suspension's saved registers are its body's
                     // width, which is the window the restore lays down.
                     if (next_base + co->frame.register_count >= m->slot_capacity) {
                         return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
@@ -2574,11 +2574,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     frame->pc = pc;
 
                     if (dispose) {
-                        // 10.7: what is pending runs, innermost first, and
+                        // §10.7: what is pending runs, innermost first, and
                         // then the coroutine is finished.
                         vm_enter_disposal_frame(m, co, next_base, a, &frame,
                                                                   &rbase, &chunk, &pc);
-                        // 15.4: the guards above leave only a suspended
+                        // §15.4: the guards above leave only a suspended
                         // coroutine here, so the slot a yield^ answers into
                         // is written the way a resume writes it -- with
                         // nil^, since dispose sends nothing in.
@@ -2586,7 +2586,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         goto drain;
                     }
 
-                    // 5.11: one frame, put back where it left off. 13.8改:
+                    // 03§5.11: one frame, put back where it left off. §13.8+:
                     // `prepared` carries what the call site reserved, so the
                     // callee can tell whether a run is wanted here -- and
                     // the resume's arguments go over as they were written,
@@ -2597,7 +2597,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                          i++) {
                         sent_run[sent_count++] = R(first + i);
                     }
-                    // 05 の 8.9: a host value argument goes over whole, as
+                    // 05§8.9: a host value argument goes over whole, as
                     // the pointer form, and rides alone -- a run's positions
                     // are single slots, so it mixes with nothing.
                     if (sent_count == 1 && lhat_is_hostvalue(sent_run[0])) {
@@ -2637,9 +2637,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     return vm_finish(m, chunk, LHAT_RUN_NOT_CALLABLE, lhat_nil(), at);
                 }
 
-                // 14.4: the receiver sits between the callee and the
+                // §14.4: the receiver sits between the callee and the
                 // arguments, and whether it is passed depends on the callee.
-                // A member that takes no self^ is a static one (14.4), so the
+                // A member that takes no self^ is a static one (§14.4), so the
                 // frame simply starts after the receiver.
                 size_t given = b;
                 size_t skip = 1;
@@ -2650,13 +2650,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         skip = 2;
                     }
                 }
-                // 13.7: 'expr...' put a table in the last slot instead of an
+                // §13.7: 'expr...' put a table in the last slot instead of an
                 // ordinary argument; its positions are unpacked in place of
                 // it, which is why what a call owes is read through
                 // call_arg() from here on rather than off registers directly.
                 const LhatTable *spread_table = NULL;
                 size_t before_spread = given;
-                if ((cc & LHAT_CALL_SPREAD) != 0) {  // 13.8改, as above
+                if ((cc & LHAT_CALL_SPREAD) != 0) {  // §13.8+, as above
                     if (given == 0) {
                         return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                     }
@@ -2668,7 +2668,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                     given = before_spread + spread_table->array_count;
                 }
-                // 13.7: the last slot of a variadic callee collects the rest
+                // §13.7: the last slot of a variadic callee collects the rest
                 // into a table rather than taking one argument for itself, so
                 // a call owes at least the fixed count and not exactly the
                 // slot count.
@@ -2676,7 +2676,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 size_t required = callee->proto->has_variadic
                                       ? declared_slots - 1
                                       : declared_slots;
-                // 13.4: nothing fills a missing argument in. A parameter's
+                // §13.4: nothing fills a missing argument in. A parameter's
                 // default belongs to the editor that writes the call, so the
                 // count owed here is the declared one either way.
                 if (callee->proto->has_variadic ? given < required
@@ -2696,7 +2696,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                         bool refused = false;
                         LhatValue value = call_arg(m->slots, rbase, a, skip,
                                                    spread_table, before_spread, i);
-                        // 05 の 8.9: the collection is a table, and a table
+                        // 05§8.9: the collection is a table, and a table
                         // member is never a host value -- the checker said
                         // so at the call; this is the unchecked backstop.
                         if (lhat_is_hostvalue(value)) {
@@ -2713,7 +2713,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     collected_variadic = lhat_object((LhatObject *)collected);
                 }
 
-                // 02 の 15.5: calling a yieldable procedure does not suspend
+                // §15.5: calling a yieldable procedure does not suspend
                 // the caller. It answers a coroutine, and the body has not
                 // started -- which is why the colouring of async/await never
                 // arises here.
@@ -2723,10 +2723,10 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     if (co == NULL) {
                         return vm_finish(m, chunk, LHAT_RUN_OUT_OF_MEMORY, lhat_nil(), at);
                     }
-                    // 16.3: made for a for^ loop's walk and handed to
+                    // §16.3: made for a for^ loop's walk and handed to
                     // nothing else (code.h's LHAT_CALL_WALK).
                     co->owned = !tail && (cc & LHAT_CALL_WALK) != 0;
-                    // 05 の 8.9: without a spread the arguments sit in their
+                    // 05§8.9: without a spread the arguments sit in their
                     // laid-out slots, widths included, so the copy is
                     // slot-blind -- what lets a wide parameter cross. A
                     // spread re-indexes by value, and never mixes with a
@@ -2757,12 +2757,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     VM_NEXT();
                 }
 
-                // 5.3: a tail call runs in this frame rather than one above
+                // 03§5.3: a tail call runs in this frame rather than one above
                 // it, where the frame is free to go. It is not free while a
-                // cleanup is pending (5.5 runs those after the call, and a
+                // cleanup is pending (03§5.5 runs those after the call, and a
                 // frame that has left cannot run them), nor when it is a
-                // coroutine's (5.11 -- the frame is that coroutine's body),
-                // nor at the top level of a session (03 の 4.3 keeps those
+                // coroutine's (03§5.11 -- the frame is that coroutine's body),
+                // nor at the top level of a session (03§4.3 keeps those
                 // slots for the next input).
                 bool reuse = tail && frame->cleanup_count == 0 &&
                              frame->coroutine == NULL &&
@@ -2771,13 +2771,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
 
-                // 5.3: the arguments already sit just above the callee, so
+                // §5.3: the arguments already sit just above the callee, so
                 // the new frame starts there and needs no shuffling -- unless
-                // a spread broke the contiguity, or 13.7's collector has to
+                // a spread broke the contiguity, or §13.7's collector has to
                 // overwrite the slot after the fixed ones with the table just
                 // built.
                 size_t next_base = rbase + a + skip;
-                // 03 の 4.3改: room for THIS callee's window, not for the
+                // 03§4.3+: room for THIS callee's window, not for the
                 // widest a compile could make. The two were the same
                 // question while every machine had 8192 slots to spend; a
                 // machine measured by its caller may have a few hundred,
@@ -2802,21 +2802,21 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 }
                 vm_clear_scratch_inline(m, next_base, callee->proto);
 
-                // 5.3: the window the callee is about to run in has been laid
+                // 03§5.3: the window the callee is about to run in has been laid
                 // out above this frame; taking the frame over is moving it
                 // down onto this frame's own registers. Nothing above is read
                 // again, and next_base is always higher than base (a callee
                 // sits at least one slot above the frame it was called from),
                 // so the move is forward and needs no care about overlap.
                 if (reuse) {
-                    // 5.4: what still points into these registers takes its
+                    // 05§5.4: what still points into these registers takes its
                     // value with it first. Closing leaves the slots as they
                     // are, so the arguments being moved down are still there
                     // to read.
                     vm_close_upvalues(m, frame->base);
                     size_t window = callee->proto->chunk.registers;
                     for (size_t i = 0; i < window; i++) {
-                        // 05 の 8.9: a host value's continuation slots are raw
+                        // 05§8.9: a host value's continuation slots are raw
                         // bytes, so the payload and the tag travel exactly as
                         // they lie rather than through a value read.
                         m->slots.values[frame->base + i] =
@@ -2827,9 +2827,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     frame->closure = callee;
                     frame->pc = 0;
                     frame->returning = false;
-                    // 5.3: `base`, `result` and `prepared` are the original
+                    // 03§5.3: `base`, `result` and `prepared` are the original
                     // caller's and stay its own -- the answer still goes where
-                    // that call site reserved room for it. 11.9's `derive`
+                    // that call site reserved room for it. §11.9's `derive`
                     // stays for the same reason: what this frame answers is
                     // still read the way the expression that made it asks.
                     // The drop is sticky: a body whose answer was already
@@ -2863,7 +2863,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 frame->cleanups[frame->cleanup_count++] = lhat_bx(instruction);
                 VM_NEXT();
 
-            // 10.2 and 12.3: leaving the block runs what it entered. The two
+            // §10.2 and §12.3: leaving the block runs what it entered. The two
             // cases differ only in where control goes afterwards.
             VM_CASE(LHAT_BC_POPCLEANUP)
                 frame->drain_target = a;
@@ -2874,7 +2874,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             VM_CASE(LHAT_BC_ENDCLEANUP)
                 goto drain;
 
-            // 10.4: leaving the procedure leaves every block inside it, so
+            // §10.4: leaving the procedure leaves every block inside it, so
             // the drain runs everything still pending before the frame goes.
             VM_CASE(LHAT_BC_RETURN)
             VM_CASE(LHAT_BC_RETURN_NIL)
@@ -2906,14 +2906,14 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 frame->drain_target = 0;
                 frame->returning = true;
                 frame->answer = op == LHAT_BC_RETURN ? R(a) : lhat_nil();
-                // 05 の 8.9: a host value answer moves into the frame's own
+                // 05§8.9: a host value answer moves into the frame's own
                 // room before the drain -- the callee's window overlaps the
                 // caller's scratch, so no register survives the cleanups.
                 // The pop places it whole from there. A coroutine's own
                 // return crossing a suspension was refused by the checker;
                 // this is the backstop.
                 if (op == LHAT_BC_RETURN && lhat_is_hostvalue(R(a))) {
-                    // 8.9改2: the base is no exception any more -- the drain
+                    // §8.9: the base is no exception any more -- the drain
                     // hands the value to the host whole, off this same room.
                     const LhatHostValueTag *tag = lhat_as_hostvalue_tag(R(a));
                     for (size_t i = 0; i < tag->width; i++) {
@@ -2921,7 +2921,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                     frame->answer.as.hostvalue_run = frame->answer_run;
                 }
-                // 02 の 13.8改: a tuple answer moves into the same room, for
+                // §13.8+: a tuple answer moves into the same room, for
                 // the same reason -- no register survives the drain. The
                 // positions are values rather than raw bytes, so their tags
                 // travel beside them, and the collector reads them there
@@ -2941,25 +2941,25 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 }
                 goto drain;
 
-            // 04 の 11.6: unlike a fault the machine itself raises, the
+            // 04§11.6: unlike a fault the machine itself raises, the
             // value is the program's own -- carried through to the host
             // exactly as lhat_run always has, rather than discarded like
             // every other vm_finish() here discards its nil^.
             VM_CASE(LHAT_BC_PANIC)
                 return vm_finish(m, chunk, LHAT_RUN_PANIC, R(a), at);
 
-            // 11.6: 14.12's own runtime check (vm_fits_call already
+            // §11.6: §14.12's own runtime check (vm_fits_call already
             // trusts it for overload^ resolution), just asked once instead
             // of per candidate. Compile-time disjointness (check.c) already
             // ruled out what could never hold; this is what it could not
             // rule out, checked against the actual value.
-            // 02 の 11.6改3: where the value fits, it stays and only the
+            // §11.6+3: where the value fits, it stays and only the
             // type the checker tracks narrowed. Where it does not, the
             // answer is the other arm of what as^ was said to be -- a
-            // localerror^.CastFailure, which 04 の 2.7改 will not let the
+            // localerror^.CastFailure, which 04§2.7+ will not let the
             // frame return, so a writer meets it here or nowhere.
             //
-            // 03 の 4.2: this runs whether or not anything was checked. A
+            // 03§4.2: this runs whether or not anything was checked. A
             // relaxed build makes the same value the strict one promised.
             VM_CASE(LHAT_BC_ASCAST) {
                 const LhatRuntimeType *wanted =
@@ -2977,33 +2977,33 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 02 の 15.4: the frame stops here and the value goes out. 5.11
-            // keeps the one frame rather than a stack, which 15.5 is what
+            // §15.4: the frame stops here and the value goes out. 03§5.11
+            // keeps the one frame rather than a stack, which §15.5 is what
             // makes possible -- a yield^ is always in the body it suspends.
             VM_CASE(LHAT_BC_YIELD) {
                 LhatCoroutine *co = frame->coroutine;
-                // 10.7: nothing is waiting for a yield^ during disposal.
+                // §10.7: nothing is waiting for a yield^ during disposal.
                 if (co == NULL || frame->disposing) {
                     return vm_finish(m, chunk, LHAT_RUN_YIELD_OUTSIDE, lhat_nil(), at);
                 }
                 LhatValue value = R(a);
-                // 02 の 13.8改: a tuple goes out whole. The positions ride
+                // §13.8+: a tuple goes out whole. The positions ride
                 // the frame's own room the way a return^'s do -- the window
                 // is about to be copied into the coroutine and then left
                 // behind, so no register survives to be read from the
                 // resumer's side. What the resume sends comes back into the
                 // first position's slot (co->frame.sent_into below) whatever its
                 // own width is -- one value, a host value laid out whole, or
-                // 13.8改's several as a run head with the positions after.
+                // §13.8+'s several as a run head with the positions after.
                 //
-                // b == 0 with a run head in the slot is 15.8's delegation
+                // b == 0 with a run head in the slot is §15.8's delegation
                 // loop forwarding what it was handed: the positions are
                 // already in this frame's answer room, put there by the
                 // RESUME just above -- by WALK_AS_ANSWER for a table's walk,
                 // or by the inner body's own yield collating into it -- so
                 // there is nothing to fill and the head goes out as it
                 // stands.
-                // 05 の 8.9: b == LHAT_YIELD_HOSTVALUE says R[A..] is a host
+                // 05§8.9: b == LHAT_YIELD_HOSTVALUE says R[A..] is a host
                 // value laid out whole. It rides the frame's own room the
                 // way a return's does -- the window is about to be left
                 // behind -- and goes out as the pointer form the placement
@@ -3044,13 +3044,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
 
                 for (size_t i = 0; i < co->frame.register_count; i++) {
                     lhat_slots_set(co->frame.registers, i, R(i));
-                    // 5.12: the coroutine has just taken a whole frame's
+                    // 03§5.12: the coroutine has just taken a whole frame's
                     // worth of the stack into itself. The backward barrier,
                     // as for a table: one more visit to the coroutine costs
                     // less than marking every register as it is copied.
                     lhat_gc_barrier_back(m, (LhatObject *)co, R(i));
                 }
-                // 15.4 with 5.4: the captures of this frame's slots travel
+                // §15.4 with §5.4: the captures of this frame's slots travel
                 // with the registers, or a resume at another depth would
                 // leave them reading whatever frame took these addresses
                 // over. This frame is the top one, so its captures are the
@@ -3067,7 +3067,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     up->suspended_in = co;
                     up->next_open = co->open;
                     co->open = up;
-                    // 5.12: the vm_capture now keeps the coroutine alive
+                    // 03§5.12: the vm_capture now keeps the coroutine alive
                     // (gc.c), which a black upvalue has to declare.
                     lhat_gc_barrier(m, (LhatObject *)up,
                                     lhat_object((LhatObject *)co));
@@ -3083,17 +3083,17 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     co->frame.cleanups[i] = frame->cleanups[i];
                 }
                 if (co->frame.cleanup_count > 0) {
-                    m->cleanup_carriers++;  // 10.7: a suspended carrier
+                    m->cleanup_carriers++;  // §10.7: a suspended carrier
                 }
 
                 uint8_t into = frame->result;
-                // 13.8改: read before `frame` becomes the resumer below. The
+                // §13.8+: read before `frame` becomes the resumer below. The
                 // room outlives the pop -- the entry is still there, only
                 // uncounted.
                 uint8_t reserved = frame->prepared;
                 const LhatValueUnion *out_run = frame->answer_run;
                 const uint8_t *out_tags = frame->answer_tags;
-                // 05 の 8.8: no resumer below -- the host resumed this
+                // 05§8.8: no resumer below -- the host resumed this
                 // coroutine at the base of this run (lhat_machine_resume),
                 // so the yield leaves vm_run_frames the way a return does, the
                 // coroutine staying suspended for the next resume. The
@@ -3101,7 +3101,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 // value, or the positions copied into the machine's room.
                 if (m->frame_count == base_depth + 1) {
                     m->frame_count--;
-                    // 05 の 8.9改2: the host receives the value whole, as
+                    // 05§8.9: the host receives the value whole, as
                     // the pointer form aimed at the machine's scratch.
                     if (lhat_is_hostvalue(value)) {
                         return vm_finish(m, chunk, LHAT_RUN_OK,
@@ -3131,7 +3131,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 chunk = &frame->closure->proto->chunk;
                 pc = frame->pc;
                 if (lhat_is_hostvalue(value) && reserved == 0) {
-                    // 15.8: the delegation loop forwards the value. The
+                    // §15.8: the delegation loop forwards the value. The
                     // bytes move into the resumer's own room -- the popped
                     // frame's entry would be taken over by the next push --
                     // and the head is re-aimed there, keeping the invariant
@@ -3144,7 +3144,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     value.as.hostvalue_run = frame->answer_run;
                     lhat_slots_set(m->slots, rbase + into, value);
                 } else if (lhat_is_hostvalue(value)) {
-                    // 05 の 8.9: written out whole at the resume's slot, as
+                    // 05§8.9: written out whole at the resume's slot, as
                     // a call's answer is at its own -- the call said the
                     // width it made room for (compile's prepared).
                     if ((size_t)reserved <
@@ -3154,7 +3154,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                       lhat_nil(), at);
                     }
                 } else if (lhat_is_run(value) && reserved == 0) {
-                    // 15.8: the resumer is a delegation loop, which reserved
+                    // §15.8: the resumer is a delegation loop, which reserved
                     // one slot because it could not know this width (see
                     // RESUME). The head goes in that slot and the positions
                     // into the resumer's own answer room -- which is exactly
@@ -3179,8 +3179,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                     lhat_slots_set(m->slots, rbase + into, value);
                 } else if (lhat_is_run(value)) {
-                    // 13.8改: laid out as a head slot naming the width plus
-                    // the positions, exactly as a returned tuple is. 13.9's
+                    // §13.8+: laid out as a head slot naming the width plus
+                    // the positions, exactly as a returned tuple is. §13.9's
                     // 'union(Y, T)' is what the resumer holds, and the head's
                     // tag is what tells the two apart there. A narrower run
                     // (the short side of a widened fold) lands as it is --
@@ -3200,11 +3200,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     }
                 } else if (reserved > 1 &&
                            lhat_is_object_kind(value, LHAT_OBJECT_TABLE)) {
-                    // 16.3 with 13.8改: a loop reserved a run and the body
+                    // §16.3 with §13.8+: a loop reserved a run and the body
                     // yielded a table -- the iterator that answers pairs as
                     // tables rather than tuples. Its positions go into the
                     // reserved slots -- indexed here rather than by the loop --
-                    // so the two iterator shapes meet the same binds. A missing position is 04 の 11.3's
+                    // so the two iterator shapes meet the same binds. A missing position is 04§11.3's
                     // absence, which a destructuring faults on.
                     const LhatTable *yielded =
                         (const LhatTable *)lhat_as_object(value);
@@ -3230,11 +3230,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 02 の 15.8: the delegation loop asks whether the inner one is
-            // finished, since 13.9 makes what a resume answers the union of
+            // §15.8: the delegation loop asks whether the inner one is
+            // finished, since §13.9 makes what a resume answers the union of
             // its yield type and its return type.
             VM_CASE(LHAT_BC_ISDONE) {
-                // 16.3: a walk ITERPREP laid inline is a table while it runs
+                // §16.3: a walk ITERPREP laid inline is a table while it runs
                 // and nil^ once RESUME has found its end.
                 if (lhat_is_nil(R(b)) ||
                     lhat_is_object_kind(R(b), LHAT_OBJECT_TABLE)) {
@@ -3247,7 +3247,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 LhatCoroutine *co = (LhatCoroutine *)lhat_as_object(R(b));
                 bool done = co->frame.state == LHAT_COROUTINE_DONE;
                 SET_R(a, lhat_bool(done));
-                // 16.3: a loop's own coroutine, run to its end, is given back
+                // §16.3: a loop's own coroutine, run to its end, is given back
                 // to be made again -- the loop held it in R(b), and in R(b+1)
                 // too where the bound itself was the call that made it.
                 if (done && co->owned) {
@@ -3262,17 +3262,17 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
 
             VM_CASE(LHAT_BC_RESUME) {
-                // 16.3 with 13.8改: which shape one step puts down. C is the
+                // §16.3 with §13.8+: which shape one step puts down. C is the
                 // loop's word -- the count of names is syntax, so unchecked
-                // and checked compiles say the same thing (03 の 4.2).
-                // 0 (and 1) is 15.8's delegation loop, the one emitter of a
+                // and checked compiles say the same thing (03§4.2).
+                // 0 (and 1) is §15.8's delegation loop, the one emitter of a
                 // RESUME with no width: the pair rides the answer room and
                 // the YIELD after it forwards the run as it stands.
                 WalkMode mode = (cc & LHAT_RESUME_WIDE) != 0 ? WALK_AS_VALUE
                                 : cc >= 3                    ? WALK_AS_RUN
                                 : cc == 2                    ? WALK_AS_VALUE
                                                              : WALK_AS_ANSWER;
-                // 16.3: a walk ITERPREP laid inline -- the same step a
+                // §16.3: a walk ITERPREP laid inline -- the same step a
                 // table's walk takes below, on the cursor in the registers.
                 if (lhat_is_object_kind(R(b), LHAT_OBJECT_TABLE)) {
                     LhatWalkCursor cursor;
@@ -3305,12 +3305,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     return vm_finish(m, chunk, LHAT_RUN_DEAD_COROUTINE, lhat_nil(), at);
                 }
 
-                // 16.3: a table's walk has no body to enter, so resuming it
+                // §16.3: a table's walk has no body to enter, so resuming it
                 // is one step and nothing more.
                 if (co->source == LHAT_COROUTINE_TABLE) {
                     // A run is two positions; a loop that reserved another
                     // width asked for something the walk does not yield.
-                    // 16.3改2: and a projection yields no pair at all, so a
+                    // §16.3+2: and a projection yields no pair at all, so a
                     // loop written with two names is asking the same way.
                     if (mode == WALK_AS_RUN &&
                         (lhat_walk_is_projection(co->cursor.part) || (size_t)cc != 3 ||
@@ -3321,7 +3321,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     vm_step_table_walk(m, co, mode, rbase + a, frame);
                     VM_NEXT();
                 }
-                // 05 の 8.8: and so is a host's -- one C call. The loops
+                // 05§8.8: and so is a host's -- one C call. The loops
                 // send nothing in; the delegation loop forwards R(a), which
                 // is what a BODY's resume writes into sent_into below.
                 if (co->source == LHAT_COROUTINE_HOST) {
@@ -3331,7 +3331,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                       lhat_nil(), at);
                     }
                     LhatRunStatus fault = LHAT_RUN_OK;
-                    // 15.8 with 13.8改: what the outer resume sent may
+                    // §15.8 with §13.8+: what the outer resume sent may
                     // itself be a run, laid at R(a) head-first by this
                     // frame's own suspension -- the body path below reads
                     // it the same way. A for^ loop sends nothing.
@@ -3370,7 +3370,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 if (m->frame_count >= m->frame_capacity) {
                     return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
-                // 13.8改: the frame goes above the slots the loop reserved
+                // §13.8+: the frame goes above the slots the loop reserved
                 // for the answer, or the callee's window would overlap the
                 // run about to be written back into this one.
                 size_t next_base =
@@ -3378,11 +3378,11 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     ((cc & LHAT_RESUME_WIDE) != 0
                          ? (size_t)(cc & ~LHAT_RESUME_WIDE)
                          : cc >= 3 ? (size_t)cc : 1);
-                if (next_base + co->frame.register_count >= m->slot_capacity) {  // 4.3改
+                if (next_base + co->frame.register_count >= m->slot_capacity) {  // 03§4.3+
                     return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
                 }
 
-                // 15.8 with 13.8改: the delegation loop forwards what the
+                // §15.8 with §13.8+: the delegation loop forwards what the
                 // outer resume sent, which may itself be a run -- laid at
                 // R(a) by this frame's own suspension, head plus positions.
                 // A for^ loop sends nil^, which is never one.
@@ -3390,7 +3390,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 size_t sent_count = 1;
                 sent_run[0] = R(a);
                 if (lhat_is_hostvalue(R(a))) {
-                    // 05 の 8.9: the outer resume laid the value out whole
+                    // 05§8.9: the outer resume laid the value out whole
                     // at this slot; it goes on as the pointer form, its
                     // bytes stashed clear of the restore.
                     sent_run[0] = vm_stash_sent_hostvalue(m, rbase + a);
@@ -3415,7 +3415,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     sent_count = width;
                 }
                 // As at the natives' resume: the run has to fit the
-                // suspended frame (5.1's stop for an unchecked proto).
+                // suspended frame (09§5.1's stop for an unchecked proto).
                 if (sent_count > 1 &&
                     co->frame.state == LHAT_COROUTINE_SUSPENDED &&
                     (size_t)co->frame.sent_into + sent_count >= co->frame.register_count) {
@@ -3423,13 +3423,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                                   at);
                 }
                 frame->pc = pc;
-                // 13.8改: what the resume reserved for the answer -- a loop
+                // §13.8+: what the resume reserved for the answer -- a loop
                 // driving a tuple-yielding body says its width here, and the
-                // yield's placement reads it (15.4).
+                // yield's placement reads it (§15.4).
                 //
-                // 15.8: zero is the delegation loop, and means "whatever
+                // §15.8: zero is the delegation loop, and means "whatever
                 // width comes, forward it". It cannot say a width: unlike a
-                // for^, whose count of names is syntax (03 の 4.2), a
+                // for^, whose count of names is syntax (03§4.2), a
                 // await^ would have to read the inner body's type to know
                 // one, and an unchecked compile has no type to read. So the
                 // width is settled where it is known -- at the yield -- and
@@ -3448,7 +3448,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
 
 
-            // 02 の 19 章: the declaration builds its objects where it
+            // §19: the declaration builds its objects where it
             // stands. NEWENUM reads the descriptor constant the compiler
             // made; NEWENUMERATOR evaluates nothing itself -- the value
             // arrived in R[C], put there by the member's own expression.
@@ -3474,7 +3474,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 LHAT_GC_POLL();  // this case allocates
                 if (!lhat_is_object_kind(R(a), LHAT_OBJECT_ENUM) ||
                     !lhat_is_object_kind(R(b), LHAT_OBJECT_STRING) ||
-                    // 05 の 8.9: a host value cannot live in a heap object.
+                    // 05§8.9: a host value cannot live in a heap object.
                     lhat_is_hostvalue(R(cc))) {
                     return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
                 }
@@ -3527,9 +3527,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
-            // 5.1改6: integers all three, the loop counts in integers. Its
+            // §5.1: integers all three, the loop counts in integers. Its
             // overflow is not widened: a real that far up is within
-            // tolerance of the bound (14.8) and would never leave it.
+            // tolerance of the bound (§14.8) and would never leave it.
             VM_CASE(LHAT_BC_FORLOOP)
                 VM_FORLOOP_FAST(add_exact, <=);
                 goto forloop_generic;
@@ -3565,12 +3565,12 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         continue;
 #endif
 
-    // 02 の 11.1: an operator is a function the left operand carries, named
-    // by 11.8 after the operator itself. The instructions above take their
+    // §11.1: an operator is a function the left operand carries, named
+    // by §11.8 after the operator itself. The instructions above take their
     // own types directly and come here for everything else, which is why the
     // built-in cases pay nothing for this.
     call_operator: {
-        // 11.8改: NEG is the one instruction arriving here with a single
+        // §11.8: NEG is the one instruction arriving here with a single
         // operand. Everything below reads 'cc' only where a right operand
         // exists, so the unary path leaves that register untouched -- NEG
         // never wrote one.
@@ -3591,18 +3591,18 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         for (;;) {
             size_t length = 0;
             const char *name = vm_operator_name(op, &length);
-            // 14.4 makes an operator a method: the left operand is the
+            // §14.4 makes an operator a method: the left operand is the
             // receiver and the right one the single argument.
             receiver_on_right = false;
             answer = vm_operator_candidate(m, R(b), name, length, R(b), rhs,
                                         given, false, &found, &actual_receiver);
-            // 11.3改: the left carries nothing that takes this right
+            // §11.3+: the left carries nothing that takes this right
             // operand, so the right one is asked whether it was written as
             // the receiver instead. This is what lets a value join an
             // operation whose left operand is a built-in, which can carry no
             // answer for it.
             //
-            // 11.8改: a unary operator has no other side to ask. Its one
+            // §11.8: a unary operator has no other side to ask. Its one
             // operand is the receiver by the only reading there is.
             if (!unary &&
                 (answer == OPERATOR_ABSENT || answer == OPERATOR_NO_CANDIDATE)) {
@@ -3617,8 +3617,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     answer = right;
                 }
             }
-            // 11.9改: an equality was looked for as '=' first. A type that
-            // wrote none may still have said how it orders, and 11.9 has
+            // §11.9+: an equality was looked for as '=' first. A type that
+            // wrote none may still have said how it orders, and §11.9 has
             // that refine equality too -- so the other name is asked before
             // the default is taken.
             if (answer != OPERATOR_PICKED && op == LHAT_BC_EQ &&
@@ -3628,19 +3628,19 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
             break;
         }
-        // 11.9改: which of the two answered, and so how what comes back is
+        // §11.9+: which of the two answered, and so how what comes back is
         // read -- an op^= answers the bool^ itself, a '<=>' a number^ to put
         // beside zero.
         bool answered_bool = op == LHAT_BC_EQ;
-        // 11.9: equality is answered whether or not either was written --
-        // 14.2 says what a table is the same as and 05 の 8.9 what a host
+        // §11.9: equality is answered whether or not either was written --
+        // §14.2 says what a table is the same as and 05§8.9 what a host
         // value is, and a type that says more only refines that. An ordering
         // has no such answer to fall back on and faults the way it always did.
         if (answer != OPERATOR_PICKED &&
             (derive_from == LHAT_BC_EQ || derive_from == LHAT_BC_NE)) {
             bool equal;
             if (lhat_is_hostvalue(R(b)) || lhat_is_hostvalue(rhs)) {
-                // 05 の 8.9: the bytes under the same tag. Reading the heads
+                // 05§8.9: the bytes under the same tag. Reading the heads
                 // alone would call two same-typed values equal whatever they
                 // hold.
                 equal = lhat_is_hostvalue(R(b)) &&
@@ -3657,8 +3657,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         if (answer != OPERATOR_PICKED) {
             return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }
-        // 05 の 8.9: a host value's operator is C and answers on the spot --
-        // no frame, no derive to carry: the receiver convention is 14.4's,
+        // 05§8.9: a host value's operator is C and answers on the spot --
+        // no frame, no derive to carry: the receiver convention is §14.4's,
         // with each operand handed over as its head aimed into the stack.
         if (lhat_is_object_kind(found, LHAT_OBJECT_HOST)) {
             LhatHost *carried_host = (LhatHost *)lhat_as_object(found);
@@ -3674,7 +3674,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             if (!lhat_is_hostvalue(actual_receiver)) {
                 operands[receiver_on_right ? 1 : 0] = actual_receiver;
             }
-            frame->pc = pc;  // 11.6改, as at a CALL
+            frame->pc = pc;  // §11.6+, as at a CALL
             size_t frames_before = m->frame_count;
             LhatValue answered = lhat_nil();
             if (!vm_call_host_fn(m, carried_host->call,
@@ -3692,7 +3692,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 bool held = false;
                 LhatRunStatus status = LHAT_RUN_OK;
                 if (answered_bool) {
-                    // 11.9改: an op^= answers the judgement itself. The shape
+                    // §11.9+: an op^= answers the judgement itself. The shape
                     // rule asks it for a bool^, so anything else is a body
                     // that did not keep to its signature.
                     if (!lhat_is_bool(answered)) {
@@ -3703,7 +3703,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                            (derive_from == LHAT_BC_EQ);
                 } else if (derive_from == LHAT_BC_EQ ||
                            derive_from == LHAT_BC_NE) {
-                    // 11.9: what came back is read against zero.
+                    // §11.9: what came back is read against zero.
                     held = lhat_value_equal(answered, lhat_integer(0)) ==
                            (derive_from == LHAT_BC_EQ);
                 } else if (!ordering(derive_from, answered, lhat_integer(0),
@@ -3713,8 +3713,8 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 SET_R(a, lhat_bool(held));
                 VM_NEXT();
             }
-            // 02 の 13.8改: an operator answers one value, whoever wrote it
-            // -- 11.8's shape gives it no room for several, and the frame
+            // §13.8+: an operator answers one value, whoever wrote it
+            // -- §11.8's shape gives it no room for several, and the frame
             // pushed for an L^ one says so too (prepared = 1 below). A host
             // that answered a run has nowhere to put it here.
             if (lhat_is_run(answered)) {
@@ -3733,9 +3733,9 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         }
         const LhatClosure *carried =
             (const LhatClosure *)lhat_as_object(found);
-        // 15.7改: an operator may not be yieldable. Not because it is an f^ --
-        // 15.3改 lets one of those suspend -- but because 11.8's signature
-        // answers T, and a yieldable subroutine answers a coroutine (15.5).
+        // §15.7+: an operator may not be yieldable. Not because it is an f^ --
+        // §15.3+ lets one of those suspend -- but because §11.8's signature
+        // answers T, and a yieldable subroutine answers a coroutine (§15.5).
         if (carried->proto == NULL || carried->proto->yields) {
             return vm_finish(m, chunk, LHAT_RUN_TYPE_ERROR, lhat_nil(), at);
         }
@@ -3743,29 +3743,29 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
         }
 
-        // 5.3 wants the arguments in a contiguous run, and b and cc need not
-        // be one. 14.4 puts the left operand in self^, so it leads: the frame
+        // 03§5.3 wants the arguments in a contiguous run, and b and cc need not
+        // be one. §14.4 puts the left operand in self^, so it leads: the frame
         // is laid out just past where the answer goes, the way a native call
         // lays one out.
         //
-        // 11.3改: and a self^-last one needs nothing else here. Its
+        // §11.3+: and a self^-last one needs nothing else here. Its
         // parameter list is written in operand order too -- the left operand
         // first, the self^ after it -- so the same two slots hold the same two
         // values whichever side the receiver is. Only which slot the body
         // calls self^ differs, and that is the body's own business.
         size_t next_base = rbase + (a) + 1;
         if (next_base + carried->proto->chunk.registers >=
-            m->slot_capacity) {  // 4.3改
+            m->slot_capacity) {  // 03§4.3+
             return vm_finish(m, chunk, LHAT_RUN_STACK_OVERFLOW, lhat_nil(), at);
         }
         // Both operands are read before either slot of the new window is
-        // written: 12 の 4.1's forwarding reads an operand where it lies,
+        // written: 12§4.1's forwarding reads an operand where it lies,
         // and a destination that is itself a local puts the window right on
         // top of one -- 's := s .. t' has t sitting at next_base.
         LhatValue left_operand = receiver_on_right ? R(b) : actual_receiver;
         LhatValue right_operand = receiver_on_right ? actual_receiver : rhs;
         lhat_slots_set(m->slots, next_base + (0), left_operand);
-        // 11.8改: a unary one declares self^ and nothing else, so the one
+        // §11.8: a unary one declares self^ and nothing else, so the one
         // slot is the whole frame.
         if (!unary) {
             lhat_slots_set(m->slots, next_base + (1), right_operand);
@@ -3778,20 +3778,20 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         entered->pc = 0;
         entered->base = next_base;
         entered->result = a;
-        entered->prepared = 1;  // 13.8改: an operator answers one value
+        entered->prepared = 1;  // §13.8+: an operator answers one value
         entered->cleanup_count = 0;
         entered->returning = false;
         entered->coroutine = NULL;
         entered->disposing = false;
-        entered->drop_answer = false;  // 5.3
+        entered->drop_answer = false;  // §5.3
         // The room is a root while the frame lives (mark_roots), so it
         // starts empty rather than as whatever the slot held before.
         entered->answer = lhat_nil();
         entered->jit_return = NULL;
-        // 11.9: an ordering that reached for '<=>' wants the answer
+        // §11.9: an ordering that reached for '<=>' wants the answer
         // read against zero, not handed over as it is.
         entered->derive = derive_from;
-        // 11.9改: unless what answered was an op^=, whose bool^ is the
+        // §11.9+: unless what answered was an op^=, whose bool^ is the
         // judgement itself -- `derive` then says only whether to negate it.
         entered->derive_equal = answered_bool;
 
@@ -3815,20 +3815,20 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             VM_NEXT();
         }
 
-        // 5.4: whatever still points into this frame takes its value with it,
+        // §5.4: whatever still points into this frame takes its value with it,
         // since the slots are about to be reused.
         {
-            // 5.3: a tail call from a body that discards what it calls answers
+            // 03§5.3: a tail call from a body that discards what it calls answers
             // for that body, which answers the nil^ of falling off its end.
             LhatValue value = frame->drop_answer ? lhat_nil() : frame->answer;
-            // 5.11: the body is over, so the coroutine has nothing left to
+            // 03§5.11: the body is over, so the coroutine has nothing left to
             // resume and its cleanups have all run.
             if (frame->coroutine != NULL) {
                 frame->coroutine->frame.state = LHAT_COROUTINE_DONE;
                 frame->coroutine->frame.cleanup_count = 0;
             }
 
-            // 03 の 4.3: a session's top-level slots outlive the input, so
+            // 03§4.3: a session's top-level slots outlive the input, so
             // what points into them goes on sharing them. Closing those here
             // would undo the CLOSE compile_session_statements deliberately
             // does not write, and a later input's ':=' through a closure
@@ -3840,7 +3840,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 vm_close_upvalues(m, frame->base + (ran != NULL ? ran->kept : 0));
             }
 
-            // 02 の 10.7: a coroutine dropped in the last few instructions
+            // §10.7: a coroutine dropped in the last few instructions
             // never met a collection, and without one here whether its
             // finally^ runs comes down to whether the heap happened to fill
             // up in time. The frame is still counted, which is what makes
@@ -3873,7 +3873,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             m->frame_count--;
 
             if (m->frame_count == base_depth) {
-                // 05 の 8.9改2: a coroutine's return^ hands its T to the
+                // 05§8.9: a coroutine's return^ hands its T to the
                 // host whole, the same pointer form a yield^'s produce
                 // takes. (The checker still refuses one as the program's
                 // own answer; a relaxed run that wrote one gets it too --
@@ -3882,7 +3882,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     return vm_finish(m, chunk, LHAT_RUN_OK,
                                   vm_hand_hostvalue_out(m, value), at);
                 }
-                // 02 の 13.8改: several values do cross. The positions rode
+                // §13.8+: several values do cross. The positions rode
                 // the frame's own room through the drain; they are copied
                 // into the machine's here so the result may point at them
                 // once the frame is gone. `value` becomes positions[0], which
@@ -3906,7 +3906,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 return vm_finish(m, chunk, LHAT_RUN_OK, value, at);
             }
 
-            // 02 の 10.7: what the frame held is dead now. Its window lies
+            // §10.7: what the frame held is dead now. Its window lies
             // inside its caller's, so a slot left holding a dropped coroutine
             // would be a root of the caller's until something wrote over it,
             // and the end-of-run sweep would never see the coroutine go. Paid
@@ -3921,13 +3921,13 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             }
 
             uint8_t into = frame->result;
-            // 02 の 13.8改: read off the frame that is going, before `frame`
+            // §13.8+: read off the frame that is going, before `frame`
             // becomes the caller below. The room outlives the pop -- the
             // array entry is still there, only uncounted.
             uint8_t reserved = frame->prepared;
             const LhatValueUnion *answered_run = frame->answer_run;
             const uint8_t *answered_tags = frame->answer_tags;
-            // 02 の 11.9: the one frame whose answer is not the value of
+            // §11.9: the one frame whose answer is not the value of
             // the expression that made it. An ordering that reached for '<=>'
             // asked a number^ of it, and what was written asks which side of
             // zero that falls on.
@@ -3941,7 +3941,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 bool held = false;
                 LhatRunStatus status = LHAT_RUN_OK;
                 if (derived_equal) {
-                    // 11.9改: an op^= answered, and its bool^ is the
+                    // §11.9+: an op^= answered, and its bool^ is the
                     // judgement. The shape rule asks it for one, so anything
                     // else is a body that did not keep to its signature.
                     if (!lhat_is_bool(value)) {
@@ -3954,23 +3954,23 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                            (derived == LHAT_BC_EQ);
                 } else if (!ordering(derived, value, lhat_integer(0), &held,
                                      &status)) {
-                    // 11.9: the shape rule asks an op^<=> for a number^, so
+                    // §11.9: the shape rule asks an op^<=> for a number^, so
                     // this is a body that answered with something else.
                     return vm_finish(m, chunk, status, lhat_nil(), at);
                 }
                 value = lhat_bool(held);
             }
-            // 05 の 8.9: a host value answer rides the frame's own room
+            // 05§8.9: a host value answer rides the frame's own room
             // through the drain (see the RETURN case), and is written out
             // whole here, into the caller's slots -- which are live again
             // now that the callee's window is gone.
-            // 02 の 13.8改: a tuple rides the same room, and is laid out here
+            // §13.8+: a tuple rides the same room, and is laid out here
             // as a head slot naming the width plus the positions after it.
             // The two sides have to agree on that width; a disagreement is
             // reported rather than reconciled, because a tuple and a t^{...}
             // are different types and only pack^ turns one into the other.
             // Wherever the checker ran, the type settled this already -- an
-            // unchecked compile, 03 の 4.3's session and 05 の 5.3's
+            // unchecked compile, 03§4.3's session and 05§5.3's
             // separately compiled units are what land here.
             if (lhat_is_run(value)) {
                 size_t positions = lhat_run_width(value);
@@ -3978,7 +3978,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     return vm_finish(m, chunk, LHAT_RUN_TUPLE_UNEXPECTED,
                                   lhat_nil(), at);
                 }
-                // 13.8改: a narrower run is the short side of a widened
+                // §13.8+: a narrower run is the short side of a widened
                 // fold and lands as it is -- CHECKRUN pads the missing
                 // positions with nil^ where the binding takes it apart.
                 // Only a wider run than the reservation is the mismatch.
@@ -3995,7 +3995,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                     lhat_slots_set(m->slots, rbase + into + 1 + i, held);
                 }
             } else if (lhat_is_hostvalue(value)) {
-                // 05 の 8.9: before the run-reservation reading -- a call
+                // 05§8.9: before the run-reservation reading -- a call
                 // that answers a host value declared its width as prepared,
                 // and the whole value is what belongs at the slot. A site
                 // that could not know the type reserved one slot, and is

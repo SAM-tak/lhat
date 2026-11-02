@@ -1,10 +1,10 @@
 // L^ (lhat) -- LSP server tests: what may stand where the cursor is
-// (completion.c). 07 の 4 章.
+// (completion.c). 07§4.
 //
 // The member half is pinned against the one rule the enumeration has: what
 // it offers is what lhat_type_find_member would answer with, so a shadowed
 // member appears once and a delegate lends only what takes a receiver. A
-// second list here would be a second reading of 14.10.
+// second list here would be a second reading of §14.10.
 
 #include <stdlib.h>
 #include <string.h>
@@ -146,7 +146,7 @@ static void test_a_dot_with_nothing_after_it(void)
         expect_offers(items, "at", true);
         expect_offers(items, "text", true);
         expect_offers(items, "peek", true);
-        // 14.11: new belongs to the definition, not to what it makes.
+        // §14.11: new belongs to the definition, not to what it makes.
         expect_offers(items, "new", false);
         LHAT_CHECK_EQ_INT(kind_of(items, "peek"), METHOD);
         LHAT_CHECK_EQ_INT(kind_of(items, "at"), FIELD);
@@ -180,7 +180,7 @@ static void test_a_dot_with_nothing_after_it(void)
     }
     check_dispose(&c);
 
-    // 8.2 refuses this statement outright and the writer will see that, but
+    // §8.2 refuses this statement outright and the writer will see that, but
     // the run is kept under the refusal and walked for the record
     // (parser.c's `refused`, check_stmt.c's ERROR arm). Without that, a
     // writer one keystroke into a member name -- which is where a request
@@ -255,8 +255,8 @@ static void test_a_receiver_that_is_not_a_name(void)
                "let^ n = (a .. b).\n");
     {
         cJSON *items = offered_after(&c, "(a .. b).");
-        // 11.2: what the concatenation answers is a string, and a string's
-        // members are the checker's own (14.19). The property is that they
+        // §11.2: what the concatenation answers is a string, and a string's
+        // members are the checker's own (§14.19). The property is that they
         // are the STRING's -- reading the nearest name would have given b's,
         // which is the same type here only by luck. `x` is what a table
         // would have offered, and no table stands anywhere near this dot.
@@ -268,7 +268,7 @@ static void test_a_receiver_that_is_not_a_name(void)
     check_dispose(&c);
 }
 
-// 14.5 composes two definitions and 14.12 marks what replaces what. The
+// §14.5 composes two definitions and §14.12 marks what replaces what. The
 // enumeration asks the lookup which member wins, so an override is one item.
 static void test_what_the_lookup_would_answer(void)
 {
@@ -288,13 +288,13 @@ static void test_what_the_lookup_would_answer(void)
     {
         cJSON *items = offered_after(&c, "d.");
         LHAT_CHECK_EQ_INT(times_offered(items, "speak"), 1);
-        // 14.5: what the base wrote and the derived did not is still there.
+        // §14.5: what the base wrote and the derived did not is still there.
         expect_offers(items, "n", true);
         cJSON_Delete(items);
     }
     check_dispose(&c);
 
-    // 14.7改2: a delegate lends what an instance may reach through it, which
+    // §14.7+2: a delegate lends what an instance may reach through it, which
     // is what takes a receiver -- and nothing else.
     LHAT_TEST("14.7改2: a delegate lends only what takes a receiver");
     check_text(&c,
@@ -317,7 +317,7 @@ static void test_what_the_lookup_would_answer(void)
     check_dispose(&c);
 }
 
-// 14.19 with 15.6改: the members no list holds. The completion asks the
+// §14.19 with §15.6+: the members no list holds. The completion asks the
 // checker for each spelling it knows of, so which receiver takes which is
 // never written down here -- these pin that the answer tracks the cascade.
 static void test_the_built_ins(void)
@@ -333,7 +333,7 @@ static void test_the_built_ins(void)
         expect_offers(items, "split", true);
         expect_offers(items, "replace", true);
         expect_offers(items, "tonumber", true);
-        // 14.19: a string is not a value a writer adds names to, so no hat.
+        // §14.19: a string is not a value a writer adds names to, so no hat.
         expect_offers(items, "length^", false);
         // and it is not a collection, so the table's counting word is not its
         expect_offers(items, "count", false);
@@ -358,7 +358,7 @@ static void test_the_built_ins(void)
     }
     check_dispose(&c);
 
-    // 02 の 14.8改2: number^ is a word rather than a value, and the
+    // §14.8+2: number^ is a word rather than a value, and the
     // constants are the whole of what stands after its dot.
     LHAT_TEST("02 の 14.8改2: number^ offers its constants and nothing else");
     check_text(&c, "let^ n = number^.\n");
@@ -391,7 +391,7 @@ static void test_the_built_ins(void)
     }
     check_dispose(&c);
 
-    // 14.17改: a written member wins, and the two spellings are one member
+    // §14.17+: a written member wins, and the two spellings are one member
     // off a plain table -- so the built-in must not show up beside it.
     LHAT_TEST("14.17改: a written member is not doubled by its built-in");
     check_text(&c,
@@ -408,7 +408,7 @@ static void test_the_built_ins(void)
     }
     check_dispose(&c);
 
-    // The def^ side of 14.17改: the bare spelling is not the writer's there,
+    // The def^ side of §14.17+: the bare spelling is not the writer's there,
     // so both answer and both are offered.
     LHAT_TEST("but a def^'s instance takes either spelling of iterate");
     check_text(&c,
@@ -419,7 +419,7 @@ static void test_the_built_ins(void)
         cJSON *items = offered_after(&c, "h.");
         expect_offers(items, "iterate", true);
         expect_offers(items, "iterate^", true);
-        // 14.10改: the sequence operations belong to a plain table alone.
+        // §14.10+: the sequence operations belong to a plain table alone.
         expect_offers(items, "push^", false);
         cJSON_Delete(items);
     }
@@ -430,8 +430,8 @@ static void test_what_is_never_offered(void)
 {
     Checked c;
 
-    // 14.10改: a sequence's members are named by their positions, and 01 の
-    // 3.1 spells a name as an identifier -- so "1" is a spelling the
+    // §14.10+: a sequence's members are named by their positions, and 01 の
+    // 10§3.1 spells a name as an identifier -- so "1" is a spelling the
     // language could never accept where a member name goes.
     LHAT_TEST("14.10改: a position is not a name, so it is not offered");
     check_text(&c,
@@ -445,7 +445,7 @@ static void test_what_is_never_offered(void)
     }
     check_dispose(&c);
 
-    // 03 の 3.1: what nothing decided answers nothing -- and that has to
+    // 03§3.1: what nothing decided answers nothing -- and that has to
     // hold for the built-ins too, which would otherwise reach the tail where
     // tostring answers for every type.
     LHAT_TEST("a receiver nothing decided answers an empty list");
@@ -470,7 +470,7 @@ static void test_what_is_never_offered(void)
     check_dispose(&c);
 }
 
-// 11.7改2: '?.' steps past the nil^ arm, so what is offered is what the
+// §11.7+2: '?.' steps past the nil^ arm, so what is offered is what the
 // access would accept -- not nothing, which is what the union alone answers.
 static void test_a_guarded_dot(void)
 {
@@ -520,7 +520,7 @@ static void test_reading_an_import(void)
     LHAT_TEST("and is not, where no import^ stands before it");
     expect_import("let^ x = point.", false, NULL);
     expect_import("x.", false, NULL);
-    // 01 の 6.1: after a '#' the line is prose.
+    // 01§6.1: after a '#' the line is prose.
     expect_import("# import^ std.", false, NULL);
     expect_import("let^ x = 1  # see import^ std.", false, NULL);
 
@@ -576,7 +576,7 @@ static void test_reading_a_word(void)
     LHAT_TEST("14.10: but a member name is the receiver's to answer");
     expect_word("foo.", false, NULL);
     expect_word("foo.le", false, NULL);
-    // 11.7改2: the guarded dot ends in the same byte.
+    // §11.7+2: the guarded dot ends in the same byte.
     expect_word("foo?.le", false, NULL);
 
     LHAT_TEST("01 の 6.1 with 4 章: and neither prose nor text is code");
@@ -602,7 +602,7 @@ static void test_the_words_offered(void)
     expect_offers(items, "let^", true);
     expect_offers(items, "if^", true);
     expect_offers(items, "for^", true);
-    expect_offers(items, "downto^", true);  // 16.3's clauses, not only its head
+    expect_offers(items, "downto^", true);  // §16.3's clauses, not only its head
     expect_offers(items, "f^", true);
     expect_offers(items, "def^", true);
     expect_offers(items, "errordef^", true);
@@ -615,7 +615,7 @@ static void test_the_words_offered(void)
     expect_offers(items, "if", false);
 
     LHAT_TEST("and a spelling the language dropped is not offered");
-    // 14.4改: the word for a definition is def^, and class^ was not kept
+    // §14.4+: the word for a definition is def^, and class^ was not kept
     // even as another spelling of it.
     expect_offers(items, "class^", false);
     // new^Type{...} is a construction expression; .new(...) remains a member.
@@ -632,7 +632,7 @@ static void test_the_words_offered(void)
     LHAT_CHECK_EQ_INT(kind_of(items, "Self^"), CLASS);
     LHAT_CHECK_EQ_INT(kind_of(items, "nil^"), CONSTANT);
     LHAT_CHECK_EQ_INT(kind_of(items, "true^"), CONSTANT);
-    // 05 の 8.6 with 8.1: no scope holds these, so nothing else offers them.
+    // 05§8.6 with 05§8.1: no scope holds these, so nothing else offers them.
     LHAT_CHECK_EQ_INT(kind_of(items, "self^"), VARIABLE);
     LHAT_CHECK_EQ_INT(kind_of(items, "L^"), VARIABLE);
     LHAT_CHECK_EQ_INT(kind_of(items, "_^"), VARIABLE);
@@ -709,7 +709,7 @@ static void test_the_names_in_scope(void)
     }
     check_dispose(&c);
 
-    // 8 章: the inner one is what the name means there, and it is the one
+    // 08§8: the inner one is what the name means there, and it is the one
     // whose type is shown -- which is what the checker's innermost-first
     // ordering buys.
     LHAT_TEST("a shadowed name is offered once, as the inner one");
@@ -837,7 +837,7 @@ static void test_taking_another_unit_in(void)
                            strcmp(whole, "demo.helpers.greet") == 0,
                        "expected the declared path, got %s",
                        whole != NULL ? whole : "nothing");
-            // 5.1: the path is written from the unit that writes it.
+            // §5.1: the path is written from the unit that writes it.
             const char *line = extra_text(greet);
             LHAT_CHECK(line != NULL &&
                            strcmp(line, "require^ \"lib/helpers.lh\"\n") == 0,
@@ -849,7 +849,7 @@ static void test_taking_another_unit_in(void)
     }
     check_dispose(&c);
 
-    // 05 の 3 章 puts module^ first and the parser refuses a second one, so a
+    // 05§3 puts module^ first and the parser refuses a second one, so a
     // line written above it would stop the file parsing.
     LHAT_TEST("and the line goes under module^, never above it");
     check_text(&c, "module^ demo.here\nlet^ a = 1\ngre\n");
@@ -864,8 +864,8 @@ static void test_taking_another_unit_in(void)
     }
     check_dispose(&c);
 
-    // 01 の 6.4: a block at the head of a file belongs to what follows it,
-    // and 07 の 4 章 makes that block the unit's own description. Writing
+    // 01§6.4: a block at the head of a file belongs to what follows it,
+    // and 07§4 makes that block the unit's own description. Writing
     // into the middle of it would hand it to the new line instead.
     LHAT_TEST("01 の 6.4: and under the comment block at the head of a file");
     check_text(&c, "# What this is for.\n# A second line.\nlet^ a = 1\ngre\n");
@@ -886,8 +886,8 @@ static void test_taking_another_unit_in(void)
     }
     check_dispose(&c);
 
-    // A second bare require^ of one file is a redefinition (05 の 5.5 through
-    // 8.8's last-segment rule), so this has to be right rather than tidy.
+    // A second bare require^ of one file is a redefinition (05§5.5 through
+    // 05§8.8's last-segment rule), so this has to be right rather than tidy.
     LHAT_TEST("05 の 5.5: a unit already required gains no second line");
     check_text(&c, "require^ \"lib/helpers.lh\"\nlet^ a = 1\ngre\n");
     {

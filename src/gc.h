@@ -3,10 +3,10 @@
 // Section numbers refer to DesignDocuments/03-compilation-pipeline.md unless
 // prefixed.
 //
-// 5.12: a mark and sweep that does not move anything, so nothing outside has
-// to be told where a value went -- 5.4's upvalues point into the stack and
-// 5.7's coroutines keep a copy of their registers, and neither would follow.
-// 03 の 1.2 keeps Lua's incremental collector as something to borrow later;
+// 03§5.12: a mark and sweep that does not move anything, so nothing outside has
+// to be told where a value went -- §5.4's upvalues point into the stack and
+// 03§5.7's coroutines keep a copy of their registers, and neither would follow.
+// 03§1.2 keeps Lua's incremental collector as something to borrow later;
 // this is the working form it would replace.
 //
 // Marking uses an explicit list rather than recursion, so a deep structure
@@ -16,7 +16,7 @@
 // that could give up halfway would be leaving the heap in a state it has no
 // way to describe.
 //
-// The machine owns the heap and the roots, and this reads both. 02 の 10.7
+// The machine owns the heap and the roots, and this reads both. §10.7
 // also has it hold back a coroutine it finds unreachable with cleanups still
 // pending, which is the one place a collection reaches back into the run.
 
@@ -31,7 +31,7 @@
 
 struct LhatMachine;
 
-// 5.12: what a collection knows about an object. White is "not reached";
+// 03§5.12: what a collection knows about an object. White is "not reached";
 // gray is "reached, but what it refers to has not been"; black is "reached,
 // and so is everything it refers to". The invariant a collector has to keep
 // while it marks is that **no black object refers to a white one** -- a black
@@ -63,11 +63,11 @@ void lhat_gc_reach(LhatObject **gray, LhatValue value);
 // Marks everything the object refers to. Objects a chunk owns are reached
 // like any other; the sweep simply never visits that list, so one of those
 // goes black and stays black, and a later collection walks past it without
-// looking in. That is only sound because what a chunk holds -- 5.9's error
-// kinds, 5.11's types, the strings its constants name -- refers to nothing
+// looking in. That is only sound because what a chunk holds -- 03§5.9's error
+// kinds, 03§5.11's types, the strings its constants name -- refers to nothing
 // but other objects of the same chunk, and none of them is ever written to
 // after the chunk is built. A chunk object able to hold a running program's
-// value would need the barriers 5.12 puts on the machine's own.
+// value would need the barriers 03§5.12 puts on the machine's own.
 void lhat_gc_children(LhatObject **gray, LhatObject *object);
 
 // ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ bool lhat_gc_advance(struct LhatMachine *machine, size_t budget);
 void lhat_gc_rearm(struct LhatMachine *machine);
 
 // A whole cycle, now, and nothing left half done: what the program cannot
-// reach when this is called has been freed when it answers. What 05 の 8.6's
+// reach when this is called has been freed when it answers. What 05§8.6's
 // gc.collect() is, and the only thing that gives a pause the size of the
 // heap -- which is why the program has to ask for it by name.
 void lhat_gc_collect(struct LhatMachine *machine);
@@ -110,12 +110,12 @@ void lhat_gc_collect(struct LhatMachine *machine);
 // The barriers
 // ---------------------------------------------------------------------------
 //
-// 5.12: a black object is one the collector is finished with, so a white
+// 03§5.12: a black object is one the collector is finished with, so a white
 // object that only it refers to would be swept while still live. These are
 // what a write that could do that has to go through. Both are nothing at all
 // unless a cycle is in PROPAGATE and `parent` is actually black.
 //
-// The collector only ever runs at an instruction boundary (5.12's rule about
+// The collector only ever runs at an instruction boundary (03§5.12's rule about
 // half-built objects), so a write in the same instruction that made `parent`
 // needs neither: nothing has looked at it yet. What needs one is a write to
 // an object that was already there when a step ran -- a table, an upvalue,
@@ -132,7 +132,7 @@ void lhat_gc_barrier(struct LhatMachine *machine, LhatObject *parent,
 void lhat_gc_barrier_back(struct LhatMachine *machine, LhatObject *parent,
                           LhatValue value);
 
-// 02 の 10.7: the next coroutine the last collection held back, or NULL.
+// §10.7: the next coroutine the last collection held back, or NULL.
 // Taking it off the list is the caller's signal that it is about to run the
 // cleanups; nothing else marks one as handled.
 LhatCoroutine *lhat_gc_take_pending(struct LhatMachine *machine);

@@ -1,6 +1,6 @@
 // L^ (lhat) -- LSP server: the syntax tree as JSON, for lhat/ast.
 //
-// 06 の 4 章. Structure, positions and comments -- nothing about how any of it
+// 06§4. Structure, positions and comments -- nothing about how any of it
 // should be drawn. Which way a construct runs, what is a container and what is
 // a leaf, where a list wraps: all of that is the editor's, so that trying a
 // different layout does not mean rebuilding the language server.
@@ -9,7 +9,7 @@
 // lhat_node_visit_children names each child and says whether its place holds
 // a list, which is enough to write the whole tree out generically. What it
 // cannot say is which lists hold statements -- where code switched off with
-// '#[~ ... ]#' is listed (01 の 6.5) -- and disabled_code.h answers that.
+// '#[~ ... ]#' is listed (01§6.5) -- and disabled_code.h answers that.
 
 #include "ast_json.h"
 
@@ -255,9 +255,9 @@ static void add_child(void *context, const char *field, bool in_list,
 }
 
 #if LHAT_WITH_COMMENTS
-// 01 の 6.5: which disabled code between this node's children stands among
+// 01§6.5: which disabled code between this node's children stands among
 // its statements. Decided before anything of the node is written, because
-// the comment is attached (6.4) to this node or to a child of it, and
+// the comment is attached (01§6.4) to this node or to a child of it, and
 // whichever holds it must leave it out of its comments.
 typedef struct {
     const Layer *layer;
@@ -268,7 +268,7 @@ typedef struct {
 
 static void mark_listed_before(ListedWalk *walk, uint32_t limit)
 {
-    // Past one of 9 章's clauses, what follows is that clause's -- and the
+    // Past one of 01§9's clauses, what follows is that clause's -- and the
     // clause ends where its last statement does, so neither can list it in
     // the right place. It stays the comment it lexes as.
     bool among = walk->previous == NULL ||
@@ -308,7 +308,7 @@ static const char *mark_listed(const LhatNode *node, const Layer *layer)
     return statements;
 }
 
-// 01 の 6.4. Spans only: the text is a slice of the source, which the reply
+// 01§6.4. Spans only: the text is a slice of the source, which the reply
 // carries once.
 static bool add_comments(cJSON *out, const LhatNode *node, const Layer *layer)
 {
@@ -403,7 +403,7 @@ static bool fill_node(cJSON *out, const LhatNode *node, const Layer *layer)
 
 static cJSON *node_to_json(const LhatNode *node, const Layer *layer)
 {
-    // 06 の 4.2: `start` comes from the subtree because an infix or postfix
+    // 06§4.2: `start` comes from the subtree because an infix or postfix
     // node is written starting at its own operator, while `end` is the node's
     // own -- the token that closes a construct belongs to no child.
     cJSON *out = open_node(lhat_node_kind_name(node->kind),
@@ -454,7 +454,7 @@ static cJSON *node_to_json(const LhatNode *node, const Layer *layer)
 }
 
 #if LHAT_WITH_COMMENTS
-// 06 の 4.1: a node of its own kind spanning the markers, listing the
+// 06§4.1: a node of its own kind spanning the markers, listing the
 // statements it holds the way a block lists its own.
 static cJSON *disabled_to_json(const LhatComment *comment, const Layer *layer)
 {

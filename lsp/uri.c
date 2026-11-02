@@ -89,7 +89,7 @@ char *lsp_uri_to_absolute_path(const char *uri)
     }
 
     // "/C:/..." -> "c:/..." -- the one place in this server that knows
-    // about a Windows drive letter, the same way 05 の 8.9 keeps the
+    // about a Windows drive letter, the same way 05§8.9 keeps the
     // language itself away from its surroundings by confining a seam to
     // one file.
     if (is_drive_letter_path(decoded)) {

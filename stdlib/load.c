@@ -1,4 +1,4 @@
-// L^ (lhat) -- sample standard library: std.load (05 の 5.6).
+// L^ (lhat) -- sample standard library: std.load (05§5.6).
 //
 // Two calls into the program (lhat_program_load_text / _file) and one into
 // the machine (lhat_machine_adopt_script): the program checks and compiles
@@ -128,7 +128,7 @@ bool lhatstdlib_load_register(LhatProgram *program)
     if (module == NULL) {
         return false;
     }
-    // 05 の 8.7: the program gives this back when it goes -- a register
+    // 05§8.7: the program gives this back when it goes -- a register
     // that answers bool hands its caller no handle to free it with.
     if (!lhat_program_on_dispose(program, lhat_free, module)) {
         lhat_free(module);
@@ -145,7 +145,7 @@ bool lhatstdlib_load_register(LhatProgram *program)
     module->rejected =
         lhat_lookup_error_kind(program, "std.load", "Error", "Rejected");
 
-    // 13.4: registration signatures take no parameter names. A load is an
+    // §13.4: registration signatures take no parameter names. A load is an
     // effect -- it writes the program and may read a file -- so both are
     // p^. The closure answered is 'p^... -> any^;' whatever the unit was
     // (load.h): a module^ unit's refuses arguments when called, as any

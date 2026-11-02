@@ -1,6 +1,6 @@
-// L^ (lhat) -- tests for std.binary (11 章).
+// L^ (lhat) -- tests for std.binary (01§11).
 //
-// The bytes of 11 の 3.4's example are pinned exactly, since the order is the
+// The bytes of 11§3.4's example are pinned exactly, since the order is the
 // promise other machines read; the other kinds are pinned by a round trip
 // and by what decode refuses.
 
@@ -207,7 +207,7 @@ static void test_reuse(void)
         lhat_test_ran_dispose(&ran);
     }
 
-    // 11 の 3.3: a header counts the records after it, and each decode
+    // 11§3.3: a header counts the records after it, and each decode
     // answers where the next one starts.
     LHAT_TEST("decode reads from a start and answers where the next begins");
     {
@@ -287,7 +287,7 @@ static void test_types(void)
     }
 }
 
-// A native extension reaching Bytes the way 11 の 2.1 tells one to: through
+// A native extension reaching Bytes the way 11§2.1 tells one to: through
 // the ABI table's lookup, registering its Bytes overload only when the host
 // registered std.binary. ext.total answers the sum of the bytes it is given;
 // ext.fill makes a Bytes n bytes of 1.

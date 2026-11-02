@@ -6,11 +6,11 @@
 #include <stdlib.h>
 #include "hosted.h"
 #include "lhat/port.h"
-#include "lhat/program.h" // 05 § 5.3: which units a forgotten one holds
+#include "lhat/program.h" // 05§5.3: which units a forgotten one holds
 #include "type.h"
 
 // ---------------------------------------------------------------------------
-// 05 の 8.9: host values at run time
+// 05§8.9: host values at run time
 // ---------------------------------------------------------------------------
 
 // The members table the machine built for a host value type at install, or
@@ -57,7 +57,7 @@ bool vm_place_hostvalue_answer(Machine *m, size_t at, LhatValue answered)
     return true;
 }
 
-// 05 の 8.9改2: the value a host receives from a yield^ or a return^ at the
+// 05§8.9: the value a host receives from a yield^ or a return^ at the
 // base of a run -- the bytes moved into the machine's scratch (the frame
 // that held them is going) and the head re-aimed there. Alive until the
 // next call that runs the machine, which is the tuple positions' contract;
@@ -76,7 +76,7 @@ LhatValue vm_hand_hostvalue_out(Machine *m, LhatValue value)
     return value;
 }
 
-// 02 の 13.8改: the several values a host answered with, laid down at `at`
+// §13.8+: the several values a host answered with, laid down at `at`
 // as the run every other producer makes -- head slot naming the width, the
 // positions after it. `reserved` is what the call site left room for (CALL's
 // C), and it has to agree: a host and its caller can disagree only by being
@@ -192,7 +192,7 @@ LhatValue lhat_hostvalue_field_value(const LhatValueUnion *data,
     return lhat_nil();
 }
 
-// And the write. False when the value is not a number^ -- 14.8's one type,
+// And the write. False when the value is not a number^ -- §14.8's one type,
 // either representation.
 bool vm_hostvalue_field_set(LhatValueUnion *data,
                                 const LhatHostValueField *field,
@@ -288,8 +288,8 @@ bool lhat_machine_make_host(LhatMachine *machine, LhatHostFn call,
     return true;
 }
 
-// One step of 05 の 8.7's walk: the table under `segment` in `owner`, made
-// there where nothing is. 02 の 8.8's rule holds: what is there is left alone.
+// One step of 05§8.7's walk: the table under `segment` in `owner`, made
+// there where nothing is. §8.8's rule holds: what is there is left alone.
 // NULL where something that is not a table stands, or the write is refused.
 static LhatTable *reach_segment(Machine *m, LhatTable *owner,
                                 const char *segment, size_t length)
@@ -313,7 +313,7 @@ static LhatTable *reach_segment(Machine *m, LhatTable *owner,
     return next;
 }
 
-// 05 の 8.7: the same walk a unit's registration makes, for what the host
+// 05§8.7: the same walk a unit's registration makes, for what the host
 // registers.
 static LhatTable *reach_table(Machine *m, LhatTable *owner, const char *path)
 {
@@ -444,7 +444,7 @@ void *lhat_hostdata_pointer(LhatValue value, const LhatHostDataTag *tag)
         return NULL;
     }
     const LhatHostData *data = (const LhatHostData *)lhat_as_object(value);
-    // 05 の 8.8改: a tag declared under `tag` answers too. That is the
+    // 05§8.8+: a tag declared under `tag` answers too. That is the
     // promise lhat_register_hostdata_subtype took -- a pointer of the
     // derived type may be read as one of the base's -- and refusing it here
     // would leave the host unable to use the relation it declared.
@@ -467,7 +467,7 @@ void *lhat_hostvalue_data(LhatValue argument, const LhatHostValueTag *tag)
     }
     // The head carries the tag; the bytes start one slot later. The cast
     // drops const on purpose: the run is a scratch copy of the caller's,
-    // and 8.9 lets a host read or write it freely for the call's duration.
+    // and §8.9 lets a host read or write it freely for the call's duration.
     return (void *)(run + 1);
 }
 
@@ -550,7 +550,7 @@ bool lhat_machine_bind_hostvalues(LhatMachine *machine,
     if (machine == NULL || entries == NULL || count == 0 || slots == 0) {
         return false;
     }
-    // 05 の 8.9: a tag's index is the process's and not this program's
+    // 05§8.9: a tag's index is the process's and not this program's
     // (registry.h), so a program declaring only some of the host value types
     // leaves gaps. The array is taken to the width the indices reach rather
     // than to how many this program declared, and a gap stays NULL -- no
@@ -584,7 +584,7 @@ bool lhat_machine_bind_hostvalues(LhatMachine *machine,
     return true;
 }
 
-// 05 の 5.7: the read-only half of reach_table -- walk to what is there and
+// 05§5.7: the read-only half of reach_table -- walk to what is there and
 // answer NULL where nothing is, making nothing on the way. A path that does
 // not reach a table is a path with nothing to forget.
 static LhatTable *table_at(LhatTable *owner, const char *segment,
@@ -609,7 +609,7 @@ static LhatTable *table_along(LhatTable *owner, const char *module,
     return owner;
 }
 
-// 05 の 5.7: after `module` was forgotten, the segments above it that stand
+// 05§5.7: after `module` was forgotten, the segments above it that stand
 // empty were made only to reach what is gone. Each goes, from the nearest up,
 // until one still holds something -- or is a unit's own table, which stays
 // for as long as the unit is registered, empty or not.
@@ -649,7 +649,7 @@ static void remove_empty_segments(Machine *m, const char *module)
     }
 }
 
-// 05 の 5.7: whether `module` is what a unit of the machine's program named
+// 05§5.7: whether `module` is what a unit of the machine's program named
 // itself -- the one thing there is to forget. A name a unit published can
 // hold a table sealed the way a unit's is (another unit's, published again),
 // so the value alone cannot say; the program's module names can, and they
@@ -682,7 +682,7 @@ bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
     }
 
     // Down to the table the last segment sits in. The ones above it stay:
-    // other modules live under them, and 5.3's guard tests each step for
+    // other modules live under them, and 03§5.3's guard tests each step for
     // nil^ anyway, so an empty table left behind means the same as no table.
     const char *segment = module;
     size_t length = strcspn(segment, ".");
@@ -710,7 +710,7 @@ bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
     }
     LhatValue key = lhat_object((LhatObject *)last);
 
-    // 5.3: the unit's table holds what it published and the units named
+    // 10§5.3: the unit's table holds what it published and the units named
     // under it. What it published goes -- and with it, once nothing else
     // reaches them, what it kept to itself. The units under it are units of
     // their own and stay, in a table of their own that this unit takes again
@@ -756,7 +756,7 @@ bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
         }
     }
 
-    // 04 の 11.3 spells "not there" nil^, which is exactly what 5.3's guard
+    // 04§11.3 spells "not there" nil^, which is exactly what 03§5.3's guard
     // tests -- so storing nil^, or a table that is not sealed, is the whole
     // of forgetting.
     bool refused = false;
@@ -769,7 +769,7 @@ bool lhat_machine_forget_unit(LhatMachine *machine, const char *module)
     return true;
 }
 
-// 05 の 8.7 の読み: the path walked without making anything. reach_table
+// 05§8.7 の読み: the path walked without making anything. reach_table
 // above creates the tables a registration needs; a read that created one
 // would answer nil^ for a name and leave a table behind saying it had been
 // asked for.
@@ -843,10 +843,10 @@ bool lhat_machine_register(LhatMachine *machine, const char *module,
     if (key == NULL) {
         return false;
     }
-    // 02 の 14.12: a second registration of one name is another arm, not a
+    // §14.12: a second registration of one name is another arm, not a
     // replacement -- the same thing OVERLOADINDEX makes of a member written
     // twice, built here because a registration compiles to no instruction.
-    // 05 の 8.7 has already refused any pair that could take the same call.
+    // 05§8.7 has already refused any pair that could take the same call.
     LhatValue held = lhat_table_get(owner, lhat_object((LhatObject *)key));
     if (!lhat_is_nil(held)) {
         LhatOverload *group = NULL;
@@ -868,7 +868,7 @@ bool lhat_machine_register(LhatMachine *machine, const char *module,
                    &refused) && !refused;
 }
 
-// 05 の 8.7改5: the machine's half of the join. The path above the module
+// 05§8.7+5: the machine's half of the join. The path above the module
 // is the machine's to make (a unit's own module^ lands in the same spine),
 // and the module itself is a pointer to what the program built.
 bool lhat_machine_attach_module(LhatMachine *machine, const char *path,
@@ -917,7 +917,7 @@ bool lhat_machine_set_global(LhatMachine *machine, const char *name,
     if (m == NULL || m->environment == NULL || name == NULL) {
         return false;
     }
-    // 05 の 8.6: vm_set_key rather than an instruction, so the seal on L^ is
+    // 05§8.6: vm_set_key rather than an instruction, so the seal on L^ is
     // not in the way -- what it refuses is what a program writes, and this is
     // the host writing what the program will read.
     return vm_set_member(m, m->environment, name, value);
@@ -1102,7 +1102,7 @@ bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
     }
     // Same shape LHAT_BC_NEWERROR builds, and the same field defaults
     // compile_error_new writes for what a construction left out (04 の
-    // 2.3): every kind has message and cause without either being declared.
+    // 04§2.3): every kind has message and cause without either being declared.
     LhatError *error = lhat_error_new(&m->objects, kind);
     if (error == NULL) {
         return false;
@@ -1135,7 +1135,7 @@ bool lhat_machine_make_error(LhatMachine *machine, const LhatErrorKind *kind,
     return true;
 }
 
-// 10 §4: the ID and the English text of every LhatRunStatus, indexed by the
+// 10§4: the ID and the English text of every LhatRunStatus, indexed by the
 // code. The ID is the one a translation is written against and never changes
 // meaning; the English is the reference every other language translates (10
 // §2.2).
@@ -1153,7 +1153,7 @@ static const LhatMessageEntry RUN_MESSAGES[] = {
     [LHAT_RUN_SEALED] = {"run.sealed",
         "this table belongs to the machine; what it holds is "
         "written by the host, not from here"},
-    // 02 の 14.11
+    // §14.11
     [LHAT_RUN_MUTABLE_DEFAULT] = {"run.mutable-default",
         "a field's default lives on the prototype: an immutable "
         "value, a table of its own (each instance is given a "
@@ -1174,16 +1174,16 @@ static const LhatMessageEntry RUN_MESSAGES[] = {
         {"run.coroutine-not-started", "resume needs start() first"},
     [LHAT_RUN_COROUTINE_ALREADY_STARTED] = {"run.coroutine-already-started",
         "start() only works before the first resume"},
-    // 02 の 15.16
+    // §15.16
     [LHAT_RUN_COSTATE] = {"run.costate",
         "load() takes only what save() answered on this coroutine, and "
         "neither works on a running one or a walk with no body"},
-    // 04 の 11.6: a placeholder for a caller that only wants this
+    // 04§11.6: a placeholder for a caller that only wants this
     // status's own name -- the actual message is what the program
     // panicked with, in LhatRunResult.value, which this cannot see.
     [LHAT_RUN_PANIC] = {"run.panic", "panic^"},
     [LHAT_RUN_SUSPENDED] = {"run.suspended", "the slice ran out"},
-    // 02 の 13.8改
+    // §13.8+
     [LHAT_RUN_TUPLE_ARITY] = {"run.tuple-arity",
         "this call and what it called disagree on how many values "
         "come back"},

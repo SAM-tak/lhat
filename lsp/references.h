@@ -1,10 +1,10 @@
 // L^ (lhat) -- LSP server: every place one name was written.
 //
-// 07 の 5 章. The checker records, for every name it resolved, where the
+// 07§5. The checker records, for every name it resolved, where the
 // meaning it reached was declared (check.h's LhatResolution). Going to a
 // definition reads one such record; finding the references reads them all
 // and keeps the ones pointing at the same place. The walk is the checker's
-// either way, and 8 章's scoping is not read a second time.
+// either way, and 08§8's scoping is not read a second time.
 //
 // A name is therefore identified by **where it was declared** rather than by
 // how it is spelt: two `count`s in two scopes are two names, and one name
@@ -12,8 +12,8 @@
 // the server knowing anything about scopes.
 //
 // What has no declared place answers nothing -- a name the host registered
-// was declared in C (05 の 8.7), and a built-in of a string or a coroutine
-// (14.19, 15.6改) was declared by the language. Neither can be renamed, and
+// was declared in C (05§8.7), and a built-in of a string or a coroutine
+// (§14.19, §15.6+) was declared by the language. Neither can be renamed, and
 // saying so is the right answer rather than a missing one.
 
 #ifndef LSP_REFERENCES_H
@@ -65,9 +65,9 @@ bool lsp_references_declaration_in(const LhatUnit *unit,
                                    const LspReferenceTarget *target,
                                    uint32_t *from, uint32_t *to);
 
-// Whether `spelling` is a name a writer could have written (01 の 3.1), so a
+// Whether `spelling` is a name a writer could have written (01§3.1), so a
 // rename refuses a new name the lexer would not read back as one. Says
-// nothing about whether the name is free -- 8.7's collision is the checker's
+// nothing about whether the name is free -- §8.7's collision is the checker's
 // to report, once, where it happens.
 bool lsp_references_is_name(const char *spelling, size_t length);
 
