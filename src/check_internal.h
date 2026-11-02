@@ -15,14 +15,26 @@
 #include "environment.h"
 #include "lhat/config.h"
 #include "grow.h"
-#include "message.h"  // 07 §6: the titles the fixes are offered under
+#include "message.h"  // 07 § 6: the titles the fixes are offered under
 #include "operators.h"
 #include "lhat/port.h"
 
-// 05 の 8.7: a host writes a type out as text, so the checker reads the type
-// grammar of 13 章 back through the parser it came from.
+// 05 § 8.7: a host writes a type out as text, so the checker reads the type
+// grammar of § 13 back through the parser it came from.
 #include "parser.h"
 #include "lhat/source.h"
+
+// § 15.1+: how many levels of what a place holds the body being checked made.
+// 0 is none -- it arrived from somewhere else; 1 is the table itself but not
+// what it holds; LHAT_OWN_DEEP is everything it reaches. Changing what sits n
+// levels down asks for more than n. Read off every value the place is given,
+// never off where the walk stands, so a loop's way back round is no way round:
+// `own` only goes down, and `relied` is the most any change so far needed.
+// Lowering `own` beneath `relied` is the one report, made where it happens.
+typedef struct ChkOwnership {
+    uint8_t own;
+    uint8_t relied;
+} ChkOwnership;
 
 // A name bound in a scope. `offset` is where its let^ stands, which 8.7 needs
 // to tell a use before the definition from one after it.
@@ -40,12 +52,14 @@ typedef struct Binding {
     LhatType *seed;
     uint32_t offset;
     bool reached;  // its let^ has been walked past
-    // 15.1改: bound to a table this scope's own code made -- a literal or a
-    // 14.11 new -- rather than to one that arrived from somewhere else. An
-    // f^ may change the first and not the second, and reading it off the
-    // initialiser's shape is what keeps that decidable without following
-    // aliases: 'let^ v = t' binds a name, not a new table, so it is false.
-    bool fresh;
+    // § 15.1+: what the name holds and how much of it the body made.
+    ChkOwnership owned;
+    // § 15.1+: the name was bound to something read out of what `alias` is the
+    // ownership of, `alias_depth` levels down -- 'let^ r = rows[0]' or a for^
+    // focus. Then `alias` is what a write leans on and what a store lowers;
+    // `owned` above only caps it, and drops when the name is written again.
+    ChkOwnership *alias;
+    uint8_t alias_depth;
     // 03 の 4.3: bound by an earlier input of a session. Writing the name
     // again is a redefinition rather than the clash 8.7 makes of two let^ in
     // one scope -- it is the same place, written again.
@@ -472,6 +486,11 @@ typedef struct {
     // -- is what its own signature promised. Saved and restored around each
     // literal, as in_new_body above is.
     bool receiver_mutable;
+    // § 15.1+: self^'s ownership while either of the two above holds -- whole
+    // on entry, by the signature's word (or the copy the machine just made),
+    // and lowered by what the body stores into it. Saved and restored with
+    // them.
+    ChkOwnership self_owned;
 
     // 15.1改3: the body being walked wrote '-> fresh^T', so every exit owes
     // a value this body made. Saved and restored the same way.
@@ -850,10 +869,16 @@ LhatType *chk_module_root_table(Checker *c);
 void chk_register_module_type(Checker *c, const char *module_name,
                               LhatType *exports);
 LhatType *chk_hosted_module(Checker *c, const LhatNode *path);
-bool chk_value_is_fresh(const Checker *c, const LhatNode *value,
-                        const LhatType *type);
+// § 15.1+: what the body being checked owns (ChkOwnership).
+uint8_t chk_made_depth(const Checker *c, const LhatNode *value,
+                       const LhatType *type);
+bool chk_lean_on(Checker *c, const LhatNode *place, bool whole);
+void chk_store_into(Checker *c, const LhatNode *at, const LhatNode *place,
+                    uint8_t made);
+void chk_store_into_self(Checker *c, const LhatNode *at, uint8_t made);
+void chk_bind_own(Checker *c, Binding *b, const LhatNode *value,
+                  const LhatType *type);
 bool chk_receiver_is_own_coroutine(Checker *c, const LhatNode *receiver);
-bool chk_receiver_is_own_table(Checker *c, const LhatNode *receiver);
 bool chk_scope_within_body(Checker *c, const Scope *found_in);
 bool chk_scope_within(Checker *c, const Scope *found_in, const Scope *boundary);
 void chk_check_write_target(Checker *c, const LhatNode *target);

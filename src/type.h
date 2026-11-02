@@ -411,6 +411,10 @@ struct LhatType {
             // reached through a call). Meaningless beside is_function ==
             // false: a p^ never needed permission.
             bool mutable_self;
+            // 15.1改: and writes only into the receiver itself, never below
+            // it -- 14.22's push^ and its kin. Set by the checker on those
+            // alone; what a body may reach under self^ is not written.
+            bool mutable_shallow;
             // 15.2: the body contains yield^ or await^, so calling it answers
             // a coroutine rather than running anything (15.5)
             bool yields;

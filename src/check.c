@@ -903,8 +903,6 @@ LhatType *chk_without(Checker *c, LhatType *type, LhatType *unwanted);
 ParamVar *chk_param_var_for(Checker *c, const LhatType *type);
 bool chk_signature_accepts(const LhatType *func, LhatType *const *args,
                            size_t count, bool through_member);
-bool chk_value_is_fresh(const Checker *c, const LhatNode *value,
-                        const LhatType *type);
 void chk_check_write_target(Checker *c, const LhatNode *target);
 void chk_check_opaque_write(Checker *c, const LhatNode *target);
 bool chk_receiver_is_own_coroutine(Checker *c, const LhatNode *receiver);
@@ -4939,6 +4937,9 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE] = {"check.function-changes-table",
         "an f^ may change only a table its own body made; this one "
         "came from somewhere else"},
+    [LHAT_CHECK_ERR_OWN_LOWERED] = {"check.own-lowered",
+        "this puts something this f^ did not make where the body changes "
+        "things elsewhere; that change would reach whoever it came from"},
     [LHAT_CHECK_ERR_FUNCTION_REQUIRES] = {"check.function-requires",
         "an f^ may not require^: requiring runs the unit's body, "
         "which nothing holds to an f^'s rules"},

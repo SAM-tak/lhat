@@ -710,6 +710,167 @@ static void test_purity(void)
     unit_dispose(&u);
 }
 
+// 15.1改: how far down a place is the body's own. A name owns the least of
+// everything it was given, and a table owns only what lies above whatever
+// arrived from outside.
+static void test_ownership_depth(void)
+{
+    Unit u;
+
+    LHAT_TEST("a ':=' of an argument takes the name's table back");
+    check_text(&u,
+               "var^ f = f^ t:t^{ x:number^ } -> number^ {\n"
+               "    var^ u = { x := 0 }\n"
+               "    u := t\n"
+               "    u.x := 3\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+    unit_dispose(&u);
+
+    // The loop's way back round reaches the write with the argument in hand,
+    // so it is the ':=' that is reported.
+    LHAT_TEST("and one after a write is reported where it lowers");
+    check_text(&u,
+               "var^ f = f^ t:t^{ x:number^ } -> number^ {\n"
+               "    var^ u = { x := 0 }\n"
+               "    for^ i in^ { 1, 2 } {\n"
+               "        u.x := 3\n"
+               "        u := t\n"
+               "    }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OWN_LOWERED);
+    unit_dispose(&u);
+
+    LHAT_TEST("a fresh^ answer is not one reassigned to an argument");
+    check_text(&u,
+               "var^ f = f^ t:t^{ x:number^ } -> fresh^t^{ x:number^ } {\n"
+               "    var^ u = { x := 0 }\n"
+               "    u := t\n"
+               "    return^ u\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ANSWER_NOT_FRESH);
+    unit_dispose(&u);
+
+    LHAT_TEST("nil^ owns everything, so a table built later is the body's");
+    check_text(&u,
+               "var^ f = f^ -> number^ {\n"
+               "    var^ u : nil^|t^{ x:number^ } = nil^\n"
+               "    u := { x := 0 }\n"
+               "    if^ u fits^ t^{ x:number^ } { u.x := 1 }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a literal holding an argument owns only itself");
+    check_text(&u,
+               "var^ f = f^ t:t^{ x:number^ } -> number^ {\n"
+               "    var^ u = { inner = t }\n"
+               "    u.inner.x := 3\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+    unit_dispose(&u);
+
+    LHAT_TEST("and so does a clone^");
+    check_text(&u,
+               "var^ f = f^ t:t^{ inner:t^{ x:number^ } } -> number^ {\n"
+               "    var^ u = t.clone^()\n"
+               "    u.inner.x := 3\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+    unit_dispose(&u);
+
+    LHAT_TEST("a mutable^self^ call wants all of its receiver");
+    check_text(&u,
+               "var^ Box = def^{\n"
+               "    self^{ log : t^{ number^[] } = {} },\n"
+               "    add := f^mutable^self^, v:number^ { self^.log.push^(v) },\n"
+               "}\n"
+               "var^ f = f^ shared:t^{ number^[] } -> number^ {\n"
+               "    var^ b = Box.new()\n"
+               "    b.log := shared\n"
+               "    b.add(1)\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MUTATES_OUTSIDE);
+    unit_dispose(&u);
+
+    LHAT_TEST("a coroutine held in the body's table is not the body's");
+    check_text(&u,
+               "var^ f = f^ co:c^{ f^ -> number^ -> nil^ } -> number^ {\n"
+               "    var^ u = { c = co }\n"
+               "    u.c.start()\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_ADVANCES_OUTSIDE);
+    unit_dispose(&u);
+
+    // What a name reads out of the body's own table is the body's too.
+    LHAT_TEST("a name or a focus read out of the body's table writes into it");
+    check_text(&u,
+               "var^ f = f^ -> number^ {\n"
+               "    var^ rows = { { x := 0 }, { x := 1 } }\n"
+               "    let^ r = rows[0]\n"
+               "    r.x := 1\n"
+               "    for^ q in^ rows { q.x := 2 }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and lowers it when something arrives that way");
+    check_text(&u,
+               "var^ f = f^ t:t^{ x:number^ } -> number^ {\n"
+               "    var^ rows = { { inner = { x := 0 } } }\n"
+               "    let^ r = rows[0]\n"
+               "    rows[0].inner.x := 1\n"
+               "    r.inner := t\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_OWN_LOWERED);
+    unit_dispose(&u);
+
+    // 14.22's push^ changes its receiver and nothing below it.
+    LHAT_TEST("push^ gathers arguments without giving up the levels above");
+    check_text(&u,
+               "var^ f = f^ xs:t^{ t^{ x:number^ }[] } -> number^ {\n"
+               "    var^ by = { a = {} }\n"
+               "    for^ v in^ xs { by.a.push^(v) }\n"
+               "    return^ by.a.count^\n"
+               "}\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("but what was gathered is still the caller's");
+    check_text(&u,
+               "var^ f = f^ xs:t^{ t^{ x:number^ }[] } -> number^ {\n"
+               "    var^ by = { a = {} }\n"
+               "    by.a.push^(xs[0])\n"
+               "    by.a[0].x := 1\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+    unit_dispose(&u);
+
+    // 15.1改2: self^ is whole on entry, and what the body stores into it
+    // is not.
+    LHAT_TEST("a mutable^self^ body may not write through what it stored");
+    check_text(&u,
+               "var^ Box = def^{\n"
+               "    self^{ items : t^{ t^{ x:number^ }[] } = {} },\n"
+               "    add := f^mutable^self^, v:t^{ x:number^ } {\n"
+               "        self^.items.push^(v)\n"
+               "        self^.items[0].x := 1\n"
+               "    },\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CHANGES_TABLE);
+    unit_dispose(&u);
+}
+
 // 8.9: var^ binds a name a ':=' may reach and let^ one it may not. The rule is
 // about the name and not about the value, which is what keeps it apart from
 // 15.1改's question about a table and 05 の 8.6's about the machine's own.
@@ -979,6 +1140,7 @@ static void test_effect_union_calls(void)
 int main(void)
 {
     test_purity();
+    test_ownership_depth();
     test_immutable_bindings();
     test_effect_union_calls();
     return lhat_test_report("test_check_purity");

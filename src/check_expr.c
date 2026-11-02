@@ -1730,11 +1730,23 @@ static LhatType *coroutine_answer(Checker *c, const LhatType *coro)
     return lhat_type_union(c->result->types, produce, ends_with);
 }
 
+// The receiver of a call: what stands before the dot, or -- 14.4, written
+// out -- the first argument.
+static const LhatNode *call_receiver(const LhatNode *node, const LhatType *callee)
+{
+    if (node->v.access.target->kind == LHAT_NODE_MEMBER) {
+        return node->v.access.target->v.access.target;
+    }
+    return callee->v.func.takes_self && !callee->v.func.self_last
+               ? node->v.access.argument : NULL;
+}
+
 // 15.1改2: an f^ whose receiver seat is mutable writes through it, so an f^
 // body may call one only on what it made itself -- 15.3改's rule for a
-// coroutine, reached through a call instead of a resume. Inside a
-// mutable^self^ body, self^ is the one receiver the signature already
-// vouches for, so mutable methods chain through it unasked.
+// coroutine, reached through a call instead of a resume. 15.1改: nothing says
+// how far below its receiver such a body writes, so all of it has to be the
+// body's -- except for 14.22's push^ and its kin, which change the receiver
+// itself and nothing under it.
 static void check_mutable_receiver(Checker *c, const LhatNode *node,
                                    const LhatType *callee)
 {
@@ -1743,30 +1755,36 @@ static void check_mutable_receiver(Checker *c, const LhatNode *node,
         !callee->v.func.mutable_self) {
         return;
     }
-    const LhatNode *receiver = NULL;
-    if (node->v.access.target->kind == LHAT_NODE_MEMBER) {
-        receiver = node->v.access.target->v.access.target;
-    } else if (callee->v.func.takes_self && !callee->v.func.self_last) {
-        // 14.4: written out, the receiver is the first argument.
-        receiver = node->v.access.argument;
-    }
-    if (receiver != NULL && c->receiver_mutable) {
-        // The root of the chain, so 'self^.log.push^(v)' is seen the way
-        // the write rule sees 'self^.log[k] := v' -- one root, one body.
-        const LhatNode *root = receiver;
-        while (root != NULL && (root->kind == LHAT_NODE_MEMBER ||
-                                root->kind == LHAT_NODE_INDEX)) {
-            root = root->v.access.target;
-        }
-        const char *name = NULL;
-        size_t length = 0;
-        if (chk_node_name(c, root, &name, &length) &&
-            chk_name_is(name, length, "self^")) {
-            return;
-        }
-    }
-    if (receiver == NULL || !chk_receiver_is_own_table(c, receiver)) {
+    if (!chk_lean_on(c, call_receiver(node, callee), !callee->v.func.mutable_shallow)) {
         chk_report(c, node, LHAT_CHECK_ERR_MUTATES_OUTSIDE);
+    }
+}
+
+// 15.1改: once the arguments are read. A call counts as a table built around
+// them -- what a new() answers holds what it was given -- and a mutable^self^
+// call may put any of them under its receiver, one level down at the least.
+static void own_after_call(Checker *c, const LhatNode *node,
+                           const LhatType *callee,
+                           const LhatCheckType *const *types, size_t count)
+{
+    const LhatNode *receiver = call_receiver(node, callee);
+    uint8_t made = LHAT_OWN_DEEP;
+    size_t i = 0;
+    for (const LhatNode *arg = node->v.access.argument; arg != NULL;
+         arg = arg->next, i++) {
+        if (arg->kind == LHAT_NODE_SPREAD) {
+            made = 0;
+            break;
+        }
+        if (arg == receiver) {
+            continue;
+        }
+        uint8_t brought = chk_made_depth(c, arg, i < count ? (const LhatType *)types[i] : NULL);
+        made = brought < made ? brought : made;
+    }
+    ((LhatNode *)node)->checked_own = made == LHAT_OWN_DEEP ? made : (uint8_t)(made + 1);
+    if (c->in_function && callee->v.func.is_function && callee->v.func.mutable_self) {
+        chk_store_into(c, node, receiver, made);
     }
 }
 
@@ -2449,6 +2467,8 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                     chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
                 }
                 check_mutable_receiver(c, node, arm->type);  // 15.1改2
+                own_after_call(c, node, arm->type,
+                               (const LhatCheckType *const *)args, tracked);
                 if (arm->type->v.func.answers_fresh) {
                     ((LhatNode *)node)->call_answers_fresh = true;  // 15.1改3
                 }
@@ -2652,6 +2672,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                    tuple_spread ? LHAT_CHECK_ERR_ARITY_SPREAD
                                 : LHAT_CHECK_ERR_ARITY);
     }
+    own_after_call(c, node, callee, host_arguments, host_count);
 
     // 15.10: when the body being checked is calling itself, its result is
     // still being worked out, and 03 の 3.4 reads the NULL to mean exactly
@@ -2890,6 +2911,7 @@ static LhatType *mutable_method(Checker *c)
 {
     LhatType *signature = lhat_type_func(c->result->types, true);
     signature->v.func.mutable_self = true;
+    signature->v.func.mutable_shallow = true;
     return signature;
 }
 
@@ -4210,6 +4232,8 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
     // half is described by name; the sequence half by position, counted the
     // way the machine lays it out -- from zero, in the order written.
     size_t position = 0;
+    // 15.1改: how much of what the entries hold was made here as well.
+    uint8_t made = LHAT_OWN_DEEP;
     for (const LhatNode *entry = items; entry != NULL;
          entry = entry->next) {
         // The receiver scope, exactly as chk_infer_def pushes it: self^ is
@@ -4235,6 +4259,8 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
         LhatType *value = chk_require_value(c, entry->v.entry.value,
                                             chk_infer(c, entry->v.entry.value));
         c->expected_func = outer_expected;
+        uint8_t brought = chk_made_depth(c, entry->v.entry.value, value);
+        made = brought < made ? brought : made;
         if (annotation != NULL) {
             chk_expect(c, entry->v.entry.value, value, annotation, LHAT_CHECK_ERR_MISMATCH);
             value = annotation;
@@ -4266,6 +4292,8 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
         if (entry->v.entry.computed) {
             const LhatNode *key = entry->v.entry.key;
             LhatType *asked = chk_require_value(c, key, chk_infer(c, key));
+            uint8_t keyed = chk_made_depth(c, key, asked);
+            made = keyed < made ? keyed : made;
             // 04 の 11.3: nil^ is how "not there" is spelled, so it cannot
             // also be a key. The machine reports one that turns out to be
             // nil^; a key that can only ever be one is decided here. A NaN
@@ -4328,6 +4356,8 @@ static LhatType *infer_table(Checker *c, const LhatNode *node)
                                        value);
         }
     }
+    ((LhatNode *)node)->checked_own =
+        made == LHAT_OWN_DEEP ? made : (uint8_t)(made + 1);
     if (table->v.table.index_key != NULL) {
         join_table_entry_types(c, table, &table->v.table.index_key,
                                 &table->v.table.index_value);
@@ -4725,6 +4755,8 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // 15.1改2: whether this body's own receiver seat is mutable.
     bool outer_receiver_mutable = c->receiver_mutable;
     c->receiver_mutable = func->v.func.mutable_self;
+    ChkOwnership outer_self_owned = c->self_owned;
+    c->self_owned = (ChkOwnership){LHAT_OWN_DEEP, 0};
     // 15.1改3: whether every exit of this body owes something new.
     bool outer_must_answer_fresh = c->must_answer_fresh;
     c->must_answer_fresh = func->v.func.answers_fresh;
@@ -4900,6 +4932,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     c->deferred--;
     c->in_new_body = outer_in_new_body;
     c->receiver_mutable = outer_receiver_mutable;
+    c->self_owned = outer_self_owned;
     c->must_answer_fresh = outer_must_answer_fresh;
     c->scope = outer_scope;
     c->declared_result = outer_declared;
@@ -6945,9 +6978,12 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             LhatType *instance = receiver != NULL      ? receiver->type
                                  : c->self_link != NULL ? c->self_link->type
                                                         : NULL;
+            uint8_t made = LHAT_OWN_DEEP;
             for (const LhatNode *field = node->v.list.items; field != NULL;
                  field = field->next) {
                 LhatType *value = chk_infer(c, field->v.entry.value);
+                uint8_t brought = chk_made_depth(c, field->v.entry.value, value);
+                made = brought < made ? brought : made;
                 // 05 の 8.9: an instance is a table, so its fields refuse a
                 // host value the way any table member does.
                 if (chk_is_hostvalue(value)) {
@@ -6982,6 +7018,10 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 chk_expect(c, field->v.entry.value, value, held->type,
                            LHAT_CHECK_ERR_MISMATCH);
             }
+            // 15.1改: the fields land in self^ itself.
+            ((LhatNode *)node)->checked_own =
+                made == LHAT_OWN_DEEP ? made : (uint8_t)(made + 1);
+            chk_store_into_self(c, node, made);
             return instance != NULL ? instance
                                     : chk_simple(c, LHAT_TYPE_UNKNOWN);
         }

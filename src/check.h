@@ -238,6 +238,9 @@ typedef enum {
                                            // -- this one is not one the body
                                            // made, so changing it is
                                            // observable from outside
+    LHAT_CHECK_ERR_OWN_LOWERED,         // 15.1改: this puts something the
+                                        // body did not make where the body
+                                        // changes things, written elsewhere
     LHAT_CHECK_ERR_FUNCTION_REQUIRES,   // 05 の 5.3: require^ runs the unit,
                                         // a body of its own, which an f^ may
                                         // not have run on its behalf
