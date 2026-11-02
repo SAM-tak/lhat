@@ -3,7 +3,7 @@
 名前をまとめて別の単位から取り込む仕組みを定める。
 
 節番号のうち「01 の」「02 の」「03 の」「04 の」と前置きしたものは他文書を指す。
-未決事項には `M` を冠して [syntax.loop]にまとめる。
+未決事項には `M` を冠して [syntax.loop] にまとめる。
 
 ---
 
@@ -16,7 +16,7 @@
 `def^` を束縛した名前も、手続きの名前も同じように衝突する。
 種別を入れ子にしても、衝突する場所が1つ減るだけで解決しない。
 
-[lex.scope]のスコープ指定子（`$` `$^`）は
+[lex.scope] のスコープ指定子（`$` `$^`）は
 **入れ子のスコープを指すもの** であり、名前空間ではない。
 `$` がファイルスコープを指すので単位の概念は字句の段階で先取りされているが、
 単位をまたいで名前を渡す手段が別に要る。
@@ -51,7 +51,7 @@ let^ x : Foo = Foo.new()          # Foo は値としても型としても引け�
 #### 場が同じでも、型の位置に書けるとは限らない
 
 上の表のとおり `let^ x = 1` が指すのは **値だけ** である。
-「その値の型」を名前で指す機能は、本節も [syntax.type]も定めていない。
+「その値の型」を名前で指す機能は、本節も [syntax.type] も定めていない。
 
 ```lhat
 let^ x = 1
@@ -108,7 +108,7 @@ module^ namespace1.module1
 ファイルの位置は都合で動く。型の名前が位置に縛られていると、
 **ファイルを移すだけで診断の文言と型のラベルが変わる**。
 
-宣言された名前は [pipeline.open]で型のラベルになり、[modules.require.once] で登録の鍵になる。
+宣言された名前は [pipeline.open] で型のラベルになり、[modules.require.once] で登録の鍵になる。
 どちらもファイルの位置とは無関係であってほしい。
 
 `module^` が名乗ったパスは **検査の結果に残る**。[modules.require.short] の省略形が
@@ -187,10 +187,10 @@ Lua の `require` は、モジュールがファイルの末尾でテーブル�
 > **`return <式>` は実行しなければ何が公開されるか分からない。**
 
 返る値は実行時に組み立てられうるので、**単位を実行せずに公開分を知ることができない**。
-[syntax.colon]が型検査に依存を辿らせる以上、これは成立しない。
+[syntax.colon] が型検査に依存を辿らせる以上、これは成立しない。
 
 `public^` は宣言ごとの印なので、**構文解析だけで公開分が決まる**。
-[syntax.colon]の静的な取り込みと、`return` を書かせないことは互いを支えている。
+[syntax.colon] の静的な取り込みと、`return` を書かせないことは互いを支えている。
 
 書き忘れの事故が消えるのは副次的な利得である。
 Lua では `return` を忘れても読み込みは成功し、使う場所で初めて `nil` になる。
@@ -299,7 +299,7 @@ if (!lhat_unit_export_conforms(unit, "update", "p^number^;")) {
 `module^` の無いスクリプトは何も公開しない（[modules.unit.optional]）——答えは `return^` の値で、
 この口の相手ではない。
 
-これは [modules.open]の M7（機械の印を「所有単位だけが書ける」へ広げるか）とは
+これは [modules.open] の M7（機械の印を「所有単位だけが書ける」へ広げるか）とは
 別の話である。M7 が問うているのは **テーブルのメンバ** を誰が書けるかで、
 本節が言っているのは **名前** を誰が書けるかである（[syntax.stmt.let]）。
 
@@ -334,11 +334,11 @@ LSP は既存のプロジェクト境界（設定ファイルのディレクト�
 どこを探すか、複数見つかったらどうするかを決めなければならない。
 パスで指せばその問いが生じない。
 
-`module^` の名前は [lton.load]のラベルと [modules.require.once] の鍵として働く。**指し方とは役割が違う。**
+`module^` の名前は [lton.load] のラベルと [modules.require.once] の鍵として働く。**指し方とは役割が違う。**
 
 ### 5.2 引数はリテラルでなければならない [modules.require.literal]
 
-[lton.nil]が型検査に依存を辿らせるため、**パスは構文解析の時点で決まっている必要がある**。
+[lton.nil] が型検査に依存を辿らせるため、**パスは構文解析の時点で決まっている必要がある**。
 計算された文字列は受け付けない。
 
 実行時に決まる読み込みは別の機構である——[modules.require.load] の `std.load`。
@@ -353,7 +353,7 @@ LSP は既存のプロジェクト境界（設定ファイルのディレクト�
 
 一度きりを成立させているのは**単位自身の前置きが登録簿に自分を問い合わせる
 ガード**であって、`require^` の側ではない。単位を作り直したときに何が要るかは
-これで決まる——[modules.require.reload]。
+これで決まる——[modules.require.reload] 。
 
 #### `f^` の中には書けない
 
@@ -372,7 +372,7 @@ LSP は既存のプロジェクト境界（設定ファイルのディレクト�
 `require^` が束縛するのは **1つの名前だけ** であり、それは取り込む側が選ぶ。
 単位の中の名前が呼び出し側の場に流れ込むことはない。
 
-[debug.role]の衝突は、これで起きなくなる。
+[debug.role] の衝突は、これで起きなくなる。
 同じ名前の単位を2つ取り込んでも、束縛する名前を分ければ済む。
 
 ```lhat
@@ -419,7 +419,7 @@ require^ "src/geometry.lt"                      # 名乗ったパスに入る
 その文のあるフレームの中では、`require^` が単位を読み込んだ直後の
 `L^.modules.<根>` を読む。入れ子の本体（関数・閉包）からは、捕捉せずに読むたびに
 `L^.modules.<根>` を辿る。登録簿のその表には、単位が公開した名前も、その下に名乗る
-単位（[lsp.hover]の「単位の下に名乗る単位」）も入るので、親と子をどちらの順で書いても
+単位（[lsp.hover] の「単位の下に名乗る単位」）も入るので、親と子をどちらの順で書いても
 両方に届く。
 
 ```lhat
@@ -664,7 +664,7 @@ lhat_reload(program, path, machines, machine_count);  // machines は載せた�
 > ほかの L^ のコードを再開する。**
 
 忘却から、その単位がもう一度 `require^` されるまでの間、登録簿のその位置には何も
-無い。省略形や `import^` の根（[modules.require.short]、[modules.host.import]）はその間に読むと何にも届かず、実行時の
+無い。省略形や `import^` の根（[modules.require.short] 、[modules.host.import]）はその間に読むと何にも届かず、実行時の
 誤りで止まる（壊れはしない）。止めた機械で、根を走らせ直すまで何も走らせなければ、
 その間は誰にも見えない。機械を止めずに忘却する口は設けない。
 
@@ -858,7 +858,7 @@ let^ print = require^ "system/debug.lh".print
 
 **都合が悪ければホストは与えなければよい。** 既定はあくまで既定である。
 
-これは [syntax.input.command] と [syntax.runtime-api]が既に採っている形と同じである。
+これは [syntax.input.command] と [syntax.runtime-api] が既に採っている形と同じである。
 入力形式の選択も断片の与え方もホストの責務であり、
 ランタイムはモードを状態として持たない。初期束縛もそこに並ぶ。
 
@@ -904,14 +904,14 @@ print("hello")                       # 自分で書いたほう
 ### 8.3 ホストは型を書いて登録する [modules.host.register]
 
 初期束縛の名前が何の型かを、検査器は知らなければならない
-（[syntax.colon]が型検査に依存を辿らせるため）。その手段は
+（[syntax.colon] が型検査に依存を辿らせるため）。その手段は
 「ソースとして読む」ではなく、**ホストが型を書いて渡す**（[syntax.stmt.visible]）。
 
 ```c
 lhat_register_func(&program, "system.io", "print", "p^string^;", print_fn, NULL);
 ```
 
-`"p^string^;"` は [syntax.type]の型の文法そのままであり、検査器はそれを読む。
+`"p^string^;"` は [syntax.type] の型の文法そのままであり、検査器はそれを読む。
 
 こちらのほうが小さい。**宣言と実装が離れない** ためである。
 ソース側に宣言を置く形では、`.lh` の宣言と C の実装が食い違いうるので、
@@ -927,7 +927,7 @@ lhat_register_func(&program, "system.io", "print", "p^string^;", print_fn, NULL)
 
 `typeof^` も同様に構文とする。
 
-`typeof^` は検査器が式に決定した静的型を答える（[syntax.obj.typeof]、[pipeline.bc.typeof]）。
+`typeof^` は検査器が式に決定した静的型を答える（[syntax.obj.typeof] 、[pipeline.bc.typeof]）。
 コンパイラはその型を記述子として保存する。誤り種別などの例外と、検査を
 経ていないコードでは実行時タグへフォールバックし、値の構造は走査しない。
 
@@ -1222,7 +1222,7 @@ return^ L^.modules.ns.one.v        # 読める
 型に印が1つあり、機械が作るテーブルにそれを立てるだけである。
 
 ホスト側の許可は自動で成り立つ。検査器が見るのは L^ のソースだけであり、
-**ホストは [modules.host.import]・[modules.hostdata] の C の API を通るので検査器を通らない**。
+**ホストは [modules.host.import] ・[modules.hostdata] の C の API を通るので検査器を通らない**。
 したがって「L^ に書かれたものを一律に拒む」がそのまま規則になり、
 ホスト用の抜け道を作る必要がない。
 
@@ -1244,7 +1244,7 @@ poke(m)                # x の型は t^{ … }。印を持たない
 書き込みの命令がそれを見て拒む。
 
 ホスト側はここでも自動的に自由である。
-ホストは [modules.host.import]・[modules.hostdata] の C の API でテーブルに触るので、**命令を通らない**。
+ホストは [modules.host.import] ・[modules.hostdata] の C の API でテーブルに触るので、**命令を通らない**。
 検査器のときと同じ構造がそのまま成り立つ。
 例外は program が機械の間で共有する表で、そこはホストも書かない（[modules.host.shared-registry]）。
 
@@ -1463,7 +1463,7 @@ L^ で書いた多重定義は、コンパイラが本体から候補の型を�
 #### 登録された型は公称である
 
 `lhat_register_type` が作るのは [l10n.choose.structs] と同じ **宣言の場所が同一性** の型である。
-[syntax.op.semantic] の構造的型付けの例外にあたる。詳細は [modules.hostdata]。
+[syntax.op.semantic] の構造的型付けの例外にあたる。詳細は [modules.hostdata] 。
 
 [syntax.stmt.member] の印も立てるので、`var^ t.x = …` でメンバを後から足せない。
 
@@ -1907,7 +1907,7 @@ var^ p.other := 1                              # 誤り
 [syntax.obj.typeof] の型情報も同じ扱いとする。公称であり、何を持つかは作った側が決めている。
 
 `def^` のインスタンスは公称ではないので、この規則の対象外である。
-[syntax.obj]のフィールドを書き換えるのは、フィールドの用途そのものである。
+[syntax.obj] のフィールドを書き換えるのは、フィールドの用途そのものである。
 
 ##### 応答できるようにするなら2つ要る［提案］
 
@@ -2861,7 +2861,7 @@ C の側が持つ `LhatValue` は根ではない（コレクタが知ってい�
 
 `L^.modules` はその代わりにならない。L^ から読める場所であり、しかも登録
 されたモジュールの下は [modules.host.shared-registry] の共有の表で、ホストの書き込みも断られる
-（[modules.host.shared-registry]「ホストも書かない」）。
+（[modules.host.shared-registry] 「ホストも書かない」）。
 
 - 表は機械と共に作られ、機械が根にする（`src/gc.c` の `mark_roots`）
 - 中の形はホストが決める。文字列の鍵で名前を引いても、自分の表をぶら下げても
@@ -3046,7 +3046,7 @@ VM 専用版では、各拡張が記述子の `signatures` / `signatures_size` �
   `std.math.pi` は落ちない。登録は検査の前に済んでいて値も分かっているので、
   畳み込みの対象にする方針である。
 
-  ［補足］畳み込んだ値はチャンクに焼き込まれる。[lsp.open]のバイナリ単位は
+  ［補足］畳み込んだ値はチャンクに焼き込まれる。[lsp.open] のバイナリ単位は
   コンパイルしたホストとは別のホストで読み込まれうるので、そちらが同じ名前に
   違う値を登録していても焼き込んだ値が勝つ。署名表（[lsp.open]）に値を載せて
   読み込み時に照合するか、畳み込むのを変えようのない定数に限るかを決める要がある。
@@ -3060,7 +3060,7 @@ VM 専用版では、各拡張が記述子の `signatures` / `signatures_size` �
 > `lhat_program_check` で、テキストを見ずに同じ単位が立つ。**
 
 目的は **VM のみビルド**——構文解析器と型検査器を外し、事前コンパイル済みだけを
-走らせる構成（[lsp.references]の余談）の前提を作ること。単位ごとに書き出すので、シーン単位の
+走らせる構成（[lsp.references] の余談）の前提を作ること。単位ごとに書き出すので、シーン単位の
 部分ロード・破棄はそのまま保たれる。
 
 ### 10.1 拡張子は変えない。先頭のバイトが種別を言う [modules.binary.magic]
@@ -3130,7 +3130,7 @@ SEGV し得る。読むのは自分が書いたものだけ、という前提で
 
 - 行表・`source_name`・`debug_name` は**常に残る**。traceback（[errors.runtime.traceback]）が
   出荷ビルドでも読む
-- ローカル名・捕捉名（[debug.table]、デバッガが読む）は**落とせる**
+- ローカル名・捕捉名（[debug.table] 、デバッガが読む）は**落とせる**
   （`--strip-debug`、`lhat_unit_write_binary` の `with_debug_names`）
 - `member_cache` の答えなど実行時のスクラッチは書かない
 
@@ -3272,7 +3272,7 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
   終わらないジョブが1つ在れば行列は永久に空かないので、空いた時にしか見ない形は
   待っているタスクを永久に見落とす（実装中に踏んだ）
 
-- **std.task のワーカーが小さい機械を持つようになった。** [pipeline.machine.sizing]。
+- **std.task のワーカーが小さい機械を持つようになった。** [pipeline.machine.sizing] 。
   既定の 165,157 バイトから 48,933 バイトへ。深さ 200→64 は引き換えで、
   超えたジョブは既存の失敗経路に乗る
 
@@ -3313,7 +3313,7 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
   が配る待ちを本体の終わりで押す（`joined` の 2ms ポーリングが消えた）、
   `failed()` が join せず誤りを読む、`lhatstdlib_thread_on_finish` が
   ホストのループへ、`lhatstdlib_thread_join_all` が破棄前の待ち。
-  `join` の答えは `any^`（lhatove の thread-design [modules.public.types]・[errors.catch.clause]・[binary.net.one-machine]）
+  `join` の答えは `any^`（lhatove の thread-design [modules.public.types] ・[errors.catch.clause] ・[binary.net.one-machine]）
 - **std.channel（2026-09-04）: 機械の間のキュー。** carry の上に載せた
   MPMC の待ち行列（push/supply/pop/demand/peek/count/hasRead/clear/atomic、
   名前付き）。中身は運ばれた木のまま持ち、取り出す機械で組み直す。
@@ -3343,7 +3343,7 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
   @rpc・メンバ一覧・説明文が消えていた。書き出し時に公開 API 自身で集めた
   レコードを節に運び、読み手はそれで答える（木は運ばない）。VM のみビルドも
   同じ道で答える
-- **[modules.binary.signatures]・[modules.binary.vm-only]（2026-09-02）: 署名表と VM のみビルド。** 前段の無いビルドが
+- **[modules.binary.signatures] ・[modules.binary.vm-only]（2026-09-02）: 署名表と VM のみビルド。** 前段の無いビルドが
   ホストを登録する唯一の道として、フルビルドが登録から書いた「署名テキスト→
   install の記述子」の表を引く（ユーザー案）。二つ目の文法も解決器も持たず、
   表の中身は登録が作った物そのもの。`LHAT_WITH_FRONTEND` で前段を外し、
@@ -3362,7 +3362,7 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
 - **[pipeline.machine.sizing]（2026-09-02）: 公開名は呼び出し形を取らない。** [pipeline.infer.call-shapes]
   （単位内の呼び出し形で未注釈の本体を検査する）の導入にあたり、公開された
   名前をその対象から外した。公開署名は約束であり、内側の呼び出しが狭めて
-  はならない。[l10n.catalog.english-baked]「相手の本体を検査せずに署名を読める」は形が単位を
+  はならない。[l10n.catalog.english-baked] 「相手の本体を検査せずに署名を読める」は形が単位を
   越えないことでそのまま立つ
 
 - [modules.host.import] の読み（2026-09-01）: `lhat_machine_registered` —— 登録の双子。
@@ -3373,8 +3373,8 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
 - [modules.host.panic]（2026-09-01）: 列挙体の登録（`lhat_register_enum` / `_valued`）。
   `type` を書けばホスト型の下（`godot.Node.Mode.Idle`）——[modules.hostdata] の公称型は
   名前空間でもあるので、モジュール直下の同名とは別の宣言になる。
-  [syntax.enum]に入れ子は無く、これは [modules.hostdata] の名前空間を借りた形である。
-  [syntax.enum]の enum^ そのもの——メンバはシングルトン値、when^ の全名指しは
+  [syntax.enum] に入れ子は無く、これは [modules.hostdata] の名前空間を借りた形である。
+  [syntax.enum] の enum^ そのもの——メンバはシングルトン値、when^ の全名指しは
   網羅、fits^ は宣言を比べる。同一性はプログラム単位（列挙値はプログラムを
   跨がない）。dump は "enum" 種（メンバ名+値）で書き、LSP の replay が読む
 
@@ -3519,7 +3519,7 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
   log と同じく f^。std.thread の join は worker の fault に worker 側で
   描いたトレースバックを message へ連結して返すようになった
 
-- **[modules.hostdata.base]・[modules.hostvalue.union]（2026-08-20）: ホスト製の値の可用性を引き上げた。**
+- **[modules.hostdata.base] ・[modules.hostvalue.union]（2026-08-20）: ホスト製の値の可用性を引き上げた。**
   LOVE2D バインドの弱参照要求を掘ると同根の欠落が3つあった
   （yield がホスト値を運べない・Box^ もホストデータもキーとして
   ポインタ同一性でしか引けない）ため、弱値キャッシュより先にこちらを
@@ -3543,7 +3543,7 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
   conforms は Box^→ConstBox^ の一方向。箱のフィールドは
   読みのみ直アクセス可に。(3) yield^/resume/答えはホスト値を**丸ごと**
   運ぶ（席の全幅。多値の席には混ぜない。ホスト境界の resume は同日中に
-  開通——[modules.hostvalue]、受けはスクラッチ指しの pointer 形で positions と同じ
+  開通——[modules.hostvalue] 、受けはスクラッチ指しの pointer 形で positions と同じ
   寿命契約、送りは R のタグ照合つき）。「コルーチン境界値不可」「yield
   本体と幅つき引数併用不可」の
   v1 制限を削除。書かれた c^ 型の3席へのホスト値一括拒否も撤去し、
@@ -3558,16 +3558,16 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
   ひとつに統合（[binary.containers]）。統合後も「値しか指さない名前」を型の位置で引けてしまう
   実装の誤りがあり、「構造を持たない値は拒む」の線で修正
 - 初期束縛は当初「L^ の文の並びとして与える」だったが、
-  ホストが C 側で型を書いて登録する形（[errors.dropped.answer]・[modules.host.import]）に差し替え
+  ホストが C 側で型を書いて登録する形（[errors.dropped.answer] ・[modules.host.import]）に差し替え
 - `L^.modules` への登録は当初「言語の中で書ける」としていたが、
   `L^` を機械のものとした決定に合わせ、L^ の側からは書けないことに統一（[modules.host.machine]）
 - `typeof^` を構文とする理由は当初「静的な型を読むもの」だったが、
   実装で検査結果に頼れないと判明し、実行時に値の形を走査する設計に確定（[syntax.stmt.no-postfix-assign]）。
   `rawsignature^` は提案のみで撤回
-- 省略形 `require^ "path"`（[modules.require.short]、旧称 [modules.require.no-spill]）と宣言パスの記録（[pipeline.strict.per-unit]、旧称 [modules.unit.path-free]）を追加
+- 省略形 `require^ "path"`（[modules.require.short] 、旧称 [modules.require.no-spill]）と宣言パスの記録（[pipeline.strict.per-unit] 、旧称 [modules.unit.path-free]）を追加
 - ホスト値（[modules.hostvalue]）の文字列化を追加。裸の `tostring` を登録し、
   無ければ組込みが型の名前 `<module.Name>` を書く。補間の穴は「スタックの外」ではない
-- 公開する引数の型は束縛の側に書いてもよいことを明記（[modules.public.types]、[pipeline.infer.expected]）
+- 公開する引数の型は束縛の側に書いてもよいことを明記（[modules.public.types] 、[pipeline.infer.expected]）
 - ホスト値の箱（[modules.hostvalue]）は当初「ライブラリの仕事であり、言語機構ではない」
   — std.math が値型 LVector3 とは別に箱型 Vector3（[modules.hostdata] のホストデータ）を
   手書きで提供していた — だったが、型ごとに約70行の同文と手動の寿命管理・
@@ -3629,7 +3629,7 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
   呼べるようになって初めて意味を持つ事実を2つ明記した——ホストが握っている
   値は根ではないこと（走り終わった run のレジスタも含む）と、[syntax.finally.coroutine] の
   後始末待ちは回すループが無いので次に L^ が走るまで待つこと
-- **ホストの回収が後始末まで走らせるようにした（[modules.host.machine]・[modules.require.reload]）。** godot バインドの
+- **ホストの回収が後始末まで走らせるようにした（[modules.host.machine] ・[modules.require.reload]）。** godot バインドの
   指摘。`L^.collectgarbage()` は元から `finally^` を走らせており、走らせて
   いなかったのは C の口だけだった——対等性の取り違えである。走らせないと、
   落ちたコルーチンが中断先の閉包を握ったまま `pending_disposals` が数えられず、
@@ -3653,7 +3653,7 @@ number と **type.c**（登録が型を作る中核で、前段を一切読ま�
   問題も起きない（program がひとつなら起きない）。単位ひとつの差し替えは
   live edit のために残る。あわせて、そのために割っていた型アリーナの2本立ても
   取り下げた——用が無くなった
-- **ホストの登録の同一性を process にひとつにした（[modules.host.import]・[l10n.choose.structs]）。**
+- **ホストの登録の同一性を process にひとつにした（[modules.host.import] ・[l10n.choose.structs]）。**
   同一性が宣言なら、宣言とは何かを決めなければならない——答えは**それを行う
   C の呼び出し**であり、同じ呼び出しを2つの program に対して行っても宣言は
   ひとつである。program ごとにタグを作っていたのは実装の都合で、その結果

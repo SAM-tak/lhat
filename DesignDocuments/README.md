@@ -82,6 +82,7 @@
 | 10-localization.md | `l10n` |
 | 11-binary-and-net.md | `binary` |
 | 12-specialization.md | `spec` |
+| ../lhat-vscode-extension/devdocs/06-visual-editor.md（拡張のリポジトリ） | `editor` |
 
 ### 参照の書き方
 

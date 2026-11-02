@@ -9,7 +9,7 @@
 `:` 導入構文の終端、文の構成、繰り返しの節、`finally^` 節、演算子と優先順位、
 `with^`、型の文法、オブジェクトモデル、サブルーチンの種別、
 `for^` と `repeat^` が確定している。
-未決事項は [pipeline.open]にまとめてある。
+未決事項は [pipeline.open] にまとめてある。
 
 ---
 
@@ -237,7 +237,7 @@ foo
 ファイルと同じ結果が得られる。
 
 **これを実現する手段（端末の bracketed paste など）はホストの責務であり、
-言語仕様の範囲外である。** 言語側は [syntax.runtime-api]の API を提供するにとどまる。
+言語仕様の範囲外である。** 言語側は [syntax.runtime-api] の API を提供するにとどまる。
 
 ### 3.4 ファイルと REPL の一致 [syntax.repl.same]
 
@@ -261,7 +261,7 @@ L^ は「改行直後の `(` は呼び出し括弧にならない」と決めて
 
 ## 4. ランタイムに必要な API [syntax.runtime-api]
 
-ホストが [syntax.repl]の手順を組めるように、ランタイムは次を提供する。
+ホストが [syntax.repl] の手順を組めるように、ランタイムは次を提供する。
 
 - 断片を通常形式として解析するエントリポイント（1行でも複数行でもよい）
 - 断片をコマンド形式として解析するエントリポイント
@@ -360,7 +360,7 @@ if^expr {
 先読みは増えない。条件は元々読む必要があるものだからである。
 
 同じことが `for^` にも当てはまる。[syntax.for.not-loop] のとおり `for^` は続く節の形を採るので、
-`for^ … if^` と [syntax.match]の `when^` 節群にも文と式の2つがある。
+`for^ … if^` と [syntax.match] の `when^` 節群にも文と式の2つがある。
 どちらかは **駆動節を読み終えてから** 分かる。
 
 ##### 式が文の位置に来てよいかは [syntax.stmt.no-bare-expr] が決める［重要］
@@ -473,7 +473,7 @@ let^ r = if^a: 1 el^: 2 ;
 
 > `:` は開いた構造を導入する。開いたものは `;` で閉じる。
 
-if 式と、[syntax.match]のパターンマッチの式形（[syntax.match.semicolon]）がこれに従う。
+if 式と、[syntax.match] のパターンマッチの式形（[syntax.match.semicolon]）がこれに従う。
 関数・手続きの本体を `:` で書く式形は持たない。本体は常に `{ … }` で囲む。
 
 [lex.space.newline] で「`;` は改行方針とは独立に必要」と切り出したのがこれにあたる。
@@ -839,7 +839,7 @@ let^ u = { a := 1, a := 2 }   # 同じ
 | `for^ i from^ 1 to^ 10` | `from^` | 数える形の焦点。他の綴りを採らない（[syntax.for.from]） |
 | `for^ var^ i = 1 while^ … next^ i := …` | `var^` | 書き手が焦点を進める形（[syntax.for.forms]） |
 | `for^ i := 1 while^ … next^ i := …` | なし | 焦点の再代入。既存の外側名を要る（[syntax.for.reuse]） |
-| `with^ h = open(p)` | `with^` | 束縛の定義。`let^` と同じ扱い（[syntax.with]、[syntax.stmt.let]） |
+| `with^ h = open(p)` | `with^` | 束縛の定義。`let^` と同じ扱い（[syntax.with] 、[syntax.stmt.let]） |
 
 > **`:=` は値を与える。名前を作るかどうかは導入子が決める。**
 > **作った名前を後から書けるかどうかは、どちらの導入子かが決める。**
@@ -1417,7 +1417,7 @@ var^ t.a = "a"      # よい
   印は型に乗っているので、`t^{ … }` の引数を通った先では印が消える。
   そこで `t.a := x` を書かれれば通ってしまう。sealed と全く同じ穴である
 
-そして [modules.open]の **M7**（機械の印を「所有単位だけが書ける」へ広げるか）が
+そして [modules.open] の **M7**（機械の印を「所有単位だけが書ける」へ広げるか）が
 未決のまま残っている。メンバ単位の可変性はその議論と同じ領域にあり、
 **別々に決めれば後で衝突する**。M7 と一緒に決める。
 
@@ -1691,7 +1691,7 @@ main^:
 - `prolog^` / `prologue^`
 - `pre^` / `premain^`
 - `epilog^` / `epilogue^`
-- `next^` / `skip^` / `continue^`（[syntax.loop.next]。`next^` が推奨形）
+- `next^` / `skip^` / `continue^`（[syntax.loop.next] 。`next^` が推奨形）
 
 どちらで書いてもよい。整形時にどちらへ寄せるかはフォーマッタが決める。
 条件分岐の綴り（[syntax.if.spellings]）と同じ扱いである。
@@ -2262,7 +2262,7 @@ Python も同じ制限を課している。
 
 - 関数しか呼べない
 - 代入は局所変数に対してのみ
-- `yield^` できない（[syntax.sub.op-not-yieldable]。`f^` であることからではなく、[syntax.op.define] の署名から従う）
+- `yield^` できない（[syntax.sub.op-not-yieldable] 。`f^` であることからではなく、[syntax.op.define] の署名から従う）
 
 利用者が定義した演算子も同じ制約を受ける。
 **演算子に副作用を持たせられない。**
@@ -2687,7 +2687,7 @@ C はビット演算を比較より弱くしており、`x & MASK == 0` が `x &
 | 10 | `**` | **右** |
 | 11 | 後置 `.` `?.` 呼び出し `?(` `[` `?[` `?` | 左 |
 
-`catch^` と `try^` は [04-errors.md](04-errors.md) の [lsp.hover], [lsp.references]で定める。
+`catch^` と `try^` は [04-errors.md](04-errors.md) の [lsp.hover], [lsp.references] で定める。
 `catch^` を二項演算子より強くしたのは、
 `base + parse(s) catch^ 0` で失敗するのが `parse(s)` であって
 `base + parse(s)` ではないためである（[errors.catch.precedence]）。
@@ -3068,7 +3068,7 @@ op^+ := f^lhs:number^, self^ -> number^ { return^ lhs + self^.n }
 積の定義は `op^cross^` と `op^dot^` と書く。式中ではそれぞれ
 `×` と `⋅` でも書けるが、定義名は語の形に統一する。
 順序（`<` `>` `≦` `≧`）は個別には書かず `<=>` ひとつから読み出し、
-`≠` は `=` の否定である（[syntax.op.compare]・[syntax.op.equal]）。`and^` `or^` `!` は言語のもの。
+`≠` は `=` の否定である（[syntax.op.compare] ・[syntax.op.equal]）。`and^` `or^` `!` は言語のもの。
 ビット演算の5語も同じで、`number^` にしか答えない（[syntax.obj.bits]）。
 
 #### 名前は演算子そのもの
@@ -3076,7 +3076,7 @@ op^+ := f^lhs:number^, self^ -> number^ { return^ lhs + self^.n }
 通常の記号演算子には対応表を作らない。`concat` のような別名を割り当てれば、
 **どの演算子がどの語かを覚える対象** が増える。
 
-[lex.comment]がメンバ名を識別子と定めているため、
+[lex.comment] がメンバ名を識別子と定めているため、
 `..` は **利用者が手で書けない名前** になる。
 書けない以上、利用者のメンバと衝突しない。
 [syntax.obj.structure] の位置の型が数字をメンバ名に使うのと同じ手である。
@@ -3103,7 +3103,7 @@ overload^ op^.. := f^self^, other:Vec -> Vec { … },
 #### 組込み型は処理系が持つ
 
 `string^` の `..` も `number^` の算術も処理系が持つ。L^ で書き下すのではない。
-コルーチンが `start()` を持つのと同じ扱いである（[syntax.sub.coroutine-make]、[modules.host.coroutine-ops]）。
+コルーチンが `start()` を持つのと同じ扱いである（[syntax.sub.coroutine-make] 、[modules.host.coroutine-ops]）。
 
 ```text
 string^ の ..  :  f^self^, string^ -> string^;
@@ -3286,7 +3286,7 @@ s < t    # 誤り。順序を言うものが無い
 #### 組込み型も持つ
 
 `number^` と `string^` は自分の順序を持つ。文字列は **UTF-8 のバイト順**
-（[lex.source]が符号化を固定しているため、符号点の順と一致する）。
+（[lex.source] が符号化を固定しているため、符号点の順と一致する）。
 
 ```lhat
 1 <=> 2        # -1
@@ -3469,7 +3469,7 @@ L^ でも同じ線引きを採る。`t.foo`(静的メンバ、型が「ある」
 **panic** であり、`catch^`では捕まえられない。C API から見ると
 `lhat_run` が `LhatRunResult`(status 付き)を普通に返すだけで、
 プロセスを異常終了させることはない — ホスト(REPL 等)が
-それを見て次へ進むかどうかを選ぶ。[errors.runtime]に詳細がある。
+それを見て次へ進むかどうかを選ぶ。[errors.runtime] に詳細がある。
 
 **panic は `finally^` も駆動しない**（[errors.runtime.panic-finally]）。拾えないものの
 後始末を言語が代わりに走らせる筋はなく、他言語も致命の層では走らせない。
@@ -3501,7 +3501,7 @@ panic^ "実装されていない経路"
 L^ は **例外機構を持たない**。Zig や Go と同じく、
 失敗しうる操作は誤りを表す値を返し、呼び出し側がそれを受け取って処理する。
 
-この選択は本章と [errors.chain]の設計を大きく単純にしている。
+この選択は本章と [errors.chain] の設計を大きく単純にしている。
 
 「後始末の最中に例外が飛んだらどうするか」は他言語で難所とされてきた。
 C++ の `terminate`、Java の抑制された例外、Python の `__context__` は
@@ -3558,7 +3558,7 @@ p^number^, number^ -> number^ ;
 どちらの綴りも返り値の位置にしか書けず、引数の位置に書けば誤りになる
 （コルーチンの `R` は例外——[syntax.type.coroutine]）。テーブルを返す道も残っている。
 
-[syntax.colon]に述べた原則「開いた構造は `;` が閉じる」にそのまま従っている。
+[syntax.colon] に述べた原則「開いた構造は `;` が閉じる」にそのまま従っている。
 
 #### `self^` と `def^` は型ではない
 
@@ -3766,17 +3766,17 @@ f^number^, number^ -> string^ ;                  # 型
 #### (2) オブジェクトの構造的な型 → [syntax.obj.structure]
 
 `t^{ dispose : p^self^; }` の形で書く。
-判定は「少なくともこれらのメンバを持つ」。詳細は [syntax.obj.structure]。
+判定は「少なくともこれらのメンバを持つ」。詳細は [syntax.obj.structure] 。
 
 #### (3) 可変長引数 → [syntax.type.variadic]
 
 `...:型` の形で書き、同型可変長を既定とする。
-型を省略した `...` は `any^` になる。詳細は [syntax.type.variadic]。
+型を省略した `...` は `any^` になる。詳細は [syntax.type.variadic] 。
 
 #### (4) yieldable な手続きの型 → [syntax.type.coroutine]
 
 コルーチンの型は `c^{ p^受け取る型 -> 出す型 -> 返り値型 }` と書く。
-席は `->` で区切り、書いた矢印の本数が書いた席の数である。詳細は [syntax.type.coroutine]。
+席は `->` で区切り、書いた矢印の本数が書いた席の数である。詳細は [syntax.type.coroutine] 。
 
 ### 13.7 可変長引数 [syntax.type.variadic]
 
@@ -3823,10 +3823,10 @@ let^ sum = f^ ...:number^ -> number^ {
 }
 ```
 
-`for^ i, x in^ ...` と2変数で受けるのは、[syntax.for.forms]・[syntax.type.destructure] の一般規則
+`for^ i, x in^ ...` と2変数で受けるのは、[syntax.for.forms] ・[syntax.type.destructure] の一般規則
 （複数名は位置で取り出す）をここでも崩さないため。
 `for^ x in^ ...` と単数で書けば、`x` は **要素そのもの** になる
-（[syntax.for.forms]。`...` はテーブルであり、1名の走査は列の値を順に受ける）。
+（[syntax.for.forms] 。`...` はテーブルであり、1名の走査は列の値を順に受ける）。
 
 動的な添字（`...[i]`）は `T|nil^` になる。列の個数が定まらないため、
 範囲外になる可能性を打ち消せない。
@@ -4224,7 +4224,7 @@ return^ { a, b }    # テーブル。確保する
 
 #### 性能
 
-呼び出し規約は [pipeline.bc.call]。直後に分解される形はスタック上を流れ、
+呼び出し規約は [pipeline.bc.call] 。直後に分解される形はスタック上を流れ、
 `divmod` を2000回呼ぶ束縛の確保はゼロである（実測。
 テーブル経路は同じループで1000超を回収する）。
 
@@ -4274,7 +4274,7 @@ Lua の実際はそうではない。`return f()` は多値のまま末尾呼び
 末尾呼び出しを妨げるのは cleanup である（`finally^` が呼び出しの後に走る形）。
 多値とは無関係で、Lua 5.4 の to-be-closed 変数と同じ制約になる。
 
-実装は [pipeline.bc.call]「末尾呼び出しはフレームを再利用する」にある。
+実装は [pipeline.bc.call] 「末尾呼び出しはフレームを再利用する」にある。
 
 #### 分解束縛
 
@@ -4907,7 +4907,7 @@ x fits^ any^|nil^    # 誤り。13.5 により any^ に潰れる
 
 報告しないことと、知らないことは別である。
 到達しない枝が分かることは **最適化の材料** になる
-（[spec.open.unreported]。型が確定した箇所にのみ効く）。
+（[spec.open.unreported] 。型が確定した箇所にのみ効く）。
 
 - 常に真の `fits^` — 偽の側の枝を落とせる
 - 常に偽の `fits^` — 真の側の枝を落とせる
@@ -5002,7 +5002,7 @@ repeat^until^ x fits^ string^ { use(x) }                  # 本体では x は s
 **繰り返しを抜けた後は絞り込まない。** `break^`（[syntax.loop.exit]）はどこからでも抜けられるので、
 何が繰り返しを終わらせたのかが外では分からない。
 
-`to^`・`downto^`・`in^` は条件を持たない。`if^`・`when^` の形（[syntax.for.forms]、[syntax.match]）は
+`to^`・`downto^`・`in^` は条件を持たない。`if^`・`when^` の形（[syntax.for.forms] 、[syntax.match]）は
 `if^` そのものなので元から効く。
 
 #### `nil^` との比較も絞り込む
@@ -5664,7 +5664,7 @@ def^^.helper()   # 01 の 2.3 の段数。入れ子の外側
 
 ##### 型としては書けない
 
-[syntax.type]に `def^` という型は無い。`f^ r:def^ …` は [syntax.type.signature] のとおり誤りであり、
+[syntax.type] に `def^` という型は無い。`f^ r:def^ …` は [syntax.type.signature] のとおり誤りであり、
 それは `self^` が型として書けないのと同じ線である。
 
 ```lhat
@@ -5951,7 +5951,7 @@ let^ R = def^{
 2巡目が本体を推論し、1巡目の仮置きを本物で置き換える。
 
 輪の返り値型も書かなくてよい。**本体を歩く巡は、答えが変わらなくなるまで繰り返す**
-——[pipeline.infer.rounds]。前の巡が推論した型が次の巡の種になり、輪はそこで閉じる。
+——[pipeline.infer.rounds] 。前の巡が推論した型が次の巡の種になり、輪はそこで閉じる。
 
 ##### 推論より先に読まれるものは書かれていなければならない
 
@@ -6366,7 +6366,7 @@ t^{ dispose : p^self^; }
 
 `with^` が要求する「戻り値を持たない `dispose()` を持つ」はこれで表せる。
 
-綴りは [errors.open]と [syntax.obj.self] に従う。
+綴りは [errors.open] と [syntax.obj.self] に従う。
 `dispose` はインスタンスメソッドなので第一引数が `self^` であり、
 返り値がないので `->` を書かない（[syntax.type.empty]）。
 
@@ -6410,7 +6410,7 @@ p^ x:t^ { … }       # 誤り。{ … } がメンバの列挙として食われ
 
 #### 列の側も型を持つ
 
-[syntax.obj]はテーブルを **列と写像の両方** としている。
+[syntax.obj] はテーブルを **列と写像の両方** としている。
 写像の側は名前でメンバを述べるが、列の側も同じく型を持つ。
 
 ```lhat
@@ -7091,7 +7091,7 @@ let^ Derived = Base .. def^{
 
 「基底の基底の実装」に段数で届く読みは無い（[lex.hat.repeat] に理由の全文）。
 要点: 段数スキップはパートの挿入で黙って壊れ、指す先がキーの上書き履歴に依存し、
-[syntax.obj.compose-ambiguous]の明示形——パートを名指す `A.a`——が既にあって挿入にも履歴にも壊されない。
+[syntax.obj.compose-ambiguous] の明示形——パートを名指す `A.a`——が既にあって挿入にも履歴にも壊されない。
 Java/C++ の `super.super` 禁止、Python の明示クラス名と同じ方向である。
 
 ###### `super^` は値である
@@ -7474,7 +7474,7 @@ let^ m = p^ x = self^{ a := 1 } { … }
       | [ 式 ] = 式       # 任意の値のキー
 ```
 
-`[ 式 ] =` は **[lex.comment]が識別子として書けないキー** のためにある。
+`[ 式 ] =` は **[lex.comment] が識別子として書けないキー** のためにある。
 序数でも名前でもないキーを、リテラルの中で指定できる。
 
 ```lhat
@@ -7534,7 +7534,7 @@ let^ t = { (a = 0), (b = "aaaaa") }     # { false^, true^ }
 
 #### 文字列のキーと名前は同じもの
 
-`t.a` と `t["a"]` は同じ入口である（[syntax.obj]、Lua と同じ）。
+`t.a` と `t["a"]` は同じ入口である（[syntax.obj] 、Lua と同じ）。
 したがって `{ ["a"] = 1 }` と `{ a = 1 }` は同じテーブルを作る。
 
 #### キーを伴う要素は位置を消費しない
@@ -7779,7 +7779,7 @@ let^ D = A .. def^{ self^{}, m := f^ -> string^ { return^ "x" } }   # 誤り。�
 
 #### 名前形の合成でも対になる
 
-[syntax.obj.compose-ambiguous]の名前どうしの合成では、具体的なメソッド同士の同名は曖昧になり、
+[syntax.obj.compose-ambiguous] の名前どうしの合成では、具体的なメソッド同士の同名は曖昧になり、
 具体的なフィールド同士の同名は誤りになる。一方、
 **片方が宣言・片方が提供** の組み合わせは衝突ではない。それが宣言の目的である。
 
@@ -7800,7 +7800,7 @@ let^ D = Need .. Give        # 可。順序はどちらでもよい
 一部にだけ適合する実装は誤りになる。宣言を重ねる順序で判定は変わらない。
 両方が宣言のままなら、穴は開いたまま次に渡り、合成自体は正当である。
 
-[syntax.obj.compose-ambiguous]で曖昧になった名前は、宣言を満たす提供には数えない。
+[syntax.obj.compose-ambiguous] で曖昧になった名前は、宣言を満たす提供には数えない。
 宣言をその名前と合成しても要求は未解決のままであり、
 その定義からインスタンスを生成することはできない。
 
@@ -8059,7 +8059,7 @@ typeof^(A.new()) = typeof^(B.new())    # true^
 
 #### 綴りの形
 
-- 序数のメンバ（[syntax.obj]の列側）は名前を持たず、位置のまま並べる — `t^{ number^, string^ }`
+- 序数のメンバ（[syntax.obj] の列側）は名前を持たず、位置のまま並べる — `t^{ number^, string^ }`
 - 名前のメンバはアルファベット順に並べる — ハッシュ表の内部順は書き手の意図でも
   安定でもないため、`.signature` の出力と `typeof^(x) = typeof^(y)` の両方が
   ある1つの順序に頼らずに済むよう、記述子に変換した時点で並べ替える
@@ -8115,7 +8115,7 @@ typeof^(co).signature   # "c^{p^ -> number^ -> number^}"        # 呼んだ答�
 tostring : f^self^ -> string^;
 ```
 
-`start()` や `iterate()` と同じ扱いである（[syntax.sub.coroutine-make]、[syntax.for.forms]、[modules.host.coroutine-ops]）。
+`start()` や `iterate()` と同じ扱いである（[syntax.sub.coroutine-make] 、[syntax.for.forms] 、[modules.host.coroutine-ops]）。
 取り込みを要さず、値を手に入れた時点でその値が持っている。
 [syntax.op.define] の `..` や算術と同じく、[syntax.op.semantic] の判定は組込み型と利用者定義型で同じ形になる
 ——どちらも「`tostring` を持つか」を問うだけである。
@@ -8521,7 +8521,7 @@ ASCII 同士の境界には CRLF 以外の結合が無く、Unicode の表引き
 衝突しない場所にハット綴りを置く理由も無い。置けば
 **同じ一つのメンバに書き方が2つある**ことになり、書き手はどちらを書くか
 選ばされ、読み手は違いを探すことになる。コルーチンの `start` `resume`
-`dispose`（[syntax.with.coroutine]、[syntax.sub.coroutine-make]）に初めからハット綴りが無いのと同じ線である。
+`dispose`（[syntax.with.coroutine] 、[syntax.sub.coroutine-make]）に初めからハット綴りが無いのと同じ線である。
 
 ##### `tostring` だけは両方の綴りを持つ
 
@@ -9081,7 +9081,7 @@ n.bitat(2)                   # true^
 (3.0).isinteger()            # true^
 ```
 
-記号（`&` `|` `~` `<<` `>>`）は使わない。理由は [lex.op.small]。
+記号（`&` `|` `~` `<<` `>>`）は使わない。理由は [lex.op.small] 。
 優先順位は [syntax.op.precedence] の (6)。
 
 #### 被演算子は整数の値
@@ -9191,7 +9191,7 @@ let^ test = p^t:Transition -> bool^{ return^ t.condition() }
 - **本体の中で `var^` した名前**。入れ子のブロック（`do^{ … }`）や
   `for^`・`with^` が作るものも本体の内側である
 - **外側の名前は不可。** `$^` などの指定子で明示しても同じ。
-  [lex.scope]の指定子は **探し始める場所** を言うだけであり、書ける場所を増やさない
+  [lex.scope] の指定子は **探し始める場所** を言うだけであり、書ける場所を増やさない
 - **入れ子の `f^` は自分の本体を基準にする。** 外側の `f^` が作った名前も、
   内側から見れば外である
 
@@ -9224,7 +9224,7 @@ L^ には参照渡しの引数がそもそも無いので、その誤解の余�
 | 軸 | 問い | 節 |
 | --- | --- | --- |
 | 可変性 | この **名前** は書き替えてよいか | [syntax.stmt.let] |
-| 純粋性 | この本体は **誰の** 名前・テーブルを触っているか | [syntax.sub.kinds]、[syntax.sub.table-write] |
+| 純粋性 | この本体は **誰の** 名前・テーブルを触っているか | [syntax.sub.kinds] 、[syntax.sub.table-write] |
 | 所有 | この **テーブル** は機械のものか、ホストのものか | [modules.host.machine], [modules.hostdata] |
 
 判定は **可変性・純粋性・所有** の順に行う。
@@ -9272,7 +9272,7 @@ let^ f = f^ t:t^{ x:number^ } -> number^ {
 
 **中身が何も変えられない値は全部と数える。** 数・文字列・真偽値・`nil^`・enum・
 サブルーチン（捕捉したものを変えられるのは `p^` だけで、`f^` は `p^` を呼べない）・
-封印された表・スタックに写されるホスト値（[modules.hostvalue]。中身を共有する Box は除く）・
+封印された表・スタックに写されるホスト値（[modules.hostvalue] 。中身を共有する Box は除く）・
 `f^mutable^self^` のメンバを持たないホストデータ（[modules.hostdata]）がそれにあたる。
 誰が作ったかで違いが出ないものだからである。
 
@@ -9331,7 +9331,7 @@ for^ i in^ xs {
 
 所有権や線形型は要らない。**「返すものは新しい」を署名に持たせるだけで足りる。**
 印は **結果の席** に書く — 約束の中身は答えの性質であって、本体の性質ではない。
-`mutable^self^`（[syntax.sub.mutable-self]、入力の席の許可）と対になる、出力の席の約束である。
+`mutable^self^`（[syntax.sub.mutable-self] 、入力の席の許可）と対になる、出力の席の約束である。
 
 ```lhat
 let^ pair = f^ a:number^ -> fresh^t^{ number^[] } { return^ {a, a} }
@@ -9809,7 +9809,7 @@ L^ に要らないのは、[syntax.sub.yieldable] が `yield^` の有無から
 | `start()` | `X^ -> Y\|Ret;` | 先頭から本体を走らせる（[syntax.sub.yieldable]） |
 | `resume(v)` | `X^ R -> Y\|Ret;` | 続きを走らせ、`v` を送る（[syntax.sub.yield-both]） |
 | `resume()` | `X^ -> Y\|Ret;` | R が無いときの同じもの。送るものが無い（[syntax.type.coroutine]） |
-| `dispose()` | `X^;` | 残っている後始末を走らせて終わらせる（[syntax.finally.coroutine]、[syntax.with.coroutine]） |
+| `dispose()` | `X^;` | 残っている後始末を走らせて終わらせる（[syntax.finally.coroutine] 、[syntax.with.coroutine]） |
 | `iterate^()` | `f^ -> c^{ X^R -> Y -> Ret };` | 自分自身（[syntax.for.forms]） |
 | `done()` | `f^ -> bool^;` | 本体が終端まで走ったか |
 | `started()` | `f^ -> bool^;` | `start()` が既に走ったか |
@@ -9874,7 +9874,7 @@ c.resume(nil^)               # nil^。同上
   `resume` の1つの呼び出し地点が毎回持たなければならない値の一部にあたる
 
 **「機械が実際に `nil^` を渡すから」は理由にならない。** 返り値なしの `p^` も
-本体の末尾で同じものを渡している（[pipeline.bc]の呼び出し規約）。差は
+本体の末尾で同じものを渡している（[pipeline.bc] の呼び出し規約）。差は
 **誰がその値を見られるか** にある——普通の呼び出しは [syntax.type.empty] が値として使う道を
 全位置で塞ぐのに対し、`resume` は受け取ってしまう。`log(m) ?? 0` が無意味で
 `c.resume() ?? 0` が意味を持つのはそのためである。
@@ -10844,11 +10844,11 @@ for^v in^t { print($"t array {index^}:{v}") }
 登録すれば `for^ x in^ value` はその歩みを回す。登録していない型を
 `in^` に渡すのは、下記「`in^` の右は静的にも問う」のとおり誤りになる
 ——ホストデータはメンバの引き方だけがテーブルであり、裏に歩ける
-テーブルは無い。登録の作法は [modules.hostdata]。
+テーブルは無い。登録の作法は [modules.hostdata] 。
 
 判定は [syntax.op.semantic] の構造的な規則そのままである。
 「`iterate^` を持つか」を問うだけで、特別な標識も継承関係も要らない。
-`start`、`resume`、`dispose` を組込みで持つ扱い（[syntax.with.coroutine]、[modules.host.coroutine-ops]）と同じ位置づけになる。
+`start`、`resume`、`dispose` を組込みで持つ扱い（[syntax.with.coroutine] 、[modules.host.coroutine-ops]）と同じ位置づけになる。
 
 ###### 綴りはハット付き
 
@@ -11043,7 +11043,7 @@ var^ k, v = w.start() ?? (nil^, nil^)
 
 **密な部分を添字順に先に走査し、残りは順序を定めない。**
 
-[syntax.obj]がテーブルを列と写像の両方にしているため、列の側には守る価値のある順序がある。
+[syntax.obj] がテーブルを列と写像の両方にしているため、列の側には守る価値のある順序がある。
 ハッシュ部の順序は実装の都合であり、約束しない。
 
 ##### 名前の数が走査の仕方を選ぶ
@@ -11201,7 +11201,7 @@ for^ var^ i = 1, var^ j = 2  # 誤り。次の束縛は次の for^ に書く
 
 `elseif^` `else^` の節からも焦点が見える。
 
-**繰り返しではないため、[syntax.loop]の節（`prolog^` `main^` `epilog^` など）は付けられない。**
+**繰り返しではないため、[syntax.loop] の節（`prolog^` `main^` `epilog^` など）は付けられない。**
 
 ##### 式の形もある (for^ if^ 式、for^ do^ 式)
 
@@ -11239,7 +11239,7 @@ let^ i = for^let^x, y = f1()
 **`do^:` の後に `when^` は書けない。** [syntax.match.semicolon] のとおりパターンマッチを開くのは
 主語の後の `:` であり、綴りはそれ1つである。
 
-[syntax.match]のパターンマッチも同じ形を持つ。
+[syntax.match] のパターンマッチも同じ形を持つ。
 
 #### パターンマッチ
 
@@ -11253,7 +11253,7 @@ for^ expr { when^ 0: stats other^: stats }
 for^ expr: when^ 0: expr other^: expr;
 ```
 
-[syntax.match]で定める。[syntax.type.fits] の絞り込みを先に決めたことで、その上の糖衣に収まった。
+[syntax.match] で定める。[syntax.type.fits] の絞り込みを先に決めたことで、その上の糖衣に収まった。
 
 ### 16.4 方向は推論しない［重要］ [syntax.for.direction]
 
@@ -11716,7 +11716,7 @@ when^ P, Q:         →  展開(P) or^ 展開(Q)
 other^:             →  else^
 ```
 
-**残りは [syntax.type.fits] と [errors.exhaustive]がそのまま担う。**
+**残りは [syntax.type.fits] と [errors.exhaustive] がそのまま担う。**
 
 - **絞り込みが効く** — `when^ fits^ ParseError.Syntax:` の節の中で主語は
   その種別に狭まり、宣言されたフィールドが見える（[errors.fits.form]）
@@ -11884,7 +11884,7 @@ lhat_register_annotation_signature(program, "export",
   C# の `AttributeUsage` と同じ役目
 - **何個書けるか** — `LHAT_ANNOTATION_FILEUNIQUE` を足すと、そのファイルに
   1つまでになる。2つ目はそれが立っている位置で弾かれる
-- **引数の形** — [errors.open]の型文法をそのまま使う。個数と種別を検査器が見る。
+- **引数の形** — [errors.open] の型文法をそのまま使う。個数と種別を検査器が見る。
   `string^` は文字列リテラルと裸の名前の両方を受ける。
   言わなければ引数について何も問わない
 
@@ -12156,7 +12156,7 @@ enum^ Mode {
   確かめなかった。列が `nil^` の位置を持つようになり（[syntax.obj.count]）、`any^` の列を
   型付きの焦点で回すと `nil^` の位置で型エラーになっていた。合わない要素は
   飛ばし、`index^` は本当の位置を数え続ける
-- **[syntax.obj.count]・[syntax.obj.table-ops]（2026-10-03）: 列は `nil^` を位置として持つ。** 列の途中や末尾に
+- **[syntax.obj.count] ・[syntax.obj.table-ops]（2026-10-03）: 列は `nil^` を位置として持つ。** 列の途中や末尾に
   `nil^` を書いても縮めず、末尾の次への `nil^` は足す（[pipeline.bc.table]）。縮めるのは
   `pop^`・`remove^`・`clear^` と新設の `resize^` だけ。以前は `nil^` で列が
   途切れ、未使用の位置を挟むデータの後半がハッシュ側に落ちていた。`count^` が
@@ -12166,7 +12166,7 @@ enum^ Mode {
   写しとして運ぶ（[modules.hostdata.base]）ので、std.thread も std.task も捕捉のある閉包を
   受け取る。印を要求するホストも無く、約束の使い道が残っていなかった。
   語・検査・型の印・実行時記述子の印をまとめて外した。
-- **[syntax.type.variadic]・[syntax.type.tuple]（2026-09-22）: タプルの `...` はどこにでも書け、固定引数も埋める。**
+- **[syntax.type.variadic] ・[syntax.type.tuple]（2026-09-22）: タプルの `...` はどこにでも書け、固定引数も埋める。**
   タプルの `...` もテーブルと同じく「末尾・可変長の枠だけ」としていたが、
   それはテーブルの長さが走るまで分からないことから来た制約で、幅が型で
   決まるタプルには要らなかった。`g(1, f()...)`・`g(f()..., 1)` が書ける。
@@ -12175,7 +12175,7 @@ enum^ Mode {
   ものを展開する、の3つを別の文で言い、タプルを含む呼び出しの引数の数の
   誤りは位置を数えていることを添える。実行時のタプル展開はコンパイラが
   普通の引数に並べる形に置き換わり、機械からその経路が消えた
-- **[syntax.obj.number-consts]・[syntax.obj.abs]（2026-09-22）: `pi`・`tau`・`e` は `std.math` のもの。**
+- **[syntax.obj.number-consts] ・[syntax.obj.abs]（2026-09-22）: `pi`・`tau`・`e` は `std.math` のもの。**
   `number^` の静的メンバから外し、`std.math.pi` などとした。`number^` に残るのは
   表現の事実である `inf`・`nan` だけ。登録した定数は今のところ実行時のメンバ
   読みになり、`number^.pi` にあったコンパイル時の畳み込みを失うが、これは
@@ -12226,7 +12226,7 @@ enum^ Mode {
   呼び出しが答える型を取る一語。型の位置・式の位置とも。yieldable は
   `c^{ … }` のまま、返り値なしは誤り。`Argument[i]`/`Return[i]` の分解は採らない
 
-- **[syntax.type.fits]・[syntax.obj.typeof]（2026-09-03）: 委譲先のホスト型は記述子に写さない。**
+- **[syntax.type.fits] ・[syntax.obj.typeof]（2026-09-03）: 委譲先のホスト型は記述子に写さない。**
   包みの `typeof^` はホストの全メンバを列挙せず `t^{ … } & godot.Node` と
   印字し、`fits^` の実行時判定は委譲の連鎖上の値をタグで問う（[modules.hostdata.base]）
 
@@ -12338,7 +12338,7 @@ enum^ Mode {
   が「呼び出し元へ返せない誤りの一族」を与えたので、合併は書いた本人の
   ところで止まり、その上のどの署名にも現れない。止まる形は演算子として
   持たず、`catch^ panic^ it^` と書く（[syntax.with.no-fail] の `panic^` を `catch^` の
-  右辺にだけ許した——[errors.catch.panic]。値を答えず戻ってこないので、値の
+  右辺にだけ許した——[errors.catch.panic] 。値を答えず戻ってこないので、値の
   求められる位置に置いても穴が空かない）。対を持つ言語
   （Kotlin・C#・Swift・Go）と分かれるのは、どちらの綴りも失敗の扱いを
   書かせないためである
@@ -12354,7 +12354,7 @@ enum^ Mode {
   強くし（優先順位表の 7 と 8 を入れ替え）、`x as^? T ?? 0` が括弧なしで
   書けるようにした——Kotlin・Swift と同じ順序である
 
-- **[syntax.obj.number-consts]・[syntax.obj.abs]（2026-08-23）: スカラー数学。** LOVE2D バインドの
+- **[syntax.obj.number-consts] ・[syntax.obj.abs]（2026-08-23）: スカラー数学。** LOVE2D バインドの
   「sin/cos/sqrt/abs/min/max/pi が無い」に対し、Lua の math を写さず
   分けた——自分ひとつの形を読む `abs`/`sign`/`clamp` は `number^` の
   メンバ、定数は `number^.pi/tau/e/inf/nan`（[syntax.obj.typeof] が予告した静的メンバの
@@ -12519,7 +12519,7 @@ enum^ Mode {
   `let^`/`var^` を導入子とした（[syntax.stmt.define]）。その後 `let^` と `var^` に
   再代入の可否を割り、名前の側だけを見る3本目の軸とした（[syntax.stmt.let]）
 - **波括弧の中の綴り**: 5種の波括弧で `=` と `:=` の扱いが3通りに割れていた。
-  すべて両方を読み、意味の差を持たせず、推奨形を `=` に揃えた（[syntax.stmt.define]、[syntax.obj.keys-equals]）
+  すべて両方を読み、意味の差を持たせず、推奨形を `=` に揃えた（[syntax.stmt.define] 、[syntax.obj.keys-equals]）
 - **多値返却**: 一度は廃止（波及点4つを理由に）→ 名指せる型 `(A, B)` として
   復活（[syntax.type.tuple]）。波及の源は「多値であること」ではなく「名指せないこと」だった。
   これに伴い `unpack^` は廃止、分解束縛の印も不要になった（[syntax.type.destructure]）、
@@ -12527,7 +12527,7 @@ enum^ Mode {
   手駆動だけに残していた組テーブルの応答も後に廃止し、
   手駆動もタプルで答える形に統一した（[syntax.for.forms]）。
   `catch^` に代替のタプルを渡せない穴は
-  値としてのタプルリテラルで埋めた（[syntax.type.tuple]、[errors.catch.ignore]）。
+  値としてのタプルリテラルで埋めた（[syntax.type.tuple] 、[errors.catch.ignore]）。
   括弧の読み方が型と値で揃い、`return^ (a, b)` は構文解析の時点で
   `return^ a, b` に畳まれるので、[syntax.sub.expr-body] の暗黙の返却も規則なしで通る。
   最後にホスト境界へ広げ、C の関数も多値を答え、`LhatRunResult` も
@@ -12539,10 +12539,10 @@ enum^ Mode {
   幅が実行時に決まるタプルは席を予約できずヒープに置くしかなく、
   それはテーブルそのものだからである
   代替を置く形は `catch^` だけに入れていたが `??` にも揃え、
-  同じ幅のタプル同士の合併を位置ごとに畳むようにした（[syntax.op.default]、[syntax.type.tuple]）——
+  同じ幅のタプル同士の合併を位置ごとに畳むようにした（[syntax.op.default] 、[syntax.type.tuple]）——
   これで走査を手で駆動しても答えを束縛できる（[syntax.for.forms]）。
   タプルが名前に束縛できないことで [syntax.match.no-destructure] の論拠がむしろ強まったので、
-  分解パターンと入れ子分解は保留を畳んで設けないことにした（[syntax.match.no-destructure]、[syntax.type.destructure]）
+  分解パターンと入れ子分解は保留を畳んで設けないことにした（[syntax.match.no-destructure] 、[syntax.type.destructure]）
 - **`for^` の焦点**: 導入子を書かせる形 → 書かせない形 → `from^` が導入する形。
   機械が進める焦点に `var^`/`let^` のどちらを書かせても字面が嘘をつくため（[syntax.for.from]）
 - **2つの綴りは名前として一つ（[syntax.obj.tostring-hat]）**: 「素のテーブル以外では同じ一つの
@@ -12560,7 +12560,7 @@ enum^ Mode {
   バインディングで実際に出た。止まらない走査は費用でもあり、
   1本の `f^` の検査が 94ms かかっていた
 - **`is^` と `fits^`**: `is^` が適合の判定だったが、同一性を問う演算子に改め、
-  適合は `fits^` に移した（[syntax.type.fits]、[errors.runtime.traceback]）
+  適合は `fits^` に移した（[syntax.type.fits] 、[errors.runtime.traceback]）
 - **`typeof^`**: 値を走査してリフレクションを返す、から静的解決に反転（[syntax.obj.typeof]）。
   実行時のテーブルは純粋なデータであり、走査して型を組み立てる方向自体が誤り
 - **比較**: 個別の `op^` では定義できず利用者定義型が順序に参加できなかった。
@@ -12570,7 +12570,7 @@ enum^ Mode {
 - **`new^` → `new`**: ハットは名前の一部（[lex.hat.repeat]）と定めた結果、
   `def^` の上にしか現れない構成子にハットは要らなくなった（[syntax.obj.new]）。
   逆に素のテーブルに生える組込みは `tostring^` `iterate^` とハットを付けた
-  （[syntax.obj.tostring-hat]、[syntax.for.forms]）— 書き手の名前空間を処理系が使わないため
+  （[syntax.obj.tostring-hat] 、[syntax.for.forms]）— 書き手の名前空間を処理系が使わないため
 - **`rawsignature^`** は提案のみで撤回。`typeof^(x).signature` に一本化（[syntax.obj.typeof]）
 - 実装が追いついていなかったものを順に埋めた: 比較の連鎖（[syntax.op.precedence] の (5)）、
   `?.` `?[` `?(`（[syntax.op.nil-safe]）、分解束縛（[syntax.type.destructure]）、`fits^` の一般化（[syntax.type.fits]）、
@@ -12611,7 +12611,7 @@ enum^ Mode {
   インスタンスを指す（[syntax.type.self]）。注釈にも同じ形を書ける（[syntax.obj.structure]）
 - 型の書き出しが輪を `Self^`（段数付き）で畳むようにした（[syntax.type.self]）。
   後退辺を `t^{}` に潰していたのをやめ、受け手も `self^` と書くようにしたので、
-  `typeof^` の答えはそのまま型注釈として読み戻せる（[syntax.obj.typeof]、[modules.host.import]）
+  `typeof^` の答えはそのまま型注釈として読み戻せる（[syntax.obj.typeof] 、[modules.host.import]）
 - `closed^` を足した（15.13）。前置したサブルーチンは外の名前を1つも
   捕捉せず、印は型の一部で `closed^p^…;` は `p^…;` に適合する。
   別の機械で本体を走らせる形（std.thread の spawn）が、渡す場所ではなく
@@ -12625,7 +12625,7 @@ enum^ Mode {
   止まらないため。`last^`・`epilog^` は走らない（脱出ではない）
 - `await^` を追加（[syntax.sub.await-done]）。委譲（[syntax.sub.await]）と同じ型付け・同じ命令であり、
   中断点が読んで分かる語を充てたものである。待てるのはコルーチン——[syntax.sub.continuation] のとおり
-  `Task` にあたる型は持たない。`async` の印は [syntax.sub.yieldable]・[syntax.sub.no-contagion] により要らない。
+  `Task` にあたる型は持たない。`async` の印は [syntax.sub.yieldable] ・[syntax.sub.no-contagion] により要らない。
   誰がいつ再開するか（スケジューラ）は言語の外に置く
 - コルーチンを作るサブルーチンの型を明文化した（[syntax.type.coroutine]）。結果はそのコルーチンで
   あり、[syntax.type.signature]（結果は呼び出しが答えるもの）と [syntax.sub.no-contagion]（呼び出しはコルーチンを返す）の
@@ -12693,12 +12693,12 @@ enum^ Mode {
   不在なら右辺も評価しない。`?:=` は同じ形の素の代入で、こちらが埋めるのは
   「`:=` は鍵が無ければ作ってしまう」という別の穴である。節番号は
   [syntax.stmt.multi-target] を「書き先は複数書ける」と取り合っていたので付け直した
-- 位置の型に個数を書けるようにした（[syntax.obj.structure-repeat]「同じ型が続くなら個数を書ける」新設）。
+- 位置の型に個数を書けるようにした（[syntax.obj.structure-repeat] 「同じ型が続くなら個数を書ける」新設）。
   `t^{ number^[9] }` は書き下した9つと同じ型であり、幅部分型がそのまま働くので
   個数は下限になる。`t^{}` にも `t^{ T[] }` にも書けない「最低9個」がこれで書ける。
   分けて書いてよく（`number^, number^[2]` は `number^[3]`）、読み返した綴りは
   3つ以上を畳んだ形に揃う。`[0]` は書いた型が消えるので誤り
-- 絞り込みが整数の範囲も覚えるようにした（[syntax.type.fits-word]「整数の範囲も絞り込む」新設）。
+- 絞り込みが整数の範囲も覚えるようにした（[syntax.type.fits-word] 「整数の範囲も絞り込む」新設）。
   生まれるのは両端を書き下した `for^` と、書き下した整数との比較の2つだけ。
   [syntax.obj.structure] が「少なくともこれらを持つ」である以上、範囲が宣言された位置から
   出なければ [errors.runtime.index] の `nil^` は起こりえない。範囲は型の一部ではなく
@@ -12755,7 +12755,7 @@ enum^ Mode {
   書けない。C# の属性が同じ制約に同じ理由で辿り着いている。
   `@` は 9596 で中間値参照を撤回して以来空いていた綴りである
 
-- **resume が多値を送れるようになった**（[syntax.type.coroutine]・[syntax.sub.yield-both]・[syntax.sub.await]）。[syntax.type.tuple] が
+- **resume が多値を送れるようになった**（[syntax.type.coroutine] ・[syntax.sub.yield-both] ・[syntax.sub.await]）。[syntax.type.tuple] が
   タプルを入れたとき出す側（`yield^ a, b`）だけ多値になり、送り返しは
   「resume が送るのは1つの値」のまま取り残されていた。`R` もタプルに
   でき、`resume(1, 2)` の引数の数は `R` の幅、受けるのは
@@ -12772,7 +12772,7 @@ enum^ Mode {
   束縛だけだからである
 
 - **walk の K・V を言えない for^ in^ は、strict では焦点の注釈を求める**
-  （[syntax.for.forms]、[pipeline.strict.per-unit]③ の焦点版）。計算キーだけのテーブルの走査は従来 K・V が
+  （[syntax.for.forms] 、[pipeline.strict.per-unit]③ の焦点版）。計算キーだけのテーブルの走査は従来 K・V が
   unknown のまま静かに流れていた（ユーザー指摘 — 実行時エラーで初めて
   露見していた）。注釈 `for^ k:K, v:V in^ t` が型を言えば従来どおり歩け、
   以降の規則（可変長席の拒否など）にも型が見える。テーブル型の側で
@@ -12824,7 +12824,7 @@ enum^ Mode {
   受けは `_^` のみ（名前受け・再代入受けは検査の誤り）。嘘の入れ物という
   概念ごと消えた
 
-- **幅の違う合併は nil^ 延長で畳む**（[syntax.type.tuple]・[syntax.type.coroutine]）。同幅タプルの位置畳みを
+- **幅の違う合併は nil^ 延長で畳む**（[syntax.type.tuple] ・[syntax.type.coroutine]）。同幅タプルの位置畳みを
   入れたとき（S48）、幅違いが「畳まない」まま取り残され、コルーチンの
   union(Y, T) と幅の違う複数 `return^` の合併が、[syntax.type.tuple] 自身が禁じる
   `(A, B)|string^` 型の——書き手には書けず受ける手段も無い——型を内部で
@@ -12833,7 +12833,7 @@ enum^ Mode {
   実際に `nil^` を置く。判別できる腕（誤り・`nil^`）は従来どおり畳まずに
   残る——`(K, V)|nil^` の走査駆動と `(A, B)|SomeError` の try^ は不変
 
-- **束縛の右辺は旧世界を一様に読む**（[syntax.stmt.old-world]・[syntax.sub.this]）。[syntax.stmt.old-world] を入れたとき、
+- **束縛の右辺は旧世界を一様に読む**（[syntax.stmt.old-world] ・[syntax.sub.this]）。[syntax.stmt.old-world] を入れたとき、
   外側参照になるのは非遅延の読みだけで、遅延本体には自己参照が残っていた
   ——指示が足りなかった箇所である。右辺のどこでも（遅延本体の捕捉を
   含めて）その文が束縛する名前は旧束縛を指すことに統一し、**名前で書く

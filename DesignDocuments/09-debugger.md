@@ -105,7 +105,7 @@ LhatValue     lhat_machine_fault_value(const LhatMachine *);
 出荷ビルドはその分岐一つも払わない。`LHAT_WITH_DEBUGGER`（CMake option、
 既定 ON）を OFF にすると、フック・監視者（[debug.inspect.write.birth]）・内観と評価（[spec.member-cache]）が
 前処理で消え、実行ループの判定ごと無くなる——GDScript のリリースビルドが
-検査を消すのと同じ形である。フォルトのトレースバック（[errors.runtime.traceback]の3 API）は
+検査を消すのと同じ形である。フォルトのトレースバック（[errors.runtime.traceback] の3 API）は
 デバッガではないので残る。ノブは LhatMachine の形を変えるため、生成ヘッダ
 （version.h）に載る。`LHAT_BUILD_DAP` はこのノブを要求する。
 
@@ -562,7 +562,7 @@ lhat: dap listening on 51234
   書き戻しは setVariable。
 - 全 machine 対応（[debug.dap.machines]）。machine の誕生の観測・全台停止・受信スレッド。
   D7 閉鎖、pause の覗き見は受信スレッドに置き換え。
-- パスの写像（[debug.dap.paths]、`DapPathMap`）。仮想ファイルシステムのホスト（lhatove）
+- パスの写像（[debug.dap.paths] 、`DapPathMap`）。仮想ファイルシステムのホスト（lhatove）
   のための editor↔unit の両方向解決。
 - `LHAT_WITH_DEBUGGER`（2026-08-31）。出荷ビルドがデバッガを前処理で消す
   ノブ。トレースバックは残る——フォルト報告はデバッガではない。

@@ -192,7 +192,7 @@ Godot のクラスのメソッドはほとんどが継承したものなので�
 
 ### `import^` の根から先の読みも地点である
 
-本体の中で `godot.X` と書くと、`L^.modules` から段ごとに読む（[modules.host.import]、
+本体の中で `godot.X` と書くと、`L^.modules` から段ごとに読む（[modules.host.import] 、
 根は生きた別名）。鍵はどれも書かれた名前なので、どの段も `GETMEMBER` の地点になる。
 `L^.modules` は単位が登録されると版が上がり、その時は正しく外れる。
 その下の表はホストの共有の表なので、当たり続ける。
@@ -462,8 +462,8 @@ upvalue を閉じる処理、確保を伴う命令（クロージャ・表・イ
 
 ## 改定履歴（要約）
 
-- **起こした（2026-10-10）。** [pipeline.bc]にあった特殊化（[pipeline.bc.generic] の方針・[pipeline.bc.generic]・
-  [pipeline.bc.registers], [pipeline.bc.overload]・5.14・[pipeline.decide.cheap]）と、改定履歴にだけあった [pipeline.bc.generic]〜改7 を
+- **起こした（2026-10-10）。** [pipeline.bc] にあった特殊化（[pipeline.bc.generic] の方針・[pipeline.bc.generic] ・
+  [pipeline.bc.registers], [pipeline.bc.overload] ・5.14・[pipeline.decide.cheap]）と、改定履歴にだけあった [pipeline.bc.generic] 〜改7 を
   まとめた。後者は本文（[pipeline.strict.per-unit], [pipeline.repl]）に起こした。命令の意味は 03 に残る
 
 - **7（2026-10-07）: copy-and-patch の JIT を試作した。** 方式の選定は、

@@ -1,5 +1,5 @@
 // L^ (lhat) -- LSP server tests: the syntax tree as JSON (ast_json.c), which
-// is what lhat/ast answers with. 06§4 defines the shape.
+// is what lhat/ast answers with. [editor.ast] defines the shape.
 
 #include <stdlib.h>
 #include <string.h>
@@ -120,7 +120,7 @@ static void test_shape(void)
     tree_dispose(&t);
 
     // Nothing about how to draw it: the editor decides direction, containers
-    // and wrapping (06§5), so none of that may leak into the reply.
+    // and wrapping ([editor.map]), so none of that may leak into the reply.
     LHAT_TEST("the reply says nothing about layout");
     tree_of(&t, "if^ x { f() }\n");
     char *printed = cJSON_PrintUnformatted(t.json);
@@ -177,7 +177,7 @@ static void test_spans(void)
 {
     Tree t;
 
-    // 06§4.2: the left edge comes from the subtree, so a call reaches back
+    // [editor.ast.span]: the left edge comes from the subtree, so a call reaches back
     // over its callee even though the node itself begins at the '('.
     LHAT_TEST("a span covers the whole construct");
     tree_of(&t, "let^ v = f(1, 2)\n");

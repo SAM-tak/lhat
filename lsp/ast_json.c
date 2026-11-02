@@ -1,6 +1,6 @@
 // L^ (lhat) -- LSP server: the syntax tree as JSON, for lhat/ast.
 //
-// 06§4. Structure, positions and comments -- nothing about how any of it
+// [editor.ast]. Structure, positions and comments -- nothing about how any of it
 // should be drawn. Which way a construct runs, what is a container and what is
 // a leaf, where a list wraps: all of that is the editor's, so that trying a
 // different layout does not mean rebuilding the language server.
@@ -403,7 +403,7 @@ static bool fill_node(cJSON *out, const LhatNode *node, const Layer *layer)
 
 static cJSON *node_to_json(const LhatNode *node, const Layer *layer)
 {
-    // 06§4.2: `start` comes from the subtree because an infix or postfix
+    // [editor.ast.span]: `start` comes from the subtree because an infix or postfix
     // node is written starting at its own operator, while `end` is the node's
     // own -- the token that closes a construct belongs to no child.
     cJSON *out = open_node(lhat_node_kind_name(node->kind),
@@ -454,7 +454,7 @@ static cJSON *node_to_json(const LhatNode *node, const Layer *layer)
 }
 
 #if LHAT_WITH_COMMENTS
-// 06§4.1: a node of its own kind spanning the markers, listing the
+// [editor.ast.protocol]: a node of its own kind spanning the markers, listing the
 // statements it holds the way a block lists its own.
 static cJSON *disabled_to_json(const LhatComment *comment, const Layer *layer)
 {

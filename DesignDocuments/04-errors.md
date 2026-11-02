@@ -4,7 +4,7 @@
 表現の形・伝播の記法・受け取り損ねの検出を本文書に委ねた。ここで決める。
 
 節番号のうち「02 の」「01 の」と前置きしたものは他文書を指す。
-未決事項には `E` を冠して [errors.open]にまとめる。
+未決事項には `E` を冠して [errors.open] にまとめる。
 
 ---
 
@@ -122,7 +122,7 @@ errordef^ ParseError {
 IOError.NotFound  <:  IOError  <:  error^
 ```
 
-**種別が型であることが本章の要になっている。** [syntax.repl]と [pipeline.open]がこれに乗る。
+**種別が型であることが本章の要になっている。** [syntax.repl] と [pipeline.open] がこれに乗る。
 
 種別の集合は **1段** であり、入れ子は設けない。
 名前が長くなる問題は階層ではなく **名前空間** の話であり、誤りに限らない。
@@ -342,7 +342,7 @@ localerror^.CastFailure     # 11.6改3。as^ が外れたときの誤り
 
 #### 「誤り」は両方を指す
 
-[errors.catch]・[errors.try]・[syntax.stmt.no-bare-expr] の「誤り」は、以降 `error^|localerror^` の意味である。
+[errors.catch] ・[errors.try] ・[syntax.stmt.no-bare-expr] の「誤り」は、以降 `error^|localerror^` の意味である。
 `catch^` はどちらも受け、`catch^:` の `it^` は両方の合併になる。
 演算子の側に分岐は無い——**`try^` が一方を拒むだけ**である。
 
@@ -376,7 +376,7 @@ p^ {
 `return^ { v = try^ … }` のように**内側に紛れる**形も落ちる。走査は合併・
 タプルの位置・`t^{}` のフィールド・サブルーチンの結果まで潜る。
 
-ただし **`def^`・誤りの種別・ホスト型は原子として扱う**（[errors.kind.nominal]、[syntax.obj.name]）。
+ただし **`def^`・誤りの種別・ホスト型は原子として扱う**（[errors.kind.nominal] 、[syntax.obj.name]）。
 潜れば `cause` に行き当たり、[errors.kind.made] のとおりそれは両方の族を受けるので、
 **すべての誤り種別が「伝播禁止に触れている」ことになって何も返せなくなる**。
 
@@ -390,13 +390,13 @@ p^ {
 
 #### `finally^` との関係［補足］
 
-[errors.cleanup]が既に同じ性質を持つ枠を1つ持っている——`finally^` の中で受け取った
+[errors.cleanup] が既に同じ性質を持つ枠を1つ持っている——`finally^` の中で受け取った
 誤りは外へ伝播させる手段がない。**そこでは位置の性質だったものを、
 ここでは種別の性質にした**。新しい概念ではない。
 
 #### 逃げ道は連鎖ひとつ
 
-[errors.chain]の `cause` に包んで返すことが、**伝播禁止の誤りを解決する唯一の
+[errors.chain] の `cause` に包んで返すことが、**伝播禁止の誤りを解決する唯一の
 正規の出口**である。自分の誤りに包むことが「その場で解決した」ことであり、
 原因は残る。
 
@@ -435,7 +435,7 @@ f^ divmod(a:number^, b:number^) -> (number^, number^)|DivError;
 c^{ f^-> (K, V)}               # テーブルの走査。resume は (K, V)|nil^
 ```
 
-**返しうる誤りを署名に書けることが [errors.exhaustive]を成り立たせている。**
+**返しうる誤りを署名に書けることが [errors.exhaustive] を成り立たせている。**
 Zig の error set にあたるものが、既にある記法だけで表せる。
 
 ### 3.2 略記を設けない [errors.fallible.no-shorthand]
@@ -547,7 +547,7 @@ g(f() catch^ 1, 2)            # 引数2つ? 引数1つ?
 
 右辺に書けるのは **`try^ it^`** である。`it^` は誤りだけの型なので、
 `try^` はそれを必ず外へ渡し、値を答えない。したがって
-**`e catch^ try^ it^` は `try^ e` と同じ動きをする**。[errors.try]の前置の `try^` は、
+**`e catch^ try^ it^` は `try^ e` と同じ動きをする**。[errors.try] の前置の `try^` は、
 これを1語で書く記法である。
 
 ### 4.2 誤りの名前は `it^` [errors.catch.it]
@@ -576,7 +576,7 @@ let^ n = parse(s) catch^ for^ it^: when^ fits^ ParseError.Eof: 0 other^: try^ it
 
 `other^` の中の `it^` は、前の選択肢が取らなかった種別に絞り込まれている
 （[syntax.match.form]）。`try^ it^` はそれを外へ渡して値を答えないので、全体の型は
-成功側と代替値だけになる。`panic^` にはならない（[errors.catch.panic]との違い）。
+成功側と代替値だけになる。`panic^` にはならない（[errors.catch.panic] との違い）。
 
 外側を `try^` で包み、残りを値のまま返しても同じ動きになる。
 前置の `try^` は単項で `catch^` より強いので（[errors.catch.precedence]）、括弧が要る。
@@ -712,7 +712,7 @@ prolog^  →  pre^  →  first^  →  main^  →  catch^  →  last^  →  epilo
 #### `try^` は書く
 
 腕を書いただけでは何も捕まらない。**どの式が誤りを投げうるかは、
-書かれた `try^` が言う**。[errors.try]の `try^` の意味は変わらない——変わるのは
+書かれた `try^` が言う**。[errors.try] の `try^` の意味は変わらない——変わるのは
 行き先だけであり、腕があればその腕へ、無ければ呼び出し元へ行く。
 
 前に `try^` がひとつも無い腕は誤りとする。
@@ -730,7 +730,7 @@ prolog^  →  pre^  →  first^  →  main^  →  catch^  →  last^  →  epilo
 #### どの腕にも当たらなかった誤り
 
 **外へ抜ける。** 裸の `try^` を書いたのと同じであり、その誤りは
-関数の返り値に加わる（[errors.try.result]・[pipeline.infer]）。外側のブロックに腕があれば
+関数の返り値に加わる（[errors.try.result] ・[pipeline.infer]）。外側のブロックに腕があれば
 そちらへ行く。
 
 返り値に含められない誤りは [errors.try.result] がその場で報告するので、
@@ -869,7 +869,7 @@ f^ read(p:string^) -> string^|IOError.NotFound {
 }
 ```
 
-報告は `try^` を書いた場所で行う。[syntax.obj.override]、[lex.ambig.call-line] と同じ原則である。
+報告は `try^` を書いた場所で行う。[syntax.obj.override] 、[lex.ambig.call-line] と同じ原則である。
 返せない誤りを返そうとしているのは `try^` の側であり、
 呼び出し元が悪いわけではない。
 
@@ -1128,7 +1128,7 @@ let^ depth = e.cause?.cause?.message
 
 ### 11.2 ゼロ除算は実数へ広がる [errors.runtime.div-zero]
 
-[syntax.obj.number] が Lua 5.3 の数値模型を採ると定め、[syntax.obj.number-widen]が桁溢れを
+[syntax.obj.number] が Lua 5.3 の数値模型を採ると定め、[syntax.obj.number-widen] が桁溢れを
 「誤りにせず実数へ広げる」と定めた。同じ理由がゼロ除算にも当てはまる。
 `//` と `%` は、ゼロを割った時点で整数の計算をやめて実数として計算し直す。
 実数の除算は元から失敗しないので、そこから先は `/` と同じ答えになる。
@@ -1151,7 +1151,7 @@ let^ mean = total / count            # 触れない
 let^ half = total // count           # ゼロを渡しても number^ のまま
 ```
 
-これは本章のために作った例外ではなく、[syntax.obj.number-widen]の決定から従っている。
+これは本章のために作った例外ではなく、[syntax.obj.number-widen] の決定から従っている。
 
 ### 11.3 表の添字 [errors.runtime.index]
 
@@ -1173,10 +1173,10 @@ let^ v = t[k] ?? 0     # 欠落したときの既定値は ?? で書く（02 の
 
 > **その種類の鍵で届くと型が言っているものの合併。**
 
-[syntax.obj]が表を列と写像の両方としているので、**鍵の種類で見る半分が変わる**。
+[syntax.obj] が表を列と写像の両方としているので、**鍵の種類で見る半分が変わる**。
 
 - **数の鍵** — 列の側。並べた位置の型と、[syntax.type.variadic] の可変長の尾
-- **文字列の鍵** — 名前つきの側。[syntax.obj]が `t.a` と `t["a"]` を同じ入口としている
+- **文字列の鍵** — 名前つきの側。[syntax.obj] が `t.a` と `t["a"]` を同じ入口としている
 - **鍵の型が決まっていない** — どちらもありうるので両方の合併。
   片方に決めるのは「どちらか分かっている」と主張することになる
 
@@ -1274,7 +1274,7 @@ relaxed には検査挿入がない（[pipeline.strict.relaxed]）。挿入検�
 - **`t[k]`** — 検査は **既に存在する**。
   配列部か連想部かの判定と境界の確認は、返す値の種類によらず必要である。
   欠落時に何を返すかを変えても検査の回数は変わらない
-- **`nil^` の参照** — 実行時検査そのものが生じない（[errors.runtime.nil]。relaxed でも挿入せず、踏めば命令の panic）
+- **`nil^` の参照** — 実行時検査そのものが生じない（[errors.runtime.nil] 。relaxed でも挿入せず、踏めば命令の panic）
 
 加えて、L^ はバイトコード仮想機械であり、
 **値は既に型タグを持つ**（[pipeline.value.tags]）。合併を返すために箱詰めが増えることはない。
@@ -1373,9 +1373,9 @@ traceback:
 ［補足］最内フレームの行はそのフレームの保存された `pc` から引くので、
 ホスト境界をまたぐ前に `pc` を書く（さもないと `std.debug.traceback` を
 ホストから読むと最内行が一つ前の呼び出しにずれる）。この API はデバッガの
-フックの中でも同じフレームを読む（[09-debugger.md](09-debugger.md) [errors.fallible.union]、[errors.kind.disjoint]）。
+フックの中でも同じフレームを読む（[09-debugger.md](09-debugger.md) [errors.fallible.union] 、[errors.kind.disjoint]）。
 
-エラー**値**（error^）は今までどおり何も刻まない — [errors.chain]の「連鎖は
+エラー**値**（error^）は今までどおり何も刻まない — [errors.chain] の「連鎖は
 明示だけ」と同じ線で、欲しければ `std.debug.traceback()` を message に
 書き込む。値の出自を機構で問うかは 05 の M4 と一緒に別途。
 
@@ -1461,7 +1461,7 @@ IOError.NotFound      # この種別
 `localerror^` に触れる型を返り値型・yield 型・宣言されたフィールドの型に
 書くことは [errors.kind.local-no-propagate] が拒む。書ける場所は引数の型・局所の注釈・`catch^` の腕である。
 
-修飾された名前を型として書けることが要る。[syntax.type]の型の文法に加わる。
+修飾された名前を型として書けることが要る。[syntax.type] の型の文法に加わる。
 
 ### 12.5 [syntax.obj.def-form] の族との関係 [errors.grammar.def-family]
 
@@ -1513,7 +1513,7 @@ IOError.NotFound      # この種別
   まさにその用途であり、掘り崩すことになる）。`??` にも及ぼさない
   （[syntax.op.semantic] の「欠落は誤りではない」により別種の主張になる）
 
-- **[errors.kind.local]・[errors.kind.local-no-propagate]（2026-08-26）: `localerror^` — 呼び出し元へ返せない誤りの
+- **[errors.kind.local] ・[errors.kind.local-no-propagate]（2026-08-26）: `localerror^` — 呼び出し元へ返せない誤りの
   一族。** `errordef^` に対する `localerrordef^` を足し、その宣言する種別を
   **`error^` とは互いに素な第二の頂点**の下に置いた。強制は
   「`localerror^` に触れる型は返り値型にも yield 型にも現れてはならない」
@@ -1522,7 +1522,7 @@ IOError.NotFound      # この種別
   `-> T|error^` が含みうることになり `error^` 自体と `cause` が返せなく
   なるためである。走査は名前的な型で止め（`cause` が両族を受けるため潜れ
   ない）、代わりに宣言されたフィールドの型に書くことを禁じた。
-  [lton.text]が `finally^` について既に持っていた「その場で解決するしかない枠」を、
+  [lton.text] が `finally^` について既に持っていた「その場で解決するしかない枠」を、
   位置の性質から種別の性質へ移したもの。
   類例は調べた範囲では無い——Java/Rust/Swift/Nim の「呼び出し元の宣言で
   そうなる」形は属性の持ち主が関数であり、Midori の abandonment ほかは
@@ -1535,7 +1535,7 @@ IOError.NotFound      # この種別
   （既定の二層の下側。他言語も致命の層では走らせない——Go の fatal
   throw、C# の FailFast、C++ の terminate ほか。ホスト資源は [modules.hostdata]
   の三契機で返るので漏れず、走らせる案は二重パニック問題を背負う）。
-  エラー値への出自付与は見送り（[errors.chain]の線・M4 と別途）
+  エラー値への出自付与は見送り（[errors.chain] の線・M4 と別途）
 
 - E1〜E8 は決定済みとして本文に取り込み欠番
   （種別は型・署名に合併で書く・`fits^` 絞り込み・停止は設けない・
@@ -1544,7 +1544,7 @@ IOError.NotFound      # この種別
   **宣言された型**（[debug.hook]）に決着。値では網羅性が型に載らないため。
   汎用の列挙体 `enum^` も用途消滅により導入せず——のち [syntax.match.other]（bool
   網羅）が「公称宣言なら値照合でも網羅性は型に載る」前例を作ったため、
-  2026-09-01 に [syntax.enum]として再導入。errordef^ は構築時フィールドを
+  2026-09-01 に [syntax.enum] として再導入。errordef^ は構築時フィールドを
   持つ和型としてこの文書の領分に残る
 - ゼロ除算は当初 `//` `%` が誤り値（`ArithError.DivideByZero`）を返す設計だったが、
   [syntax.obj.number-widen]（桁溢れは実数へ広がる）と同じ手で解消し撤回（[syntax.op.concat]）。
@@ -1557,8 +1557,8 @@ IOError.NotFound      # この種別
 - 腕が全部種別の合併も `message` と `cause` を答えることを明記（[errors.kind.made]）。
   構造型とは比べないことも併記——公称であることは [errors.kind.nominal] のまま
 - 返り値型を書いていない本体では、`try^` が通した誤りが推論した返り値型に
-  加わることを明記（[pipeline.bc.call]、[pipeline.infer]）。[pipeline.bc.call] の検査は書いた場合の話である
-- 旧4.5で `try^{ … catch^ 型: … catch^: … }` を追加した（[errors.catch.clause]で廃止し、
+  加わることを明記（[pipeline.bc.call] 、[pipeline.infer]）。[pipeline.bc.call] の検査は書いた場合の話である
+- 旧4.5で `try^{ … catch^ 型: … catch^: … }` を追加した（[errors.catch.clause] で廃止し、
   ブロック末尾の `catch^` 節へ移行）。文を並べて捕まえる形が
   無かったため、無名手続きで囲って即時呼び出しするほかなく、その中の
   `return^` が囲いから出るだけという取り違えが起きていた。ブロックの中の
@@ -1566,7 +1566,7 @@ IOError.NotFound      # この種別
   誤りは裸の `try^` と同じく外へ抜ける。本体と腕の直下では `catch^` が
   腕を開く語になるので、そこで二項の `catch^` を書くなら括弧で囲む
 - [syntax.op.semantic] の `T` が何であるかを書き下した（「`T` は何か」新設）。その種類の鍵で届くと
-  型が言っているものの合併であり、[syntax.obj]が表を列と写像の両方にしている以上
+  型が言っているものの合併であり、[syntax.obj] が表を列と写像の両方にしている以上
   数の鍵と文字列の鍵では見る半分が変わる。型がその種類について何も挙げていなければ
   `T` が無いので判断しない——名前つきの側を開く綴りが無く、閉じると素の写像が
   書けなくなるため。規定そのものは変わっていない

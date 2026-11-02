@@ -179,7 +179,7 @@ typedef enum {
     ((k) == LHAT_CLAUSE_PRE || (k) == LHAT_CLAUSE_FIRST ||                    \
      (k) == LHAT_CLAUSE_MAIN || (k) == LHAT_CLAUSE_LAST)
 
-// 06§4.2: a stretch of the source text, for a tool that shows or rewrites
+// [editor.ast.span]: a stretch of the source text, for a tool that shows or rewrites
 // it. A `length` of 0 means nothing was written there -- the construct bound
 // the name itself, and there is no word to rewrite.
 typedef struct {
@@ -203,7 +203,7 @@ struct LhatNode {
 
     // One past the last byte the construct consumed, so [offset, end) is the
     // whole of it. Diagnostics only ever needed the start, but a tool that
-    // shows or replaces the source of one node needs the span (06§4.2).
+    // shows or replaces the source of one node needs the span ([editor.ast.span]).
     //
     // A node built from a single token gets this from that token. Anything
     // longer sets it on the way out of the construct, so a parse function

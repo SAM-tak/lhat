@@ -2,7 +2,7 @@
 //
 // The lexer sees a block comment there, and the language never looks inside.
 // The tools do: lhat/ast lists what one holds among the statements around it
-// (06§4.1), and lhat/toggleDisabledCode writes the markers and takes them
+// ([editor.ast.protocol]), and lhat/toggleDisabledCode writes the markers and takes them
 // away again.
 
 #ifndef LSP_DISABLED_CODE_H

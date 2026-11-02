@@ -30,7 +30,7 @@
 ```
 
 言語サーバは `L^` の実装（`src/`）をそのまま組み込む。字句解析・構文解析・型検査を
-サーバ側で二重に実装しない。ビジュアルエディタも同じ接続を使う（06§2）。
+サーバ側で二重に実装しない。ビジュアルエディタも同じ接続を使う（[editor.layout]）。
 デバッグは別で、`lhat --dap` が担う（[09-debugger.md](09-debugger.md)）——`lhatls` とは別の
 プロセスで、枠（Content-Length）だけを共有する。
 
@@ -41,12 +41,12 @@
 | 診断 | `textDocument/publishDiagnostics` | `lsp/diagnostics.c`、`lsp/worker.c` |
 | 意味的な構文強調 | `textDocument/semanticTokens/full` | `lsp/handlers/semantic_tokens.c` |
 | 文書の同期 | `textDocument/didOpen` / `didChange` / `didClose` | `lsp/handlers/text_document_sync.c` |
-| ホバー | `textDocument/hover` | [lsp.hover]。`lsp/hover.c` |
-| 定義へ移動 | `textDocument/definition` | [lsp.hover]の `LhatResolution` がそのまま答える。`lsp/definition.c` |
+| ホバー | `textDocument/hover` | [lsp.hover] 。`lsp/hover.c` |
+| 定義へ移動 | `textDocument/definition` | [lsp.hover] の `LhatResolution` がそのまま答える。`lsp/definition.c` |
 | 文書シンボル | `textDocument/documentSymbol` | 構文木だけから作る。`lsp/document_symbol.c` |
-| 参照の検索 | `textDocument/references` | [debug.dap]。解決の記録を定義位置で引く。`lsp/references.c` |
+| 参照の検索 | `textDocument/references` | [debug.dap] 。解決の記録を定義位置で引く。`lsp/references.c` |
 | 名前の変更 | `textDocument/rename`（`prepareRename` 付き） | 同じ答えをファイルごとに束ねる。`lsp/handlers/references.c` |
-| 補完 | `textDocument/completion` | [lsp.hover]の「点の記録」「言語の語と、スコープにある名前」「まだ取り込んでいない名前」。答えは `lhat/completion.h`、整形と取り込み行は `lsp/completion.c` |
+| 補完 | `textDocument/completion` | [lsp.hover] の「点の記録」「言語の語と、スコープにある名前」「まだ取り込んでいない名前」。答えは `lhat/completion.h`、整形と取り込み行は `lsp/completion.c` |
 
 検査はワーカースレッドで動く。プロジェクト内の `*.lh` はそれぞれが独立した根であり、
 1つの編集は「その根」と「最後の検査でその文書を通過した根」だけを検査し直す
@@ -92,11 +92,11 @@ let^ twice = f^n:number^ -> number^;
 関数・手続きの要約では型をもう一度別行に表示しない。
 その他の宣言では、書かれたものと推論型を併記する。
 
-型は [errors.open]の記法で書き出す（`lhat_type_write`、`src/type.c`）。
+型は [errors.open] の記法で書き出す（`lhat_type_write`、`src/type.c`）。
 `number^`、`t^{ sku : string^ }`、`f^number^ -> string^;` のように読める。
 表示のための道具であって、往復できる表現ではない。
 
-[syntax.obj]はテーブルが自分自身を含むことを許すので、**深さと要素数で打ち切る**
+[syntax.obj] はテーブルが自分自身を含むことを許すので、**深さと要素数で打ち切る**
 （`LHAT_TYPE_WRITE_MAX_DEPTH`、`LHAT_TYPE_WRITE_MAX_ITEMS`）。
 省略箇所を `…` にする。出力長を測ってから領域を確保し、固定バイト数による
 途中切断はしない。関数要約では引数型ごとに構造を省略し、引数名・戻り値・終端を残す。
@@ -107,7 +107,7 @@ let^ twice = f^n:number^ -> number^;
 （`check.h` の `LhatResolution` と `lhat_check_resolution_at`）。
 `scope_find` が答えを出すその場所で、使用位置・定義位置・型を記録する。
 
-[lsp.vscode]のスコープ規則をホバー側で解き直す道は採らない。
+[lsp.vscode] のスコープ規則をホバー側で解き直す道は採らない。
 実装が二つになれば歩調を合わせ続ける必要が生じ、しかも**規則が難しい場所でこそ食い違う**。
 
 記録は使用位置の順に並ぶので、位置からの検索は二分探索で済む。
@@ -139,7 +139,7 @@ let^ twice = f^n:number^ -> number^;
 
 **サーバ側で式の型を出し直さない。** 解決の記録は名前で引く表なので、
 `f().` なら「呼び出しは返り値を答える」を、`a[i].` なら添字の規則を、と
-サーバに書き足していくことになる。それは [lsp.hover]が hover で既に拒否した
+サーバに書き足していくことになる。それは [lsp.hover] が hover で既に拒否した
 「二つ目の実装」であり、`(a + b).` に至っては直前の名前 `b` の型を引いて
 **黙って間違う**。点に控えれば、どの形のレシーバも一つの機構で答える。
 
@@ -253,14 +253,14 @@ size_t lhat_program_completion_modules(program, prefix, length, into, capacity);
 同じ取引である。
 
 **スコープにある名前は、スコープ自身が閉じるときに控える**
-（`check.h` の `LhatBindingSite`、`chk_scope_close`）。[lton.host]のスコープ規則をサーバ側で
+（`check.h` の `LhatBindingSite`、`chk_scope_close`）。[lton.host] のスコープ規則をサーバ側で
 解き直さないのは、ホバーが解決の記録を読むのと同じ理由である。控えるのは
 スコープが覆った範囲と、閉じる時点でそれが持っていた束縛の全て — [modules.host.import] が名前を
 スコープ全体で見えるものとするので、範囲は `let^` より後ではなくスコープそのもの。
 
 **並び順が唯一の仕組みである。** スコープは自分を囲むスコープより先に閉じるので、
 記録は自然に内側から並ぶ。ある位置を含むものを順に流せば、**最初に来るのが
-[lton.host]の探索が見つけるはずのもの**で、以降は全て隠されたもの。だから
+[lton.host] の探索が見つけるはずのもの**で、以降は全て隠されたもの。だから
 `lhat_check_bindings_at` は走査1つで済み、綴りごとに最初の1件を採るサーバ側も
 シャドウイングを1行も書かない。
 
@@ -305,11 +305,11 @@ size_t lhat_program_completion_modules(program, prefix, length, into, capacity);
 
 ここが一番尖っている。
 
-- **`module^` の上には入れられない。** [modules.unit]がそれを先頭に置き、
+- **`module^` の上には入れられない。** [modules.unit] がそれを先頭に置き、
   構文解析器が2つ目を拒む。上に書けば見た目が悪いのではなく、**ファイルが
   構文解析を通らなくなる**
 - **先頭のコメント塊の中にも入れられない。** [lex.comment.kept] では塊は直後に来る
-  ものに属し、[lsp.hover]はその塊を単位自身の説明としている。間に割り込めば
+  ものに属し、[lsp.hover] はその塊を単位自身の説明としている。間に割り込めば
   説明文が新しい行のものになる
 
 だから: `module^` があればその次の行、無ければ先頭のコメント塊の後、それも
@@ -333,7 +333,7 @@ size_t lhat_program_completion_modules(program, prefix, length, into, capacity);
 位置から直に探して答える。
 
 **別の単位から来た名前は、モジュール名が見える。**追加の仕組みは要らない。
-[modules]では他の単位の名前に触れる道が `require^` と `import^` しかなく、
+[modules] では他の単位の名前に触れる道が `require^` と `import^` しかなく、
 束縛の定義行に必ずモジュール名が現れるためである。
 
 ```text
@@ -356,13 +356,13 @@ let^ other = require^ "lib/util.lh"
 
 なお言語サーバは `LHAT_WITH_COMMENTS` を定義したビルドを使う（[lex.comment.kept]）。
 外れた構成では 2 が空になり、1 だけが出る。
-ビジュアルエディタもノードのコメントとして同じものを使う（06§5.4）。
+ビジュアルエディタもノードのコメントとして同じものを使う（[editor.map.comments]）。
 
 ## 5. 参照の検索と名前の変更 [lsp.references]
 
 **名前とは、それが宣言された場所である。** 綴りではない。二つのスコープの
 `count` は二つの名前であり、三つのファイルから届く一つの名前は一つである。
-これが、サーバが [lsp.vscode]のスコープ規則を一行も読まずに安全な改名を出せる理由。
+これが、サーバが [lsp.vscode] のスコープ規則を一行も読まずに安全な改名を出せる理由。
 
 解決の記録（`check.h` の `LhatResolution`）を**逆から読む**だけである。定義へ
 移動は一つの記録が指す先を読む。参照の検索は全部の記録を読んで、同じ場所を
@@ -414,7 +414,7 @@ let^ other = require^ "lib/util.lh"
 
 > **修正案はライブラリが作る。道具はそれを編集に変換するだけである。**
 
-拒んだ段が、何が正しかったかを知っている。サーバで作り直せば [lsp.hover]と同じ理由で
+拒んだ段が、何が正しかったかを知っている。サーバで作り直せば [lsp.hover] と同じ理由で
 スコープ規則の2つ目の実装になり、難しい場合にだけ食い違う。診断が自分の修正案を持ち、
 `lhat_unit_diagnostic_fix`（`lhat/program.h`）がそれを答える。
 
@@ -470,7 +470,7 @@ let^ other = require^ "lib/util.lh"
   ASCII の大小は数えない。許すのは書かれた名前の長さの3分の1まで、少なくとも1。
   同じ近さなら先に差し出された方を取る
 - **候補は、その場で読めて検査器が拒まない名前だけ**である。名前はスコープを内側から
-  （[syntax.stmt.old-world]で自分の初期化式から読めない物は除く）、次にホストが束縛した物（[modules.host.initial]）。
+  （[syntax.stmt.old-world] で自分の初期化式から読めない物は除く）、次にホストが束縛した物（[modules.host.initial]）。
   メンバは受け手が書いて持つ物と組み込みの物（[syntax.obj.substring]）で、これは `.` の補完と
   **同じ走査**（`lhat_check_written_members`・`lhat_check_builtin_members`）を通る。
   構築の欄は雛形の欄だけ（メソッドは構築が書く物ではない）、誤りの欄は種別の欄に
@@ -517,7 +517,7 @@ let^ other = require^ "lib/util.lh"
 （`synchronize`）のままでよい — 失敗した文は木に残り、後続の文も読まれ、検査器は
 構文エラーの有無に関わらず走る。足したのは二点で、**末尾の `.` に引数の無い
 メンバを残す**ことと、**文の位置で拒んだ式を `LHAT_NODE_ERROR` の下に残す**こと。
-どちらも診断は変えず、木を捨てないだけである（[lsp.hover]の「点の記録」）。
+どちらも診断は変えず、木を捨てないだけである（[lsp.hover] の「点の記録」）。
 型の路（`parse_type`）と修飾名（`parse_qualified_name`）は変えない:
 後者を変えると `module^ a.` が単位の名前を `"a."` にしてしまい、
 それは [modules.require.short] が短い `require^` を束ねる名前である。
@@ -526,7 +526,7 @@ let^ other = require^ "lib/util.lh"
 
 | 要求 | 用途 | 定義 | 実装 |
 | --- | --- | --- | --- |
-| `lhat/ast` | ビジュアルエディタに構文木を渡す | 06§4 | `lsp/ast_json.c`、`lsp/handlers/ast.c` |
+| `lhat/ast` | ビジュアルエディタに構文木を渡す | [editor.ast] | `lsp/ast_json.c`、`lsp/handlers/ast.c` |
 | `lhat/toggleDisabledCode` | 選択を文の単位に広げて `#[~ … ]#` で囲む・外す | [lex.comment.disabled] | `lsp/disabled_code.c`、`lsp/handlers/disabled_code.c` |
 
 独自拡張は `lhat/` を接頭辞とする。
@@ -566,21 +566,21 @@ webview → 拡張本体は `postMessage`、拡張本体 → `lhatls` は `sendR
 
 **カスタムエディタは既定にしない**（`"priority": "option"`）。
 `*.lh` を開けばテキストエディタが出る。グラフは `L^: Open Graph View` で横に開く。
-第1段階（06§3）が読み取り専用である以上、グラフだけが出る状態は行き止まりになる。
+第1段階（[editor.stages]）が読み取り専用である以上、グラフだけが出る状態は行き止まりになる。
 
 ### 8.1 二つの半分と、その作り分け [lsp.vscode.halves]
 
 拡張は性質の違う二つの半分でできている。
 
 - **拡張本体**（`src/*.ts`）— Node の上で動き、`tsc` が CommonJS に出す
-- **webview**（`src/webview/`）— ブラウザの上で動き、React Flow を使う（06§8.4）。
+- **webview**（`src/webview/`）— ブラウザの上で動き、React Flow を使う（[editor.render.layer]）。
   JSX を含み、React とその依存ごと束ねる必要があるので **esbuild** が1つに固める
 
 esbuild は型を見ないので、型検査は `tsconfig.rf.json`（`npm run check:rf`）が別に行う。
 **束ねるものと検査するものを分けてある**ので、片方だけを走らせても意味がある。
 
 写像（`src/webview/map.ts`）は描画層に依存しない。これは意図してそう書いたもので、
-描画層を差し替えても写像は動いたことが 06§8.4 の検証で確かめられている。
+描画層を差し替えても写像は動いたことが [editor.render.layer] の検証で確かめられている。
 
 ## 9. 設定 — 二つのファイル [lsp.config]
 
@@ -614,7 +614,7 @@ esbuild は型を見ないので、型検査は `tsconfig.rf.json`（`npm run ch
 
 ### 9.1 `exclude` — 何を根にしないか [lsp.config.exclude]
 
-[lsp.features]のとおり、プロジェクト内の `*.lh` はそれぞれが独立した根になる。
+[lsp.features] のとおり、プロジェクト内の `*.lh` はそれぞれが独立した根になる。
 `exclude` はその**根の集合**を決める。パターンはプロジェクトルートからの相対
 パスに `/` 区切りで照合する。
 
@@ -658,7 +658,7 @@ excluded."* と断っている。git がこの但し書きを持つのは性能�
   取り除かれる道が無いので、「開いている間だけ根」にすると一度開いたファイルの
   赤が閉じた後も残る — 元の苦情がそのまま戻る
 - **根にならないだけである。**他の根が `require^` した先は今までどおり読まれ、
-  そこにある誤りは報告される。[modules.require]の辿りは言語のもので、サーバが検査器に
+  そこにある誤りは報告される。[modules.require] の辿りは言語のもので、サーバが検査器に
   「そのファイルは無い」と嘘をつく話ではない。`exclude` は根の集合を決める
   道具であって、診断を黙らせる道具ではない
 
@@ -735,7 +735,7 @@ rename の通知を受けると読み直し、根の集合を作り直し、全�
   べき**で、空のバッファにはそれしか出せないこと
 
 - L2（補完に必要な誤り回復の水準。文の水準は現状のまま、末尾の `.` にだけ
-  節点を残す）は決定済み。[debug.dap]に取り込み欠番
+  節点を残す）は決定済み。[debug.dap] に取り込み欠番
 - L1（`module^` のコメントは単位の説明）・L3（webview は拡張本体経由）・
   L4（カスタムエディタは既定にしない）・L6（定義行と推論型を両方出す）・
   L7（モジュール名は定義行に出る）・L8（メンバーも解決の記録に載せ、ホバーと
@@ -743,4 +743,4 @@ rename の通知を受けると読み直し、根の集合を作り直し、全�
 - 参照の検索と名前の変更（[debug.dap]）。解決の記録を定義位置で引き、検査済みの根が
   抱える全単位を歩く。宣言された場所が名前の同一性であり、宣言位置を持たない
   ものは何も答えない —— そこを自分自身の宣言と扱うと、改名が一箇所だけを
-  書き換えて残りを置き去りにする。[debug.dap]が独立し、以降の章は1つずつ繰り下がった
+  書き換えて残りを置き去りにする。[debug.dap] が独立し、以降の章は1つずつ繰り下がった

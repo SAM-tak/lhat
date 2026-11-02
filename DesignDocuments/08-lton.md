@@ -66,7 +66,7 @@ window = { title = "test suite", width = 480 },
 - 算術・比較・連結・入れ子のテーブル・条件式 — **通る**
 - **`p^` の呼び出しはすべて誤り**
 
-そして [syntax.sub]により、**効果を持つものはすべて `p^` である**。ゆえに:
+そして [syntax.sub] により、**効果を持つものはすべて `p^` である**。ゆえに:
 
 > **LTON のテキストは効果を持てない。**
 
@@ -167,7 +167,7 @@ b = b.Mode.FOO,
 消すことだから（[errors.runtime.index]）。したがって `a = nil^,` は**鍵を置かない**。
 std.json が JSON の `null` について同じ答えを出しているのと同じ帰結である。
 
-**位置の側**（配列部）は `nil^` を保持する（[syntax.obj.count]、[pipeline.value.layout]）。`1, nil^, 3,` は
+**位置の側**（配列部）は `nil^` を保持する（[syntax.obj.count] 、[pipeline.value.layout]）。`1, nil^, 3,` は
 長さ 3 で、1 番目の位置は `nil^` のまま残る。末尾の `nil^` も同じで、
 `1, 2, nil^,` の長さは 3 である。書き出し（9 節）もその位置を `nil^,` として
 出すので、往復で長さは変わらない。
@@ -375,5 +375,5 @@ CLI の `--compile` は取り込みを持つ LTON とその依存単位を、プ
 
 - **T1・T2 を閉じた（5 節）。** T1「呼び出し側が名前を渡せる形」は、読み込む
   側から渡す形を採らず、LTON の先頭に `import^` / `require^` を書く形に決めた
-  （[lton.names.imports]、実装済み）。言語サーバーは型検査をしないまま、取り込んだ名前の参照表
+  （[lton.names.imports] 、実装済み）。言語サーバーは型検査をしないまま、取り込んだ名前の参照表
   だけを作る。T2「`initial_bindings` を他の入口にも及ぼすか」は及ぼさない（[lton.names.no-initial]）

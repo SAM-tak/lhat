@@ -118,7 +118,7 @@ let^ input = b.format(Input, {
 ```
 
 **並びは列で書く。** テーブルの名前付きのキーは書いた順を保たない（02 の
-[syntax.for.forms]。ハッシュ部の順序は約束されない）ので、`{ aaa = 16, bbb = 8 }` の形では
+[syntax.for.forms] 。ハッシュ部の順序は約束されない）ので、`{ aaa = 16, bbb = 8 }` の形では
 ビットの並び順を決められない。
 
 `std.binary.format` は最初の型値と列を一度だけ読んで、**型付き形式オブジェクト**
@@ -134,7 +134,7 @@ let^ input = b.format(Input, {
 プログラマの誤りになる（04 の線引き）。
 
 形式オブジェクト自身は可変個数のフィールド定義を持つので、ホスト値
-（[modules.hostvalue]、248 バイト上限・スタック限定）にはできず、hostdata になる。これは
+（[modules.hostvalue] 、248 バイト上限・スタック限定）にはできず、hostdata になる。これは
 符号化される値の幅が可変という意味ではない。
 
 #### 種類も hostdata である［補足］
@@ -460,7 +460,7 @@ lhat には DAP（[lton.text]）のためのソケット層 `port/socket.c`（`l
 閉じたもの:
 
 - **B1** `format(type, fields)` が `Format<T>` を作り、`decode` は `T` を返す。
-  種類の木と型は `format` 時に一度照合する（[binary.codec.format]・[binary.codec.encode]）
+  種類の木と型は `format` 時に一度照合する（[binary.codec.format] ・[binary.codec.encode]）
 - **B2** `fixed` の丸めは最も近い刻み（[pipeline.infer]）［補足］
 - **B3** Format は固定ビット長だけを扱う。可変長の種類は持たず、`bits()` と
   `size()` は常に形式だけから決まる（[binary.codec.kinds]）

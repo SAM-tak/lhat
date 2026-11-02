@@ -100,7 +100,7 @@ static void check_spans_enclose(const char *text)
     parse_dispose(&p);
 }
 
-// 06§4.2: the source a node covers. The left edge comes from the subtree
+// [editor.ast.span]: the source a node covers. The left edge comes from the subtree
 // (lhat_node_span_start) because an infix or postfix node is written starting
 // at its operator; the right edge is the node's own, since the token that
 // closes a construct belongs to no child.
@@ -122,7 +122,7 @@ static void check_span_text(const char *text, const LhatNode *(*pick)(const Pars
 // Every kind has to answer with a name of its own. A kind left out of
 // lhat_node_kind_name's switch falls through to "?", which says nothing and
 // is indistinguishable from every other omission -- and lsp/ast_json.c hands
-// that straight to the visual editor as the node's kind (06§4.1). Three
+// that straight to the visual editor as the node's kind ([editor.ast.protocol]). Three
 // kinds had been missing this way, so the count is checked rather than left
 // to whoever adds the next one.
 static void test_kind_names(void)
