@@ -1703,7 +1703,7 @@ optional access は従来どおり結果に nil の可能性を残す。
 [syntax.repl.same] が扱っていた「同じテキストが場所によって違う構文木になる」種類の問題は、
 厳格度の設定によっては生じない。
 
-#### 4.2+ 名前の意味と保存先を分離する [pipeline.repl.name-storage]
+#### 4.2+2 名前の意味と保存先を分離する [pipeline.repl.name-storage]
 
 通常の `let^` / `var^` と名前付き引数は、検査器が宣言ノードを束縛の識別子として
 確定する。宣言と使用箇所の `checked_binding` はその同じノードを指す。

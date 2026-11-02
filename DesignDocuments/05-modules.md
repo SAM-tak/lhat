@@ -1376,7 +1376,7 @@ lhat_register_member(program, "m", "T", "dispose", "p^self^;", fn, ctx);
 超えて書いた後に分かるのでは遅い。コンパイラが書かれた呼び出し位置で
 拒むものを、これが登録された位置で拒む。
 
-#### 8.8+2 歩きは Y と T を言い分ける［重要］ [modules.host.boundary-yields]
+#### 8.7+6 歩きは Y と T を言い分ける［重要］ [modules.host.boundary-yields]
 
 > **歩きの1歩は同じ形で答え、続くかどうかだけを返す。**
 
@@ -2229,7 +2229,7 @@ id を持って行き、両方止まる——1つ目は自分のが来ず、2つ
 `join` の答えは `any^` になった。carry が運ぶものは [modules.hostdata.sharing] 以降
 テーブル・閉包・ホストのオブジェクトも含み、scalar の合併では嘘になる。
 
-##### 8.7+2 `L^.modules` を引くのに文字列を作らない [modules.host.no-string-lookup]
+##### 8.7+7 `L^.modules` を引くのに文字列を作らない [modules.host.no-string-lookup]
 
 登録も、ホストデータの値の生成も、`L^.modules` から型の表まで名前で降りる。
 その1段ごとに**キーの文字列を作ってから引いていた**——表が既に在っても作る

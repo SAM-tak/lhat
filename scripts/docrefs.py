@@ -40,11 +40,16 @@ def labels(report):
         if not m:
             continue
         fence = False
+        numbers = set()
         for i, line in enumerate(io.open(os.path.join(DOCS, name), encoding='utf-8')):
             fence ^= line.startswith('```')
             if fence or not NUMBERED.match(line):
                 continue
             at = f'DesignDocuments/{name}:{i + 1}'
+            number = line.split()[1].rstrip('.')
+            if number in numbers:
+                report(f'{at}: {number} is already another heading\'s number')
+            numbers.add(number)
             label = LABEL.search(line)
             if not label:
                 report(f'{at}: a numbered heading without a label')

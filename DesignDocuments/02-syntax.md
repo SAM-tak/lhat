@@ -2908,7 +2908,7 @@ let^ a = t?[0] ?? "100"
 手続き（`p^`）の `?(` は例外で、答えは無いまま（[syntax.type.empty]）。`nil^` との合併に
 意味が無い。
 
-#### 11.7+2 最初の `?` が連鎖の残りを守る［重要］ [syntax.op.nil-safe-chain]
+#### 11.7+3 最初の `?` が連鎖の残りを守る［重要］ [syntax.op.nil-safe-chain]
 
 > **`?` を1つ書けば、その後置連鎖の残り全部が守られる。
 > `nil^` の選択肢が付くのは連鎖の末尾で一度だけである。**
@@ -5034,7 +5034,7 @@ if^ t? { var^ n : number^ = t }                 # 11.7改2 の短い形。同じ
 `t != nil^` と書けば [syntax.op.compare] の比較判定が先に走り、[syntax.obj.override] の互いに素性から
 **答えが実行前に決まっている比較**として誤りになる。
 
-#### 13.11+ 整数の範囲も絞り込む [syntax.type.fits-range]
+#### 13.11+2 整数の範囲も絞り込む [syntax.type.fits-range]
 
 絞り込みが覚えるのは選択肢だけではない。
 
@@ -7561,7 +7561,7 @@ NaN も同じく処理系の側で拒む — [syntax.obj.number] の単一の数
 [syntax.obj.template] のとおり雛形のフィールドは名前で参照されるため、
 キーを伴う要素は書けない。位置指定を認めていないのと同じ理由である。
 
-#### 14.14+ 列の範囲にある実数の添字は丸める [syntax.obj.keys-round]
+#### 14.14+2 列の範囲にある実数の添字は丸める [syntax.obj.keys-round]
 
 > **列（0 から並んだ位置）の範囲に落ちる実数の添字は、整数へ丸めて読み書きする。
 > 丸めは [syntax.obj.substring] の `at` と同じ。**
@@ -10864,7 +10864,7 @@ for^v in^t { print($"t array {index^}:{v}") }
 `start`、`resume`、`dispose`、`done`、`started` は据え置く。
 これらはコルーチンにしか生えず、コルーチンに書き手が名前を足す方法はない。
 
-##### 16.3+2 `keys^()` と `values^()` — 同じ走査の2つの射影 [syntax.for.keys-values]
+##### 16.3+3 `keys^()` と `values^()` — 同じ走査の2つの射影 [syntax.for.keys-values]
 
 > **`t.keys^()` と `t.values^()` は、`iterate^()` が出す組の左と右である。**
 
