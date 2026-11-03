@@ -82,9 +82,9 @@ let^Reader = def^{
             return^0
         }
         let^d = c.tonumber() ?? 0
-        if^d < 1 or^ d > 9 {
+        if^d < 1 or^d > 9 {
             self^.ok := false^
-            return^ 0
+            return^0
         }
         self^.used[d - 1] += 1 # the if^d < 1 or^ d > 9 { above holds d to 1..9,
         # so d - 1 is 0..8 and there is no nil check to make: this need not be
