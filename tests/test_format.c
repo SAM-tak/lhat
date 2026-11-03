@@ -70,6 +70,10 @@ int main(void)
     expect("let^x  =  foo ( 1 ,2 )+bar[ 3 ]\n", &o,
            "let^x = foo(1, 2) + bar[3]\n");
     expect("let^x = - 1 * ( -y )\n", &o, "let^x = -1 * (-y)\n");
+    expect("var^ts : t^{ std.task.Task<number^> [] } = {}\n"
+           "var^ns : t^{ Name [9] } = {}\n", &o,
+           "var^ts : t^{ std.task.Task<number^>[] } = {}\n"
+           "var^ns : t^{ Name[9] } = {}\n");
     expect("let^t = {a = 1, b = 2}\nlet^u = { a = 1 }\nlet^v = { }\n", &o,
            "let^t = {a = 1, b = 2}\nlet^u = { a = 1 }\nlet^v = {}\n");
 

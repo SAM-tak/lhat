@@ -493,6 +493,11 @@ static uint32_t spacing(const Format *f, size_t i)
         return kept;
     }
     bool after_hat = a->kind == UNIT_TOKEN && a->token.kind == LHAT_TOKEN_HAT_IDENT;
+    // An expression has no '[' that begins a value, so one after '>' is an
+    // array of the type whose arguments the '>' closed: `Task<number^>[]`.
+    if (unit_is_op(b, LHAT_OP_LBRACKET) && unit_is_op(a, LHAT_OP_GT)) {
+        return 0;
+    }
     if (unit_is_op(b, LHAT_OP_LPAREN) || unit_is_op(b, LHAT_OP_LBRACKET)) {
         return after_hat ? kept : !ends_operand(a);
     }
