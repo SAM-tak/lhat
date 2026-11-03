@@ -173,6 +173,8 @@ cJSON *lsp_handle_initialize(LspServer *server, const cJSON *params)
 
     // The outline, from the tree alone (document_symbol.h).
     cJSON_AddBoolToObject(capabilities, "documentSymbolProvider", true);
+    // [lsp.format]: the library's formatter, over the editor's own text.
+    cJSON_AddBoolToObject(capabilities, "documentFormattingProvider", true);
 
     // [lsp.references]: the same record read the other way round -- every use
     // pointing at one declaration rather than one use pointing at its.

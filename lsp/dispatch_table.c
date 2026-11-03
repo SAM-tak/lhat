@@ -11,6 +11,7 @@
 #include "handlers/definition.h"
 #include "handlers/disabled_code.h"
 #include "handlers/document_symbol.h"
+#include "handlers/formatting.h"
 #include "handlers/hover.h"
 #include "handlers/initialize.h"
 #include "handlers/semantic_tokens.h"
@@ -30,6 +31,7 @@ const LspRequestEntry LSP_REQUEST_TABLE[] = {
     {"textDocument/rename", lsp_handle_rename},
     {"textDocument/completion", lsp_handle_completion},
     {"textDocument/codeAction", lsp_handle_code_action},
+    {"textDocument/formatting", lsp_handle_formatting},
     // [lsp.extensions]: an extension of our own, so it is named under "lhat/".
     {"lhat/ast", lsp_handle_ast},
     {"lhat/typeOptions", lsp_handle_type_options},

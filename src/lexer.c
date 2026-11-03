@@ -442,7 +442,7 @@ static LhatToken scan_identifier(LhatLexer *lexer, Mark start)
         advance_n(lexer, (size_t)width);
     }
 
-    // [debug.hook.nature]: a run of '^' glued to the identifier turns it into a hat
+    // [lex.hat.repeat]: a run of '^' glued to the identifier turns it into a hat
     // identifier, and the count is retained (super^^^).
     uint32_t hats = 0;
     while (current_byte(lexer) == '^') {

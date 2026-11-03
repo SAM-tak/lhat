@@ -47,6 +47,12 @@ signatures-not-written = lhat: 署名表を書き出せなかった
 compile-needs-out = lhat: --compile には -o DIR が要る
 # no-front-end = lhat: this build has no front end; --run a binary unit
 no-front-end = lhat: このビルドには前段が無い。バイナリ単位を --run すること
+# not-formatted = {path}: not formatted
+not-formatted = {path}: 整形されていない
+# format-unreadable = {path}: error: not formatted, since it does not read; --check says why
+format-unreadable = {path}: エラー: 読めないので整形しなかった。理由は --check が言う
+# format-changed-tokens = {path}: error: not formatted, since the result would read as other tokens (a formatter bug)
+format-changed-tokens = {path}: エラー: 整形すると別の字句の並びに読めるので整形しなかった（整形器の不具合）
 # version = L^ (lhat) {version}
 version = L^ (lhat) {version}
 # greeting = an expression on its own is answered; an unfinished construct reads on
@@ -63,6 +69,8 @@ usage = 使い方: lhat [オプション] <ファイル> [引数...]
    --ast          構文木を出す
    --tokens       代わりにトークン列を出す
    --dump-bytecode  その単位が何にコンパイルされるかを出す
+   --format       名指した各ファイルを、それに効く .editorconfig に従って整形し書き換える
+   --format-check  何も書き換えない。名指したファイルが整形済みでなければ失敗する
    --command      入力をコマンド形式として読む
    --strict       型の誤りをコンパイル時に報告する（ファイルの既定）
    --relaxed      決まらない型は実行時の検査に委ねる（プロンプトの既定）

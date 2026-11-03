@@ -33,7 +33,7 @@ typedef enum {
                                               // main^ or last^ was written
     LHAT_PARSE_ERR_PRE_IN_WALK,               // [syntax.loop.pre]: pre^ runs before the
                                               // walk has bound anything
-    LHAT_PARSE_ERR_CLAUSE_NOT_IN_LOOP,        // [lton.text] clauses outside a loop
+    LHAT_PARSE_ERR_CLAUSE_NOT_IN_LOOP,        // [syntax.loop.clauses] outside a loop
     LHAT_PARSE_ERR_FOR_NEEDS_CLAUSE,          // [syntax.for.forms]: for^ needs a driving clause
     LHAT_PARSE_ERR_REPEAT_TAKES_NO_NEXT,      // [syntax.for.repeat]
     LHAT_PARSE_ERR_NEXT_NOT_HERE,             // [syntax.for.forms]: next^ updates a while^

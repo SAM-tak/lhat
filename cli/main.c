@@ -27,6 +27,7 @@
 // which writes out the instructions a host is never shown.
 #include "code.h"
 #include "compile.h"
+#include "format.h"
 #include "message.h"
 #include "program_internal.h"
 
@@ -421,6 +422,9 @@ enum {
     CLI_SIGNATURES_NOT_WRITTEN,
     CLI_COMPILE_NEEDS_OUT,
     CLI_NO_FRONT_END,
+    CLI_NOT_FORMATTED,
+    CLI_FORMAT_UNREADABLE,
+    CLI_FORMAT_CHANGED_TOKENS,
     CLI_VERSION,
     CLI_GREETING,
     CLI_USAGE,
@@ -468,6 +472,13 @@ static const LhatMessageEntry CLI_MESSAGES[] = {
         "lhat: could not write the signature table"},
     [CLI_COMPILE_NEEDS_OUT] =
         {"cli.compile-needs-out", "lhat: --compile needs -o DIR"},
+    [CLI_NOT_FORMATTED] = {"cli.not-formatted", "{path}: not formatted"},
+    [CLI_FORMAT_UNREADABLE] = {"cli.format-unreadable",
+        "{path}: error: not formatted, since it does not read; --check says "
+        "why"},
+    [CLI_FORMAT_CHANGED_TOKENS] = {"cli.format-changed-tokens",
+        "{path}: error: not formatted, since the result would read as other "
+        "tokens (a formatter bug)"},
     [CLI_NO_FRONT_END] = {"cli.no-front-end",
         "lhat: this build has no front end; --run a binary unit"},
     [CLI_VERSION] = {"cli.version", "L^ (lhat) {version}"},
@@ -486,6 +497,10 @@ static const LhatMessageEntry CLI_MESSAGES[] = {
         "  --ast          print the syntax tree\n"
         "  --tokens       print the token stream instead\n"
         "  --dump-bytecode  print what the unit compiles to\n"
+        "  --format       rewrite each file named as the formatter writes it, "
+        "by the .editorconfig that governs it\n"
+        "  --format-check  rewrite nothing; fail if a file named is not "
+        "formatted\n"
         "  --command      read the input as the command form\n"
         "  --strict       report a type error at compile time (default for "
         "a file)\n"
@@ -1530,6 +1545,67 @@ static int dump_tree(const LhatSource *source, bool typed, bool command)
     return status;
 }
 
+// [lsp.format]: one file, formatted in place -- or, when `check`, only
+// asked whether it already is. The bytes are read as they are on disk, since
+// the line ends the file uses are the ones it keeps.
+static int format_file(const char *path, bool check)
+{
+    FILE *file = fopen(path, "rb");
+    char *text = NULL;
+    size_t length = 0;
+    if (file != NULL) {
+        fseek(file, 0, SEEK_END);
+        long size = ftell(file);
+        fseek(file, 0, SEEK_SET);
+        text = size >= 0 ? (char *)malloc((size_t)size + 1) : NULL;
+        length = text != NULL ? fread(text, 1, (size_t)size, file) : 0;
+        fclose(file);
+    }
+    if (text == NULL) {
+        say_path(stderr, CLI_CANNOT_READ, path);
+        return EXIT_FAILURE;
+    }
+
+    LhatFormatOptions options;
+    lhat_format_defaults(&options);
+    lhat_format_read_editorconfig(path, &options);
+    size_t extension = strlen(path) > 5 ? strlen(path) - 5 : 0;
+    bool lton = strcmp(path + extension, ".lton") == 0;
+    char *formatted = NULL;
+    size_t formatted_length = 0;
+    LhatFormatStatus status =
+        lhat_format(text, length, lton, &options, &formatted, &formatted_length);
+    bool changed = status == LHAT_FORMAT_OK &&
+                   (formatted_length != length ||
+                    memcmp(formatted, text, length) != 0);
+    free(text);
+
+    int result = EXIT_SUCCESS;
+    if (status == LHAT_FORMAT_SYNTAX_ERROR) {
+        say_path(stderr, CLI_FORMAT_UNREADABLE, path);
+        result = EXIT_FAILURE;
+    } else if (status == LHAT_FORMAT_CHANGED_TOKENS) {
+        say_path(stderr, CLI_FORMAT_CHANGED_TOKENS, path);
+        result = EXIT_FAILURE;
+    } else if (status != LHAT_FORMAT_OK) {
+        cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
+        result = EXIT_FAILURE;
+    } else if (changed && check) {
+        say_path(stdout, CLI_NOT_FORMATTED, path);
+        result = EXIT_FAILURE;
+    } else if (changed) {
+        file = fopen(path, "wb");
+        if (file == NULL ||
+            fwrite(formatted, 1, formatted_length, file) != formatted_length) {
+            say_path(stderr, CLI_CANNOT_WRITE, path);
+            result = EXIT_FAILURE;
+        }
+        if (file != NULL) fclose(file);
+    }
+    lhat_free(formatted);
+    return result;
+}
+
 #endif  // LHAT_WITH_FRONTEND
 
 // One compiled body, then the bodies written inside it, one step deeper --
@@ -1726,6 +1802,7 @@ int main(int argc, char **argv)
     bool ast_only = false;
     bool bytecode_only = false;
     bool check_only = false;
+    int format_files = 0;  // [lsp.format]: 1 rewrites, 2 only checks
     bool run_program = false;
     bool command_form = false;
     bool dump_host_api = false;
@@ -1752,6 +1829,10 @@ int main(int argc, char **argv)
             ast_only = true;
         } else if (strcmp(argv[i], "--dump-bytecode") == 0) {
             bytecode_only = true;
+        } else if (strcmp(argv[i], "--format") == 0) {
+            format_files = 1;
+        } else if (strcmp(argv[i], "--format-check") == 0) {
+            format_files = 2;
         } else if (strcmp(argv[i], "--check") == 0) {
             check_only = true;
         } else if (strcmp(argv[i], "--run") == 0) {
@@ -1968,6 +2049,26 @@ int main(int argc, char **argv)
         ok = ok && write_catalog(dump_messages_dir, "dap", entries, said);
 #endif
         return ok ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    // [lsp.format]: every file named is the formatter's, none a script's.
+    if (format_files != 0) {
+#if LHAT_WITH_FRONTEND
+        if (path == NULL) {
+            print_usage();
+            return EXIT_FAILURE;
+        }
+        int status = format_file(path, format_files == 2);
+        for (size_t i = 0; i < argument_count; i++) {
+            if (format_file(arguments[i], format_files == 2) != EXIT_SUCCESS) {
+                status = EXIT_FAILURE;
+            }
+        }
+        return status;
+#else
+        cli_say(stderr, CLI_NO_FRONT_END, NULL, 0);
+        return EXIT_FAILURE;
+#endif
     }
 
     // [pipeline.repl]: with nothing to read, read from the prompt.

@@ -83,7 +83,7 @@ typedef enum {
     LHAT_NODE_WITH,          // with^ x = e  ... { ... }    ([syntax.with])
     LHAT_NODE_FOR,           // for^ ...                    ([syntax.for])
     LHAT_NODE_REPEAT,        // repeat^ ...                 ([syntax.for.repeat])
-    LHAT_NODE_LOOP_CLAUSE,   // prolog^: first^: last^: ... ([lton.text])
+    LHAT_NODE_LOOP_CLAUSE,   // prolog^: first^: last^: ... ([syntax.loop.clauses])
     LHAT_NODE_ERRORDEF,      // errordef^ Name { ... }      ([errors.kind.errordef])
     LHAT_NODE_ERROR_KIND,    // one kind inside an errordef^
     LHAT_NODE_ENUMDEF,       // enum^ Name { ... }          ([syntax.enum])
@@ -477,7 +477,7 @@ struct LhatNode {
         // INTERP, CALL argument lists, WITH bindings.
         //
         // For BLOCK, `items` holds the unlabelled statements, which are the
-        // main clause, and `extra` holds the other clauses of [lton.text] as a list
+        // main clause, and `extra` holds the other clauses of [syntax.loop.clauses] as a list
         // of LHAT_NODE_LOOP_CLAUSE. A block with no clause markers keeps
         // `extra` empty, so the common case is unchanged.
         struct {

@@ -241,6 +241,7 @@ set(LHAT_FRONTEND_SOURCES
     src/semantic.c
     src/completion.c
     src/fix.c
+    src/format.c
     src/prompt.c
     src/compile.c
 )
@@ -633,6 +634,7 @@ if(LHAT_BUILD_LSP)
         lsp/handlers/references.c
         lsp/references.c
         lsp/handlers/document_symbol.c
+        lsp/handlers/formatting.c
         lsp/document_symbol.c
         lsp/lton.c
         lsp/resolution.c

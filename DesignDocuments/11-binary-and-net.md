@@ -416,7 +416,7 @@ Windows は、閉じたポートへ送ったデータグラムの ICMP を次の
 
 ### 4.5 実装の置き場 [binary.net.where]
 
-lhat には DAP（[lton.text]）のためのソケット層 `port/socket.c`（`lhatsocket`）が
+lhat には DAP（[debug]）のためのソケット層 `port/socket.c`（`lhatsocket`）が
 ある。TCP はループバック専用のまま、UDP をここに足した。
 
 - `lhatsocket` は DAP と `std.net` のどちらかが要るときに組む
