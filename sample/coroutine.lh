@@ -3,7 +3,7 @@ import^std.math.vector3
 let^y = f^x:number^{
     print(x)
     x += 1
-    var^a:string^, b:number^ = yield^"aaa", x
+    var^a:string^, b:number^= yield^"aaa", x
     print(a, b)
     x += 1
     a, b := yield^a.."bbb", x
@@ -19,17 +19,17 @@ let^y = f^x:number^{
 
 let^ny = f^x:number^{
     print(x)
-    var^_^:string^,_^:number^ = _yield^"aaa", x
+    var^_^:string^, _^:number^= _yield^"aaa", x
     return^"done"
 }
 
-let^ny2 = f^x:number^->c^{f^string^, number^-> string^, number^ -> string^} {
+let^ny2 = f^x:number^-> c^{f^string^, number^-> string^, number^-> string^} {
     print(x)
-    var^_^:string^,_^:number^ = _yield^"aaa", x # これを省略できるようにしたい
+    var^_^:string^, _^:number^= _yield^"aaa", x # これを省略できるようにしたい
     return^"done"
 }
 
-do^ {
+do^{
     print("ex. 1")
     let^co = y(1)
     var^a, b = co.start()
@@ -40,7 +40,7 @@ do^ {
     }
 }
 
-do^ {
+do^{
     print("ex. 2")
     let^co = ny(1)
     var^a, b = co.start()
@@ -51,7 +51,7 @@ do^ {
     }
 }
 
-do^ {
+do^{
     print("ex. 3")
     let^co = y(1)
     var^a, b = co.start()
@@ -62,7 +62,7 @@ do^ {
     }
 }
 
-do^ {
+do^{
     print("ex. 4")
     let^co = y(1)
     let^a, b = co.start()

@@ -6,7 +6,7 @@ try^std.task.start(2)
 let^half = f^n, src, dst, aux {
     _yield^0
     let^solve = f^n, src, dst, aux {
-        if^n <= 0 { return^ 0 }
+        if^n <= 0 { return^0 }
         return^this^(n - 1, src, aux, dst) + 1 + this^(n - 1, aux, dst, src)
     }
     return^solve(n, src, dst, aux)

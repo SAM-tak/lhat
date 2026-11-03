@@ -1,13 +1,13 @@
-if^!nil^?   { print("1 falsy") } #=> falsy L^では nil^だけ
-if^!true^?  { print("2 falsy") } # 何も出力されない
+if^!nil^? { print("1 falsy") } #=> falsy L^では nil^だけ
+if^!true^? { print("2 falsy") } # 何も出力されない
 if^!false^? { print("3 falsy") } # 何も出力されない
-if^!0?      { print("4 falsy") } # 何も出力されない
-if^!""?     { print("5 falsy") } # 何も出力されない
+if^!0? { print("4 falsy") } # 何も出力されない
+if^!""? { print("5 falsy") } # 何も出力されない
 
 #let^\U0061 = 1
 #print("a = ", a)
 
-let^f = f^ { 1, 2 }
+let^f = f^{ 1, 2 }
 let^g = f^x, y { x + y }
 let^h = f^x, y, z { x + y + z }
 # let^h = f^x, y, z, w { x + y + z + w } # これはR^と違って出来ない仕様
@@ -27,17 +27,17 @@ print("pack", pack^f())
 print(typeof^(f))
 print(typeof^(f).signature)
 
-for^let^u:number^ = 0
-for^let^v:number^ = 1
-if^ u = 0 {
+for^let^u:number^= 0
+for^let^v:number^= 1
+if^u = 0 {
     print("sdsad", v)
 else^:
     print("!!!")
 }
 
-let^u:number^ = 0
-let^v:number^ = 0
-if^ u = 0 and^ v = 0 {
+let^u:number^= 0
+let^v:number^= 0
+if^u = 0 and^v = 0 {
     print("sdsad")
 else^:
     print("!!!")
@@ -52,25 +52,25 @@ let^t = {width^2:
 print(t[1, 2])
 ]#
 
-if^ f? {
+if^f? {
     print("aaaa")
 el^:
     print("aaaa")
 }
 
-print(if^ f?: 1 el^: 0;)
+print(if^f?: 1 el^: 0;)
 
 let^b = "aaa"
 
-if^ f? {
+if^f? {
     print("aaaa")
-el^ b?:
+el^b?:
     print("bbbb")
 el^:
     print("cccc")
 }
 
-print(if^ f?: 1 elif^b?: 2 else^: 3;)
+print(if^f?: 1 elif^b?: 2 else^: 3;)
 
 let^iii = {aaaaa = "aaa", "bbb"}.tostring^
 print(iii)
@@ -79,7 +79,7 @@ let^A = def^{
     self^{ a = 0, b = 0, },
     overload^new = f^a, b { self^{ a = a, b = b } },
     overload^new = f^a { self^{ a = a, b = a } },
-    add = f^self^, rhs:Self^ -> Self^ { self^ },
+    add = f^self^, rhs:Self^-> Self^{ self^},
     op^* = f^self^, rhs:number^{ def^.new(self^.a * rhs, self^.b * rhs) },
     overload^op^* = f^lhs:number^, self^{ def^.new(lhs * self^.a, lhs * self^.b) },
     somestatic = p^{ print("aaa") },
@@ -216,9 +216,9 @@ match("ccc")
 let^yy = p^x:number^{
     do^{
         var^x = x.tostring()
-        return^ x
+        return^x
     }
-    return^ ""
+    return^""
 }
 
 print(yy(2))
@@ -235,7 +235,7 @@ let^foo = f^x:number^{ print(x) }
 let^bar = f^{ print("bar!") return^4 }
 # let^blah = foo; (bar()) print(foo, bar, blah)
 let^blah = foo do^{(bar())} print(foo, bar, blah) # やっぱ現行のルールで別にいいのでは
-print(0 < u < 3 < v = 0 and^ blah = blah)
+print(0 < u < 3 < v = 0 and^blah = blah)
 
 print("any^fits^nil^", any^fits^nil^)
 let^anynil = p^anyOrNil:any^|nil^{

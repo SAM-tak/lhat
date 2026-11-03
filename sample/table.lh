@@ -15,7 +15,7 @@ anyt.push^(0)
 anyt.push^(1)
 anyt.push^(2)
 anyt.push^(3)
-for^v:number^ in^anyt { print($"anyt array {index^}:{v}") }
+for^v:number^in^anyt { print($"anyt array {index^}:{v}") }
 
 let^concat = t2d..anyt
 print(concat)

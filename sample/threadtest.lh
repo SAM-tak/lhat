@@ -3,18 +3,18 @@ import^std.thread
 let^a = "aaaaaa"
 
 let^h = std.thread.spawn(p^... {
-    for^ i, x in^ ... { print(x) }
+    for^i, x in^... { print(x) }
     print("sleeping...")
     std.thread.sleep(1)
     print(a)
-    return^ 1
+    return^1
 }, "arg0", 1)
 
 if^h fits^std.thread.ThreadHandle {
     let^first = h.join()
     let^again = h.join()
     if^again fits^std.thread.ThreadError.AlreadyJoined {
-        return^ 1
+        return^1
     }
-    return^ 0
+    return^0
 }

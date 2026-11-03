@@ -20,7 +20,7 @@ import^std.thread
 待てるもの = コルーチン（15.9）。`delay` は「期限を出して止まる」コルーチンを返し、
 その期限 id がスケジューラまで届く。await^ が委譲なので、何段深くても届く。
 ]#
-public^let^delay:p^number^-> c^{p^-> number^ -> nil^}; = p^seconds {
+public^let^delay:p^number^-> c^{p^-> number^-> nil^}; = p^seconds {
     let^id = std.async.timer(seconds)
     yield^id
 }
@@ -33,8 +33,8 @@ public^let^delay:p^number^-> c^{p^-> number^ -> nil^}; = p^seconds {
 
 std.async が登録されていなければ id は 0。そのときだけ `done()` で訊く形に落ちる。
 ]#
-public^let^joined:p^std.thread.ThreadHandle -> c^{p^-> number^ ->
-        any^
+public^let^joined:p^std.thread.ThreadHandle -> c^{p^-> number^->
+    any^
         |std.thread.ThreadError.AlreadyJoined
         |std.thread.ThreadError.BadResult
         |std.sys.Error.OutOfMemory }; = p^h {
@@ -56,25 +56,25 @@ public^let^joined:p^std.thread.ThreadHandle -> c^{p^-> number^ ->
 ]#
 public^let^Scheduler: t^{
     self^{
-        tasks : t^{[number^]:c^{p^ -> number^}|nil^},
+        tasks : t^{[number^]:c^{p^-> number^}|nil^},
         waits : t^{},
         live : number^,
-        add : p^self^, c^{ p^ -> number^} -> number^;,
-        step : p^self^, number^ -> bool^;,
+        add : p^self^, c^{ p^-> number^} -> number^;,
+        step : p^self^, number^-> bool^;,
         wake : p^self^, number^;,
-        poll : p^self^ -> bool^;,
+        poll : p^self^-> bool^;,
         run : p^self^;
     },
-    new : f^ -> Self^;
+    new : f^-> Self^;
 } = def^{
     self^{
-        tasks : t^{[number^]:c^{p^ -> number^}|nil^} = { },
-        waits = { },      # 待っている期限 id。0 なら起きている
-        live  = 0,
+        tasks : t^{[number^]:c^{p^-> number^}|nil^} = {},
+        waits = {},      # 待っている期限 id。0 なら起きている
+        live = 0,
     },
 
     # 走らせる。start はまだしない——run() が最初の一歩を進める
-    add = p^self^, task:c^{p^-> number^}{
+    add = p^self^, task:c^{p^-> number^} {
         let^slot = self^.live
         self^.tasks[slot] := task
         self^.waits[slot] := 0
@@ -85,7 +85,7 @@ public^let^Scheduler: t^{
     # 1つ進める。答えは「まだ生きているか」
     step = p^self^, i:number^{
         let^task = self^.tasks[i]
-        if^task is^nil^{ return^false^ }
+        if^task is^nil^{ return^false^}
 
         let^asked = if^task.started(): task.resume() el^: task.start();
         if^task.done() {
@@ -124,7 +124,7 @@ public^let^Scheduler: t^{
                 waiting += 1
             }
         }
-        if^awake = 0 and^ waiting > 0 {
+        if^awake = 0 and^waiting > 0 {
             # 誰も起きていない。済んでいるものだけ取る——ここでは眠らない
             let^done = std.async.wait(0)
             if^done fits^number^{ self^.wake(done) }
@@ -152,7 +152,7 @@ public^let^Scheduler: t^{
             # 眠ってよいのは「誰も起きていない **かつ** 待っているものが在る」
             # ときだけである。待つものが無いのに眠れば、次の poll() まで
             # 何も起こらないまま止まる
-            if^awake = 0 and^ waiting > 0 {
+            if^awake = 0 and^waiting > 0 {
                 let^done = std.async.wait(60)
                 if^done fits^number^{ self^.wake(done) }
             }

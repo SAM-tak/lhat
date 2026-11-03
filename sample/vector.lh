@@ -61,6 +61,6 @@ print(vtos[positions.c])
 # (a bare host value cannot ride the variadic seat -- box it, or print
 # fields: k.get().x). The table type cannot say K and V for computed keys
 # yet, so strict asks the focus to say them.
-for^k:Vector3.ConstBox^, v:string^ in^vtos {
+for^k:Vector3.ConstBox^, v:string^in^vtos {
     print(k, v)
 }

@@ -20,13 +20,13 @@ let^A = def^{
         t = {}
     },
     override^new = f^t:t^{} {
-        self^ {
+        self^{
             t = t
         }
     },
     iterate = f^self^{
         var^c = 1
-        for^k:string^, v:number^ in^self^.t {
+        for^k:string^, v:number^in^self^.t {
             yield^k, v, c
             c += 1
         }
@@ -53,10 +53,10 @@ let^t2 = {
     c = 3,
     d = 4,
     e = 5,
-    iterate^ = f^self^{
+    iterate^= f^self^{
         var^c = 0
         for^k in^self^.keys^() {
-            if^ k = "iterate^" { continue^}
+            if^k = "iterate^" { continue^}
             yield^k, self^[k], c
             c += 1
         }
