@@ -1,20 +1,20 @@
-import^ std.binary
-import^ std.stream
+import^std.binary
+import^std.stream
 
-let^ State = t^{ name:string^, level:number^ }
-let^ state = new^State { name="player", level=12 }
+let^State = t^{ name:string^, level:number^}
+let^state = new^State { name = "player", level = 12 }
 
 # 1件をメモリ上のバイト列に保存する
-let^ bytes = try^std.binary.encode(state)
-let^ restored = try^std.binary.decode(bytes)
-if^ restored fits^State { print(restored.name, restored.level) }
+let^bytes = try^std.binary.encode(state)
+let^restored = try^std.binary.decode(bytes)
+if^restored fits^State { print(restored.name, restored.level) }
 
 # 同じ Writer に複数件を書き、Reader から1件ずつ取り出す
-let^ writer = try^std.stream.writer()
+let^writer = try^std.stream.writer()
 try^std.binary.serialize(writer, state)
-try^std.binary.serialize(writer, { name="next", level=13 })
-let^ reader = try^std.stream.reader(try^writer.toString())
-for^ i from^0 to^1 {
-    let^ value = try^std.binary.deserialize(reader)
-    if^ value fits^State { print(value.name, value.level) }
+try^std.binary.serialize(writer, { name = "next", level = 13 })
+let^reader = try^std.stream.reader(try^writer.toString())
+for^i from^0 to^1 {
+    let^value = try^std.binary.deserialize(reader)
+    if^value fits^State { print(value.name, value.level) }
 }

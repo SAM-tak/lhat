@@ -752,13 +752,13 @@ var^ x : number^ := 0      # 許容
 | `self^{ … }` | フィールドの雛形 | [syntax.obj.template] |
 | `def^{ … }` | 定義のメンバ（`op^` の定義を含む） | [syntax.obj.def-form] |
 | `errordef^ K { … }` | 種別のフィールド | [errors.kind.errordef] |
-| `error^K{ … }` | 生成するときに与える値 | [errors.kind.new] |
+| `new^K{ … }` | 生成するときに与える値 | [errors.kind.new] |
 
 ```lhat
 let^ t = { a = 0, b = "x" }
 let^ P = def^{ self^{ w = 5 }, m = p^ { } }
 errordef^ E { K { line : number^ = 0 } }
-let^ e = error^E.K{ line = 3 }
+let^ e = new^E.K{ line = 3 }
 ```
 
 ここでは `=` が比較にならない。比較が要るなら括弧で囲む（[syntax.obj.keys]）。

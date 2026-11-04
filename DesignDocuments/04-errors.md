@@ -401,7 +401,7 @@ p^ {
 原因は残る。
 
 ```lhat
-let^ v = x as^ T catch^ error^ConfigError.Invalid{ cause = it^ }
+let^v = x as^T catch^new^ConfigError.Invalid{ cause = it^ }
 ```
 
 `any^` に広げれば静的には見えなくなるが、[pipeline.repl.no-fork] のとおり実行時の追跡は
@@ -1075,7 +1075,7 @@ if^ r fits^ number^ { … }
 `finally^` の中で誤りを受け取った場合にできるのは、記録するか、無視することである。
 
 ```lhat
-finally^: flush() catch^ nil^
+finally^: flush() catch^nil^
 ```
 
 ---
@@ -1085,9 +1085,9 @@ finally^: flush() catch^ nil^
 下位の誤りを包んで返す場合、`cause` に元の誤りを入れる。
 
 ```lhat
-let^ r = parse(s)
-if^ r fits^ ParseError {
-    return^ error^ConfigError.Invalid{
+let^r = parse(s)
+if^r fits^ParseError {
+    return^new^ConfigError.Invalid{
         message := "config could not be read",
         cause := r,
     }
@@ -1097,7 +1097,7 @@ if^ r fits^ ParseError {
 `cause` は `error^|nil^` なので、辿る側は `?.` で書ける（[lex.op.list]）。
 
 ```lhat
-let^ depth = e.cause?.cause?.message
+let^depth = e.cause?.cause?.message
 ```
 
 連鎖は **包む側が明示的に入れたときだけ** できる。自動では付かない。
@@ -1124,7 +1124,7 @@ let^ depth = e.cause?.cause?.message
 拾えない — [errors.runtime.panic] に記す。
 
 なお実行時の機構そのものが誤り値を返す箇所は無い。
-誤り値は `error^…{ }` の生成（プログラムとホスト）だけから生まれる。
+誤り値は `new^ErrorGroup.ErrorName{ }` の生成（プログラムとホスト）だけから生まれる。
 
 ### 11.2 ゼロ除算は実数へ広がる [errors.runtime.div-zero]
 
