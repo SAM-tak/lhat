@@ -692,7 +692,7 @@ LhatType *lhat_type_coro(LhatTypeArena *arena, LhatType *receive,
         type->v.coroutine.receive = receive;
         type->v.coroutine.produce = produce;
         // [syntax.type.coroutine]: an empty third slot already says the last resume receives
-        // nil^ -- coroutine_answer puts it into Y|T. Writing that nil^ out as
+        // nil^ -- chk_coroutine_answer puts it into Y|T. Writing that nil^ out as
         // well would be a second spelling of one type, and two types that
         // differ nowhere a program can see. Folded here, at the one place a
         // coroutine type is built, so no reader has to know about the two.

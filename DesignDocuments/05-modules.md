@@ -2846,7 +2846,7 @@ install が歩いている最中のグラフに落ちてはいけない。
 - 取るのは公開入口だけ: `check` / `compile` / `load_text*` / `load_file` /
   `write_text` / `install` / `invalidate` / `discard_retired` / `reload`
 - **入れ子にしない。** 中で他の入口を呼ぶものは、錠の内側にいる半分
-  （`compile_all`・`check_held`・`load_text_held`）を呼ぶ。だからホストの
+  （`prg_compile_all`・`prg_check_held`・`prg_load_text_held`）を呼ぶ。だからホストの
   錠は再帰でなくてよい（ただの mutex で足りる）
 - **走る側は何も要らない。** 機械は proto の上を走り、書きは proto を
   動かさない（[pipeline.bc.coroutine] は本体を retire するのであって解放しない）

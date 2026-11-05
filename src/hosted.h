@@ -1,5 +1,5 @@
 // L^ (lhat) -- what a host registered, in the shape the compiler and the
-// machine read it ([modules.host.import]-8.9). Produced by program.c's registration
+// machine read it ([modules.host.import]-8.9). Produced by program_host.c's registration
 // calls; the strings and objects are owned by the registering LhatProgram
 // and outlive every machine and every compile that reads them.
 
@@ -61,7 +61,7 @@ typedef struct LhatHostTypeEntry {
     const char *name;
     const LhatHostDataTag *tag;
     // [modules.hostdata.base]: whether this one has been given what its base registered.
-    // program.c's flatten pass sets it; a base is done before what is under
+    // program_host.c's flatten pass sets it; a base is done before what is under
     // it, so a chain settles from the root down however the entries are
     // ordered. Nothing outside that pass reads it.
     bool flattened;
@@ -81,7 +81,7 @@ typedef struct LhatHostValueTypeEntry {
 // registered host value type, found back by tag->index. Called by
 // lhat_program_install after the entries have landed under L^.modules --
 // the tables bound here are those very ones, so the collector reaches them
-// through the environment already. program.c is the one caller.
+// through the environment already. program_host.c is the one caller.
 struct LhatMachine;
 bool lhat_machine_bind_hostvalues(struct LhatMachine *machine,
                                   const LhatHostValueTypeEntry *entries,

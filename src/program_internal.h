@@ -299,8 +299,8 @@ struct LhatProgram {
     // [modules.host.lock]: the host's lock over every write to this program, or NULL
     // for the one-threaded case that needs none. Taken by the public
     // entries and by nothing else -- an entry that would nest calls the
-    // half of itself that is already inside (compile_all, check_held,
-    // load_text_held).
+    // half of itself that is already inside (prg_compile_all, prg_check_held,
+    // prg_load_text_held).
     LhatProgramLockFn lock;
     LhatProgramLockFn unlock;
     void *lock_context;
@@ -545,5 +545,38 @@ const LhatRuntimeType *lhat_program_signature_type(LhatProgram *program,
 // is what makes every entry point one bounds test rather than three.
 bool lhat_unit_stage_of(const LhatUnit *unit, size_t index, LhatStage *stage,
                         size_t *within);
+
+// What program.c, program_host.c and program_require.c share. Not for the
+// in-tree tools: they go through the lhat_program_* entries above.
+char *prg_duplicate(const char *text);
+uint64_t prg_hash_text(const char *text, size_t length);
+// [modules.require.path]: a require^ is relative to the unit that wrote it.
+char *prg_resolve_against(const LhatProgram *program, const char *base,
+                          const char *relative, size_t relative_length);
+LhatUnit *prg_find_unit(LhatProgram *program, const char *path);
+const LhatSignatureIndex *prg_find_signature(const LhatProgram *program,
+                                             const char *text);
+#if LHAT_WITH_FRONTEND
+void prg_check_parsed(LhatProgram *program, LhatUnit *unit,
+                      LhatTypeArena *arena);
+#endif
+// [modules.hostdata.base]: gives every derived host type what its base registered. Both
+// of the two ways checking starts call it; it does its work once.
+void prg_flatten_hostdata_bases(LhatProgram *program);
+void prg_stamp_source(LhatProto *proto, const char *path);
+bool prg_fill_unit_table(LhatUnit *u);
+bool prg_compile_one(LhatProgram *program, LhatUnit *u, bool registers);
+// [modules.host.lock]: the halves that run with the lock already held, for the
+// entries that would otherwise take it twice.
+bool prg_compile_all(LhatProgram *program);
+const LhatUnit *prg_check_held(LhatProgram *program, const char *path);
+bool prg_install_all(const LhatProgram *program, LhatMachine *machine);
+size_t prg_invalidate_held(LhatProgram *program, const char *path);
+void prg_discard_retired_held(LhatProgram *program);
+LhatLoadStatus prg_load_text_held(LhatProgram *program, const char *name,
+                                  const char *text, size_t length,
+                                  const LhatLoadOptions *options,
+                                  LhatProto **out);
+extern const LhatMessageEntry prg_program_parts[1];
 
 #endif  // LHAT_PROGRAM_INTERNAL_H

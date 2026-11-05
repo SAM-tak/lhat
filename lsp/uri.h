@@ -1,7 +1,7 @@
 // L^ (lhat) -- LSP server: file:// URIs and the paths program.h wants.
 //
 // program.c's normalise_path only unifies separators and folds '.'/'..' --
-// it never turns an absolute path into a relative one, and resolve_against
+// it never turns an absolute path into a relative one, and prg_resolve_against
 // joins a require^'s relative text onto the last segment of whoever wrote
 // it. So handing program.h absolute paths keeps a whole dependency graph
 // absolute automatically, with no workspace-relative bookkeeping needed.

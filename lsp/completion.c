@@ -567,7 +567,7 @@ char *lsp_completion_relative_path(const char *from, const char *target)
         return NULL;
     }
     // The directory the requiring unit stands in, which is what [modules.require]
-    // resolves a written path against (program.c's resolve_against).
+    // resolves a written path against (program.c's prg_resolve_against).
     const char *slash = strrchr(from, '/');
     size_t base_length = slash != NULL ? (size_t)(slash - from) + 1 : 0;
     char *base = lsp_strndup(from, base_length);

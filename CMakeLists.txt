@@ -210,6 +210,8 @@ set(LHAT_CORE_SOURCES
     src/number.c
     src/type.c
     src/program.c
+    src/program_host.c
+    src/program_require.c
     src/extension.c
     src/registry.c
     src/code.c
@@ -235,7 +237,11 @@ set(LHAT_FRONTEND_SOURCES
     src/ast.c
     src/parser.c
     src/check.c
+    src/check_narrow.c
     src/check_expr.c
+    src/check_member.c
+    src/check_object.c
+    src/check_func.c
     src/check_stmt.c
     src/check_initialization.c
     src/semantic.c

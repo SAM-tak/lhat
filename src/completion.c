@@ -364,7 +364,7 @@ static bool word_prefix(const char *text, size_t length,
 // it and nothing is refused by it: a word missing here is one suggestion
 // that does not appear, and a word here that the language no longer takes is
 // one the checker reports the moment it is written. When the language gains
-// a word, add it -- the same bargain chk_builtin_words[] (src/check_expr.c)
+// a word, add it -- the same bargain chk_builtin_words[] (src/check_member.c)
 // strikes for members.
 typedef struct {
     const char *word;

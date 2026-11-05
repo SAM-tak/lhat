@@ -38,7 +38,7 @@ static const uint8_t TABLE_MAGIC[4] = { 0x89, 'L', 'H', 'S' };
 #define HEADER_BYTES 24u  // magic, format, flags, fingerprint, hash
 
 // ---------------------------------------------------------------------------
-// The one hash: FNV-1a 64, as program.c's hash_text
+// The one hash: FNV-1a 64, as program.c's prg_hash_text
 // ---------------------------------------------------------------------------
 
 static uint64_t fnv_step(uint64_t hash, const void *bytes, size_t length)

@@ -1,7 +1,6 @@
-// L^ (lhat) -- the checker's own insides, shared by check.c, check_expr.c
-// and check_stmt.c and included by nothing else. The chk_ prefix marks a
-// symbol that crosses those three files and must not collide with anything
-// at link time.
+// L^ (lhat) -- the checker's own insides, shared by the check*.c files and
+// included by nothing else. The chk_ prefix marks a symbol that crosses
+// those files and must not collide with anything at link time.
 
 #ifndef LHAT_CHECK_INTERNAL_H
 #define LHAT_CHECK_INTERNAL_H
@@ -821,13 +820,13 @@ LhatType *chk_table_walk_tuple(Checker *c, const LhatType *over);
 LhatType *chk_table_element_type(Checker *c, const LhatType *over);
 LhatType *chk_without_nil_arm(Checker *c, LhatType *target);
 // [syntax.obj.substring]: the bare spellings the built-in cascade answers to, for the one
-// caller that lists them rather than looking one up. See check_expr.c, where
+// caller that lists them rather than looking one up. See check_member.c, where
 // it stands next to the cascade it belongs to.
 extern const char *const chk_builtin_words[];
 extern const size_t chk_builtin_word_count;
 
 // [syntax.obj.structure] with [syntax.obj.substring]: what a type answers for a member of this name, asked
-// rather than walked into. `node` NULL asks it quietly -- see check_expr.c.
+// rather than walked into. `node` NULL asks it quietly -- see check_member.c.
 LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
                         size_t length, const LhatNode *node,
                         LhatType **named_type);
@@ -888,5 +887,32 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements);
 void chk_check_statements(Checker *c, const LhatNode *statements);
 void chk_check_block_in_scope(Checker *c, const LhatNode *node);
 void chk_check_statement(Checker *c, const LhatNode *node);
+
+// What check_expr.c shares with the files split off it: check_member.c,
+// check_object.c and check_func.c.
+bool chk_runtime_has_unresolved_arguments(const LhatType *type);
+LhatType *chk_access_target(Checker *c, const LhatNode *node, LhatType *type);
+const LhatType *chk_operator_arm(const LhatType *carrier,
+                                 LhatType *const *args, size_t count,
+                                 bool self_last);
+void chk_report_no_member(Checker *c, const LhatNode *node, LhatType *target,
+                          const char *name, size_t length);
+void chk_join_table_entry_types(Checker *c, const LhatType *table,
+                                LhatType **keys, LhatType **values);
+LhatType *chk_coroutine_made_by(Checker *c, const LhatType *func);
+LhatType *chk_coroutine_answer(Checker *c, const LhatType *coro);
+void chk_hostvalue_temporary_write(Checker *c, const LhatNode *at,
+                                   const LhatNode *receiver,
+                                   const LhatType *type);
+void chk_retain_instance_failure(Checker *c, Instantiation *instance,
+                                 size_t start);
+LhatType *chk_infer_template(Checker *c, const LhatNode *node);
+LhatType *chk_nil_propagated(Checker *c, const LhatNode *node,
+                             LhatType *answer);
+bool chk_run_of_names(const LhatNode *node, bool allow_scope);
+bool chk_string_member_key(Checker *c, const LhatNode *key);
+LhatType *chk_infer_index(Checker *c, const LhatNode *node);
+LhatType *chk_infer_table(Checker *c, const LhatNode *node);
+LhatType *chk_declared_signature(Checker *c, const LhatNode *node);
 
 #endif  // LHAT_CHECK_INTERNAL_H

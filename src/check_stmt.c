@@ -786,7 +786,7 @@ void chk_register_module_type(Checker *c, const char *module_name,
 
 // The step of the host's tree a written path reaches -- its own members are
 // the units named under it, and what the unit there published is its base
-// (program.c's hosted_unit).
+// (program_host.c's hosted_unit).
 static const LhatType *hosted_step(Checker *c, const LhatNode *path)
 {
     const LhatType *owner = c->require.hosted;
