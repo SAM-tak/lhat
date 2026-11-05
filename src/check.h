@@ -154,6 +154,8 @@ typedef enum {
     LHAT_CHECK_ERR_BOX_FIELD_WRITE,     // [modules.hostvalue.union]: a box's field is read
                                         // off the bytes; writing goes
                                         // through set()
+    LHAT_CHECK_ERR_HOSTVALUE_TEMPORARY_WRITE, // [modules.hostvalue]: a temporary copy
+                                             // has no storage to write back to
     LHAT_CHECK_ERR_NOT_BOXABLE,         // [modules.hostvalue]: box^ takes a host value
                                         // -- everything else already lives
                                         // on the heap and needs no box

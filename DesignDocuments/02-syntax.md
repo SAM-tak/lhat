@@ -3080,6 +3080,10 @@ op^+ := f^lhs:number^, self^ -> number^ { return^ lhs + self^.n }
 `≠` は `=` の否定である（[syntax.op.compare] ・[syntax.op.equal]）。`and^` `or^` `!` は言語のもの。
 ビット演算の5語も同じで、`number^` にしか答えない（[syntax.obj.bits]）。
 
+`[]` はホストが登録した hostdata の読み出しに限る例外である
+（[modules.hostdata.index]）。L^ の `def^{ … }` には `op^[]` を定義できず、
+テーブルの `[]` は常に組込みのキー参照になる。hostvalue も対象外である。
+
 #### 名前は演算子そのもの
 
 通常の記号演算子には対応表を作らない。`concat` のような別名を割り当てれば、

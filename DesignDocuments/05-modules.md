@@ -1788,6 +1788,38 @@ void *lhat_hostdata_pointer(LhatValue value, const LhatHostDataTag *tag);
 - **検査** — `store.Held` を求める位置に `store.Other` は書けない
 - **実行時** — `lhat_hostdata_pointer` のタグ照合。relaxed（[pipeline.strict.per-unit]）で抜けても止まる
 
+#### 8.8+4 hostdata の添字読み出し [modules.hostdata.index]
+
+hostdata に限り、ホストは `[]` という名前で読み出し演算子を登録できる。
+L^ 側では `hd.getAt(i)` の代わりに `hd[i]` と書ける。
+
+```c
+lhat_register_member(program, "store", "Buffer", "[]",
+                     "f^self^, number^ -> number^;", buffer_get_at, context);
+```
+
+```lhat
+let^ value = buffer[3]       # 登録した [] を self^=buffer、キー=3 で呼ぶ
+let^ maybe = buffer?[3]     # nil^ ならキーも評価せず nil^
+```
+
+- 署名は `f^self^, Key -> Value;`。キー1つと戻り値1つを取り、
+  `p^`、`mutable^self^`、可変長引数、タプルの戻り値は受け付けない。
+- キーの型で多重定義でき、基底型からの継承も通常の登録メンバと同じである。
+- 戻り値は登録した型そのもの。組込みテーブル参照と違い、自動で `nil^` を足さない。
+  不在を返す場合は署名を `Value|nil^` とする。範囲外などの扱いはホストが決める。
+- `hd.name` は通常の登録メンバ参照であり、`[]` を呼ばない。
+  `[]` を登録した hostdata の `hd["name"]` は、文字列もキーとして `[]` に渡す。
+- `[]` を登録していない hostdata のキー参照は従来の登録メンバ参照のままである。
+- テーブル・`def^` のインスタンス・hostvalue には定義できない。
+  L^ ソースの `op^[]` も受け付けず、ホスト登録の名前 `"[]"` でのみ定義する。
+- 読み出し専用であり、`hd[i] := value` や複合代入には対応しない。
+  書き込みにはホストの明示的なメソッドを使う。
+- 戻り値が参照なら、`hd[i].x := value` や `hd[i].change()` は参照先を変更する。
+  その型の通常の書き込み・呼び出し制約は引き続き適用する。
+  hostvalue なら取得したコピーなので、フィールド代入と変更メソッドの呼び出しは拒む
+  （[modules.hostvalue]）。
+
 #### 8.8+ ホスト型は基底を1つ持てる［重要］ [modules.hostdata.base]
 
 > **ホスト型は登録のときに基底を1つ名指せる。基底の在るタグは、基底を
@@ -2508,6 +2540,24 @@ GCの走査は幅を知らずに正しく動く -- CONT はオブジェクトで
 メンバ（演算子・メソッド）は `lhat_register_hostvalue_member`、
 フィールドは `lhat_register_hostvalue_field(…, offset, kind)` で申告し、
 `v.x` はホスト呼び出しなしにバイト列を直に読み書きする。
+
+#### 一時的なコピーは書き換えない
+
+hostvalue を返す関数呼び出しや hostdata の `[]`（[modules.hostdata.index]）は、
+取得元の場所ではなくコピーを返す。その一時値へのフィールド代入、
+`p^self^` または `f^mutable^self^` メソッドの呼び出しはエラーにする。
+読み取りと、受け手を変更しない `f^self^` メソッドは使える。
+
+```lhat
+items[i].x := 1          # 誤り。戻り値が hostvalue なら一時コピーへの変更
+items[i].change()        # 同じ。受け手を変更できるメソッド
+let^ x = items[i].x      # 読み取りは可能
+var^ copy = items[i]
+copy.x := 1             # ローカルのコピーを変更。items には書き戻さない
+```
+
+参照型の戻り値にはこの制限を加えない。参照が指すオブジェクトへの変更と、
+hostvalue のコピーへの変更を、戻り値の型だけで区別する。
 
 #### スタックの外に出られない［重要］
 

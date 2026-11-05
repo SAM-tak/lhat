@@ -242,6 +242,7 @@ static size_t LHAT_HOT_FUNCTION(Machine *m, const LhatChunk *chunk,
                 break;
             }
             case LHAT_BC_GETINDEX:
+            case LHAT_BC_GETELEMENT:
             case LHAT_BC_GETMEMBER: {
                 LhatValue key = op == LHAT_BC_GETMEMBER
                                     ? chunk->constants[chunk->member_keys[c]] : HOT_R(c);

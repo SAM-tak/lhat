@@ -3797,7 +3797,9 @@ static void compile_expression(Compiler *c, const LhatNode *node, uint8_t into)
                 // bytes it asks by sit whole beside the head.
                 uint8_t key = reserve_for(c, node->v.access.argument);
                 compile_key(c, node, key);
-                emit(c, lhat_encode_abc(LHAT_BC_GETINDEX, into, target, key));
+                emit(c, lhat_encode_abc(node->kind == LHAT_NODE_INDEX
+                                            ? LHAT_BC_GETELEMENT : LHAT_BC_GETINDEX,
+                                        into, target, key));
             }
             chain_close(c, &chain);
             c->next_register = mark;
@@ -6558,7 +6560,8 @@ static void mark_hot_loops(LhatProto *proto)
             case LHAT_BC_LTK: case LHAT_BC_LEK: case LHAT_BC_GTK: case LHAT_BC_GEK:
             case LHAT_BC_JUMP: case LHAT_BC_JUMP_FALSE:
             case LHAT_BC_FORLOOP: case LHAT_BC_FORLOOPD:
-            case LHAT_BC_GETINDEX: case LHAT_BC_GETMEMBER: case LHAT_BC_SETINDEX:
+            case LHAT_BC_GETINDEX: case LHAT_BC_GETELEMENT:
+            case LHAT_BC_GETMEMBER: case LHAT_BC_SETINDEX:
                 break;
             default:
                 after_unsupported = i + 1;

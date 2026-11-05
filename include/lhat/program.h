@@ -819,6 +819,8 @@ bool lhat_register_hostdata_type_arguments(LhatProgram *program, const char *mod
 //
 // [modules.hostdata.base]: a derived type inherits what its base registered. Registering the
 // same name on the derived one is what replaces it there.
+// [modules.hostdata.index]: name "[]" registers a hostdata-only bracket getter,
+// with signature f^self^, Key -> Value;. It does not enable indexed writes.
 bool lhat_register_member(LhatProgram *program, const char *module,
                           const char *type, const char *name,
                           const char *signature, LhatHostFn call,

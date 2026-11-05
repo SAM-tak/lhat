@@ -1741,6 +1741,17 @@ static const LhatNode *call_receiver(const LhatNode *node, const LhatType *calle
                ? node->v.access.argument : NULL;
 }
 
+static void check_hostvalue_temporary_write(Checker *c, const LhatNode *at,
+                                            const LhatNode *receiver,
+                                            const LhatType *type)
+{
+    // [modules.hostvalue]: an indexed or returned value is a copy, with no
+    // location in its source to write back to. A reference keeps its identity.
+    if (receiver != NULL && receiver->checked_binding == NULL && chk_is_hostvalue(type)) {
+        chk_report(c, at, LHAT_CHECK_ERR_HOSTVALUE_TEMPORARY_WRITE);
+    }
+}
+
 // [syntax.sub.mutable-self]: an f^ whose receiver seat is mutable writes through it, so an f^
 // body may call one only on what it made itself -- [syntax.sub.yieldable-f]'s rule for a
 // coroutine, reached through a call instead of a resume. [syntax.sub.table-write]: nothing says
@@ -1750,6 +1761,12 @@ static const LhatNode *call_receiver(const LhatNode *node, const LhatType *calle
 static void check_mutable_receiver(Checker *c, const LhatNode *node,
                                    const LhatType *callee)
 {
+    if (callee != NULL && callee->kind == LHAT_TYPE_FUNC && callee->v.func.takes_self &&
+        (!callee->v.func.is_function || callee->v.func.mutable_self)) {
+        const LhatNode *receiver = call_receiver(node, callee);
+        check_hostvalue_temporary_write(c, node, receiver,
+                                         receiver != NULL ? receiver->checked_type : NULL);
+    }
     if (!c->in_function || callee == NULL ||
         callee->kind != LHAT_TYPE_FUNC || !callee->v.func.is_function ||
         !callee->v.func.mutable_self) {
@@ -3112,6 +3129,9 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
     LhatType *target = chk_infer(c, node->v.access.target);
+    if (c->writing_to == node) {
+        check_hostvalue_temporary_write(c, node, node->v.access.target, target);
+    }
 #if LHAT_WITH_RESOLUTIONS
     // [lsp.hover]: only the two answers below have a member record to point
     // at, so what is left here when this returns is this access's member or
@@ -4053,6 +4073,23 @@ static LhatType *dictionary_index_type(Checker *c, const LhatNode *node,
     if (over == NULL) {
         return NULL;
     }
+    if (over->kind == LHAT_TYPE_TABLE &&
+        over->v.table.hostdata_tag != NULL) {
+        const LhatTypeMember *getter = chk_find_member(over, "[]", 2);
+        if (getter != NULL) {
+            if (c->writing_to == node) {
+                chk_report(c, node, LHAT_CHECK_ERR_TABLE_IS_SEALED);
+                return chk_simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            LhatType *args[1] = { key };
+            const LhatType *arm = operator_arm(getter->type, args, 1, false);
+            if (arm == NULL) {
+                chk_report(c, node->v.access.argument, LHAT_CHECK_ERR_NO_OPERATOR);
+                return chk_simple(c, LHAT_TYPE_UNKNOWN);
+            }
+            return lhat_type_call_answer(arm);
+        }
+    }
     if (over->kind == LHAT_TYPE_TABLE && over->v.table.index_key != NULL &&
         !over->v.table.inferred_index) {
         chk_expect(c, node->v.access.argument, key, over->v.table.index_key,
@@ -4111,7 +4148,8 @@ static LhatType *infer_index(Checker *c, const LhatNode *node)
     // arm, and '?[' steps past it under strict as well.
     over = access_target(c, node, over);
     LhatType *dictionary = dictionary_index_type(c, node, over, asked);
-    if (dictionary != NULL && over->kind != LHAT_TYPE_TABLE) {
+    if (dictionary != NULL && (over->kind != LHAT_TYPE_TABLE ||
+                               over->v.table.hostdata_tag != NULL)) {
         return dictionary;
     }
     // [errors.runtime.index]: only a table holds keys. A settled type that is not one

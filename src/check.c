@@ -4843,6 +4843,9 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_BOX_FIELD_WRITE] = {"check.box-field-write",
         "a box's field is read straight off its bytes; writing "
         "goes through set(...), which a ConstBox^ does not have"},
+    [LHAT_CHECK_ERR_HOSTVALUE_TEMPORARY_WRITE] = {"check.hostvalue-temporary-write",
+        "this host value is a temporary copy; bind it to a local before "
+        "changing it (the change does not write back to its source)"},
     [LHAT_CHECK_ERR_NOT_BOXABLE] = {"check.not-boxable",
         "box^ takes a host value; everything else already lives "
         "on the heap and needs no box"},

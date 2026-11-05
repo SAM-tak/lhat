@@ -429,6 +429,7 @@ static Choice choose(const LhatChunk *chunk, size_t pc)
             choice.stencil = &lhat_jit_stencil_getupval;
             break;
         case LHAT_BC_GETINDEX:
+        case LHAT_BC_GETELEMENT:
             choice.stencil = &lhat_jit_stencil_getindex;
             break;
         case LHAT_BC_GETMEMBER:

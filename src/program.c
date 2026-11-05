@@ -2215,6 +2215,18 @@ static bool register_into(LhatProgram *program, LhatType *owner,
     if (written == NULL) {
         return false;
     }
+    // [modules.hostdata.index]: [] is a hostdata-only, non-yielding getter.
+    if (strcmp(name, "[]") == 0 &&
+        (owner->kind != LHAT_TYPE_TABLE || owner->v.table.hostdata_tag == NULL ||
+         written->kind != LHAT_TYPE_FUNC || !written->v.func.is_function ||
+         !written->v.func.takes_self || written->v.func.self_last ||
+         written->v.func.mutable_self ||
+         written->v.func.yields || written->v.func.variadic != NULL ||
+         written->v.func.params == NULL || written->v.func.params->next != NULL ||
+         written->v.func.result == NULL ||
+         lhat_type_tuple_arm_width(written->v.func.result) > 0)) {
+        return false;
+    }
     // [syntax.type.tuple]: the room a boundary answers into is LHAT_MAX_TUPLE
     // wide, and the reason it is that wide is that the machine's own is.
     // A signature promising more than the machine can carry is refused
@@ -2319,6 +2331,14 @@ static bool register_into(LhatProgram *program, LhatType *owner,
         return false;
     }
     const LhatRuntimeType *rt = lhat_program_signature_type(program, signature);
+    if (strcmp(name, "[]") == 0 &&
+        (owner->kind != LHAT_TYPE_TABLE || owner->v.table.hostdata_tag == NULL ||
+         rt == NULL || rt->kind != LHAT_TYPE_RT_SUBROUTINE || !rt->is_function ||
+         !rt->takes_self || rt->self_last || rt->mutable_self || rt->variadic != NULL ||
+         rt->part_count != 1 || rt->result == NULL ||
+         rt->result->kind == LHAT_TYPE_RT_TUPLE)) {
+        return false;
+    }
     return rt != NULL && keep_entry_rt(program, module, type, name, call,
                                        context, rt, signature);
 }

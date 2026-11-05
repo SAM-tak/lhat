@@ -331,6 +331,9 @@ typedef enum {
     // where that unit has run -- sealed -- and nil^ otherwise, including where
     // only the units named under it have made its table.
     LHAT_BC_REGISTERED, // A B   R[A] = the unit R[B] names, or nil^
+    // [modules.hostdata.index]: bracket reads may call a hostdata's [] member.
+    // GETINDEX remains the raw member lookup used by dotted accesses.
+    LHAT_BC_GETELEMENT, // A B C R[A] = R[B][R[C]], with hostdata dispatch
     LHAT_BC_COUNT
 } LhatOpcode;
 

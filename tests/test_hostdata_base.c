@@ -14,6 +14,7 @@
 // silent, which is worse than refused.
 
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1552,8 +1553,196 @@ static void test_inferred_hostdata_identity(void)
     lhat_program_dispose(&program);
 }
 
+static void node_get_at(LhatMachine *machine, void *context,
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
+{
+    (void)machine;
+    (void)context;
+    LHAT_CHECK_EQ_INT(count, 2);
+    SceneNode *self = (SceneNode *)lhat_hostdata_pointer(arguments[0], node_tag);
+    if (self == NULL) self = (SceneNode *)lhat_hostdata_pointer(arguments[0], other_tag);
+    answers[0] = lhat_integer(self->id +
+                              (lhat_is_integer(arguments[1])
+                                   ? lhat_as_integer(arguments[1]) : 100));
+    *answer_count = 1;
+}
+
+static void test_hostdata_index(void)
+{
+    const char *reads[] = {
+        "let^ hd = scene.makeSprite() return^ hd[2] + hd.id()",
+        "let^ hd = scene.makeSprite() return^ hd[\"id\"]",
+        "let^ hd : scene.Sprite2D|nil^ = scene.makeSprite() return^ hd?[2] ?? 0",
+        "let^ hd : any^ = scene.makeSprite() return^ hd[2]",
+        "let^ hd : scene.Sprite2D|scene.Resource = scene.makeSprite() return^ hd[2]",
+        "let^ hd = scene.makeSprite() let^ t = { [\"[]\"] = f^self^, k:number^ { 999 }, 8 } return^ t[0]",
+        "let^ hd : scene.Sprite2D|nil^ = nil^ return^ hd?[scene.makeSprite()[0]] ?? 5",
+    };
+    const int expected[] = { 82, 140, 42, 42, 42, 8, 5 };
+    for (size_t i = 0; i < sizeof reads / sizeof reads[0]; i++) {
+        LHAT_TEST("hostdata bracket reads dispatch without changing table or member reads");
+        char source[512];
+        snprintf(source, sizeof source, "import^ scene\n%s\n", reads[i]);
+        const File files[] = {{ "main.lh", source }};
+        LhatProgram program;
+        Disk disk;
+        program_with(&program, &disk, files, 1);
+        LHAT_REQUIRE(register_scene(&program, false), "registered");
+        LHAT_REQUIRE(lhat_register_member(&program, "scene", "Node", "[]",
+                    "f^self^, number^ -> number^;", node_get_at, NULL), "getter registered");
+        LHAT_REQUIRE(lhat_register_member(&program, "scene", "Node", "[]",
+                    "f^self^, string^ -> number^;", node_get_at, NULL), "overload registered");
+        LHAT_REQUIRE(lhat_register_member(&program, "scene", "Resource", "[]",
+                    "f^self^, number^ -> number^;", node_get_at, NULL), "union arm registered");
+        the_node.id = 40;
+        LhatRunResult ran = run_program(&program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), expected[i]);
+        lhat_program_dispose(&program);
+    }
+
+    const char *refused[] = {
+        "let^ hd = scene.makeSprite() return^ hd[true^]",
+        "let^ hd = scene.makeSprite() hd[0] := 1",
+        "let^ hd = scene.makeSprite() hd[0] += 1",
+        "let^ C = def^{ op^[] = f^self^, k:number^ { k } }",
+    };
+    for (size_t i = 0; i < sizeof refused / sizeof refused[0]; i++) {
+        LHAT_TEST("hostdata indexing rejects wrong keys and writes; L^ cannot define op^[]");
+        char source[256];
+        snprintf(source, sizeof source, "import^ scene\n%s\n", refused[i]);
+        const File files[] = {{ "main.lh", source }};
+        LhatProgram program;
+        Disk disk;
+        program_with(&program, &disk, files, 1);
+        LHAT_REQUIRE(register_scene(&program, false), "registered");
+        LHAT_REQUIRE(lhat_register_member(&program, "scene", "Node", "[]",
+                    "f^self^, number^ -> number^;", node_get_at, NULL), "getter registered");
+        const LhatUnit *root = lhat_program_check(&program, "main.lh");
+        LHAT_CHECK(root != NULL && (root->parsed.diagnostic_count > 0 ||
+                                    root->checked.diagnostic_count > 0), "rejected");
+        lhat_program_dispose(&program);
+    }
+
+    LHAT_TEST("a dynamic key is checked before invoking a lone hostdata getter");
+    {
+        const File dynamic[] = {{ "main.lh",
+            "import^ scene\nlet^ hd : any^ = scene.makeSprite()\nreturn^ hd[true^]\n" }};
+        LhatProgram dynamic_program;
+        Disk dynamic_disk;
+        program_with(&dynamic_program, &dynamic_disk, dynamic, 1);
+        LHAT_REQUIRE(register_scene(&dynamic_program, false), "registered");
+        LHAT_REQUIRE(lhat_register_member(&dynamic_program, "scene", "Node", "[]",
+                    "f^self^, number^ -> number^;", node_get_at, NULL), "getter registered");
+        LhatRunResult ran = run_program(&dynamic_program);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_NO_CANDIDATE);
+        lhat_program_dispose(&dynamic_program);
+    }
+
+    LHAT_TEST("only a hostdata getter with one key can register as []");
+    const File files[] = {{ "main.lh", "return^ 0" }};
+    LhatProgram program;
+    Disk disk;
+    program_with(&program, &disk, files, 1);
+    LHAT_REQUIRE(register_scene(&program, false), "registered");
+    const char *bad[] = { "p^self^, number^;", "f^number^ -> number^;",
+                          "f^self^ -> number^;", "f^self^, number^, number^ -> number^;",
+                          "f^self^, number^ -> (number^, number^);",
+                          "f^mutable^self^, number^ -> number^;" };
+    for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+        LHAT_CHECK(!lhat_register_member(&program, "scene", "Node", "[]",
+                                         bad[i], node_get_at, NULL), "bad getter refused");
+    }
+    LHAT_REQUIRE(lhat_register_hostvalue_type(&program, "scene", "Small", 8) != NULL,
+                  "hostvalue registered");
+    LHAT_CHECK(!lhat_register_hostvalue_member(&program, "scene", "Small", "[]",
+                "f^self^, number^ -> number^;", node_get_at, NULL), "hostvalue refused");
+    lhat_program_dispose(&program);
+}
+
+static void small_value(LhatMachine *machine, void *context,
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
+{
+    (void)arguments;
+    (void)count;
+    double value = 42;
+    LHAT_CHECK(lhat_make_hostvalue(machine, context, &value, &answers[0]), "value made");
+    *answer_count = 1;
+}
+
+static void small_read(LhatMachine *machine, void *context,
+                        const LhatValue *arguments, size_t count,
+                        LhatValue *answers, int *answer_count)
+{
+    (void)machine;
+    (void)count;
+    double *value = lhat_hostvalue_data(arguments[0], context);
+    answers[0] = lhat_real(*value);
+    *answer_count = 1;
+}
+
+static void test_indexed_hostvalue_temporary(void)
+{
+    const char *cases[] = {
+        "a[0].x := 1",
+        "a[0].x += 1",
+        "a[0].change()",
+        "a[0].mutate()",
+        "scene.value().x := 1",
+        "scene.value().change()",
+        "return^ a[0].x",
+        "return^ a[0].inspect()",
+        "var^ v = a[0] v.x := 7 return^ v.x",
+        "let^ refs = {{ x = 0, change = p^self^ { self^.x := 9 } }}\n"
+        "refs[0].x := 1 refs[0].change() return^ refs[0].x",
+    };
+    const int expected[] = { 42, 42, 7, 9 };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        LHAT_TEST("index results distinguish reference mutation from temporary hostvalue mutation");
+        char source[512];
+        snprintf(source, sizeof source, "import^ scene\nlet^ a = scene.makeSprite()\n%s\n", cases[i]);
+        const File files[] = {{ "main.lh", source }};
+        LhatProgram program;
+        Disk disk;
+        program_with(&program, &disk, files, 1);
+        LHAT_REQUIRE(register_scene(&program, false), "registered");
+        const LhatHostValueTag *tag = lhat_register_hostvalue_type(&program, "scene", "Small", sizeof(double));
+        LHAT_REQUIRE(tag != NULL, "value type registered");
+        LHAT_REQUIRE(lhat_register_hostvalue_field(&program, "scene", "Small", "x", 0, LHAT_HVFIELD_F64), "field registered");
+        LHAT_REQUIRE(lhat_register_member(&program, "scene", "Node", "[]",
+                    "f^self^, number^ -> scene.Small;", small_value, (void *)tag), "getter registered");
+        LHAT_REQUIRE(lhat_register_func(&program, "scene", "value",
+                    "f^ -> scene.Small;", small_value, (void *)tag), "factory registered");
+        LHAT_REQUIRE(lhat_register_hostvalue_member(&program, "scene", "Small", "inspect",
+                    "f^self^ -> number^;", small_read, (void *)tag), "reader registered");
+        LHAT_REQUIRE(lhat_register_hostvalue_member(&program, "scene", "Small", "change",
+                    "p^self^;", node_dispose, NULL), "procedure registered");
+        LHAT_REQUIRE(lhat_register_hostvalue_member(&program, "scene", "Small", "mutate",
+                    "f^mutable^self^ -> number^;", small_read, (void *)tag), "mutating function registered");
+        if (i < 6) {
+            const LhatUnit *root = lhat_program_check(&program, "main.lh");
+            bool found = false;
+            for (size_t d = 0; root != NULL && d < root->checked.diagnostic_count; d++) {
+                found |= root->checked.diagnostics[d].code == LHAT_CHECK_ERR_HOSTVALUE_TEMPORARY_WRITE;
+            }
+            LHAT_CHECK(found, "temporary mutation diagnosed: %s", cases[i]);
+        } else {
+            LhatRunResult ran = run_program(&program);
+            LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+            LHAT_CHECK_EQ_INT(lhat_is_integer(ran.value) ? lhat_as_integer(ran.value)
+                                                        : (int)lhat_as_real(ran.value),
+                              expected[i - 6]);
+        }
+        lhat_program_dispose(&program);
+    }
+}
+
 int main(void)
 {
+    test_indexed_hostvalue_temporary();
+    test_hostdata_index();
     test_the_relation();
     test_inferred_hostdata_identity();
     test_inherited_members();

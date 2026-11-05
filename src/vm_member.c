@@ -17,6 +17,10 @@
 // NULL for every other instruction.
 const char *vm_operator_name(LhatOpcode op, size_t *length)
 {
+    if (op == LHAT_BC_GETELEMENT) {
+        *length = 2;
+        return "[]";
+    }
     switch (op) {
 #define LHAT_OPERATOR_CASE(opk, bc, spelling, len) \
     case LHAT_BC_##bc:                             \
@@ -727,7 +731,8 @@ OperatorLookup vm_operator_candidate(Machine *m, LhatValue side,
 {
     *picked = lhat_nil();
     *bound = receiver;
-    const LhatTable *carrier = vm_table_of(side);
+    const LhatTable *carrier = length == 2 && name != NULL && memcmp(name, "[]", 2) == 0
+                                  ? vm_readable_table(side) : vm_table_of(side);
     // [modules.hostvalue]: a host value's operators live in the members table the
     // machine bound for its type -- the value has no heap half of its own.
     if (carrier == NULL && lhat_is_hostvalue(side)) {
@@ -784,6 +789,13 @@ OperatorLookup vm_operator_candidate(Machine *m, LhatValue side,
         if (host->has_variadic ? given < host->parameters
                                : given != host->parameters) {
             return OPERATOR_NO_CANDIDATE;
+        }
+        if (length == 2 && memcmp(name, "[]", 2) == 0) {
+            size_t skip = 1;
+            shaped[0] = found;
+            if (!host->takes_self || !vm_fits_call(found, shaped, given, true, &skip)) {
+                return OPERATOR_NO_CANDIDATE;
+            }
         }
         *picked = found;
         return OPERATOR_PICKED;

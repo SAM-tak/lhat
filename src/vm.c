@@ -886,6 +886,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
         VM_LABEL(LHAT_BC_GETMETHOD),
         VM_LABEL(LHAT_BC_ITERPREP),
         VM_LABEL(LHAT_BC_REGISTERED),
+        VM_LABEL(LHAT_BC_GETELEMENT),
     };
 #endif
 
@@ -1569,7 +1570,19 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
                 VM_NEXT();
             }
 
+            VM_CASE(LHAT_BC_GETELEMENT) {
+                // Tables always use their built-in indexing. Only hostdata
+                // can replace a bracket read; dotted member reads bypass it.
+                if (lhat_is_object_kind(R(b), LHAT_OBJECT_HOSTDATA)) {
+                    LhatValue receiver = R(b);
+                    LhatValue indexer = vm_lookup_named(vm_readable_table(R(b)),
+                                                        "[]", 2, &receiver);
+                    if (!lhat_is_nil(indexer)) goto call_operator;
+                }
+                goto raw_index;
+            }
             VM_CASE(LHAT_BC_GETINDEX) {
+            raw_index:;
                 LhatValue own;
                 if (vm_read_own_table(R(b), R(cc), &own)) {
                     SET_R(a, own);
@@ -3604,7 +3617,7 @@ static LhatRunResult run_frames_loop(Machine *m, size_t base_depth,
             //
             // [syntax.op.define]: a unary operator has no other side to ask. Its one
             // operand is the receiver by the only reading there is.
-            if (!unary &&
+            if (!unary && op != LHAT_BC_GETELEMENT &&
                 (answer == OPERATOR_ABSENT || answer == OPERATOR_NO_CANDIDATE)) {
                 LhatValue other = lhat_nil(), right_receiver = rhs;
                 OperatorLookup right = vm_operator_candidate(
