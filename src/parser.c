@@ -833,7 +833,8 @@ static LhatNode *parse_type_atom(Parser *p)
         // second hat counts written t^/def^ literals outwards the way it^^
         // counts loops. The word is not self^ -- capital S, a different name
         // ([lex.hat.repeat]: a hat identifier is its word plus one hat, compared
-        // byte for byte) -- and unlike self^ it is a type rather than a value.
+        // byte for byte). In type position it names the type; in value
+        // position it aliases def^ ([syntax.obj.def-word]).
         if (!token_is_hat_stacked(p, &p->current, "Self")) {
             refuse_extra_hats(p, &p->current);
         }
@@ -943,7 +944,7 @@ static LhatNode *parse_type(Parser *p)
 // ---------------------------------------------------------------------------
 
 // [lex.hat.repeat]: only these words have levels for a second hat to count --
-// it^ this^ self^ def^ reach the enclosing focus, subroutine, receiver or
+// it^ this^ self^ def^/Self^ reach the enclosing focus, subroutine, receiver or
 // definition (compiled as stacked reaches -- vm.c). break^ and
 // the '$' specifier read their counts on paths of their own. super^^ is
 // refused on purpose ([syntax.obj.super]): which implementation an override wraps is
@@ -954,7 +955,8 @@ static bool word_stacks(const Parser *p, const LhatToken *token)
     return token_is_hat_stacked(p, token, "it") ||
            token_is_hat_stacked(p, token, "this") ||
            token_is_hat_stacked(p, token, "self") ||
-           token_is_hat_stacked(p, token, "def");
+           token_is_hat_stacked(p, token, "def") ||
+           token_is_hat_stacked(p, token, "Self");
 }
 
 // The refusal for a name position that never stacks: a key, a type name, a
@@ -3112,6 +3114,7 @@ static bool can_begin_statement(const Parser *p)
                    check_hat(p, "public") ||
                    check_hat(p, "L") ||
                    check_hat(p, "this") || check_hat(p, "self") ||
+                   check_hat(p, "Self") ||
                    check_hat(p, "it") || check_hat(p, "super");
         case LHAT_TOKEN_OP:
             // [lex.ambig.call-line]: a '(' on a fresh line opens a statement.

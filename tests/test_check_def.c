@@ -17,6 +17,37 @@ static void test_definitions(void)
 {
     Unit u;
 
+    LHAT_TEST("Self^ and def^ reach the same definition while Self^ remains an instance type");
+    check_text(&u,
+               "let^ C = def^{ self^{ value = 7 },\n"
+               "  tag = f^ -> number^ { 3 },\n"
+               "  make = f^ -> Self^ { Self^.new() },\n"
+               "  read = f^self^ -> number^ { Self^.tag() + def^.tag() + self^.value },\n"
+               "  same = f^ -> bool^ { Self^ is^ def^ } }\n"
+               "let^ c : C = C.make()\n"
+               "let^ n : number^ = c.read()\n"
+               "let^ same : bool^ = C.same()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("Self^^ reaches the outer definition through a closure");
+    check_text(&u,
+               "let^ Outer = def^{ tag = f^ -> number^ { 3 },\n"
+               "  build = f^ -> number^ {\n"
+               "    let^ Inner = def^{ tag = f^ -> number^ { 7 },\n"
+               "      read = f^ -> number^ {\n"
+               "        let^ callback = f^ -> number^ { Self^^.tag() + Self^.tag() }\n"
+               "        return^ callback() } }\n"
+               "    return^ Inner.read() } }\n"
+               "let^ n : number^ = Outer.build()\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("Self^ outside a definition has no value binding");
+    check_text(&u, "let^ n = Self^.new()\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_UNDEFINED);
+    unit_dispose(&u);
+
     // [syntax.obj.instance]: an instance reaches the definition's members, so its type holds
     // both those and the template's fields.
     LHAT_TEST("an instance has the fields and the members");

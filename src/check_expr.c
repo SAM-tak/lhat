@@ -6180,17 +6180,21 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
         }
     }
 
-    // [syntax.obj.self]: def^ names the definition, and every member reaches it -- a
-    // static one included, since what it names is there before any instance
-    // is. self^ is the other way round and is bound per member below: only
+    // [syntax.obj.self]: def^ and Self^ name the same definition in value position,
+    // and every member reaches it, including static members: the definition
+    // exists before any instance. self^ is bound per member below: only
     // one that wrote it among its parameters is handed a receiver, so only
     // there does the name mean anything.
     Scope members;
     chk_scope_open(&members, c->scope, NULL, false);
-    Binding *owner = chk_scope_add(&members, "def^", 4, definition, node->offset);
-    if (owner != NULL) {
-        owner->reached = true;
-        owner->declaration = node;
+    const char *owner_names[] = { "def^", "Self^" };
+    for (size_t i = 0; i < 2; i++) {
+        Binding *owner = chk_scope_add(&members, owner_names[i], strlen(owner_names[i]),
+                                       definition, node->offset);
+        if (owner != NULL) {
+            owner->reached = true;
+            owner->declaration = node;
+        }
     }
 
     Scope *outer = c->scope;

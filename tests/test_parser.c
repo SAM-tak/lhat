@@ -4516,13 +4516,10 @@ static void test_stacked_hats(void)
     LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 
-    // It is a type and never a value, so the expression side has no reach for
-    // a second hat to count -- refused there like any other word.
-    LHAT_TEST("but not where a value is written");
+    // In value position Self^^ counts definitions, just like def^^.
+    LHAT_TEST("Self^^ also stacks where a value is written");
     parse_text(&p, "x := Self^^");
-    LHAT_CHECK(p.result.diagnostic_count > 0, "expected a diagnostic");
-    LHAT_CHECK_EQ_INT(p.result.diagnostics[0].code,
-                      LHAT_PARSE_ERR_HATS_DONT_STACK);
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
     parse_dispose(&p);
 }
 

@@ -16,6 +16,31 @@ static void test_definitions(void)
 {
     Run r;
 
+    LHAT_TEST("Self^ aliases def^ in static members and instance methods");
+    run_text(&r,
+             "let^ C = def^{ self^{ value = 7 },\n"
+             "  tag = f^ -> number^ { 3 },\n"
+             "  make = f^ -> Self^ { Self^.new() },\n"
+             "  read = f^self^ -> number^ { Self^.tag() + def^.tag() + self^.value },\n"
+             "  same = f^ -> bool^ { Self^ is^ def^ } }\n"
+             "if^ C.same() { return^ C.make().read() }\n"
+             "return^ 0\n");
+    CHECK_INTEGER(&r, 13);
+    run_dispose(&r);
+
+    LHAT_TEST("Self^^ and def^^ capture the same outer definition");
+    run_text(&r,
+             "let^ Outer = def^{ tag = f^ { 3 },\n"
+             "  build = f^ {\n"
+             "    let^ Inner = def^{ tag = f^ { 7 },\n"
+             "      read = f^ {\n"
+             "        let^ callback = f^ { Self^^.tag() * 100 + def^^.tag() * 10 + Self^.tag() }\n"
+             "        return^ callback() } }\n"
+             "    return^ Inner.read() } }\n"
+             "return^ Outer.build()\n");
+    CHECK_INTEGER(&r, 337);
+    run_dispose(&r);
+
     LHAT_TEST("instance methods and callbacks remain callable after composition");
     run_text(&r,
              "let^ A = def^{ self^{ callback = f^ { 7 },\n"
