@@ -4,4 +4,4 @@ let^position = std.math.vector3.new(1, 2, 3)
 let^velocity = std.math.vector3.new(0, 1, 0)
 let^next = position + velocity * 0.5
 
-print(next.y)  # [syntax.juxta.hat-start]
+print(next.y)  # 2.5
