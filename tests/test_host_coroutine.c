@@ -397,6 +397,33 @@ static void test_walks_hostdata(void)
     }
     lhat_program_dispose(&program);
 
+    // [syntax.type.fits]: a host walk carries no type of its own, whatever its
+    // registration wrote, so a run-time fits^ cannot say it yields a number^.
+    LHAT_TEST("a host walk fits only a coroutine type that asks nothing of it");
+    {
+        static const File files[] = {
+            {"main.lh",
+             "import^ seq\n"
+             "let^ w:any^ = seq.make(4, 6).iterate()\n"
+             "if^ w fits^ c^{p^ -> number^} { return^ 1 }\n"
+             "if^ w fits^ c^{p^ * -> * -> *} { return^ 2 }\n"
+             "return^ 3\n"},
+        };
+        program_with(&program, &disk, files, 1);
+        walk_releases = 0;
+        range_tag = lhat_register_hostdata_type(&program, "seq", "Range");
+        lhat_register_member(&program, "seq", "Range", "iterate^",
+                             "f^self^ -> c^{p^ -> number^};",
+                             range_iterate, NULL);
+        lhat_register_func(&program, "seq", "make",
+                           "f^number^, number^ -> seq.Range;", range_make,
+                           NULL);
+        LhatRunResult ran = run_program(&program, NULL);
+        LHAT_CHECK_EQ_INT(ran.status, LHAT_RUN_OK);
+        LHAT_CHECK_EQ_INT(lhat_as_integer(ran.value), 2);
+    }
+    lhat_program_dispose(&program);
+
     // A hostdata type is a table only in how its members are reached; one
     // that registered no iterate has nothing behind it to walk, and the
     // checker says so rather than leaving the loop to walk an empty table.

@@ -1122,6 +1122,15 @@ static void test_isa(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
+    // Knowing the type does not settle a no: it reaches the instruction.
+    LHAT_TEST("a coroutine of a known type does not fit another");
+    run_checked_text(&r,
+                     "let^ g = p^ { yield^ 1 return^ 2 }\n"
+                     "let^ x = g()\n"
+                     "return^ x fits^ c^{p^ -> string^ -> string^}\n");
+    CHECK_BOOL(&r, false);
+    run_dispose(&r);
+
     LHAT_TEST("p^; asks only that it is a subroutine");
     run_text(&r, "return^ (p^ { }) fits^ p^;\n");
     CHECK_BOOL(&r, true);

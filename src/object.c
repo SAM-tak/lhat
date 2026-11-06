@@ -755,6 +755,41 @@ static bool callable_satisfies(LhatValue value, const LhatRuntimeType *wanted,
     return signature != NULL && rt_fits(signature, wanted, NULL, NULL, scope);
 }
 
+// [syntax.sub.yieldable-f]: an f^ wrote it, or it is a built-in walk. Host walks are
+// p^ unless the VM marked a pure walk.
+static bool coroutine_is_function(const LhatCoroutine *co)
+{
+    if (co->source == LHAT_COROUTINE_TABLE) return true;
+    if (co->source == LHAT_COROUTINE_HOST) return co->host_is_function;
+    return co->source == LHAT_COROUTINE_BODY && co->frame.closure != NULL &&
+           co->frame.closure->proto != NULL && co->frame.closure->proto->is_function;
+}
+
+// [syntax.type.fits]: what a coroutine receives, yields and ends with, compared the way
+// callable_satisfies compares a signature. Only a checked body says what those
+// are, so a type asking for any of them is not known to fit anything else.
+static bool coroutine_satisfies(const LhatCoroutine *co,
+                                const LhatRuntimeType *wanted,
+                                const RtScope *scope)
+{
+    if (wanted->coroutine_top) return true;
+    bool function = coroutine_is_function(co);
+    if (!wanted->kind_any && wanted->is_function && !function) return false;
+    if (wanted->receive_any && wanted->produce_any && wanted->result_any) return true;
+    const LhatProto *proto = co->source == LHAT_COROUTINE_BODY && co->frame.closure != NULL
+                                 ? co->frame.closure->proto : NULL;
+    if (proto == NULL || !proto->yield_receives_known) return false;
+    LhatRuntimeType made;
+    memset(&made, 0, sizeof made);
+    made.kind = LHAT_TYPE_RT_COROUTINE;
+    made.is_function = function;
+    made.receive = proto->yield_receive_type;
+    made.produce = proto->yield_produce_type;
+    made.result = proto->result_type;
+    made.endless = proto->yield_endless;
+    return rt_fits(&made, wanted, NULL, NULL, scope);
+}
+
 // scope is the chain of structures the walk is inside, so a Self^ in a
 // wanted signature names the structure it was written in ([syntax.type.self]).
 static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
@@ -928,17 +963,10 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
         }
         case LHAT_TYPE_RT_SUBROUTINE:
             return callable_satisfies(value, type, scope);
-        // [syntax.sub.yieldable-f]: an f^ coroutine type admits only a body an f^ wrote or a
-        // built-in walk. Host walks are p^ unless the VM marked a pure walk.
-        case LHAT_TYPE_RT_COROUTINE: {
-            if (!lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE)) return false;
-            if (type->coroutine_top || type->kind_any || !type->is_function) return true;
-            const LhatCoroutine *co = (const LhatCoroutine *)lhat_as_object(value);
-            if (co->source == LHAT_COROUTINE_TABLE) return true;
-            if (co->source == LHAT_COROUTINE_HOST) return co->host_is_function;
-            return co->source == LHAT_COROUTINE_BODY && co->frame.closure != NULL &&
-                   co->frame.closure->proto != NULL && co->frame.closure->proto->is_function;
-        }
+        case LHAT_TYPE_RT_COROUTINE:
+            return lhat_is_object_kind(value, LHAT_OBJECT_COROUTINE) &&
+                   coroutine_satisfies((const LhatCoroutine *)lhat_as_object(value),
+                                       type, scope);
         // [errors.kind.local]: a family, not every error. The two tops are disjoint, so
         // asking error^ of a localerror^ answers false.
         case LHAT_TYPE_RT_ERROR: {

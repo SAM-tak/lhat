@@ -89,6 +89,21 @@ static void test_text(void)
         lhat_test_ran_dispose(&ran);
     }
 
+    // [syntax.type.fits]: nothing was checked against the loaded text from here, so
+    // what it yields is not known.
+    LHAT_TEST("a coroutine from loaded text fits only what asks nothing of it");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.load\n"
+            "let^ f = std.load.text(\"yield^ 1\", \"gen\")\n"
+            "if^ f fits^ std.load.Error { return^ -1 }\n"
+            "let^ co:any^ = f()\n"
+            "return^ (if^ co fits^ c^{p^*->number^->*}: 10 el^: 0 ;) +\n"
+            "    (if^ co fits^ c^{p^*->*->*}: 1 el^: 0 ;)\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 1);
+        lhat_test_ran_dispose(&ran);
+    }
+
     LHAT_TEST("a module^ unit takes nothing");
     {
         LhatTestRan ran = run_source(
