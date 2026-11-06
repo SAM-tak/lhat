@@ -43,6 +43,9 @@ else^:
     print("!!!")
 }
 
+# 常にfalse^の無意味な条件だが、コンパイル時に検出、はできていない
+print("invalid condition", 0 < u < 3 < v = 0)
+
 #[ 入ってない
 let^t = {width^2:
   0, 1,
@@ -233,8 +236,9 @@ print(s.at(-1))
 
 let^foo = f^x:number^{ print(x) }
 let^bar = f^{ print("bar!") return^4 }
-let^blah = foo; (bar()) print(foo, bar, blah) # foo(bar()) と解釈させない書き方
-print(0 < u < 3 < v = 0 and^blah = blah)
+let^blah = foo; (bar()) # foo(bar()) と解釈させない書き方
+print(typeof^(foo).signature, typeof^(bar).signature, typeof^(blah).signature)
+print(blah = foo)
 
 print("any^fits^nil^", any^fits^nil^)
 let^anynil = p^anyOrNil:any^|nil^{
