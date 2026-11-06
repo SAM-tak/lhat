@@ -54,6 +54,8 @@ typedef enum {
                                               // parameter name is wanted
     LHAT_PARSE_ERR_FRESH_TUPLE,               // [syntax.sub.fresh]: fresh^ covers one
                                               // result, and a tuple is several
+    LHAT_PARSE_ERR_FUNCTION_NEEDS_RESULT,     // [syntax.type.empty]: an f^ signature always
+                                              // writes '->'
     LHAT_PARSE_ERR_OPERATOR_NOT_DEFINABLE,    // [syntax.op.framework]: only '..' has an op^
                                               // definition so far
     LHAT_PARSE_ERR_COMPOUND_NOT_DEFINABLE,    // [syntax.stmt.compound]: 'a += b' is

@@ -1486,7 +1486,7 @@ static void test_hosting(void)
                    "and title is a string");
         LHAT_CHECK(!lhat_unit_export_conforms(root, "update", "p^string^;"),
                    "a different parameter does not conform");
-        LHAT_CHECK(!lhat_unit_export_conforms(root, "update", "f^number^;"),
+        LHAT_CHECK(!lhat_unit_export_conforms(root, "update", "f^number^ -> number^;"),
                    "nor does an f^ stand for a p^");
         LHAT_CHECK(!lhat_unit_export_conforms(root, "nothere", "number^"),
                    "an export that is not there conforms to nothing");

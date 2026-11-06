@@ -3654,6 +3654,7 @@ p^number^;
 ##### `f^` は返り値なしにならない
 
 関数は必ず返り値を持つため、`f^` の `->` が無い形は現れない。
+`f^;` や `f^number^;` と書けば構文エラーである。
 
 `f^` だけを特別扱いし、`f^number^;` を「`number^` を返す」と読ませる案は採らない。
 `p^number^;` と `f^number^;` が同じ形で逆の意味になり、
@@ -3808,7 +3809,7 @@ let^ sum = f^ ...:number^ -> number^ { … }
 
 ```lhat
 f^ ...:number^ -> number^ ;
-f^ x:number^, ...:number^ ;
+p^ number^, ...:number^ ;
 ```
 
 他の引数が `名前:型` の形をとるため、`...` をその名前の位置に置く。
@@ -3964,8 +3965,8 @@ Go の `...int`、Swift の `Int...`、Kotlin の `vararg`、C# の `params` と
 `:` 以降を省略した `...` は `any^` を意味する。
 
 ```lhat
-f^ x:number^, ... ;          # 末尾の可変長は any^
-f^ x:number^, ...:number^ ;  # number^ の可変長
+p^ number^, ... ;          # 末尾の可変長は any^
+p^ number^, ...:number^ ;  # number^ の可変長
 ```
 
 異型を扱う手続きは短く書ける。
@@ -7204,7 +7205,7 @@ p^; & p^string^;
 TypeScript が多重定義を関数型の交差として扱うのも同じ理由による。
 
 ```lhat
-print(typeof^(Bar.new()).signature)
+print(typeof^(Bar).signature)
 ```
 
 ```text
@@ -11903,7 +11904,7 @@ let^ Hidden = …              # 誤り。ホストはこの値に手が届か�
 lhat_register_annotation(program, "godot", "export", LHAT_ANNOTATION_FIELD);
 // 引数の形
 lhat_register_annotation_signature(program, "export",
-                                   "f^ number^, number^, ...;");
+                                   "p^ number^, number^, ...;");
 ```
 
 - **どこに付けられるか** — 場所違いは検査器が弾く。Java の `@Target`、

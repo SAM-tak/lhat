@@ -49,6 +49,8 @@ signature-named = 書かれた署名は仮引数の名前を持たない（13.3�
 param-needs-name = 仮引数の名前が要る所に型がある。名前の無い型は書かれた署名のもので、署名は ';' が閉じる
 # fresh-tuple = fresh^ promises one new answer; a tuple result cannot carry it
 fresh-tuple = fresh^ はひとつの新しい答えを約束する。タプルの結果には付けられない
+# function-needs-result = a function always answers, so its signature needs '->' and a result type; a signature that answers nothing is a p^
+function-needs-result = 関数は必ず答えるので、署名には '->' と結果の型が要る。何も答えない署名は p^ で書く
 # operator-not-definable = op^ defines '..' and the arithmetic operators; and^, or^, '!' and the comparisons are the language's own
 operator-not-definable = op^ が定義するのは '..' と算術の演算子である。and^・or^・'!' と比較は言語のものである
 # compound-not-definable = a compound assignment has no definition of its own: 'a += b' is 'a := a + b', so it is op^+ that decides what it does

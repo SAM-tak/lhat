@@ -498,6 +498,17 @@ static LhatNode *parse_type_result(Parser *p)
     return finish(p, node);
 }
 
+// [syntax.type.empty]: the ';' a signature ends on, reached with no '->' written.
+// That says it answers nothing, which an f^ never does. Anything else standing
+// here is the missing ';' the caller reports.
+static void refuse_function_without_result(Parser *p, const LhatNode *signature)
+{
+    if (signature->v.func.is_function && signature->v.func.return_type == NULL &&
+        check_op(p, LHAT_OP_SEMICOLON)) {
+        report(p, &p->current, LHAT_PARSE_ERR_FUNCTION_NEEDS_RESULT);
+    }
+}
+
 static LhatNode *parse_type_function(Parser *p, bool is_function)
 {
     LhatToken start = p->current;
@@ -525,6 +536,7 @@ static LhatNode *parse_type_function(Parser *p, bool is_function)
         }
     }
 
+    refuse_function_without_result(p, node);
     expect_op(p, LHAT_OP_SEMICOLON);
     return finish(p, node);
 }
@@ -1775,6 +1787,7 @@ static LhatNode *parse_subroutine_or_type(Parser *p, bool is_function)
 
     // [syntax.type.semicolon]'s ';' says signature. Anything else is read as the literal it
     // was, whose '{' the expect below still demands.
+    refuse_function_without_result(p, node);
     if (match_op(p, LHAT_OP_SEMICOLON)) {
         if (literal_told) {
             report(p, &named_at, LHAT_PARSE_ERR_SIGNATURE_NAMED);
@@ -5669,6 +5682,9 @@ static const LhatMessageEntry PARSE_MESSAGES[] = {
     [LHAT_PARSE_ERR_FRESH_TUPLE] = {"parse.fresh-tuple",
         "fresh^ promises one new answer; a tuple result cannot "
         "carry it"},
+    [LHAT_PARSE_ERR_FUNCTION_NEEDS_RESULT] = {"parse.function-needs-result",
+        "a function always answers, so its signature needs '->' and a "
+        "result type; a signature that answers nothing is a p^"},
     [LHAT_PARSE_ERR_SIGNATURE_NAMED] = {"parse.signature-named",
         "a written signature carries no parameter names (13.3); "
         "the names belong to a literal, whose body a '{' opens"},

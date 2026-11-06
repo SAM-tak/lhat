@@ -188,7 +188,7 @@ static void variadic_parameters(void)
         "let^Numeric=number^ let^collect=f^...{...}",
         "let^Numeric=number^ let^collect=f^...:string^{...}",
         "let^Numeric=number^ let^read=f^callback:(p^...;){0}",
-        "let^Numeric=number^ let^read=f^callback:(f^...:string^;){0}",
+        "let^Numeric=number^ let^read=f^callback:(f^...:string^ -> number^;){0}",
     };
     for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
         Unit u;

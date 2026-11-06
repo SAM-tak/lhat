@@ -641,6 +641,43 @@ static void test_statements(void)
 
     // Nothing spreads one value across several targets here: a compound
     // operator reads the target it writes back to.
+    // [syntax.type.empty]: an f^ always answers, in every place a signature stands.
+    static const char *const unanswering[] = {
+        "let^ g : f^; = nil^",
+        "let^ g : f^number^; = nil^",
+        "let^ g : (f^;)|nil^ = nil^",
+        "let^ T = t^{ m : f^self^; }",
+        "let^ u = p^ h:f^; { }",
+        "let^ u = f^ -> f^; { }",
+        "x fits^ f^;",
+        "x = f^;",
+    };
+    for (size_t i = 0; i < sizeof unanswering / sizeof *unanswering; i++) {
+        LHAT_TEST(unanswering[i]);
+        parse_text(&p, unanswering[i]);
+        bool found = false;
+        for (size_t d = 0; d < p.result.diagnostic_count; d++) {
+            found = found || p.result.diagnostics[d].code ==
+                                 LHAT_PARSE_ERR_FUNCTION_NEEDS_RESULT;
+        }
+        LHAT_CHECK(found, "an f^ with no '->' is refused");
+        parse_dispose(&p);
+    }
+
+    // The same shape with something answered, and a p^, are what it steers to.
+    static const char *const answering[] = {
+        "let^ g : f^ -> number^; = nil^",
+        "let^ g : f^number^ -> number^; = nil^",
+        "let^ g : p^; = nil^",
+        "let^ g : p^number^; = nil^",
+    };
+    for (size_t i = 0; i < sizeof answering / sizeof *answering; i++) {
+        LHAT_TEST(answering[i]);
+        parse_text(&p, answering[i]);
+        LHAT_CHECK_EQ_INT(error_count(&p), 0);
+        parse_dispose(&p);
+    }
+
     LHAT_TEST("but the two lists have to be the same length");
     parse_text(&p, "a, b += 1");
     LHAT_CHECK(error_count(&p) > 0, "expected a diagnostic");
