@@ -1583,6 +1583,11 @@ bool lhat_runtime_type_equal(const LhatRuntimeType *a, const LhatRuntimeType *b)
                 !lhat_runtime_type_equal(a->variadic, b->variadic)) {
                 return false;
             }
+            // [syntax.type.empty]: so is whether it answers. 'p^;' answers nothing
+            // and 'p^ -> any^;' answers something, and rt_fits tells them apart.
+            if ((a->result == NULL) != (b->result == NULL)) {
+                return false;
+            }
             return lhat_runtime_type_equal(a->result, b->result);
         case LHAT_TYPE_RT_TABLE:
             // Both sides were sorted once when reflect_type built them

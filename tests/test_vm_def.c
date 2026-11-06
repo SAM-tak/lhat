@@ -1108,6 +1108,20 @@ static void test_isa(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
+    // [syntax.type.empty]: the chunk keeps equal constants once, so two signatures
+    // the comparison took for one would answer each other's fits^.
+    LHAT_TEST("'p^;' and 'p^ -> any^;' stay two questions, whichever is asked first");
+    run_checked_text(&r,
+                     "let^ h:any^ = p^ { }\n"
+                     "let^ a = h fits^ p^;\n"
+                     "let^ b = h fits^ p^ -> any^;\n"
+                     "let^ i:any^ = p^ -> number^ { return^ 1 }\n"
+                     "let^ c = i fits^ p^ -> any^;\n"
+                     "let^ d = i fits^ p^;\n"
+                     "return^ a and^ !b and^ c and^ !d\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+
     LHAT_TEST("p^; asks only that it is a subroutine");
     run_text(&r, "return^ (p^ { }) fits^ p^;\n");
     CHECK_BOOL(&r, true);
