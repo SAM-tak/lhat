@@ -1884,9 +1884,8 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
                 // them, since a position is a slot and not a run of slots.
                 LhatType *position = chk_resolve_type(c, item);
                 // The same three a position has to satisfy wherever it comes
-                // from. Written positions used to ask only about errors,
-                // which let a registered '-> (number^, SomeHostValue)'
-                // through -- [modules.hostvalue] has no slot to spare for one.
+                // from, so a registered '-> (number^, SomeHostValue)' does not
+                // get through -- [modules.hostvalue] has no slot to spare for one.
                 chk_check_tuple_position(c, item, position);
                 lhat_type_add_position(c->result->types, tuple, position);
             }

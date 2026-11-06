@@ -989,11 +989,10 @@ static bool value_satisfies(LhatValue value, const LhatRuntimeType *type,
             }
             return true;
         // [syntax.type.self]: the structure this one is written inside, which the
-        // walk has already been through. Asked of a value it answers what the
-        // cycle used to be flattened to -- that it is a table -- since telling
-        // more would mean walking a value that may hold itself as well. The
-        // checker is where the shape is judged ([spec.arms]); this is [syntax.op.table]'s
-        // own check, and it says no less than it did.
+        // walk has already been through. Asked of a value it answers only that
+        // it is a table, since telling more would mean walking a value that may
+        // hold itself as well. The checker is where the shape is judged
+        // ([spec.arms]); this is [syntax.op.table]'s own check.
         case LHAT_TYPE_RT_SELF:
             return lhat_is_object_kind(value, LHAT_OBJECT_TABLE);
         }

@@ -1530,12 +1530,11 @@ bool lhat_bind_initial(LhatProgram *program, const char *name,
 // [modules.host.shared-registry]: the registrations, built once on the program's own heap
 // ---------------------------------------------------------------------------
 //
-// install used to build every registration again for every machine: a value
-// object and a key string apiece, and a table per path segment, all on that
-// machine's heap. Nothing about any of it is the machine's -- a LhatHost
-// carries the host's own C pointers, a key string is bytes, a type's members
-// table holds only more of the same. So it is built here instead, on
-// host_heap, where things are born black (LHAT_GC_BLACK, set below) and
+// A registration is a value object and a key string apiece, and a table per
+// path segment. Nothing about any of it is a machine's -- a LhatHost carries
+// the host's own C pointers, a key string is bytes, a type's members table
+// holds only more of the same. So it is built once, here, on host_heap, where
+// things are born black (LHAT_GC_BLACK, set below) and
 // therefore belong to no machine's collection: lhat_gc_reach returns without
 // writing when what it is handed is not white, which is the whole of what
 // makes a shared object safe to walk from several threads at once.
@@ -1892,10 +1891,9 @@ bool prg_install_all(const LhatProgram *program, LhatMachine *machine)
         }
     }
 
-    // [modules.hostdata.base]'s base links and [modules.host.panic]'s enums used to be built here, once per
-    // machine. They are facts about the declarations rather than about any
-    // machine, so build_shared_modules has them (shared_link_bases,
-    // shared_enum).
+    // [modules.hostdata.base]'s base links and [modules.host.panic]'s enums are
+    // facts about the declarations rather than about any machine, so
+    // build_shared_modules has them (shared_link_bases, shared_enum).
     // [modules.host.machine]: what goes in L^ itself rather than under its registry.
     for (size_t i = 0; i < program->global_count; i++) {
         const LhatGlobalEntry *e = &program->global_entries[i];
