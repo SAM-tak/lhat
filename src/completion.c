@@ -472,8 +472,6 @@ static const Word WORDS[] = {
     // The types a name is not needed for (check.c's builtin_type), with
     // [syntax.type.self]'s word for the literal being written inside.
     {"number^", LHAT_COMPLETION_CLASS},
-    {"int^", LHAT_COMPLETION_CLASS},
-    {"float^", LHAT_COMPLETION_CLASS},
     {"string^", LHAT_COMPLETION_CLASS},
     {"costate^", LHAT_COMPLETION_CLASS},
     {"bool^", LHAT_COMPLETION_CLASS},

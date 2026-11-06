@@ -168,69 +168,6 @@ LhatRuntimeType *vm_tag_type(LhatHeap *heap, LhatValue value)
         const LhatProto *proto = closure->proto;
         if (proto->signature != NULL)
             return lhat_runtime_type_clone(heap, proto->signature);
-        LhatRuntimeType *type =
-            lhat_type_rt_new(heap, LHAT_TYPE_RT_SUBROUTINE);
-        if (type == NULL) {
-            return NULL;
-        }
-        type->is_function = proto->is_function;
-        type->takes_self = proto->takes_self;
-        // [syntax.type.variadic]: the last slot collects rather than taking one argument for
-        // itself, so it is kept apart from `parts` here the same way
-        // v.func.variadic is kept apart from a checked type's own params.
-        uint8_t fixed_end = proto->has_variadic ? proto->parameters - 1
-                                                : proto->parameters;
-        // [syntax.obj.self]: self^ is not a parameter of the signature -- it is the
-        // receiver, written out only where [syntax.obj.self] already says so. [syntax.op.right]: the
-        // slot it occupies is the last one when it was written there.
-        uint8_t first = proto->takes_self && !proto->self_last ? 1 : 0;
-        if (proto->takes_self && proto->self_last && fixed_end > 0) {
-            fixed_end--;
-        }
-        for (uint8_t i = first; i < fixed_end; i++) {
-            LhatRuntimeType *param = proto->parameter_types != NULL
-                                         ? proto->parameter_types[i]
-                                         : NULL;
-            if (param == NULL) {
-                // [syntax.type.variadic]: nothing written asks for the top type, not nothing.
-                param = lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
-            }
-            if (param == NULL || !lhat_type_rt_add_part(type, param)) {
-                return NULL;
-            }
-        }
-        if (proto->has_variadic) {
-            LhatRuntimeType *element =
-                proto->parameter_types != NULL
-                    ? proto->parameter_types[fixed_end]
-                    : NULL;
-            type->variadic = element != NULL
-                                 ? element
-                                 : lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
-            if (type->variadic == NULL) {
-                return NULL;
-            }
-        }
-        // [syntax.sub.no-contagion]: a call to a yielding body does not run it -- it makes the
-        // coroutine [syntax.type.coroutine] describes, and that is what the caller receives, so
-        // that is this signature's result. The same three slots the branch
-        // above hands back for the coroutine itself.
-        if (proto->yields) {
-            LhatRuntimeType *made =
-                lhat_type_rt_new(heap, LHAT_TYPE_RT_COROUTINE);
-            if (made == NULL) {
-                return NULL;
-            }
-            made->receive = proto->yield_receive_type;
-            made->produce = proto->yield_produce_type;
-            made->result = proto->result_type;
-            made->endless = proto->yield_endless;  // [syntax.type.coroutine]
-            made->is_function = proto->is_function;
-            type->result = made;
-            return type;
-        }
-        type->result = proto->result_type;
-        return type;
     }
     if (lhat_is_object_kind(value, LHAT_OBJECT_HOST)) {
         const LhatHost *host = (const LhatHost *)lhat_as_object(value);
@@ -273,7 +210,8 @@ LhatRuntimeType *vm_tag_type(LhatHeap *heap, LhatValue value)
         return type;
     }
     // A type-info value itself, a runtime operation, … -- nothing more to
-    // say than that a value is there.
+    // say than that a value is there. A body compiled without a checker is
+    // one of these: it has no signature to answer with.
     return lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
 }
 

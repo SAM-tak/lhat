@@ -1886,6 +1886,37 @@ static void compile_self_assign(Compiler *c, const LhatNode *node,
     c->next_register = mark;
 }
 
+// [syntax.obj.typeof]: a body the program did not write has no checked type to
+// lower, so its signature is said here from what the proto already knows: it
+// takes nothing by name, a '...' asks nothing of its elements, and a yielding
+// one answers a coroutine whose Y, R and T nothing settled.
+static void unwritten_signature(Compiler *c, LhatProto *proto)
+{
+    LhatHeap *heap = &root_of(c)->proto->chunk.heap;
+    LhatRuntimeType *type = lhat_type_rt_new(heap, LHAT_TYPE_RT_SUBROUTINE);
+    if (type == NULL) {
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
+        return;
+    }
+    type->is_function = proto->is_function;
+    type->takes_self = proto->takes_self;
+    if (proto->has_variadic) {
+        type->variadic = lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
+    }
+    if (proto->yields) {
+        type->result = lhat_type_rt_new(heap, LHAT_TYPE_RT_COROUTINE);
+        if (type->result != NULL) {
+            type->result->is_function = proto->is_function;
+        }
+    }
+    if ((proto->has_variadic && type->variadic == NULL) ||
+        (proto->yields && type->result == NULL)) {
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
+        return;
+    }
+    proto->signature = type;
+}
+
 // [syntax.obj.super]: what super^ means inside an override^ new -- the hook of the new
 // written before it, run against the same receiver. Every written new ahead
 // of `stop_entry` in the chain is compiled once more as a hook (the same
@@ -1904,6 +1935,7 @@ static void bind_new_hooks(Compiler *c, const DefChain *chain,
     idle->takes_self = true;
     idle->parameters = 1;
     idle->parameter_slots = 1;
+    unwritten_signature(c, idle);
     size_t index = lhat_proto_add(c->proto, idle);
     if (index == SIZE_MAX) {
         lhat_proto_free(idle);
@@ -2250,6 +2282,7 @@ static void compile_default_new(Compiler *c, const LhatNode *node,
         return;
     }
     proto->is_function = true;
+    unwritten_signature(c, proto);
 
     size_t index = lhat_proto_add(c->proto, proto);
     if (index == SIZE_MAX) {
@@ -6702,6 +6735,7 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         compile_statements(&c, unit->v.list.items);
     }
     emit(&c, lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0));
+    unwritten_signature(&c, proto);
     lhat_rt_cache_dispose(&c.rt_cache);
 
     // A session hands the registries back so the next input has them; without

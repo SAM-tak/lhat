@@ -11186,7 +11186,7 @@ repeat^3 next^ … { … }                            # 誤り（16.5）
 
 ```lhat
 for^let^i = 1
-for^var^j:int^ = 2
+for^var^j = 2
 if^ i + j < 10 { … }
 ```
 
@@ -11195,7 +11195,7 @@ if^ i + j < 10 { … }
 ```lhat
 do^{
     let^i = 1
-    var^j:int^ = 2
+    var^j = 2
     if^i + j < 10 { … }
 }
 ```

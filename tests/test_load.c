@@ -66,6 +66,39 @@ static void test_text(void)
         lhat_test_ran_dispose(&ran);
     }
 
+    // [syntax.obj.typeof]: a unit's top level has no written signature, so the
+    // compiler says one. The answer's union with std.load.Error is what sends
+    // typeof^ to the value rather than to the checker.
+    LHAT_TEST("a loaded script answers 'p^...' for its signature");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.load\n"
+            "let^ f = std.load.text(\"return^ 1\", \"gen\")\n"
+            "return^ typeof^(f).signature\n");
+        LHAT_CHECK_RAN_TEXT(ran, "p^...:any^;");
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("a yielding one answers the coroutine it makes");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.load\n"
+            "let^ f = std.load.text(\"yield^ 1\\nreturn^ 2\", \"gen\")\n"
+            "return^ typeof^(f).signature\n");
+        LHAT_CHECK_RAN_TEXT(ran, "p^...:any^ -> c^{p^};");
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("a module^ unit takes nothing");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.load\n"
+            "let^ f = std.load.text(\"module^ stage\", \"stage.lh\")\n"
+            "return^ typeof^(f).signature\n");
+        LHAT_CHECK_RAN_TEXT(ran, "p^;");
+        lhat_test_ran_dispose(&ran);
+    }
+
     LHAT_TEST("and calling it with arguments is an arity fault");
     {
         LhatTestRan ran = run_source(LOADED(

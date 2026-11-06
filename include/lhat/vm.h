@@ -467,12 +467,6 @@ bool lhat_machine_registered(LhatMachine *machine, const char *module,
                              const char *type, const char *name,
                              LhatValue *out);
 
-bool lhat_machine_make_enum(LhatMachine *machine, const char *name,
-                            const struct LhatRuntimeType *decl,
-                            const char *const *members,
-                            const LhatInteger *values, size_t count,
-                            LhatValue *out);
-
 // A string on `machine`'s own heap, made the way [modules.host.import]'s registration
 // makes a table or a host -- the machine has to make it, since the value's
 // object header and its place in the collector's heap are the machine's to

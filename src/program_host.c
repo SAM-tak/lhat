@@ -1678,7 +1678,7 @@ static bool shared_entry(LhatProgram *program, LhatTable *root,
     return shared_register(heap, root, e->module, e->type, e->name, value);
 }
 
-// lhat_machine_make_enum, on the program's heap. The declaration type is
+// A registered enum, on the program's heap. The declaration type is
 // already there (lhat_type_rt_new against host_heap at registration).
 static bool shared_enum(LhatProgram *program, LhatTable *root,
                         const LhatProgramEnum *e)

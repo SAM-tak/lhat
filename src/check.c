@@ -911,8 +911,7 @@ bool chk_receiver_is_own_coroutine(Checker *c, const LhatNode *receiver);
 // builtin spellings.
 static LhatType *builtin_type(Checker *c, const char *name, size_t length)
 {
-    if (chk_name_is(name, length, "number^") || chk_name_is(name, length, "int^") ||
-        chk_name_is(name, length, "float^")) {
+    if (chk_name_is(name, length, "number^")) {
         return chk_simple(c, LHAT_TYPE_NUMBER);
     }
     if (chk_name_is(name, length, "string^")) {
@@ -2846,26 +2845,6 @@ struct LhatCheckSession {
     LhatType *hosted;
 };
 
-bool lhat_check_session_global(LhatCheckSession *session, const char *name,
-                               const char *signature)
-{
-    if (session == NULL || name == NULL || signature == NULL) {
-        return false;
-    }
-    if (session->globals == NULL) {
-        session->globals = lhat_type_table(&session->types);
-        if (session->globals == NULL) {
-            return false;
-        }
-    }
-    LhatType *written =
-        lhat_type_of_text(signature, strlen(signature), &session->types, NULL,
-                          NULL);
-    return written != NULL &&
-           lhat_type_add_member(&session->types, session->globals, name,
-                                strlen(name), written) != NULL;
-}
-
 void lhat_check_session_bind(LhatCheckSession *session,
                              const char *const *names,
                              const char *const *members, size_t count)
@@ -2887,8 +2866,7 @@ void lhat_check_session_hosted(LhatCheckSession *session, LhatType *hosted,
     session->hosted = hosted;
     // [modules.host.machine]: the two arrive together, since both are what the same registry
     // registered. Replacing rather than merging is what makes handing over a
-    // program the whole answer -- what lhat_check_session_global built in the
-    // session's own arena was the other way of answering the same question.
+    // program the whole answer.
     if (globals != NULL) {
         session->globals = globals;
     }

@@ -756,13 +756,6 @@ const LhatNode *lhat_check_session_seed(LhatCheckSession *session, const char *n
 // read out of a result checked in it stays valid.
 void lhat_check_session_dispose(LhatCheckSession *session);
 
-// [modules.host.machine]: a member of L^ the host provides, its type written in [syntax.type]'s
-// grammar the way [modules.host.import]'s registration writes one. A prompt has no LhatProgram
-// to hold these, so the session does -- what a file gets through LhatRequire.
-// Resolved in the session's own arena, so the caller keeps no type.
-bool lhat_check_session_global(LhatCheckSession *session, const char *name,
-                               const char *signature);
-
 // [modules.host.initial]: the names the host bound to members of L^. The arrays belong to
 // the caller and have to outlive the session; setting them again replaces
 // what was there.
@@ -778,8 +771,8 @@ void lhat_check_session_bind(LhatCheckSession *session,
 //
 // Both types belong to whatever arena made them, so that has to outlive the
 // session -- a program registered into keeps its own and is the usual answer.
-// `globals` may be NULL to leave what lhat_check_session_global built alone;
-// anything else replaces it.
+// `globals` may be NULL to leave what is there alone; anything else replaces
+// it.
 void lhat_check_session_hosted(LhatCheckSession *session, LhatType *hosted,
                                LhatType *globals);
 

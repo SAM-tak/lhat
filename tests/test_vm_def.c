@@ -1108,11 +1108,6 @@ static void test_isa(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
-    LHAT_TEST("int^ and float^ are both number^");
-    run_text(&r, "return^ 1 fits^ int^ and^ 1.5 fits^ float^\n");
-    CHECK_BOOL(&r, true);
-    run_dispose(&r);
-
     LHAT_TEST("p^; asks only that it is a subroutine");
     run_text(&r, "return^ (p^ { }) fits^ p^;\n");
     CHECK_BOOL(&r, true);
@@ -1394,6 +1389,25 @@ static void test_typeof(void)
                      "let^ f = f^ x { return^ x + 1 }\n"
                      "return^ typeof^(f).signature\n");
     CHECK_STRING(&r, "f^number^ -> number^;");
+    run_dispose(&r);
+
+    // [syntax.obj.typeof]: nobody wrote the default new, so what it answers with
+    // is said by the compiler. A type mentioning an error is what sends typeof^
+    // to the instruction rather than to the checker's answer.
+    LHAT_TEST("the default new has a signature of its own");
+    run_checked_text(&r,
+                     "let^ D = def^ { x:number^ = 1 }\n"
+                     "let^ h:(f^ -> any^;)|error^ = D.new\n"
+                     "return^ typeof^(h).signature\n");
+    CHECK_STRING(&r, "f^;");
+    run_dispose(&r);
+
+    LHAT_TEST("and it fits the signature it answers");
+    run_checked_text(&r,
+                     "let^ D = def^ { x:number^ = 1 }\n"
+                     "let^ h:(f^ -> any^;)|error^ = D.new\n"
+                     "return^ h fits^ f^;\n");
+    CHECK_BOOL(&r, true);
     run_dispose(&r);
 
     // [pipeline.repl.no-fork]: and a compile that never checked is left exactly as it was.
