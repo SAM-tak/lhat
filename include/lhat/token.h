@@ -189,10 +189,12 @@ typedef struct {
     uint32_t line;    // 1-based
     uint32_t column;  // 1-based, counted in code points, not bytes
 
-    // [lex.ambig.call-line]. The only newline-sensitive rule in the language reads
-    // this flag: a call or index '(' must not be preceded by a newline.
-    // The first token of a file has it set.
-    bool preceded_by_newline;
+    // [lex.ambig.call-line]: a statement may start here, because a newline or a
+    // ';' ([syntax.stmt.semicolon]) stands before this token. Only the parser can
+    // say whether one does -- the token after a newline inside a call's arguments
+    // has this set too. What it stops is a '(' or an operand continuing the
+    // expression before it. The first token of a file has it set.
+    bool may_start_stmt;
 
     union {
         LhatOpKind op;

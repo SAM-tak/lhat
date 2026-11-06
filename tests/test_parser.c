@@ -641,6 +641,75 @@ static void test_statements(void)
 
     // Nothing spreads one value across several targets here: a compound
     // operator reads the target it writes back to.
+    // [syntax.stmt.semicolon]: a ';' ends the statement, as a newline does. Each of
+    // these is the statements counted, with what the ';' must not let continue.
+    static const struct {
+        const char *text;
+        size_t statements;
+    } ended[] = {
+        {"let^blah = foo; (bar())", 2},
+        {"let^blah = foo; (bar()) print(foo, bar, blah)", 3},
+        {"print(1); print(2)", 2},
+        {"let^a = 1;", 1},
+        {";", 0},
+        {";;; print(1);;; print(2);;;", 2},
+        {"let^T = p^; (bar())", 2},
+        {"let^T = p^number^ -> number^; (bar())", 2},
+        {"let^x = if^ a: 1 el^: 2 ; (bar())", 2},
+        {"let^x = if^ a: 1 el^: 2 ;; (bar())", 2},
+        {"if^ a { print(1); }; print(2)", 2},
+        {"do^{ print(1); print(2); }; print(3)", 2},
+        {"f(); return^; g()", 3},
+    };
+    for (size_t i = 0; i < sizeof ended / sizeof *ended; i++) {
+        LHAT_TEST(ended[i].text);
+        parse_text(&p, ended[i].text);
+        LHAT_CHECK_EQ_INT(error_count(&p), 0);
+        size_t count = 0;
+        for (const LhatNode *s = p.result.root != NULL
+                                     ? p.result.root->v.list.items : NULL;
+             s != NULL; s = s->next) {
+            count++;
+        }
+        LHAT_CHECK_EQ_INT(count, ended[i].statements);
+        parse_dispose(&p);
+    }
+
+    LHAT_TEST("a ';' ends the statement but not the line");
+    parse_text(&p, "print(1); print(2)\nprint(3)");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    {
+        const LhatNode *first = p.result.root->v.list.items;
+        LHAT_CHECK_EQ_INT(first->line, 1);
+        LHAT_CHECK_EQ_INT(first->next->line, 1);
+        LHAT_CHECK_EQ_INT(first->next->next->line, 2);
+    }
+    parse_dispose(&p);
+
+    LHAT_TEST("a ';' closing a signature leaves the statement open");
+    parse_text(&p, "let^T = p^;|nil^");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+    parse_text(&p, "let^g:p^; = h");
+    LHAT_CHECK_EQ_INT(error_count(&p), 0);
+    parse_dispose(&p);
+
+    // Only where a statement may begin: nowhere inside one.
+    static const char *const unended[] = {
+        "let^x = a + ;",
+        "foo(a; b)",
+        "let^t = { a = 1; b = 2 }",
+        "let^x = a; + 1",
+        "foo; .bar()",
+        "for^let^i = 1; for^j from^0 to^1 { }",
+    };
+    for (size_t i = 0; i < sizeof unended / sizeof *unended; i++) {
+        LHAT_TEST(unended[i]);
+        parse_text(&p, unended[i]);
+        LHAT_CHECK(error_count(&p) > 0, "expected a diagnostic");
+        parse_dispose(&p);
+    }
+
     // [syntax.type.empty]: an f^ always answers, in every place a signature stands.
     static const char *const unanswering[] = {
         "let^ g : f^; = nil^",

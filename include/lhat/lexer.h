@@ -68,7 +68,10 @@ typedef struct {
     uint32_t line;
     uint32_t column;
 
-    bool pending_newline;  // a newline was crossed since the last token
+    // A newline was crossed since the last token, or that token was a ';'
+    // ([syntax.stmt.semicolon]): the next token's may_start_stmt. `line` counts
+    // only the newlines in the text.
+    bool pending_stmt_start;
     bool after_dot;        // [syntax.finally.block]: digits after '.' scan as an integer only
 
     // Interpolation mode stack (section [lex.string.interp]). Frames alternate between a

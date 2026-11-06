@@ -58,6 +58,12 @@ int main(void)
            "let^f = f^a -> number^{ 0 }\n");
     expect("let^ x = self^ + 1\n", &o, "let^x = self^+ 1\n");
 
+    // [syntax.stmt.semicolon]: kept where it was written, and the statements stay
+    // on the line they share.
+    LHAT_TEST("[lsp.format.hat]: a statement-ending ';' stays where it is written");
+    expect("let^a = 1;  let^b = 2 ;print(a);;\n", &o,
+           "let^a = 1; let^b = 2; print(a);;\n");
+
     LHAT_TEST("[lsp.format.hat]: lhat_space_after_hat puts the space back");
     {
         LhatFormatOptions spaced = defaults();

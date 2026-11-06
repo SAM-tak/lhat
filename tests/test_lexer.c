@@ -354,7 +354,7 @@ static void test_lexical_hazards(void)
     LHAT_TEST("10.9 a call paren on the same line is not flagged");
     scan_text(&s, "foo(a)");
     LHAT_CHECK(is_op(&s.tokens[1], LHAT_OP_LPAREN), "expected (");
-    LHAT_CHECK(!s.tokens[1].preceded_by_newline, "( should not be flagged");
+    LHAT_CHECK(!s.tokens[1].may_start_stmt, "( should not be flagged");
     scan_dispose(&s);
 
     LHAT_TEST("10.9 a paren after a newline is flagged");
@@ -368,20 +368,20 @@ static void test_lexical_hazards(void)
             }
         }
         LHAT_CHECK(paren > 0, "expected to find a (");
-        LHAT_CHECK(s.tokens[paren].preceded_by_newline,
+        LHAT_CHECK(s.tokens[paren].may_start_stmt,
                    "( at the start of a line should be flagged");
     }
     scan_dispose(&s);
 
     LHAT_TEST("10.9 the first token of a file is flagged");
     scan_text(&s, "foo");
-    LHAT_CHECK(s.tokens[0].preceded_by_newline, "first token should be flagged");
+    LHAT_CHECK(s.tokens[0].may_start_stmt, "first token should be flagged");
     scan_dispose(&s);
 
     LHAT_TEST("10.9 a multi-line string does not flag the next token");
     scan_text(&s, "\"line one\nline two\" x");
     LHAT_CHECK_EQ_INT(s.tokens[1].kind, LHAT_TOKEN_IDENT);
-    LHAT_CHECK(!s.tokens[1].preceded_by_newline,
+    LHAT_CHECK(!s.tokens[1].may_start_stmt,
                "the newline is inside the string, not between tokens");
     scan_dispose(&s);
 }
@@ -585,7 +585,7 @@ static void test_comments(void)
     LHAT_CHECK_EQ_INT(token_count(&s), 2);
     LHAT_CHECK_EQ_STR(token_text(&s, 0), token_length(&s, 0), "a");
     LHAT_CHECK_EQ_STR(token_text(&s, 1), token_length(&s, 1), "b");
-    LHAT_CHECK(s.tokens[1].preceded_by_newline, "b follows a newline");
+    LHAT_CHECK(s.tokens[1].may_start_stmt, "b follows a newline");
     scan_dispose(&s);
 
     LHAT_TEST("a shebang line is just a comment");

@@ -110,8 +110,8 @@ static void print_token(const LhatLexer *lexer, const LhatToken *token)
             break;
     }
 
-    if (token->preceded_by_newline) {
-        printf("   [newline before]");
+    if (token->may_start_stmt) {
+        printf("   [may start stmt]");
     }
     printf("\n");
 }

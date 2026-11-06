@@ -417,7 +417,7 @@ static void synchronize(Parser *p)
 {
     p->panicking = false;
     while (!at_eof(p)) {
-        if (check_op(p, LHAT_OP_RBRACE)) {
+        if (check_op(p, LHAT_OP_RBRACE) || check_op(p, LHAT_OP_SEMICOLON)) {
             return;
         }
         if (p->current.kind == LHAT_TOKEN_HAT_IDENT ||
@@ -2371,7 +2371,7 @@ static bool type_application_ahead(const Parser *p)
         if (angles <= 0) {
             if (angles != 0 || brackets != 0) return false;
             token = lhat_lexer_next(&probe);
-            return token.preceded_by_newline || !starts_expression(&token);
+            return token.may_start_stmt || !starts_expression(&token);
         }
         token = lhat_lexer_next(&probe);
     }
@@ -2448,7 +2448,7 @@ static LhatNode *parse_postfix(Parser *p)
 
         // [syntax.finally.epilog]: a '(' on a line of its own starts a statement rather than
         // continuing this expression.
-        if (check_op(p, LHAT_OP_LPAREN) && !at.preceded_by_newline) {
+        if (check_op(p, LHAT_OP_LPAREN) && !at.may_start_stmt) {
             advance(p);
             node = access_node(p, LHAT_NODE_CALL, &at, node,
                                parse_arguments(p), false);
@@ -2624,7 +2624,7 @@ static LhatNode *parse_unary(Parser *p)
         // [lex.ambig.call-line] again: what it sends has to be on its own line. A '('
         // is admitted besides starts_expression's list, for the
         // parenthesised tuple spelling below.
-        if (!p->current.preceded_by_newline &&
+        if (!p->current.may_start_stmt &&
             (starts_expression(&p->current) ||
              (p->current.kind == LHAT_TOKEN_OP &&
               p->current.v.op == LHAT_OP_LPAREN)) &&
@@ -3223,7 +3223,7 @@ static LhatNode *parse_annotations(Parser *p)
         node->v.named.name = name;
         node->v.named.members = NULL;
 
-        if (check_op(p, LHAT_OP_LPAREN) && !p->current.preceded_by_newline) {
+        if (check_op(p, LHAT_OP_LPAREN) && !p->current.may_start_stmt) {
             advance(p);
             LhatNode *tail = NULL;
             while (!check_op(p, LHAT_OP_RPAREN) && !at_eof(p)) {
@@ -3256,6 +3256,14 @@ static LhatNode *parse_annotations(Parser *p)
     return first;
 }
 
+// [syntax.stmt.semicolon]: where a statement may begin, a ';' has just ended one
+// (or stands where nothing was written), so there is nothing here to read.
+static void skip_statement_ends(Parser *p)
+{
+    while (match_op(p, LHAT_OP_SEMICOLON)) {
+    }
+}
+
 static LhatNode *parse_statement_list(Parser *p)
 {
     LhatNode *head = NULL;
@@ -3271,6 +3279,7 @@ static LhatNode *parse_statement_list(Parser *p)
     // because [l10n.compose.hole-kinds] and [syntax.loop.order] both put those inside the braces. [errors.catch.clause]'s
     // catch^ arms sit inside them the same way: no statement begins with the
     // word, so met here it opens one.
+    skip_statement_ends(p);
     while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE) && !is_else_marker(p) &&
            !check_hat(p, "catch") && clause_index(p) < 0) {
         uint32_t before = p->current.offset;
@@ -3290,6 +3299,7 @@ static LhatNode *parse_statement_list(Parser *p)
         if (p->current.offset == before && !at_eof(p)) {
             advance(p);
         }
+        skip_statement_ends(p);
     }
     p->depth--;
     p->tail_expr_depth = outer_tail;
@@ -4218,6 +4228,7 @@ static LhatNode *parse_when_clauses(Parser *p, const LhatToken *start,
             }
             LhatNode *statements = NULL;
             LhatNode *statements_tail = NULL;
+            skip_statement_ends(p);
             while (!at_eof(p) && !check_op(p, LHAT_OP_RBRACE) &&
                    !is_when_marker(p)) {
                 uint32_t before = p->current.offset;
@@ -4229,6 +4240,7 @@ static LhatNode *parse_when_clauses(Parser *p, const LhatToken *start,
                 if (p->current.offset == before && !at_eof(p)) {
                     advance(p);
                 }
+                skip_statement_ends(p);
             }
             block->v.list.items = statements;
             clause->v.clause.body = finish(p, block);
@@ -4776,7 +4788,7 @@ static LhatNode *parse_jump(Parser *p, LhatNodeKind kind)
                                   check_hat(p, "_yield") ||
                                   check_hat(p, "await");
     bool operand_follows =
-        !p->current.preceded_by_newline &&
+        !p->current.may_start_stmt &&
         ((starts_expression(&p->current) &&
           (!is_statement_keyword(p) || begins_expression_form)) ||
          check_op(p, LHAT_OP_LPAREN) || check_op(p, LHAT_OP_SUB) ||
@@ -5465,7 +5477,7 @@ void lhat_parse_lton(LhatLexer *lexer, LhatParseResult *result)
         }
         lhat_node_append(&head, &tail, statement);
         if (p.panicking) break;
-        while (match_op(&p, LHAT_OP_SEMICOLON)) {}
+        skip_statement_ends(&p);
     }
     p.lton_body = true;
     LhatToken body_at = p.current;

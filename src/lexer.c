@@ -317,7 +317,7 @@ static void skip_block_comment(LhatLexer *lexer)
             }
         } else {
             if (c == '\n') {
-                lexer->pending_newline = true;
+                lexer->pending_stmt_start = true;
             }
             advance(lexer);
         }
@@ -341,7 +341,7 @@ static void skip_trivia(LhatLexer *lexer)
             continue;
         }
         if (c == '\n') {
-            lexer->pending_newline = true;
+            lexer->pending_stmt_start = true;
             advance(lexer);
             continue;
         }
@@ -393,7 +393,7 @@ static LhatToken finish(LhatLexer *lexer, Mark start, LhatTokenKind kind)
     token.length = (uint32_t)(lexer->pos - start.offset);
     token.line = start.line;
     token.column = start.column;
-    token.preceded_by_newline = lexer->pending_newline;
+    token.may_start_stmt = lexer->pending_stmt_start;
     return token;
 }
 
@@ -1008,9 +1008,8 @@ void lhat_lexer_init(LhatLexer *lexer, const LhatSource *source)
     lexer->source = source;
     lexer->line = 1;
     lexer->column = 1;
-    // The first token sits at the start of a line, so it counts as preceded by
-    // a newline for the purposes of section [lex.ambig.call-line].
-    lexer->pending_newline = true;
+    // The first token has nothing before it to continue.
+    lexer->pending_stmt_start = true;
 }
 
 void lhat_lexer_dispose(LhatLexer *lexer)
@@ -1043,7 +1042,7 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
     // Checked before skipping trivia: inside a string, whitespace is content.
     if (inside_interpolated_text(lexer)) {
         LhatToken token = scan_interpolation_segment(lexer);
-        lexer->pending_newline = false;
+        lexer->pending_stmt_start = false;
         lexer->after_dot = false;
         return token;
     }
@@ -1056,7 +1055,7 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
         if (current_byte(lexer) == '}') {
             advance(lexer);
             lexer->interp_depth--;
-            lexer->pending_newline = false;
+            lexer->pending_stmt_start = false;
             lexer->after_dot = false;
             return finish(lexer, hole, LHAT_TOKEN_INTERP_EXPR_END);
         }
@@ -1064,7 +1063,7 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
         // '::' is concatenation and is left to the normal path.
         if (current_byte(lexer) == ':' && byte_at(lexer, 1) != ':') {
             LhatToken token = scan_interpolation_format(lexer);
-            lexer->pending_newline = false;
+            lexer->pending_stmt_start = false;
             lexer->after_dot = false;
             return token;
         }
@@ -1074,7 +1073,7 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
 
     if (at_end(lexer)) {
         LhatToken token = finish(lexer, start, LHAT_TOKEN_EOF);
-        lexer->pending_newline = false;
+        lexer->pending_stmt_start = false;
         lexer->after_dot = false;
         return token;
     }
@@ -1134,7 +1133,8 @@ LhatToken lhat_lexer_next(LhatLexer *lexer)
         }
     }
 
-    lexer->pending_newline = false;
+    lexer->pending_stmt_start = token.kind == LHAT_TOKEN_OP &&
+                             token.v.op == LHAT_OP_SEMICOLON;
     lexer->after_dot = token.kind == LHAT_TOKEN_OP &&
                        (token.v.op == LHAT_OP_DOT || token.v.op == LHAT_OP_NIL_DOT);
     return token;
