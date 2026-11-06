@@ -1889,8 +1889,10 @@ static void compile_self_assign(Compiler *c, const LhatNode *node,
 // [syntax.obj.typeof]: a body the program did not write has no checked type to
 // lower, so its signature is said here from what the proto already knows: it
 // takes nothing by name, a '...' asks nothing of its elements, and a yielding
-// one answers a coroutine whose Y, R and T nothing settled.
-static void unwritten_signature(Compiler *c, LhatProto *proto)
+// one answers a coroutine whose Y, R and T nothing settled. [syntax.type.empty]:
+// an f^ always answers, so one with no `answer` to say answers any^.
+static void unwritten_signature(Compiler *c, LhatProto *proto,
+                                LhatRuntimeType *answer)
 {
     LhatHeap *heap = &root_of(c)->proto->chunk.heap;
     LhatRuntimeType *type = lhat_type_rt_new(heap, LHAT_TYPE_RT_SUBROUTINE);
@@ -1908,9 +1910,12 @@ static void unwritten_signature(Compiler *c, LhatProto *proto)
         if (type->result != NULL) {
             type->result->is_function = proto->is_function;
         }
+    } else if (proto->is_function) {
+        type->result = answer != NULL
+                           ? answer : lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
     }
     if ((proto->has_variadic && type->variadic == NULL) ||
-        (proto->yields && type->result == NULL)) {
+        ((proto->yields || proto->is_function) && type->result == NULL)) {
         fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
@@ -1935,7 +1940,9 @@ static void bind_new_hooks(Compiler *c, const DefChain *chain,
     idle->takes_self = true;
     idle->parameters = 1;
     idle->parameter_slots = 1;
-    unwritten_signature(c, idle);
+    unwritten_signature(c, idle,
+                        lhat_type_rt_new(&root_of(c)->proto->chunk.heap,
+                                         LHAT_TYPE_RT_NIL));
     size_t index = lhat_proto_add(c->proto, idle);
     if (index == SIZE_MAX) {
         lhat_proto_free(idle);
@@ -2282,7 +2289,12 @@ static void compile_default_new(Compiler *c, const LhatNode *node,
         return;
     }
     proto->is_function = true;
-    unwritten_signature(c, proto);
+    // It answers an instance like any written new.
+    const LhatDefinition *origin = node->checked_definition;
+    if (origin != NULL && origin->instance != NULL) {
+        proto->result_type = runtime_type(c, origin->instance);
+    }
+    unwritten_signature(c, proto, proto->result_type);
 
     size_t index = lhat_proto_add(c->proto, proto);
     if (index == SIZE_MAX) {
@@ -2299,7 +2311,6 @@ static void compile_default_new(Compiler *c, const LhatNode *node,
     inner.proto = proto;
     inner.result = c->result;
 
-    (void)node;
     uint8_t slot = reserve(&inner);
     uint8_t inner_mark = inner.next_register;
     uint8_t owner = reserve(&inner);
@@ -6735,7 +6746,7 @@ static LhatCompileResult compile_unit(LhatCompileSession *session,
         compile_statements(&c, unit->v.list.items);
     }
     emit(&c, lhat_encode_abc(LHAT_BC_RETURN_NIL, 0, 0, 0));
-    unwritten_signature(&c, proto);
+    unwritten_signature(&c, proto, NULL);
     lhat_rt_cache_dispose(&c.rt_cache);
 
     // A session hands the registries back so the next input has them; without

@@ -1396,17 +1396,17 @@ static void test_typeof(void)
     // to the instruction rather than to the checker's answer.
     LHAT_TEST("the default new has a signature of its own");
     run_checked_text(&r,
-                     "let^ D = def^ { x:number^ = 1 }\n"
+                     "let^ D = def^ { self^{ x:number^ = 1 } }\n"
                      "let^ h:(f^ -> any^;)|error^ = D.new\n"
                      "return^ typeof^(h).signature\n");
-    CHECK_STRING(&r, "f^;");
+    CHECK_STRING(&r, "f^ -> t^{ x : number^ };");
     run_dispose(&r);
 
-    LHAT_TEST("and it fits the signature it answers");
+    LHAT_TEST("and it fits a function that answers");
     run_checked_text(&r,
                      "let^ D = def^ { x:number^ = 1 }\n"
                      "let^ h:(f^ -> any^;)|error^ = D.new\n"
-                     "return^ h fits^ f^;\n");
+                     "return^ h fits^ f^ -> any^;\n");
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 

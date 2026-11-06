@@ -7208,7 +7208,7 @@ print(typeof^(Bar.new()).signature)
 ```
 
 ```text
-t^{ bar : f^ -> number^;, foo : p^; & p^string^;, new : f^; }
+t^{ self^{}, bar : f^ -> number^;, foo : p^; & p^string^;, new : f^ -> Self^; }
 ```
 
 多重定義された `foo` の型に交差が現れる。合成の表示にも `&` を用いる（[syntax.obj.compose]）ため、

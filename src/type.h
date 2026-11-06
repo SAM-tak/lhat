@@ -125,6 +125,8 @@ typedef struct LhatFunctionInstance {
 typedef struct LhatDefinition {
     const struct LhatDefinition *left;
     const struct LhatDefinition *right;
+    // [syntax.obj.instance]: what this definition's new answers.
+    const struct LhatType *instance;
     const struct LhatNode *literal;
     const struct LhatNode *statements;
     const LhatLexer *lexer;

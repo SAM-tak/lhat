@@ -1173,6 +1173,9 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
     definition->v.table.is_definition = true;
     definition->v.table.instance = instance;  // [syntax.obj.instance]
     definition->v.table.from_definition = true;
+    if (node->checked_definition != NULL) {
+        ((LhatDefinition *)node->checked_definition)->instance = instance;
+    }
     instance->v.table.from_definition = true;
 
     copy_members(c, definition, left);
@@ -1339,6 +1342,9 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     ((LhatNode *)node)->checked_definition = origin;
     LhatType *definition = lhat_type_table(c->result->types);
     LhatType *instance = lhat_type_table(c->result->types);
+    if (origin != NULL) {
+        origin->instance = instance;
+    }
     // [syntax.obj.compose]: '..' between two definitions is composition, never a call of an
     // op^.. one of them carries -- this is what tells a definition from an
     // instance of it.
