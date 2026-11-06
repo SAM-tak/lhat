@@ -1478,6 +1478,7 @@ LhatType *chk_infer_binary(Checker *c, const LhatNode *node)
             if (joined != NULL) {
                 joined->left = a;
                 joined->right = b;
+                joined->instance = b->instance;
             }
             ((LhatNode *)node)->checked_definition = joined;
         }

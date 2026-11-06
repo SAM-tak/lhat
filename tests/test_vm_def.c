@@ -1424,6 +1424,55 @@ static void test_typeof(void)
     CHECK_BOOL(&r, true);
     run_dispose(&r);
 
+    // [syntax.obj.compose]: the default new of a composition answers all of it,
+    // whichever way the composition was written.
+    LHAT_TEST("the default new of a composition with a literal");
+    run_checked_text(&r,
+                     "let^ A = def^ { self^{ a:number^ = 1 } }\n"
+                     "let^ C = A .. def^ { self^{ b:number^ = 2 } }\n"
+                     "let^ h:(f^ -> any^;)|error^ = C.new\n"
+                     "return^ typeof^(h).signature\n");
+    CHECK_STRING(&r, "f^ -> t^{ a : number^, b : number^ };");
+    run_dispose(&r);
+
+    LHAT_TEST("the default new of a composition of two names");
+    run_checked_text(&r,
+                     "let^ A = def^ { self^{ a:number^ = 1 } }\n"
+                     "let^ B = def^ { self^{ b:number^ = 2 } }\n"
+                     "let^ C = A .. B\n"
+                     "let^ h:(f^ -> any^;)|error^ = C.new\n"
+                     "return^ typeof^(h).signature\n");
+    CHECK_STRING(&r, "f^ -> t^{ a : number^, b : number^ };");
+    run_dispose(&r);
+
+    // A written new carried into a composition: what it takes is the part's, and
+    // what it answers is the whole. The part's own new goes on answering the part.
+#define COMPOSED_NEW                                                           \
+    "let^ P = def^ { self^{ a:number^ = 0 },\n"                                \
+    "  override^new := f^ v:number^ { self^{ a := v } } }\n"                    \
+    "let^ Q = P .. def^ { self^{ b:number^ = 2 } }\n"
+    LHAT_TEST("a part's new answers the whole composition");
+    run_checked_text(&r, COMPOSED_NEW
+                     "let^ h:(f^number^ -> any^;)|error^ = Q.new\n"
+                     "return^ typeof^(h).signature\n");
+    CHECK_STRING(&r, "f^number^ -> t^{ a : number^, b : number^ };");
+    run_dispose(&r);
+
+    LHAT_TEST("the part's own new still answers the part");
+    run_checked_text(&r, COMPOSED_NEW
+                     "let^ h:(f^number^ -> any^;)|error^ = P.new\n"
+                     "return^ typeof^(h).signature\n");
+    CHECK_STRING(&r, "f^number^ -> t^{ a : number^ };");
+    run_dispose(&r);
+
+    LHAT_TEST("and the composition's fits what a call of it makes");
+    run_checked_text(&r, COMPOSED_NEW
+                     "let^ m:any^ = Q.new\n"
+                     "return^ m fits^ f^number^ -> t^{ a:number^, b:number^ };\n");
+    CHECK_BOOL(&r, true);
+    run_dispose(&r);
+#undef COMPOSED_NEW
+
     // [pipeline.repl.no-fork]: and a compile that never checked is left exactly as it was.
     // There is no settled type to reach for, so the written spelling is all
     // there is -- here none, which is any^. run_text compiles without

@@ -84,6 +84,8 @@ typedef struct DefChain {
     // earlier one -- so the lexer belongs to the part and not to the chain.
     const LhatLexer *lexers[LHAT_MAX_DEF_CHAIN];
     size_t count;
+    // [syntax.obj.instance]: what the whole chain's new answers.
+    const LhatType *instance;
 } DefChain;
 
 // One subroutine being compiled. Parent frames transport captures selected
@@ -2012,6 +2014,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
         fail(c, LHAT_COMPILE_UNSUPPORTED);
         return;
     }
+    chain.instance = node->checked_definition->instance;
 
     // [syntax.obj.name]: the same structure a table literal makes, marked as the one a
     // def^ made. Nothing about conformance reads that ([syntax.op.semantic] keeps identity
@@ -2751,6 +2754,38 @@ static void compile_call(Compiler *c, const LhatNode *node, uint8_t into)
 // prototype -- binds the copy as self^, and answers it whatever the body
 // does. A hook ([syntax.obj.super]'s super^) is the same body run against a receiver it
 // is handed instead, the way any method is. Neither may yield.
+// [syntax.obj.compose]: a part's new, compiled again for the composition it stands in.
+// Its literal was checked against the part, so what it takes is right and what
+// it answers is not: the composition makes the whole instance. The descriptor
+// is the cache's and other bodies share it, so this changes a copy.
+static void answer_whole_instance(Compiler *c, LhatProto *proto,
+                                  const LhatType *instance)
+{
+    LhatRuntimeType *answer = runtime_type(c, instance);
+    LhatRuntimeType *copy =
+        lhat_type_rt_new(&root_of(c)->proto->chunk.heap, LHAT_TYPE_RT_SUBROUTINE);
+    if (answer == NULL || copy == NULL) {
+        fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
+        return;
+    }
+    const LhatRuntimeType *written = proto->signature;
+    copy->is_function = written->is_function;
+    copy->takes_self = written->takes_self;
+    copy->self_last = written->self_last;
+    copy->mutable_self = written->mutable_self;
+    copy->answers_fresh = written->answers_fresh;
+    copy->variadic = written->variadic;
+    copy->result = answer;
+    for (size_t i = 0; i < written->part_count; i++) {
+        if (!lhat_type_rt_add_part(copy, written->parts[i])) {
+            fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
+            return;
+        }
+    }
+    proto->result_type = answer;
+    proto->signature = copy;
+}
+
 static void compile_subroutine_as(Compiler *c, const LhatNode *node,
                                   uint8_t into, BodyKind kind)
 {
@@ -2994,6 +3029,12 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         ? runtime_type(c, signature->v.func.result)
         : NULL;
     proto->signature = signature != NULL ? runtime_type(c, signature) : NULL;
+    if (kind == LHAT_BODY_CONSTRUCTOR && proto->signature != NULL &&
+        proto->signature->kind == LHAT_TYPE_RT_SUBROUTINE &&
+        c->building != NULL && c->building->count > 1 &&
+        c->building->instance != NULL) {
+        answer_whole_instance(c, proto, c->building->instance);
+    }
 
     // [syntax.sub.yieldable], [syntax.type.coroutine]: Y and R have no written form at all -- [pipeline.bc.checked-answers]'s
     // checked_type is the only place either can come from, written or not.
