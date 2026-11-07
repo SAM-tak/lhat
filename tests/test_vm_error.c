@@ -1016,6 +1016,31 @@ static void test_cleanups(void)
 
 static void test_growing_catch_jumps(void)
 {
+    // [errors.catch.clause]: what an inner block's arms did not take goes to the arms
+    // outside it, and they read it as their own.
+    LHAT_TEST("an error no inner arm took reaches the arms outside");
+    {
+        Run r;
+        run_text(&r,
+                 "errordef^ E { A, B }\n"
+                 "let^ fail = f^ -> number^|E.A|E.B { return^ error^E.B{} }\n"
+                 "var^ seen = 0\n"
+                 "do^{\n"
+                 "    do^{\n"
+                 "        try^ fail()\n"
+                 "        seen := -1\n"
+                 "    catch^ E.A:\n"
+                 "        seen := -2\n"
+                 "    }\n"
+                 "    seen := -3\n"
+                 "catch^ E.B:\n"
+                 "    seen := 1\n"
+                 "}\n"
+                 "return^ seen\n");
+        CHECK_INTEGER(&r, 1);
+        run_dispose(&r);
+    }
+
     for (int nested = 0; nested < 2; nested++) {
         LHAT_TEST("hundreds of error escapes reach the attached catch clauses");
         char source[65536];

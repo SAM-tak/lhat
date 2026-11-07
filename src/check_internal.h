@@ -464,6 +464,9 @@ typedef struct {
     struct CatchFrame {
         LhatType *caught;
         struct CatchFrame *outer;
+        // A try^ over the body's own call, whose result is still being inferred:
+        // what these arms may find is not all known yet.
+        bool undecided;
     } *catch_frame;
 
     // [syntax.obj.super]: what an override^ is writing over, which is what super^

@@ -2645,14 +2645,18 @@ static void check_clause(Checker *c, const LhatNode *node, LhatClauseKind kind,
 // [errors.catch.clause]: the arms of `owner`, given what the try^ written before them
 // found. Each takes what it is written for, with it^ narrowed to that ([errors.catch.it]),
 // and what no arm took goes on out exactly as a bare try^ would have sent it.
-static void check_arms(Checker *c, const LhatNode *owner, LhatType *caught,
-                       const LhatNode *arms)
+static void check_arms(Checker *c, const LhatNode *owner,
+                       const struct CatchFrame *frame, const LhatNode *arms)
 {
+    LhatType *caught = frame->caught;
     // [errors.catch.clause]: an arm with no try^ before it is refused --
     // [errors.catch.form]'s line, one construct over: catching what cannot
     // fail says nothing.
-    if (caught == NULL) {
+    if (caught == NULL && !frame->undecided) {
         chk_report(c, owner, LHAT_CHECK_ERR_CATCHES_NOTHING);
+    }
+    if (frame->undecided && c->catch_frame != NULL) {
+        c->catch_frame->undecided = true;
     }
 
     LhatType *left = caught;
@@ -2663,6 +2667,11 @@ static void check_arms(Checker *c, const LhatNode *owner, LhatType *caught,
         // The bare arm takes everything still standing; a written one takes
         // the arms of that which fit it, the same reading [syntax.type.fits]'s fits^ makes.
         LhatType *here = want != NULL ? chk_only(c, left, want) : left;
+        // A type that did not resolve has been reported, and says nothing here.
+        if (caught != NULL && !frame->undecided && here == NULL &&
+            (want != NULL || arm->v.clause.condition == NULL)) {
+            chk_report(c, arm, LHAT_CHECK_ERR_ARM_NEVER_RUNS);
+        }
 
         Scope scope;
         chk_scope_open(&scope, c->scope, arm, false);
@@ -2731,7 +2740,7 @@ static void check_caught(Checker *c, const LhatNode *owner,
 
     Narrowing *narrowed = c->narrowings;
     c->narrowings = plain;
-    check_arms(c, owner, frame.caught, arms);
+    check_arms(c, owner, &frame, arms);
     c->narrowings = narrowed;
 
     if (bound != NULL) {
@@ -2988,7 +2997,7 @@ void chk_check_statement(Checker *c, const LhatNode *node)
             }
 
             if (node->v.list.arms != NULL) {
-                check_arms(c, node, frame.caught, node->v.list.arms);
+                check_arms(c, node, &frame, node->v.list.arms);
             }
 
             // [syntax.finally.block]: the if^'s own finally^, in a scope of its own the

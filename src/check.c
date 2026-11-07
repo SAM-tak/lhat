@@ -3772,6 +3772,9 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_CATCHES_NOTHING] = {"check.catches-nothing",
         "nothing before these catch^ arms can fail: an error reaches "
         "them by being written try^, and none is"},
+    [LHAT_CHECK_ERR_ARM_NEVER_RUNS] = {"check.arm-never-runs",
+        "this catch^ arm never runs: nothing the try^ before it can find "
+        "is left for it to take"},
     [LHAT_CHECK_ERR_HOSTVALUE_ESCAPES] = {"check.hostvalue-escapes",
         "a host value lives on the stack and nowhere else; box it "
         "into the container type its library provides to keep it"},

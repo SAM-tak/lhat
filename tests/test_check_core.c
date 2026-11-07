@@ -2213,6 +2213,91 @@ static void test_errors(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_CATCHES_NOTHING);
     unit_dispose(&u);
 
+    // [errors.catch.clause]: an arm with nothing left to take never runs.
+#define ARM_PRELUDE                                                            \
+    "errordef^ IOError { NotFound, Denied }\n"                                  \
+    "errordef^ Other { Q }\n"                                                   \
+    "var^ one = f^ -> number^|IOError.NotFound { return^ 0 }\n"                 \
+    "var^ both = f^ -> number^|IOError { return^ 0 }\n"                         \
+    "var^ top = f^ -> number^|error^ { return^ 0 }\n"
+    static const struct {
+        const char *name;
+        const char *source;
+        bool dead;
+    } arm_cases[] = {
+        {"an arm for a kind nothing can find",
+         ARM_PRELUDE "var^ go = p^ { do^{ try^ one() catch^ Other.Q: var^ m = 1 catch^: var^ n = 2 } }\n", true},
+        {"a bare arm after everything was taken",
+         ARM_PRELUDE "var^ go = p^ { do^{ try^ one() catch^ IOError.NotFound: var^ m = 1 catch^: var^ n = 2 } }\n", true},
+        {"a kind after its whole declaration",
+         ARM_PRELUDE "var^ go = p^ { do^{ try^ both() catch^ IOError: var^ m = 1 catch^ IOError.Denied: var^ n = 2 } }\n", true},
+        {"the same arm twice",
+         ARM_PRELUDE "var^ go = p^ -> number^|IOError { do^{ try^ both() catch^ IOError.Denied: var^ m = 1 catch^ IOError.Denied: var^ n = 2 } return^ 0 }\n", true},
+        {"a kind only the with^ head can find",
+         ARM_PRELUDE
+         "let^ R = def^ { dispose := f^self^ -> nil^ { return^ nil^ } }\n"
+         "var^ open = f^ -> R|Other.Q { return^ R.new() }\n"
+         "var^ go = p^ -> number^|Other.Q { with^ h = try^ open() { try^ one() catch^ IOError: var^ m = 1 catch^ Other.Q: var^ n = 2 } return^ 0 }\n", true},
+        {"the whole declaration after one of its kinds",
+         ARM_PRELUDE "var^ go = p^ { do^{ try^ both() catch^ IOError.NotFound: var^ m = 1 catch^ IOError: var^ n = 2 } }\n", false},
+        {"a kind out of what may be any error",
+         ARM_PRELUDE "var^ go = p^ { do^{ try^ top() catch^ Other.Q: var^ m = 1 catch^: var^ n = 2 } }\n", false},
+        {"an arm over a value nothing typed",
+         ARM_PRELUDE "var^ go = p^ x:f^ -> any^; { do^{ try^ x() catch^ Other.Q: var^ m = 1 catch^: var^ n = 2 } }\n", false},
+        {"an arm over a body's own recursion",
+         ARM_PRELUDE
+         "var^ walk = f^ n:number^ {\n"
+         "    if^ n = 0 { return^ error^Other.Q{ } }\n"
+         "    return^ try^ this^(n - 1)\n"
+         "catch^ Other.Q:\n"
+         "    return^ 0\n"
+         "}\n", false},
+        {"and beside another try^ that says less",
+         ARM_PRELUDE
+         "var^ walk = f^ n:number^ {\n"
+         "    if^ n = 0 { return^ error^Other.Q{ } }\n"
+         "    try^ one()\n"
+         "    return^ try^ this^(n - 1)\n"
+         "catch^ Other.Q:\n"
+         "    return^ 0\n"
+         "catch^:\n"
+         "    return^ 1\n"
+         "}\n", false},
+        {"a try^ in an arm reaching the arms outside",
+         ARM_PRELUDE "var^ go = p^ { do^{ do^{ try^ one() catch^: try^ both() } catch^: var^ n = 2 } }\n", false},
+        {"a union arm any of which can come",
+         ARM_PRELUDE "var^ go = p^ { do^{ try^ one() catch^ IOError.NotFound|Other.Q: var^ m = 1 } }\n", false},
+        {"what an inner arm left, in the arms outside",
+         ARM_PRELUDE "var^ go = p^ { do^{ do^{ try^ both() catch^ IOError.NotFound: var^ m = 1 } catch^ IOError.Denied: var^ n = 2 } }\n", false},
+        {"and what the inner arm took is gone from them",
+         ARM_PRELUDE "var^ go = p^ -> number^|IOError.Denied { do^{ do^{ try^ both() catch^ IOError.NotFound: var^ m = 1 } catch^ IOError.NotFound: var^ n = 2 } return^ 0 }\n", true},
+    };
+    for (size_t i = 0; i < sizeof arm_cases / sizeof arm_cases[0]; i++) {
+        LHAT_TEST(arm_cases[i].name);
+        check_text(&u, arm_cases[i].source);
+        if (arm_cases[i].dead) {
+            CHECK_REPORTS(&u, LHAT_CHECK_ERR_ARM_NEVER_RUNS);
+        } else {
+            CHECK_CLEAN(&u);
+        }
+        unit_dispose(&u);
+    }
+#undef ARM_PRELUDE
+
+    // What no arm took still has to fit the body's result, wherever it left.
+    LHAT_TEST("what the arms outside did not take leaves through the result");
+    check_text(&u,
+               "errordef^ IOError { NotFound, Denied }\n"
+               "var^ both = f^ -> number^|IOError { return^ 0 }\n"
+               "var^ go = p^ -> number^ {\n"
+               "    do^{\n"
+               "        do^{ try^ both() catch^ IOError.NotFound: var^ m = 1 }\n"
+               "    }\n"
+               "    return^ 0\n"
+               "}\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_TRY_OUTSIDE);
+    unit_dispose(&u);
+
     // [errors.kind.nominal]: identity is the declaration, so two identical ones differ.
     LHAT_TEST("kinds from different declarations do not mix");
     check_text(&u,

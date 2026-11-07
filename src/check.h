@@ -336,6 +336,9 @@ typedef enum {
                                         // that write no try^ have nothing to
                                         // catch, the same as [binary.net.api]'s catch^ on
                                         // an expression that cannot fail
+    LHAT_CHECK_ERR_ARM_NEVER_RUNS,      // [errors.catch.clause]: nothing the try^
+                                        // before this arm can find is left for
+                                        // it to take
     LHAT_CHECK_ERR_HOSTVALUE_ESCAPES,   // [modules.hostvalue]: a host value lives in
                                         // stack slots and nowhere else, so a
                                         // table, a capture, an any^, a

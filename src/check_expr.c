@@ -955,6 +955,14 @@ void chk_error_leaves(Checker *c, const LhatNode *at, LhatType *escaping)
     if (escaping == NULL) {
         return;
     }
+    // [errors.catch.clause]: catch^ arms stand between this and the caller. What
+    // leaves here reaches them, and [errors.try.result] is asked of whatever they do not
+    // take, where they are.
+    if (c->catch_frame != NULL) {
+        c->catch_frame->caught =
+            lhat_type_union(c->result->types, c->catch_frame->caught, escaping);
+        return;
+    }
     // [errors.kind.local-no-propagate]: before asking whether this subroutine's result admits the
     // error, ask whether any result could. A localerror^ has to be resolved
     // in the frame that raised it, so widening the signature is not the fix
@@ -3391,19 +3399,11 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             if (!chk_can_be(value, error)) {
                 // try^ is an identity on an expression that cannot fail.
                 return value;
-            } else if (c->catch_frame != NULL) {
-                // [errors.catch.clause]: catch^ arms stand between this and the
-                // caller. What leaves here reaches them, and [errors.try.result] is asked of
-                // whatever they do not take, where they are.
-                LhatType *escaping = chk_only(c, value, error);
-                if (escaping != NULL) {
-                    c->catch_frame->caught =
-                        lhat_type_union(c->result->types,
-                                        c->catch_frame->caught, escaping);
-                }
-            } else {
-                chk_error_leaves(c, node, chk_only(c, value, error));
             }
+            if (value == NULL && c->catch_frame != NULL) {
+                c->catch_frame->undecided = true;
+            }
+            chk_error_leaves(c, node, chk_only(c, value, error));
             LhatType *kept = chk_without(c, value, error);
             return successful_error_result(c, kept);
         }
