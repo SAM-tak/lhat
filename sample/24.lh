@@ -144,45 +144,43 @@ let^same = f^want, used {
     return^true^
 }
 
-do^{
-    with^rng = try^std.random.new() {
-        let^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
-        var^shown = ""
-        for^i from^1 to^4 {
-            let^d = try^rng.rangeint(1, 9)
-            if^1 <= d <= 9 { # narrowing the range is what removes the nil check
-                want[d - 1] += 1
-                # L^ cannot tell from rng.rangeint(1, 9) that d is within 1..9,
-                # so the if^1 <= d <= 9 {} around it is what says so.
-            }
-            # Without the narrowing it has to be written this way:
-            # want[d - 1] ?+= 1
-            # which is shorter, and says a nil^ may be reached where none ever
-            # is -- and would swallow one that arrived from somewhere unnoticed.
-            shown := $"{shown} {d}"
+with^rng = try^std.random.new() {
+    let^want = { 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+    var^shown = ""
+    for^i from^1 to^4 {
+        let^d = try^rng.rangeint(1, 9)
+        if^1 <= d <= 9 { # narrowing the range is what removes the nil check
+            want[d - 1] += 1
+            # L^ cannot tell from rng.rangeint(1, 9) that d is within 1..9,
+            # so the if^1 <= d <= 9 {} around it is what says so.
         }
-        print($"Four digits:{shown}")
-        print("Enter an expression using each of them once, or an empty line to stop.")
+        # Without the narrowing it has to be written this way:
+        # want[d - 1] ?+= 1
+        # which is shorter, and says a nil^ may be reached where none ever
+        # is -- and would swallow one that arrived from somewhere unnoticed.
+        shown := $"{shown} {d}"
+    }
+    print($"Four digits:{shown}")
+    print("Enter an expression using each of them once, or an empty line to stop.")
 
-        repeat^{
-            let^line = try^std.io.readLine()
-            if^line.length = 0 { break^}
+    repeat^{
+        let^line = try^std.io.readLine()
+        if^line.length = 0 { break^}
 
-            let^r = Reader.new(line)
-            let^value = r.read()
-            if^!r.ok {
-                print("That is not an expression I can read.")
-            elif^!same(want, r.used):
-                print("Use each of the four digits exactly once.")
-            # / is real division, so 8/(3-8/3) does not land on exactly 24.
-            # But = takes the error of a real into account, so comparing
-            # directly is fine. To pick the width yourself there is the member
-            # eq (not needed here), or round it with value.round().
-            elif^value = 24:
-                print("Correct!")
-            else^:
-                print($"Incorrect: {value}")
-            }
+        let^r = Reader.new(line)
+        let^value = r.read()
+        if^!r.ok {
+            print("That is not an expression I can read.")
+        elif^!same(want, r.used):
+            print("Use each of the four digits exactly once.")
+        # / is real division, so 8/(3-8/3) does not land on exactly 24.
+        # But = takes the error of a real into account, so comparing
+        # directly is fine. To pick the width yourself there is the member
+        # eq (not needed here), or round it with value.round().
+        elif^value = 24:
+            print("Correct!")
+        else^:
+            print($"Incorrect: {value}")
         }
     }
 catch^std.io.IOError.Eof:

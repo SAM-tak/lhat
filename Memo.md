@@ -633,20 +633,35 @@ CPUリソースはさして問題ではなく、現状問題なのはメモリ�
 定義
 
 ```lhat
-macro^time(stats){
-    let^start_time = time.now()
+macrodef^Time^(stats) {
+    let^StartTime^ = time.now()
     stats
-    print($"Time elapsed: {time.now()-start_time}s")
+    print($"Time elapsed: {time.now()-StartTime^}s")
+}
+```
+
+```lhat
+macrodef^time!(stats) {
+    let^start_time! = time.now()
+    stats
+    print($"Time elapsed: {time.now()-start_time!}s")
 }
 ```
 
 使用
 
 ```lhat
-time! foo() # > Time elapsed: 0.0002s
+Time^foo() # > Time elapsed: 0.0002s
+```
+
+```lhat
+time!foo() # > Time elapsed: 0.0002s
 ```
 
 マクロは、やっぱ今どきはやめたほうがいいかも。どんなに頑張ってもさほど「衛生的」にはならないんじゃないか、マクロである限り。
+
+ユーザー定義ハット識別子（小文字の[a-z]から始まるものは予約）という概念を考えたが、後置`!`が空いてるから、
+別にそれでいいんじゃないか、という気もする。
 
 ### 気になるところ（後で調べること）
 
@@ -708,7 +723,7 @@ let^a = comptime^なんかコンパイル時に呼び出せるスクリプト()
 comptime^let^スクリプトを返すスクリプト = f^n -> program^{
     r = ""
     repeat^n {
-    r ..= "dosomething() "
+        r ..= "dosomething() "
     }
     return^program^(r) # 文字列じゃなくて、置き換えるスクリプトだぞ、とマークする
 }
