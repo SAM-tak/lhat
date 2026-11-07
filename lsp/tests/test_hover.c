@@ -725,6 +725,74 @@ static void test_fits(void)
     check_dispose(&c);
 }
 
+// [lsp.hover.try]
+#define TRY_PRELUDE                                                            \
+    "errordef^ E { A, B }\n"                                                    \
+    "let^ both = f^ -> number^|E { return^ 0 }\n"
+
+static void test_try_routes(void)
+{
+    Checked c;
+    char *text;
+
+    LHAT_TEST("a try^ says where each kind goes");
+    check_text(&c, TRY_PRELUDE
+               "let^ go = p^ -> number^|E.B {\n"
+               "    try^ both()\n"
+               "    return^ 0\n"
+               "catch^ E.A:\n"
+               "    return^ 1\n"
+               "}\n");
+    LHAT_CHECK_EQ_INT(c.checked.diagnostic_count, 0);
+    text = hover_text(&c, last_offset(&c, "try^"));
+    expect_contains(text, "`E.A` \xE2\x86\x92 6:1 `catch^ E.A:`");
+    expect_contains(text, "`E.B` \xE2\x86\x92 3:11 `p^`");
+    free(text);
+    check_dispose(&c);
+
+    LHAT_TEST("what an inner arm left goes to the arm outside");
+    check_text(&c, TRY_PRELUDE
+               "let^ go = p^ {\n"
+               "    do^{\n"
+               "        do^{ try^ both() catch^ E.A: var^ m = 1 }\n"
+               "    catch^:\n"
+               "        var^ n = 2\n"
+               "    }\n"
+               "}\n");
+    LHAT_CHECK_EQ_INT(c.checked.diagnostic_count, 0);
+    text = hover_text(&c, last_offset(&c, "try^"));
+    expect_contains(text, "`E.A` \xE2\x86\x92 5:26 `catch^ E.A:`");
+    expect_contains(text, "`E.B` \xE2\x86\x92 6:5 `catch^:`");
+    free(text);
+    check_dispose(&c);
+
+    LHAT_TEST("a try^ at the top of a unit goes out of it");
+    check_text(&c, TRY_PRELUDE "try^ both()\n");
+    text = hover_text(&c, last_offset(&c, "try^"));
+    expect_contains(text, "`E` \xE2\x86\x92 out of the unit");
+    free(text);
+    check_dispose(&c);
+
+    LHAT_TEST("a try^ over the body's own call names no kind");
+    check_text(&c, TRY_PRELUDE
+               "let^ walk = f^ n:number^ {\n"
+               "    if^ n = 0 { return^ error^E.A{ } }\n"
+               "    return^ try^ this^(n - 1)\n"
+               "catch^:\n"
+               "    return^ 0\n"
+               "}\n");
+    text = hover_text(&c, last_offset(&c, "try^"));
+    expect_contains(text, "errors of the recursive call \xE2\x86\x92 6:1 `catch^:`");
+    free(text);
+    check_dispose(&c);
+
+    LHAT_TEST("a try^ that cannot fail has nothing to say");
+    check_text(&c, "let^ n = try^ 1\n");
+    LHAT_CHECK(lsp_hover_for_unit(&c.unit, last_offset(&c, "try^")) == NULL,
+               "expected no hover");
+    check_dispose(&c);
+}
+
 int main(void)
 {
     {
@@ -743,6 +811,7 @@ int main(void)
         check_dispose(&c);
     }
     test_fits();
+    test_try_routes();
     test_definition();
     test_quoted_declaration();
     test_callable_summaries();

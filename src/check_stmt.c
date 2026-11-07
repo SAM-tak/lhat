@@ -2646,7 +2646,7 @@ static void check_clause(Checker *c, const LhatNode *node, LhatClauseKind kind,
 // found. Each takes what it is written for, with it^ narrowed to that ([errors.catch.it]),
 // and what no arm took goes on out exactly as a bare try^ would have sent it.
 static void check_arms(Checker *c, const LhatNode *owner,
-                       const struct CatchFrame *frame, const LhatNode *arms)
+                       struct CatchFrame *frame, const LhatNode *arms)
 {
     LhatType *caught = frame->caught;
     // [errors.catch.clause]: an arm with no try^ before it is refused --
@@ -2667,6 +2667,9 @@ static void check_arms(Checker *c, const LhatNode *owner,
         // The bare arm takes everything still standing; a written one takes
         // the arms of that which fit it, the same reading [syntax.type.fits]'s fits^ makes.
         LhatType *here = want != NULL ? chk_only(c, left, want) : left;
+#if LHAT_WITH_RESOLUTIONS
+        chk_try_routes_reach_arm(c, frame, arm, want);
+#endif
         // A type that did not resolve has been reported, and says nothing here.
         if (caught != NULL && !frame->undecided && here == NULL &&
             (want != NULL || arm->v.clause.condition == NULL)) {
@@ -2700,6 +2703,9 @@ static void check_arms(Checker *c, const LhatNode *owner,
     }
 
     chk_error_leaves(c, owner, left);
+#if LHAT_WITH_RESOLUTIONS
+    chk_try_routes_pass_on(c, frame);
+#endif
 }
 
 // [errors.catch.clause]: a block's statements with its arms after them. The statements

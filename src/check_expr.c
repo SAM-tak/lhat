@@ -3404,6 +3404,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 c->catch_frame->undecided = true;
             }
             chk_error_leaves(c, node, chk_only(c, value, error));
+#if LHAT_WITH_RESOLUTIONS
+            chk_try_route_leaves(c, node, chk_only(c, value, error), value == NULL);
+#endif
             LhatType *kept = chk_without(c, value, error);
             return successful_error_result(c, kept);
         }

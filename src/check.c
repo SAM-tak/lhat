@@ -362,6 +362,79 @@ void chk_record_unit_resolution(Checker *c, const LhatNode *at,
     record_placed(c, at, exports, 0, unit_path, false);
 }
 
+static void record_try_route(Checker *c, const LhatNode *site,
+                             LhatTryRouteKind kind, const LhatNode *target,
+                             LhatType *errors)
+{
+    LhatCheckResult *r = c->result;
+    // A body walked again, or once for each shape it is called with, finds its way
+    // to the same places.
+    for (size_t i = r->try_route_count; i-- > 0;) {
+        LhatTryRoute *route = &r->try_routes[i];
+        if (route->at == site->offset && route->kind == kind &&
+            route->target == target) {
+            if (route->errors != NULL && errors != NULL) {
+                route->errors = lhat_type_union(
+                    r->types, (LhatType *)route->errors, errors);
+            }
+            return;
+        }
+    }
+    LHAT_GROW(r->try_routes, r->try_route_count, r->try_route_capacity, 16,
+              return);
+    r->try_routes[r->try_route_count++] =
+        (LhatTryRoute){site->offset, kind, target, errors};
+}
+
+void chk_try_route_leaves(Checker *c, const LhatNode *site, LhatType *errors,
+                          bool undecided)
+{
+    if (errors == NULL && !undecided) {
+        return;
+    }
+    if (c->catch_frame == NULL) {
+        if (c->this_link != NULL) {
+            record_try_route(c, site, LHAT_TRY_TO_BODY, c->this_link->body, errors);
+        } else {
+            record_try_route(c, site, LHAT_TRY_TO_UNIT, NULL, errors);
+        }
+        return;
+    }
+    struct TryPending *pending =
+        lhat_type_semantic_alloc(c->result->types, sizeof *pending);
+    if (pending == NULL) {
+        return;
+    }
+    *pending = (struct TryPending){site, errors, undecided, c->catch_frame->pending};
+    c->catch_frame->pending = pending;
+}
+
+void chk_try_routes_reach_arm(Checker *c, struct CatchFrame *frame,
+                              const LhatNode *arm, LhatType *want)
+{
+    for (struct TryPending *p = frame->pending; p != NULL; p = p->next) {
+        if (p->undecided) {
+            record_try_route(c, p->site, LHAT_TRY_TO_ARM, arm, NULL);
+            if (want == NULL) {
+                p->undecided = false;  // a bare arm takes whatever it turns out to be
+            }
+            continue;
+        }
+        LhatType *here = want != NULL ? chk_only(c, p->left, want) : p->left;
+        if (here != NULL) {
+            record_try_route(c, p->site, LHAT_TRY_TO_ARM, arm, here);
+        }
+        p->left = want != NULL ? chk_without(c, p->left, want) : NULL;
+    }
+}
+
+void chk_try_routes_pass_on(Checker *c, struct CatchFrame *frame)
+{
+    for (struct TryPending *p = frame->pending; p != NULL; p = p->next) {
+        chk_try_route_leaves(c, p->site, p->left, p->undecided);
+    }
+}
+
 void chk_record_member_site(Checker *c, const LhatNode *node,
                             LhatType *receiver, bool number_word)
 {
@@ -2420,6 +2493,7 @@ void chk_rounds_begin(Checker *c, Rounds *r, size_t count)
 #if LHAT_WITH_RESOLUTIONS
     r->resolutions = c->result->resolution_count;
     r->member_sites = c->result->member_site_count;
+    r->try_routes = c->result->try_route_count;
     r->binding_sites = c->result->binding_site_count;
 #endif
     r->round = 0;
@@ -2455,6 +2529,7 @@ bool chk_rounds_next(Checker *c, Rounds *r)
     // away carries the receiver that walk guessed at, and qsort being
     // unstable the settle could keep either of the two.
     c->result->member_site_count = r->member_sites;
+    c->result->try_route_count = r->try_routes;
     c->result->binding_site_count = r->binding_sites;
 #endif
     return true;
@@ -3134,6 +3209,22 @@ LhatType *lhat_type_of_text(const char *text, size_t length,
 }
 
 #if LHAT_WITH_RESOLUTIONS
+const LhatTryRoute *lhat_check_try_route_at(const LhatCheckResult *result,
+                                            uint32_t offset, size_t *cursor)
+{
+    // The word is the whole of what a hover on a try^ is about; its operand has
+    // answers of its own.
+    static const uint32_t word = sizeof "try^" - 1;
+    for (; result != NULL && *cursor < result->try_route_count; (*cursor)++) {
+        const LhatTryRoute *route = &result->try_routes[*cursor];
+        if (route->at <= offset && offset <= route->at + word) {
+            (*cursor)++;
+            return route;
+        }
+    }
+    return NULL;
+}
+
 const LhatResolution *lhat_check_resolution_at(const LhatCheckResult *result,
                                                uint32_t offset)
 {
@@ -3373,6 +3464,7 @@ void lhat_check_result_dispose(LhatCheckResult *result)
     result->resolution_count = 0;
     result->resolution_capacity = 0;
     lhat_free(result->member_sites);
+    lhat_free(result->try_routes);
     result->member_sites = NULL;
     result->member_site_count = 0;
     result->member_site_capacity = 0;

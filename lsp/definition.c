@@ -37,6 +37,29 @@ bool lsp_definition_for_unit(const LhatUnit *unit, uint32_t offset,
     return true;
 }
 
+size_t lsp_definition_try_targets(const LhatUnit *unit, uint32_t offset,
+                                  uint32_t *out, size_t capacity)
+{
+    size_t count = 0;
+    size_t cursor = 0;
+    const LhatTryRoute *route;
+    while (unit != NULL && count < capacity &&
+           (route = lhat_check_try_route_at(&unit->checked, offset, &cursor)) != NULL) {
+        const LhatNode *target = route->target;
+        if (route->kind == LHAT_TRY_TO_UNIT && unit->parsed.root != NULL) {
+            const LhatNode *root = unit->parsed.root;
+            for (const LhatNode *s = root->kind == LHAT_NODE_BLOCK ? root->v.list.items : root;
+                 s != NULL && target == NULL; s = s->next) {
+                if (s->kind == LHAT_NODE_MODULE) target = s;
+            }
+        }
+        if (target != NULL) {
+            out[count++] = target->offset;
+        }
+    }
+    return count;
+}
+
 // Where the name covering `offset` begins. A declaration is recorded as one
 // offset while a cursor may stand anywhere within the name, so a position is
 // located with the lexer, including spaces and escaped delimiters.

@@ -31,6 +31,12 @@ typedef struct {
 bool lsp_definition_for_unit(const LhatUnit *unit, uint32_t offset,
                              LspDefinitionSite *out);
 
+// [lsp.hover.try]: the places in this unit the try^ at `offset` sends errors. A route
+// out of the unit points at its module^ when it declares one, and otherwise
+// has nowhere to point. Answers how many were written to `out`.
+size_t lsp_definition_try_targets(const LhatUnit *unit, uint32_t offset,
+                                  uint32_t *out, size_t capacity);
+
 // The complete identifier under the cursor; source length when none covers it.
 uint32_t lsp_definition_name_start(const LhatSource *source, uint32_t offset);
 

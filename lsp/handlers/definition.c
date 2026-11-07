@@ -28,6 +28,10 @@ typedef struct {
     bool found;
     char *path;  // owned; the unit the definition was written in
     uint32_t offset;
+    // [lsp.hover.try]: the answer for a try^, ready to send. Its places are in the
+    // unit being asked, so nothing has to cross to another.
+    const char *uri;
+    cJSON *try_targets;
 } DefinitionRequest;
 
 static void locate(void *context, const LhatUnit *unit)
@@ -35,6 +39,24 @@ static void locate(void *context, const LhatUnit *unit)
     DefinitionRequest *request = (DefinitionRequest *)context;
     uint32_t offset =
         lsp_unit_offset_at(unit, request->line, request->character);
+    uint32_t targets[16];
+    size_t count = lsp_definition_try_targets(unit, offset, targets, 16);
+    if (count > 0) {
+        request->try_targets = cJSON_CreateArray();
+        for (size_t i = 0; i < count && request->try_targets != NULL; i++) {
+            uint32_t end = lsp_definition_name_end(
+                unit->source.text, unit->source.length, targets[i]);
+            cJSON *location = cJSON_CreateObject();
+            if (location == NULL) continue;
+            cJSON_AddStringToObject(location, "uri", request->uri);
+            cJSON_AddItemToObject(
+                location, "range",
+                lsp_range_json(lsp_unit_position_at(unit, targets[i]),
+                               lsp_unit_position_at(unit, end)));
+            cJSON_AddItemToArray(request->try_targets, location);
+        }
+        return;
+    }
     LspDefinitionSite site;
     if (!lsp_definition_for_unit(unit, offset, &site)) {
         return;
@@ -94,8 +116,13 @@ cJSON *lsp_handle_definition(LspServer *server, const cJSON *params)
     request.found = false;
     request.path = NULL;
     request.offset = 0;
+    request.uri = uri_item->valuestring;
+    request.try_targets = NULL;
     lsp_workspace_with_unit(&server->workspace, path, locate, &request);
     free(path);
+    if (request.try_targets != NULL) {
+        return request.try_targets;
+    }
 
     if (!request.found || request.path == NULL) {
         free(request.path);

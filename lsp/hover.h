@@ -55,6 +55,9 @@ typedef struct {
     // declaring unit could not be reached -- the type is shown alone.
     char *line;
     char *documentation;
+    // [lsp.hover.try]: where a try^ sends what it finds, when the hover is on one.
+    struct LspHoverTryRoute *routes;
+    size_t route_count;
 } LspHoverPart;
 
 // The half read off the unit the cursor is in. False when nothing at

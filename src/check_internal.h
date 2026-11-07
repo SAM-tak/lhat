@@ -238,6 +238,7 @@ typedef struct {
 #if LHAT_WITH_RESOLUTIONS
     size_t resolutions;
     size_t member_sites;
+    size_t try_routes;
     size_t binding_sites;
 #endif
     size_t round;
@@ -467,6 +468,16 @@ typedef struct {
         // A try^ over the body's own call, whose result is still being inferred:
         // what these arms may find is not all known yet.
         bool undecided;
+#if LHAT_WITH_RESOLUTIONS
+        // [lsp.hover.try]: each try^ these arms stand in front of, with what no arm
+        // has taken yet.
+        struct TryPending {
+            const LhatNode *site;
+            LhatType *left;
+            bool undecided;
+            struct TryPending *next;
+        } *pending;
+#endif
     } *catch_frame;
 
     // [syntax.obj.super]: what an override^ is writing over, which is what super^
@@ -667,6 +678,15 @@ void chk_record_unit_resolution(Checker *c, const LhatNode *at,
 // [lsp.hover]: the '.' of a member access and what stands to its left.
 // Made where the receiver is inferred rather than where the answer comes
 // back -- see check.h's LhatMemberSite.
+// [lsp.hover.try]: `errors` left the try^ `site`. To the arms standing in front of it
+// when there are any, and otherwise out of the body, where the route ends.
+void chk_try_route_leaves(Checker *c, const LhatNode *site, LhatType *errors,
+                          bool undecided);
+// [lsp.hover.try]: the arm `arm` is written for `want`, or everything left when NULL.
+void chk_try_routes_reach_arm(Checker *c, struct CatchFrame *frame,
+                              const LhatNode *arm, LhatType *want);
+// [lsp.hover.try]: what no arm of `frame` took goes on from there.
+void chk_try_routes_pass_on(Checker *c, struct CatchFrame *frame);
 void chk_record_member_site(Checker *c, const LhatNode *node,
                             LhatType *receiver, bool number_word);
 

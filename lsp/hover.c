@@ -18,6 +18,7 @@
 
 #include "hover.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -497,6 +498,72 @@ static bool fits_hover(const LhatUnit *unit, uint32_t offset, LspHoverPart *out)
     return true;
 }
 
+// [lsp.hover.try]: one line of what a hover on a try^ says. Strings and numbers
+// only, since a part may outlive the unit it was read off.
+typedef struct LspHoverTryRoute {
+    char *errors;  // NULL for the errors of the body's own call
+    LhatTryRouteKind kind;
+    int line;
+    int column;
+    char *target;  // how the place reads; NULL when out of the unit
+} LspHoverTryRoute;
+
+static char *try_target_text(const LhatUnit *unit, const LhatTryRoute *route)
+{
+    if (route->kind == LHAT_TRY_TO_BODY) {
+        return lsp_strdup(route->target->v.func.is_function ? "f^" : "p^");
+    }
+    if (route->kind == LHAT_TRY_TO_UNIT) {
+        return NULL;
+    }
+    const LhatNode *condition = route->target->v.clause.condition;
+    if (condition == NULL) {
+        return lsp_strdup("catch^:");
+    }
+    uint32_t from = lhat_node_span_start(condition);
+    size_t length = condition->end - from;
+    char *text = malloc(sizeof "catch^ :" + length);
+    if (text != NULL) {
+        sprintf(text, "catch^ %.*s:", (int)length, unit->source.text + from);
+    }
+    return text;
+}
+
+static bool try_hover(const LhatUnit *unit, uint32_t offset, LspHoverPart *out)
+{
+    size_t count = 0;
+    uint32_t at = 0;
+    const LhatTryRoute *route;
+    for (size_t cursor = 0;
+         (route = lhat_check_try_route_at(&unit->checked, offset, &cursor)) != NULL;) {
+        at = route->at;
+        count++;
+    }
+    if (count == 0) {
+        return false;
+    }
+    out->routes = calloc(count, sizeof *out->routes);
+    if (out->routes == NULL) {
+        return false;
+    }
+    size_t cursor = 0;
+    while ((route = lhat_check_try_route_at(&unit->checked, offset, &cursor)) != NULL) {
+        LspHoverTryRoute *line = &out->routes[out->route_count++];
+        line->kind = route->kind;
+        line->errors = route->errors != NULL ? type_text(route->errors) : NULL;
+        line->target = try_target_text(unit, route);
+        if (route->target != NULL) {
+            LspPosition place = lsp_unit_position_at(unit, route->target->offset);
+            line->line = place.line + 1;
+            line->column = place.character + 1;
+        }
+    }
+    out->has_range = true;
+    out->from = lsp_unit_position_at(unit, at);
+    out->to = lsp_unit_position_at(unit, at + (uint32_t)(sizeof "try^" - 1));
+    return true;
+}
+
 bool lsp_hover_locate(const LhatUnit *unit, uint32_t offset, LspHoverPart *out)
 {
     memset(out, 0, sizeof *out);
@@ -504,6 +571,7 @@ bool lsp_hover_locate(const LhatUnit *unit, uint32_t offset, LspHoverPart *out)
         return false;
     }
     if (fits_hover(unit, offset, out)) return true;
+    if (try_hover(unit, offset, out)) return true;
     const LhatResolution *resolved =
         lhat_check_resolution_at(&unit->checked, offset);
 
@@ -645,6 +713,45 @@ static bool append_text(char **buffer, size_t *used, size_t *capacity,
     return append(buffer, used, capacity, text, strlen(text));
 }
 
+// [lsp.hover.try]: a heading, then a line for each place in the order the arms stand.
+static bool append_try_routes(char **buffer, size_t *used, size_t *capacity,
+                              const LspHoverPart *part, bool japanese)
+{
+    bool ok = append_text(buffer, used, capacity,
+                          japanese ? "**誤りの行き先**\n" : "**Where errors go**\n");
+    for (size_t i = 0; ok && i < part->route_count; i++) {
+        const LspHoverTryRoute *route = &part->routes[i];
+        ok = append_text(buffer, used, capacity, "\n- ");
+        if (route->errors != NULL) {
+            ok = ok && append_text(buffer, used, capacity, "`") &&
+                 append_text(buffer, used, capacity, route->errors) &&
+                 append_text(buffer, used, capacity, "`");
+        } else {
+            ok = ok && append_text(buffer, used, capacity,
+                                   japanese ? "再帰呼び出しの誤り"
+                                            : "errors of the recursive call");
+        }
+        if (route->kind == LHAT_TRY_TO_UNIT) {
+            ok = ok && append_text(buffer, used, capacity,
+                                   japanese
+                                       ? " → 単位の外（実行元、または `require^` の値へ）"
+                                       : " → out of the unit (to what ran it, or the value of its `require^`)");
+            continue;
+        }
+        char place[32];
+        snprintf(place, sizeof place, " → %d:%d `", route->line, route->column);
+        ok = ok && append_text(buffer, used, capacity, place) &&
+             route->target != NULL &&
+             append_text(buffer, used, capacity, route->target) &&
+             append_text(buffer, used, capacity, "`");
+        if (route->kind == LHAT_TRY_TO_BODY) {
+            ok = ok && append_text(buffer, used, capacity,
+                                   japanese ? "（返り値に合流）" : " (joins its result)");
+        }
+    }
+    return ok;
+}
+
 cJSON *lsp_hover_render(const LspHoverPart *part)
 {
     return lsp_hover_render_localized(part, NULL);
@@ -652,9 +759,11 @@ cJSON *lsp_hover_render(const LspHoverPart *part)
 
 cJSON *lsp_hover_render_localized(const LspHoverPart *part, const char *language)
 {
-    if (part->line == NULL && part->type == NULL) {
+    if (part->line == NULL && part->type == NULL && part->route_count == 0) {
         return NULL;
     }
+    bool japanese = language != NULL &&
+        (strcmp(language, "ja") == 0 || strncmp(language, "ja-", 3) == 0);
 
     // The note, then a fenced block for the definition line with the type
     // under it, then whatever was written about it -- joined with blank lines,
@@ -668,23 +777,25 @@ cJSON *lsp_hover_render_localized(const LspHoverPart *part, const char *language
         ok = ok && append_text(&joined, &used, &capacity, part->abstract_note) &&
              append_text(&joined, &used, &capacity, "\n\n");
     }
-    ok = ok && append_text(&joined, &used, &capacity, "```lhat\n");
-    if (part->line != NULL) {
-        ok = ok && append_text(&joined, &used, &capacity, part->line);
+    if (part->route_count > 0) {
+        ok = ok && append_try_routes(&joined, &used, &capacity, part, japanese);
+    } else {
+        ok = ok && append_text(&joined, &used, &capacity, "```lhat\n");
+        if (part->line != NULL) {
+            ok = ok && append_text(&joined, &used, &capacity, part->line);
+        }
+        if (part->type != NULL) {
+            // The separator only where there is a line above it to separate
+            // from; a member has the type alone.
+            ok = ok &&
+                 append_text(&joined, &used, &capacity,
+                             part->line != NULL ? "\n: " : ": ") &&
+                 append_text(&joined, &used, &capacity, part->type);
+        }
+        ok = ok && append_text(&joined, &used, &capacity, "\n```");
     }
-    if (part->type != NULL) {
-        // The separator only where there is a line above it to separate
-        // from; a member has the type alone.
-        ok = ok &&
-             append_text(&joined, &used, &capacity,
-                         part->line != NULL ? "\n: " : ": ") &&
-             append_text(&joined, &used, &capacity, part->type);
-    }
-    ok = ok && append_text(&joined, &used, &capacity, "\n```");
     const char *documentation = part->documentation;
     if (part->fits_evaluation != LSP_HOVER_NOT_FITS) {
-        bool japanese = language != NULL &&
-            (strcmp(language, "ja") == 0 || strncmp(language, "ja-", 3) == 0);
         documentation = part->fits_evaluation == LSP_HOVER_FITS_RUNTIME
             ? (japanese ? "実行時に判定します。" : "Runtime: tests the value at runtime.")
             : part->fits_evaluation == LSP_HOVER_FITS_TRUE
@@ -728,6 +839,11 @@ void lsp_hover_part_dispose(LspHoverPart *part)
     free(part->definition_path);
     free(part->line);
     free(part->documentation);
+    for (size_t i = 0; i < part->route_count; i++) {
+        free(part->routes[i].errors);
+        free(part->routes[i].target);
+    }
+    free(part->routes);
     memset(part, 0, sizeof *part);
 }
 

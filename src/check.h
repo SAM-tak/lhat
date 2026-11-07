@@ -473,6 +473,24 @@ typedef struct {
     const LhatType *call_signature;
 } LhatResolution;
 
+// [lsp.hover.try]: one place a try^ sends errors. Kept apart from LhatResolution
+// because a try^ is no name, and may have several answers: what one arm does not
+// take goes on to the next arm, the arms outside, or out of the body.
+typedef enum {
+    LHAT_TRY_TO_ARM,   // the catch^ arm `target`
+    LHAT_TRY_TO_BODY,  // the result of the subroutine `target`
+    LHAT_TRY_TO_UNIT,  // out of the unit, to what ran it; `target` is NULL
+} LhatTryRouteKind;
+
+typedef struct {
+    uint32_t at;  // where the word try^ stands
+    LhatTryRouteKind kind;
+    const LhatNode *target;
+    // What goes there, from the result's type arena. NULL when the try^ is over the
+    // body's own call, whose result was still being inferred.
+    const LhatType *errors;
+} LhatTryRoute;
+
 // [lsp.hover]: a place a member name may stand -- the '.' of an access, with
 // the type of whatever stands to its left.
 //
@@ -575,6 +593,12 @@ typedef struct {
     size_t member_site_count;
     size_t member_site_capacity;
 
+    // Where every try^ sends what it finds, one record per place it goes. A try^
+    // that was walked more than once keeps one record per place.
+    LhatTryRoute *try_routes;
+    size_t try_route_count;
+    size_t try_route_capacity;
+
     // Every name every scope held, in the order the scopes closed -- which
     // is innermost first, since a scope is disposed of before the one around
     // it. lhat_check_bindings_at leans on that and nothing else, so no
@@ -608,6 +632,11 @@ size_t lhat_check_error_count(const LhatCheckResult *result);
 // `offset` may fall anywhere within the name, not only on its first byte.
 const LhatResolution *lhat_check_resolution_at(const LhatCheckResult *result,
                                                uint32_t offset);
+
+// [lsp.hover.try]: the next place the try^ at `offset` sends an error, or NULL when
+// there are no more. `cursor` starts at 0 and carries the walk.
+const LhatTryRoute *lhat_check_try_route_at(const LhatCheckResult *result,
+                                            uint32_t offset, size_t *cursor);
 
 // The member access whose '.' stands before `offset`, or NULL when none
 // does. Open at the bottom and closed at the top: a cursor on the dot itself

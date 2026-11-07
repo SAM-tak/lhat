@@ -202,6 +202,49 @@ static void test_the_name_ends_where_the_name_ends(void)
                       (int)length);
 }
 
+// [lsp.hover.try]
+static void test_a_try_goes_where_its_errors_go(void)
+{
+    Checked c;
+    uint32_t found[16];
+
+    LHAT_TEST("a try^ goes to its arm and to the body");
+    check_text(&c,
+               "errordef^ E { A, B }\n"
+               "let^ both = f^ -> number^|E { return^ 0 }\n"
+               "let^ go = p^ -> number^|E.B {\n"
+               "    try^ both()\n"
+               "    return^ 0\n"
+               "catch^ E.A:\n"
+               "    return^ 1\n"
+               "}\n");
+    size_t count = lsp_definition_try_targets(&c.unit, offset_of(&c, "try^"), found, 16);
+    LHAT_CHECK_EQ_INT(count, 2);
+    LHAT_CHECK_EQ_INT(found[0], offset_of(&c, "catch^"));
+    LHAT_CHECK_EQ_INT(found[1], offset_of(&c, "p^ ->"));
+    check_dispose(&c);
+
+    LHAT_TEST("out of a unit goes to its module^");
+    check_text(&c,
+               "module^ a.b\n"
+               "errordef^ E { A }\n"
+               "let^ one = f^ -> number^|E.A { return^ 0 }\n"
+               "try^ one()\n");
+    count = lsp_definition_try_targets(&c.unit, offset_of(&c, "try^"), found, 16);
+    LHAT_CHECK_EQ_INT(count, 1);
+    LHAT_CHECK_EQ_INT(found[0], offset_of(&c, "module^"));
+    check_dispose(&c);
+
+    LHAT_TEST("and out of a script goes nowhere to point at");
+    check_text(&c,
+               "errordef^ E { A }\n"
+               "let^ one = f^ -> number^|E.A { return^ 0 }\n"
+               "try^ one()\n");
+    LHAT_CHECK_EQ_INT(
+        lsp_definition_try_targets(&c.unit, offset_of(&c, "try^"), found, 16), 0);
+    check_dispose(&c);
+}
+
 int main(void)
 {
     {
@@ -219,6 +262,7 @@ int main(void)
     test_a_written_type_name();
     test_a_kind_of_a_set();
     test_nothing_to_point_at();
+    test_a_try_goes_where_its_errors_go();
     test_the_name_ends_where_the_name_ends();
     return lhat_test_report("test_definition");
 }
