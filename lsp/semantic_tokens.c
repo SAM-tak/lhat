@@ -21,7 +21,7 @@
 // so it has to match LhatSemanticKind one for one.
 const char *const LSP_SEMANTIC_TOKEN_TYPES[] = {
     "namespace", "type", "class", "parameter", "variable", "function",
-    "property",
+    "property", "enumMember",
 };
 const size_t LSP_SEMANTIC_TOKEN_TYPES_COUNT =
     sizeof LSP_SEMANTIC_TOKEN_TYPES / sizeof LSP_SEMANTIC_TOKEN_TYPES[0];

@@ -37,6 +37,7 @@ enum {
     SEM_VARIABLE = LHAT_SEMANTIC_VARIABLE,
     SEM_FUNCTION = LHAT_SEMANTIC_FUNCTION,
     SEM_PROPERTY = LHAT_SEMANTIC_PROPERTY,
+    SEM_ENUM_MEMBER = LHAT_SEMANTIC_ENUM_MEMBER,
 };
 
 enum {
@@ -147,6 +148,13 @@ static void refine_from_resolution(const SemCollector *c, uint32_t offset,
     if (resolved->builtin) {
         *modifiers |= SEM_MOD_BUILTIN;
     }
+    // [syntax.enum]: a value access answers the wide enum type, but the
+    // name still denotes its particular constant, including in type paths.
+    if (resolved->named_kind != NULL &&
+        resolved->named_kind->kind == LHAT_TYPE_ENUM_MEMBER) {
+        *type = SEM_ENUM_MEMBER;
+        return;
+    }
     if (*type != SEM_VARIABLE && *type != SEM_PROPERTY) {
         return;  // the form already said what this is
     }
@@ -179,10 +187,9 @@ static void refine_from_resolution(const SemCollector *c, uint32_t offset,
         *type = SEM_FUNCTION;
     } else if (settled->kind == LHAT_TYPE_ERROR_SET ||
                settled->kind == LHAT_TYPE_ERROR_KIND ||
-               settled->kind == LHAT_TYPE_ENUM ||
-               settled->kind == LHAT_TYPE_ENUM_MEMBER) {
-        // [errors.kind.errordef]: what an errordef^ declared, and one kind within it --
-        // and [syntax.enum]'s enum, the same two tiers.
+               settled->kind == LHAT_TYPE_ENUM) {
+        // [errors.kind.errordef]: the set and its kinds are types;
+        // [syntax.enum]'s declaration is a type, its members are constants.
         *type = SEM_TYPE;
     }
 }
@@ -784,6 +791,15 @@ static void walk_value(SemCollector *out, const LhatNode *node)
         case LHAT_NODE_ERROR_KIND:
             emit_name(out, node->v.named.name, SEM_TYPE, SEM_MOD_DECLARATION);
             walk_error_fields(out, node->v.named.members);
+            break;
+        case LHAT_NODE_ENUMDEF:
+            emit_name(out, node->v.named.name, SEM_TYPE, SEM_MOD_DECLARATION);
+            walk_list(out, node->v.named.members);
+            break;
+        case LHAT_NODE_ENUM_MEMBER:
+            emit_name(out, node->v.named.name, SEM_ENUM_MEMBER,
+                      SEM_MOD_DECLARATION);
+            walk_value(out, node->v.named.members);
             break;
         case LHAT_NODE_MODULE:
             walk_qualified_path(out, node->v.named.name, SEM_NAMESPACE);

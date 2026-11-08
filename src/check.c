@@ -271,6 +271,7 @@ static void record_resolution(Checker *c, const LhatNode *at, const Binding *b,
     entry->builtin = false;  // a name a scope holds is the program's own
     entry->definition_path = NULL;  // bound in this unit, by this scope
     entry->type = type;
+    entry->named_kind = NULL;
     entry->call_signature = NULL;
 }
 
@@ -310,7 +311,8 @@ void chk_record_typed_resolution(Checker *c, const LhatNode *at,
 // place to point at" check.h describes, which a host registration and a
 // built-in keep.
 static void record_placed(Checker *c, const LhatNode *at, LhatType *type,
-                          uint32_t definition, const char *path, bool builtin)
+                          uint32_t definition, const char *path, bool builtin,
+                          const LhatType *named_kind)
 {
     LhatCheckResult *r = c->result;
     if (at == NULL || at->end <= at->offset) {
@@ -335,6 +337,7 @@ static void record_placed(Checker *c, const LhatNode *at, LhatType *type,
     entry->immutable = false;
     entry->builtin = builtin;
     entry->type = type;
+    entry->named_kind = named_kind;
     entry->call_signature = NULL;
 }
 
@@ -345,21 +348,21 @@ void chk_record_member_resolution(Checker *c, const LhatNode *at,
     // [syntax.obj.structure] looks a member up in a type, and the type says where it was
     // written -- in this unit or in the one that published it ([modules.deps.static]).
     record_placed(c, at, type, member != NULL ? member->declared_at : 0,
-                  member != NULL ? member->declared_in : NULL, builtin);
+                  member != NULL ? member->declared_in : NULL, builtin, NULL);
 }
 
 void chk_record_kind_resolution(Checker *c, const LhatNode *at, LhatType *type,
                                 const LhatType *kind)
 {
     record_placed(c, at, type, kind != NULL ? kind->v.error.declared_at : 0,
-                  kind != NULL ? kind->v.error.declared_in : NULL, false);
+                  kind != NULL ? kind->v.error.declared_in : NULL, false, kind);
 }
 
 void chk_record_unit_resolution(Checker *c, const LhatNode *at,
                                 LhatType *exports, const char *unit_path)
 {
     // The whole unit is what was named, so its start is the place.
-    record_placed(c, at, exports, 0, unit_path, false);
+    record_placed(c, at, exports, 0, unit_path, false, NULL);
 }
 
 static void record_try_route(Checker *c, const LhatNode *site,

@@ -41,7 +41,8 @@ typedef enum {
     LHAT_SEMANTIC_PARAMETER,
     LHAT_SEMANTIC_VARIABLE,
     LHAT_SEMANTIC_FUNCTION,
-    LHAT_SEMANTIC_PROPERTY
+    LHAT_SEMANTIC_PROPERTY,
+    LHAT_SEMANTIC_ENUM_MEMBER  // [syntax.enum]: a named constant within an enum^
 } LhatSemanticKind;
 
 typedef struct {

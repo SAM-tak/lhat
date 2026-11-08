@@ -468,6 +468,9 @@ typedef struct {
     // What the name holds there. Belongs to the result's type arena, so it
     // is valid for as long as the result is.
     LhatType *type;
+    // [syntax.enum]: the member actually named, even when its value has the
+    // wide enum type. Also records [errors.kind.errordef]'s named kind.
+    const LhatType *named_kind;
     // The signature instantiated for this use as a callee, if any. Kept
     // separate from the value's type so declaration hovers stay general.
     const LhatType *call_signature;

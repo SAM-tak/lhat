@@ -381,6 +381,58 @@ static void test_a_type_written_as_a_value(void)
     check_dispose(&c);
 }
 
+static void test_enum_members_are_constants(void)
+{
+    LHAT_TEST("[syntax.enum]: enum declarations and references distinguish constants");
+    static const char *source =
+        "enum^Mode { Idle, Walk, Run }\n"
+        "let^mode = Mode.Walk\n"
+        "let^label = for^mode:\n"
+        "    when^Mode.Idle: \"idle\"\n"
+        "    when^Mode.Walk: \"walking\"\n"
+        "    when^Mode.Run: \"running\";\n"
+        "let^accept = f^state:Mode.Idle -> number^ { return^0 }\n"
+        "enum^Code { First = Mode.Idle, Second = 20 }\n"
+        "let^code = Code.First\n"
+        "let^value = code.value\n"
+        "let^owner = code.enum^\n";
+    Checked c;
+    check_text(&c, source);
+    LHAT_CHECK(c.parsed.diagnostic_count == 0, "enum source must parse");
+    for (size_t i = 0; i < c.checked.diagnostic_count; i++) {
+        LHAT_CHECK(false, "enum source diagnostic %d at offset %u",
+                   (int)c.checked.diagnostics[i].code,
+                   c.checked.diagnostics[i].offset);
+    }
+    cJSON *data = lsp_semantic_tokens_for_unit(&c.unit);
+    Tokens tokens = decode(data);
+
+    expect_token(&tokens, source, "Mode {", "type", true);
+    expect_token(&tokens, source, "Idle,", "enumMember", true);
+    expect_token(&tokens, source, "Walk,", "enumMember", true);
+    expect_token(&tokens, source, "Run }", "enumMember", true);
+    expect_token(&tokens, source, "Mode.Walk\n", "type", false);
+    expect_token(&tokens, source, "Walk\n", "enumMember", false);
+    expect_token(&tokens, source, "Mode.Idle:", "type", false);
+    expect_token(&tokens, source, "Idle:", "enumMember", false);
+    expect_token(&tokens, source, "Walk:", "enumMember", false);
+    expect_token(&tokens, source, "Run:", "enumMember", false);
+    expect_token(&tokens, source, "Mode.Idle ->", "type", false);
+    expect_token(&tokens, source, "Idle ->", "enumMember", false);
+    expect_token(&tokens, source, "Idle, Second", "enumMember", false);
+    expect_token(&tokens, source, "Code {", "type", true);
+    expect_token(&tokens, source, "First =", "enumMember", true);
+    expect_token(&tokens, source, "Second =", "enumMember", true);
+    expect_token(&tokens, source, "Code.First", "type", false);
+    expect_token(&tokens, source, "First\n", "enumMember", false);
+    expect_token(&tokens, source, "value\n", "property", false);
+    expect_token(&tokens, source, "enum^\n", "type", false);
+
+    free(tokens.items);
+    cJSON_Delete(data);
+    check_dispose(&c);
+}
+
 static void test_catch_arms(void)
 {
     LHAT_TEST("04 の 4.5: a block's statements and its arms");
@@ -1104,6 +1156,7 @@ int main(void)
     test_module_path_reads_the_same_everywhere();
     test_compound_assignment_is_one_token();
     test_catch_arms();
+    test_enum_members_are_constants();
     test_for_focus();
     test_qualified_type_name();
     test_a_type_name_is_coloured_only_where_it_names_a_type();
