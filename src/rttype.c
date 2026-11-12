@@ -296,7 +296,7 @@ static LhatRuntimeType *build_rt(RtBuild *build,
             // [syntax.sub.no-contagion]: what a call answers -- the coroutine where the body
             // yields ([syntax.type.coroutine]). [syntax.obj.typeof]'s typeof^ comes through here, and what a
             // reader wants from a signature is what a call hands back.
-            rt->result = rt_from_checked(build, lhat_type_call_answer(type), seen);
+            rt->result = rt_from_checked(build, lhat_type_func_result(type), seen);
             return rt;
         }
 
@@ -455,7 +455,7 @@ static bool mentions_error(const LhatType *type, const RtSeen *seen)
             // this to the instruction just the same.
             return (type->v.func.variadic != NULL &&
                     mentions_error(type->v.func.variadic, seen)) ||
-                   mentions_error(lhat_type_call_answer(type), seen);
+                   mentions_error(lhat_type_func_result(type), seen);
 
         case LHAT_TYPE_UNION:
         case LHAT_TYPE_INTERSECT:
@@ -625,7 +625,7 @@ static void each_child(const LhatType *type, RtEdge edge, void *context)
                 RT_EDGE(p->type);
             }
             RT_EDGE(type->v.func.variadic);
-            RT_EDGE(lhat_type_call_answer(type));
+            RT_EDGE(lhat_type_func_result(type));
             return;
         case LHAT_TYPE_CORO:
             RT_EDGE(type->v.coroutine.receive);

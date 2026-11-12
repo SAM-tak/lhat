@@ -64,7 +64,7 @@ static void find_site(Site *site, const LhatNode *node)
           site->offset == lhat_node_span_start(node->v.func.return_type)))) {
         const LhatType *func = node->display_type;
         site->actual = func != NULL && func->kind == LHAT_TYPE_FUNC
-                           ? lhat_type_call_answer(func) : NULL;
+                           ? lhat_type_func_result(func) : NULL;
         site->annotation = node->v.func.return_type;
         if (site->result_index >= 0) {
             if (site->actual && lhat_type_tuple_width(site->actual)) {

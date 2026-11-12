@@ -436,7 +436,7 @@ static cJSON *node_to_json(const LhatNode *node, const Layer *layer)
     }
     if (out != NULL && node->kind == LHAT_NODE_FUNC && type != NULL &&
         type->kind == LHAT_TYPE_FUNC) {
-        const LhatType *answer = lhat_type_call_answer(type);
+        const LhatType *answer = lhat_type_func_result(type);
         if (answer != NULL && answer->kind != LHAT_TYPE_NONE) {
             char written[512];
             lhat_type_write(answer, written, sizeof written);

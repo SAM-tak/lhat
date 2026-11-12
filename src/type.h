@@ -686,7 +686,7 @@ LhatType *lhat_type_tuple_at(const LhatType *type, size_t index);
 //
 // NULL for a signature that answers nothing ([syntax.type.empty]), and for anything that is
 // not a signature at all.
-LhatType *lhat_type_call_answer(const LhatType *type);
+LhatType *lhat_type_func_result(const LhatType *type);
 
 // Builds a union or an intersection. Arms that add nothing are dropped, so
 // 'number^|number^' collapses and 'T|any^' becomes any^. A single surviving

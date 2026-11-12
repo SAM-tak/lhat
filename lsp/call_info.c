@@ -195,7 +195,7 @@ cJSON *lsp_call_info(const LhatUnit *unit, const LhatNode *node)
     if (signature->v.func.variadic != NULL)
         cJSON_AddItemToObject(info, "variadic", input_json(signature->v.func.variadic, owner, param));
     const LhatType *answer = node->display_type;
-    if (answer == NULL) answer = lhat_type_call_answer((LhatType *)signature);
+    if (answer == NULL) answer = lhat_type_func_result((LhatType *)signature);
     if (answer != NULL && answer->kind == LHAT_TYPE_TUPLE) {
         for (const LhatTypeList *position = answer->v.composite.arms; position != NULL; position = position->next)
             cJSON_AddItemToArray(outputs, type_json(position->type));

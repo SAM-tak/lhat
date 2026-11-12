@@ -1490,7 +1490,7 @@ static bool fits_type_settled(const LhatType *type, const FitsTypeSeen *seen)
                 if (p->type == NULL || !fits_type_settled(p->type, seen)) return false;
             }
             return fits_type_settled(type->v.func.variadic, seen) &&
-                   fits_type_settled(lhat_type_call_answer(type), seen);
+                   fits_type_settled(lhat_type_func_result(type), seen);
         case LHAT_TYPE_CORO:
             return fits_type_settled(type->v.coroutine.receive, seen) &&
                    fits_type_settled(type->v.coroutine.produce, seen) &&
@@ -1525,8 +1525,8 @@ static bool fits_types_disjoint(const LhatType *actual, const LhatType *target)
         const LhatTypeList *a = actual->v.func.params, *b = target->v.func.params;
         while (a != NULL && b != NULL) { a = a->next; b = b->next; }
         if (a != NULL || b != NULL) return true;
-        const LhatType *from = lhat_type_call_answer(actual);
-        const LhatType *into = lhat_type_call_answer(target);
+        const LhatType *from = lhat_type_func_result(actual);
+        const LhatType *into = lhat_type_func_result(target);
         if ((from == NULL) != (into == NULL)) return true;
         return from != NULL && lhat_type_disjoint(from, into);
     }

@@ -1924,7 +1924,7 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
         // [syntax.sub.no-contagion]: what calling it answers -- either a body that yields ([syntax.type.coroutine]),
         // or one that hands back a coroutine it made itself. [syntax.for.forms] asks only
         // that a coroutine arrive; which of the two wrote it does not matter.
-        LhatType *walks = lhat_type_call_answer(answer);
+        LhatType *walks = lhat_type_func_result(answer);
         if (answer->kind != LHAT_TYPE_FUNC || walks == NULL ||
             walks->kind != LHAT_TYPE_CORO) {
             chk_report(c, at, LHAT_CHECK_ERR_NOT_COROUTINE);

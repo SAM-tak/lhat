@@ -426,7 +426,7 @@ static LhatType *right_operator(Checker *c, const char *name, size_t length,
         return NULL;
     }
     *answered = true;
-    return lhat_type_call_answer(arm);
+    return lhat_type_func_result(arm);
 }
 
 // [syntax.op.define]: what '-x' is worth when x is not a number^. The operand carries the
@@ -446,7 +446,7 @@ static LhatType *infer_unary_operator(Checker *c, LhatType *operand)
     // the one -- so the arm is asked for the leading self^ and no other.
     const LhatType *arm =
         chk_operator_arm(chk_operator_member(c, operand, "-", 1), NULL, 0, false);
-    return lhat_type_call_answer(arm);
+    return lhat_type_func_result(arm);
 }
 
 // [syntax.op.right]: the operator member this side answers with as the LEFT operand. One
@@ -532,7 +532,7 @@ static void fold_arm(Checker *c, Candidates *into, const Known *known,
     if (on_right != NULL) {
         into->right = lhat_type_union(types, into->right, on_right);
     }
-    LhatType *answered = lhat_type_call_answer((LhatType *)arm);
+    LhatType *answered = lhat_type_func_result((LhatType *)arm);
     if (answered != NULL) {
         into->answer = lhat_type_union(types, into->answer, answered);
     }
@@ -779,7 +779,7 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
                 continue;
             }
             if (chk_signature_accepts(arm->type, args, 1, true)) {
-                return lhat_type_call_answer(arm->type);
+                return lhat_type_func_result(arm->type);
             }
         }
         // [syntax.op.right]: no arm here takes it, so the right operand is asked
@@ -852,7 +852,7 @@ static LhatType *infer_operator_inner(Checker *c, const LhatNode *node, LhatOpKi
                    by_nil ? LHAT_CHECK_ERR_OPERATOR_ON_MAYBE_NIL
                           : LHAT_CHECK_ERR_NO_OPERATOR);
     }
-    return lhat_type_call_answer(carrier);
+    return lhat_type_func_result(carrier);
 }
 
 static LhatType *infer_operator(Checker *c, const LhatNode *node, LhatOpKind op,

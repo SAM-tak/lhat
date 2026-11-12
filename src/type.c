@@ -296,7 +296,7 @@ LhatType *lhat_type_result_attribute(LhatTypeArena *arena, LhatType *type,
     }
     if (attribute == LHAT_TYPE_ATTRIBUTE_RETURN) {
         if (type->kind != LHAT_TYPE_FUNC) return NULL;
-        LhatType *answer = lhat_type_call_answer(type);
+        LhatType *answer = lhat_type_func_result(type);
         return answer != NULL && answer->kind != LHAT_TYPE_NONE
                    ? answer : lhat_type_simple(arena, LHAT_TYPE_NIL);
     }
@@ -1229,7 +1229,7 @@ LhatType *lhat_type_tuple_at(const LhatType *type, size_t index)
 // [syntax.type.coroutine-result]: what a call answers, which is what `result` holds -- the
 // coroutine for a body that yields ([syntax.sub.no-contagion]). NULL for anything that is
 // not a signature, so a caller holding any type may ask.
-LhatType *lhat_type_call_answer(const LhatType *type)
+LhatType *lhat_type_func_result(const LhatType *type)
 {
     if (type == NULL || type->kind != LHAT_TYPE_FUNC) {
         return NULL;
@@ -1524,8 +1524,8 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
     // [syntax.sub.no-contagion]: and what a call answers is the coroutine where the body yields
     // ([syntax.type.coroutine]), not [syntax.type.coroutine]'s T -- so a signature written 'p^number^;' does not
     // take one that makes a coroutine, and one written with the c^{ … } does.
-    LhatType *from = lhat_type_call_answer(value);
-    LhatType *into = lhat_type_call_answer(target);
+    LhatType *from = lhat_type_func_result(value);
+    LhatType *into = lhat_type_func_result(target);
     if ((from == NULL) != (into == NULL)) {
         return false;
     }
@@ -2968,7 +2968,7 @@ static void write_type(TypeSink *sink, const LhatType *type, int depth)
             // coroutine it makes ([syntax.type.coroutine]) rather than what the body returns.
             // [modules.host.import] has this read back as a type expression, and a caller
             // reading it wants to know what arrives.
-            LhatType *answer = lhat_type_call_answer(type);
+            LhatType *answer = lhat_type_func_result(type);
             if (answer != NULL && answer->kind != LHAT_TYPE_NONE) {
                 put_text(sink, " -> ");
                 if (type->v.func.answers_fresh) {

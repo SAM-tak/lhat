@@ -1368,7 +1368,7 @@ static LhatType *dictionary_index_type(Checker *c, const LhatNode *node,
                 chk_report(c, node->v.access.argument, LHAT_CHECK_ERR_NO_OPERATOR);
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
-            return lhat_type_call_answer(arm);
+            return lhat_type_func_result(arm);
         }
     }
     if (over->kind == LHAT_TYPE_TABLE && over->v.table.index_key != NULL &&
