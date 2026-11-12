@@ -4568,21 +4568,22 @@ take().resume("a")       # 受け取る型があるので1つ取る
 ```lhat
 let^ gen = p^ n:number^ { yield^ n }
 
-var^ g : p^number^ -> c^{ p^-> number^}; = gen
+var^ g : f^number^ -> c^{ p^-> number^}; = gen
 ```
 
 新しい規則ではない。[syntax.type.signature] が「結果とは呼び出しが答えるもの」と定めており、
 [syntax.sub.no-contagion] が「呼び出しはコルーチンを返す」と定めている。その2つの重なりである。
+署名の先頭が `f^` になるのも [syntax.sub.no-contagion] による——作る呼び出しは本体を走らせない。
 [syntax.for.forms] が `iterate^()` の契約を `f^ -> c^{ … };` と書いているのも同じ形である。
 
-##### 13.9+2 本体の `->` も呼んだら何が来るか [syntax.type.coroutine-result]
+##### 13.9+2 本体の `->` も「呼んだら何が返るか」の意味 [syntax.type.coroutine-result]
 
-> **本体に書く `->` も、署名の `->` と同じく「呼んだら何が来るか」である。
+> **本体に書く `->` も、署名の `->` と同じく「呼んだら何が返るか」である。
 > `yield^` を含む本体の `->` には `c^{ … }` しか書けない。**
 
 ```lhat
 p^ n:number^ -> c^{ p^-> number^ -> string^ } { yield^ n return^ "z" }   # 通る
-p^ n:number^ -> string^ { yield^ n return^ "z" }   # 誤り。呼べばコルーチンが来る
+p^ n:number^ -> string^ { yield^ n return^ "z" }   # 誤り。呼べばコルーチンが返る
 p^ n:number^ { yield^ n return^ "z" }              # 通る。T は return^ から推論する
 ```
 
@@ -8167,12 +8168,13 @@ typeof^(A.new()) = typeof^(B.new())    # true^
 gen を呼び出して得られたコルーチンを `typeof^` すると [pipeline.bc.checked-answers] の同じ経路（`LhatProto` に載せた
 `yield_produce_type`/`yield_receive_type`）から拾い、そのシグネチャは `c^{ p^R -> Y -> T }`
 のようになる。
-`typeof^(gen).signature` は `p^ -> c^{ p^R -> Y -> T };` のように コルーチン型を返り値の型としてもつ。
+`typeof^(gen).signature` は `f^ -> c^{ p^R -> Y -> T };` のように コルーチン型を返り値の型としてもつ
+（先頭が `f^` であることは [syntax.sub.no-contagion]）。
 
 ```lhat
 let^ gen = p^ { yield^ 1 return^ 9 }
 let^ co = gen()
-typeof^(gen).signature  # "p^ -> c^{p^ -> number^ -> number^};" # gen 自身
+typeof^(gen).signature  # "f^ -> c^{p^ -> number^ -> number^};" # gen 自身
 typeof^(co).signature   # "c^{p^ -> number^ -> number^}"        # 呼んだ答え
 ```
 
@@ -9678,7 +9680,8 @@ let^ f = f^ -> t^{ c : c^{ f^-> number^} } {
 
 #### `p^` のコルーチンは今までどおり
 
-`f^` から yieldable な `p^` を呼んでコルーチンを作ることはできる（[syntax.sub.no-contagion]）。
+`f^` から yieldable な `p^` を呼んでコルーチンを作ることはできる
+（その署名は `f^` である。[syntax.sub.no-contagion]）。
 だが **進めることはできない**。その本体が何をするかは `f^` の側から見えない。
 
 したがって `f^`／`p^` のどちらのコルーチンかを **型で見分けられる必要がある**。
@@ -9860,6 +9863,61 @@ c.resume(nil^)    # ここで "b"
 ここで返るものは **本体全体であり、再開位置が先頭にある** ものである。
 
 `iterate^`（[syntax.for.forms]）が呼ばれた時点で反復が1つ進んでしまわないのも、この規則による。
+
+#### ジェネレーター常に関数である
+
+> **`yield^` を含む手続きはコルーチンジェネレーターと解釈されるので、`p^` ではなく `f^` になる。
+> 本体の種別はコルーチンの側に残る。**
+
+```lhat
+let^py = p^x:number^ {
+    yield^
+    return^"done"
+}
+# py            : f^number^ -> c^{ p^-> nil^ -> string^};
+# py(1).start   : p^-> nil^|string^;
+# py(1).resume  : p^-> nil^|string^;
+```
+
+コルーチンジェネレーターの呼び出しは本体を実行せず、新しいコルーチンを作って答えるだけなので、
+副作用を持たない。副作用を持つのは `start` や `resume` の進める操作であり、そちらは
+[syntax.sub.coroutine-members] のとおり本体の種別を取る。
+
+##### `p^` と書いたのに `f^` と出る［重要］
+
+注釈を書くと、1行の中に2つの語が並ぶ。
+
+```lhat
+let^ delay : f^number^ -> c^{ p^-> number^ -> nil^ }; = p^ seconds {
+    yield^ std.async.timer(seconds)
+}
+```
+
+誤記ではない。［補足］2つの語は別のものを言っている。
+
+> **本体の先頭の語は「本体を走らせる操作」の種別を言う。**
+
+- 普通の本体を走らせるのは呼び出しである。だから本体の語がそのまま署名の語になる
+- yieldable な本体を走らせるのは `start()`／`resume()` である。だから本体の語は
+  コルーチンの語（`c^{ p^… }` の先頭）になり、署名の語にはならない
+- 署名の語が言うのは呼び出しの種別であり、作るだけの呼び出しは常に `f^` である
+
+yieldable な `f^` では2つがたまたま同じ語になるので、食い違いが見えるのは
+yieldable な `p^` だけである。
+
+Python の `def` も同じ形をとる。`yield` を含む `def` は呼んでも本体が走らず、
+ジェネレータを答える。L^ ではそれが型に出る。
+
+##### 帰結
+
+- `f^` から yieldable な `p^` を呼べることは、[syntax.sub.kinds] の呼び出し規則から
+  そのまま従う。`f^… -> c^{ p^… };` と書いた引数やメンバを経て受け取ったものでも同じである
+- 進めることは今までどおり `f^` からはできない（[syntax.sub.yieldable-f]）
+- `p^… -> c^{ p^… };` と書いた席にも入る（[syntax.sub.kinds] の「関数は手続きの型に適合する」）。
+  ただしその席から読んだ値は `p^` として扱われ、`f^` から呼べなくなる。
+  公開する名前の注釈は `f^` で書く
+- 値を文字列にしたときの種別（[syntax.obj.tostring]）も署名の側の `f^` になる
+- スクリプトの最上位が yieldable なときも同じである（[modules.unit.optional]）
 
 ### 15.6 コルーチンの生成に専用の記法は要らない [syntax.sub.coroutine-make]
 
@@ -12209,6 +12267,11 @@ enum^ Mode {
 検査）。`enum^` のメンバの値は**宣言時に決まる定数**であり、構築は無い。
 
 ## 改定履歴（要約）
+
+- **[syntax.sub.no-contagion]（2026-11-12）: yieldable な `p^` の署名は `f^`。** 以前は署名も `p^` で、
+  `f^` から呼べることは本体から推論した印による例外だった。書かれた署名を経ると
+  印が落ちて呼べず、`f^… -> c^{ p^… };` の席にも入らなかった。コルーチンの種別と
+  `start`/`resume` は `p^` のまま
 
 - **[errors.runtime.div-zero], [errors.runtime.panic]（2026-11-01）: `::` は `..` と同じ連結。** 型検査、優先順位、右結合、
   定義の合成、演算子定義を共通にし、`op^::` のメンバ名も `..` に統一する。

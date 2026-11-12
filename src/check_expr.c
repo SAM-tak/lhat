@@ -1905,7 +1905,7 @@ LhatType *chk_infer_template(Checker *c, const LhatNode *node)
         self_tail = &(*self_tail)->outer;
         *self_tail = NULL;
     }
-    LhatType *signature = lhat_type_func(c->result->types, node->v.func.is_function);
+    LhatType *signature = chk_signature_shell(c->result->types, node);
     for (const LhatNode *p = node->v.func.params; p != NULL; p = p->next) {
         if (p->v.param.variadic || chk_self_marker_at(c, node->v.func.params, p) != 0) {
             chk_report(c, p, LHAT_CHECK_ERR_TEMPLATE_CONTEXT);
@@ -1945,7 +1945,7 @@ static Instantiation *instantiate_template(Checker *c, LhatTemplate *definition,
     definition->instances = concrete.instantiations;
     if (instance != NULL && !instance->checking) {
         instance->checking = true;
-        LhatType *shape = lhat_type_func(result.types, definition->node->v.func.is_function);
+        LhatType *shape = chk_signature_shell(result.types, definition->node);
         for (size_t k = 0; k < count; k++) lhat_type_add_param(result.types, shape, args[k]);
         concrete.expected_func = shape;
         instance->concrete->body->v.func.is_template = false;
@@ -2178,8 +2178,8 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         }
     }
     if (seeded) {
-        LhatType *expected = lhat_type_func(
-            c->result->types, node->v.access.target->v.func.is_function);
+        LhatType *expected =
+            chk_signature_shell(c->result->types, node->v.access.target);
         for (size_t i = 0; i < given_count; i++) {
             lhat_type_add_param(c->result->types, expected, given_types[i]);
         }
@@ -2455,12 +2455,9 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
                 if (settled && position + 1 <= UINT16_MAX) {
                     ((LhatNode *)node)->checked_arm = (uint16_t)(position + 1);
                 }
-                // [syntax.sub.kinds], [syntax.sub.no-contagion]: f^ may call only f^, whichever arm [syntax.obj.override]
-                // resolved to -- except a yieldable p^, whose call alone
-                // stays referentially transparent (see the plain-call site
-                // above for why).
-                if (c->in_function && !arm->type->v.func.is_function &&
-                    !arm->type->v.func.yields) {
+                // [syntax.sub.kinds]: f^ may call only f^, whichever arm [syntax.obj.override]
+                // resolved to.
+                if (c->in_function && !arm->type->v.func.is_function) {
                     chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
                 }
                 check_mutable_receiver(c, node, arm->type);  // [syntax.sub.mutable-self]
@@ -2526,15 +2523,12 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     }
 
     // [syntax.sub.kinds]: f^ may call only f^, never p^ -- a p^ may run side effects an f^
-    // is not allowed to. [syntax.sub.no-contagion] carves out one exception: calling a yieldable
-    // p^ does not run its body at all, only makes a coroutine (start()
-    // is what runs it, and that is p^ itself, caught the same way any other
-    // p^ call is) -- so that call alone stays referentially transparent and
-    // is not what this rule exists to catch. Reported here rather than
-    // refused earlier so arguments still get checked, the same as an
-    // ordinary mismatch.
-    if (c->in_function && !effect_union && !callee->v.func.is_function &&
-        !callee->v.func.yields) {
+    // is not allowed to. A yielding p^ body is not one of those: its signature
+    // is an f^ ([syntax.sub.no-contagion]), since the call only makes a coroutine, and
+    // start() is what runs the body -- a p^ itself, caught here like any
+    // other. Reported here rather than refused earlier so arguments still
+    // get checked, the same as an ordinary mismatch.
+    if (c->in_function && !effect_union && !callee->v.func.is_function) {
         chk_report(c, node, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     }
     check_mutable_receiver(c, node, callee);  // [syntax.sub.mutable-self]

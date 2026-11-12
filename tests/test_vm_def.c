@@ -1571,7 +1571,19 @@ static void test_typeof(void)
     run_checked_text(&r,
                      "var^ g = p^ x:number^ { yield^ x }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^};");
+    CHECK_STRING(&r, "f^number^ -> c^{p^ -> number^};");
+    run_dispose(&r);
+
+    // [syntax.sub.no-contagion]: the call is an f^'s and the coroutine keeps the body's kind,
+    // which is what a value asked at run time answers too.
+    LHAT_TEST("and the value fits that f^ signature, its coroutine still a p^ one");
+    run_checked_text(&r,
+                     "var^ a : any^ = p^ x:number^ { yield^ x }\n"
+                     "var^ n = 0\n"
+                     "if^ a fits^ f^number^ -> c^{ p^-> number^}; { n := n + 1 }\n"
+                     "if^ a fits^ f^number^ -> c^{ f^-> number^}; { n := n + 2 }\n"
+                     "return^ n\n");
+    CHECK_INTEGER(&r, 1);
     run_dispose(&r);
 
     // [syntax.type.coroutine]'s third type is what a written c^{ … } says, and it stays there.
@@ -1579,7 +1591,7 @@ static void test_typeof(void)
     run_checked_text(&r,
                      "var^ g = p^ x:number^ -> c^{ p^-> number^ -> string^ } { yield^ x return^ \"z\" }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^ -> string^};");
+    CHECK_STRING(&r, "f^number^ -> c^{p^ -> number^ -> string^};");
     run_dispose(&r);
 
     // [syntax.type.tuple-parens]: a tuple in a result position is written bare -- the same
@@ -1655,7 +1667,7 @@ static void test_typeof(void)
                      "var^ g = p^ x:number^ -> c^{p^ -> number^ -> string^}\n"
                      "    { yield^ x return^ \"z\" }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^ -> string^};");
+    CHECK_STRING(&r, "f^number^ -> c^{p^ -> number^ -> string^};");
     run_dispose(&r);
 
     // [syntax.type.coroutine]: the three slots each say "none" in their own way, and typeof^
@@ -1666,28 +1678,28 @@ static void test_typeof(void)
     run_checked_text(&r,
                      "var^ g = p^ { repeat^ { yield^ 1 } }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^ -> c^{p^ -> number^ -> -};");
+    CHECK_STRING(&r, "f^ -> c^{p^ -> number^ -> -};");
     run_dispose(&r);
 
     LHAT_TEST("and one that ends without a value leaves it empty");
     run_checked_text(&r,
                      "var^ g = p^ { yield^ 1 }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^ -> c^{p^ -> number^};");
+    CHECK_STRING(&r, "f^ -> c^{p^ -> number^};");
     run_dispose(&r);
 
     LHAT_TEST("a yield^ with no value still hands nil^ over, so Y says so");
     run_checked_text(&r,
                      "var^ g = p^ { yield^ }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^ -> c^{p^ -> nil^};");
+    CHECK_STRING(&r, "f^ -> c^{p^ -> nil^};");
     run_dispose(&r);
 
     LHAT_TEST("and a var^ receiving one is what puts a type in the first slot");
     run_checked_text(&r,
                      "var^ g = p^ { var^ x : string^ = yield^ 1 }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^ -> c^{p^string^ -> number^};");
+    CHECK_STRING(&r, "f^ -> c^{p^string^ -> number^};");
     run_dispose(&r);
 
     // [errors.kind.nominal] sends a type mentioning an error to the instruction rather
@@ -1698,7 +1710,7 @@ static void test_typeof(void)
                      "var^ g = p^ -> c^{p^ -> number^ -> string^|E.Bad}\n"
                      "    { yield^ 1 return^ \"z\" }\n"
                      "return^ typeof^(g).signature\n");
-    CHECK_STRING(&r, "p^ -> c^{p^ -> number^ -> string^|E.Bad};");
+    CHECK_STRING(&r, "f^ -> c^{p^ -> number^ -> string^|E.Bad};");
     run_dispose(&r);
 
     // The two typeof^ paths ([pipeline.bc.typeof]'s resolved one and the instruction)

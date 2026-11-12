@@ -20,7 +20,7 @@ import^std.thread
 待てるもの = コルーチン（15.9）。`delay` は「期限を出して止まる」コルーチンを返し、
 その期限 id がスケジューラまで届く。await^ が委譲なので、何段深くても届く。
 ]#
-public^let^delay:p^number^-> c^{p^-> number^-> nil^}; = p^seconds {
+public^let^delay:f^number^-> c^{p^-> number^-> nil^}; = p^seconds {
     let^id = std.async.timer(seconds)
     yield^id
 }
@@ -33,7 +33,7 @@ public^let^delay:p^number^-> c^{p^-> number^-> nil^}; = p^seconds {
 
 std.async が登録されていなければ id は 0。そのときだけ `done()` で訊く形に落ちる。
 ]#
-public^let^joined:p^std.thread.ThreadHandle -> c^{p^-> number^->
+public^let^joined:f^std.thread.ThreadHandle -> c^{p^-> number^->
     any^
         |std.thread.ThreadError.AlreadyJoined
         |std.thread.ThreadError.BadResult

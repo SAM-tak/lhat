@@ -1902,7 +1902,9 @@ static void unwritten_signature(Compiler *c, LhatProto *proto,
         fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }
-    type->is_function = proto->is_function;
+    // [syntax.sub.no-contagion]: calling a yielding body only makes the coroutine, so the
+    // signature is an f^; the body's own kind is the coroutine's.
+    type->is_function = proto->is_function || proto->yields;
     type->takes_self = proto->takes_self;
     if (proto->has_variadic) {
         type->variadic = lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
@@ -1912,12 +1914,12 @@ static void unwritten_signature(Compiler *c, LhatProto *proto,
         if (type->result != NULL) {
             type->result->is_function = proto->is_function;
         }
-    } else if (proto->is_function) {
+    } else if (type->is_function) {
         type->result = answer != NULL
                            ? answer : lhat_type_rt_new(heap, LHAT_TYPE_RT_ANY);
     }
     if ((proto->has_variadic && type->variadic == NULL) ||
-        ((proto->yields || proto->is_function) && type->result == NULL)) {
+        (type->is_function && type->result == NULL)) {
         fail(c, LHAT_COMPILE_OUT_OF_MEMORY);
         return;
     }

@@ -1936,8 +1936,7 @@ static LhatType *walk_produce(Checker *c, const LhatNode *at, LhatType *over,
         // makes it with the call, and one that hands back a coroutine it holds
         // is not told apart from one that builds it.
         if (c->in_function &&
-            ((!answer->v.func.is_function && !answer->v.func.yields) ||
-             !walks->v.coroutine.is_function)) {
+            (!answer->v.func.is_function || !walks->v.coroutine.is_function)) {
             chk_report(c, at, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
         }
         return walks->v.coroutine.produce;

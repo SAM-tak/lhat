@@ -64,6 +64,30 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CALLS_PROCEDURE);
     unit_dispose(&u);
 
+    // [syntax.sub.no-contagion]: that is the signature's own kind rather than an exception
+    // made at the call, so it survives being written down and handed on.
+    LHAT_TEST("a yieldable p^ sits where an f^ signature is written");
+    check_text(&u,
+               "var^ gen = p^ n:number^ { yield^ n }\n"
+               "var^ g : f^number^ -> c^{ p^-> number^}; = gen\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("and an f^ handed one under that signature may call it");
+    check_text(&u,
+               "var^ gen = p^ n:number^ { yield^ n }\n"
+               "var^ f = f^ make:f^number^ -> c^{ p^-> number^}; { return^ make(1) }\n"
+               "var^ co = f(gen)\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("while the coroutine stays a p^ one, which an f^ seat refuses");
+    check_text(&u,
+               "var^ gen = p^ n:number^ { yield^ n }\n"
+               "var^ g : f^number^ -> c^{ f^-> number^}; = gen\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
+    unit_dispose(&u);
+
     LHAT_TEST("a p^ nested inside an f^ may call a p^ again");
     check_text(&u,
                "var^ log = p^ x:any^ { }\n"

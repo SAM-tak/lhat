@@ -145,7 +145,8 @@ for^ a in^ args { … }
 > yieldable である（[syntax.sub.yieldable]）。走らせると本体を実行せず、コルーチンを答える
 > （[syntax.sub.no-contagion]）。**
 
-最上位も本体の1つなので、推論を変える理由がない。`lhat_run` の答えがその
+最上位も本体の1つなので、推論を変える理由がない。署名も他の yieldable な `p^` と同じく
+`f^... -> c^{ p^… };` になる。`lhat_run` の答えがその
 コルーチンになり、ホストは `lhat_machine_resume` で回し、
 `lhat_machine_coroutine_done` で終わりを知る——毎フレーム1回、のように。
 コマンドラインは最後まで回し、終わりの値を答えとする。

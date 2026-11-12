@@ -29,6 +29,15 @@ void chk_unify_yield(Checker *c, const LhatNode *at, LhatType **slot,
     }
 }
 
+// [syntax.sub.no-contagion]: the empty signature of a subroutine literal. Calling a
+// yielding body runs none of it -- the call only makes the coroutine -- so
+// the signature is an f^ whichever word the body was written with. The body's
+// own kind rides on the coroutine, where start() and resume() take it.
+LhatType *chk_signature_shell(LhatTypeArena *types, const LhatNode *node)
+{
+    return lhat_type_func(types, node->v.func.is_function || node->v.func.yields);
+}
+
 // [pipeline.infer]: the result type is inferred from return^ unless it is written,
 // and a subroutine that calls itself has to write it.
 // [syntax.obj.abstract-override]: the shape a subroutine literal declares, read off its annotations
@@ -43,7 +52,7 @@ LhatType *chk_declared_signature(Checker *c, const LhatNode *node)
     if (node == NULL || node->kind != LHAT_NODE_FUNC) {
         return NULL;
     }
-    LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
+    LhatType *func = chk_signature_shell(c->result->types, node);
     func->v.func.yields = node->v.func.yields;
     func->v.func.answers_fresh = node->v.func.answers_fresh;  // [syntax.sub.fresh]
     for (const LhatNode *param = node->v.func.params; param != NULL;
@@ -54,7 +63,7 @@ LhatType *chk_declared_signature(Checker *c, const LhatNode *node)
             func->v.func.self_last = marker == 2;
             // [syntax.sub.mutable-self]: the marker travels with the seat. On a p^ it says
             // nothing a p^ could not already do, so it is not recorded.
-            if (param->v.param.mutable_receiver && func->v.func.is_function) {
+            if (param->v.param.mutable_receiver && node->v.func.is_function) {
                 func->v.func.mutable_self = true;
             }
             continue;
@@ -145,8 +154,7 @@ static LhatType *infer_func_instantiated(Checker *c, const LhatNode *node)
 #if LHAT_WITH_RESOLUTIONS
         size_t resolutions = c->result->resolution_count;
 #endif
-        LhatType *shape =
-            lhat_type_func(c->result->types, node->v.func.is_function);
+        LhatType *shape = chk_signature_shell(c->result->types, node);
         for (size_t k = 0; k < i->count; k++) {
             lhat_type_add_param(c->result->types, shape, i->args[k]);
         }
@@ -177,6 +185,7 @@ static LhatType *infer_func_instantiated(Checker *c, const LhatNode *node)
 static LhatType *coroutine_made(Checker *c, const LhatType *func, LhatType *receive,
                                 LhatType *produce, LhatType *result)
 {
+    const LhatNode *body = func->source_body;
     // [syntax.type.coroutine]: the third type is what the last resume receives. Where the body
     // ends without a value it is left empty and [syntax.sub.coroutine-members]'s nil^ joins Y|T at
     // the resume instead -- so the nil^ stands where it is really received
@@ -195,7 +204,7 @@ static LhatType *coroutine_made(Checker *c, const LhatType *func, LhatType *rece
     // same: a yield^ with no value really does hand nil^ to the resumer.
     LhatType *coroutine = lhat_type_coro(
         c->result->types, receive, produce != NULL ? produce : chk_simple(c, LHAT_TYPE_NIL),
-        result, endless, func->v.func.is_function);
+        result, endless, body->v.func.is_function);
     if (coroutine != NULL) coroutine->source_body = func->source_body;
     return coroutine;
 }
@@ -231,7 +240,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     }
     if (expected_func != NULL && (expected_func->kind != LHAT_TYPE_FUNC ||
                                   (expected_func->v.func.is_function &&
-                                   !node->v.func.is_function))) {
+                                   !node->v.func.is_function && !node->v.func.yields))) {
         expected_func = NULL;  // not a signature for this; nothing to take
     }
     const LhatTypeList *expected_param =
@@ -244,7 +253,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         return infer_func_instantiated(c, node);
     }
 
-    LhatType *func = lhat_type_func(c->result->types, node->v.func.is_function);
+    LhatType *func = chk_signature_shell(c->result->types, node);
     // [syntax.sub.yieldable]: whether the body suspends is read off the body, not written.
     if (func != NULL) func->source_body = node;
     func->v.func.yields = node->v.func.yields;
@@ -273,7 +282,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
             func->v.func.self_last = marker == 2;
             // [syntax.sub.mutable-self]: the marker travels with the seat. On a p^ it says
             // nothing a p^ could not already do, so it is not recorded.
-            if (param->v.param.mutable_receiver && func->v.func.is_function) {
+            if (param->v.param.mutable_receiver && node->v.func.is_function) {
                 func->v.func.mutable_self = true;
             }
             continue;

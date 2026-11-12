@@ -935,6 +935,7 @@ bool chk_run_of_names(const LhatNode *node, bool allow_scope);
 bool chk_string_member_key(Checker *c, const LhatNode *key);
 LhatType *chk_infer_index(Checker *c, const LhatNode *node);
 LhatType *chk_infer_table(Checker *c, const LhatNode *node);
+LhatType *chk_signature_shell(LhatTypeArena *types, const LhatNode *node);
 LhatType *chk_declared_signature(Checker *c, const LhatNode *node);
 
 #endif  // LHAT_CHECK_INTERNAL_H

@@ -448,7 +448,10 @@ static void write_value(Writer *w, LhatValue value, size_t depth)
             return;
         case LHAT_OBJECT_SUBROUTINE: {
             const LhatClosure *closure = (const LhatClosure *)object;
-            put_text(w, closure->proto != NULL && closure->proto->is_function
+            // [syntax.sub.no-contagion]: the signature's kind, which a yielding body's
+            // word does not decide.
+            put_text(w, closure->proto != NULL &&
+                            (closure->proto->is_function || closure->proto->yields)
                             ? "f^" : "p^");
             return;
         }

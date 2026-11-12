@@ -85,7 +85,7 @@ static void test_text(void)
             "import^ std.load\n"
             "let^ f = std.load.text(\"yield^ 1\\nreturn^ 2\", \"gen\")\n"
             "return^ typeof^(f).signature\n");
-        LHAT_CHECK_RAN_TEXT(ran, "p^...:any^ -> c^{p^};");
+        LHAT_CHECK_RAN_TEXT(ran, "f^...:any^ -> c^{p^};");
         lhat_test_ran_dispose(&ran);
     }
 
