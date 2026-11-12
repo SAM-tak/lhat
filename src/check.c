@@ -2147,15 +2147,22 @@ bool chk_mentions_function_coroutine(const LhatType *type, unsigned depth)
                    chk_mentions_function_coroutine(type->v.table.index_value,
                                                    depth + 1);
 
-        case LHAT_TYPE_FUNC:
+        case LHAT_TYPE_FUNC: {
             for (const LhatTypeList *p = type->v.func.params; p != NULL;
                  p = p->next) {
                 if (chk_mentions_function_coroutine(p->type, depth + 1)) {
                     return true;
                 }
             }
-            return chk_mentions_function_coroutine(type->v.func.result, depth + 1) ||
+            // [syntax.sub.yieldable-f]: a yielding signature makes a fresh coroutine at
+            // each call, which is no coroutine leaving; what its body returns is.
+            const LhatType *answer = type->v.func.result;
+            if (type->v.func.yields && answer != NULL && answer->kind == LHAT_TYPE_CORO) {
+                answer = answer->v.coroutine.result;
+            }
+            return chk_mentions_function_coroutine(answer, depth + 1) ||
                    chk_mentions_function_coroutine(type->v.func.variadic, depth + 1);
+        }
 
         case LHAT_TYPE_UNION:
         case LHAT_TYPE_INTERSECT:

@@ -168,6 +168,16 @@ static void test_purity(void)
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_COROUTINE_ESCAPES);
     unit_dispose(&u);
 
+    // A yielding f^ handed out makes a fresh coroutine at each call, so it
+    // carries none out -- an instance whose iterate yields is the common case.
+    LHAT_TEST("but a yielding f^ may be carried out");
+    check_text(&u,
+               "var^ f = f^ { return^ { walk := f^ { yield^ 1 } } }\n"
+               "var^ A = def^{ self^{ n := 0 }, iterate = f^self^ { yield^ self^.n } }\n"
+               "var^ make = f^ { return^ A.new() }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // [syntax.type.coroutine] with [syntax.sub.yieldable-f]: the front half is a signature, and its kind is the
     // body's. Written out, an f^ coroutine can be taken as an argument --
     // which is the one thing [syntax.sub.yieldable-f] allows without letting it be advanced.
