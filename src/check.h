@@ -204,6 +204,9 @@ typedef enum {
                                         // the result position says what a call
                                         // answers, and the yield^ sites say it
                                         // too. The two disagreed
+    LHAT_CHECK_ERR_YIELDABLE_RESULT,    // [syntax.type.coroutine-result]: a yielding body's
+                                        // call answers a coroutine, so its
+                                        // written result has to be a c^{ … }
 
     LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION, // [syntax.sub.yieldable]: a yield^ that is bound
                                             // (directly, by a let^) needs a

@@ -1574,10 +1574,10 @@ static void test_typeof(void)
     CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^};");
     run_dispose(&r);
 
-    // [syntax.type.coroutine]'s third type is what a written result says, and it stays there.
+    // [syntax.type.coroutine]'s third type is what a written c^{ … } says, and it stays there.
     LHAT_TEST("and what it returns is the third of the three");
     run_checked_text(&r,
-                     "var^ g = p^ x:number^ -> string^ { yield^ x return^ \"z\" }\n"
+                     "var^ g = p^ x:number^ -> c^{ p^-> number^ -> string^ } { yield^ x return^ \"z\" }\n"
                      "return^ typeof^(g).signature\n");
     CHECK_STRING(&r, "p^number^ -> c^{p^ -> number^ -> string^};");
     run_dispose(&r);
@@ -1706,7 +1706,7 @@ static void test_typeof(void)
     // makes is written exactly as the signature promised it.
     LHAT_TEST("the coroutine itself reads the same as the promise");
     run_checked_text(&r,
-                     "var^ g = p^ x:number^ -> string^ { yield^ x return^ \"z\" }\n"
+                     "var^ g = p^ x:number^ -> c^{ p^-> number^ -> string^ } { yield^ x return^ \"z\" }\n"
                      "return^ typeof^(g(1)).signature\n");
     CHECK_STRING(&r, "c^{p^ -> number^ -> string^}");
     run_dispose(&r);

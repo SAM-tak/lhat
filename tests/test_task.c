@@ -842,7 +842,7 @@ static void test_static_results(void)
         "import^ std.task\nlet^ t = std.task.async(p^ n:number^ -> number^ { return^ n })\n"),
         "closure with a parameter rejected");
     LHAT_CHECK(!lhat_test_check_text(regs, 2,
-        "import^ std.task\nlet^ job = p^ -> number^ { _yield^ 0 return^ 1 }\n"
+        "import^ std.task\nlet^ job = p^ { _yield^ 0 return^ 1 }\n"
         "let^ t = std.task.async(job)\n"), "yieldable closure rejected; its call is the job");
     LHAT_CHECK(!lhat_test_check_text(regs, 2,
         "import^ std.task\nlet^ t = std.task.async(p^ -> number^, number^ { return^ 1, 2 })\n"),

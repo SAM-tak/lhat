@@ -3601,6 +3601,9 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_COROUTINE_MISMATCH] = {"check.coroutine-mismatch",
         "the coroutine this body makes is not the one written "
         "here; the yield^ sites and the c^{ … } have to agree"},
+    [LHAT_CHECK_ERR_YIELDABLE_RESULT] = {"check.yieldable-result",
+        "this body yields, so a call answers a coroutine; write c^{ … } "
+        "here, or leave the result unwritten"},
     [LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION] = {"check.yield-needs-annotation",
         "a yield^ that is bound needs a written type there"},
     [LHAT_CHECK_ERR_YIELD_TYPE_MISMATCH] = {"check.yield-type-mismatch",

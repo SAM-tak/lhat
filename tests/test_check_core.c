@@ -486,7 +486,7 @@ static void test_names(void)
     // written to carry it would hold nil^ and claim otherwise.
     LHAT_TEST("'_^' carries an annotation without carrying a value");
     check_text(&u,
-               "var^ gen = p^ -> number^ {\n"
+               "var^ gen = p^ {\n"
                "  var^ _^ : string^ = _yield^ 1\n"
                "  return^ 0 }\n");
     CHECK_CLEAN(&u);
@@ -870,7 +870,7 @@ static void test_results(void)
     unit_dispose(&u);
 
     LHAT_TEST("and a p^ with a written result is not made to admit nil^");
-    check_text(&u, "var^ g = p^ -> number^ { repeat^ { yield^ 1 } }\n");
+    check_text(&u, "var^ g = p^ -> c^{ p^-> number^ -> number^ } { repeat^ { yield^ 1 } }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 

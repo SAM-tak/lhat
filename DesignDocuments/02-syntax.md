@@ -4454,7 +4454,7 @@ c^{ p^(number^, number^) -> Y -> T }   # 同じ型
 「タプルは名前にしか束縛できない」がそのまま効く。分解して受ける。
 
 ```lhat
-let^ gen = p^ -> (number^, string^) {
+let^ gen = p^{
     yield^ 1, "a"
     yield^ 2, "b"
     return^ 0, ""
@@ -4575,21 +4575,30 @@ var^ g : p^number^ -> c^{ p^-> number^}; = gen
 [syntax.sub.no-contagion] が「呼び出しはコルーチンを返す」と定めている。その2つの重なりである。
 [syntax.for.forms] が `iterate^()` の契約を `f^ -> c^{ … };` と書いているのも同じ形である。
 
-**本体に書く `-> T` は今までどおり T**（[syntax.type.coroutine] の3つ目）である。
+##### 13.9+2 本体の `->` も呼んだら何が来るか [syntax.type.coroutine-result]
+
+> **本体に書く `->` も、署名の `->` と同じく「呼んだら何が来るか」である。
+> `yield^` を含む本体の `->` には `c^{ … }` しか書けない。**
 
 ```lhat
-p^ n:number^ -> string^ { yield^ n return^ "z" }   # ここの -> は本体が返すもの
-p^number^ -> c^{ p^-> number^ -> string^ };     # 型は呼んだら何が来るか
+p^ n:number^ -> c^{ p^-> number^ -> string^ } { yield^ n return^ "z" }   # 通る
+p^ n:number^ -> string^ { yield^ n return^ "z" }   # 誤り。呼べばコルーチンが来る
+p^ n:number^ { yield^ n return^ "z" }              # 通る。T は return^ から推論する
 ```
 
-##### 本体の `->` にも `c^{ … }` を書ける
-
-同じ値について同じことを言っているので、**どちらの位置でも `c^{ … }` を受ける**。
 本体には13.9 の3つ目が渡り、まわりのコルーチンは呼び手のものになる。
+最終結果の型だけを気にするなら、`->` を書かずに推論に任せる。
 
-```lhat
-p^ n:number^ -> c^{ p^-> number^ -> string^ } { yield^ n return^ "z" }
-```
+`-> T` を「本体が返すもの」と読む言語（Rust の `async fn`、Python の `async def`、Kotlin の `suspend fun`）は、
+`async`／`suspend` の印で色を別に書いている。L^ は [syntax.sub.yieldable] が yieldable を推論するので
+その印が無く、**`-> c^{ … }` がコルーチンであることを書き手が明示し、検査に守らせる唯一の場所**になる。
+
+- `-> c^{ … }` と書いた本体から `yield^` を消せば、本体の側で誤りになる
+- `-> string^` と書いた本体に `yield^` を足せば、本体の側で誤りになる。呼び出し元を見て回る前に色の変化が分かる
+- `->` の意味が一つなので、`.ReturnType`（[syntax.type.return-type]）が答えるものと本体に書いたものが常に一致する
+
+束縛の側に書いた署名（`var^ g : p^ -> number^; = p^{ yield^ 1 }`）は、代入の適合判定が
+呼び出しの答えるコルーチンと突き合わせる。`any^` のようにコルーチンを受け入れる結果なら通る。
 
 **書いた `c^{ … }` は `yield^` の並びから求まる形と突き合わせる。**
 受け取る型と出す型は [syntax.sub.yieldable] が `yield^`／`await^` から決めるので、
@@ -10363,11 +10372,11 @@ L^ に底の型がない以上、`_yield^` は値を送れ、値を受け取れ�
 **型検査からは区別できない。それが要点である。**
 
 ```lhat
-let^ real = p^ -> number^ {
+let^ real = p^{
     var^ got : string^ = yield^ 1
     return^ 9
 }
-let^ fake = p^ -> number^ {
+let^ fake = p^{
     var^ got : string^ = _yield^ 1     # 同じ c^{ p^string^ -> number^ -> number^ }
     return^ 9
 }

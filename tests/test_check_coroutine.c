@@ -346,11 +346,11 @@ static void test_coroutines(void)
     // [syntax.type.coroutine]'s三つ has to match what the consumer was written against.
     LHAT_TEST("_yield^ gives the same coroutine type a yield^ does");
     check_text(&u,
-               "var^ real = p^ -> number^ {\n"
+               "var^ real = p^ {\n"
                "  var^ got : string^ = yield^ 1\n"
                "  return^ 9\n"
                "}\n"
-               "var^ fake = p^ -> number^ {\n"
+               "var^ fake = p^ {\n"
                "  var^ _^ : string^ = _yield^ 1\n"
                "  return^ 9\n"
                "}\n"
@@ -574,6 +574,30 @@ static void test_coroutines(void)
     LHAT_CHECK(syntax_errors(&u) > 0, "expected a syntax error");
     unit_dispose(&u);
 
+    // [syntax.type.coroutine-result]: the result position says what a call answers, and a yielding
+    // body's call answers a coroutine -- a written T alone is not that.
+    LHAT_TEST("a yielding body's written result has to be a coroutine");
+    check_text(&u, "var^ g = p^ n:number^ -> string^ { yield^ n return^ \"z\" }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELDABLE_RESULT);
+    unit_dispose(&u);
+
+    LHAT_TEST("and the c^{ … } it answers is accepted");
+    check_text(&u,
+               "var^ g = p^ n:number^ -> c^{ p^-> number^ -> string^ }"
+               " { yield^ n return^ \"z\" }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
+    LHAT_TEST("a signature on the binding is asked of the call too");
+    check_text(&u, "var^ g : p^ -> number^; = p^ { yield^ 1 return^ 2 }\n");
+    LHAT_CHECK(lhat_check_error_count(&u.checked) > 0, "expected an error");
+    unit_dispose(&u);
+
+    LHAT_TEST("and one that admits the coroutine is satisfied");
+    check_text(&u, "var^ g : p^ -> any^; = p^ { yield^ 1 return^ 2 }\n");
+    CHECK_CLEAN(&u);
+    unit_dispose(&u);
+
     // [syntax.sub.yieldable] settles Y and R from the yield^ sites, so a written c^{ … } is a
     // second statement about them and the two have to agree.
     LHAT_TEST("what it yields has to be what the signature wrote");
@@ -623,7 +647,7 @@ static void test_coroutines(void)
     // inferred from the body's yield^/return^ sites.
     LHAT_TEST("what a resume answers includes both the yield and the return type");
     check_text(&u,
-               "var^ p = p^ -> string^ { var^ a:number^ = yield^ 10 return^ \"a\" }\n"
+               "var^ p = p^ { var^ a:number^ = yield^ 10 return^ \"a\" }\n"
                "var^ c = p()\n"
                "var^ s : number^|string^ = c.resume(1)\n");
     CHECK_CLEAN(&u);
@@ -736,15 +760,15 @@ static void test_coroutines(void)
     // pins it is the type the body was found to answer.
     LHAT_TEST("15.8: return^ takes an await^ as its value");
     check_text(&u,
-               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
-               "var^ outer = p^ -> number^ { return^ await^ gen() }\n");
+               "var^ gen = p^ { yield^ 1 return^ 2 }\n"
+               "var^ outer = p^ -> c^{ p^-> number^ -> number^ } { return^ await^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and the type it answers is the awaited one's");
     check_text(&u,
-               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
-               "var^ outer = p^ -> string^ { return^ await^ gen() }\n");
+               "var^ gen = p^ { yield^ 1 return^ 2 }\n"
+               "var^ outer = p^ -> c^{ p^-> number^ -> string^ } { return^ await^ gen() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
 
@@ -753,7 +777,7 @@ static void test_coroutines(void)
     // has no type unless one is written where it is bound.
     LHAT_TEST("a yield^ after return^ is read as its value");
     check_text(&u,
-               "var^ outer = p^ -> number^ { return^ yield^ 1 }\n");
+               "var^ outer = p^ { return^ yield^ 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
     unit_dispose(&u);
 
@@ -761,7 +785,7 @@ static void test_coroutines(void)
     // written on the next one is a statement, as it always was.
     LHAT_TEST("but one on the next line is a statement of its own");
     check_text(&u,
-               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "var^ gen = p^ { yield^ 1 return^ 2 }\n"
                "var^ outer = p^ {\n"
                "    return^\n"
                "    await^ gen()\n"
@@ -772,14 +796,14 @@ static void test_coroutines(void)
     // [syntax.sub.await]: the value of a delegation is the inner one's return value.
     LHAT_TEST("the value of await^ is the inner return type");
     check_text(&u,
-               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "var^ gen = p^ { yield^ 1 return^ 2 }\n"
                "var^ outer = p^ { var^ n : number^ = await^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and it is not the type it yields");
     check_text(&u,
-               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "var^ gen = p^ { yield^ 1 return^ 2 }\n"
                "var^ outer = p^ { var^ s : string^ = await^ gen() }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_MISMATCH);
     unit_dispose(&u);
@@ -788,7 +812,7 @@ static void test_coroutines(void)
     // -- what is awaited finishes, and its T is what the wait answers with.
     LHAT_TEST("await^ answers what the awaited one returns");
     check_text(&u,
-               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "var^ gen = p^ { yield^ 1 return^ 2 }\n"
                "var^ outer = p^ { var^ n : number^ = await^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -805,7 +829,7 @@ static void test_coroutines(void)
     // marker is written anywhere -- [syntax.sub.no-contagion]'s colouring never starts.
     LHAT_TEST("a body that awaits is yieldable, and its caller is not");
     check_text(&u,
-               "var^ gen = p^ -> number^ { yield^ 1 return^ 2 }\n"
+               "var^ gen = p^ { yield^ 1 return^ 2 }\n"
                "var^ task = p^ { var^ n : number^ = await^ gen() }\n"
                "var^ plain = p^ { var^ c = task() c.dispose() }\n");
     CHECK_CLEAN(&u);
@@ -815,7 +839,7 @@ static void test_coroutines(void)
     // it is what runs a fresh coroutine from the top.
     LHAT_TEST("start() answers the same union as resume()");
     check_text(&u,
-               "var^ p = p^ -> string^ { var^ a:number^ = yield^ 10 return^ \"a\" }\n"
+               "var^ p = p^ { var^ a:number^ = yield^ 10 return^ \"a\" }\n"
                "var^ c = p()\n"
                "var^ s : number^|string^ = c.start()\n");
     CHECK_CLEAN(&u);
@@ -927,7 +951,7 @@ static void test_coroutines(void)
 
     LHAT_TEST("a yield^ buried in an expression has nowhere to write it either");
     check_text(&u,
-               "var^ p = p^ -> number^ { return^ 1 + yield^ 1 }\n");
+               "var^ p = p^ { return^ 1 + yield^ 1 }\n");
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_YIELD_NEEDS_ANNOTATION);
     unit_dispose(&u);
 

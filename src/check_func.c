@@ -359,11 +359,23 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // value, so both spellings are read the same way here. Y and R stay
     // [syntax.sub.yieldable]'s to settle from the yield^ sites; what was written of them is
     // checked against those below rather than handed down.
+    //
+    // [syntax.type.coroutine-result]: the result position says what a call answers, and a yielding
+    // body's call answers a coroutine -- so anything but a c^{ … } written on the
+    // literal is wrong. One that came from the binding is left to the
+    // assignment, which reads the call's answer and may well accept it (any^).
     LhatType *written_coroutine = NULL;
-    if (node->v.func.yields && declared != NULL &&
-        declared->kind == LHAT_TYPE_CORO) {
-        written_coroutine = declared;
-        declared = declared->v.coroutine.result;
+    if (node->v.func.yields && declared != NULL) {
+        if (declared->kind == LHAT_TYPE_CORO) {
+            written_coroutine = declared;
+            declared = declared->v.coroutine.result;
+        }
+        else {
+            if (node->v.func.return_type != NULL) {
+                chk_report(c, node->v.func.return_type, LHAT_CHECK_ERR_YIELDABLE_RESULT);
+            }
+            declared = NULL;
+        }
     }
     func->v.func.result = declared;
 
