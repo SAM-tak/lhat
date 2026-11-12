@@ -75,6 +75,23 @@ do^{
     }
 }
 
+do^{
+    print("ex. 5")
+    let^py = p^x:number^{
+        yield^
+        yield^
+        print(x)
+        return^"done"
+    }
+    let^co = py(1)
+    var^a = co.start()
+    print(a)
+    repeat^until^co.done() {
+        a := co.resume()
+        print(a)
+    }
+}
+
 # print("ex. 5")
 # for^let^c = y(1)
 # for^var^a, b = c.start()
