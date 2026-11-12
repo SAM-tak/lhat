@@ -1693,40 +1693,6 @@ static bool immediately_called(Checker *c, const LhatNode *node)
     return true;
 }
 
-// [syntax.sub.no-contagion] with [syntax.type.coroutine]: the coroutine a call to this signature makes. The middle
-// two types are whatever the body's yield^/await^ sites agreed on ([syntax.sub.yieldable]);
-// a body with no yield^ at all -- only a await^ that never ran, or none
-// reached -- leaves them NULL, which nil^ fills the same way an unwritten
-// result does.
-LhatType *chk_coroutine_made_by(Checker *c, const LhatType *func)
-{
-    // [syntax.type.coroutine]: the third type is what the last resume receives. Where the body
-    // ends without a value it is left empty and [syntax.sub.coroutine-members]'s nil^ joins Y|T at
-    // the resume instead -- so the nil^ stands where it is really received
-    // rather than in the coroutine's own type. A body that cannot end has no
-    // last resume at all, which `endless` says: nothing joins Y there, since
-    // putting anything in would make every consumer narrow away a value that
-    // never arrives.
-    bool endless =
-        func->v.func.result == NULL && !func->v.func.ends_without_value;
-    // [syntax.sub.yieldable-f]: the coroutine carries the kind of the body it came from, which
-    // is what decides who may advance it ([syntax.sub.coroutine-members]).
-    //
-    // R is left empty when nothing in the body received a yield^: no var^ took
-    // one, so there is no value being sent in and a resume takes no argument.
-    // Nothing unions R with anything, so there is nothing for a nil^ to be an
-    // arm of -- filling one in would be inventing a parameter. Y is not the
-    // same: a yield^ with no value really does hand nil^ to the resumer.
-    LhatType *coroutine = lhat_type_coro(c->result->types, func->v.func.yield_receive,
-                          func->v.func.yield_produce != NULL
-                              ? func->v.func.yield_produce
-                              : chk_simple(c, LHAT_TYPE_NIL),
-                          func->v.func.result, endless,
-                           func->v.func.is_function);
-    if (coroutine != NULL) coroutine->source_body = func->source_body;
-    return coroutine;
-}
-
 // [syntax.type.coroutine]: what one turn of a coroutine answers -- Y|T, which done() is what
 // tells apart ([syntax.sub.coroutine-members]). The third slot has two ways of being empty and they
 // answer differently: a body that cannot end never reaches a last resume, so
@@ -2720,14 +2686,6 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
 
 LhatType *chk_call_answer(Checker *c, const LhatType *callee)
 {
-    // [syntax.sub.no-contagion]: calling a yieldable procedure answers a coroutine rather than
-    // running it. infer_func puts that on the signature as it settles the
-    // three types, and every other reader takes it from there; a signature a
-    // first pass seeded has none yet, and is assembled here instead.
-    if (callee->v.func.yields) {
-        return callee->v.func.answers != NULL ? callee->v.func.answers
-                                              : chk_coroutine_made_by(c, callee);
-    }
     // [syntax.type.empty]: a signature with no result answers no value. That is not a gap in
     // inference, so it is not spelled with a NULL -- [pipeline.infer] kept it apart
     // from nil^, and this is where that stays observable.

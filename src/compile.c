@@ -3046,7 +3046,7 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
         // nil^) reach a value reflected at run time. Otherwise typeof^ would
         // answer one thing where the checker resolved it and another where
         // [errors.kind.nominal] sends it to the instruction instead.
-        const LhatType *made = lhat_type_call_answer(checked);
+        const LhatType *made = checked->v.func.result;
         if (made != NULL && made->kind == LHAT_TYPE_CORO) {
             proto->yield_produce_type =
                 runtime_type(c, made->v.coroutine.produce);
@@ -3065,11 +3065,6 @@ static void compile_subroutine_as(Compiler *c, const LhatNode *node,
                     : (made->v.coroutine.receive != NULL ? 1 : 0);
             proto->yield_endless = made->v.coroutine.endless;
             proto->result_type = runtime_type(c, made->v.coroutine.result);
-        } else {
-            proto->yield_produce_type =
-                runtime_type(c, checked->v.func.yield_produce);
-            proto->yield_receive_type =
-                runtime_type(c, checked->v.func.yield_receive);
         }
     }
 

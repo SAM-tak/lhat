@@ -922,7 +922,6 @@ void chk_report_no_member(Checker *c, const LhatNode *node, LhatType *target,
                           const char *name, size_t length);
 void chk_join_table_entry_types(Checker *c, const LhatType *table,
                                 LhatType **keys, LhatType **values);
-LhatType *chk_coroutine_made_by(Checker *c, const LhatType *func);
 LhatType *chk_coroutine_answer(Checker *c, const LhatType *coro);
 void chk_hostvalue_temporary_write(Checker *c, const LhatNode *at,
                                    const LhatNode *receiver,

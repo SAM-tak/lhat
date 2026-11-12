@@ -626,7 +626,6 @@ const LhatCheckType *lhat_check_signature_result(LhatInstantiationContext *conte
     if (made == NULL) return NULL;
     *made = *signature;
     made->v.func.result = (LhatType *)result;
-    made->v.func.answers = NULL;
     return made;
 }
 
@@ -1227,17 +1226,15 @@ LhatType *lhat_type_tuple_at(const LhatType *type, size_t index)
     return p != NULL ? p->type : NULL;
 }
 
-// [syntax.sub.no-contagion]: a call does not run a yielding body -- it makes the coroutine [syntax.type.coroutine]
-// describes, and that is what the caller is handed. Assembled by infer_func,
-// where the three slots settle; NULL until then and on every signature that
-// does not yield, where the written result is the whole answer.
+// [syntax.type.coroutine-result]: what a call answers, which is what `result` holds -- the
+// coroutine for a body that yields ([syntax.sub.no-contagion]). NULL for anything that is
+// not a signature, so a caller holding any type may ask.
 LhatType *lhat_type_call_answer(const LhatType *type)
 {
     if (type == NULL || type->kind != LHAT_TYPE_FUNC) {
         return NULL;
     }
-    return type->v.func.answers != NULL ? type->v.func.answers
-                                        : type->v.func.result;
+    return type->v.func.result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1527,8 +1524,6 @@ static bool conforms_func(const LhatType *value, const LhatType *target,
     // [syntax.sub.no-contagion]: and what a call answers is the coroutine where the body yields
     // ([syntax.type.coroutine]), not [syntax.type.coroutine]'s T -- so a signature written 'p^number^;' does not
     // take one that makes a coroutine, and one written with the c^{ … } does.
-    // Reading `result` here would compare the two on what their bodies return,
-    // which is not what either caller receives.
     LhatType *from = lhat_type_call_answer(value);
     LhatType *into = lhat_type_call_answer(target);
     if ((from == NULL) != (into == NULL)) {

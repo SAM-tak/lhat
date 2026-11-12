@@ -80,16 +80,13 @@ LhatType *chk_declared_signature(Checker *c, const LhatNode *node)
     }
     // [syntax.sub.no-contagion]: a yieldable's call answers a coroutine, and the seed says so
     // too -- a walk written against a member seeded here asks no more.
-    // What it yields only the body knows, so with nothing written the
+    // What it yields only the body knows, so with no c^{ … } written the
     // answer is a coroutine of unknowns.
-    if (node->v.func.yields && func->v.func.answers == NULL) {
-        LhatType *written = func->v.func.result;
-        func->v.func.answers =
-            written != NULL && written->kind == LHAT_TYPE_CORO
-                ? written
-                : lhat_type_coro(c->result->types, NULL,
-                                 chk_simple(c, LHAT_TYPE_UNKNOWN), NULL,
-                                 false, node->v.func.is_function);
+    LhatType *written = func->v.func.result;
+    if (node->v.func.yields && (written == NULL || written->kind != LHAT_TYPE_CORO)) {
+        func->v.func.result = lhat_type_coro(c->result->types, NULL,
+                                             chk_simple(c, LHAT_TYPE_UNKNOWN), NULL,
+                                             false, node->v.func.is_function);
     }
     return func;
 }
@@ -170,6 +167,37 @@ static LhatType *infer_func_instantiated(Checker *c, const LhatNode *node)
     ((LhatNode *)node)->checked_type = settled;
     c->instantiating = outer;
     return settled;
+}
+
+// [syntax.sub.no-contagion] with [syntax.type.coroutine]: the coroutine a call to a yielding body
+// makes, which is what its signature's result holds. R and Y are whatever the
+// body's yield^/await^ sites agreed on ([syntax.sub.yieldable]); a body none of
+// them reached leaves them NULL, and nil^ fills Y the way it fills an unwritten
+// result.
+static LhatType *coroutine_made(Checker *c, const LhatType *func, LhatType *receive,
+                                LhatType *produce, LhatType *result)
+{
+    // [syntax.type.coroutine]: the third type is what the last resume receives. Where the body
+    // ends without a value it is left empty and [syntax.sub.coroutine-members]'s nil^ joins Y|T at
+    // the resume instead -- so the nil^ stands where it is really received
+    // rather than in the coroutine's own type. A body that cannot end has no
+    // last resume at all, which `endless` says: nothing joins Y there, since
+    // putting anything in would make every consumer narrow away a value that
+    // never arrives.
+    bool endless = result == NULL && !func->v.func.ends_without_value;
+    // [syntax.sub.yieldable-f]: the coroutine carries the kind of the body it came from, which
+    // is what decides who may advance it ([syntax.sub.coroutine-members]).
+    //
+    // R is left empty when nothing in the body received a yield^: no var^ took
+    // one, so there is no value being sent in and a resume takes no argument.
+    // Nothing unions R with anything, so there is nothing for a nil^ to be an
+    // arm of -- filling one in would be inventing a parameter. Y is not the
+    // same: a yield^ with no value really does hand nil^ to the resumer.
+    LhatType *coroutine = lhat_type_coro(
+        c->result->types, receive, produce != NULL ? produce : chk_simple(c, LHAT_TYPE_NIL),
+        result, endless, func->v.func.is_function);
+    if (coroutine != NULL) coroutine->source_body = func->source_body;
+    return coroutine;
 }
 
 LhatType *chk_infer_func(Checker *c, const LhatNode *node)
@@ -377,7 +405,11 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
             declared = NULL;
         }
     }
-    func->v.func.result = declared;
+    // Until the body settles Y and R, a call of it from inside (this^) answers
+    // the coroutine as far as it is known.
+    func->v.func.result = node->v.func.yields
+                              ? coroutine_made(c, func, NULL, NULL, declared)
+                              : declared;
 
     Scope *outer_scope = c->scope;
     LhatType *outer_declared = c->declared_result;
@@ -448,11 +480,6 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // into it.
     chk_settle_param_vars(c, param_mark);
 
-    if (node->v.func.yields) {
-        func->v.func.yield_produce = c->coroutine_produce;
-        func->v.func.yield_receive = c->coroutine_receive;
-    }
-
     // Reaching the end of the body is an exit that produces no value, and a
     // bare return^ is the same exit written down. Both hand nil^ back at run
     // time, so [pipeline.infer] counts them together. What that means depends on
@@ -481,6 +508,8 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         chk_report(c, node, LHAT_CHECK_ERR_FALLS_OUT_OF_RESULT);
     }
 
+    // What the body returns: [syntax.type.coroutine]'s third type where it yields.
+    LhatType *result = declared;
     if (declared == NULL) {
         // [pipeline.infer]: the result is what the exits that do not go through the
         // subroutine itself agree on. Leaving without a value is one of
@@ -511,7 +540,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         if (c->recursive_return && c->inferred_result == NULL) {
             chk_report(c, node, LHAT_CHECK_ERR_NEVER_RETURNS);
         }
-        func->v.func.result = c->inferred_result;
+        result = c->inferred_result;
 
         // [pipeline.strict.per-unit]: what the body did not decide is reported here rather
         // than left in the signature. A result type is a promise to every
@@ -523,7 +552,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
         //
         // A result [pipeline.infer.expected]'s expectation gave is written rather than inferred,
         // so this branch is not where it lands at all.
-        if (lhat_type_has_gap(func->v.func.result)) {
+        if (lhat_type_has_gap(result)) {
             chk_report(c, node, LHAT_CHECK_ERR_RESULT_UNDECIDED);
         }
     }
@@ -534,25 +563,26 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // own -- the writers and conformance among them, which is what lets the
     // written-out form ('p^number^ -> c^{ p^nil^ -> number^ -> nil^ };') be
     // read back as the annotation it looks like ([modules.host.import]).
-    if (node->v.func.yields) {
-        func->v.func.answers = chk_coroutine_made_by(c, func);
-        // [syntax.type.coroutine] with [syntax.sub.yieldable]: R and Y are read off the yield^ sites. Where the
-        // writer put them down as well, the two have to be the same
-        // coroutine -- a signature saying something else is not a signature,
-        // and one of the two has to move. A signature written on the binding
-        // meets the same question at the assignment, which conforms_func
-        // asks through lhat_type_call_answer; one written here has no
-        // assignment to meet, so it is asked here.
-        if (written_coroutine != NULL &&
-            !lhat_type_conforms(func->v.func.answers, written_coroutine)) {
-            chk_report(c, node, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
-        }
+    func->v.func.result = node->v.func.yields
+                              ? coroutine_made(c, func, c->coroutine_receive,
+                                               c->coroutine_produce, result)
+                              : result;
+    // [syntax.type.coroutine] with [syntax.sub.yieldable]: R and Y are read off the yield^ sites. Where the
+    // writer put them down as well, the two have to be the same
+    // coroutine -- a signature saying something else is not a signature,
+    // and one of the two has to move. A signature written on the binding
+    // meets the same question at the assignment, which conforms_func
+    // asks; one written here has no assignment to meet, so it is asked
+    // here.
+    if (written_coroutine != NULL &&
+        !lhat_type_conforms(func->v.func.result, written_coroutine)) {
+        chk_report(c, node, LHAT_CHECK_ERR_COROUTINE_MISMATCH);
     }
 
     // [syntax.obj.new]: whatever the body does, the member answers the copy the machine
     // made -- so the signature says so, whichever branch above wrote it.
     if (constructor) {
-        func->v.func.result = c->self_link != NULL ? c->self_link->type : NULL;
+        result = func->v.func.result = c->self_link != NULL ? c->self_link->type : NULL;
         func->v.func.ends_without_value = false;
     }
 
@@ -562,16 +592,16 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
     // as through the result itself -- so the whole result type is read rather
     // than its outermost shape. A p^ coroutine needs nothing here: advancing
     // one is a p^ call, which [syntax.sub.kinds] already refuses inside an f^.
-    if (node->v.func.is_function &&
-        chk_mentions_function_coroutine(func->v.func.result, 0)) {
+    // What a yielding f^ answers is its own coroutine, which is the caller's to
+    // run; what must not leave is one its body returns.
+    if (node->v.func.is_function && chk_mentions_function_coroutine(result, 0)) {
         chk_report(c, node, LHAT_CHECK_ERR_COROUTINE_ESCAPES);
     }
 
     // [errors.kind.local-no-propagate], and the same shape of rule as the one above: a localerror^
     // may not be what a caller receives. Reading the whole settled signature
     // rather than its outermost shape catches it inside a table or a nested
-    // one, and reaches a coroutine's Y as well as its T (chk_type_touches_local
-    // asks `answers` first).
+    // one, and reaches a coroutine's Y as well as its T.
     //
     // A body that tried to let one past through try^ was already refused at
     // the try^ itself, and chk_error_leaves keeps it out of what it infers --

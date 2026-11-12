@@ -386,8 +386,10 @@ struct LhatType {
             const struct LhatHostDataTag *hostdata_tag;
         } table;
 
-        // [syntax.type.signature]. `result` is NULL when nothing is returned ([syntax.type.empty]), and
-        // `variadic` holds the element type of a trailing '...' ([syntax.type.variadic]).
+        // [syntax.type.signature]. `result` is what a call answers, NULL when nothing is returned
+        // ([syntax.type.empty]); for a body that yields that is the coroutine it makes, whose
+        // third type is what the body returns ([syntax.type.coroutine-result]). `variadic`
+        // holds the element type of a trailing '...' ([syntax.type.variadic]).
         struct {
             LhatTypeList *params;
             LhatInstantiationCheckHandler instantiation_handler;
@@ -424,21 +426,6 @@ struct LhatType {
             // nothing could reach it before the call. A promise, so it flows
             // one way in conforms_func.
             bool answers_fresh;
-            // [syntax.sub.yieldable]: what the body's yield^/await^ sites agree on. Both NULL
-            // until inferred; meaningless unless `yields` is true.
-            LhatType *yield_produce;
-            LhatType *yield_receive;
-            // [syntax.sub.no-contagion]: what a call to this answers. A body that yields is not
-            // run by the call -- it makes a coroutine ([syntax.type.coroutine]) -- so that is
-            // what the caller receives, and this is it, assembled out of the
-            // three fields above once they settle. NULL on everything else,
-            // where `result` is the answer.
-            //
-            // [syntax.type.coroutine]'s T stays in `result` either way: that is what the body
-            // returns, which is what the compiler and [syntax.sub.yieldable] read. Everything
-            // that asks what a *call* is worth -- the writers, conformance,
-            // the runtime type -- reads this one first.
-            LhatType *answers;
             // [pipeline.infer]: the body has a way out that produces no value -- it
             // reaches its end, or a bare return^ takes it there. False means
             // every way out carries a value, or there is no way out at all.
@@ -694,10 +681,8 @@ const LhatType *lhat_type_hostvalue_arm(const LhatType *type);
 // The type at a zero-based position, or NULL when there is none.
 LhatType *lhat_type_tuple_at(const LhatType *type, size_t index);
 
-// [syntax.sub.no-contagion]: what a call to this signature answers -- the coroutine a yielding
-// body makes ([syntax.type.coroutine]), or the result written on it. Anything asking what a call
-// is worth goes through here; reading `result` on its own answers [syntax.type.coroutine]'s T,
-// which is a different question for a body that yields.
+// [syntax.type.coroutine-result]: what a call to this signature answers, which is its `result`
+// -- the coroutine for a body that yields ([syntax.sub.no-contagion]).
 //
 // NULL for a signature that answers nothing ([syntax.type.empty]), and for anything that is
 // not a signature at all.

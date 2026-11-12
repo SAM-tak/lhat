@@ -936,10 +936,7 @@ bool chk_type_touches_local(const LhatType *type, unsigned depth)
         // [syntax.sub.no-contagion]: what a call to one of these is worth is what a caller
         // receives, so a signature carrying one out is caught here too.
         case LHAT_TYPE_FUNC:
-            return chk_type_touches_local(type->v.func.answers != NULL
-                                              ? type->v.func.answers
-                                              : type->v.func.result,
-                                          depth + 1);
+            return chk_type_touches_local(type->v.func.result, depth + 1);
 
         case LHAT_TYPE_CORO:
             return chk_type_touches_local(type->v.coroutine.produce, depth + 1) ||

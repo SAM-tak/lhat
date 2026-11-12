@@ -450,9 +450,9 @@ static bool mentions_error(const LhatType *type, const RtSeen *seen)
                     return true;
                 }
             }
-            // [syntax.sub.no-contagion]: the answer rather than the result, since that is what is
-            // about to be built -- an error inside the coroutine a yielding
-            // body makes has to send this to the instruction just the same.
+            // [syntax.sub.no-contagion]: what a call answers is what is about to be built -- an
+            // error inside the coroutine a yielding body makes has to send
+            // this to the instruction just the same.
             return (type->v.func.variadic != NULL &&
                     mentions_error(type->v.func.variadic, seen)) ||
                    mentions_error(lhat_type_call_answer(type), seen);
