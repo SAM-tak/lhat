@@ -45,12 +45,12 @@ whole array in descending order. Each returns an iterator (coroutine) yielding
 the original index and value, without copying the array. Dictionary entries are excluded.
 
 ```lhat
-let^ values = {10, 20, 30, 40}
-for^ i, v in^ values.range^(1, 2) { print(i, v) }
+let^values = {10, 20, 30, 40}
+for^i, v in^values.range^(1, 2) { print(i, v) }
 # 1 20, then 2 30
 
-for^ i, v in^ values.reverse_iterate^() {
-    if^ v >= 30 { values.remove^(i) }
+for^i, v in^values.reverse_iterate^() {
+    if^v >= 30 { values.remove^(i) }
 }
 # values is now {10, 20}
 ```

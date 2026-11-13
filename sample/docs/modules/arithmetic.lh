@@ -1,0 +1,4 @@
+module^demo.arithmetic
+
+let^factor = 2
+public^let^double = f^n:number^{ n * factor }

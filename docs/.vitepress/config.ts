@@ -8,7 +8,9 @@ const pages = {
     { text: 'インストール', link: '/ja/guide/installation' },
     { text: '最初のプログラム', link: '/ja/guide/first-program' },
     { text: '言語の基本', link: '/ja/guide/basics' },
+    { text: 'インポートとモジュール', link: '/ja/guide/modules' },
     { text: 'バイナリ保存とストリーム', link: '/ja/guide/binary-data' },
+    { text: '並行処理', link: '/ja/guide/tasks' },
     { text: 'VS Code の使い方', link: '/ja/tools/vscode' }
   ],
   en: [
@@ -16,7 +18,9 @@ const pages = {
     { text: 'Installation', link: '/en/guide/installation' },
     { text: 'Your first program', link: '/en/guide/first-program' },
     { text: 'Language basics', link: '/en/guide/basics' },
+    { text: 'Imports and modules', link: '/en/guide/modules' },
     { text: 'Binary data and streams', link: '/en/guide/binary-data' },
+    { text: 'Concurrency', link: '/en/guide/tasks' },
     { text: 'Using VS Code', link: '/en/tools/vscode' }
   ]
 }

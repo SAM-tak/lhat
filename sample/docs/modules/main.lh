@@ -1,0 +1,5 @@
+let^calc = require^"arithmetic.lh"
+print(calc.double(21))
+
+require^"arithmetic.lh"
+print(demo.arithmetic.double(5))

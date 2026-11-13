@@ -10,10 +10,12 @@
   "embedding/index.md": "829bfee85b0dab6901957a70f3cf42f036193b50de41d20cffa2197d6b263de6",
   "embedding/runtime.md": "7995d0cec46cd802e6233f6f891cfa2085a86ad665390abc14ec5315afc2a86f",
   "embedding/tooling.md": "90e8efb23d5c9aa834b8e574c66a05094add5bf83b1bc04e7e4910afac605f26",
-  "guide/basics.md": "3a853c4d42585c4707bf7e8471e69b1137ff22fd80735caba667ea83be9f3631",
+  "guide/basics.md": "71f7e4a8fb809d7d899cd24e0cd1ab7a5e194d4141b45f50c4a288d1608c972d",
   "guide/binary-data.md": "40504b90aa2d620f83432e4e357c4b9765ae6139a3a5a0f27c39cf5fc603ebdb",
   "guide/first-program.md": "a3e4fe1b16b2e5d11f2644e2d26acfefe41676ab8d18f4ad18b243b47eee52af",
   "guide/installation.md": "6acc719d31688bd0b1013a037405f4c19073d8a52a4448c70e6c7d27a41d2135",
+  "guide/modules.md": "3a23c2de992884949e04f569b2f0e4ef035b18e1ee1392afc3976327f7d4e836",
+  "guide/tasks.md": "73e3d629f6dfe534591a8300eb3fba9f2d6f750aa70d5847f66373d035b0aad2",
   "index.md": "599716b65f06ef2d3a1b96ad00652742fc77a5eee9f34efe81d5ad9f82e0418d",
   "tools/vscode.md": "d17c06e76dfbe32a767d4d4449d7a2a893b3b2125f372b763912fe220e2be9ba"
 }

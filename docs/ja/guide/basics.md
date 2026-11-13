@@ -45,12 +45,12 @@ lhat sample/readme/basics.lh
 辞書部分は含みません。
 
 ```lhat
-let^ values = {10, 20, 30, 40}
-for^ i, v in^ values.range^(1, 2) { print(i, v) }
+let^values = {10, 20, 30, 40}
+for^i, v in^values.range^(1, 2) { print(i, v) }
 # 1 20、2 30
 
-for^ i, v in^ values.reverse_iterate^() {
-    if^ v >= 30 { values.remove^(i) }
+for^i, v in^values.reverse_iterate^() {
+    if^v >= 30 { values.remove^(i) }
 }
 # values は {10, 20}
 ```

@@ -1,0 +1,5 @@
+import^std.math
+print(std.math.sqrt(81))
+
+let^m = import^std.math
+print(m.sqrt(144))
