@@ -1119,8 +1119,7 @@ static bool make_directories(const char *path)
 }
 
 // [modules.binary] : checks and compiles the program the way --run does, then
-static bool write_bytes(const char *out_path, const uint8_t *bytes,
-                        size_t length)
+static bool write_bytes(const char *out_path, const uint8_t *bytes, size_t length)
 {
     FILE *file = make_directories(out_path) ? fopen(out_path, "wb") : NULL;
     if (file == NULL) {
@@ -1189,8 +1188,7 @@ static char *project_output_path(const char *directory, const char *root, const 
     return out;
 }
 
-static int compile_lton(const char *path, const char *out_dir, bool strict,
-                        bool with_debug)
+static int compile_lton(const char *path, const char *out_dir, bool strict, bool with_debug)
 {
 #ifdef LHAT_CLI_WITH_STDLIB
     size_t length = 0;
@@ -1961,9 +1959,8 @@ int main(int argc, char **argv)
         // [pipeline.strict.per-unit]: the dump says which strictness this host runs under,
         // and lsp/host_config.c reads it back -- so --relaxed writes
         // "strict": false rather than always claiming strict.
-        lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL,
-                          NULL);
-    (void)lhat_program_set_project_root(&program, project_root);
+        lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL, NULL);
+        (void)lhat_program_set_project_root(&program, project_root);
         speak(&program);
         if (!bind_host_names(&program)) {
             cli_say(stderr, CLI_OUT_OF_MEMORY, NULL, 0);
@@ -2004,9 +2001,8 @@ int main(int argc, char **argv)
     // [modules.binary.signatures]: the signature table this driver's registrations make.
     if (dump_signatures_path != NULL) {
         LhatProgram program;
-        lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL,
-                          NULL);
-    (void)lhat_program_set_project_root(&program, project_root);
+        lhat_program_init(&program, strictness != STRICTNESS_RELAXED, NULL, NULL);
+        (void)lhat_program_set_project_root(&program, project_root);
         speak(&program);
         uint8_t *bytes = NULL;
         size_t length = 0;

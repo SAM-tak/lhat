@@ -52,6 +52,7 @@ static void *open_library(void *context, const char *path)
     return module;
 #endif
 }
+
 static LhatExtensionSymbol symbol(void *context, void *library, const char *name)
 {
     (void)context;
@@ -62,6 +63,7 @@ static LhatExtensionSymbol symbol(void *context, void *library, const char *name
     return (LhatExtensionSymbol)dlsym(library, name);
 #endif
 }
+
 static void close_library(void *context, void *library)
 {
     (void)context;
@@ -71,7 +73,12 @@ static void close_library(void *context, void *library)
     dlclose(library);
 #endif
 }
-static const char *loader_error(void *context) { (void)context; return error; }
+
+static const char *loader_error(void *context)
+{
+    (void)context;
+    return error;
+}
 
 bool cli_extensions_register(LhatProgram *program)
 {
