@@ -199,4 +199,4 @@ let^ e = new^InputError.Invalid { line=3, message="invalid input" }
 
 [sample ディレクトリ](https://github.com/SAM-tak/lhat/tree/main/sample)には、
 オブジェクトの合成、コルーチン、並行タスクなどの例もあります。
-各機能の詳しい規則は、現在は[設計文書](https://github.com/SAM-tak/lhat/tree/main/DesignDocuments)を参照してください。
+各機能の詳しい規則は [L^ リファレンス](../reference/index.md)を参照してください。

@@ -203,4 +203,4 @@ This `divide` returns an error when the divisor is 0, and the division result ot
 
 The [sample directory](https://github.com/SAM-tak/lhat/tree/main/sample) includes examples of
 object composition, coroutines, concurrent tasks, and more.
-For detailed rules, currently refer to the [design documents](https://github.com/SAM-tak/lhat/tree/main/DesignDocuments) (Japanese).
+For detailed rules, see the [L^ reference](../reference/index.md).

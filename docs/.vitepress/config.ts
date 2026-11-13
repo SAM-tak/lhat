@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitepress'
 import lhatGrammar from './lhat.tmLanguage.json'
+import { standardLibraries } from './stdlib.mjs'
 
 const repository = 'https://github.com/SAM-tak/lhat'
 const pages = {
@@ -43,6 +44,45 @@ const embedding = {
     { text: 'Tooling and diagnostics', link: '/en/embedding/tooling' },
     { text: 'Reloading and distribution', link: '/en/embedding/deployment' },
     { text: 'Standard library binding examples', link: '/en/embedding/binding-examples' }
+  ]
+}
+
+const reference = {
+  ja: [
+    { text: '概覧', link: '/ja/reference/' },
+    { text: '字句とソース', link: '/ja/reference/lexical' },
+    { text: '束縛とスコープ', link: '/ja/reference/bindings' },
+    { text: '型', link: '/ja/reference/types' },
+    { text: '式と演算子', link: '/ja/reference/expressions' },
+    { text: '制御構文', link: '/ja/reference/control-flow' },
+    { text: '関数と手続き', link: '/ja/reference/subroutines' },
+    { text: 'コルーチン', link: '/ja/reference/coroutines' },
+    { text: 'テーブルとオブジェクト', link: '/ja/reference/objects' },
+    { text: 'エラー', link: '/ja/reference/errors' },
+    { text: 'モジュール', link: '/ja/reference/modules' },
+    { text: '注釈', link: '/ja/reference/annotations' },
+    {
+      text: '標準ライブラリ', link: '/ja/reference/stdlib/', collapsed: true,
+      items: standardLibraries.map(({ name }) => ({ text: name, link: `/ja/reference/stdlib/${name.slice(4).replaceAll('.', '-')}` }))
+    }
+  ],
+  en: [
+    { text: 'Overview', link: '/en/reference/' },
+    { text: 'Lexical structure and source', link: '/en/reference/lexical' },
+    { text: 'Bindings and scope', link: '/en/reference/bindings' },
+    { text: 'Types', link: '/en/reference/types' },
+    { text: 'Expressions and operators', link: '/en/reference/expressions' },
+    { text: 'Control flow', link: '/en/reference/control-flow' },
+    { text: 'Functions and procedures', link: '/en/reference/subroutines' },
+    { text: 'Coroutines', link: '/en/reference/coroutines' },
+    { text: 'Tables and objects', link: '/en/reference/objects' },
+    { text: 'Errors', link: '/en/reference/errors' },
+    { text: 'Modules', link: '/en/reference/modules' },
+    { text: 'Annotations', link: '/en/reference/annotations' },
+    {
+      text: 'Standard library', link: '/en/reference/stdlib/', collapsed: true,
+      items: standardLibraries.map(({ name }) => ({ text: name, link: `/en/reference/stdlib/${name.slice(4).replaceAll('.', '-')}` }))
+    }
   ]
 }
 
@@ -92,11 +132,13 @@ export default defineConfig({
         nav: [
           { text: 'ガイド', link: '/ja/' },
           { text: 'アプリケーションへの組み込み', link: '/ja/embedding/' },
+          { text: 'L^ リファレンス', link: '/ja/reference/' },
           { text: 'C API', link: '/ja/api/' }
         ],
         sidebar: [
           { text: '使い始める', items: pages.ja },
           { text: 'アプリケーションへの組み込み', items: embedding.ja },
+          { text: 'L^ リファレンス', items: reference.ja },
           { text: 'C API リファレンス', items: api.ja }
         ],
         outline: { label: 'このページ', level: [2, 3] },
@@ -113,11 +155,13 @@ export default defineConfig({
         nav: [
           { text: 'Guide', link: '/en/' },
           { text: 'Embedding', link: '/en/embedding/' },
+          { text: 'L^ reference', link: '/en/reference/' },
           { text: 'C API', link: '/en/api/' }
         ],
         sidebar: [
           { text: 'Getting started', items: pages.en },
           { text: 'Embedding in an application', items: embedding.en },
+          { text: 'L^ reference', items: reference.en },
           { text: 'C API reference', items: api.en }
         ],
         editLink: { pattern: `${repository}/edit/main/docs/:path`, text: 'Edit this page on GitHub' }

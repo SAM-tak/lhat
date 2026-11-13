@@ -17,6 +17,7 @@ If a released version behaves differently, check the version you are using and i
 **To embed L^ in your own application, start with the [embedding guide](./embedding/index.md).**
 It covers a buildable host example, exposing APIs, GC and event loops, editor integration, and distribution.
 Look up individual functions in the [C API reference](./api/index.md).
+Look up language notation, types, and evaluation rules in the [L^ reference](./reference/index.md).
 
 To try the language with the CLI, follow these steps:
 
