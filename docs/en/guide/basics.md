@@ -74,6 +74,84 @@ the position and does not reduce the array length.
 
 `slice^` returns a shallow copy, while `reverse^()` reverses the original array in place.
 
+## if^ statements and expressions
+
+An `if^` statement executes code according to a condition. The statement itself does not return a value.
+
+```lhat
+let^n = 2
+if^n < 0 {
+    print("negative")
+elif^n = 0:
+    print("zero")
+else^:
+    print("positive")
+}
+```
+
+It starts with `if^ condition {` and encloses all branches in **one pair of `{` and `}`**.
+Unlike C, which encloses each branch in its own `{ ... }`, L^ places `elif^ condition:`
+and `else^:` inside the same braces. `elif^` adds a condition; `else^` handles the case
+where none of the conditions holds. A statement can omit `else^`, in which case it
+does nothing if no condition holds.
+
+Use an `if^` expression to select a value for a binding or calculation.
+
+```lhat
+let^n = 2
+let^sign = if^n < 0: "negative" el^n = 0: "zero" el^: "positive";
+print(sign)
+```
+
+An expression starts with `if^ condition:` and **ends with `;`, which closes the entire expression**.
+`el^ condition:` adds a conditional branch, while `el^:` introduces the final, unconditional branch.
+The selected branch supplies the expression's value; here, `sign` is `"positive"`.
+An `if^` expression must produce a value in every case, so its final `el^:` is required.
+A list of conditions is never treated as proof of exhaustiveness; always include an unconditional branch.
+
+## Pattern matching statements and expressions
+
+Pattern matching uses `for^` and `when^`. It evaluates the subject once and selects
+the first matching branch from top to bottom. `other^:` handles the case where no pattern matches.
+
+```lhat
+let^n = 2
+for^n {
+when^0:
+    print("zero")
+when^1 to^3:
+    print("few")
+other^:
+    print("many")
+}
+```
+
+The statement form starts with `for^ subject {` and, like an `if^` statement,
+encloses all branches in **one pair of `{` and `}`**. The statement itself does not return a value.
+It can omit `other^:` and does nothing if no branch matches.
+`when^ value:` tests equality, `when^ lower to^ upper:` tests an inclusive range,
+and `when^ fits^ Type:` tests whether the subject fits a type.
+
+Use the expression form to select a value:
+
+```lhat
+let^n = 2
+let^label = for^n:
+    when^0: "zero"
+    when^1 to^3: "few"
+    other^: "many";
+print(label)
+```
+
+The expression form starts with `for^ subject:` and **ends with `;`, which closes the entire expression**.
+The selected branch supplies its value; here, `label` is `"few"`.
+
+Expression forms have an **exhaustiveness check** to ensure that every case produces a value.
+Normally, include `other^:`. It can be omitted when the type checker can prove coverage,
+such as when type patterns cover all possible types, both `true^` and `false^` cover a `bool^`,
+or all members of an enum are listed. Numeric value and range patterns alone do not establish exhaustiveness.
+A non-exhaustive expression is a type error in strict mode.
+
 ## Constructing values with an explicit type
 
 Use `new^Type{ field=value, ... }` to construct a value with an explicit type.
