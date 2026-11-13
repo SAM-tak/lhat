@@ -74,7 +74,7 @@ CLI の配布アーカイブとは区別してください。
 
 ## 3. スクリプトの入口を決める
 
-<<< @/../sample/embedding/main.lh{text}
+<<< @/../sample/embedding/main.lh{lhat}
 
 `module^demo` はスクリプトをモジュールとして宣言し、`public^let^update` は外部に公開するコールバックです。
 `app` はホストが登録するモジュールです。`app.report` は標準の組み込み関数ではありません。

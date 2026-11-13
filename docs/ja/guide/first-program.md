@@ -7,7 +7,7 @@ L^ のソースファイルの拡張子は `.lh` です。
 
 次の内容を保存してください。
 
-<<< @/../sample/docs/hello.lh{text}
+<<< @/../sample/docs/hello.lh{lhat}
 
 ターミナルで、ファイルを置いたフォルダから実行します。
 

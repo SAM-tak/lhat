@@ -6,7 +6,7 @@
 
 ## メモリに保存する
 
-<<< @/../sample/docs/binary-data.lh{text}
+<<< @/../sample/docs/binary-data.lh{lhat}
 
 実行結果は `player 12`、`player 12`、`next 13` です。
 `encode` はバイナリの `string^` を返し、`decode` は `string^` と `std.binary.Bytes` を受け付けます。

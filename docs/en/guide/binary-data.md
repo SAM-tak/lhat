@@ -6,7 +6,7 @@ They also work in VMOnly builds without the front end.
 
 ## Saving in memory
 
-<<< @/../sample/docs/binary-data.lh{text}
+<<< @/../sample/docs/binary-data.lh{lhat}
 
 The output is `player 12`, `player 12`, then `next 13`.
 `encode` returns a binary `string^`; `decode` accepts a `string^` or `std.binary.Bytes`.

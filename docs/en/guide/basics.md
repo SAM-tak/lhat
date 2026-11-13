@@ -14,7 +14,7 @@ Both spellings also work for definition composition and `op^` operator declarati
 
 ## Variables, tables, and iteration
 
-<<< @/../sample/readme/basics.lh{text}
+<<< @/../sample/readme/basics.lh{lhat}
 
 Running this file prints `10 120`.
 From the repository root, you can run it with:
@@ -103,7 +103,7 @@ The error supertype `error^` will remain available.
 
 ## Functions and procedures
 
-<<< @/../sample/readme/functions.lh{text}
+<<< @/../sample/readme/functions.lh{lhat}
 
 `discounted` is a function (`f^`) that calculates a discounted price.
 `checkout` is a procedure (`p^`) that displays the result using `print`.
@@ -115,7 +115,7 @@ Separating calculations from I/O and external updates lets the type checker enfo
 
 ## Handling errors
 
-<<< @/../sample/readme/errors.lh{text}
+<<< @/../sample/readme/errors.lh{lhat}
 
 `errordef^` defines error kinds.
 This `divide` returns an error when the divisor is 0, and the division result otherwise.

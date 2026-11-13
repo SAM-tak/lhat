@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitepress'
+import lhatGrammar from './lhat.tmLanguage.json'
 
 const repository = 'https://github.com/SAM-tak/lhat'
 const pages = {
@@ -57,6 +58,23 @@ const api = {
 }
 
 export default defineConfig({
+  markdown: {
+    languages: [{ ...lhatGrammar, name: 'lhat' }],
+    codeTransformers: [{
+      name: 'lhat-dim-hats',
+      span(node) {
+        if (this.options.lang !== 'lhat') return
+        node.children = node.children.flatMap(child => {
+          if (child.type !== 'text' || !child.value.includes('^')) return [child]
+          const parts = child.value.split('^')
+          return parts.flatMap((part, index) => [
+            ...(index ? [{ type: 'element' as const, tagName: 'span', properties: { style: 'opacity: 0.5' }, children: [{ type: 'text' as const, value: '^' }] }] : []),
+            { type: 'text' as const, value: part }
+          ])
+        })
+      }
+    }]
+  },
   title: 'L^',
   lang: 'ja',
   description: 'L^ programming language documentation / L^ ユーザーガイド',

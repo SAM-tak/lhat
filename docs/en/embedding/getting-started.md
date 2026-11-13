@@ -74,7 +74,7 @@ Do not confuse CLI release archives with SDKs.
 
 ## 3. Define the script entry point
 
-<<< @/../sample/embedding/main.lh{text}
+<<< @/../sample/embedding/main.lh{lhat}
 
 `module^demo` declares a module, and `public^let^update` exposes a callback.
 The host registers the `app` module; `app.report` is not a built-in function.

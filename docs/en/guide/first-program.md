@@ -7,7 +7,7 @@ L^ source files use the `.lh` extension.
 
 Save the following code.
 
-<<< @/../sample/docs/hello.lh{text}
+<<< @/../sample/docs/hello.lh{lhat}
 
 From the directory containing the file, run:
 

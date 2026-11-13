@@ -13,7 +13,7 @@ L^ の構文キーワードには `let^`、`var^`、`for^` のように末尾に
 
 ## 変数、テーブル、繰り返し
 
-<<< @/../sample/readme/basics.lh{text}
+<<< @/../sample/readme/basics.lh{lhat}
 
 このファイルを実行すると `10 120` が表示されます。
 リポジトリのルートから実行する場合は、次のコマンドを使えます。
@@ -98,7 +98,7 @@ let^ e = new^InputError.Invalid { line=3, message="invalid input" }
 
 ## 関数と手続き
 
-<<< @/../sample/readme/functions.lh{text}
+<<< @/../sample/readme/functions.lh{lhat}
 
 `discounted` は割引後の価格を計算する関数 `f^` です。
 `checkout` は、その計算結果を `print` で表示する手続き `p^` です。
@@ -110,7 +110,7 @@ let^ e = new^InputError.Invalid { line=3, message="invalid input" }
 
 ## エラーを扱う
 
-<<< @/../sample/readme/errors.lh{text}
+<<< @/../sample/readme/errors.lh{lhat}
 
 `errordef^` はエラーの種類を定義します。
 この `divide` は、除数が 0 ならエラーを返し、それ以外なら割り算の結果を返します。

@@ -54,11 +54,11 @@ npm run docs:translations -- --record guide/installation.md
 たとえば次の記法でコードを表示できます。
 
 ```md
-<<< @/../sample/docs/hello.lh{text}
+<<< @/../sample/docs/hello.lh{lhat}
 ```
 
-L^ の例は現時点では `text` を指定してプレーンテキストとして表示します。
-言語の規則を誤って示す他言語のハイライトは割り当てません。
+L^ の例には `lhat` を指定します。ハイライトには VS Code 拡張 0.6.3 の TextMate 文法を使用します。
+文法を更新する際は `.vitepress/lhat.tmLanguage.json` を拡張の文法と同期してください。
 例を変更した場合は実行結果も確認し、日英両方の説明を更新してください。
 
 組み込みガイドの実行例は `sample/embedding/` にあります。
