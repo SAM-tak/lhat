@@ -14,7 +14,7 @@ import^std.task
 
 捕捉と引数はスナップショットとして渡します。結果を `await` で受け取れるのは一度だけで、2度目以降は `TaskError.Taken` です。
 
-`await` は呼び出した機械を待たせます。自分のイベントループを持つ場合は `done()` や `awaitable()` を使います。`stop()` は未完了の仕事を破棄してワーカーを停止します。
+`await` は呼び出した機械を待たせます。ジョブの中で別のタスクを待つときは `await^ t.join()` を使うと、待つ間ワーカーを他のジョブに譲ります。自分のイベントループを持つ場合は `done()` や `awaitable()` を使います。`stop()` は未完了の仕事を破棄してワーカーを停止します。
 
 使用例は[並行処理](../../guide/tasks.md)を参照してください。
 
@@ -105,6 +105,14 @@ f^self^ -> string^|nil^;
 
 ```text
 f^self^ -> number^;
+```
+
+### Task.join
+
+完了を待つコルーチンを作る。`await^` で `await` と同じ結果を受け取る。
+
+```text
+f^self^ -> c^{f^ -> number^ -> self^.T0|std.task.TaskError|std.sys.Error.OutOfMemory};
 ```
 
 ### Task.dispose

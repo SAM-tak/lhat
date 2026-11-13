@@ -824,6 +824,34 @@ static void task_async(LhatMachine *machine, void *context,
     answers[0] = out;
 }
 
+// What await answers for a finished task: its result, adopted by machine, or the error it
+// ended with -- taken exactly once across all VMs, a failure included.
+static LhatValue take_answer(LhatMachine *machine, Task *task)
+{
+    const TaskModule *module = task->module;
+    lhat_mutex_lock(&task->lock);
+    if (task->taken) {
+        lhat_mutex_unlock(&task->lock);
+        return fail_with(machine, module->taken, "task result was already taken");
+    }
+    task->taken = true;
+    LhatRunStatus status = task->status;
+    LhatDetachedValue *result = task->detached;
+    task->detached = NULL;
+    lhat_mutex_unlock(&task->lock);
+    if (status != LHAT_RUN_OK) {
+        char *said = failure_text(task);
+        LhatValue error = fail_with(machine, module->failed,
+                                    said != NULL ? said : lhat_run_status_message(status));
+        lhat_free(said);
+        return error;
+    }
+    if (task->result_refused) {
+        return fail_with(machine, module->refused, "task result cannot transfer ownership");
+    }
+    return lhat_machine_adopt_result(machine, result);
+}
+
 static void task_await(LhatMachine *machine, void *context,
                        const LhatValue *arguments, size_t count,
                        LhatValue *answers, int *answer_count)
@@ -859,29 +887,9 @@ static void task_await(LhatMachine *machine, void *context,
         }
         lhat_condition_wait_for(&task->done, &task->lock, HOST_PAUSE_MS);
     }
-    *answer_count = 1;
-    if (task->taken) {
-        lhat_mutex_unlock(&task->lock);
-        answers[0] = fail_with(machine, module->taken, "task result was already taken");
-        return;
-    }
-    // Claim completion, including a failure, exactly once across all VMs.
-    task->taken = true;
-    LhatRunStatus status = task->status;
-    LhatDetachedValue *result = task->detached;
-    task->detached = NULL;
     lhat_mutex_unlock(&task->lock);
-    if (status != LHAT_RUN_OK) {
-        char *said = failure_text(task);
-        answers[0] = fail_with(machine, module->failed,
-            said != NULL ? said : lhat_run_status_message(status));
-        lhat_free(said);
-    } else if (task->result_refused) {
-        answers[0] = fail_with(machine, module->refused,
-                              "task result cannot transfer ownership");
-    } else {
-        answers[0] = lhat_machine_adopt_result(machine, result);
-    }
+    *answer_count = 1;
+    answers[0] = take_answer(machine, task);
 }
 
 static void task_done(LhatMachine *machine, void *context,
@@ -929,31 +937,87 @@ static void task_failed(LhatMachine *machine, void *context,
 
 // [syntax.sub.await-done]: the same push std.thread's handle answers with -- a scheduler
 // parks on the wait instead of asking done() over and over.
+// The task's wait, armed for machine the first time it is asked for, and pushed already when
+// the job has ended.
+static LhatInteger awaitable_id(LhatMachine *machine, Task *task)
+{
+    lhat_mutex_lock(&task->lock);
+    if (task->await_id == 0) {
+        task->waits = lhatstdlib_async_waits(task->module->program);
+        task->await_id = lhatstdlib_async_external(task->waits, machine);
+    }
+    LhatInteger id = task->await_id;
+    bool already = task->finished;
+    void *waits = task->waits;
+    lhat_mutex_unlock(&task->lock);
+    if (already && id != 0) {
+        lhatstdlib_async_complete(waits, id);
+    }
+    return id;
+}
+
 static void task_awaitable(LhatMachine *machine, void *context,
                            const LhatValue *arguments, size_t count,
                            LhatValue *answers, int *answer_count)
 {
     (void)count;
-    const TaskModule *module = (const TaskModule *)context;
-    Task *task = self_of(module, arguments[0]);
-    LhatInteger id = 0;
-    if (task != NULL) {
-        lhat_mutex_lock(&task->lock);
-        if (task->await_id == 0) {
-            task->waits = lhatstdlib_async_waits(module->program);
-            task->await_id =
-                lhatstdlib_async_external(task->waits, machine);
-        }
-        id = task->await_id;
-        bool already = task->finished;
-        void *waits = task->waits;
-        lhat_mutex_unlock(&task->lock);
-        if (already && id != 0) {
-            lhatstdlib_async_complete(waits, id);
-        }
-    }
-    answers[0] = lhat_integer(id);
+    Task *task = self_of((const TaskModule *)context, arguments[0]);
+    answers[0] = lhat_integer(task != NULL ? awaitable_id(machine, task) : 0);
     *answer_count = 1;
+}
+
+// [syntax.sub.await]: what await^ delegates to. While the job runs, a step yields the task's
+// wait, so a job waiting on another gives its worker up instead of sleeping on it -- which
+// std.task.await does, and which stalls a pool whose every worker waits that way. Once the job
+// has ended, the walk ends with what await would answer.
+static bool join_step(LhatMachine *machine, void *context, const LhatValue *sent,
+                      size_t sent_count, LhatValue *answers, int *answer_count)
+{
+    Task *task = (Task *)context;
+    (void)sent;
+    (void)sent_count;
+    *answer_count = 1;
+    lhat_mutex_lock(&task->lock);
+    bool finished = task->finished;
+    lhat_mutex_unlock(&task->lock);
+    if (!finished) {
+        // 0 is no wait: the job comes straight back and looks again.
+        answers[0] = lhat_integer(awaitable_id(machine, task));
+        return true;
+    }
+    answers[0] = take_answer(machine, task);
+    return false;
+}
+
+static void join_release(LhatMachine *machine, void *context,
+                         const LhatValue *arguments, size_t count,
+                         LhatValue *answers, int *answer_count)
+{
+    (void)machine;
+    (void)arguments;
+    (void)count;
+    (void)answers;
+    (void)answer_count;
+    task_let_go((Task *)context, NULL);
+}
+
+static void task_join(LhatMachine *machine, void *context,
+                      const LhatValue *arguments, size_t count,
+                      LhatValue *answers, int *answer_count)
+{
+    (void)count;
+    Task *task = self_of((const TaskModule *)context, arguments[0]);
+    *answer_count = 1;
+    answers[0] = lhat_nil();
+    if (task == NULL) {
+        return;
+    }
+    task_retain(task, NULL);  // the walk's own hold
+    if (!lhat_machine_make_coroutine(machine, join_step, task, join_release,
+                                     arguments[0], &answers[0])) {
+        task_let_go(task, NULL);
+        answers[0] = lhat_nil();
+    }
 }
 
 static void task_dispose(LhatMachine *machine, void *context,
@@ -1072,6 +1136,10 @@ bool lhatstdlib_task_register(LhatProgram *program)
            lhat_register_member(program, "std.task", "Task", "awaitable",
                                 "f^self^ -> number^;", task_awaitable,
                                 module) &&
+           lhat_register_member(program, "std.task", "Task", "join",
+                                "f^self^ -> c^{f^ -> number^ -> self^.T0"
+                                "|std.task.TaskError|std.sys.Error.OutOfMemory};",
+                                task_join, module) &&
            lhat_register_member(program, "std.task", "Task", "dispose",
                                 "p^self^;", task_dispose,
                                 (void *)module->tag) &&

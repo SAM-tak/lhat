@@ -14,7 +14,7 @@ import^std.task
 
 Captures and arguments cross as snapshots. A result can be collected by `await` exactly once; subsequent attempts return `TaskError.Taken`.
 
-`await` blocks the calling machine. Use `done()` or `awaitable()` with your own event loop. `stop()` drops unfinished jobs and stops workers.
+`await` blocks the calling machine. Inside a job, wait for another task with `await^ t.join()`, which gives the worker to other jobs while it waits. Use `done()` or `awaitable()` with your own event loop. `stop()` drops unfinished jobs and stops workers.
 
 See [Concurrency](../../guide/tasks.md) for examples.
 
@@ -105,6 +105,14 @@ Get a `std.async` ID for completion.
 
 ```text
 f^self^ -> number^;
+```
+
+### Task.join
+
+Create a coroutine awaiting completion; `await^` it for what `await` answers.
+
+```text
+f^self^ -> c^{f^ -> number^ -> self^.T0|std.task.TaskError|std.sys.Error.OutOfMemory};
 ```
 
 ### Task.dispose

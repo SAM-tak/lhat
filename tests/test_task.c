@@ -346,6 +346,61 @@ static void test_answers(void)
         LHAT_CHECK_RAN_INTEGER(ran, 6);
         lhat_test_ran_dispose(&ran);
     }
+
+    // [syntax.sub.await]: join is what await^ delegates to. On the only worker, a job that slept
+    // on another with std.task.await would hold it while the other waits for its timer.
+    LHAT_TEST("a job joining another gives the only worker up");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.task\n"
+            "import^ std.async\n"
+            "std.task.start(1) catch^ panic^ it^\n"
+            "let^ inner = std.task.async((p^ { yield^ std.async.timer(0.05) return^ 20 })())\n"
+            "var^ n = 0\n"
+            "if^ inner fits^ std.task.Task {\n"
+            "    let^ add = p^ {\n"
+            "        let^ got = await^ inner.join() catch^ 0\n"
+            "        return^ got + 1\n"
+            "    }\n"
+            "    let^ outer = std.task.async(add())\n"
+            "    if^ outer fits^ std.task.Task {\n"
+            "        let^ got = std.task.await(outer)\n"
+            "        if^ got fits^ number^ { n += got }\n"
+            "    }\n"
+            "}\n"
+            "std.task.stop()\n"
+            "return^ n\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 21);
+        lhat_test_ran_dispose(&ran);
+    }
+
+    LHAT_TEST("join ends with the error await would answer");
+    {
+        LhatTestRan ran = run_source(
+            "import^ std.task\n"
+            "std.task.start(1) catch^ panic^ it^\n"
+            "let^ bad = std.task.async(p^ { panic^ \"boom\" })\n"
+            "var^ n = 0\n"
+            "if^ bad fits^ std.task.Task {\n"
+            "    let^ probe = p^ {\n"
+            "        let^ first = await^ bad.join()\n"
+            "        let^ second = await^ bad.join()\n"
+            "        var^ k = 0\n"
+            "        if^ first fits^ std.task.TaskError.Failed { k += 1 }\n"
+            "        if^ second fits^ std.task.TaskError.Taken { k += 10 }\n"
+            "        return^ k\n"
+            "    }\n"
+            "    let^ t = std.task.async(probe())\n"
+            "    if^ t fits^ std.task.Task {\n"
+            "        let^ got = std.task.await(t)\n"
+            "        if^ got fits^ number^ { n := got }\n"
+            "    }\n"
+            "}\n"
+            "std.task.stop()\n"
+            "return^ n\n");
+        LHAT_CHECK_RAN_INTEGER(ran, 11);
+        lhat_test_ran_dispose(&ran);
+    }
 }
 
 static const LhatTestRegister with_channel[] = {lhatstdlib_task_register,

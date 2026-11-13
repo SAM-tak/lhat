@@ -2411,6 +2411,12 @@ OS スレッドは `start` のときの N 本きり。
   タスクが誰も見られなくなる
 - `await` は呼んだ機械を止める。ループを持つ側は `t.done()` か
   `t.awaitable()`（[syntax.sub.await-done] の押し）
+- **ジョブの中で待つなら `await^ t.join()`。** `join()` はホストのコルーチン
+  （`c^{f^ -> number^ -> self^.T0|std.task.TaskError|std.sys.Error.OutOfMemory}`）を
+  返し、終わるまで `awaitable` の id を yield し、終わったら `await` と同じ答え
+  （失敗・拒否・`Taken` も含む）で終わる。`Channel.take()` と同じ形
+  （[syntax.sub.await] の委譲）。`await` で待つとワーカーを1本ふさぎ、全ワーカーが
+  そうして待てば——`start(1)` で別のジョブを待つだけで——プールは止まる
 - `Task` は共有型（[modules.host.boundary-yields]）。チャネルに積める・他のジョブへ渡せる
 - **プールは program の本体を握る。** 破棄の前に `std.task.stop()`
   （C からは `lhatstdlib_task_stop`）。モジュールの後始末も保険で止める
