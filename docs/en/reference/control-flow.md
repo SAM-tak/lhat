@@ -117,10 +117,12 @@ with^w = create("out") {
 - Like `finally^`, disposal runs on normal completion, `break^`, `return^`, error propagation, and coroutine disposal.
 - In the same block, `finally^` runs first and `dispose()` after it.
 - The value must have a `dispose()` that takes no arguments and returns nothing. The check is structural; a value that fails it is a type error in strict mode.
+  In a `def^`, write `dispose = p^self^ {…}`; `self^` does not count as an argument. Standard library and host types work too when they have `dispose()`.
 - As with `let^`, the bound name cannot be reassigned, and `with^name := expression` is not allowed.
 - `with^` cannot appear inside an `f^` body.
 - `dispose()` does not return errors. Call fallible cleanup, such as `flush()`, as a separate operation beforehand.
 - Coroutines have `dispose()`, so passing one to `with^` disposes it when the block ends.
+- The `catch^` clauses of a `with^` block do not receive errors passed by `try^` in the initializers. To receive them, wrap the whole statement in `do^{…}`.
 
 Source: [Syntax](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
 ([syntax.stmt], [syntax.if], [syntax.loop], [syntax.finally], [syntax.with], [syntax.for], [syntax.match]).

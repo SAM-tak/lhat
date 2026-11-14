@@ -41,6 +41,7 @@ c^{p^再開時に受け取る型 -> yieldする型 -> 最終結果型}
 引数名と既定値は型に含めません。署名内の `self^` は受け手の印で、型名ではありません。
 `Self^` は型リテラルの内側で自身の型を参照します。
 複数の戻り値はタプルです。通常の1つの変数やテーブルとは異なります。
+戻り値の位置ではタプルを `-> A, B` と裸のコンマ列で書きます。`,` は `|` より弱く結合するため、合併がタプル全体を覆うときだけ `-> (A, B)|SomeError` と括弧が必要です。タプルの位置にエラー型は置けません。
 
 ホストの公称型は `std.task.Task<number^>` のように型引数を持てます。
 型引数は不変で、実行時記述子にも保持されます。
@@ -59,5 +60,5 @@ c^{p^再開時に受け取る型 -> yieldする型 -> 最終結果型}
 `number^` や `t^{…}` のような型の綴りも、型値を受け取る API に渡せます。
 
 参照元：[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-（[syntax.type]、[syntax.obj.structure]、[syntax.obj.typeof]、[syntax.op.as]、[syntax.op.as-error]）、
+（[syntax.type]、[syntax.type.tuple-parens]、[syntax.obj.structure]、[syntax.obj.typeof]、[syntax.op.as]、[syntax.op.as-error]）、
 [モジュール](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/05-modules.md)（[modules.label]）。

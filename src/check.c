@@ -3890,8 +3890,8 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
         "it in a union has to be told apart by the first of them "
         "-- nil^ or an error, the same as beside (A, B)"},
     [LHAT_CHECK_ERR_TUPLE_UNION] = {"check.tuple-union",
-        "the only thing (A, B) may be written in a union with is "
-        "an error"},
+        "(A, B) may be written in a union only with nil^ or an "
+        "error, which the first slot tells apart"},
     [LHAT_CHECK_ERR_TUPLE_ARITY] = {"check.tuple-arity",
         "this answers a different number of values than there are "
         "names to take them"},

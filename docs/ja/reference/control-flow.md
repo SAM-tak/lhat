@@ -117,10 +117,12 @@ with^w = create("out") {
 - 破棄は `finally^` と同じく、通常終了、`break^`、`return^`、エラー伝播、コルーチンの破棄で実行します。
 - 同じブロックの `finally^` が先、`dispose()` が後です。
 - 値は、引数を取らず値を返さない `dispose()` を持つ必要があります。判定は構造的で、満たさない値は strict の型検査でエラーです。
+  `def^` では `dispose = p^self^ {…}` と書きます。`self^` は引数の数に入りません。標準ライブラリやホストの型も `dispose()` を持てば使えます。
 - 導入する名前は `let^` と同じく再代入できません。`with^名前 := 式` も書けません。
 - `f^` の本体には書けません。
 - `dispose()` はエラーを返しません。失敗しうる後始末は、`flush()` などの別の操作として先に呼びます。
 - コルーチンも `dispose()` を持つため、`with^` に渡すとブロックの終了時に破棄されます。
+- `with^` のブロックの `catch^` 節は、初期化式の `try^` が渡すエラーを受けません。受けるには全体を `do^{…}` で囲みます。
 
 参照元：[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
 （[syntax.stmt]、[syntax.if]、[syntax.loop]、[syntax.finally]、[syntax.with]、[syntax.for]、[syntax.match]）。

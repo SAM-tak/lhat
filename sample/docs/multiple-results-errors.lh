@@ -1,0 +1,18 @@
+errordef^MathError { DivisionByZero }
+
+let^divmod = f^a:number^, b:number^ -> (number^, number^)|MathError {
+    if^b = 0 {
+        return^new^MathError.DivisionByZero{}
+    }
+    return^a // b, a % b
+}
+
+let^q, r = divmod(7, 0) catch^(0, 0)
+print(q, r) # 0 0
+
+let^show = p^a:number^, b:number^ -> nil^|MathError {
+    let^x, y = try^divmod(a, b)
+    print(x, y)
+}
+show(7, 2) catch^print("division by zero") # 3 1
+show(7, 0) catch^print("division by zero") # division by zero

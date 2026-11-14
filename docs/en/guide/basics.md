@@ -191,6 +191,21 @@ Functions may update local state, but cannot modify external state or call proce
 Procedures can call both functions and procedures.
 Separating calculations from I/O and external updates lets the type checker enforce the boundary of side effects.
 
+### Returning multiple values
+
+Functions and procedures can return several values with `return^expr1, expr2`.
+
+<<< @/../sample/docs/multiple-results.lh{lhat}
+
+Write the result type as a comma-separated list, as in `-> number^, number^`.
+Receive the values with the same number of names, as in `let^q, r = divmod(7, 2)`.
+You cannot bind them to a single name or pass them directly as an argument.
+
+To pass them as arguments to another call, write `...` after the call to expand them.
+`add(divmod(7, 2)...)` is the same as `add(3, 1)`.
+To collect the values in a table, use `pack^`. `pack^divmod(7, 2)` is an array table equal to `{ 3, 1 }`.
+For what can be expanded and where, see [Multiple results](../reference/subroutines.md#multiple-results) and [Expanding into arguments](../reference/subroutines.md#expanding-into-arguments).
+
 ## Handling errors
 
 <<< @/../sample/readme/errors.lh{lhat}
@@ -198,6 +213,22 @@ Separating calculations from I/O and external updates lets the type checker enfo
 `errordef^` defines error kinds.
 This `divide` returns an error when the divisor is 0, and the division result otherwise.
 `catch^0` substitutes `0` when an error is returned, so this program prints `0`.
+
+### Writing result types with multiple values and errors
+
+When a subroutine returns either several values or an error, parenthesize the values before adding the error type to the union.
+
+<<< @/../sample/docs/multiple-results-errors.lh{lhat}
+
+`,` binds more loosely than `|`. Without parentheses, `-> number^, number^|MathError` means
+"two values: `number^` and `number^|MathError`", which is a type error.
+An error is returned instead of the whole list of values, not as one of them.
+`-> (number^, number^)|MathError` means "two numbers, or an error".
+With `nil^`, both forms are valid, but `-> A, B|nil^` and `-> (A, B)|nil^` mean different things; see the [reference](../reference/subroutines.md#parentheses-change-what-a-union-with-nil-means).
+
+The caller uses `try^` and `catch^` as with a single value.
+A `catch^` fallback also supplies the same number of values, as in `catch^(0, 0)`.
+For details, see [Multiple values and errors](../reference/errors.md#multiple-values-and-errors) in the reference.
 
 ## Cleaning up resources
 

@@ -46,6 +46,38 @@ new^名前.情報付き種別 { フィールド = 値 }
 エラーを含まない式への `try^` は値・型をそのまま通します。
 伝播でスコープを抜けるときも `finally^`・`with^` の後始末は実行します。
 
+## 複数の値とエラー
+
+複数の値か、エラーのどちらかを返すサブルーチンは、戻り値の型を `(型1, 型2)|エラー型` と書きます。
+
+```lhat
+errordef^MathError { DivisionByZero }
+
+let^divmod = f^a:number^, b:number^ -> (number^, number^)|MathError {
+    if^b = 0 {
+        return^new^MathError.DivisionByZero{}
+    }
+    return^a // b, a % b
+}
+
+let^q, r = divmod(7, 0) catch^(0, 0)
+let^show = p^a:number^, b:number^ -> nil^|MathError {
+    let^x, y = try^divmod(a, b)
+    print(x, y)
+}
+```
+
+- `,` は `|` より弱く結合します。括弧のない `-> number^, number^|MathError` は
+  `number^` と `number^|MathError` の2位置のタプルです。タプルの位置にはエラー型を置けないため、型エラーになります。
+  エラーは位置の1つとしてではなく、タプル全体の代わりに返ります。
+- 括弧が要るのは、合併がタプル全体を覆うときだけです。エラーを含まない戻り値は `-> number^, number^` と裸で書きます。
+- タプル全体と合併できるのはエラー型と `nil^` だけです。`(number^, number^)|number^` のような合併は書けません。
+  `nil^` との合併は[関数と手続き](./subroutines.md#nil-との合併は括弧で意味が変わる)を参照してください。
+- `try^呼び出し()` は、成功ならタプルを分解束縛へ渡し、エラーなら伝播します。
+- `catch^` の代替は同じ幅のタプルで書きます（`catch^(0, 0)`）。`catch^panic^it^` も使えます。
+- タプルを含む合併は、タプルと同じく1つの名前に束縛できません。
+  結果を束縛してから `fits^` で判別する形はとれないため、`try^` か `catch^` で受けます。
+
 ## ローカルエラー
 
 `localerrordef^` は `localerror^` の下の種別を宣言します。
@@ -64,4 +96,5 @@ panic は、存在すると約束したメンバが実際にはないなど、�
 整数演算の桁溢れやゼロ除算は実数へ広がり、それ自体をエラー値にはしません。
 
 参照元：[エラー](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/04-errors.md)
-（[errors.kind]、[errors.catch]、[errors.try]、[errors.exhaustive]、[errors.dropped]、[errors.runtime]）。
+（[errors.kind]、[errors.catch]、[errors.try]、[errors.exhaustive]、[errors.dropped]、[errors.runtime]）、
+[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)（[syntax.type.tuple]、[syntax.type.tuple-parens]）。

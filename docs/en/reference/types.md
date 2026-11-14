@@ -41,6 +41,7 @@ Signature semicolons are required. A procedure with no result omits `->`.
 Parameter names and defaults are not part of a type. `self^` marks a receiver rather than naming a type.
 `Self^` inside a type literal refers to its own type.
 Multiple return values form a tuple, distinct from a single ordinary variable or table.
+In result position, write a tuple as a bare comma list, `-> A, B`. Because `,` binds more loosely than `|`, parentheses are needed only when a union covers the whole tuple: `-> (A, B)|SomeError`. An error type cannot occupy a tuple position.
 
 Host nominal types may have invariant type arguments, as in `std.task.Task<number^>`.
 These arguments are also retained in runtime descriptors.
@@ -59,5 +60,5 @@ Checked code uses the type determined by the checker; unchecked code reports wha
 Type notation such as `number^` or `t^{…}` can also be passed to APIs accepting type values.
 
 Sources: [Syntax](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-([syntax.type], [syntax.obj.structure], [syntax.obj.typeof], [syntax.op.as], [syntax.op.as-error]);
+([syntax.type], [syntax.type.tuple-parens], [syntax.obj.structure], [syntax.obj.typeof], [syntax.op.as], [syntax.op.as-error]);
 [Modules](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/05-modules.md) ([modules.label]).
