@@ -113,6 +113,10 @@ Table built-ins require hats to distinguish them from user keys; string built-in
 
 ## Built-in table operations
 
+Tables can hold data under freely chosen names, so their built-in operations are called as hatted members such as `t.insert^(position, value)`. For example, a data member named `insert` is distinct from `insert^` and does not collide with the built-in operation.
+
+By contrast, a `def^` constructor is named `new`, and `with^` uses `dispose` for cleanup; these special names have no hats. Their object roles give these names a construction or cleanup meaning rather than leaving the same bare names available for confusingly different uses. The construction syntax `new^Type{…}` and the member `new` are different things. On `def^` definitions and instances, bare `tostring` is also a special name for string conversion and denotes the same member as `tostring^`. On plain tables, bare `tostring` is available as a data name, and `tostring^` accesses the built-in conversion.
+
 | Operation | Purpose |
 | --- | --- |
 | `clone^()` | Shallow copy |
