@@ -1,0 +1,14 @@
+let^t = {aaa = 1}
+t["bbb"] := 2
+print(t["bbb"])              # 2
+print(typeof^(t).signature)   # t^{ aaa : number^ }
+
+# A declared dictionary constrains keys and values, not key presence.
+let^d:t^{[string^]:number^} = {}
+let^key = "bbb"
+d[key] := 2
+d[key] := 3
+print(d[key])                # 3
+print(typeof^(d).signature)  # t^{ [string^] : number^ }
+d[key] := nil^               # Delete the dictionary entry.
+print(d[key] ?? 0)           # 0

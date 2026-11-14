@@ -43,6 +43,7 @@ Integral `2.0` and `2` are the same key; non-integral keys outside the array are
 
 To add a named member to an existing table, write `var^t.bbb = "bbb"`.
 `t.bbb := "bbb"` updates an existing member, so the checker rejects it if `bbb` does not yet exist.
+This describes ordinary structural types listing named members. Dictionary constraints, when present, also apply as described below.
 
 | Form | Member absent | Member present |
 | --- | --- | --- |
@@ -63,6 +64,37 @@ Adding `height` afterward preserves `width`. With `=`, the final member must be 
 
 These operations apply to ordinary tables. Definition/instance structure, access through type annotations, and mutation inside functions have their respective restrictions.
 See [Introducing and updating members](./bindings.md#introducing-and-updating-members) for bindings, and [Built-in table operations](#built-in-table-operations) for array insertion and removal.
+
+### Adding and updating arbitrary keys through indexing
+
+Use `t[key] := value` for a key determined at runtime. It inserts an absent key or updates an existing one.
+Neither `var^t[key] = value` nor `var^t[key] := value` is supported; member introduction with `var^` uses dot notation.
+
+```lhat
+let^t = {aaa = 1}
+t["bbb"] := 2  # Insertion is allowed.
+# t.bbb := 2   # Error: the type has no bbb member.
+```
+
+::: info Asymmetry between dot notation and indexing
+The designer recognizes that different write rules for the same key look inconsistent, but this distinction is currently by design.
+Dot notation declares or updates named members; indexing inserts or updates keyed entries.
+:::
+
+The checker reads a declaration such as `var^t.bbb = 2` and includes the named member `bbb:number^` in the static type.
+This does not rewrite type information at runtime: within the same scope, even `typeof^(t).signature` written before the declaration includes `bbb`.
+Its presence in the type does not allow reading the member's value before the declaration executes.
+
+An indexed insertion does not add a named `bbb:number^` member to the type.
+**It does not automatically add a `[string^]:number^` dictionary constraint either.** Here `typeof^(t).signature` remains `t^{aaa:number^}`, and `t.bbb` does not become available.
+
+To guarantee dictionary key and value types, specify `t^{[KeyType]:ValueType}` at construction.
+
+<<< @/../sample/docs/reference/table-keys.lh{lhat}
+
+Writes to `d[key]` check the key against `string^` and the value against `number^`.
+The dictionary type does not guarantee any particular key's presence, so reads have type `number^|nil^`. Assigning `nil^` deletes an entry.
+For a dictionary type, `d.bbb` also follows these constraints as a string-key access; it is distinct from a required named member.
 
 ## Counts and strings
 
