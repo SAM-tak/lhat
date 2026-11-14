@@ -48,11 +48,6 @@ the original index and value, without copying the array. Dictionary entries are 
 let^values = {10, 20, 30, 40}
 for^i, v in^values.range^(1, 2) { print(i, v) }
 # 1 20, then 2 30
-
-for^i, v in^values.reverse_iterate^() {
-    if^v >= 30 { values.remove^(i) }
-}
-# values is now {10, 20}
 ```
 
 Bounds are zero-based and inclusive. Negative indices count from the end, with
@@ -65,8 +60,22 @@ A lower bound greater than the upper bound, or out-of-bounds endpoints, produces
 Bounds are resolved at the call; values are read as iteration advances.
 These iterators do not introduce `index^`.
 
-Calling `remove^` during forward iteration can skip elements because later
-elements shift left. To delete the current element, iterate in reverse as above.
+### Removing matching elements during iteration
+
+To remove matching array elements, the idiom is to iterate in reverse and call
+`remove^` with the current index.
+
+```lhat
+let^values = {10, 20, 30, 40}
+for^i, v in^values.reverse_iterate^() {
+    if^v >= 30 { values.remove^(i) }
+}
+# values is now {10, 20}
+```
+
+Calling `remove^` during forward iteration can skip the next element because later
+elements shift left. In reverse, removing the current element does not change the
+indices of elements still to be visited.
 Reverse iteration does not make deleting other positions, inserting, or sorting safe.
 Deleting existing dictionary keys with `values[k] := nil^` during traversal
 does not skip the remaining keys. Assigning `nil^` to an array position keeps
