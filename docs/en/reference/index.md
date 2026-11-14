@@ -12,10 +12,12 @@ For a walkthrough, see [Language basics](../guide/basics.md); for host integrati
 | [Bindings and scope](./bindings.md) | Declarations, reassignment, members, name resolution, destructuring |
 | [Types](./types.md) | Basic and structural types, unions, signatures, conformance, type descriptors |
 | [Expressions and operators](./expressions.md) | Precedence, comparisons, logic, concatenation, nil, casts |
+| [Numbers and strings](./numbers-and-strings.md) | Numeric comparison, formats, conversion, bit operations, Unicode, search and splitting |
 | [Control flow](./control-flow.md) | Conditions, pattern matching, iteration, exits, cleanup |
 | [Functions and procedures](./subroutines.md) | Definitions, arguments, results, effects, recursion |
 | [Coroutines](./coroutines.md) | Creation, starting, resuming, yield, await, types |
 | [Tables and objects](./objects.md) | Tables, built-in members, definitions, construction, composition, enums |
+| [Host types and boxes](./host-types.md) | Host data, host values, copying and storage restrictions, mutable and sealed boxes |
 | [Errors](./errors.md) | Error types, construction, handling, propagation, panic |
 | [Modules](./modules.md) | Translation units, exports, require, host bindings |
 | [Annotations](./annotations.md) | Syntax, arguments, placement, host validation |

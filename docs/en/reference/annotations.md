@@ -38,5 +38,10 @@ Unregistered annotations produce errors rather than being silently ignored.
 Editor exposure and RPC in game engines are examples of host-defined meanings.
 Consult the embedding application's API for available annotations.
 
+The host can read declaration names, parameter names, and annotations independently of types.
+It can also supply an implementation for an annotated procedure with an empty body.
+This follows the empty-body registration contract; annotations do not unconditionally replace arbitrary bodies.
+Nonempty bodies run unchanged, and an unannotated empty procedure remains a no-op.
+
 Source: [Syntax](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-([syntax.annot], [syntax.annot.spelling], [syntax.annot.literal-args], [syntax.annot.where], [syntax.annot.host]).
+([syntax.annot.host-fills], [syntax.annot], [syntax.annot.spelling], [syntax.annot.literal-args], [syntax.annot.where], [syntax.annot.host]).

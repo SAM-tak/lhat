@@ -53,6 +53,15 @@ Chained comparisons evaluate the middle expressions once.
 Safe access handles absent receivers, rather than suppressing type mismatches or arbitrary runtime failures.
 `catch^` handles errors; `??` handles `nil^`.
 
+The first nil-safe operation short-circuits the rest of the same postfix chain.
+If a is absent in `a?.b.c()`, subsequent operations and argument evaluation are skipped.
+Parentheses break the chain: `(a?.b).c()` does not protect the outer `.c()`.
+A trailing presence test `?` is false when the chain ends in absence.
+
+Concatenating plain tables creates a new table with the array parts in sequence and the keyed parts combined.
+Duplicate named keys are errors. Inputs remain unchanged and elements are shared shallowly.
+See [Numbers and strings](./numbers-and-strings.md) for numeric and string built-ins.
+
 ## Defining operators
 
 Inside `def^`, `op^operator = function` defines arithmetic, concatenation, `cross^`, `dot^`, `<=>`, or `=`.
@@ -64,5 +73,5 @@ Extend ordering with `op^<=>` and equality with boolean-returning `op^=`.
 Operator implementations cannot be yieldable.
 
 Sources: [Syntax](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-([syntax.op], [syntax.op.table], [syntax.op.default], [syntax.op.nil-safe], [syntax.op.present], [syntax.op.right], [syntax.op.equal], [syntax.sub.op-not-yieldable]);
+([syntax.op.nil-safe-chain], [syntax.op.concat-table], [syntax.op], [syntax.op.table], [syntax.op.default], [syntax.op.nil-safe], [syntax.op.present], [syntax.op.right], [syntax.op.equal], [syntax.sub.op-not-yieldable]);
 [Errors](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/04-errors.md) ([errors.runtime.div-zero]).

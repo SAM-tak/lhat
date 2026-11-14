@@ -23,8 +23,14 @@
 再開時に送られた値は `yield^` の結果として受け取れます。
 `return^` の最終結果と途中の yield の値は型の上で区別します。
 
+`start()`・`resume()` の結果は yield 型と最終結果型の合併です。同じ型なら値だけでは区別できないため、`done()` で終了を確認します。
+値を返さずに終了する場合も、動かす側には `nil^` が返ります。
+タプルを yield・return する場合、駆動結果は両者の最大幅を取り、不足位置を `nil^` で埋めます。
+通常のタプルの分解束縛が不足を補うという意味ではありません。
+
 `_yield^式` は同じ型の情報を与えますが、実行時の中断と値の評価は生成しません。
 実際に中断せず、呼び出しをコルーチン生成にするためにも使えます。
+受信側を書けるのは `_^` だけです。`_await^` や `yieldall^` という構文はありません。
 
 ## 型の3つの位置
 
@@ -37,6 +43,10 @@ c^{p^R -> Y -> T}
 空の位置は「無し」、`*` は型と個数を制約しない位置です。`any^` は値1つの型なので `*` とは異なります。
 `c^` は3位置の情報を消去した上位型です。`.ResultType` は型の位置で最終結果型を取り出します。
 
+位置は `->` だけで区切ります。`c^{p^-> Y}` は受信なし、`c^{p^-> -> T}` は受信・yield なしです。
+最終位置の `-` は終了しないことを表し、`start()`・`resume()` の結果に最終結果型を加えません。
+3位置ともタプルを取れます。受信が2位置なら `resume(a, b)` と送り、`let^a, b = yield^値` で受け取ります。
+
 各中断点で `R`・`Y` は一様でなければなりません。異なる中断点の型を暗黙に合併しません。
 受信する名前がなければ受信型はありません。
 
@@ -46,6 +56,8 @@ c^{p^R -> Y -> T}
 内側の yield は外側を動かす側へ届き、再開値も内側へ渡ります。
 単なる呼び出しだけでは、この委譲は起きません。
 コルーチンでない値を `await^` することはできません。
+コルーチンを返す呼び出しを、呼び出し文や `_^` への束縛でそのまま捨てることはできません。
+明示して保持・開始するか、`await^` で委譲します。
 
 `await^` は言語の構文、`std.task.await(task)` は標準ライブラリの結果取得 API です。
 ワーカースレッドへの仕事の投入には[並行処理](../guide/tasks.md)を参照してください。
@@ -66,5 +78,5 @@ c^{p^R -> Y -> T}
 通常の走査・タスク実行には開始・再開・委譲を使います。
 
 参照元：[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-（[syntax.type.coroutine]、[syntax.sub.yieldable]、[syntax.sub.yieldable-f]、[syntax.sub.yield-both]、
+（[syntax.sub.coroutine-members]、[syntax.type.tuple]、[syntax.type.coroutine]、[syntax.sub.yieldable]、[syntax.sub.yieldable-f]、[syntax.sub.yield-both]、
 [syntax.sub.no-contagion]、[syntax.sub.await]、[syntax.sub.phantom-yield]、[syntax.sub.await-done]、[syntax.sub.save-load]）。

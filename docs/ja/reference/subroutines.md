@@ -34,6 +34,11 @@ p^引数:型 -> 戻り値型 { 本体 }
 可変長引数は末尾にだけ書け、本体の `...` は受け取った値を集めた1つのテーブルです。
 戻り値は `return^式` と書きます。
 
+引数の既定値は、エディタが呼び出しを作るときの初期値です。**引数を省略可能にはしません。**
+`f^x:number^ = 1 { x }` も、呼び出すときには必ず1引数を渡します。既定値は引数型と照合しますが、引数型の推論の根拠にはしません。
+関数はすべての終了経路で値を返す必要があり、`nil^` を返す場合も `return^nil^` と明示します。
+戻り値のない手続きの呼び出し結果は `nil^` という値ではなく「値なし」なので、束縛・引数・式には置けません。
+
 関数の本体全体が式1つだけなら、その式を返します。
 この規則は複数文の末尾や手続きには広がりません。複数文の関数では `return^` を明示します。
 戻り値のない手続きの署名は `p^引数型;` で、戻り値の節を置きません。
@@ -114,6 +119,9 @@ three(1, divmod(7, 2)...)    # three(1, 3, 1)
 第一引数の `self^` はメソッドの受け手を表し、`値.メソッド()` で自動的に渡されます。
 `Self^` は型の参照であり、受け手の値 `self^` とは異なります。
 
+閉包は外側の名前の格納場所を共有して捕捉します。作成時の値のコピーではないため、その後の再代入も見えます。
+ただし関数・手続きの副作用制限は捕捉後も変わりません。
+
 ## 中断できるサブルーチン
 
 `yield^`・`_yield^`・`await^` によって yieldable かどうかを推論します。
@@ -122,5 +130,8 @@ yieldable な呼び出しは本体を実行せずコルーチンを返します�
 詳細は[コルーチン](./coroutines.md)を参照してください。
 
 参照元：[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-（[syntax.type.signature]、[syntax.type.variadic]、[syntax.type.tuple]、[syntax.type.tuple-parens]、[syntax.op.default]、[syntax.sub.kinds]、[syntax.sub.table-write]、
+（[syntax.type.param-names]、[syntax.type.empty]、[syntax.type.signature]、[syntax.type.variadic]、[syntax.type.tuple]、[syntax.type.tuple-parens]、[syntax.op.default]、[syntax.sub.kinds]、[syntax.sub.table-write]、
 [syntax.sub.fresh]、[syntax.sub.mutable-self]、[syntax.sub.expr-body]、[syntax.sub.this]、[syntax.obj.self]）。
+
+参照元：[コンパイルパイプライン](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/03-compilation-pipeline.md)
+（[pipeline.strict]、[pipeline.infer]、[pipeline.bc.capture]）。

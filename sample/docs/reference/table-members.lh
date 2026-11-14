@@ -1,0 +1,12 @@
+let^t = {aaa = 1}
+var^t.bbb = "bbb"           # Add a member to an existing table.
+t.bbb := "updated"         # Update an existing member.
+print(t.aaa, t.bbb)         # 1 updated
+
+var^t.ccc := 3             # Add if absent.
+var^t.ccc := 4             # Update if present.
+print(t.ccc)               # 4
+
+var^t.config.window.width = 800 # Create missing intermediate tables.
+var^t.config.window.height = 600
+print(t.config.window.width, t.config.window.height) # 800 600

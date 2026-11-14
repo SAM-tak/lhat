@@ -38,6 +38,10 @@ new^名前.情報付き種別 { フィールド = 値 }
 本体で `try^` などにより渡されたエラーを型で選んで処理します。
 成功・失敗の戻り値を束縛した場合は、`fits^` やパターンマッチでも判別できます。
 
+`catch^` 節はサブルーチンや一般のブロックにも書け、`catch^ 型:` を順に試し、型を省略した `catch^:` を最後の受け皿にできます。
+単にエラー値を返す呼び出しを置いただけでは節に入りません。`try^` による明示的な伝播が必要です。
+節の中で発生・伝播したエラーを、その同じ節が再び捕まえることはありません。
+
 ## 伝播する
 
 `try^式` は、成功ならその値を返し、エラーなら現在のサブルーチンからエラーを返します。
@@ -93,8 +97,12 @@ let^show = p^a:number^, b:number^ -> nil^|MathError {
 
 panic は、存在すると約束したメンバが実際にはないなど、実行時に契約が破れた異常です。
 通常のエラー値とは異なり、L^ の `catch^` では拾えません。実行結果としてホストへ報告されます。
+panic・fault ではスタックを巻き戻さず、L^ の `finally^` や `with^` の後始末も実行しません。
+これらが動く通常の終了・`return^`・エラー値の伝播とは区別してください。
+`panic^値` でプログラムから明示的に停止できます。値は必須で、文字列以外も渡せ、そのままホストへ報告します。
+通常は文ですが、戻ってこないため `catch^panic^it^` の代替にも置けます。
 整数演算の桁溢れやゼロ除算は実数へ広がり、それ自体をエラー値にはしません。
 
 参照元：[エラー](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/04-errors.md)
-（[errors.kind]、[errors.catch]、[errors.try]、[errors.exhaustive]、[errors.dropped]、[errors.runtime]）、
-[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)（[syntax.type.tuple]、[syntax.type.tuple-parens]）。
+（[errors.catch.clause]、[errors.runtime.panic-finally]、[errors.kind]、[errors.catch]、[errors.try]、[errors.exhaustive]、[errors.dropped]、[errors.runtime]）、
+[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)（[syntax.with.panic]、[syntax.type.tuple]、[syntax.type.tuple-parens]）。

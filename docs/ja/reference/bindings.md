@@ -50,6 +50,19 @@
 `var^ t.member = 値` はメンバの導入、`t.member := 値` は既存メンバの再代入です。
 テーブルリテラル内では `member = 値`、`[キー式] = 値` と書きます。
 メンバを書き換えると、そのテーブルを共有する参照からも変更が見えます。
+`let^t.member = 値` は使えません。`let^` で束縛したテーブルへの追加も含め、具体例は[構築済みテーブルへのメンバ追加と更新](./objects.md#構築済みテーブルへのメンバ追加と更新)を参照してください。
+
+## メンバの定義と更新を兼ねる形
+
+`var^t.member := 値` は、メンバがなければ導入、あれば更新する形です。
+`var^t.member = 値` は導入専用です。裸の `t.member := 値` が新しいメンバを宣言するわけではありません。
+この追加は通常のテーブルに対する操作で、定義やインスタンスの構造へ後付けするものではありません。
+型注釈を経由した構造型では、その注釈に基づいて可否を判定します。
+
+## 多重代入の評価
+
+複数の書き先では、受け手・添字・右辺を読み切ってから書き込みます。`a, b := b, a` で値を交換できます。
+`a, b += x, y` も各位置に演算します。`?:=`・`?+=` の不在判定は位置ごとで、ほかの位置は更新できます。
 
 ## 複数の値と分解
 
@@ -57,6 +70,7 @@
 右辺が1つのタプルを返す呼び出しなら、`let^a, b = 呼び出し()` は分解束縛です。
 名前の数とタプルの位置の数は一致しなければなりません。
 テーブルを名前の列へ暗黙に分解することはありません。テーブルの要素は添字で取り出します。
+入れ子の分解はありません。余分な値を暗黙に切り捨てたり、不足分を自動で埋めたりもしません。
 
 `_^` は値を捨てる受け皿です。値を参照できる名前を導入しません。
 型注釈が必要な位置では `_^:型` と書けます。
@@ -67,7 +81,9 @@
 数値反復の `for^i from^…` の焦点や、走査が束縛する名前も本体から再代入できません。
 条件付き反復で自分で更新する焦点には `for^var^i = …` を使います。
 
+言語が用意する暗黙のグローバル変数はありません。翻訳単位の名前、取り込んだ名前、ホストの初期束縛を使います。
+
 参照元：[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-（[syntax.stmt.define]、[syntax.stmt.compound]、[syntax.stmt.visible]、[syntax.stmt.member]、[syntax.stmt.let]、
+（[syntax.stmt.member-upsert]、[syntax.stmt.define]、[syntax.stmt.compound]、[syntax.stmt.visible]、[syntax.stmt.member]、[syntax.stmt.let]、
 [syntax.type.destructure]、[syntax.type.discard]、[syntax.sub.kinds]、[syntax.for.forms]）、
 [字句構造](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/01-lexical-structure.md)（[lex.hat.repeat]、[lex.scope]）。

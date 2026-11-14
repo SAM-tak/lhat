@@ -1,0 +1,20 @@
+let^HasCount = def^{
+    self^{ abstract^count:number^ },
+    read = f^self^ -> number^ { self^.count },
+}
+
+# Defining HasCount is valid; HasCount.new() would be an error.
+
+let^FixedCount = HasCount .. def^{
+    self^{ count = 10 },
+}
+let^fixed = FixedCount.new()
+print(fixed.read()) # 10
+
+let^GivenCount = HasCount .. def^{
+    override^new = f^initial:number^ {
+        self^{ count = initial }
+    },
+}
+let^given = GivenCount.new(20)
+print(given.read()) # 20

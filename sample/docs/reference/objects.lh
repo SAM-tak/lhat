@@ -1,0 +1,15 @@
+let^Counter = def^{
+    self^{ value = 0 },
+    add = p^self^, amount:number^ {
+        self^.value += amount
+    },
+    doubled = f^self^ -> number^ {
+        def^.double(self^.value)
+    },
+    double = f^value:number^ -> number^ { value * 2 },
+}
+
+let^c = new^Counter{ value = 3 }
+c.add(2)
+print(c.value, c.doubled()) # 5 10
+print(Counter.double(4))   # 8

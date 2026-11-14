@@ -46,6 +46,10 @@ In result position, write a tuple as a bare comma list, `-> A, B`. Because `,` b
 Host nominal types may have invariant type arguments, as in `std.task.Task<number^>`.
 These arguments are also retained in runtime descriptors.
 
+`t^{number^[3]}` requires at least three positions of the same type; `t^{number^[]}` is an indefinite sequence.
+Fixed position types, an indefinite tail, named members, and dictionary constraints can be combined.
+Tuple positions are restricted to results and coroutine input/output; tuples are not ordinary arguments or table values.
+
 ## Conformance, narrowing, and casts
 
 `value fits^ Type` returns a boolean and narrows the value's type in branches.
@@ -53,12 +57,39 @@ These arguments are also retained in runtime descriptors.
 A cast does not convert values; handle failure locally with `catch^` or an appropriate clause.
 Casts between syntactically disjoint types are rejected by the checker.
 
+`fits^` is allowed even when conformance or disjointness is already known, but a right-hand type that collapses to `any^` is rejected as meaningless.
+Known integer ranges from comparisons also contribute to branch narrowing.
+
 ## Types as values
 
 `typeof^(expression)` returns a type descriptor; `.signature` provides its textual representation.
 Checked code uses the type determined by the checker; unchecked code reports what runtime tags can establish.
 Type notation such as `number^` or `t^{…}` can also be passed to APIs accepting type values.
 
+Type values themselves have type `type^`, or `type^<T>` when the represented type T is retained.
+`=` on descriptors checks structural equality.
+`nil^` still denotes the absence value; use `typeof^(nil^)` for its type descriptor.
+The right-hand types of `fits^` and `as^` are resolved statically, not chosen dynamically through runtime descriptors.
+`let^T = TypeNotation`, an existing type name, or a parenthesized type name creates a type alias; `public^let^` exports it.
+Binding a descriptor obtained through `var^`, a call, a conditional, indexing, or `typeof^` does not introduce a type name.
+
+### Result-type attributes
+
+Append `.ReturnType` to a named subroutine with a result, or a signature alias, to refer to its call-result type.
+It works in type positions and as a type value. For a yieldable subroutine, it is the coroutine type itself.
+It is not available on result-less procedures, overload groups, or call results such as `f().ReturnType`.
+Attributes such as `ARG0.ResultType`, `ARG0.ReturnType`, and `ARG0.T0` let registered signatures derive results from argument types.
+
+### Checking strictness
+
+Strict mode reports unresolved inferred types, unresolved errors, and non-exhaustive expressions.
+The host selects strictness when checking a unit; source declarations do not switch it. CLI files default to strict and the REPL to relaxed, overridable with `--strict` or `--relaxed`.
+Relaxed mode does not disable syntax/type contradictions or host-value storage restrictions.
+`any^` explicitly accepts a broad value; it does not mean inference failed.
+
 Sources: [Syntax](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-([syntax.type], [syntax.type.tuple-parens], [syntax.obj.structure], [syntax.obj.typeof], [syntax.op.as], [syntax.op.as-error]);
+([syntax.obj.structure-repeat], [syntax.type.as-expr], [syntax.type.return-type], [syntax.type.fits-range], [syntax.type], [syntax.type.tuple-parens], [syntax.obj.structure], [syntax.obj.typeof], [syntax.op.as], [syntax.op.as-error]);
 [Modules](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/05-modules.md) ([modules.label]).
+
+Source: [Compilation pipeline](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/03-compilation-pipeline.md)
+([pipeline.strict], [pipeline.infer], [pipeline.bc.capture]).

@@ -39,6 +39,11 @@ This does not extend to the last expression of a multi-statement body or to proc
 Multi-statement functions use an explicit `return^`.
 A procedure with no result has a signature such as `p^ArgumentType;`, without a result clause.
 
+Parameter defaults are initial values used by editors when creating calls. **They do not make arguments optional.**
+Even `f^x:number^ = 1 { x }` must be called with one argument. Defaults are checked against parameter types but do not determine their inference.
+Functions must return a value on every terminating path; returning absence requires explicit `return^nil^`.
+A result-less procedure call produces no value, rather than the value `nil^`, and cannot occupy bindings, arguments, or expressions.
+
 ## Multiple results
 
 ```lhat
@@ -115,6 +120,9 @@ On the receiving side, `...` is always one table, however the values were passed
 `self^` as the first parameter marks a method receiver, supplied automatically by `value.method()`.
 The type reference `Self^` differs from the receiver value `self^`.
 
+Closures capture shared storage for outer names, rather than copies of their values at creation time; subsequent reassignment is visible.
+Function/procedure effect restrictions still apply after capture.
+
 ## Yieldable subroutines
 
 Yieldability is inferred from `yield^`, `_yield^`, and `await^`.
@@ -123,5 +131,8 @@ Functions can also be yieldable, subject to restrictions including the origin of
 See [Coroutines](./coroutines.md).
 
 Source: [Syntax](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-([syntax.type.signature], [syntax.type.variadic], [syntax.type.tuple], [syntax.type.tuple-parens], [syntax.op.default], [syntax.sub.kinds], [syntax.sub.table-write],
+([syntax.type.param-names], [syntax.type.empty], [syntax.type.signature], [syntax.type.variadic], [syntax.type.tuple], [syntax.type.tuple-parens], [syntax.op.default], [syntax.sub.kinds], [syntax.sub.table-write],
 [syntax.sub.fresh], [syntax.sub.mutable-self], [syntax.sub.expr-body], [syntax.sub.this], [syntax.obj.self]).
+
+Source: [Compilation pipeline](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/03-compilation-pipeline.md)
+([pipeline.strict], [pipeline.infer], [pipeline.bc.capture]).

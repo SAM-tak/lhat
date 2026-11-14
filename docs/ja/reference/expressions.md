@@ -53,6 +53,15 @@
 これらの安全なアクセスは受け手の不在を扱います。存在する値の型違いや、任意の実行時異常を隠すものではありません。
 `catch^` はエラー、`??` は `nil^` を扱い、それぞれ対象が異なります。
 
+最初の nil 安全な操作は、同じ後置連鎖の残りも短絡します。
+`a?.b.c()` で a が不在なら `.b` 以降の操作と引数評価を行いません。
+括弧で切った `(a?.b).c()` は別の連鎖なので、外側の `.c()` を保護しません。
+後置の不在判定 `?` は、連鎖が不在で終わった場合は偽です。
+
+素のテーブルの連結は新しいテーブルを作り、配列部分を続けて並べ、キー付き部分を合わせます。同じ名前のキーが両側にあればエラーです。
+元のテーブルを変更せず、要素は浅く共有します。
+数値・文字列の組込みメンバは[数値と文字列](./numbers-and-strings.md)を参照してください。
+
 ## 演算子の定義
 
 `def^` 内の `op^演算子 = 関数` で、算術、連結、`cross^`・`dot^`、`<=>`・`=` を定義できます。
@@ -64,5 +73,5 @@
 演算子の実装を yieldable にはできません。
 
 参照元：[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-（[syntax.op]、[syntax.op.table]、[syntax.op.default]、[syntax.op.nil-safe]、[syntax.op.present]、[syntax.op.right]、[syntax.op.equal]、[syntax.sub.op-not-yieldable]）、
+（[syntax.op.nil-safe-chain]、[syntax.op.concat-table]、[syntax.op]、[syntax.op.table]、[syntax.op.default]、[syntax.op.nil-safe]、[syntax.op.present]、[syntax.op.right]、[syntax.op.equal]、[syntax.sub.op-not-yieldable]）、
 [エラー](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/04-errors.md)（[errors.runtime.div-zero]）。

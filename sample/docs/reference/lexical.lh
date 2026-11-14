@@ -1,0 +1,9 @@
+let^n = 42
+#[~
+this_name_is_not_defined()
+#[ A nested comment. ]#
+]#
+print($"n={n:%04d}") # n=0042
+print($"pi={3.14159:%.2f}") # pi=3.14
+print($"{n:n=%d%%}") # n=42%
+print($"{{{n}}}") # {42}

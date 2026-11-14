@@ -38,5 +38,10 @@
 ゲームエンジンでのエディタ公開や RPC などもホストが意味を与える用途です。
 使える注釈は組み込み先のアプリケーションの API を参照してください。
 
+宣言の名前・引数名・注釈は、型から独立した情報としてホストが読み取れます。
+ホストは注釈付きの空の手続き本体へ実装を与えることもできます。
+これは空の本体とホスト登録の約束に基づくもので、注釈があるだけで一般の本体を無条件に置き換える機構ではありません。
+空でない本体はそのまま実行し、注釈のない空の手続きは通常どおり何もしません。
+
 参照元：[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-（[syntax.annot]、[syntax.annot.spelling]、[syntax.annot.literal-args]、[syntax.annot.where]、[syntax.annot.host]）。
+（[syntax.annot.host-fills]、[syntax.annot]、[syntax.annot.spelling]、[syntax.annot.literal-args]、[syntax.annot.where]、[syntax.annot.host]）。

@@ -46,6 +46,19 @@ Initial bindings such as `print` are host configuration, rather than implicit la
 See [Imports and modules](../guide/modules.md) for usage and
 [Exposing host APIs and types](../embedding/host-api.md) for registering bindings.
 
+## Scripts and the execution environment
+
+At the top level of a script without `module^`, `...` is a table of arguments supplied by its caller.
+Its type is `t^{any^[]}`, so narrow values when using them.
+A top-level `yield^` or `await^` makes the script return a coroutine; the CLI drives it to completion.
+This suspension is not allowed at the top level of a named module or REPL input.
+
+`L^` is a read-only table exposing machine information; `L^.modules` holds registered modules.
+Roots introduced by import/require shorthand alias the registry. Nested functions read the registry on each reference.
+In contrast, `let^m = require^…` and `let^m = import^…` retain the value at binding time.
+If the host reloads a module, retained values still refer to the old version, while registry traversal reaches the new version.
+Child modules sharing a root merge into it, but L^ cannot add or modify registry members.
+
 Sources: [Modules](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/05-modules.md)
-([modules.unit], [modules.public], [modules.require], [modules.deps], [modules.host.initial], [modules.host.import]);
+([modules.unit.optional], [modules.require.reload], [modules.require.short], [modules.host.machine], [modules.unit], [modules.public], [modules.require], [modules.deps], [modules.host.initial], [modules.host.import]);
 [Syntax](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md) ([syntax.enum.declare]).

@@ -46,6 +46,10 @@ c^{p^再開時に受け取る型 -> yieldする型 -> 最終結果型}
 ホストの公称型は `std.task.Task<number^>` のように型引数を持てます。
 型引数は不変で、実行時記述子にも保持されます。
 
+`t^{number^[3]}` は同じ型の少なくとも3位置、`t^{number^[]}` は個数を決めない列です。
+固定した位置の型、末尾の不定長の列、名前付きメンバや辞書の制約を組み合わせられます。
+タプルを置ける位置は戻り値とコルーチンの受信などに限られ、普通の引数やテーブルと同じ値としては扱いません。
+
 ## 適合、絞り込み、キャスト
 
 `値 fits^ 型` は真偽値を返し、分岐内で値の型を絞り込みます。
@@ -53,12 +57,39 @@ c^{p^再開時に受け取る型 -> yieldする型 -> 最終結果型}
 キャストは値の変換ではありません。失敗は `catch^` などでその場で処理します。
 構文上互いに素と分かるキャストは型検査で拒否します。
 
+`fits^` は既に適合すると分かる場合や互いに素の場合も書けますが、右辺が `any^` へ潰れる判定は無意味として拒否します。
+比較から分かった整数範囲の情報も分岐の絞り込みに使います。
+
 ## 型を値として扱う
 
 `typeof^(式)` は型記述子を返し、`.signature` で型の文字列表現を得ます。
 検査済みなら検査器が決定した型を使い、未検査なら実行時のタグから分かる範囲を答えます。
 `number^` や `t^{…}` のような型の綴りも、型値を受け取る API に渡せます。
 
+型値自体の型は `type^` で、表す型 T を保持する場合は `type^<T>` です。
+型記述子の `=` は構造の等値を調べます。
+`nil^` は値の綴りのままなので、nil 型の記述子には `typeof^(nil^)` を使います。
+`fits^`・`as^` の右辺は静的に解決する型です。実行時に選んだ型記述子を右辺として使うことはできません。
+`let^T = 型綴り`、既存の型名、括弧で囲んだ型名からは型エイリアスを作れ、`public^let^` なら他の単位にも公開できます。
+`var^`、関数呼び出し、条件式、添字参照、`typeof^` で観測した記述子を束縛しても型名にはなりません。
+
+### 戻り値型の属性
+
+戻り値を持つサブルーチン名や署名の別名に `.ReturnType` を付けると、呼び出しが答える型を参照できます。
+型位置にも型値の式にも使えます。yieldable ならコルーチン型そのものです。
+戻り値なしの手続き、多重定義の群、`f().ReturnType` のような呼び出し結果には使えません。
+型属性には `ARG0.ResultType`・`ARG0.ReturnType`・`ARG0.T0` などもあり、登録署名の実引数の型から結果を定めます。
+
+### 検査の厳格度
+
+strict は推論で未決定の型、未解決のエラー、網羅できない式などを報告します。
+厳格度はホストが翻訳単位の検査に対して選び、ソース内の宣言では切り替えません。CLI はファイルが strict、REPL が relaxed を既定とし、`--strict`・`--relaxed` で変更できます。
+relaxed でも構文や型の矛盾、ホスト値の保持制限などを無効にはしません。
+`any^` は明示的に広い値を受ける型であり、「推論が決まらない」の代わりではありません。
+
 参照元：[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-（[syntax.type]、[syntax.type.tuple-parens]、[syntax.obj.structure]、[syntax.obj.typeof]、[syntax.op.as]、[syntax.op.as-error]）、
+（[syntax.obj.structure-repeat]、[syntax.type.as-expr]、[syntax.type.return-type]、[syntax.type.fits-range]、[syntax.type]、[syntax.type.tuple-parens]、[syntax.obj.structure]、[syntax.obj.typeof]、[syntax.op.as]、[syntax.op.as-error]）、
 [モジュール](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/05-modules.md)（[modules.label]）。
+
+参照元：[コンパイルパイプライン](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/03-compilation-pipeline.md)
+（[pipeline.strict]、[pipeline.infer]、[pipeline.bc.capture]）。

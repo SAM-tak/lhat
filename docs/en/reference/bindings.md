@@ -48,6 +48,19 @@ Referring beyond existing scopes is an error.
 `var^ t.member = value` introduces a member; `t.member := value` updates an existing one.
 Table literals use `member = value` and `[keyExpression] = value`.
 Mutation is visible through other references to the same table.
+`let^t.member = value` is invalid. See [Adding and updating members after construction](./objects.md#adding-and-updating-members-after-construction) for examples, including tables bound with `let^`.
+
+## Introducing or updating a member
+
+`var^t.member := value` introduces an absent member or updates an existing one.
+`var^t.member = value` only introduces it; bare `t.member := value` does not declare a new member.
+This extends ordinary tables, not the structure of definitions or instances.
+Through an annotated structural type, validity follows that annotation.
+
+## Multiple-assignment evaluation
+
+All receivers, indices, and right-hand values are read before writes occur. `a, b := b, a` swaps values.
+`a, b += x, y` applies the operation at each position. `?:=` and `?+=` check absence separately at each position, allowing other positions to update.
 
 ## Multiple values and destructuring
 
@@ -55,6 +68,7 @@ Mutation is visible through other references to the same table.
 With one tuple-returning expression, `let^a, b = call()` destructures its result.
 The number of names must match the tuple's arity.
 Tables are not implicitly destructured into names; access their elements by index.
+Nested destructuring, implicit truncation of extra values, and automatic padding of missing values are not supported.
 
 `_^` discards a value without creating a readable name. Use `_^:Type` where an annotation is needed.
 
@@ -64,7 +78,9 @@ Parameters can be reassigned inside their body. Names introduced by `with^` cann
 The focus of a counted `for^i from^…` or names supplied by iteration also cannot be reassigned by the body.
 A manually updated conditional-loop focus uses `for^var^i = …`.
 
+The language supplies no implicit global variables. Use unit-level names, imported names, and host initial bindings.
+
 Sources: [Syntax](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-([syntax.stmt.define], [syntax.stmt.compound], [syntax.stmt.visible], [syntax.stmt.member], [syntax.stmt.let],
+([syntax.stmt.member-upsert], [syntax.stmt.define], [syntax.stmt.compound], [syntax.stmt.visible], [syntax.stmt.member], [syntax.stmt.let],
 [syntax.type.destructure], [syntax.type.discard], [syntax.sub.kinds], [syntax.for.forms]);
 [Lexical structure](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/01-lexical-structure.md) ([lex.hat.repeat], [lex.scope]).

@@ -38,6 +38,10 @@ A block clause such as `do^{… catch^ Type: …}` selects by type among errors
 forwarded from the body by `try^` or similar control flow.
 If a result is bound to a name, `fits^` or pattern matching can distinguish success and failure.
 
+Subroutines and general blocks can also have `catch^` clauses. Typed `catch^ Type:` clauses are tried in order, with an untyped `catch^:` as the final fallback.
+Merely calling an error-returning operation does not enter a clause: explicit propagation through `try^` is required.
+An error originating or propagating inside a handler is not caught again by that same handler.
+
 ## Propagation
 
 `try^expression` produces the success value, or returns an error from the current subroutine.
@@ -92,8 +96,12 @@ Declared unions and narrowing provide exhaustiveness checks for error values.
 
 A panic indicates a runtime contract violation, such as a promised member being absent.
 It is distinct from an ordinary error value and cannot be caught with L^ `catch^`; it is reported to the host as an execution result.
+Panic/fault does not unwind the stack or run L^ `finally^`/`with^` cleanup.
+This differs from normal completion, `return^`, and propagation of error values, which do run cleanup.
+`panic^value` explicitly stops execution. Its operand is required, may be non-string, and is reported unchanged to the host.
+It is normally a statement, but can also be a non-returning fallback such as `catch^panic^it^`.
 Integer overflow and division by zero widen to floating point rather than producing error values.
 
 Source: [Errors](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/04-errors.md)
-([errors.kind], [errors.catch], [errors.try], [errors.exhaustive], [errors.dropped], [errors.runtime]);
-[Syntax](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md) ([syntax.type.tuple], [syntax.type.tuple-parens]).
+([errors.catch.clause], [errors.runtime.panic-finally], [errors.kind], [errors.catch], [errors.try], [errors.exhaustive], [errors.dropped], [errors.runtime]);
+[Syntax](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md) ([syntax.with.panic], [syntax.type.tuple], [syntax.type.tuple-parens]).

@@ -6,6 +6,7 @@ Statements execute code; expressions produce values. A bare calculation cannot s
 Use calls, declarations, assignments, and control statements.
 A function whose entire body is one expression returns that expression's value.
 `do^{…}` is a statement block.
+`;` can also explicitly terminate a statement; this differs from the required `;` closing an expression form.
 
 ## if^ statements and expressions
 
@@ -78,10 +79,37 @@ Patterns do not support destructuring or additional guard clauses.
 `for^` introduces a focus; not every form iterates. `repeat^` introduces no focus.
 Both `while^` and `until^` test before the body. `to^` and `downto^` explicitly specify direction.
 
+### One-time focus
+
+`for^let^name = expression if^ condition {…}` binds the name and branches once.
+Its expression form is `for^let^name = expression if^ condition: value el^: value;`.
+`for^let^name = expression do^: value;` returns a value using the focus without a condition.
+The focus can also destructure a tuple into multiple names.
+
+### Traversal rules
+
+<<< @/../sample/docs/reference/control-flow.lh{lhat}
+
+`in^` obtains an iterator through `iterate^()`. An existing coroutine returns itself as its iterator.
+`for^v in^t` traverses only array values; `for^k, v in^t` traverses pairs from both array and keyed parts.
+`t.keys^()` and `t.values^()` independently iterate all keys and all values.
+Array indices are visited in ascending order, followed by dictionary entries in unspecified order.
+`index^` is the current index during array traversal; an inner array traversal takes precedence.
+Range and reverse iterators return original indices but do not introduce `index^`.
+Deleting the current dictionary key by assigning `nil^` is allowed. Use reverse traversal when removing array elements, which shifts later positions.
+
+`step^` is positive; direction is not inferred. The endpoint and step are evaluated once at loop entry.
+To update an existing name, omit the introducer: `for^i while^… next^…`.
+The header's `next^update` is only for `while^`/`until^`; separate multiple updates with commas.
+
 ## Clauses and exits
 
 Loop clauses have the order `prolog^` → `pre^` → `first^` → `main^` → `catch^` → `last^` → `epilog^` → `finally^`.
 A body with no headings is an implicit `main^`.
+At least one of `main^`, `pre^`, `first^`, or `last^` is required as the body.
+`prologue^`, `premain^`, and `epilogue^` are aliases of `prolog^`, `pre^`, and `epilog^`.
+Clauses share the loop-body scope without leaking names outside it.
+An `in^` loop cannot have `pre^`, which would run before the element binding.
 
 | Clause | Execution |
 | --- | --- |
@@ -98,6 +126,7 @@ A body with no headings is an implicit `main^`.
 The loop targeted by a break also runs `last^` and `epilog^`.
 Inner loops crossed by a multi-level exit, and loops exited by `return^` or error propagation, run only `finally^` cleanup.
 `return^` exits the current subroutine.
+`skip^` and `continue^` are aliases of the `next^` statement. Loop updates still run before the next condition test.
 
 ## Cleanup
 
@@ -124,5 +153,8 @@ with^w = create("out") {
 - Coroutines have `dispose()`, so passing one to `with^` disposes it when the block ends.
 - The `catch^` clauses of a `with^` block do not receive errors passed by `try^` in the initializers. To receive them, wrap the whole statement in `do^{…}`.
 
+`return^`, `break^`, or similar exits from within `finally^` cannot replace an already selected exit target or result.
+Panic/fault stops do not run `finally^` or `with^` cleanup; see [Errors](./errors.md#dropped-errors-and-panic).
+
 Source: [Syntax](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-([syntax.stmt], [syntax.if], [syntax.loop], [syntax.finally], [syntax.with], [syntax.for], [syntax.match]).
+([syntax.for.keys-values], [syntax.for.reuse], [syntax.loop.next], [syntax.stmt], [syntax.if], [syntax.loop], [syntax.finally], [syntax.with], [syntax.for], [syntax.match]).

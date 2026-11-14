@@ -47,6 +47,18 @@
 具体的な使用例は[インポートとモジュール](../guide/modules.md)、
 バインディングの登録方法は[ホスト API と型を公開する](../embedding/host-api.md)を参照してください。
 
+## スクリプトと実行環境
+
+`module^` のないスクリプトの最上位では、`...` が実行元から渡された引数のテーブルです。型は `t^{any^[]}` なので、利用時に絞り込みます。
+最上位に `yield^`・`await^` を含めると、スクリプト全体がコルーチンを返します。CLI は終了まで駆動します。
+`module^` のある単位や REPL の最上位では、この中断は認めません。
+
+`L^` は機械の情報を公開する読み取り用テーブルで、`L^.modules` は登録モジュールを持ちます。
+取り込みの省略形が導入する根は登録簿への別名です。入れ子の関数からは参照のたびに登録簿を読みます。
+一方、`let^m = require^…` や `let^m = import^…` は束縛時の値を保持します。
+ホストが再読み込みした場合、既に保持した値は旧版のままであり、登録簿を辿る参照は新版へ届きます。
+同じ根を持つ子モジュールは合流しますが、L^ から登録簿にメンバを追加・変更することはできません。
+
 参照元：[モジュール](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/05-modules.md)
-（[modules.unit]、[modules.public]、[modules.require]、[modules.deps]、[modules.host.initial]、[modules.host.import]）、
+（[modules.unit.optional]、[modules.require.reload]、[modules.require.short]、[modules.host.machine]、[modules.unit]、[modules.public]、[modules.require]、[modules.deps]、[modules.host.initial]、[modules.host.import]）、
 [構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)（[syntax.enum.declare]）。

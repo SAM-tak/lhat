@@ -6,6 +6,7 @@
 呼び出し文、宣言、再代入、制御構文などを使います。
 `f^` の本体全体が式1つだけの場合は、その式を戻り値にする規則があります。
 `do^{…}` は文のブロックです。
+`;` は文の明示的な終端にも使えます。式形式を閉じる必須の `;` とは役割が異なります。
 
 ## if^ 文と if^ 式
 
@@ -78,10 +79,37 @@ for^ 対象: when^ パターン: 値 other^: 値;
 `repeat^` は焦点を導入しません。`while^`・`until^` の条件は本体より前に判定します。
 数値反復の方向は `to^`・`downto^` で明示します。
 
+### 1回だけ評価する焦点
+
+`for^let^名前 = 式 if^ 条件 {…}` は、名前を束縛して1回だけ条件分岐します。
+式形式は `for^let^名前 = 式 if^ 条件: 値 el^: 値;` です。
+`for^let^名前 = 式 do^: 値;` は、条件を付けず焦点を使って値を返す式です。
+焦点は複数の名前へのタプル分解も取れます。
+
+### 走査の規則
+
+<<< @/../sample/docs/reference/control-flow.lh{lhat}
+
+`in^` は対象の `iterate^()` で走査を取得します。既存のコルーチンは自分自身を走査として返します。
+`for^v in^t` はテーブルの配列部分の値だけ、`for^k, v in^t` は配列部分とキー付き部分の組を読みます。
+`t.keys^()`・`t.values^()` は全要素のキー・値をそれぞれ返す独立した走査です。
+順序は配列の添字順、その後に順序を約束しない辞書部分です。
+`index^` は配列走査中の現在の添字で、内側の配列走査があれば内側が優先します。
+範囲・逆順走査は元の添字を返しますが、`index^` は導入しません。
+走査で現在の辞書キーを `nil^` にする削除は可能です。配列の削除は後続が詰まるため、逆順走査を使います。
+
+`step^` は正の量です。方向は推論せず、終点と歩幅は反復の開始時に一度だけ評価します。
+既存の名前を更新する反復では、導入子を書かず `for^i while^… next^…` の形を使えます。
+頭部の `next^更新` は `while^`・`until^` 専用で、カンマで複数の更新文を書けます。
+
 ## 節と脱出
 
 反復の節は `prolog^` → `pre^` → `first^` → `main^` → `catch^` → `last^` → `epilog^` → `finally^` の順です。
 見出しのない本体は暗黙の `main^` です。
+`main^`・`pre^`・`first^`・`last^` の少なくとも1つが本体として必要です。
+`prologue^`・`premain^`・`epilogue^` はそれぞれ `prolog^`・`pre^`・`epilog^` の別綴りです。
+各節は反復本体のスコープを共有し、外側へ名前を漏らしません。
+`in^` の反復には、まだ要素を束縛していない時点の `pre^` は書けません。
 
 | 節 | 実行の機会 |
 | --- | --- |
@@ -98,6 +126,7 @@ for^ 対象: when^ パターン: 値 other^: 値;
 `break^` の脱出先では `last^`・`epilog^` も実行します。
 多段脱出で通過する内側の反復や、`return^`・エラー伝播による脱出では、後始末は `finally^` だけです。
 `return^` は現在のサブルーチンを終了します。
+`skip^`・`continue^` は文の `next^` と同じです。`next^` でも反復の更新は実行し、次回の条件判定へ進みます。
 
 ## 後始末
 
@@ -124,5 +153,8 @@ with^w = create("out") {
 - コルーチンも `dispose()` を持つため、`with^` に渡すとブロックの終了時に破棄されます。
 - `with^` のブロックの `catch^` 節は、初期化式の `try^` が渡すエラーを受けません。受けるには全体を `do^{…}` で囲みます。
 
+`finally^` の中からの `return^`・`break^` などで、既に決まった脱出先や結果を置き換えることはできません。
+panic・fault による停止では `finally^`・`with^` は実行しません。[エラー](./errors.md#取りこぼしと-panic)を参照してください。
+
 参照元：[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
-（[syntax.stmt]、[syntax.if]、[syntax.loop]、[syntax.finally]、[syntax.with]、[syntax.for]、[syntax.match]）。
+（[syntax.for.keys-values]、[syntax.for.reuse]、[syntax.loop.next]、[syntax.stmt]、[syntax.if]、[syntax.loop]、[syntax.finally]、[syntax.with]、[syntax.for]、[syntax.match]）。

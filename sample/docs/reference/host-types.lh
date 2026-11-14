@@ -1,0 +1,12 @@
+import^std.math.vector2
+
+var^v = std.math.vector2.new(1, 2)
+let^b = box^v
+v.x := 3
+print(b.get().x) # 1: the box holds a copy
+b.set(v)
+print(b.get().x) # 3
+
+let^key = constbox^v
+let^t = { [key] = "found" }
+print(t[v]) # found: lookup by the unboxed value

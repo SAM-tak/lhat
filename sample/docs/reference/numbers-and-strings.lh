@@ -1,0 +1,8 @@
+print((2.5).round(), (3.5).round()) # 2 4
+print("ff".tonumber("%x") ?? 0) # 255
+print(8 bitshift^ -1) # 4
+
+let^s = "か\u{3099}Z"
+print(s.length, s.size) # 2 7
+print(s.at(0), s.sliceBytes(6)) # が Z
+print("a,,b".split(",").join^("|")) # a||b
