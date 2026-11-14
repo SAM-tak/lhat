@@ -24,6 +24,8 @@ LTON contains the inside of a table literal, optionally preceded by imports. Rea
 
 Writing supports plain data tables, finite numbers, strings, booleans, and public enums. Cycles are errors; shared children are expanded.
 
+See [Data files (LTON)](../../guide/data-files.md) for how to write LTON and when to use it instead of `.lh`.
+
 ## Types
 
 ### LtonError

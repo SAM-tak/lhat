@@ -1,10 +1,9 @@
 # About L^
 
-L^ (elhat) is an embeddable scripting language for games and applications.
-It builds on Lua's flexible tables and coroutines with static type checking and type inference.
+**Modern & Better Lua with Visual Programming.**
 
-Text and visual programming in L^ share the same `.lh` files.
-You can view a text program as a graph and review changes using ordinary source diffs.
+L^ (elhat) is an embeddable scripting language for games and applications.
+It inherits Lua's flexible tables, coroutines, and lightweight embedding, and adds static type checking and type inference.
 
 ::: warning Under development
 L^ is in pre-1.0 development. Syntax and APIs may change.
@@ -34,6 +33,7 @@ To try the language with the CLI, follow these steps:
 - Functions (`f^`) perform calculations; procedures (`p^`) handle I/O and changes to external state.
 - Typed errors, pattern matching, coroutines, and concurrent tasks are available.
 - The C API lets a host application embed L^ and register functions and types.
+- Text and visual programming are designed to share the same `.lh` files. VS Code can display and edit them as graphs, but the graph presentation is still being improved, which limits practical use.
 
 ## Using a game engine
 

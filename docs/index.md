@@ -2,7 +2,7 @@
 layout: home
 hero:
   name: L^
-  text: テキストとビジュアルで、同じソースを。
+  text: Modern & Better Lua with Visual Programming
   tagline: An embeddable scripting language for games and applications.
   actions:
     - theme: brand

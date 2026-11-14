@@ -36,7 +36,8 @@ export const standardLibraries = [
   }),
   entry('lton', 'lton', 'L^ の記法を使う設定データ', 'Configuration data using L^ notation', [
     pair('LTON はテーブルリテラルの内側を書く形式です。先頭のインポートも使えます。読み込みでは手続きの呼び出しを許しません。', 'LTON contains the inside of a table literal, optionally preceded by imports. Reading it does not permit procedure calls.'),
-    pair('書き出しは通常のデータテーブル、有限数、文字列、真偽値、公開された列挙体に対応します。循環はエラーで、共有する子は展開して書きます。', 'Writing supports plain data tables, finite numbers, strings, booleans, and public enums. Cycles are errors; shared children are expanded.')
+    pair('書き出しは通常のデータテーブル、有限数、文字列、真偽値、公開された列挙体に対応します。循環はエラーで、共有する子は展開して書きます。', 'Writing supports plain data tables, finite numbers, strings, booleans, and public enums. Cycles are errors; shared children are expanded.'),
+    pair('書き方と `.lh` との使い分けは[データファイル（LTON）](../../guide/data-files.md)を参照してください。', 'See [Data files (LTON)](../../guide/data-files.md) for how to write LTON and when to use it instead of `.lh`.')
   ], {
     parse: pair('文字列からテーブルを読む。', 'Read a table from text.'), load: pair('パスを指定してテーブルを読む。', 'Read a table from a path.'), stringify: pair('テーブルを LTON 文字列にする。', 'Write a table as LTON text.'), save: pair('パスとテーブルを指定してファイルへ保存。', 'Save a table to the supplied path.')
   }),

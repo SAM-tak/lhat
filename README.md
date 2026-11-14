@@ -21,8 +21,8 @@ this interoperability, so a program can work with both text-based and visual
 tools throughout its development.
 
 - **Visual programming, built into the design.** A shared source format for code
-  and graphs. The visual editor is a work in progress: its graph view in VS Code
-  is nearly complete, while editing in the graph is not finished yet.
+  and graphs. In VS Code, graphs can be both viewed and edited; the graph presentation
+  is still being improved, which limits practical use for now.
 - **Type safety with less annotation.** Static checking and bidirectional type
   inference help catch mistakes early while keeping everyday code concise.
 - **Tools and engine integrations you can use today.** VS Code language support,

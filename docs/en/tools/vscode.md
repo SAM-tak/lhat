@@ -43,6 +43,6 @@ Embedding in a host application also requires the host's type information and de
 
 ## Visual programming
 
-The extension also includes work on displaying and editing `.lh` source as a graph.
-The visual editor is still under development, with limitations in its interface and practical editing experience.
+The extension can display and edit `.lh` source as a graph.
+The graph presentation is still being improved, which limits practical use.
 For current capabilities and usage, see the [extension documentation](https://github.com/SAM-tak/lhat-vscode-extension).

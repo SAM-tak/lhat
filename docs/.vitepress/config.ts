@@ -10,6 +10,7 @@ const pages = {
     { text: '最初のプログラム', link: '/ja/guide/first-program' },
     { text: '言語の基本', link: '/ja/guide/basics' },
     { text: 'インポートとモジュール', link: '/ja/guide/modules' },
+    { text: 'データファイル（LTON）', link: '/ja/guide/data-files' },
     { text: 'バイナリ保存とストリーム', link: '/ja/guide/binary-data' },
     { text: '並行処理', link: '/ja/guide/tasks' },
     { text: 'VS Code の使い方', link: '/ja/tools/vscode' }
@@ -20,6 +21,7 @@ const pages = {
     { text: 'Your first program', link: '/en/guide/first-program' },
     { text: 'Language basics', link: '/en/guide/basics' },
     { text: 'Imports and modules', link: '/en/guide/modules' },
+    { text: 'Data files (LTON)', link: '/en/guide/data-files' },
     { text: 'Binary data and streams', link: '/en/guide/binary-data' },
     { text: 'Concurrency', link: '/en/guide/tasks' },
     { text: 'Using VS Code', link: '/en/tools/vscode' }

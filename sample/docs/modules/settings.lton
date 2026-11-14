@@ -1,0 +1,4 @@
+# Window settings: the inside of a table literal, without braces
+title = "demo",
+width = 480 * 2,
+height = 540,

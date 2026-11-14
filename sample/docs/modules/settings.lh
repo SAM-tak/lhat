@@ -1,0 +1,7 @@
+import^std.lton
+
+let^conf = try^std.lton.load("sample/docs/modules/settings.lton")
+print(conf["width"]) # 960
+if^conf fits^t^{ title:string^, width:number^, height:number^} {
+    print(conf.title, conf.width * conf.height) # demo 518400
+}
