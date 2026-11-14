@@ -199,6 +199,23 @@ Separating calculations from I/O and external updates lets the type checker enfo
 This `divide` returns an error when the divisor is 0, and the division result otherwise.
 `catch^0` substitutes `0` when an error is returned, so this program prints `0`.
 
+## Cleaning up resources
+
+Bind values that must be closed after use, such as files and sockets, with `with^`.
+When the block ends, the bound value's `dispose()` is called automatically.
+
+<<< @/../sample/docs/with.lh{lhat}
+
+A `def^` type can provide `dispose`.
+Consecutive `with^` lines share the following block, and values are disposed in reverse order.
+A `finally^:` clause in the same block runs first.
+`dispose()` is also called when `return^` or error propagation leaves the block.
+
+Passing a value without `dispose()` is a type error.
+Names bound by `with^` cannot be reassigned, and `with^` cannot appear inside a function (`f^`) body.
+Standard library files, regular expressions, threads, and more have `dispose()`, so they work with `with^`.
+For the detailed rules, see [Cleanup in control flow](../reference/control-flow.md#cleanup).
+
 ## More examples
 
 The [sample directory](https://github.com/SAM-tak/lhat/tree/main/sample) includes examples of

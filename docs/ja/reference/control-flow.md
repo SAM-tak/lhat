@@ -101,10 +101,26 @@ for^ 対象: when^ パターン: 値 other^: 値;
 
 ## 後始末
 
-`finally^:` はブロック末尾の節です。通常終了、`break^`、`return^`、コルーチンの破棄時にも実行します。
+`finally^:` はブロック末尾の節です。通常終了、`break^`、`return^`、エラー伝播、コルーチンの破棄時にも実行します。
 返り値を変更できず、`f^` の本体には置けません。
-`with^名前 = 式 {…}` は `dispose()` を持つ資源を束縛し、スコープ終了時に定義の逆順で破棄します。
-同じブロックの `finally^` が先、`dispose()` が後です。`dispose()` はエラーを返しません。
+
+`with^名前 = 式 {…}` は `dispose()` を持つ資源を束縛し、ブロックの終了時に `dispose()` を呼びます。
+`with^名前 = 式` を続けて書くと、直後のブロックを共有し、定義の逆順で破棄します。
+
+```lhat
+with^r = open("data")
+with^w = create("out") {
+    copy(r, w)
+}   # w.dispose()、r.dispose() の順
+```
+
+- 破棄は `finally^` と同じく、通常終了、`break^`、`return^`、エラー伝播、コルーチンの破棄で実行します。
+- 同じブロックの `finally^` が先、`dispose()` が後です。
+- 値は、引数を取らず値を返さない `dispose()` を持つ必要があります。判定は構造的で、満たさない値は strict の型検査でエラーです。
+- 導入する名前は `let^` と同じく再代入できません。`with^名前 := 式` も書けません。
+- `f^` の本体には書けません。
+- `dispose()` はエラーを返しません。失敗しうる後始末は、`flush()` などの別の操作として先に呼びます。
+- コルーチンも `dispose()` を持つため、`with^` に渡すとブロックの終了時に破棄されます。
 
 参照元：[構文](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
 （[syntax.stmt]、[syntax.if]、[syntax.loop]、[syntax.finally]、[syntax.with]、[syntax.for]、[syntax.match]）。

@@ -101,10 +101,26 @@ Inner loops crossed by a multi-level exit, and loops exited by `return^` or erro
 
 ## Cleanup
 
-`finally^:` is a block's final clause, executed on normal completion, `break^`, `return^`, and coroutine disposal.
+`finally^:` is a block's final clause, executed on normal completion, `break^`, `return^`, error propagation, and coroutine disposal.
 It cannot change the return value or appear inside an `f^` body.
-`with^name = expression {…}` binds a resource with `dispose()`, disposing resources in reverse declaration order on scope exit.
-In the same block, `finally^` runs before disposal. `dispose()` does not return errors.
+
+`with^name = expression {…}` binds a resource with `dispose()` and calls `dispose()` when the block ends.
+Consecutive `with^name = expression` lines share the following block and are disposed in reverse declaration order.
+
+```lhat
+with^r = open("data")
+with^w = create("out") {
+    copy(r, w)
+}   # w.dispose(), then r.dispose()
+```
+
+- Like `finally^`, disposal runs on normal completion, `break^`, `return^`, error propagation, and coroutine disposal.
+- In the same block, `finally^` runs first and `dispose()` after it.
+- The value must have a `dispose()` that takes no arguments and returns nothing. The check is structural; a value that fails it is a type error in strict mode.
+- As with `let^`, the bound name cannot be reassigned, and `with^name := expression` is not allowed.
+- `with^` cannot appear inside an `f^` body.
+- `dispose()` does not return errors. Call fallible cleanup, such as `flush()`, as a separate operation beforehand.
+- Coroutines have `dispose()`, so passing one to `with^` disposes it when the block ends.
 
 Source: [Syntax](https://github.com/SAM-tak/lhat/blob/main/DesignDocuments/02-syntax.md)
 ([syntax.stmt], [syntax.if], [syntax.loop], [syntax.finally], [syntax.with], [syntax.for], [syntax.match]).

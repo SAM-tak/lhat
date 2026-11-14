@@ -1,0 +1,21 @@
+let^Resource = def^{
+    self^{ name = "" },
+    dispose = p^self^ {
+        print("close", self^.name)
+    },
+}
+
+let^use = p^ {
+    with^a = new^Resource{ name = "a" }
+    with^b = new^Resource{ name = "b" } {
+        print("use", a.name, b.name)
+    finally^:
+        print("finally")
+    }
+}
+
+use()
+# use a b
+# finally
+# close b
+# close a
