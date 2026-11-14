@@ -1,0 +1,7 @@
+import^std.binary
+
+let^bytes = try^std.binary.encode({ name = "player", level = 3 })
+let^value = try^std.binary.decode(bytes)
+if^value fits^t^{ name:string^, level:number^} {
+    print(value.name, value.level) # player 3
+}

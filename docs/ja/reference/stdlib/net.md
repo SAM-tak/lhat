@@ -8,6 +8,16 @@
 import^std.net
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/net.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/net.lh
+```
+
 ## 使い方と規則
 
 アドレスとポートを指定して送受信します。受信は待機せず、データがなければタプルの先頭が `nil^` です。

@@ -8,6 +8,20 @@
 import^std.math.complex
 ```
 
+## 使用例
+
+`std.math.complex.Complex` は値の型です。成分を指定して構築するには、モジュール直下の `std.math.complex.new(...)` を使います。モジュールに別名を付ければ `別名.new(...)` と書けます。
+
+型にも別名を付け、型注釈に使えます。構築関数の `new` はモジュールの関数であり、`std.math.complex.Complex.new(...)` や `new^std.math.complex.Complex{…}` では構築できません。
+
+<<< @/../sample/docs/stdlib/math-complex.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/math-complex.lh
+```
+
 ## 使い方と規則
 
 `new(re, im)` は実部と虚部を取ります。複素数同士の `*` は複素積です。零の正規化は零のままです。

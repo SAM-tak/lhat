@@ -8,6 +8,16 @@ Mathematical functions and constants.
 import^std.math
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/math.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/math.lh
+```
+
 ## Usage and rules
 
 Trigonometric angles are radians. `atan2` takes `(y, x)`; two-argument `log` takes `(value, base)`.

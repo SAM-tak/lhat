@@ -8,6 +8,20 @@
 import^std.math.quaternion
 ```
 
+## 使用例
+
+`std.math.quaternion.Quaternion` は値の型です。成分を指定して構築するには、モジュール直下の `std.math.quaternion.new(...)` を使います。モジュールに別名を付ければ `別名.new(...)` と書けます。
+
+型にも別名を付け、型注釈に使えます。構築関数の `new` はモジュールの関数であり、`std.math.quaternion.Quaternion.new(...)` や `new^std.math.quaternion.Quaternion{…}` では構築できません。
+
+<<< @/../sample/docs/stdlib/math-quaternion.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/math-quaternion.lh
+```
+
 ## 使い方と規則
 
 `new(x, y, z, w)` の `w` はスカラー部です。クォータニオン同士の `*` はハミルトン積です。`fromAxisAngle(axis, radians)` はラジアンを取り、零の軸では `nil^`。`std.math.vector3` の登録が必要です。

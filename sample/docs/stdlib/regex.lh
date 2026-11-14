@@ -1,0 +1,6 @@
+import^std.regex
+
+with^digits = try^std.regex.new("[0-9]+") {
+    print(try^digits.match("item42")) # 42
+    print(try^digits.gsub("item42 and item7", "#")) # item# and item#
+}

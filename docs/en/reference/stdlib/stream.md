@@ -8,6 +8,16 @@ In-memory byte streams.
 import^std.stream
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/stream.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/stream.lh
+```
+
 ## Usage and rules
 
 `MemoryReader.read(buffer)` returns the bytes read, or 0 at end of input. Obtain written data with `MemoryWriter.toString()`.

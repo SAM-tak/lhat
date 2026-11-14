@@ -8,6 +8,18 @@ Shared system errors.
 import^std.sys
 ```
 
+## Example
+
+This example constructs an error value explicitly to demonstrate handling; it does not exhaust memory.
+
+<<< @/../sample/docs/stdlib/sys.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/sys.lh
+```
+
 ## Usage and rules
 
 `std.sys.Error.OutOfMemory` is the out-of-memory type shared by multiple libraries. This module has no standalone functions.

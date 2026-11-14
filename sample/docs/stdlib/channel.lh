@@ -1,0 +1,7 @@
+import^std.channel
+
+with^queue = try^std.channel.new(number^) {
+    let^id = try^queue.push(42)
+    print(queue.pop()) # 42
+    print(queue.hasRead(id)) # true
+}

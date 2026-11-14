@@ -1,0 +1,11 @@
+import^std.math.vector2
+
+let^a = std.math.vector2.new(3, 4)
+let^vec2 = import^std.math.vector2
+let^b = vec2.new(3, 4)
+let^Vector2 = std.math.vector2.Vector2
+let^origin:Vector2 = vec2.new(0, 0)
+print(a.length(), b.length()) # 5.0 5.0
+
+let^moved = origin + b
+print(moved.x, moved.y) # 3.0 4.0

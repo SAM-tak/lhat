@@ -8,6 +8,16 @@ Regular expressions.
 import^std.regex
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/regex.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/regex.lh
+```
+
 ## Usage and rules
 
 Compile reused patterns with `new(pattern)`. Module-level `match`, `gmatch`, and `gsub` take `(pattern, subject, …)`.

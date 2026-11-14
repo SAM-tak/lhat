@@ -28,6 +28,20 @@
 | [std.sys](./sys.md) | 共通のシステムエラー |
 | [std.debug](./debug.md) | デバッグ出力とスタック情報 |
 
+## ホスト値の構築
+
+標準ライブラリのホスト値は次の5種類です。成分を指定した構築には、それぞれのモジュール直下の `new` 関数を使います。型名は型注釈などに使い、`型.new(...)` や `new^型{…}` による構築には対応していません。
+
+| 型 | 構築関数 |
+| --- | --- |
+| [`std.math.complex.Complex`](./math-complex.md) | `std.math.complex.new(...)` |
+| [`std.math.vector2.Vector2`](./math-vector2.md) | `std.math.vector2.new(...)` |
+| [`std.math.vector3.Vector3`](./math-vector3.md) | `std.math.vector3.new(...)` |
+| [`std.math.quaternion.Quaternion`](./math-quaternion.md) | `std.math.quaternion.new(...)` |
+| [`std.math.vector4.Vector4`](./math-vector4.md) | `std.math.vector4.new(...)` |
+
+`let^vec2 = import^std.math.vector2` とモジュールに別名を付ければ、`vec2.new(...)` と書けます。`let^Vector2 = std.math.vector2.Vector2` は型の別名で、用途が異なります。`zero()`・`one()`・`identity()` など、値を作る別の関数も各モジュールで提供しています。
+
 ## シグネチャの読み方
 
 シグネチャの `f^`・`p^` は関数・手続き、`self^` は受け手です。`A|B` は成功値とエラーなどの合併で、エラーは `try^`・`catch^` などで扱います。同名の複数の署名はオーバーロードです。

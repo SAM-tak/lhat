@@ -8,6 +8,16 @@ JSON encoding and decoding.
 import^std.json
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/json.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/json.lh
+```
+
 ## Usage and rules
 
 A nonempty table containing only an array part becomes a JSON array; other tables become objects. An empty table becomes `{}`.

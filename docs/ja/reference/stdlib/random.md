@@ -8,6 +8,16 @@
 import^std.random
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/random.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/random.lh
+```
+
 ## 使い方と規則
 
 `new(seed)` は0を含む同じシードから同じ系列を作ります。引数なしは OS からシードを得ます。暗号用途の乱数ではありません。

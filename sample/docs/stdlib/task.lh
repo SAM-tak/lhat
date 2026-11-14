@@ -1,0 +1,7 @@
+import^std.task
+
+try^std.task.start(2)
+let^left = try^std.task.async(f^{ 20 })
+let^right = try^std.task.async(f^{ 22 })
+print((try^std.task.await(left)) + (try^std.task.await(right))) # 42
+std.task.stop()

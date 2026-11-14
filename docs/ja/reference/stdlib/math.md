@@ -8,6 +8,16 @@
 import^std.math
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/math.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/math.lh
+```
+
 ## 使い方と規則
 
 三角関数の角度はラジアンです。`atan2` は `(y, x)`、底を指定する `log` は `(値, 底)` の順です。

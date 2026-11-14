@@ -1,0 +1,12 @@
+import^std.math.quaternion
+import^std.math.vector3
+
+let^a = std.math.quaternion.new(0, 0, 0, 1)
+let^quat = import^std.math.quaternion
+let^b = quat.new(0, 0, 0, 1)
+let^Quaternion = std.math.quaternion.Quaternion
+let^c:Quaternion = quat.new(0, 0, 0, 1)
+let^rotation = a * b * c
+let^point = std.math.vector3.new(1, 2, 3)
+let^rotated = rotation.rotate(point)
+print(rotated.x, rotated.y, rotated.z) # 1.0 2.0 3.0

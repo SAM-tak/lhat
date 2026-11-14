@@ -1,0 +1,9 @@
+import^std.math.complex
+
+let^a = std.math.complex.new(1, 2)
+let^complex = import^std.math.complex
+let^b = complex.new(3, 4)
+let^Complex = std.math.complex.Complex
+let^unit:Complex = complex.new(1, 0)
+let^product = a * b * unit
+print(product.re, product.im) # -5.0 10.0

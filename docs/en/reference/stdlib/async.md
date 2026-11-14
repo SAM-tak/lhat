@@ -8,6 +8,16 @@ Timers and external completion waits.
 import^std.async
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/async.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/async.lh
+```
+
 ## Usage and rules
 
 IDs are managed per machine. Delays and wait limits use seconds. `wait(0)` polls ready completions without sleeping.

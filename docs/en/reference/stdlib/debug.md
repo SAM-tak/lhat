@@ -8,6 +8,16 @@ Debug output and stack information.
 import^std.debug
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/debug.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/debug.lh
+```
+
 ## Usage and rules
 
 `log` is exposed as `f^` for debugging and can be called inside functions. It writes to standard output.

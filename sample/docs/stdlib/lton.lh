@@ -1,0 +1,8 @@
+import^std.lton
+
+let^value = try^std.lton.parse('name = "player", level = 3')
+if^value fits^t^{ name:string^, level:number^} {
+    print(value.name, value.level) # player 3
+}
+let^text = try^std.lton.stringify(value)
+print(text.length > 0) # true

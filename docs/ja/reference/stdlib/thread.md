@@ -8,6 +8,16 @@
 import^std.thread
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/thread.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/thread.lh
+```
+
 ## 使い方と規則
 
 `spawn(手続き, 引数…)` は新しいスレッドで手続きを実行します。引数と捕捉はコピー可能な形で受け渡します。

@@ -8,6 +8,16 @@ JSON の保存と復元。
 import^std.json
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/json.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/json.lh
+```
+
 ## 使い方と規則
 
 空でない配列部分だけのテーブルは JSON 配列、それ以外はオブジェクトです。空テーブルは `{}` になります。

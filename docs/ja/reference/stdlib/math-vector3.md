@@ -8,6 +8,20 @@
 import^std.math.vector3
 ```
 
+## 使用例
+
+`std.math.vector3.Vector3` は値の型です。成分を指定して構築するには、モジュール直下の `std.math.vector3.new(...)` を使います。モジュールに別名を付ければ `別名.new(...)` と書けます。
+
+型にも別名を付け、型注釈に使えます。構築関数の `new` はモジュールの関数であり、`std.math.vector3.Vector3.new(...)` や `new^std.math.vector3.Vector3{…}` では構築できません。
+
+<<< @/../sample/docs/stdlib/math-vector3.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/math-vector3.lh
+```
+
 ## 使い方と規則
 
 ベクトル同士の `*`・`/` は成分ごと、数値との演算はスカラーによる拡大・縮小です。`lerp` は係数を0〜1に制限しません。零ベクトルの正規化は零のままです。

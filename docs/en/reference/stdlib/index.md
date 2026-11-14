@@ -28,6 +28,20 @@ This list covers modules registered by the CLI. Register the modules you need in
 | [std.sys](./sys.md) | Shared system errors |
 | [std.debug](./debug.md) | Debug output and stack information |
 
+## Constructing host values
+
+The standard library provides the following five host-value types. To construct them from components, use `new` directly on their module. Type names are used in annotations and similar contexts; construction with `Type.new(...)` or `new^Type{…}` is not supported.
+
+| Type | Constructor |
+| --- | --- |
+| [`std.math.complex.Complex`](./math-complex.md) | `std.math.complex.new(...)` |
+| [`std.math.vector2.Vector2`](./math-vector2.md) | `std.math.vector2.new(...)` |
+| [`std.math.vector3.Vector3`](./math-vector3.md) | `std.math.vector3.new(...)` |
+| [`std.math.quaternion.Quaternion`](./math-quaternion.md) | `std.math.quaternion.new(...)` |
+| [`std.math.vector4.Vector4`](./math-vector4.md) | `std.math.vector4.new(...)` |
+
+Aliasing a module with `let^vec2 = import^std.math.vector2` allows `vec2.new(...)`. In contrast, `let^Vector2 = std.math.vector2.Vector2` aliases the type. Individual modules also offer other value factories such as `zero()`, `one()`, and `identity()`.
+
 ## Reading signatures
 
 In signatures, `f^` and `p^` indicate functions and procedures, and `self^` marks a receiver. `A|B` is a union, such as success and error results; handle errors with `try^`, `catch^`, or narrowing. Multiple signatures for a name are overloads.

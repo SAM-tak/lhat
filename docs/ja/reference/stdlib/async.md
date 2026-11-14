@@ -8,6 +8,16 @@
 import^std.async
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/async.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/async.lh
+```
+
 ## 使い方と規則
 
 ID は機械ごとに管理されます。期限と待機上限の単位は秒です。`wait(0)` はスリープせず準備済みの完了を取得します。

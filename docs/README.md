@@ -24,6 +24,8 @@ npm run docs:stdlib -- build/docs-host-api.json
 
 Windows の CLI は `build/release/lhat.exe` です。
 モジュール、API の説明、注意点を変更するときは `.vitepress/stdlib.mjs` を編集します。
+使用例は `sample/docs/stdlib/` にモジュールごとの `.lh` ファイルを置き、日英のページから同じファイルを読み込みます。
+例を更新したら CLI で型検査・実行し、出力コメントとの一致を確認してください。
 生成後は実装との対応を確認し、変更したページの翻訳記録を更新してビルドします。
 生成済みの Markdown は Git に含めるため、ドキュメントのビルド時に CLI は不要です。
 

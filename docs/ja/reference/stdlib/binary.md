@@ -8,6 +8,16 @@
 import^std.binary
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/binary.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/binary.lh
+```
+
 ## 使い方と規則
 
 モジュールの `encode/decode` はスキーマ不要のデータ保存、`Format.encode/decode` は型とビット幅を決める固定形式です。

@@ -8,6 +8,16 @@ Runtime source loading.
 import^std.load
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/load.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/load.lh
+```
+
 ## Usage and rules
 
 `file(path)` and `text(source, name)` return a callable procedure; call it to run the loaded body.

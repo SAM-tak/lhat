@@ -1,0 +1,4 @@
+let^math = import^std.math
+print(math.sqrt(9)) # 3.0
+print(math.lerp(10, 20, 0.5)) # 15.0
+print(math.min(8, 3, 5)) # 3

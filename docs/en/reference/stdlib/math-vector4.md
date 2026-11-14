@@ -8,6 +8,20 @@
 import^std.math.vector4
 ```
 
+## Example
+
+`std.math.vector4.Vector4` is the value type. To construct a value from components, use `std.math.vector4.new(...)` directly on the module. Aliasing the module also allows `alias.new(...)`.
+
+You can also alias the type for annotations. The constructor `new` belongs to the module; `std.math.vector4.Vector4.new(...)` and `new^std.math.vector4.Vector4{…}` are not supported construction forms.
+
+<<< @/../sample/docs/stdlib/math-vector4.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/math-vector4.lh
+```
+
 ## Usage and rules
 
 Vector `*` and `/` are component-wise; numeric operands scale values. `lerp` does not clamp its factor to 0–1. Normalizing a zero vector leaves it zero.

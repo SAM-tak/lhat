@@ -8,6 +8,16 @@
 import^std.debug
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/debug.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/debug.lh
+```
+
 ## 使い方と規則
 
 `log` はデバッグのため `f^` として公開され、関数内からも呼べます。出力先は標準出力です。

@@ -1,0 +1,7 @@
+import^std.debug
+
+let^double = f^n:number^{
+    let^_^= std.debug.log("calculating")
+    return^n * 2
+}
+print(double(21)) # calculating, then 42

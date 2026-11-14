@@ -1,0 +1,11 @@
+import^std.stream
+import^std.binary
+
+with^reader = try^std.stream.reader("hello")
+with^writer = try^std.stream.writer()
+with^buffer = std.binary.bytes() {
+    buffer.resize(5)
+    print(try^reader.read(buffer)) # 5
+    try^writer.write(buffer)
+    print(try^writer.toString()) # hello
+}

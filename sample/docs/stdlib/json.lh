@@ -1,0 +1,7 @@
+import^std.json
+
+let^text = try^std.json.encode({ name = "player", level = 3 })
+let^value = try^std.json.decode(text)
+if^value fits^t^{ name:string^, level:number^} {
+    print(value.name, value.level) # player 3
+}

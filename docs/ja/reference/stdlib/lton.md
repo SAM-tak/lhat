@@ -8,6 +8,16 @@ L^ の記法を使う設定データ。
 import^std.lton
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/lton.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/lton.lh
+```
+
 ## 使い方と規則
 
 LTON はテーブルリテラルの内側を書く形式です。先頭のインポートも使えます。読み込みでは手続きの呼び出しを許しません。

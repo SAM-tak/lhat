@@ -1,0 +1,8 @@
+import^std.random
+
+with^rng = try^std.random.new(42) {
+    let^state = rng.save()
+    let^roll = try^rng.rangeint(1, 6)
+    try^rng.load(state)
+    print(roll = (try^rng.rangeint(1, 6))) # true
+}

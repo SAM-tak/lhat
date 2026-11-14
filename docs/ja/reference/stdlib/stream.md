@@ -8,6 +8,16 @@
 import^std.stream
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/stream.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/stream.lh
+```
+
 ## 使い方と規則
 
 `MemoryReader.read(buffer)` は実際に読めたバイト数を返します。終端は0です。`MemoryWriter.toString()` で書き込み結果を取得します。

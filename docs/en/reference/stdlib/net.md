@@ -8,6 +8,16 @@ Nonblocking UDP networking.
 import^std.net
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/net.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/net.lh
+```
+
 ## Usage and rules
 
 Send and receive using addresses and ports. Receiving never waits; the first tuple item is `nil^` when no data is available.

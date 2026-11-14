@@ -8,6 +8,16 @@ Individual OS threads.
 import^std.thread
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/thread.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/thread.lh
+```
+
 ## Usage and rules
 
 `spawn(procedure, arguments…)` runs a procedure on a new thread, transporting arguments and captured values.

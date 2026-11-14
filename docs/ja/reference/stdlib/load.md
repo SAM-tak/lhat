@@ -8,6 +8,16 @@
 import^std.load
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/load.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/load.lh
+```
+
 ## 使い方と規則
 
 `file(path)` と `text(source, name)` は呼び出せる手続きを返します。読み込んだ本体の実行は、その手続きを呼んだときです。

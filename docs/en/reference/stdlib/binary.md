@@ -8,6 +8,16 @@ Binary data and fixed-bit formats.
 import^std.binary
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/binary.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/binary.lh
+```
+
 ## Usage and rules
 
 Module-level `encode/decode` store data without a schema; `Format.encode/decode` use a typed, fixed-bit layout.

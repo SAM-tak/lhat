@@ -8,6 +8,16 @@ Concurrent tasks on a worker pool.
 import^std.task
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/task.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/task.lh
+```
+
 ## Usage and rules
 
 `start(n)` selects the worker count; omission uses the core count. `async` accepts an unstarted coroutine or a no-argument closure.

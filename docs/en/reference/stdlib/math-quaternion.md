@@ -8,6 +8,20 @@ Quaternions.
 import^std.math.quaternion
 ```
 
+## Example
+
+`std.math.quaternion.Quaternion` is the value type. To construct a value from components, use `std.math.quaternion.new(...)` directly on the module. Aliasing the module also allows `alias.new(...)`.
+
+You can also alias the type for annotations. The constructor `new` belongs to the module; `std.math.quaternion.Quaternion.new(...)` and `new^std.math.quaternion.Quaternion{…}` are not supported construction forms.
+
+<<< @/../sample/docs/stdlib/math-quaternion.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/math-quaternion.lh
+```
+
 ## Usage and rules
 
 In `new(x, y, z, w)`, `w` is the scalar part. Quaternion `*` is the Hamilton product. `fromAxisAngle(axis, radians)` takes radians and returns `nil^` for a zero axis. Registration of `std.math.vector3` is required.

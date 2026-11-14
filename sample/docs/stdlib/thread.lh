@@ -1,0 +1,6 @@
+import^std.thread
+
+let^work = p^... -> any^{ return^42 }
+with^worker = try^std.thread.spawn(work) {
+    print(worker.join() catch^panic^it^) # 42
+}

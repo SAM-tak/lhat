@@ -1,0 +1,6 @@
+import^std.async
+
+let^id = std.async.timer(0)
+let^ready = std.async.wait(0)
+print(ready = id) # true
+print(std.async.pending()) # 0

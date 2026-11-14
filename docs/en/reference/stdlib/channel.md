@@ -8,6 +8,16 @@ Value queues between machines.
 import^std.channel
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/channel.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/channel.lh
+```
+
 ## Usage and rules
 
 `new(T)` creates `Channel<T>`; `named(name, T)` accesses a shared named channel. Untyped forms are also available.

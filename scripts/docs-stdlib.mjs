@@ -22,7 +22,7 @@ for (const item of [...api.types, ...api.functions]) {
 
 const labels = {
   ja: {
-    index: '標準ライブラリ', module: 'モジュール', purpose: '用途', usage: '取り込み', notes: '使い方と規則', types: '型',
+    index: '標準ライブラリ', module: 'モジュール', purpose: '用途', usage: '取り込み', examples: '使用例', notes: '使い方と規則', types: '型',
     functions: '関数', members: 'メソッドと演算子', constants: '定数', fields: 'フィールド', variants: 'エラー種別',
     value: '値', name: '名前', type: '型', source: '実装と登録',
     disposal: '資源への参照を解放します。',
@@ -43,7 +43,7 @@ const labels = {
     further: '言語コアの規則は[概覧](../index.md)、利用例は[ガイド](../../index.md)を参照してください。'
   },
   en: {
-    index: 'Standard library', module: 'Module', purpose: 'Purpose', usage: 'Import', notes: 'Usage and rules', types: 'Types',
+    index: 'Standard library', module: 'Module', purpose: 'Purpose', usage: 'Import', examples: 'Example', notes: 'Usage and rules', types: 'Types',
     functions: 'Functions', members: 'Methods and operators', constants: 'Constants', fields: 'Fields', variants: 'Error kinds',
     value: 'Value', name: 'Name', type: 'Type', source: 'Implementation and registration',
     disposal: 'Release the reference to the resource.',
@@ -80,6 +80,16 @@ for (const locale of ['ja', 'en']) {
   const index = [`# ${t.index}`, t.intro, t.availability,
     `| ${t.module} | ${t.purpose} |\n| --- | --- |\n` + standardLibraries.map(module =>
       `| [${module.name}](./${filename(module.name)}) | ${module[locale]} |`).join('\n'),
+    `## ${locale === 'ja' ? 'ホスト値の構築' : 'Constructing host values'}`,
+    locale === 'ja'
+      ? '標準ライブラリのホスト値は次の5種類です。成分を指定した構築には、それぞれのモジュール直下の `new` 関数を使います。型名は型注釈などに使い、`型.new(...)` や `new^型{…}` による構築には対応していません。'
+      : 'The standard library provides the following five host-value types. To construct them from components, use `new` directly on their module. Type names are used in annotations and similar contexts; construction with `Type.new(...)` or `new^Type{…}` is not supported.',
+    `| ${t.type} | ${locale === 'ja' ? '構築関数' : 'Constructor'} |\n| --- | --- |\n` + api.types
+      .filter(type => type.kind === 'hostvalue' && moduleNames.has(type.module))
+      .map(type => `| [${code(`${type.module}.${type.name}`)}](./${filename(type.module)}) | ${code(`${type.module}.new(...)`)} |`).join('\n'),
+    locale === 'ja'
+      ? '`let^vec2 = import^std.math.vector2` とモジュールに別名を付ければ、`vec2.new(...)` と書けます。`let^Vector2 = std.math.vector2.Vector2` は型の別名で、用途が異なります。`zero()`・`one()`・`identity()` など、値を作る別の関数も各モジュールで提供しています。'
+      : 'Aliasing a module with `let^vec2 = import^std.math.vector2` allows `vec2.new(...)`. In contrast, `let^Vector2 = std.math.vector2.Vector2` aliases the type. Individual modules also offer other value factories such as `zero()`, `one()`, and `identity()`.',
     `## ${locale === 'ja' ? 'シグネチャの読み方' : 'Reading signatures'}`, t.signatures, t.generic, t.further]
   await writeFile(path.join(directory, 'index.md'), index.join('\n\n') + '\n')
 
@@ -89,6 +99,26 @@ for (const locale of ['ja', 'en']) {
     if (!types.length && !functions.length) throw new Error(`Module missing from host API: ${module.name}`)
     const content = [`# ${module.name}`, module[locale] + (locale === 'ja' ? '。' : '.'),
       `## ${t.usage}`, fence(`import^${module.name}`, 'lhat')]
+    const sample = `sample/docs/stdlib/${filename(module.name).replace(/\.md$/, '.lh')}`
+    // Read before linking so a missing executable example fails generation.
+    await readFile(new URL(`../${sample}`, import.meta.url), 'utf8')
+    content.push(`## ${t.examples}`)
+    const valueType = types.find(type => type.kind === 'hostvalue')
+    if (valueType) {
+      const fullType = `${module.name}.${valueType.name}`
+      content.push(locale === 'ja'
+        ? `${code(fullType)} は値の型です。成分を指定して構築するには、モジュール直下の ${code(`${module.name}.new(...)`)} を使います。モジュールに別名を付ければ ${code('別名.new(...)')} と書けます。`
+        : `${code(fullType)} is the value type. To construct a value from components, use ${code(`${module.name}.new(...)`)} directly on the module. Aliasing the module also allows ${code('alias.new(...)')}.`,
+      locale === 'ja'
+        ? `型にも別名を付け、型注釈に使えます。構築関数の ${code('new')} はモジュールの関数であり、${code(`${fullType}.new(...)`)} や ${code(`new^${fullType}{…}`)} では構築できません。`
+        : `You can also alias the type for annotations. The constructor ${code('new')} belongs to the module; ${code(`${fullType}.new(...)`)} and ${code(`new^${fullType}{…}`)} are not supported construction forms.`)
+    }
+    if (module.name === 'std.sys') content.push(locale === 'ja'
+      ? 'エラーの処理方法を示すため、例ではエラー値を明示的に作っています。実際にメモリを使い切る操作は行いません。'
+      : 'This example constructs an error value explicitly to demonstrate handling; it does not exhaust memory.')
+    content.push(`<<< @/../${sample}{lhat}`,
+      locale === 'ja' ? 'リポジトリのルートから実行できます。' : 'Run from the repository root:',
+      fence(`lhat ${sample}`, 'sh'))
     const notes = module.notes.map(note => note[locale])
     if (module.name.startsWith('std.math.vector')) notes.push(t.vectorNotes)
     if (module.name === 'std.math.vector2') notes.push(t.vector2Notes)

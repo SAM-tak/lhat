@@ -8,6 +8,16 @@
 import^std.task
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/task.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/task.lh
+```
+
 ## 使い方と規則
 
 `start(n)` はワーカー数を指定し、引数なしならコア数を使います。`async` は未開始コルーチンか引数なしの閉包を受け取ります。

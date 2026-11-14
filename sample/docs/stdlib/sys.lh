@@ -1,0 +1,4 @@
+import^std.sys
+
+let^message = (new^std.sys.Error.OutOfMemory { message = "allocation failed" }) catch^it^.message
+print(message) # allocation failed

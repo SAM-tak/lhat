@@ -1,0 +1,7 @@
+import^std.net
+
+with^socket = try^std.net.udp() {
+    try^socket.bind("127.0.0.1", 0)
+    let^address, port = socket.getLocal()
+    print(address, port > 0) # 127.0.0.1 true
+}

@@ -8,6 +8,16 @@
 import^std.regex
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/regex.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/regex.lh
+```
+
 ## 使い方と規則
 
 繰り返し使うパターンは `new(pattern)` でコンパイルします。モジュールの `match`・`gmatch`・`gsub` は `(パターン, 対象文字列, …)` の順です。

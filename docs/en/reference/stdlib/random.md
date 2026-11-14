@@ -8,6 +8,16 @@ Random numbers and reproducible state.
 import^std.random
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/random.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/random.lh
+```
+
 ## Usage and rules
 
 `new(seed)` produces the same sequence for the same seed, including zero. With no argument, seeding uses the OS. This is not a cryptographic generator.

@@ -8,6 +8,16 @@ Standard I/O and files.
 import^std.io
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/io.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/io.lh
+```
+
 ## Usage and rules
 
 `open(path, mode)` uses C file modes such as `"r"`, `"w"`, and `"rb"`. Close files with `with^` or `dispose()`.

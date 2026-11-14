@@ -8,6 +8,20 @@ Complex numbers.
 import^std.math.complex
 ```
 
+## Example
+
+`std.math.complex.Complex` is the value type. To construct a value from components, use `std.math.complex.new(...)` directly on the module. Aliasing the module also allows `alias.new(...)`.
+
+You can also alias the type for annotations. The constructor `new` belongs to the module; `std.math.complex.Complex.new(...)` and `new^std.math.complex.Complex{…}` are not supported construction forms.
+
+<<< @/../sample/docs/stdlib/math-complex.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/math-complex.lh
+```
+
 ## Usage and rules
 
 `new(re, im)` takes real and imaginary parts. Complex `*` performs complex multiplication. Normalizing zero leaves it zero.

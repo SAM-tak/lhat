@@ -8,6 +8,16 @@ Configuration data using L^ notation.
 import^std.lton
 ```
 
+## Example
+
+<<< @/../sample/docs/stdlib/lton.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/lton.lh
+```
+
 ## Usage and rules
 
 LTON contains the inside of a table literal, optionally preceded by imports. Reading it does not permit procedure calls.

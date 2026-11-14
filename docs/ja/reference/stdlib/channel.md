@@ -8,6 +8,16 @@
 import^std.channel
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/channel.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/channel.lh
+```
+
 ## 使い方と規則
 
 `new(T)` は `Channel<T>`、`named(name, T)` は名前付きの共有チャネルです。型引数を省略した形も使えます。

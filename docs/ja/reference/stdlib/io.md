@@ -8,6 +8,16 @@
 import^std.io
 ```
 
+## 使用例
+
+<<< @/../sample/docs/stdlib/io.lh{lhat}
+
+リポジトリのルートから実行できます。
+
+```sh
+lhat sample/docs/stdlib/io.lh
+```
+
 ## 使い方と規則
 
 `open(path, mode)` のモードは C のファイルモード（`"r"`・`"w"`・`"rb"` など）です。ファイルは `with^` または `dispose()` で閉じます。

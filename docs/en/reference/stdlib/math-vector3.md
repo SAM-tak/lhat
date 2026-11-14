@@ -8,6 +8,20 @@
 import^std.math.vector3
 ```
 
+## Example
+
+`std.math.vector3.Vector3` is the value type. To construct a value from components, use `std.math.vector3.new(...)` directly on the module. Aliasing the module also allows `alias.new(...)`.
+
+You can also alias the type for annotations. The constructor `new` belongs to the module; `std.math.vector3.Vector3.new(...)` and `new^std.math.vector3.Vector3{…}` are not supported construction forms.
+
+<<< @/../sample/docs/stdlib/math-vector3.lh{lhat}
+
+Run from the repository root:
+
+```sh
+lhat sample/docs/stdlib/math-vector3.lh
+```
+
 ## Usage and rules
 
 Vector `*` and `/` are component-wise; numeric operands scale values. `lerp` does not clamp its factor to 0–1. Normalizing a zero vector leaves it zero.
