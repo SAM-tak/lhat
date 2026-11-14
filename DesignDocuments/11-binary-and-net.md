@@ -453,6 +453,61 @@ lhat には DAP（[debug]）のためのソケット層 `port/socket.c`（`lhats
 - **信頼性の層。** 再送・順序保証・チャネルを持つ、ENet に当たるもの
 - **LÖVE 側の糊。** LuaSocket に似せた `socket` を LÖVE が別に用意するか
 
+### 5.1 ソケットの待ちと OS の多重化［提案］ [binary.future.socket-waits]
+
+TCP を足す、または UDP の受信を待てるようにすると、ソケットを `std.async` の
+待ちに入れることになる。そのとき OS の多重化の仕組みをどう使うかを、今の
+インターフェースのまま 3 つの OS でそろえる計画である。
+
+**今の状態［補足］。** ソケットは待ちの表に入らない（`receive` は待たない、
+[binary.net.no-wait]）。`std.async` の待ちはタイマーと外部完了だけで、`wait(s)` は
+表を見ながら最長 20ms ずつ眠る。別スレッドからの完了には、その仮眠の切れ目で
+気付く。OS の待ちの仕組みとして使っているのは DAP 用の `select`（ソケット 1 本）
+だけである。
+
+**readiness 型でそろえる。** 「読める・書けるようになったら知らせる」型を使い、
+知らされたら呼び手のバッファへノンブロッキングで読み書きする。読み込み先を
+呼び出しのときに渡す今の形（`receive` と [binary.store.contracts] の `read(buffer)`）
+がそのまま使え、インターフェースを変えずに済む。
+
+| OS | 仕組み |
+| --- | --- |
+| Linux | `epoll` |
+| macOS / BSD | `kqueue` |
+| Windows | IOCP に readiness を届ける Winsock の `ProcessSocketNotifications`（Windows 10 Build 20348 以降。実質 Windows 11 / Server 2022 以降）。それより古い版を支えるなら `\Device\Afd` の poll（wepoll 方式。Rust の mio が使う、文書化されていない仕組み）か `WSAPoll` に戻る |
+
+- ソケットは一度登録し、待つたびに全部を渡し直さない。1 回の待ちが待ちの数に
+  比例しない
+- 待ちは OS の仕組みで眠る。20ms ずつの仮眠をやめ、次のタイマーの期限を
+  待ちの上限にする
+- 別スレッドからの外部完了（`lhatstdlib_async_complete`）も OS の仕組みで起こす。
+  IOCP は `PostQueuedCompletionStatus`、Linux は `eventfd`、kqueue は
+  `EVFILT_USER` を使う。これで完了にすぐ気付く
+- 上の「受信待ち」は、ホストが外部完了で済ませる形でなく、この登録で
+  `std.async` 自身が到着を知る形になる
+
+**完了型は採らない。** IOCP の overlapped I/O や Linux の io_uring のような
+「I/O を出しておき、終わったら知らされる」型は、インターフェースを変えなければ
+使えない。
+
+- I/O が終わるまで OS がバッファへ書くので、バッファを呼び出しの間だけ貸す
+  今の形では渡せない。ライブラリが持つバッファか、動かないバッファを受け渡す形になる
+- 待ちを捨てるとき、出した I/O を取り消し（`CancelIoEx` など）、取り消しが
+  終わるまでバッファを生かしておく必要がある
+- 「今できなければすぐ返る」という `receive` の意味と合わない。出した I/O は
+  進行中になる
+
+完了型の利点は、1 回の操作のシステムコールが 1 つ少ないことである。多数の接続を
+持つときはソケットごとのバッファが常に要らない readiness 型の方がメモリで有利で、
+Microsoft もこの点を挙げて WSAPoll・select の代わりに勧めている。必要になったら、
+所有バッファの別のインターフェースとして後から足す。
+
+**R^ と同じ判断である［補足］。** R^（L^ を元にしたシステム言語）の
+`std.async`・`std.net` は TCP を持ち、`poll`（Windows は `WSAPoll`）と起こし用の
+ソケットで既に待ちを OS に任せている。同じ readiness 型でそろえる計画で、
+L^ に入れるときはその作りが参考になる。R^ が L^ をホストする場合、L^ の
+`std.async` は R^ の待ちの表で眠る。
+
 ## 6. 未決事項 [binary.open]
 
 現在はない。
