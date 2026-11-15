@@ -7,7 +7,25 @@ Search for `lhat` in VS Code's Extensions view, or install
 
 Platform-specific Marketplace packages include the `lhatls` language server.
 Editing support does not require the CLI.
-To use your own server build, set `lhat.serverPath` as described in [Installation](../guide/installation.md#use-your-own-language-server).
+
+## Use your own language server
+
+To use a different language server, such as a locally built `lhatls`, set **`lhat.serverPath`** in VS Code to its executable path.
+
+Example `settings.json` on Windows:
+
+```json
+{
+  "lhat.serverPath": "C:\\path\\to\\lhat\\build\\release\\lhatls.exe"
+}
+```
+
+On Linux or macOS, use a path such as `/path/to/lhat/build/release/lhatls`.
+An explicit path takes precedence over the bundled server. Clear the setting to use the bundled server again.
+When a package has no bundled server and the setting is empty, the extension looks for `lhatls` on `PATH`.
+
+After configuring the path, run **L^: Restart Language Server** from the Command Palette.
+See the [extension README](https://github.com/SAM-tak/lhat-vscode-extension) for server build instructions and detailed settings.
 
 ## Edit a file
 

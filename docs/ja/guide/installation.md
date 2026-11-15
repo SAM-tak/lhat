@@ -20,26 +20,6 @@ Marketplace からインストールするプラットフォーム別パッケ�
 これらの編集支援には CLI の `lhat` も不要です。
 編集・デバッグ・ビジュアルプログラミングの操作は[VS Code の使い方](../tools/vscode.md)を参照してください。
 
-## 自分で用意した言語サーバーを使う
-
-自分でビルドした `lhatls` など、付属のものとは別の言語サーバーを使う場合は、
-VS Code の設定で **`lhat.serverPath`** に実行ファイルのパスを指定します。
-
-Windows の `settings.json` の例です。
-
-```json
-{
-  "lhat.serverPath": "C:\\path\\to\\lhat\\build\\release\\lhatls.exe"
-}
-```
-
-Linux / macOS では、たとえば `/path/to/lhat/build/release/lhatls` を指定します。
-明示したパスは同梱サーバーより優先されます。指定を空に戻すと同梱サーバーを使います。
-同梱サーバーがないパッケージでは、設定が空なら `PATH` 上の `lhatls` を探します。
-
-設定後はコマンドパレットから **L^: Restart Language Server** を実行してください。
-言語サーバーのビルド手順や詳しい設定は[拡張の README](https://github.com/SAM-tak/lhat-vscode-extension/blob/main/README.ja.md)を参照してください。
-
 ## 参考実装の CLI で試す場合
 
 ホストアプリケーションを用意せずにガイドの例を実行したい場合は、CLI の `lhat` を使えます。

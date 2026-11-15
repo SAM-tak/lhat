@@ -14,7 +14,7 @@
   "guide/binary-data.md": "40504b90aa2d620f83432e4e357c4b9765ae6139a3a5a0f27c39cf5fc603ebdb",
   "guide/data-files.md": "4f34ba5bb23cd7dda70971dcd3538d73855f8fc459925b4e92f58e676de1afda",
   "guide/first-program.md": "087dbaf7e8e488c7039263e913efbbd4bb50c9d9060a27ba51ebc8263527dd8f",
-  "guide/installation.md": "369a4de36c0624864145361c64e86729e458f59ce79d9fb4dc9e46a002cdd623",
+  "guide/installation.md": "34206577c3b95a332f99083198908b3237b2ebd442a9c932c4328effad36e35f",
   "guide/modules.md": "06f26eae90c529042a2276c7ab63bb0ba911ed45155d6d94025f14d0093079bc",
   "guide/tasks.md": "73e3d629f6dfe534591a8300eb3fba9f2d6f750aa70d5847f66373d035b0aad2",
   "index.md": "f8846aacbdf6e587502bf0c6cbd0b22a9c1dc74d41e05bd19b132a87bacc5f3b",
@@ -54,5 +54,5 @@
   "reference/stdlib/thread.md": "3cf118eb391faf0ff0f530d9c52c3a348aa2e0b8b29f5b3228a42b248902cc43",
   "reference/subroutines.md": "902d49d5415eb70a579acc12a7dda82c9edeab4b37dbc8f62711dcdf702b22c8",
   "reference/types.md": "fdbc9556a69df6442fd8e51cb8c5b6c32337225514021fd3216ca513934dbb58",
-  "tools/vscode.md": "a8ee5a7838f58dc2c3ca5ee4e36e7e5f1b99dd56b75fc43f3bae6653d94ad725"
+  "tools/vscode.md": "e20e20af7409930c629049297a684e36ee2b552b1a25265d8b139bb44d997f66"
 }

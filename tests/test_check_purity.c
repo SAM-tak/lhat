@@ -47,7 +47,7 @@ static void test_purity(void)
     unit_dispose(&u);
 
     // [syntax.sub.no-contagion]: calling a yieldable p^ makes a coroutine and runs none of the
-    // body yet, so this one call stays referentially transparent even
+    // body yet, so the call does not run its side effects even
     // inside an f^ -- what would actually run the body (start()) is itself
     // a p^, caught the same as any other below.
     LHAT_TEST("an f^ may call a yieldable p^, since the call alone runs nothing");

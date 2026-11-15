@@ -21,6 +21,7 @@ definition bodies close with braces.
 
 Putting an external table into a local table does not grant permission to mutate the external one.
 The checker also tracks the origin of nested values.
+An `f^` can read mutable external state, so the same arguments can produce different results as that state changes. Referential transparency is not guaranteed.
 `fresh^` promises a fresh result; `mutable^self^` marks a function method that mutates its receiver.
 Whether such methods can be called inside a function also depends on the value's origin.
 
