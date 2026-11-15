@@ -1,67 +1,62 @@
 # インストール
 
-L^ のプログラムを実行するには、CLI の `lhat` を使います。
-VS Code 拡張は編集支援を提供しますが、実行やデバッグのための `lhat` は別途用意します。
+L^ は、Lua と同じくライブラリとして自分のアプリケーションに組み込んで使う言語です。
+スクリプトを実行するのは組み込み先のホストアプリケーションであり、CLI の `lhat`（Windows では `lhat.exe`）は参考実装です。
+アプリケーションへの組み込み方法は[組み込みガイド](../embedding/index.md)を参照してください。
 
-## 配布バイナリを使う
+ここでは、L^ のソースを編集するための VS Code 拡張を導入します。
 
-1. [Releases](https://github.com/SAM-tak/lhat/releases)を開きます。
-2. 使用する OS と CPU に対応した `lhat` のアーカイブをダウンロードします。`lhatls` は言語サーバです。
-3. アーカイブを展開します。診断の翻訳に使う `messages` が含まれている場合は、実行ファイルと一緒に残します。
-4. 展開先を `PATH` に追加するか、実行ファイルのパスを直接指定します。
+## VS Code 拡張をインストールする
 
-ターミナルで次のコマンドを実行し、ヘルプが表示されることを確認してください。
+1. VS Code の拡張機能ビューを開きます。
+2. Marketplace で `lhat` を検索します。
+3. **L^(Lhat) Language Support**（発行元 **SAMtak**）をインストールします。
+4. 作業フォルダを開き、`.lh` ファイルを作成するか、既存のファイルを開きます。
+
+[Marketplace の拡張ページ](https://marketplace.visualstudio.com/items?itemName=SAMtak.lhat)からもインストールできます。
+
+Marketplace からインストールするプラットフォーム別パッケージには、言語サーバー **`lhatls` が付属しています**。
+補完、ホバー、定義への移動、型検査などの編集支援を使うために、言語サーバーを別途インストールする必要はありません。
+これらの編集支援には CLI の `lhat` も不要です。
+編集・デバッグ・ビジュアルプログラミングの操作は[VS Code の使い方](../tools/vscode.md)を参照してください。
+
+## 自分で用意した言語サーバーを使う
+
+自分でビルドした `lhatls` など、付属のものとは別の言語サーバーを使う場合は、
+VS Code の設定で **`lhat.serverPath`** に実行ファイルのパスを指定します。
+
+Windows の `settings.json` の例です。
+
+```json
+{
+  "lhat.serverPath": "C:\\path\\to\\lhat\\build\\release\\lhatls.exe"
+}
+```
+
+Linux / macOS では、たとえば `/path/to/lhat/build/release/lhatls` を指定します。
+明示したパスは同梱サーバーより優先されます。指定を空に戻すと同梱サーバーを使います。
+同梱サーバーがないパッケージでは、設定が空なら `PATH` 上の `lhatls` を探します。
+
+設定後はコマンドパレットから **L^: Restart Language Server** を実行してください。
+言語サーバーのビルド手順や詳しい設定は[拡張の README](https://github.com/SAM-tak/lhat-vscode-extension/blob/main/README.ja.md)を参照してください。
+
+## 参考実装の CLI で試す場合
+
+ホストアプリケーションを用意せずにガイドの例を実行したい場合は、CLI の `lhat` を使えます。
+CLI は VS Code 拡張には含まれません。単独での実行や、CLI を起動するデバッグを試す場合に用意してください。
+
+1. [Releases](https://github.com/SAM-tak/lhat/releases)から、使用する OS と CPU に対応した `lhat` のアーカイブを取得します。
+2. 展開し、`messages` ディレクトリが含まれている場合は実行ファイルと一緒に残します。
+3. 展開先を `PATH` に追加するか、実行ファイルのパスを直接指定します。
 
 ```sh
 lhat --help
 ```
 
-PowerShell で展開先のフォルダから実行する場合は、`lhat` の代わりに `./lhat.exe` を使います。
-Linux や macOS では `./lhat` を使います。実行権限がない場合は `chmod +x ./lhat` で付与してください。
+展開先のフォルダから実行する場合は、PowerShell では `./lhat.exe`、Linux / macOS では `./lhat` とします。
+対応する配布物がない場合やソースからビルドする場合は、[リポジトリの README](https://github.com/SAM-tak/lhat/blob/main/README.ja.md#ビルドとテスト)を参照してください。
 
-対応する配布物がない場合や、最新のソースを試したい場合は、次の手順でビルドできます。
+以降のガイドの `lhat` は、この参考実装のコマンド名です。`PATH` に追加していない場合は、実行ファイルのパスに読み替えてください。
+拡張のデバッグで CLI を使う場合は、必要に応じて設定 `lhat.runtimePath` にそのパスを指定します。言語サーバー用の `lhat.serverPath` とは別の設定です。
 
-## ソースからビルドする
-
-必要なものは Git、C11 コンパイラ、CMake 3.25 以降、Ninja です。
-Windows では Visual Studio の C++ ビルドツールも用意してください。
-
-まずリポジトリを取得します。
-
-```sh
-git clone https://github.com/SAM-tak/lhat.git
-cd lhat
-```
-
-### Windows
-
-PowerShell で以下を実行します。`devshell.ps1` は現在のシェルに MSVC のビルド環境を設定します。
-
-```powershell
-. ./scripts/devshell.ps1
-cmake --preset debug
-cmake --build --preset debug
-./build/debug/lhat.exe --help
-```
-
-### Linux / macOS
-
-GCC または Clang と、CMake、Ninja を用意してから実行します。
-
-```sh
-cmake --preset debug
-cmake --build --preset debug
-./build/debug/lhat --help
-```
-
-### ビルドした実行ファイルを使う
-
-以降のページでは、実行ファイルを `lhat` と表記します。
-`PATH` に追加していない場合は、Windows なら `./build/debug/lhat.exe`、
-Linux / macOS なら `./build/debug/lhat` に読み替えてください。
-これらの相対パスはリポジトリのルートから実行する場合のものです。
-
-最適化ビルドでは、configure と build の両方のプリセットを `release` に変更します。
-ビルドオプションの詳細は[リポジトリの README](https://github.com/SAM-tak/lhat/blob/main/README.ja.md#ビルドとテスト)を参照してください。
-
-準備ができたら、[最初のプログラム](./first-program.md)へ進みます。
+CLI で実行を試すには[最初のプログラム](./first-program.md)、ソースの記法を学ぶには[言語の基本](./basics.md)へ進みます。

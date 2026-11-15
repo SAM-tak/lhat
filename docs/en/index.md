@@ -18,10 +18,10 @@ It covers a buildable host example, exposing APIs, GC and event loops, editor in
 Look up individual functions in the [C API reference](./api/index.md).
 Look up language notation, types, and evaluation rules in the [L^ reference](./reference/index.md).
 
-To try the language with the CLI, follow these steps:
+To start with source editing and language notation, follow these steps:
 
-1. [Install L^](./guide/installation.md) and make the `lhat` command available.
-2. Write [your first program](./guide/first-program.md), run it, and check its types.
+1. [Install the VS Code extension](./guide/installation.md) and use editing support from its bundled language server.
+2. If you want to try standalone execution, run [your first program](./guide/first-program.md) with the reference CLI.
 3. Learn about variables, tables, functions, and procedures in [Language basics](./guide/basics.md).
 4. Use completion, diagnostics, and debugging in [VS Code](./tools/vscode.md).
 
@@ -37,8 +37,8 @@ To try the language with the CLI, follow these steps:
 
 ## Using a game engine
 
-This guide starts with the standalone CLI.
-For engine-specific setup, see the integration projects.
+The following integration projects can also help embed L^ in game engines.
+See each project for engine-specific setup.
 
 | Integration | Documentation |
 | --- | --- |

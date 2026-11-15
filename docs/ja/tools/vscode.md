@@ -2,11 +2,12 @@
 
 ## 拡張をインストールする
 
-VS Code の拡張ビューで `SAMtak.lhat` を検索するか、
+VS Code の拡張ビューで `lhat` を検索するか、
 [L^ Language Support](https://marketplace.visualstudio.com/items?itemName=SAMtak.lhat)からインストールします。
 
 Marketplace のプラットフォーム別パッケージには、言語サーバ `lhatls` が同梱されています。
-プログラムを実行・デバッグするための `lhat` は、[インストール](../guide/installation.md)の手順で別途用意してください。
+編集支援のために CLI を用意する必要はありません。
+自分でビルドしたサーバーを使う場合は、[インストール](../guide/installation.md#自分で用意した言語サーバーを使う)を参照し、設定 `lhat.serverPath` にパスを指定してください。
 
 ## ファイルを編集する
 
@@ -26,6 +27,7 @@ Marketplace のプラットフォーム別パッケージには、言語サー�
 ## ターミナルから実行する
 
 VS Code のターミナルを開き、ファイルのあるフォルダで実行します。
+以下は参考実装の CLI を使う場合の例です。[CLI の準備](../guide/installation.md#参考実装の-cli-で試す場合)を済ませてください。
 
 ```sh
 lhat hello.lh

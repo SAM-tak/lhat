@@ -1,7 +1,9 @@
 # Your first program
 
-After [installing L^](./installation.md), create `hello.lh` in a working directory of your choice.
+This page tries a short program using the reference CLI.
+After [preparing the CLI](./installation.md#try-the-reference-cli), create `hello.lh` in a working directory of your choice.
 L^ source files use the `.lh` extension.
+To run scripts in your own application, see the [embedding guide](../embedding/index.md).
 
 ## Print a string
 

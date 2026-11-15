@@ -2,11 +2,12 @@
 
 ## Install the extension
 
-Search for `SAMtak.lhat` in VS Code's Extensions view, or install
+Search for `lhat` in VS Code's Extensions view, or install
 [L^ Language Support](https://marketplace.visualstudio.com/items?itemName=SAMtak.lhat) from the Marketplace.
 
 Platform-specific Marketplace packages include the `lhatls` language server.
-For running and debugging programs, install the `lhat` executable separately as described in [Installation](../guide/installation.md).
+Editing support does not require the CLI.
+To use your own server build, set `lhat.serverPath` as described in [Installation](../guide/installation.md#use-your-own-language-server).
 
 ## Edit a file
 
@@ -26,6 +27,7 @@ To inspect a diagnostic, hover over the affected code or open VS Code's Problems
 ## Run from the terminal
 
 Open VS Code's terminal and run these commands from the directory containing your file.
+These examples use the reference CLI; first [prepare the CLI](../guide/installation.md#try-the-reference-cli).
 
 ```sh
 lhat hello.lh

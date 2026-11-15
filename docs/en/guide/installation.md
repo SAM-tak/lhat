@@ -1,67 +1,61 @@
 # Installation
 
-Use the `lhat` CLI to run L^ programs.
-The VS Code extension provides editing support; running and debugging require a separate `lhat` executable.
+Like Lua, L^ is designed to be embedded as a library in your own application.
+The embedding host application runs scripts; the `lhat` CLI (`lhat.exe` on Windows) is a reference implementation.
+See the [embedding guide](../embedding/index.md) to integrate L^ into an application.
 
-## Use a release binary
+This page sets up the VS Code extension for editing L^ source.
 
-1. Open [Releases](https://github.com/SAM-tak/lhat/releases).
-2. Download the `lhat` archive for your OS and CPU. `lhatls` is the language server.
-3. Extract the archive. If it includes a `messages` directory for translated diagnostics, keep it alongside the executable.
-4. Add the extracted directory to `PATH`, or invoke the executable by its path.
+## Install the VS Code extension
 
-Run the following command in a terminal and check that it displays help.
+1. Open VS Code's Extensions view.
+2. Search the Marketplace for `lhat`.
+3. Install **L^(Lhat) Language Support**, published by **SAMtak**.
+4. Open your working folder and create or open a `.lh` file.
+
+You can also install it from the [Marketplace extension page](https://marketplace.visualstudio.com/items?itemName=SAMtak.lhat).
+
+The platform-specific Marketplace package **includes the `lhatls` language server**.
+No separate language-server installation is needed for completion, hover information, go to definition, or type-checking diagnostics.
+These editing features do not require the `lhat` CLI either.
+See [Using VS Code](../tools/vscode.md) for editing, debugging, and visual programming.
+
+## Use your own language server
+
+To use a different language server, such as a locally built `lhatls`, set **`lhat.serverPath`** in VS Code to its executable path.
+
+Example `settings.json` on Windows:
+
+```json
+{
+  "lhat.serverPath": "C:\\path\\to\\lhat\\build\\release\\lhatls.exe"
+}
+```
+
+On Linux or macOS, use a path such as `/path/to/lhat/build/release/lhatls`.
+An explicit path takes precedence over the bundled server. Clear the setting to use the bundled server again.
+When a package has no bundled server and the setting is empty, the extension looks for `lhatls` on `PATH`.
+
+After configuring the path, run **L^: Restart Language Server** from the Command Palette.
+See the [extension README](https://github.com/SAM-tak/lhat-vscode-extension) for server build instructions and detailed settings.
+
+## Try the reference CLI
+
+To run guide examples without preparing a host application, you can use the `lhat` CLI.
+The extension does not include it. Prepare it when trying standalone execution or debugging that launches the CLI.
+
+1. Download the `lhat` archive for your OS and CPU from [Releases](https://github.com/SAM-tak/lhat/releases).
+2. Extract it, keeping the `messages` directory alongside the executable if one is included.
+3. Add the directory to `PATH`, or invoke the executable by its path.
 
 ```sh
 lhat --help
 ```
 
-In PowerShell, use `./lhat.exe` instead of `lhat` when running from the extracted directory.
-On Linux or macOS, use `./lhat`. If needed, make it executable with `chmod +x ./lhat`.
+From the extracted directory, use `./lhat.exe` in PowerShell or `./lhat` on Linux/macOS.
+If no suitable release is available or you want to build from source, see the [repository README](https://github.com/SAM-tak/lhat#building-and-testing).
 
-If no suitable release binary is available, or you want to try the latest source, build it as follows.
+In the following guides, `lhat` names this reference CLI. Substitute its executable path if it is not on `PATH`.
+To debug with the CLI, set `lhat.runtimePath` when needed. This is separate from the language-server setting `lhat.serverPath`.
 
-## Build from source
-
-You need Git, a C11 compiler, CMake 3.25 or later, and Ninja.
-On Windows, also install the Visual Studio C++ build tools.
-
-First, clone the repository.
-
-```sh
-git clone https://github.com/SAM-tak/lhat.git
-cd lhat
-```
-
-### Windows
-
-Run these commands in PowerShell. `devshell.ps1` sets up the MSVC build environment in the current shell.
-
-```powershell
-. ./scripts/devshell.ps1
-cmake --preset debug
-cmake --build --preset debug
-./build/debug/lhat.exe --help
-```
-
-### Linux / macOS
-
-Install GCC or Clang, CMake, and Ninja, then run:
-
-```sh
-cmake --preset debug
-cmake --build --preset debug
-./build/debug/lhat --help
-```
-
-### Use the executable you built
-
-The following pages refer to the executable as `lhat`.
-If it is not on `PATH`, substitute `./build/debug/lhat.exe` on Windows or
-`./build/debug/lhat` on Linux and macOS.
-These relative paths assume you are running from the repository root.
-
-For an optimized build, change both the configure and build presets to `release`.
-See the [repository README](https://github.com/SAM-tak/lhat#building-and-testing) for build options.
-
-Once ready, continue to [Your first program](./first-program.md).
+Continue to [Your first program](./first-program.md) to try the CLI, or [Language basics](./basics.md) to learn the notation.
