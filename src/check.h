@@ -236,6 +236,8 @@ typedef enum {
     LHAT_CHECK_ERR_SCOPE_ON_DEFINE,     // [lex.scope] with [modules.host.import]: a let^ makes a
                                         // name where it is written, so there
                                         // is no other scope for one to name
+    LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE, // [syntax.sub.captures]: an f^ may not
+                                             // capture a mutable binding or value
     LHAT_CHECK_ERR_FUNCTION_WRITES_OUT,  // [syntax.sub.kinds]: an f^ assigns to local
                                          // variables only, and this name was
                                          // bound outside its body

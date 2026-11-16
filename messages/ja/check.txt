@@ -195,6 +195,9 @@ not-hosted = import^ はホストが登録した物に届くが、この名前�
 scope-too-far = ここで開いているより多くのスコープの外へ届こうとしている
 # scope-on-define = let^ makes a name here, so it takes no scope specifier; ':=' is what writes one that is already there
 scope-on-define = let^ はここで名前を作るので、スコープ指定子を取らない。既にある名前を書くのは ':=' である
+# function-captures-mutable = an f^ may not capture mutable binding or value '{name}'; copy an immutable value into a let^ or pass it as an argument
+function-captures-mutable = f^ は変更可能な束縛や値 '{name}' を捕捉できない。不変な値を let^ にコピーするか、引数として渡す
+
 # function-writes-out = an f^ assigns to local variables only, and this name was bound outside its body
 function-writes-out = f^ が代入できるのは局所変数だけで、この名前は本体の外で束縛されている
 # function-changes-table = an f^ may change only a table its own body made; this one came from somewhere else

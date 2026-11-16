@@ -41,8 +41,8 @@ static void test_purity(void)
 
     LHAT_TEST("an f^ may call another f^");
     check_text(&u,
-               "var^ inc = f^ n:number^ -> number^ { return^ n + 1 }\n"
-               "var^ f = f^ n:number^ -> number^ { return^ inc(n) }\n");
+               "let^ inc = f^ n:number^ -> number^ { return^ n + 1 }\n"
+               "let^ f = f^ n:number^ -> number^ { return^ inc(n) }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -52,8 +52,8 @@ static void test_purity(void)
     // a p^, caught the same as any other below.
     LHAT_TEST("an f^ may call a yieldable p^, since the call alone runs nothing");
     check_text(&u,
-               "var^ gen = p^ { yield^ 1 }\n"
-               "var^ f = f^ { return^ gen() }\n");
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ f = f^ { return^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -90,9 +90,9 @@ static void test_purity(void)
 
     LHAT_TEST("a p^ nested inside an f^ may call a p^ again");
     check_text(&u,
-               "var^ log = p^ x:any^ { }\n"
-               "var^ outer = f^ {\n"
-               "    var^ inner = p^ { log(1) }\n"
+               "let^ log = p^ x:any^ { }\n"
+               "let^ outer = f^ {\n"
+               "    let^ inner = p^ { log(1) }\n"
                "    return^ 0\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -118,8 +118,8 @@ static void test_purity(void)
     // since advancing one is only unobservable while it stays inside.
     LHAT_TEST("an f^ may yield^ and walk what it made");
     check_text(&u,
-               "var^ gen = f^ { yield^ 1 }\n"
-               "var^ sum = f^ -> number^ {\n"
+               "let^ gen = f^ { yield^ 1 }\n"
+               "let^ sum = f^ -> number^ {\n"
                "    var^ co = gen()\n"
                "    var^ a = co.start()\n"
                "    return^ 0\n"
@@ -196,9 +196,9 @@ static void test_purity(void)
     // carries none out -- an instance whose iterate yields is the common case.
     LHAT_TEST("but a yielding f^ may be carried out");
     check_text(&u,
-               "var^ f = f^ { return^ { walk := f^ { yield^ 1 } } }\n"
-               "var^ A = def^{ self^{ n := 0 }, iterate = f^self^ { yield^ self^.n } }\n"
-               "var^ make = f^ { return^ A.new() }\n");
+               "let^ f = f^ { return^ { walk := f^ { yield^ 1 } } }\n"
+               "let^ A = def^{ self^{ n := 0 }, iterate = f^self^ { yield^ self^.n } }\n"
+               "let^ make = f^ { return^ A.new() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -226,8 +226,8 @@ static void test_purity(void)
     // coroutine satisfies it. Advancing through that type is a p^ call.
     LHAT_TEST("an f^ coroutine satisfies a p^ coroutine type");
     check_text(&u,
-               "var^ gen = f^ { yield^ 1 }\n"
-               "var^ f = f^ -> number^ {\n"
+               "let^ gen = f^ { yield^ 1 }\n"
+               "let^ f = f^ -> number^ {\n"
                "    var^ c : c^{ p^ -> number^ -> nil^ } = gen()\n"
                "    return^ 0\n"
                "}\n");
@@ -265,15 +265,15 @@ static void test_purity(void)
 
     LHAT_TEST("but to one this body made it is fine");
     check_text(&u,
-               "var^ gen = f^ { yield^ 1 }\n"
-               "var^ f = f^ { await^ gen() }\n");
+               "let^ gen = f^ { yield^ 1 }\n"
+               "let^ f = f^ { await^ gen() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
     LHAT_TEST("and a bound one is the body's just the same");
     check_text(&u,
-               "var^ gen = f^ { yield^ 1 }\n"
-               "var^ f = f^ {\n"
+               "let^ gen = f^ { yield^ 1 }\n"
+               "let^ f = f^ {\n"
                "    var^ co = gen()\n"
                "    await^ co\n"
                "}\n");
@@ -381,13 +381,12 @@ static void test_purity(void)
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
-    // The rule is about the body being written in, not the one around it --
-    // the same way the call rule is.
-    LHAT_TEST("a p^ inside an f^ may write out again");
+    // A nested p^ may capture its enclosing f^'s own mutable locals.
+    LHAT_TEST("a p^ inside an f^ may write the enclosing body's locals");
     check_text(&u,
-               "var^ total = 0\n"
-               "var^ outer = f^ -> number^ {\n"
-               "    var^ inner = p^ { total := 1 }\n"
+               "let^ outer = f^ -> number^ {\n"
+               "    var^ total = 0\n"
+               "    let^ inner = p^ { total := 1 }\n"
                "    return^ 0\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -429,8 +428,8 @@ static void test_purity(void)
 
     LHAT_TEST("and one a new answered with");
     check_text(&u,
-               "var^ P = def^{ self^{ x := 0 } }\n"
-               "var^ f = f^ -> number^ {\n"
+               "let^ P = def^{ self^{ x := 0 } }\n"
+               "let^ f = f^ -> number^ {\n"
                "    var^ u = P.new()\n"
                "    u.x := 1\n"
                "    return^ u.x\n"
@@ -532,12 +531,12 @@ static void test_purity(void)
 
     LHAT_TEST("an f^ calls a mutable method on an instance it made");
     check_text(&u,
-               "var^ P = def^{\n"
+               "let^ P = def^{\n"
                "    self^{ x := 0 },\n"
                "    bump := f^mutable^self^ -> number^ "
                "{ self^.x := 1 return^ 0 },\n"
                "}\n"
-               "var^ f = f^ -> number^ {\n"
+               "let^ f = f^ -> number^ {\n"
                "    var^ mine = P.new()\n"
                "    mine.bump()\n"
                "    return^ mine.x\n"
@@ -623,10 +622,10 @@ static void test_purity(void)
 
     LHAT_TEST("a fresh^ answer counts as the caller's own");
     check_text(&u,
-               "var^ pair = f^ a:number^ -> fresh^t^{ number^[] } {\n"
+               "let^ pair = f^ a:number^ -> fresh^t^{ number^[] } {\n"
                "    return^ {a, a}\n"
                "}\n"
-               "var^ f = f^ -> number^ {\n"
+               "let^ f = f^ -> number^ {\n"
                "    var^ mine = pair(1)\n"
                "    mine.push^(2)\n"
                "    return^ mine.count^\n"
@@ -794,9 +793,9 @@ static void test_purity(void)
 
     LHAT_TEST("but it walks its own f^ coroutine, a table, and an f^ iterate^");
     check_text(&u,
-               "var^ walk = f^ t:t^{ number^[] } { for^ v in^ t { yield^ v } }\n"
-               "var^ P = def^{ self^{}, iterate^ = f^self^ { yield^ 1 } }\n"
-               "var^ f = f^ t:t^{ number^[] }, o:P -> number^ {\n"
+               "let^ walk = f^ t:t^{ number^[] } { for^ v in^ t { yield^ v } }\n"
+               "let^ P = def^{ self^{}, iterate^ = f^self^ { yield^ 1 } }\n"
+               "let^ f = f^ t:t^{ number^[] }, o:P -> number^ {\n"
                "    var^ s = 0\n"
                "    for^ v in^ walk(t) { s := s + v }\n"
                "    for^ v in^ t { s := s + v }\n"
@@ -1242,11 +1241,135 @@ static void test_effect_union_calls(void)
     unit_dispose(&u);
 }
 
+// [syntax.sub.captures]: mutable bindings and mutable values are distinct
+// refusals. A method's own receiver is an input, while an outer receiver is
+// a capture, including through an intervening p^.
+static void test_function_captures(void)
+{
+    static const struct {
+        const char *name;
+        const char *source;
+        bool rejects;
+    } cases[] = {
+        {"an f^ rejects an outer var^ even when it holds a number",
+         "var^ n = 1\nlet^ f = f^{ n }\n", true},
+        {"a let^ snapshot of a number is capturable",
+         "var^ n = 1\nlet^ saved = n\nlet^ f = f^{ saved }\n", false},
+        {"a let^ does not freeze a table",
+         "let^ t = { n = 1 }\nlet^ f = f^{ t.n }\n", true},
+        {"a copied table reference is still mutable",
+         "let^ t = { n = 1 }\nlet^ saved = t\nlet^ f = f^{ saved.n }\n", true},
+        {"a function in a var^ binding is still a mutable capture",
+         "var^ inc = f^n:number^{ n + 1 }\nlet^ f = f^{ inc(1) }\n", true},
+        {"a function in a let^ binding is capturable",
+         "let^ inc = f^n:number^{ n + 1 }\nlet^ f = f^{ inc(1) }\n", false},
+        {"a p^ may still capture mutable state",
+         "var^ n = 1\nlet^ f = p^{ n := 2 }\n", false},
+        {"an intervening p^ cannot smuggle an outer var^ into an f^",
+         "var^ n = 1\nlet^ f = f^{ let^ p = p^{ n := 2 } return^ p }\n", true},
+        {"a p^ inside an f^ may capture that f^'s own locals",
+         "let^ f = f^{ var^ n = 1 let^ p = p^{ n := 2 } return^ p }\n", false},
+        {"an inner f^ cannot capture an outer parameter",
+         "let^ f = p^n:number^{ let^ inner = f^{ n } }\n", true},
+        {"an inner f^ may capture a let^ snapshot of an outer parameter",
+         "let^ f = p^n:number^{ let^ saved = n let^ inner = f^{ saved } }\n", false},
+        {"scope specifiers do not bypass capture checking",
+         "var^ n = 1\nlet^ f = f^{ $^n }\n", true},
+        {"explicit mutable inputs remain allowed",
+         "let^ f = f^t:t^{n:number^}{ t.n }\n", false},
+        {"a method's receiver remains an explicit input",
+         "let^ D = def^{ self^{ n = 1 }, read = f^self^{ self^.n } }\n", false},
+        {"a nested f^ captures its outer method's receiver",
+         "let^ D = def^{ self^{ n = 1 }, read = f^self^{ f^{ self^.n } } }\n", true},
+        {"repeated hats do not bypass capture checking",
+         "let^ D = def^{ self^{ n = 1 }, read = f^self^{ "
+         "let^ T = { read = f^self^{ self^^.n } } return^ T } }\n", true},
+        {"super^ calls cannot implicitly capture an outer receiver",
+         "let^ A = def^{ self^{}, m = f^self^ -> number^{ 1 } }\n"
+         "let^ B = A .. def^{ self^{}, override^m = f^self^ -> number^{ "
+         "let^ read = f^{ super^() } return^ read() } }\n", true},
+        {"definitions and their def^ binding are immutable identities",
+         "let^ D = def^{ self^{ n = 1 }, make = f^{ def^.new() } }\n"
+         "let^ f = f^{ D.new() }\n", false},
+        {"a mutable arm of a union prevents capture",
+         "let^ t:number^|t^{n:number^} = 1\nlet^ f = f^{ t }\n", true},
+        {"an immutable union can be captured",
+         "let^ t:number^|string^ = 1\nlet^ f = f^{ t }\n", false},
+        {"any^ does not promise an immutable capture",
+         "let^ t:any^ = 1\nlet^ f = f^{ t }\n", true},
+        {"an instance remains mutable even under a let^",
+         "let^ D = def^{ self^{ n = 1 } }\nlet^ d = D.new()\nlet^ f = f^{ d.n }\n", true},
+        {"coroutine state cannot be captured",
+         "let^ gen = p^{ yield^ 1 }\nlet^ co = gen()\nlet^ f = f^{ co }\n", true},
+        {"type descriptors can be captured",
+         "let^ T = typeof^(1)\nlet^ f = f^{ T.signature }\n", false},
+        {"error declarations can be captured",
+         "errordef^ E { A }\nlet^ f = f^{ error^E.A{} }\n", false},
+        {"error instances have mutable fields",
+         "errordef^ E { A { n:number^ } }\nlet^ e = error^E.A{n=1}\nlet^ f = f^{ e.n }\n", true},
+        {"an error set annotation does not make an instance immutable",
+         "errordef^ E { A }\nlet^ e:E = error^E.A{}\nlet^ f = f^{ e.message }\n", true},
+        {"enum declarations and members can be captured",
+         "enum^ E { A = 1 }\nlet^ a = E.A\nlet^ f = f^{ a.value + E.A.value }\n", false},
+        {"narrowing a var^ does not freeze its binding",
+         "var^ n:number^|nil^ = 1\nif^ n? { let^ f = f^{ n } }\n", true},
+        {"forward function captures remain allowed",
+         "let^ f = f^n:number^{ if^n = 0: 0 el^: g(n - 1); }\n"
+         "let^ g = f^n:number^{ if^n = 0: 0 el^: f(n - 1); }\n", false},
+        {"forward immutable scalar captures settle before diagnostics are kept",
+         "let^ f = f^{ n }\nlet^ n = 1\n", false},
+        {"template instantiations enforce the capture rule",
+         "var^ n = 1\nlet^ f = template^f^x{ x + n }\nlet^ result = f(2)\n", true},
+        {"yieldable functions enforce the capture rule too",
+         "var^ n = 1\nlet^ f = f^{ yield^ n }\n", true},
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        Unit u;
+        LHAT_TEST(cases[i].name);
+        check_text(&u, cases[i].source);
+        if (cases[i].rejects) {
+            // Template errors are retained under the instantiation diagnostic.
+            if (strstr(cases[i].source, "template^") != NULL) {
+                CHECK_REPORTS(&u, LHAT_CHECK_ERR_SHAPE_REFUSED);
+                bool mutable_capture = false;
+                for (size_t k = 0; k < u.checked.diagnostic_count; k++) {
+                    const LhatCheckDiagnostic *cause = u.checked.diagnostics[k].cause;
+                    if (cause != NULL && cause->code == LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE) {
+                        mutable_capture = true;
+                    }
+                }
+                LHAT_CHECK(mutable_capture, "the retained cause identifies the mutable capture");
+            } else {
+                CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE);
+            }
+        } else {
+            CHECK_CLEAN(&u);
+        }
+        unit_dispose(&u);
+    }
+
+    LHAT_TEST("relaxed checking still rejects mutable captures");
+    Unit u;
+    check_relaxed_text(&u, "var^ n = 1\nlet^ f = f^{ n }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE);
+    LHAT_CHECK(lhat_check_error_count(&u.checked) > 0, "the rule is not advisory");
+    unit_dispose(&u);
+
+    LHAT_TEST("a captured let^ snapshot survives a later var^ write");
+    Run r;
+    run_checked_text(&r,
+        "var^ n = 1\nlet^ saved = n\nlet^ f = f^{ saved }\nn := 2\nreturn^ f()\n");
+    LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
+    CHECK_INTEGER(&r, 1);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_purity();
     test_ownership_depth();
     test_immutable_bindings();
     test_effect_union_calls();
+    test_function_captures();
     return lhat_test_report("test_check_purity");
 }

@@ -51,7 +51,7 @@ static void test_free(void *context, void *pointer)
 static void test_compile_allocation_failures(void)
 {
     static const char *const sources[] = {
-        "var^ x = 1\nlet^ f = f^n:number^ -> number^ {return^ x + n}\nreturn^ f(2)\n",
+        "let^ x = 1\nlet^ f = f^n:number^ -> number^ {return^ x + n}\nreturn^ f(2)\n",
         "errordef^ E { Bad }\nlet^ f = f^ {return^ error^E.Bad{}}\n"
         "do^{ try^ f() catch^ E.Bad: return^ 42 }\n",
         "let^ D = def^{self^{x = 42}, m = f^self^ {return^ self^.x}}\nreturn^ D.new().m()\n",
@@ -307,7 +307,7 @@ static void test_focus_and_catch_identity(void)
     static const char *const sources[] = {
         // Both counted-loop focuses, including a stacked reach captured by a body.
         "for^ 40 to^ 40 {for^ 2 to^ 2 {"
-        "let^ read = f^ {return^ it^^ + it^}\nreturn^ read()}}\n",
+        "let^ read = p^ {return^ it^^ + it^}\nreturn^ read()}}\n",
         // A counted focus remains distinct from a named walking target.
         "for^ 40 to^ 40 {for^ n in^ {2} {return^ it^ + n}}\n",
         // Narrowing must preserve the catch binding's identity.
@@ -317,11 +317,11 @@ static void test_focus_and_catch_identity(void)
         // Catch arms introduce an identity separate from the enclosing focus.
         "errordef^ E {A}\nlet^ fail = f^ {return^ error^ E.A{}}\n"
         "for^ 42 to^ 42 {do^{var^ ignored = try^ fail()\ncatch^:\n"
-        "let^ read = f^ {return^ it^^}\nreturn^ read()}}\n",
+        "let^ read = p^ {return^ it^^}\nreturn^ read()}}\n",
         // An expression catch's error remains available to an escaping closure.
         "errordef^ E {A {n:number^}}\n"
         "let^ fail = f^ {return^ error^ E.A{n := 42}}\n"
-        "let^ read = fail() catch^ (f^ {return^ it^.n})\nreturn^ read()\n",
+        "let^ read = fail() catch^ (p^ {return^ it^.n})\nreturn^ read()\n",
     };
     for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
         LHAT_TEST(sources[i]);
@@ -379,8 +379,8 @@ static void test_this_body_identity(void)
         "let^ count = f^ n:number^ -> number^ {"
         "if^ n = 0 {return^ 0}\nreturn^ this^(n - 1) + 1}\nreturn^ count(42)\n",
         "let^ count = f^ n:number^ -> number^ {"
-        "let^ middle = f^ -> number^ {let^ inner = f^ -> number^ {"
-        "if^ n = 0 {return^ 0}\nreturn^ this^^^(n - 1) + 1}\n"
+        "let^ saved = n\nlet^ middle = f^ -> number^ {let^ inner = f^ -> number^ {"
+        "if^ saved = 0 {return^ 0}\nreturn^ this^^^(saved - 1) + 1}\n"
         "return^ inner()}\nreturn^ middle()}\nreturn^ count(42)\n",
         // Cache two different enclosing closures and reuse the outer one.
         "let^ outer = p^ -> (f^ -> number^;) {let^ a = this^\n"
@@ -473,8 +473,8 @@ static void test_variadic_binding_identity(void)
         "let^ inner = f^ ...:number^ -> number^ {return^ (...[0] ?? 0)}\n"
         "return^ (...[0] ?? 0) + inner(2)}\nreturn^ outer(40)\n",
         "let^ decoy = {100}\n"
-        "let^ make = f^ ...:number^ -> (f^ -> number^;) {"
-        "return^ f^ -> number^ {return^ (...[0] ?? 0)}}\n"
+        "let^ make = f^ ...:number^ -> (p^ -> number^;) {"
+        "return^ p^ -> number^ {return^ (...[0] ?? 0)}}\n"
         "let^ read = make(42)\nreturn^ read()\n",
         "let^ decoy = {100}\n"
         "let^ sum = f^ ...:number^ -> number^ {var^ total = 0\n"
@@ -482,7 +482,7 @@ static void test_variadic_binding_identity(void)
         "let^ forward = f^ ...:number^ -> number^ {return^ sum(2, ...)}\n"
         "return^ forward(40)\n",
         // The script collector is a binding too, captured by a non-variadic body.
-        "let^ decoy = {100}\nlet^ read = f^ -> number^ {let^ n = ...[0]\n"
+        "let^ decoy = {100}\nlet^ read = p^ -> number^ {let^ n = ...[0]\n"
         "if^ n fits^ number^ {return^ n}\nreturn^ 0}\nreturn^ read()\n",
     };
     for (size_t i = 0; i < sizeof sources / sizeof *sources; i++) {
@@ -535,8 +535,8 @@ static void test_variadic_binding_identity(void)
 static void test_def_binding_identity(void)
 {
     static const char *const sources[] = {
-        "let^ Outer = def^{self^{}, tag = 40, read = f^self^ -> number^ {"
-        "let^ Inner = def^{self^{}, tag = 2, read = f^self^ -> number^ {"
+        "let^ Outer = def^{self^{}, tag = 40, read = p^self^ -> number^ {"
+        "let^ Inner = def^{self^{}, tag = 2, read = p^self^ -> number^ {"
         "return^ def^^.tag + def^.tag}}\nreturn^ Inner.new().read()}}\n"
         "let^ Derived = Outer .. def^{self^{}}\nreturn^ Derived.new().read()\n",
         // Source identities from both operands map to the composed table.
@@ -611,12 +611,12 @@ static void test_def_binding_identity(void)
 static void test_self_binding_identity(void)
 {
     static const char *const sources[] = {
-        "let^ Outer = def^{self^{x := 40}, read = f^self^ -> number^ {"
-        "let^ Inner = def^{self^{y := 2}, read = f^self^ -> number^ {"
+        "let^ Outer = def^{self^{x := 40}, read = p^self^ -> number^ {"
+        "let^ Inner = def^{self^{y := 2}, read = p^self^ -> number^ {"
         "return^ self^^.x + self^.y}}\nreturn^ Inner.new().read()}}\n"
         "let^ Derived = Outer .. def^{self^{}}\nreturn^ Derived.new().read()\n",
-        "let^ t = {n = 42, make = f^self^ -> (f^ -> number^;) {"
-        "return^ f^ -> number^ {return^ self^.n}}}\n"
+        "let^ t = {n = 42, make = f^self^ -> (p^ -> number^;) {"
+        "return^ p^ -> number^ {return^ self^.n}}}\n"
         "let^ read = t.make()\nreturn^ read()\n",
         "let^ Base = def^{self^{x := 0}, override^new = f^ n:number^ {self^{x = n}}}\n"
         "let^ Derived = Base .. def^{self^{y := 0}, override^new = f^ n:number^ {"
@@ -690,9 +690,9 @@ static void test_super_binding_identity(void)
 {
     static const char *const sources[] = {
         "let^ decoy = f^ -> number^ {return^ 1000}\n"
-        "let^ A = def^{self^{}, m = f^self^ -> number^ {return^ 40}}\n"
-        "let^ D = A .. def^{self^{}, override^ m = f^self^ -> number^ {"
-        "let^ read = f^ -> number^ {return^ super^()}\nreturn^ read() + 2}}\n"
+        "let^ A = def^{self^{}, m = p^self^ -> number^ {return^ 40}}\n"
+        "let^ D = A .. def^{self^{}, override^ m = p^self^ -> number^ {"
+        "let^ read = p^ -> number^ {return^ super^()}\nreturn^ read() + 2}}\n"
         "return^ D.new().m()\n",
         "let^ decoy = f^ -> number^ {return^ 1000}\n"
         "let^ A = def^{self^{}, m = f^ -> number^ {return^ 40}}\n"
@@ -972,7 +972,7 @@ static void test_missing_binding_metadata(void)
     static const char *const sources[] = {
         "var^ x = 42\nreturn^ x\n",
         "var^ x = 41\nreturn^ x + 1\n",
-        "var^ x = 42\nlet^ read = f^ -> number^ {return^ x}\nreturn^ read()\n",
+        "let^ x = 42\nlet^ read = f^ -> number^ {return^ x}\nreturn^ read()\n",
         "var^ x = 42\ndo^{var^ x = 0\nreturn^ $x}\n",
         "var^ x = 40\ndo^{$x := 42}\nreturn^ x\n",
         "enum^ x {V = 42}\nreturn^ x.V.value\n",
@@ -1079,10 +1079,10 @@ static void test_definition_origins(void)
 
     LHAT_TEST("a deferred composition can use a later resolved declaration");
     run_text(&r,
-        "var^ make = f^ {\n"
+        "let^ make = f^ {\n"
         "  var^ Derived = Base .. def^{self^{y := 2}}\n"
         "  var^ d = Derived.new()\nreturn^ d.x + d.y}\n"
-        "var^ Base = def^{self^{x := 40}}\nreturn^ make()\n");
+        "let^ Base = def^{self^{x := 40}}\nreturn^ make()\n");
     CHECK_INTEGER(&r, 42);
     LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
     run_dispose(&r);

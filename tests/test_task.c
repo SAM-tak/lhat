@@ -1082,7 +1082,7 @@ static void test_await_transfer(void)
     LHAT_TEST("closed captures transfer with a program closure");
     ran = run_source(
         "import^std.task\ntry^std.task.start(1)\n"
-        "let^t = try^std.task.async(f^{let^x = {answer = 42} return^f^{x.answer}})\n"
+        "let^t = try^std.task.async(f^{let^x = {answer = 42} return^p^{return^x.answer}})\n"
         "let^f = try^std.task.await(t)\nt.dispose()\n"
         "std.task.stop()\nL^.gc.collect()\nreturn^f()\n");
     LHAT_CHECK_RAN_INTEGER(ran, 42);
@@ -1159,7 +1159,7 @@ static void test_member_race(void)
     LhatTestRan ran = run_source(
         "import^std.task\n"
         "let^read = p^id:number^ -> number^{\n"
-        " let^own = {tag = id, get = f^ -> number^{id}}\n"
+        " let^own = {tag = id, get = p^ -> number^{return^id}}\n"
         " for^i from^0 to^100000 {\n"
         "  if^own.tag != id {return^0}\n"
         "  if^own.get() != id {return^0}\n"

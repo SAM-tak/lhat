@@ -618,8 +618,8 @@ static void test_coroutines(void)
     // coroutine it got from somewhere else really does result in that type.
     LHAT_TEST("a body answering a coroutine it did not make keeps that result");
     check_text(&u,
-               "var^ gen = p^ { yield^ 1 }\n"
-               "var^ outer = f^ -> c^{ p^-> number^}"
+               "let^ gen = p^ { yield^ 1 }\n"
+               "let^ outer = f^ -> c^{ p^-> number^}"
                " { return^ gen() }\n"
                "var^ v : number^|nil^ = outer().start()\n");
     CHECK_CLEAN(&u);

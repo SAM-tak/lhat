@@ -167,7 +167,7 @@ static void test_spawn_upvalue(void)
             "import^ std.thread\n"
             "var^ shared = 0\n"
             "let^ bump = p^ { shared := shared + 1 }\n"
-            "let^ read = f^ -> number^ { return^ shared }\n"
+            "let^ read = p^ -> number^ { return^ shared }\n"
             "let^ h = std.thread.spawn(p^ ... {\n"
             "    bump()\n"
             "    bump()\n"

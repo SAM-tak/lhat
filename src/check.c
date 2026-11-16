@@ -790,6 +790,7 @@ void chk_scope_open(Scope *scope, Scope *parent, const LhatNode *node,
     scope->bindings = NULL;
     scope->tail = NULL;
     scope->parent = parent;
+    scope->function = NULL;
     scope->transparent = transparent;
     scope->from = node != NULL ? node->offset : 0;
     scope->to = node != NULL ? node->end : 0;
@@ -3823,6 +3824,9 @@ static const LhatMessageEntry CHECK_MESSAGES[] = {
     [LHAT_CHECK_ERR_SCOPE_ON_DEFINE] = {"check.scope-on-define",
         "let^ makes a name here, so it takes no scope specifier; "
         "':=' is what writes one that is already there"},
+    [LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE] = {"check.function-captures-mutable",
+        "an f^ may not capture mutable binding or value '{name}'; copy an immutable "
+        "value into a let^ or pass it as an argument"},
     [LHAT_CHECK_ERR_FUNCTION_WRITES_OUT] = {"check.function-writes-out",
         "an f^ assigns to local variables only, and this name was "
         "bound outside its body"},

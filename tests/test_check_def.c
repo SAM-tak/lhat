@@ -512,10 +512,10 @@ static void test_definitions(void)
     // [syntax.if.bool]: what a body may reach, a body written inside it may reach too.
     LHAT_TEST("but a subroutine inside a method still captures it");
     check_text(&u,
-               "var^ C = def^{\n"
+               "let^ C = def^{\n"
                "    self^{ v := 0 },\n"
                "    read := p^self^ -> number^ {\n"
-               "        var^ g = f^ -> number^ { return^ self^.v }\n"
+               "        let^ g = p^ -> number^ { return^ self^.v }\n"
                "        return^ g()\n"
                "    },\n"
                "}\n");
@@ -1757,8 +1757,8 @@ static void test_delegate(void)
 
     LHAT_TEST("a delegated member is part of what an instance carries");
     check_text(&u,
-               "var^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
-               "var^ Outer = def^{\n"
+               "let^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
+               "let^ Outer = def^{\n"
                "    self^{ abstract^ held : Inner },\n"
                "    override^new = f^ { self^{ held = Inner.new() } },\n"
                "    delegate^ self^.held\n"
@@ -1771,13 +1771,13 @@ static void test_delegate(void)
     // wrapper. This is what the feature is for.
     LHAT_TEST("a wrapper satisfies a structure written for the delegate");
     check_text(&u,
-               "var^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
-               "var^ Outer = def^{\n"
+               "let^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
+               "let^ Outer = def^{\n"
                "    self^{ abstract^ held : Inner },\n"
                "    override^new = f^ { self^{ held = Inner.new() } },\n"
                "    delegate^ self^.held\n"
                "}\n"
-               "var^ takes = f^ x:t^{ read : f^self^ -> number^; } -> number^"
+               "let^ takes = f^ x:t^{ read : f^self^ -> number^; } -> number^"
                " { x.read() }\n"
                "var^ n = takes(Outer.new())\n");
     CHECK_CLEAN(&u);
@@ -1785,8 +1785,8 @@ static void test_delegate(void)
 
     LHAT_TEST("a member written here shadows the delegate's, in the type too");
     check_text(&u,
-               "var^ Inner = def^{ read = f^self^ -> string^ { \"a\" } }\n"
-               "var^ Outer = def^{\n"
+               "let^ Inner = def^{ read = f^self^ -> string^ { \"a\" } }\n"
+               "let^ Outer = def^{\n"
                "    self^{ abstract^ held : Inner },\n"
                "    override^new = f^ { self^{ held = Inner.new() } },\n"
                "    read = f^self^ -> number^ { 1 },\n"
@@ -1801,9 +1801,9 @@ static void test_delegate(void)
     // reach different values with different members.
     LHAT_TEST("self^.name and a bare name reach different things");
     check_text(&u,
-               "var^ Field = def^{ fromField = f^self^ -> number^ { 1 } }\n"
-               "var^ Member = def^{ fromMember = f^self^ -> number^ { 2 } }\n"
-               "var^ A = def^{\n"
+               "let^ Field = def^{ fromField = f^self^ -> number^ { 1 } }\n"
+               "let^ Member = def^{ fromMember = f^self^ -> number^ { 2 } }\n"
+               "let^ A = def^{\n"
                "    self^{ abstract^ store : Field },\n"
                "    override^new = f^ { self^{ store = Field.new() } },\n"
                "    delegate^ self^.store\n"
@@ -1859,8 +1859,8 @@ static void test_delegate(void)
     // -- the wrapper's own code is the first place that wants it.
     LHAT_TEST("a member body reaches the delegate through self^");
     check_text(&u,
-               "var^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
-               "var^ Outer = def^{\n"
+               "let^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
+               "let^ Outer = def^{\n"
                "    self^{ abstract^ held : Inner },\n"
                "    override^new = f^ { self^{ held = Inner.new() } },\n"
                "    delegate^ self^.held,\n"
@@ -1895,8 +1895,8 @@ static void test_delegate(void)
     // this def^ WROTE is what the order reads, not what has landed so far.
     LHAT_TEST("a member written here shadows the delegate from inside too");
     check_text(&u,
-               "var^ Inner = def^{ read = f^self^ -> string^ { \"a\" } }\n"
-               "var^ Outer = def^{\n"
+               "let^ Inner = def^{ read = f^self^ -> string^ { \"a\" } }\n"
+               "let^ Outer = def^{\n"
                "    self^{ abstract^ held : Inner },\n"
                "    override^new = f^ { self^{ held = Inner.new() } },\n"
                "    delegate^ self^.held,\n"
@@ -1914,9 +1914,9 @@ static void test_delegate(void)
     // when checked and another when run ([pipeline.repl.no-fork]).
     LHAT_TEST("the last part's delegate is the one, in the type too");
     check_text(&u,
-               "var^ P = def^{ which = f^self^ -> number^ { 1 } }\n"
-               "var^ Q = def^{ which = f^self^ -> string^ { \"two\" } }\n"
-               "var^ First = def^{\n"
+               "let^ P = def^{ which = f^self^ -> number^ { 1 } }\n"
+               "let^ Q = def^{ which = f^self^ -> string^ { \"two\" } }\n"
+               "let^ First = def^{\n"
                "    self^{ abstract^ a : P },\n"
                "    override^new = f^ { self^{ a = P.new() } },\n"
                "    delegate^ self^.a,\n"
@@ -1935,8 +1935,8 @@ static void test_delegate(void)
     // is one and it is that one.
     LHAT_TEST("a part declaring none keeps the base's delegate");
     check_text(&u,
-               "var^ P = def^{ which = f^self^ -> number^ { 1 } }\n"
-               "var^ First = def^{\n"
+               "let^ P = def^{ which = f^self^ -> number^ { 1 } }\n"
+               "let^ First = def^{\n"
                "    self^{ abstract^ a : P },\n"
                "    override^new = f^ { self^{ a = P.new() } },\n"
                "    delegate^ self^.a,\n"
@@ -1950,8 +1950,8 @@ static void test_delegate(void)
     // and [syntax.obj.instance]'s order still puts it in front.
     LHAT_TEST("what the base wrote outlives a later delegate");
     check_text(&u,
-               "var^ Q = def^{ which = f^self^ -> string^ { \"two\" } }\n"
-               "var^ First = def^{ self^{ }, which = f^self^ -> number^ { 1 } }\n"
+               "let^ Q = def^{ which = f^self^ -> string^ { \"two\" } }\n"
+               "let^ First = def^{ self^{ }, which = f^self^ -> number^ { 1 } }\n"
                "var^ Second = First .. def^{\n"
                "    self^{ abstract^ b : Q },\n"
                "    override^new = f^ { self^{ b = Q.new() } },\n"
@@ -1971,13 +1971,13 @@ static void test_delegate(void)
     // there is a host type to ask with: test_hostdata_base.c.
     LHAT_TEST("between def^ the wrapper conforms, because the shape does");
     check_text(&u,
-               "var^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
-               "var^ Outer = def^{\n"
+               "let^ Inner = def^{ read = f^self^ -> number^ { 1 } }\n"
+               "let^ Outer = def^{\n"
                "    self^{ abstract^ held : Inner },\n"
                "    override^new = f^ { self^{ held = Inner.new() } },\n"
                "    delegate^ self^.held\n"
                "}\n"
-               "var^ takes = f^ x:Inner -> number^ { x.read() }\n"
+               "let^ takes = f^ x:Inner -> number^ { x.read() }\n"
                "var^ n = takes(Outer.new())\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);

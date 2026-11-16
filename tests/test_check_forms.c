@@ -106,7 +106,7 @@ static void test_scope_specifiers(void)
     LHAT_TEST("a body is one scope, parameters and all");
     check_text(&u,
                "var^ x = 1\n"
-               "var^ f = f^ x:string^ -> number^ { return^ $^x }\n");
+               "let^ f = p^ x:string^ -> number^ { return^ $^x }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -660,8 +660,8 @@ static void test_variadic(void)
     // [syntax.type.variadic]: 'expr...' spreads a collected table back into a variadic tail.
     LHAT_TEST("'...' forwards into another variadic call");
     check_text(&u,
-               "var^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
-               "var^ outer = f^ ...:number^ -> number^ {\n"
+               "let^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "let^ outer = f^ ...:number^ -> number^ {\n"
                "  return^ inner(...)\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -678,10 +678,10 @@ static void test_variadic(void)
 
     LHAT_TEST("fixed arguments may lead a forwarded spread");
     check_text(&u,
-               "var^ inner = f^ base:number^, ...:number^ -> number^ {\n"
+               "let^ inner = f^ base:number^, ...:number^ -> number^ {\n"
                "  return^ base\n"
                "}\n"
-               "var^ outer = f^ ...:number^ -> number^ {\n"
+               "let^ outer = f^ ...:number^ -> number^ {\n"
                "  return^ inner(100, ...)\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -692,8 +692,8 @@ static void test_variadic(void)
     // only way to write `print("a", ...)` -- print declares no fixed ones.
     LHAT_TEST("values written into the tail may lead a spread");
     check_text(&u,
-               "var^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
-               "var^ outer = f^ ...:number^ -> number^ {\n"
+               "let^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "let^ outer = f^ ...:number^ -> number^ {\n"
                "  return^ inner(10, 20, ...)\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -724,9 +724,9 @@ static void test_variadic(void)
     // rather than wholesale.
     LHAT_TEST("a tuple spreads into a variadic tail");
     check_text(&u,
-               "var^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
-               "var^ pair = f^ -> (number^, number^) { return^ 1, 2 }\n"
-               "var^ outer = f^ -> number^ {\n"
+               "let^ inner = f^ ...:number^ -> number^ { return^ 0 }\n"
+               "let^ pair = f^ -> (number^, number^) { return^ 1, 2 }\n"
+               "let^ outer = f^ -> number^ {\n"
                "  return^ inner(pair()...)\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -897,8 +897,8 @@ static void test_patterns(void)
 
     LHAT_TEST("the unnamed subject proves the same way");
     check_text(&u,
-               "var^ flip = f^ -> bool^ { return^ true^ }\n"
-               "var^ name = f^ -> string^ {\n"
+               "let^ flip = f^ -> bool^ { return^ true^ }\n"
+               "let^ name = f^ -> string^ {\n"
                "    for^ flip(): when^ true^: \"yes\" when^ false^: \"no\" ;\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -1055,8 +1055,8 @@ static void test_patterns(void)
     LHAT_TEST("an exhausted union leaves the success type");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
-               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "var^ use = f^ -> number^ {\n"
+               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "let^ use = f^ -> number^ {\n"
                "    for^ var^ r := open() {\n"
                "        when^ fits^ IOError.NotFound: return^ 0\n"
                "        when^ fits^ IOError.Denied: return^ 0\n"

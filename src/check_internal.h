@@ -117,6 +117,9 @@ typedef struct Scope {
     Binding *bindings;
     Binding *tail;
     struct Scope *parent;
+    // [syntax.sub.captures]: crossing this scope captures into an f^,
+    // including when a nested p^ is the body that actually reads the name.
+    const LhatNode *function;
     // [syntax.loop.scope] with [lex.scope]: a layer that holds names without being a '{'
     // anyone wrote. The loop clauses lasting the whole loop (prolog^, first^)
     // live in one of these, around the layer main^ binds into -- so a name

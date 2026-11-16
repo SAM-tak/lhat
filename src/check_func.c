@@ -270,6 +270,7 @@ LhatType *chk_infer_func(Checker *c, const LhatNode *node)
 
     Scope body;
     chk_scope_open(&body, c->scope, node, false);
+    body.function = node->v.func.is_function ? node : NULL;
 
     for (const LhatNode *param = node->v.func.params; param != NULL;
          param = param->next) {

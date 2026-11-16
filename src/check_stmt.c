@@ -2228,7 +2228,15 @@ static void check_errordef(Checker *c, const LhatNode *node)
     LhatType *set = lhat_type_error_set(c->result->types, name, length,
                                         node->v.named.local);
     ((LhatNode *)node)->checked_type = set;
-    chk_scope_add(c->scope, name, length, set, node->offset)->reached = true;
+    Binding *binding = chk_scope_add(c->scope, name, length, set, node->offset);
+    if (binding != NULL) {
+        binding->reached = true;
+        binding->immutable = true;
+        // [syntax.sub.captures]: the declaration is an immutable identity;
+        // an error instance with this same type has mutable fields.
+        binding->names_type = true;
+        binding->named_type = set;
+    }
 
     for (const LhatNode *kind = node->v.named.members; kind != NULL;
          kind = kind->next) {
@@ -2292,6 +2300,7 @@ static void check_enumdef(Checker *c, const LhatNode *node)
     Binding *binding = chk_scope_add(c->scope, name, length, decl, node->offset);
     if (binding != NULL) {
         binding->reached = true;
+        binding->immutable = true;
         binding->declaration = node->v.named.name;
         ((LhatNode *)node->v.named.name)->checked_binding = binding->declaration;
     }

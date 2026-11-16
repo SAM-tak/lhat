@@ -158,8 +158,8 @@ static void test_narrowing(void)
     LHAT_TEST("an exiting branch narrows what follows it");
     check_text(&u,
                "errordef^ ParseError { Syntax { line : number^ }, Eof }\n"
-               "var^ parse = f^ -> number^|ParseError { return^ 0 }\n"
-               "var^ use = f^ -> number^ {\n"
+               "let^ parse = f^ -> number^|ParseError { return^ 0 }\n"
+               "let^ use = f^ -> number^ {\n"
                "    var^ r = parse()\n"
                "    if^ r fits^ ParseError.Syntax { return^ 0 }\n"
                "    if^ r fits^ ParseError.Eof { return^ 0 }\n"
@@ -184,8 +184,8 @@ static void test_narrowing(void)
     LHAT_TEST("an exhausted union leaves the success type");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
-               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "var^ use = f^ -> number^ {\n"
+               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "let^ use = f^ -> number^ {\n"
                "    var^ r = open()\n"
                "    if^ r fits^ IOError.NotFound {\n"
                "        return^ 0\n"
@@ -897,10 +897,10 @@ static void test_stacked_hats(void)
 
     LHAT_TEST("self^^ carries the enclosing receiver's members");
     check_text(&u,
-               "var^ Outer = def^{ self^{ x := 7 },\n"
-               "  m := f^self^ -> number^ {\n"
-               "    var^ Inner = def^{ self^{ y := 1 },\n"
-               "      n := f^self^ -> number^ { return^ self^^.x + self^.y }\n"
+               "let^ Outer = def^{ self^{ x := 7 },\n"
+               "  m := p^self^ -> number^ {\n"
+               "    let^ Inner = def^{ self^{ y := 1 },\n"
+               "      n := p^self^ -> number^ { return^ self^^.x + self^.y }\n"
                "    }\n"
                "    return^ Inner.new().n()\n"
                "  }\n"
@@ -911,7 +911,7 @@ static void test_stacked_hats(void)
     LHAT_TEST("and a member the outer receiver lacks is reported");
     check_text(&u,
                "var^ Outer = def^{ self^{ x := 7 },\n"
-               "  m := f^self^ -> number^ {\n"
+               "  m := p^self^ -> number^ {\n"
                "    var^ Inner = def^{ self^{ y := 1 },\n"
                "      n := f^self^ -> number^ { return^ self^^.y }\n"
                "    }\n"

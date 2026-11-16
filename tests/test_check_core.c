@@ -249,8 +249,8 @@ static void test_names(void)
     // no forward declaration, since a body does not run where it is written.
     LHAT_TEST("mutual recursion needs no forward declaration");
     check_text(&u,
-               "var^ isEven = f^ n:number^ -> bool^ { return^ isOdd(n) }\n"
-               "var^ isOdd = f^ n:number^ -> bool^ { return^ isEven(n) }\n");
+               "let^ isEven = f^ n:number^ -> bool^ { return^ isOdd(n) }\n"
+               "let^ isOdd = f^ n:number^ -> bool^ { return^ isEven(n) }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -320,7 +320,7 @@ static void test_names(void)
     // so the capture is of what the name meant outside.
     LHAT_TEST("a body in the initialiser captures what it shadows");
     check_text(&u,
-               "var^ f = 21\n"
+               "let^ f = 21\n"
                "do^{\n"
                "    let^ f = f^ -> number^ { return^ f * 2 }\n"
                "    var^ n : number^ = f()\n"
@@ -343,9 +343,9 @@ static void test_names(void)
     // it. Losing this to the rule above would be losing [syntax.stmt.visible] itself.
     LHAT_TEST("mutual recursion written inside a body keeps working");
     check_text(&u,
-               "var^ outer = f^ -> bool^ {\n"
-               "  var^ isEven = f^ n:number^ -> bool^ { return^ isOdd(n) }\n"
-               "  var^ isOdd = f^ n:number^ -> bool^ { return^ isEven(n) }\n"
+               "let^ outer = f^ -> bool^ {\n"
+               "  let^ isEven = f^ n:number^ -> bool^ { return^ isOdd(n) }\n"
+               "  let^ isOdd = f^ n:number^ -> bool^ { return^ isEven(n) }\n"
                "  return^ isEven(4)\n"
                "}\n");
     CHECK_CLEAN(&u);
@@ -384,11 +384,11 @@ static void test_names(void)
     // The same pair, both sides telling the truth about what they return.
     LHAT_TEST("and a correct annotation on both sides checks cleanly");
     check_text(&u,
-               "var^ a = f^ n:number^ -> number^|bool^ {\n"
+               "let^ a = f^ n:number^ -> number^|bool^ {\n"
                "  if^ n <= 0 { return^ true^ }\n"
                "  return^ b(n - 1)\n"
                "}\n"
-               "var^ b = f^ n:number^ -> number^|bool^ {\n"
+               "let^ b = f^ n:number^ -> number^|bool^ {\n"
                "  if^ n <= 0 { return^ 999 }\n"
                "  return^ a(n - 1)\n"
                "}\n"
@@ -671,8 +671,8 @@ static void test_results(void)
     // depend on it, so the arm it contributes has to be kept.
     LHAT_TEST("a recursive call inside a larger expression still counts");
     check_text(&u,
-               "var^ tag = f^ v:any^ -> string^ { return^ \"t\" }\n"
-               "var^ f = f^ x:number^ {\n"
+               "let^ tag = f^ v:any^ -> string^ { return^ \"t\" }\n"
+               "let^ f = f^ x:number^ {\n"
                "    if^ x > 1 { return^ tag(this^(x - 1)) }\n"
                "    return^ 1\n"
                "}\n"
@@ -808,9 +808,9 @@ static void test_results(void)
     LHAT_TEST("a with^ over a try^ answers on both ways out");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
-               "var^ H = def^{ self^{ v := 7 }, dispose := p^self^ { },\n"
+               "let^ H = def^{ self^{ v := 7 }, dispose := p^self^ { },\n"
                "  read := f^self^ -> number^ { return^ self^.v } }\n"
-               "var^ open = f^ -> H|IOError.NotFound { return^ H.new() }\n"
+               "let^ open = f^ -> H|IOError.NotFound { return^ H.new() }\n"
                "var^ read = p^ -> number^|IOError.NotFound {\n"
                "    with^ h = try^ open() { return^ h.read() }\n"
                "}\n");
@@ -1506,7 +1506,8 @@ static void test_undecided_results(void)
     // that started it ([pipeline.strict.per-unit]③). [pipeline.infer.operators]: a let^-bound b would take its shape
     // from the very call in a's body, so the half that cannot settle is a
     // var^'s -- the name may come to mean some other subroutine, and no call
-    // shape is collected for it.
+    // shape is collected for it. Capturing that var^ also violates
+    // [syntax.sub.captures], independently of the inference gaps.
     LHAT_TEST("a ring that cannot settle says so at both definitions");
     check_text(&u,
                "let^ a = f^ n:number^ {\n"
@@ -1514,9 +1515,10 @@ static void test_undecided_results(void)
                "    return^ b(n)\n"
                "}\n"
                "var^ b = f^ x { return^ x }\n");
+    CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE);
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_RESULT_UNDECIDED);
     CHECK_REPORTS(&u, LHAT_CHECK_ERR_PARAM_UNDECIDED);
-    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 3);
+    LHAT_CHECK_EQ_INT(u.checked.diagnostic_count, 4);
     unit_dispose(&u);
 
     // [pipeline.strict.relaxed]: relaxed leaves an undecided type to the machine, so it says
@@ -1975,8 +1977,8 @@ static void test_errors(void)
     LHAT_TEST("try^ unwraps and the result is the success type");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
-               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "var^ read = f^ -> number^|IOError { return^ try^ open() }\n");
+               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "let^ read = f^ -> number^|IOError { return^ try^ open() }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -1997,8 +1999,8 @@ static void test_errors(void)
     LHAT_TEST("a try^ is an exit the inferred result takes in");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
-               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "var^ read = f^ { return^ try^ open() }\n"
+               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "let^ read = f^ { return^ try^ open() }\n"
                "var^ n : number^ = read() catch^ 0\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
@@ -2043,8 +2045,8 @@ static void test_errors(void)
     LHAT_TEST("catch^ arms take the errors off the result");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
-               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "var^ read = f^ -> number^ {\n"
+               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "let^ read = f^ -> number^ {\n"
                "    do^{\n"
                "        return^ try^ open()\n"
                "    catch^:\n"
@@ -2060,13 +2062,13 @@ static void test_errors(void)
     LHAT_TEST("and a function body carries them itself");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied }\n"
-               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "var^ read = f^ -> number^ {\n"
+               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "let^ read = f^ -> number^ {\n"
                "    return^ try^ open()\n"
                "catch^:\n"
                "    return^ 0\n"
                "}\n"
-               "var^ quick = f^ -> number^ { try^ open() catch^: 0 }\n");
+               "let^ quick = f^ -> number^ { try^ open() catch^: 0 }\n");
     CHECK_CLEAN(&u);
     unit_dispose(&u);
 
@@ -2075,8 +2077,8 @@ static void test_errors(void)
     LHAT_TEST("and it^ is narrowed to the arm's kind");
     check_text(&u,
                "errordef^ IOError { NotFound { path : string^ }, Denied }\n"
-               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "var^ read = f^ -> string^ {\n"
+               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "let^ read = f^ -> string^ {\n"
                "    do^{\n"
                "        var^ n = try^ open()\n"
                "        return^ \"\"\n"
@@ -2144,8 +2146,8 @@ static void test_errors(void)
     LHAT_TEST("an if^ and a loop carry arms too");
     check_text(&u,
                "errordef^ IOError { NotFound }\n"
-               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "var^ pick = f^ c:bool^ -> number^ {\n"
+               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "let^ pick = f^ c:bool^ -> number^ {\n"
                "    if^ c {\n"
                "        return^ try^ open()\n"
                "    el^:\n"
@@ -2154,7 +2156,7 @@ static void test_errors(void)
                "        return^ 2\n"
                "    }\n"
                "}\n"
-               "var^ count = p^ -> number^ {\n"
+               "let^ count = p^ -> number^ {\n"
                "    var^ total = 0\n"
                "    repeat^ 3 {\n"
                "        total += try^ open()\n"
@@ -2172,12 +2174,12 @@ static void test_errors(void)
     LHAT_TEST("a fallback can pass the kinds it has no value for");
     check_text(&u,
                "errordef^ IOError { NotFound, Denied, Busy }\n"
-               "var^ open = f^ -> number^|IOError { return^ 0 }\n"
-               "var^ a = f^ -> number^|IOError.Denied|IOError.Busy {\n"
+               "let^ open = f^ -> number^|IOError { return^ 0 }\n"
+               "let^ a = f^ -> number^|IOError.Denied|IOError.Busy {\n"
                "    return^ open() catch^ for^ it^: when^ fits^ "
                "IOError.NotFound: 0 other^: try^ it^ ;\n"
                "}\n"
-               "var^ b = f^ -> number^|IOError.Denied|IOError.Busy {\n"
+               "let^ b = f^ -> number^|IOError.Denied|IOError.Busy {\n"
                "    return^ try^ (open() catch^ for^ it^: when^ fits^ "
                "IOError.NotFound: 0 other^: it^ ;)\n"
                "}\n");
@@ -2217,9 +2219,9 @@ static void test_errors(void)
 #define ARM_PRELUDE                                                            \
     "errordef^ IOError { NotFound, Denied }\n"                                  \
     "errordef^ Other { Q }\n"                                                   \
-    "var^ one = f^ -> number^|IOError.NotFound { return^ 0 }\n"                 \
-    "var^ both = f^ -> number^|IOError { return^ 0 }\n"                         \
-    "var^ top = f^ -> number^|error^ { return^ 0 }\n"
+    "let^ one = f^ -> number^|IOError.NotFound { return^ 0 }\n"                 \
+    "let^ both = f^ -> number^|IOError { return^ 0 }\n"                         \
+    "let^ top = f^ -> number^|error^ { return^ 0 }\n"
     static const struct {
         const char *name;
         const char *source;
@@ -2812,7 +2814,7 @@ static void test_resolutions_say_what_bound_the_name(void)
     check_text(&u,
                "let^ fixed = 1\n"
                "var^ moving = 2\n"
-               "let^ take = f^ n:number^ -> number^ {\n"
+               "let^ take = p^ n:number^ -> number^ {\n"
                "    return^ n + fixed + moving\n"
                "}\n");
     CHECK_CLEAN(&u);

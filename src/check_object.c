@@ -1416,6 +1416,7 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                                        definition, node->offset);
         if (owner != NULL) {
             owner->reached = true;
+            owner->immutable = true;
             owner->declaration = node;
         }
     }

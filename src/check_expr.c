@@ -1006,6 +1006,61 @@ static Binding *read_binding_from(Scope *from, const char *name, size_t length,
     return b;
 }
 
+// [syntax.sub.captures]: this is the value itself, not everything reachable
+// through it. Sealed namespaces and definitions may expose mutable values;
+// changes through aliases, the host and reload are outside the contract.
+static bool immutable_capture_type(const LhatType *type)
+{
+    if (type == NULL) return false;
+    switch (type->kind) {
+        case LHAT_TYPE_NIL:
+        case LHAT_TYPE_BOOL:
+        case LHAT_TYPE_NUMBER:
+        case LHAT_TYPE_STRING:
+        case LHAT_TYPE_FUNC:
+        case LHAT_TYPE_ENUM:
+        case LHAT_TYPE_ENUM_MEMBER:
+            return true;
+        case LHAT_TYPE_TABLE:
+            return type->v.table.sealed || type->v.table.is_definition ||
+                   type->v.table.is_typeinfo;
+        case LHAT_TYPE_HOSTVALUE_BOX:
+            return type->v.table.sealed;
+        case LHAT_TYPE_UNION:
+        case LHAT_TYPE_INTERSECT:
+        case LHAT_TYPE_TUPLE:
+            for (const LhatTypeList *a = type->v.composite.arms; a != NULL;
+                 a = a->next) {
+                if (!immutable_capture_type(a->type)) return false;
+            }
+            return true;
+        default:
+            return false;
+    }
+}
+
+static void check_capture(Checker *c, const LhatNode *node, const Binding *b)
+{
+    if (b->import_root || c->this_link == NULL) return;
+    // Find the actual binding, including repeated hats and old-world reads.
+    for (const Scope *s = c->scope; s != NULL; s = s->parent) {
+        for (const Binding *local = s->bindings; local != NULL; local = local->next) {
+            if (local == b) return;
+        }
+        if (s->function == NULL) continue;
+        // A method's receiver is an explicit input. Its binding is installed
+        // just outside the body for member inference, rather than among the
+        // ordinary parameters. A nested f^ has a different body identity.
+        if (b->declaration == s->function &&
+            chk_name_is(b->name, b->name_length, "self^")) return;
+        if (!b->immutable || (!b->names_type && !immutable_capture_type(b->type))) {
+            chk_report_named(c, node, LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE,
+                             b->name, b->name_length);
+            return;
+        }
+    }
+}
+
 LhatType *chk_infer_name(Checker *c, const LhatNode *node,
                          LhatType **named_type)
 {
@@ -1045,6 +1100,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
             return chk_simple(c, LHAT_TYPE_UNKNOWN);
         }
         outer->reached = true;
+        check_capture(c, node, outer);
         ((LhatNode *)node)->checked_binding = outer->declaration;
 #if LHAT_WITH_RESOLUTIONS
         chk_record_resolution(c, node, outer);
@@ -1195,6 +1251,7 @@ LhatType *chk_infer_name(Checker *c, const LhatNode *node,
             c->read_provisional = true;
         }
     }
+    check_capture(c, node, b);
     // [modules.hostvalue]: a name bound outside this body reaches the value through a
     // capture, and a capture outlives the frame the slots belong to. The
     // same boundary test 15.1 uses for writes, asked of a read here because
@@ -2157,6 +2214,7 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
     ((LhatNode *)node)->checked_super_call = chk_is_super_name(c, node->v.access.target);
     if (node->checked_super_call) {
         Binding *receiver = chk_scope_find(c->scope, "self^", 5, NULL);
+        if (receiver != NULL) check_capture(c, node, receiver);
         ((LhatNode *)node)->checked_receiver = receiver != NULL ? receiver->declaration : NULL;
     }
     // [pipeline.infer.expected]: the arguments first where the callee is a literal, so what they
@@ -2985,6 +3043,7 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
             ((LhatNode *)node)->checked_import_global = b != NULL && b->import_root &&
                 c->body_scope != NULL && !chk_scope_within_body(c, found);
             if (b != NULL) {
+                if (named_type == NULL) check_capture(c, node, b);
                 ((LhatNode *)node)->checked_binding = b->declaration;
                 ((LhatNode *)node)->checked_definition = b->definition;
             }

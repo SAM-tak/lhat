@@ -117,7 +117,7 @@ static void test_errors(void)
     LHAT_TEST("3.5: bytes shorter than the format are Truncated");
     {
         LhatTestRan ran = run_source(INPUT
-                                     "let^ read = f^ s { let^ got, next = try^ input.decode(s, 0)\n"
+                                     "let^ read = p^ s { let^ got, next = try^ input.decode(s, 0)\n"
                                      "    return^ next }\n"
                                      "let^ got = read(\"ab\")\n"
                                      "if^ got fits^ std.binary.Error.Truncated { return^ \"truncated\" }\n"
@@ -132,7 +132,7 @@ static void test_errors(void)
         LhatTestRan ran = run_source("import^ std.binary\n"
                                      "let^ f = std.binary.format(t^{s:number^},\n"
                                      "    { { \"s\", std.binary.range(0, 8) } })\n"
-                                     "let^ read = f^ s { let^ got, next = try^ f.decode(s, 0)\n"
+                                     "let^ read = p^ s { let^ got, next = try^ f.decode(s, 0)\n"
                                      "    return^ next }\n"
                                      "let^ got = read(\"?\")\n"
                                      "if^ got fits^ std.binary.Error.Malformed { return^ \"malformed\" }\n"
@@ -232,7 +232,7 @@ static void test_reuse(void)
 
         // A start past the bytes is theirs to answer for: Truncated.
         ran = run_source(INPUT
-                         "let^ read = f^ s { let^ got, next = try^ input.decode(s, 1)\n"
+                         "let^ read = p^ s { let^ got, next = try^ input.decode(s, 1)\n"
                          "    return^ next }\n"
                          "let^ got = read(input.encode(value))\n"
                          "if^ got fits^ std.binary.Error.Truncated { return^ \"truncated\" }\n"

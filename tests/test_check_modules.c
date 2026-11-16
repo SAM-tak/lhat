@@ -564,6 +564,35 @@ static void test_named_diagnostics(void)
     unit_dispose(&u);
 }
 
+// [syntax.sub.captures]: sealing the namespace permits its capture without
+// recursively freezing the values it publishes. Extracting a mutable value
+// and capturing that value directly is a different operation.
+static void test_function_module_captures(void)
+{
+    static const struct {
+        const char *source;
+        bool rejects;
+    } cases[] = {
+        {"let^ m = require^ \"lib.lh\"\nlet^ f = f^{ m.state.n }\n", false},
+        {"var^ m = require^ \"lib.lh\"\nlet^ f = f^{ m.state.n }\n", true},
+        {"let^ m = require^ \"lib.lh\"\nlet^ state = m.state\nlet^ f = f^{ state.n }\n", true},
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        Unit u;
+        Library lib = {0};
+        lib.expected_path = "lib.lh";
+        LHAT_TEST(cases[i].source);
+        check_against(&u, &lib, "public^let^ state = { n = 1 }\n", cases[i].source);
+        CHECK_CLEAN(&lib.provider);
+        if (cases[i].rejects) {
+            CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE);
+        } else {
+            CHECK_CLEAN(&u);
+        }
+        check_against_dispose(&u, &lib);
+    }
+}
+
 int main(void)
 {
     test_modules();
@@ -572,5 +601,6 @@ int main(void)
     test_session_aliases();
     test_session();
     test_named_diagnostics();
+    test_function_module_captures();
     return lhat_test_report("test_check_modules");
 }

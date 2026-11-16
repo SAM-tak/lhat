@@ -114,11 +114,11 @@ let^positions = {
     c = box^std.math.vector3.new(0, 0, 0)
 }
 
-let^vco = f^{
+let^vco = f^positions:t^{ [string^]:std.math.vector3.Vector3.Box^ } {
     for^i in^positions.values^() {
         yield^i
     }
-}()
+}(positions)
 for^var^i = vco.start() until^vco.done() next^i := vco.resume() {
     print(i)
     # if^i? { print(i.get()) }

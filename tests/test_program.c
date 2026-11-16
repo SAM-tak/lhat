@@ -999,7 +999,7 @@ static void test_running(void)
              "public^ let^ v = 7\n"},
             {"main.lh",
              "require^ \"one.lh\"\n"
-             "var^ read = f^ -> number^ { return^ ns.one.v }\n"
+             "let^ read = f^ -> number^ { return^ ns.one.v }\n"
              "return^ read()\n"},
         };
         program_with(&program, &disk, captured, 2);
