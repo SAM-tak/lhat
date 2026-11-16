@@ -2274,6 +2274,7 @@ static void compile_def(Compiler *c, const LhatNode *node, uint8_t into)
     }
 
     emit(c, lhat_encode_abc(LHAT_BC_SETPROTO, into, prototype, 0));
+    emit(c, lhat_encode_abc(LHAT_BC_SEAL, into, 0, 0));
     c->next_register = proto_mark;
 
     c->building = enclosing;

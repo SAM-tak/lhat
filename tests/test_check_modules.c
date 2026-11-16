@@ -564,25 +564,52 @@ static void test_named_diagnostics(void)
     unit_dispose(&u);
 }
 
-// [syntax.sub.captures]: sealing the namespace permits its capture without
-// recursively freezing the values it publishes. Extracting a mutable value
-// and capturing that value directly is a different operation.
+// [syntax.sub.captures]: a sealed namespace does not make mutable exports
+// immutable. Both direct and indirect captures must reject that graph.
 static void test_function_module_captures(void)
 {
     static const struct {
         const char *source;
         bool rejects;
+        const char *provider;
     } cases[] = {
-        {"let^ m = require^ \"lib.lh\"\nlet^ f = f^{ m.state.n }\n", false},
-        {"var^ m = require^ \"lib.lh\"\nlet^ f = f^{ m.state.n }\n", true},
-        {"let^ m = require^ \"lib.lh\"\nlet^ state = m.state\nlet^ f = f^{ state.n }\n", true},
+        {"let^ m = require^ \"lib.lh\"\nlet^ f = f^{ m.state.n }\n", true, NULL},
+        {"var^ m = require^ \"lib.lh\"\nlet^ f = f^{ m.state.n }\n", true, NULL},
+        {"let^ m = require^ \"lib.lh\"\nlet^ state = m.state\nlet^ f = f^{ state.n }\n", true, NULL},
+        {"let^ m = require^ \"lib.lh\"\nlet^ f = f^{ m.n }\n", false,
+         "public^let^ n = 1\n"},
+        {"let^ m = require^ \"lib.lh\"\nlet^ fake:m = { n = 1 }\n"
+         "let^ f = f^{ fake.n }\n", true, "public^let^ n = 1\n"},
+        {"let^ m = require^ \"lib.lh\"\nlet^ holder:t^{ child:m } = { child = { n = 1 } }\n"
+         "let^ fake = holder.child\nlet^ f = f^{ fake.n }\n", true,
+         "public^let^ n = 1\n"},
+        {"let^ m = require^ \"lib.lh\"\nlet^ make = f^ -> m { return^ { n = 1 } }\n"
+         "let^ fake = make()\nlet^ f = f^{ fake.n }\n", true,
+         "public^let^ n = 1\n"},
+        {"let^ m = require^ \"lib.lh\"\nlet^ f = f^{ m.D.self^.tree.n }\n", false,
+         "public^let^ D = def^{ self^{ tree = { n = 1 } } }\n"},
+        {"let^ m = require^ \"lib.lh\"\nlet^ f = f^{ m.D.state.n }\n", true,
+         "public^let^ D = def^{ self^{}, state = { n = 1 } }\n"},
+        {"let^ m = require^ \"lib.lh\"\nlet^ f = f^{ m.E.A.value.n }\n", true,
+         "public^enum^ E { A = { n = 1 } }\n"},
+        {"require^ \"lib.lh\"\nlet^ f = f^{ lib.state.state.n }\n", true,
+         "module^lib.state\npublic^let^ state = { n = 1 }\n"},
+        {"require^ \"lib.lh\"\nlet^ f = f^{ lib.state[\"state\"].n }\n", true,
+         "module^lib.state\npublic^let^ state = { n = 1 }\n"},
+        {"require^ \"lib.lh\"\nlet^ f = f^{ L^.modules.lib.state.state.n }\n", true,
+         "module^lib.state\npublic^let^ state = { n = 1 }\n"},
+        {"require^ \"lib.lh\"\nlet^ f = f^{ lib.state }\n", true,
+         "module^lib.state\npublic^let^ state = { n = 1 }\n"},
+        {"require^ \"lib.lh\"\nlet^ f = f^{ lib.state.n }\n", false,
+         "module^lib.state\npublic^let^ state = { n = 1 }\npublic^let^ n = 2\n"},
     };
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
         Unit u;
         Library lib = {0};
         lib.expected_path = "lib.lh";
         LHAT_TEST(cases[i].source);
-        check_against(&u, &lib, "public^let^ state = { n = 1 }\n", cases[i].source);
+        check_against(&u, &lib, cases[i].provider != NULL ? cases[i].provider
+                              : "public^let^ state = { n = 1 }\n", cases[i].source);
         CHECK_CLEAN(&lib.provider);
         if (cases[i].rejects) {
             CHECK_REPORTS(&u, LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE);

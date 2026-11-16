@@ -28,6 +28,7 @@ static LhatType *hosted_namespace(LhatProgram *program)
     LhatType *made = lhat_type_table(&program->types);
     if (made != NULL) {
         made->v.table.sealed = true;
+        made->v.table.immutable_shape = LHAT_IMMUTABLE_HOST;
         made->v.table.is_namespace = true;  // and named through, not held
         made->v.table.is_module = true;
     }

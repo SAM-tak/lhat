@@ -1006,39 +1006,6 @@ static Binding *read_binding_from(Scope *from, const char *name, size_t length,
     return b;
 }
 
-// [syntax.sub.captures]: this is the value itself, not everything reachable
-// through it. Sealed namespaces and definitions may expose mutable values;
-// changes through aliases, the host and reload are outside the contract.
-static bool immutable_capture_type(const LhatType *type)
-{
-    if (type == NULL) return false;
-    switch (type->kind) {
-        case LHAT_TYPE_NIL:
-        case LHAT_TYPE_BOOL:
-        case LHAT_TYPE_NUMBER:
-        case LHAT_TYPE_STRING:
-        case LHAT_TYPE_FUNC:
-        case LHAT_TYPE_ENUM:
-        case LHAT_TYPE_ENUM_MEMBER:
-            return true;
-        case LHAT_TYPE_TABLE:
-            return type->v.table.sealed || type->v.table.is_definition ||
-                   type->v.table.is_typeinfo;
-        case LHAT_TYPE_HOSTVALUE_BOX:
-            return type->v.table.sealed;
-        case LHAT_TYPE_UNION:
-        case LHAT_TYPE_INTERSECT:
-        case LHAT_TYPE_TUPLE:
-            for (const LhatTypeList *a = type->v.composite.arms; a != NULL;
-                 a = a->next) {
-                if (!immutable_capture_type(a->type)) return false;
-            }
-            return true;
-        default:
-            return false;
-    }
-}
-
 static void check_capture(Checker *c, const LhatNode *node, const Binding *b)
 {
     if (b->import_root || c->this_link == NULL) return;
@@ -1053,11 +1020,52 @@ static void check_capture(Checker *c, const LhatNode *node, const Binding *b)
         // ordinary parameters. A nested f^ has a different body identity.
         if (b->declaration == s->function &&
             chk_name_is(b->name, b->name_length, "self^")) return;
-        if (!b->immutable || (!b->names_type && !immutable_capture_type(b->type))) {
+        bool descriptor = b->names_type && b->type != NULL &&
+                          b->type->kind == LHAT_TYPE_ERROR_SET;
+        if (!b->immutable || (!descriptor &&
+            !lhat_type_deeply_immutable(b->type, &c->read_provisional))) {
             chk_report_named(c, node, LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE,
                              b->name, b->name_length);
             return;
         }
+    }
+}
+
+// import^ and L^ read the registry instead of capturing a cell. They must
+// not bypass the immutable-environment rule by reading a mutable export.
+void chk_check_namespace_read(Checker *c, const LhatNode *node,
+                              LhatType *owner, LhatType *value)
+{
+    if (!c->in_function || owner == NULL || owner->kind != LHAT_TYPE_TABLE ||
+        (!owner->v.table.is_namespace && !owner->v.table.is_module) ||
+        owner->v.table.immutable_shape == LHAT_IMMUTABLE_HOST) return;
+    const LhatNode *root = node->v.access.target;
+    while (root != NULL && (root->kind == LHAT_NODE_MEMBER || root->kind == LHAT_NODE_INDEX)) {
+        root = root->v.access.target;
+    }
+    if (root == NULL) return;
+    // A namespace supplied as an explicit input, or obtained locally, is
+    // governed by the input rules rather than the capture rules.
+    if (root->checked_binding != NULL) {
+        for (Scope *s = c->scope; s != NULL; s = s->parent) {
+            for (Binding *b = s->bindings; b != NULL; b = b->next) {
+                if (b->declaration == root->checked_binding && chk_scope_within_body(c, s)) return;
+            }
+        }
+    } else if (root->kind != LHAT_NODE_HAT_IDENT && root->kind != LHAT_NODE_IDENT) {
+        return;
+    }
+    if (value != NULL && value->kind == LHAT_TYPE_TABLE &&
+        (value->v.table.is_namespace || value->v.table.is_module) &&
+        c->namespace_prefix == node) return;
+    const char *name = NULL;
+    size_t length = 0;
+    if (node->kind == LHAT_NODE_MEMBER && chk_node_name(c, node->v.access.argument, &name, &length)) {
+        const LhatTypeMember *m = chk_find_member(owner, name, length);
+        if (m != NULL && m->names_type && value != NULL && value->kind == LHAT_TYPE_ERROR_SET) return;
+    }
+    if (!lhat_type_deeply_immutable(value, &c->read_provisional)) {
+        chk_report_named(c, node, LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE, name, length);
     }
 }
 
@@ -3748,7 +3756,9 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                         ? held->v.table.instance
                         : lhat_type_hostvalue(c->result->types,
                                               held->v.table.hostvalue_tag);
-                return lhat_type_hostvalue_box(c->result->types, inner, true);
+                LhatType *box = lhat_type_hostvalue_box(c->result->types, inner, true);
+                if (box != NULL) box->deeply_immutable = true;
+                return box;
             }
             if (held == NULL || held->kind != LHAT_TYPE_HOSTVALUE) {
                 // A gap stays quiet -- the mistake was reported where the
@@ -3759,8 +3769,10 @@ static LhatType *infer_node(Checker *c, const LhatNode *node,
                 }
                 return chk_simple(c, LHAT_TYPE_UNKNOWN);
             }
-            return lhat_type_hostvalue_box(c->result->types, held,
-                                           node->v.jump.sealing);
+            LhatType *box = lhat_type_hostvalue_box(c->result->types, held,
+                                                   node->v.jump.sealing);
+            if (box != NULL) box->deeply_immutable = node->v.jump.sealing;
+            return box;
         }
 
         default:

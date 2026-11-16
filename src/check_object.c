@@ -12,6 +12,7 @@ LhatType *chk_infer_table(Checker *c, const LhatNode *node)
                                 ? node->v.named.members : node->v.list.items;
     LhatType *table = lhat_type_table(c->result->types);
     table->v.table.entries_known = true;
+    table->v.table.immutable_shape = LHAT_IMMUTABLE_COMPLETE;
 
     // [syntax.obj.self]: a method written in the literal reaches the table through its
     // self^ receiver, the same receiver a def^'s method takes -- [syntax.stmt.old-world] took
@@ -406,6 +407,31 @@ static bool immutable_default_value(Checker *c, const LhatNode *node,
     return immutable_default_type(type);
 }
 
+// The proof follows what SETPROTO actually stores, before a field's written
+// structural type erases its contents. Baking copies and seals literal
+// table trees and boxes, but keeps definitions as shared identities.
+static LhatType *baked_default_type(Checker *c, LhatType *type)
+{
+    if (type == NULL) return NULL;
+    if (type->kind == LHAT_TYPE_HOSTVALUE_BOX) {
+        LhatType *box = lhat_type_hostvalue_box(c->result->types, type->v.table.instance, true);
+        if (box != NULL) box->deeply_immutable = true;
+        return box;
+    }
+    if (type->kind != LHAT_TYPE_TABLE || type->v.table.is_definition ||
+        type->v.table.is_typeinfo) return type;
+    LhatType *copy = lhat_type_table(c->result->types);
+    if (copy == NULL) return NULL;
+    copy->v.table.sealed = true;
+    copy->v.table.immutable_shape = type->v.table.immutable_shape != LHAT_IMMUTABLE_OPEN
+                                      ? LHAT_IMMUTABLE_COMPLETE : LHAT_IMMUTABLE_OPEN;
+    for (const LhatTypeMember *m = type->v.table.members; m != NULL; m = m->next) {
+        lhat_type_add_member(c->result->types, copy, m->name, m->name_length,
+                             baked_default_type(c, m->type));
+    }
+    return copy;
+}
+
 // [syntax.obj.super] with [syntax.obj.new]: what super^ names inside a written new -- the
 // hook of the new standing before it, run against the same receiver. It
 // takes what that new took and answers nothing: the instance is already in
@@ -453,6 +479,7 @@ static LhatTypeMember *set_member_marked(Checker *c, LhatType *table,
                                          LhatType *type, bool abstract,
                                          bool pending)
 {
+    table->deeply_immutable = false;
     // The table's own, and no link followed: [modules.hostdata.base]'s base and [syntax.obj.delegate]'s
     // delegate lend a name without giving it, and writing through either
     // would put a member on somebody else's type.
@@ -1152,6 +1179,17 @@ static void compose_member(Checker *c, const LhatNode *node, LhatType *into,
     }
 }
 
+static void definition_immutability(Checker *c, LhatType *definition)
+{
+    definition->v.table.sealed = true;
+    definition->v.table.immutable_shape = LHAT_IMMUTABLE_BUILDING;
+    definition->v.table.prototype = lhat_type_table(c->result->types);
+    if (definition->v.table.prototype != NULL) {
+        definition->v.table.prototype->v.table.sealed = true;
+        definition->v.table.prototype->v.table.immutable_shape = LHAT_IMMUTABLE_BUILDING;
+    }
+}
+
 // [syntax.obj.compose]: a name on the right brings its type and any pending requirements.
 // Unlike a literal, it was not written against this left side. The compiler
 // flattens the same parts, so the type must preserve every unresolved name.
@@ -1171,6 +1209,9 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
     LhatType *definition = lhat_type_table(c->result->types);
     LhatType *instance = lhat_type_table(c->result->types);
     definition->v.table.is_definition = true;
+    definition_immutability(c, definition);
+    copy_members(c, definition->v.table.prototype, left->v.table.prototype);
+    copy_members(c, definition->v.table.prototype, right->v.table.prototype);
     definition->v.table.instance = instance;  // [syntax.obj.instance]
     definition->v.table.from_definition = true;
     if (node->checked_definition != NULL) {
@@ -1243,6 +1284,8 @@ LhatType *chk_compose_definitions(Checker *c, const LhatNode *node,
     set_member(c, definition, "new", 3,
                constructor_from(c, inherited != NULL ? inherited->type : NULL,
                                 instance));
+    definition->v.table.immutable_shape = LHAT_IMMUTABLE_COMPLETE;
+    definition->v.table.prototype->v.table.immutable_shape = LHAT_IMMUTABLE_COMPLETE;
     return definition;
 }
 
@@ -1349,6 +1392,9 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     // op^.. one of them carries -- this is what tells a definition from an
     // instance of it.
     definition->v.table.is_definition = true;
+    definition_immutability(c, definition);
+    copy_members(c, definition->v.table.prototype,
+                 base != NULL ? base->v.table.prototype : NULL);
     // [syntax.obj.members-order]: and this is what its instances carry. Held on the definition so
     // that [syntax.type.self]'s Self^ and the writer's self^{ … } section both read one
     // place, rather than going through what new answers.
@@ -1539,6 +1585,8 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
                 chk_report_named(c, field->v.entry.value,
                                  LHAT_CHECK_ERR_MUTABLE_DEFAULT, name, length);
             }
+            set_member(c, definition->v.table.prototype, name, length,
+                       baked_default_type(c, actual));
             chk_check_tostring_shape(c, field, written != NULL ? written : actual,
                                      name, length, true);
             LhatTypeMember *added = set_member(
@@ -1868,6 +1916,12 @@ LhatType *chk_infer_def(Checker *c, const LhatNode *node, LhatType *base)
     // that never settled is reported. Writing the same link twice is
     // writing it once.
     link_delegate(c, node, definition, instance, true);
+
+    definition->v.table.immutable_shape = LHAT_IMMUTABLE_COMPLETE;
+    if (definition->v.table.prototype != NULL) {
+        definition->v.table.prototype->v.table.immutable_shape = LHAT_IMMUTABLE_COMPLETE;
+    }
+    (void)lhat_type_deeply_immutable(definition, NULL);
 
     c->self_link = self_here.outer;
     return definition;

@@ -384,7 +384,9 @@ static LhatType *instantiate_result(LhatTypeArena *arena, LhatType *type,
 LhatType *lhat_type_instantiate_result(LhatTypeArena *arena, LhatType *type,
                                       const LhatType *const *args, size_t count)
 {
-    return instantiate_result(arena, type, args, count, 0);
+    LhatType *result = instantiate_result(arena, type, args, count, 0);
+    return type != NULL && type->structural_view
+               ? lhat_type_without_value_facts(arena, result) : result;
 }
 
 static LhatType *instantiate_receiver(LhatTypeArena *arena, LhatType *type,
@@ -639,6 +641,163 @@ LhatType *lhat_type_table(LhatTypeArena *arena)
     return new_type(arena, LHAT_TYPE_TABLE);
 }
 
+typedef struct ValueView {
+    const LhatType *source;
+    LhatType *copy;
+    const struct ValueView *outer;
+} ValueView;
+
+static LhatType *value_view(LhatTypeArena *arena, LhatType *type,
+                            const ValueView *seen, unsigned depth)
+{
+    if (type == NULL || type->structural_view) return type;
+    if (type->kind == LHAT_TYPE_TABLE &&
+        (type->v.table.is_typeinfo || type->v.table.nominal ||
+         (type->v.table.from_definition && !type->v.table.is_definition))) return type;
+    if (type->kind != LHAT_TYPE_TABLE && type->kind != LHAT_TYPE_FUNC &&
+        type->kind != LHAT_TYPE_CORO && type->kind != LHAT_TYPE_HOSTVALUE_BOX &&
+        type->kind != LHAT_TYPE_ARGUMENT && type->kind != LHAT_TYPE_UNION &&
+        type->kind != LHAT_TYPE_INTERSECT && type->kind != LHAT_TYPE_TUPLE) return type;
+    for (const ValueView *s = seen; s != NULL; s = s->outer) {
+        if (s->source == type) return s->copy;
+    }
+    if (depth > LHAT_MAX_PROTOTYPE_DEPTH) return lhat_type_simple(arena, LHAT_TYPE_UNKNOWN);
+    LhatType *copy = new_type(arena, type->kind);
+    if (copy == NULL) return lhat_type_simple(arena, LHAT_TYPE_UNKNOWN);
+    *copy = *type;
+    copy->structural_view = true;
+    copy->deeply_immutable = copy->checking_immutable = false;
+    ValueView here = {type, copy, seen};
+    const LhatTypeList *items = NULL;
+    LhatTypeList **tail = NULL;
+    if (type->kind == LHAT_TYPE_TABLE) {
+        copy->v.table.sealed = false;
+        copy->v.table.immutable_shape = LHAT_IMMUTABLE_OPEN;
+        copy->v.table.prototype = NULL;
+    } else if (type->kind == LHAT_TYPE_FUNC) {
+        copy->v.func.result = value_view(arena, type->v.func.result, &here, depth + 1);
+        copy->v.func.variadic = value_view(arena, type->v.func.variadic, &here, depth + 1);
+        items = type->v.func.params;
+        tail = &copy->v.func.params;
+    } else if (type->kind == LHAT_TYPE_CORO) {
+        copy->v.coroutine.receive = value_view(arena, type->v.coroutine.receive, &here, depth + 1);
+        copy->v.coroutine.produce = value_view(arena, type->v.coroutine.produce, &here, depth + 1);
+        copy->v.coroutine.result = value_view(arena, type->v.coroutine.result, &here, depth + 1);
+    } else if (type->kind == LHAT_TYPE_ARGUMENT) {
+        copy->v.argument.bound = value_view(arena, type->v.argument.bound, &here, depth + 1);
+    } else if (type->kind != LHAT_TYPE_HOSTVALUE_BOX) {
+        items = type->v.composite.arms;
+        tail = &copy->v.composite.arms;
+    }
+    if (tail != NULL) *tail = NULL;
+    for (; items != NULL; items = items->next) {
+        *tail = arena_alloc(arena, sizeof **tail);
+        if (*tail == NULL) return lhat_type_simple(arena, LHAT_TYPE_UNKNOWN);
+        (*tail)->type = value_view(arena, items->type, &here, depth + 1);
+        tail = &(*tail)->next;
+    }
+    return copy;
+}
+
+// An annotation describes a shape, never the actual value's seal. Children
+// of table views are erased lazily when read, avoiding copies of large
+// recursive member graphs and retaining registered nominal identities.
+LhatType *lhat_type_without_value_facts(LhatTypeArena *arena, LhatType *type)
+{
+    return value_view(arena, type, NULL, 0);
+}
+
+typedef struct {
+    LhatType **items;
+    size_t count, capacity;
+} ImmutableGraph;
+
+static bool immutable_push(ImmutableGraph *graph, LhatType *type)
+{
+    if (type == NULL) return false;
+    if (type->deeply_immutable || type->checking_immutable) return true;
+    if (graph->count == graph->capacity) {
+        size_t capacity = graph->capacity ? graph->capacity * 2 : 16;
+        LhatType **items = lhat_realloc(graph->items, capacity * sizeof *items);
+        if (items == NULL) return false;
+        graph->items = items;
+        graph->capacity = capacity;
+    }
+    graph->items[graph->count++] = type;
+    type->checking_immutable = true;
+    return true;
+}
+
+// [syntax.sub.captures]: exact sealed value graphs, not structural views.
+// The worklist visits each node once, including cycles and shared children.
+// Cache only after the WHOLE graph succeeds: a cycle may return to a node
+// whose mutable sibling has not been visited yet.
+bool lhat_type_deeply_immutable(LhatType *type, bool *provisional)
+{
+    ImmutableGraph graph = {0};
+    bool final = true;
+    bool ok = immutable_push(&graph, type);
+    for (size_t i = 0; ok && i < graph.count; i++) {
+        LhatType *t = graph.items[i];
+        switch (t->kind) {
+            case LHAT_TYPE_NIL:
+            case LHAT_TYPE_BOOL:
+            case LHAT_TYPE_NUMBER:
+            case LHAT_TYPE_STRING:
+            case LHAT_TYPE_FUNC:
+                break;
+            case LHAT_TYPE_TABLE:
+                if (t->v.table.is_typeinfo) break;
+                if (t->v.table.immutable_shape == LHAT_IMMUTABLE_HOST) break;
+                final = final && t->v.table.immutable_shape == LHAT_IMMUTABLE_COMPLETE;
+                if (provisional != NULL && t->v.table.immutable_shape == LHAT_IMMUTABLE_BUILDING) {
+                    *provisional = true;
+                }
+                ok = t->v.table.sealed && t->v.table.immutable_shape != LHAT_IMMUTABLE_OPEN;
+                for (const LhatTypeMember *m = t->v.table.members; ok && m != NULL; m = m->next) {
+                    if (m->names_type && m->type != NULL && m->type->kind == LHAT_TYPE_ERROR_SET) continue;
+                    ok = immutable_push(&graph, m->type);
+                }
+                LhatType *edges[] = {t->v.table.base, t->v.table.delegate,
+                    t->v.table.prototype, t->v.table.index_key,
+                    t->v.table.index_value, t->v.table.variadic};
+                for (size_t k = 0; ok && k < sizeof edges / sizeof edges[0]; k++) {
+                    if (edges[k] != NULL) ok = immutable_push(&graph, edges[k]);
+                }
+                break;
+            case LHAT_TYPE_HOSTVALUE_BOX:
+                ok = false; // Only constbox^ construction supplies a value proof.
+                break;
+            case LHAT_TYPE_ENUM:
+                if (t->v.error.immutable_building) { ok = false; break; }
+                for (const LhatTypeList *a = t->v.error.kinds; ok && a != NULL; a = a->next) {
+                    ok = immutable_push(&graph, a->type);
+                }
+                break;
+            case LHAT_TYPE_ENUM_MEMBER:
+                ok = immutable_push(&graph, t->v.error.value_type);
+                if (ok && t->v.error.set != NULL) ok = immutable_push(&graph, t->v.error.set);
+                break;
+            case LHAT_TYPE_UNION:
+            case LHAT_TYPE_INTERSECT:
+            case LHAT_TYPE_TUPLE:
+                for (const LhatTypeList *a = t->v.composite.arms; ok && a != NULL; a = a->next) {
+                    ok = immutable_push(&graph, a->type);
+                }
+                break;
+            default:
+                ok = false;
+                break;
+        }
+    }
+    for (size_t i = 0; i < graph.count; i++) {
+        graph.items[i]->checking_immutable = false;
+        if (ok && final) graph.items[i]->deeply_immutable = true;
+    }
+    lhat_free(graph.items);
+    return ok;
+}
+
 LhatType *lhat_type_hostvalue(LhatTypeArena *arena,
                               const struct LhatHostValueTag *tag)
 {
@@ -761,6 +920,7 @@ LhatType *lhat_type_enum_member(LhatTypeArena *arena, LhatType *decl,
     type->v.error.name_length = name_length;
     type->v.error.value_type = value_type;
     if (decl != NULL) {
+        decl->deeply_immutable = false;
         LhatTypeList *link = (LhatTypeList *)arena_alloc(arena, sizeof *link);
         if (link != NULL) {
             link->type = type;
@@ -1004,6 +1164,7 @@ LhatTypeMember *lhat_type_add_member(LhatTypeArena *arena, LhatType *owner,
     if (owner == NULL) {
         return NULL;
     }
+    owner->deeply_immutable = false;
     LhatTypeMember **slot = owner->kind == LHAT_TYPE_ERROR_KIND
                                 ? &owner->v.error.fields
                                 : &owner->v.table.members;

@@ -2372,6 +2372,29 @@ static void test_composition_keeps_delegation(void)
     run_dispose(&r);
 }
 
+static void test_definition_sealing(void)
+{
+    Run r;
+    LHAT_TEST("a definition is sealed after construction");
+    run_text(&r, "let^ D = def^{ self^{}, n = 1 }\nD.n := 2\nreturn^ 0\n");
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SEALED);
+    run_dispose(&r);
+
+    LHAT_TEST("a structural alias cannot bypass the definition's runtime seal");
+    run_text(&r, "let^ D = def^{ self^{}, n = 1 }\n"
+                 "let^ alias:t^{n:number^} = D\nalias.n := 2\nreturn^ 0\n");
+    LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
+    LHAT_CHECK_EQ_INT(r.ran.status, LHAT_RUN_SEALED);
+    run_dispose(&r);
+
+    LHAT_TEST("instances remain mutable and each gets a separate prototype copy");
+    run_checked_text(&r, "let^ D = def^{ self^{ tree = { n = 1 } } }\n"
+        "let^ a = D.new()\nlet^ b = D.new()\na.tree.n := 2\nreturn^ a.tree.n * 10 + b.tree.n\n");
+    LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
+    CHECK_INTEGER(&r, 21);
+    run_dispose(&r);
+}
+
 int main(void)
 {
     test_definitions();
@@ -2383,5 +2406,6 @@ int main(void)
     test_two_spellings_are_one_member();
     test_declared_beside_a_delegate();
     test_composition_keeps_delegation();
+    test_definition_sealing();
     return lhat_test_report("test_vm_def");
 }

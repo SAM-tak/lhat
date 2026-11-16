@@ -2058,6 +2058,7 @@ static LhatType *resolve_written_type(Checker *c, const LhatNode *node)
 LhatType *chk_resolve_type(Checker *c, const LhatNode *node)
 {
     LhatType *resolved = resolve_written_type(c, node);
+    resolved = lhat_type_without_value_facts(c->result->types, resolved);
 
     // [modules.hostvalue] with 08: what the compiler does with a written type it has to
     // settle itself -- fits^, as^, an overload^ed parameter -- is match the

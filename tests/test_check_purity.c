@@ -1291,6 +1291,26 @@ static void test_function_captures(void)
         {"definitions and their def^ binding are immutable identities",
          "let^ D = def^{ self^{ n = 1 }, make = f^{ def^.new() } }\n"
          "let^ f = f^{ D.new() }\n", false},
+        {"a sealed definition cannot hide mutable static data",
+         "let^ D = def^{ self^{}, state = { n = 1 } }\nlet^ f = f^{ D.state.n }\n", true},
+        {"definition bodies also check static data written later",
+         "let^ D = def^{ self^{}, read = f^{ def^.state.n }, state = { n = 1 } }\n", true},
+        {"baked prototype trees are recursively sealed",
+         "let^ D = def^{ self^{ tree = { child = { n = 1 } } } }\n"
+         "let^ f = f^{ D.self^.tree.child.n }\n", false},
+        {"immutable definition cycles can be captured",
+         "let^ D = def^{ self^{}, same = def^, n = 1 }\nlet^ f = f^{ D.same.n }\n", false},
+        {"a definition cycle cannot hide a mutable sibling",
+         "let^ D = def^{ self^{}, same = def^, state = { n = 1 } }\n"
+         "let^ f = f^{ D.same.state.n }\n", true},
+        {"a structural field annotation does not freeze a hidden value",
+         "let^ state:t^{n:number^} = { n = 1, hidden = {} }\n"
+         "let^ D = def^{ self^{}, state = state }\nlet^ f = f^{ D.state.n }\n", true},
+        {"enum values can expose mutable tables",
+         "enum^ E { A = { n = 1 } }\nlet^ f = f^{ E.A.value.n }\n", true},
+        {"an enum member can reach mutable sibling values through its enum",
+         "enum^ E { A = 1, B = { n = 1 } }\nlet^ a = E.A\n"
+         "let^ f = f^{ a.enum.B.value.n }\n", true},
         {"a mutable arm of a union prevents capture",
          "let^ t:number^|t^{n:number^} = 1\nlet^ f = f^{ t }\n", true},
         {"an immutable union can be captured",

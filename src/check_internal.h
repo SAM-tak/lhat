@@ -458,6 +458,8 @@ typedef struct {
     // restored around a nested one the same way `in_function` is, so an f^
     // written inside another measures against its own.
     Scope *body_scope;
+    // A namespace used as the prefix of a longer member/index path.
+    const LhatNode *namespace_prefix;
 
 
     // [errors.catch.clause]: the statements with catch^ arms being checked, if any. A
@@ -602,6 +604,8 @@ typedef struct LhatTemplate {
 
 void chk_freeze_templates(Checker *c, const Scope *scope);
 void chk_check_task_initialization(Checker *c);
+void chk_check_namespace_read(Checker *c, const LhatNode *node,
+                              LhatType *owner, LhatType *value);
 
 
 void chk_report(Checker *c, const LhatNode *at, LhatCheckErrorCode code);

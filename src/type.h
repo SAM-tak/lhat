@@ -235,8 +235,20 @@ typedef enum LhatTypeAttribute {
     LHAT_TYPE_ATTRIBUTE_RETURN   // .ReturnType: what a subroutine's call answers
 } LhatTypeAttribute;
 
+typedef enum {
+    LHAT_IMMUTABLE_OPEN,
+    LHAT_IMMUTABLE_BUILDING,
+    LHAT_IMMUTABLE_COMPLETE,
+    LHAT_IMMUTABLE_HOST
+} LhatImmutableShape;
+
 struct LhatType {
     LhatTypeKind kind;
+    // [syntax.sub.captures]: a successful proof over a complete immutable
+    // value graph. Structural annotations never manufacture this fact.
+    bool deeply_immutable;
+    bool checking_immutable;
+    bool structural_view;
     bool coroutine_top;
     bool receive_any, produce_any, result_any, kind_any;
     bool excludes_error; // A successful error-handling path, even if its type is open.
@@ -327,6 +339,10 @@ struct LhatType {
             // it records where the structure came from and takes no part in
             // conformance ([syntax.op.semantic]).
             bool sealed;
+            // Complete construction facts are distinct from structural types.
+            // Host namespace contents are sealed by share_tree and trusted.
+            LhatImmutableShape immutable_shape;
+            struct LhatType *prototype;
             // [modules.host.machine]: a table of the registry's structure -- L^ itself and
             // L^.gc, the module registry L^.modules, a segment of that
             // registry, what a unit published, the tree a host registered.
@@ -471,6 +487,7 @@ struct LhatType {
             // [syntax.enum]: the checked type of the member's declared value
             // -- what `.value` answers. ENUM_MEMBER only.
             LhatType *value_type;
+            bool immutable_building; // Enum values are not complete yet.
             // [errors.kind.local]: which of the two tops this belongs under --
             // localerror^ rather than error^, declared with localerrordef^.
             // The two are disjoint, so this is part of what the type IS and
@@ -541,6 +558,8 @@ void lhat_type_arena_dispose(LhatTypeArena *arena);
 LhatType *lhat_type_simple(LhatTypeArena *arena, LhatTypeKind kind);
 
 LhatType *lhat_type_table(LhatTypeArena *arena);
+bool lhat_type_deeply_immutable(LhatType *type, bool *provisional);
+LhatType *lhat_type_without_value_facts(LhatTypeArena *arena, LhatType *type);
 // [modules.hostvalue]: a host value type. Nominal like a hostdata type -- identity is
 // the tag -- and additionally barred from every place that outlives a frame,
 // which conformance and the checker enforce off the kind.

@@ -979,6 +979,69 @@ static void test_remembered_descriptors(void)
     types_dispose(&t);
 }
 
+static LhatType *sealed_value(Types *t)
+{
+    LhatType *table = table0(t);
+    table->v.table.sealed = true;
+    table->v.table.immutable_shape = LHAT_IMMUTABLE_COMPLETE;
+    return table;
+}
+
+static void test_deep_immutability(void)
+{
+    Types t;
+    types_init(&t);
+    LHAT_TEST("a sealed structural view is not proof of its hidden contents");
+    LhatType *view = table0(&t);
+    view->v.table.sealed = true;
+    LHAT_CHECK(!lhat_type_deeply_immutable(view, NULL), "open shape refused");
+
+    LHAT_TEST("a mutable sibling invalidates every node in a sealed cycle");
+    LhatType *a = sealed_value(&t), *b = sealed_value(&t);
+    LhatType *mutable = table0(&t);
+    lhat_type_add_member(&t.arena, a, "b", 1, b);
+    lhat_type_add_member(&t.arena, b, "a", 1, a);
+    lhat_type_add_member(&t.arena, a, "mutable", 7, mutable);
+    LHAT_CHECK(!lhat_type_deeply_immutable(a, NULL), "mutable descendant refused");
+    LHAT_CHECK(!a->deeply_immutable && !b->deeply_immutable, "no partial cycle proof cached");
+    LHAT_CHECK(!a->checking_immutable && !b->checking_immutable, "visit marks cleared on failure");
+    LHAT_CHECK(!lhat_type_deeply_immutable(b, NULL), "starting inside the cycle also fails");
+
+    LHAT_TEST("fully sealed cycles and shared children can be proven and cached");
+    mutable->v.table.sealed = true;
+    mutable->v.table.immutable_shape = LHAT_IMMUTABLE_COMPLETE;
+    lhat_type_add_member(&t.arena, b, "shared", 6, mutable);
+    LHAT_CHECK(lhat_type_deeply_immutable(a, NULL), "the complete graph is immutable");
+    LHAT_CHECK(a->deeply_immutable && b->deeply_immutable && mutable->deeply_immutable,
+               "the successful graph is cached");
+
+    LHAT_TEST("dictionary key types also belong to the immutable graph");
+    LhatType *dictionary = sealed_value(&t);
+    dictionary->v.table.index_key = table0(&t);
+    dictionary->v.table.index_value = simple(&t, LHAT_TYPE_NUMBER);
+    LHAT_CHECK(!lhat_type_deeply_immutable(dictionary, NULL), "mutable key refused");
+
+    LHAT_TEST("building graphs cannot leave stale positive caches");
+    LhatType *building = sealed_value(&t);
+    building->v.table.immutable_shape = LHAT_IMMUTABLE_BUILDING;
+    bool provisional = false;
+    LHAT_CHECK(lhat_type_deeply_immutable(building, &provisional), "current contents are safe");
+    LHAT_CHECK(provisional && !building->deeply_immutable, "construction remains provisional");
+    lhat_type_add_member(&t.arena, building, "late", 4, table0(&t));
+    building->v.table.immutable_shape = LHAT_IMMUTABLE_COMPLETE;
+    LHAT_CHECK(!lhat_type_deeply_immutable(building, NULL), "late mutable member is checked");
+
+    LHAT_TEST("deep immutable graphs do not consume the native call stack");
+    LhatType *root = sealed_value(&t), *tail = root;
+    for (size_t i = 0; i < 2048; i++) {
+        LhatType *next = sealed_value(&t);
+        lhat_type_add_member(&t.arena, tail, "next", 4, next);
+        tail = next;
+    }
+    LHAT_CHECK(lhat_type_deeply_immutable(root, NULL), "deep graph accepted");
+    types_dispose(&t);
+}
+
 int main(void)
 {
     test_remembered_descriptors();
@@ -991,5 +1054,6 @@ int main(void)
     test_functions();
     test_writing_parentheses();
     test_errors();
+    test_deep_immutability();
     return lhat_test_report("test_type");
 }

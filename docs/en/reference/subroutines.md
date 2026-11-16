@@ -22,8 +22,11 @@ definition bodies close with braces.
 Putting an external table into a local table does not grant permission to mutate the external one.
 The checker also tracks the origin of nested values.
 An `f^` cannot capture mutable outer bindings or values, including outer `var^` bindings, mutable tables, and coroutines.
-Copy an immutable value into a `let^` binding or pass the value as an argument or receiver. Sealed tables may be captured.
-Changes through aliases, host changes, and reload are outside this guarantee.
+Copy an immutable value into a `let^` binding or pass the value as an argument or receiver.
+Tables, definitions, and enums may be captured only when all reachable values are proven immutable.
+A shallow seal or a structural type annotation is insufficient. Module reads follow the same rule.
+Definition tables are sealed after construction; their instances remain mutable.
+Changes through aliases to explicit inputs, host changes, and reload are outside this guarantee.
 `fresh^` promises a fresh result; `mutable^self^` marks a function method that mutates its receiver.
 Whether such methods can be called inside a function also depends on the value's origin.
 

@@ -32,6 +32,10 @@ static void table_walk_halves(Checker *c, const LhatType *over,
     // An explicit index constraint supplies the bound on the entire walk.
     *out_keys = keys != NULL ? keys : chk_simple(c, LHAT_TYPE_UNKNOWN);
     *out_values = values != NULL ? values : chk_simple(c, LHAT_TYPE_UNKNOWN);
+    if (over != NULL && over->structural_view) {
+        *out_keys = lhat_type_without_value_facts(c->result->types, *out_keys);
+        *out_values = lhat_type_without_value_facts(c->result->types, *out_values);
+    }
 }
 
 LhatType *chk_table_walk_tuple(Checker *c, const LhatType *over)
@@ -73,6 +77,7 @@ LhatType *chk_table_element_type(Checker *c, const LhatType *over)
         values = lhat_type_union(c->result->types, values,
                                  over->v.table.index_value);
     }
+    if (over->structural_view) values = lhat_type_without_value_facts(c->result->types, values);
     return values != NULL ? values : chk_simple(c, LHAT_TYPE_UNKNOWN);
 }
 
@@ -409,7 +414,10 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
         chk_report(c, node, LHAT_CHECK_ERR_NO_MEMBER);
         return chk_simple(c, LHAT_TYPE_UNKNOWN);
     }
+    const LhatNode *prefix = c->namespace_prefix;
+    c->namespace_prefix = node->v.access.target;
     LhatType *target = chk_infer(c, node->v.access.target);
+    c->namespace_prefix = prefix;
     if (c->writing_to == node) {
         chk_hostvalue_temporary_write(c, node, node->v.access.target, target);
     }
@@ -466,7 +474,9 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
                                      chk_simple(c, LHAT_TYPE_NIL));
     }
 
-    return chk_member_of(c, target, name, length, node, named_type);
+    LhatType *answer = chk_member_of(c, target, name, length, node, named_type);
+    chk_check_namespace_read(c, node, target, answer);
+    return answer;
 }
 
 // [syntax.obj.structure] with [syntax.obj.substring]: what `target` answers for a member of this name. Split
@@ -486,7 +496,7 @@ LhatType *chk_infer_member(Checker *c, const LhatNode *node,
 // probe cannot: settled the target (this refuses UNKNOWN and PENDING above),
 // and set aside the nil^ arm under [errors.runtime.nil]'s rule -- which for a probe means
 // handing in the receiver LhatMemberSite already recorded.
-LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
+static LhatType *member_of(Checker *c, LhatType *target, const char *name,
                         size_t length, const LhatNode *node,
                         LhatType **named_type)
 {
@@ -1293,6 +1303,15 @@ bool chk_string_member_key(Checker *c, const LhatNode *key)
     return lhat_type_member_key_kind(&probe) == LHAT_TYPE_STRING;
 }
 
+LhatType *chk_member_of(Checker *c, LhatType *target, const char *name,
+                        size_t length, const LhatNode *node,
+                        LhatType **named_type)
+{
+    LhatType *answer = member_of(c, target, name, length, node, named_type);
+    return target->structural_view
+               ? lhat_type_without_value_facts(c->result->types, answer) : answer;
+}
+
 // Without an explicit index constraint, collect the declared members a key
 // can reach. NULL leaves the result unknown, as ordinary width subtyping does.
 static LhatType *reachable_by_key(Checker *c, const LhatType *over,
@@ -1406,9 +1425,10 @@ static LhatType *dictionary_index_type(Checker *c, const LhatNode *node,
 
 // The '[' half of the same. Lifted out of infer's switch so that it reads
 // beside infer_member, which it now shares its nil^ handling with.
-LhatType *chk_infer_index(Checker *c, const LhatNode *node)
+static LhatType *infer_index(Checker *c, const LhatNode *node, LhatType **owner)
 {
     LhatType *over = chk_infer(c, node->v.access.target);
+    *owner = over;
     LhatType *asked = chk_require_value(c, node->v.access.argument,
                                         chk_infer(c, node->v.access.argument));
     // [modules.hostvalue.union]: a box's key hash is its bytes, and only a sealed box
@@ -1510,4 +1530,18 @@ LhatType *chk_infer_index(Checker *c, const LhatNode *node)
     // 'T|nil^' out of -- [syntax.obj.structure] leaves what an undeclared table holds unsaid,
     // and [pipeline.strict.relaxed] leaves that to the machine.
     return chk_simple(c, LHAT_TYPE_UNKNOWN);
+}
+
+LhatType *chk_infer_index(Checker *c, const LhatNode *node)
+{
+    const LhatNode *prefix = c->namespace_prefix;
+    c->namespace_prefix = node->v.access.target;
+    LhatType *owner = NULL;
+    LhatType *answer = infer_index(c, node, &owner);
+    c->namespace_prefix = prefix;
+    if (owner != NULL && owner->structural_view) {
+        answer = lhat_type_without_value_facts(c->result->types, answer);
+    }
+    chk_check_namespace_read(c, node, owner, answer);
+    return answer;
 }

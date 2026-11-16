@@ -466,6 +466,19 @@ static void test_boxing(void)
                        "b.set(std.math.vector3.new(4, 5, 6))\n"),
                "the sealed box is get-only");
 
+    LHAT_TEST("only an actual sealed box can be captured");
+    LHAT_CHECK(checks("import^ std.math.vector3\n"
+                      "let^ b = constbox^std.math.vector3.new(1, 2, 3)\n"
+                      "let^ read = f^{ b.get().x }\n"), "constbox^ proves the seal");
+    LHAT_CHECK(!checks("import^ std.math.vector3\n"
+                       "let^ b:std.math.vector3.Vector3.ConstBox^ = "
+                       "box^std.math.vector3.new(1, 2, 3)\n"
+                       "let^ read = f^{ b.get().x }\n"), "a get-only view does not prove a seal");
+    LHAT_CHECK(checks("import^ std.math.vector3\n"
+                      "let^ b = box^std.math.vector3.new(1, 2, 3)\n"
+                      "let^ frozen = constbox^b\nlet^ read = f^{ frozen.get().x }\n"),
+               "a sealed copy of a live box can be captured");
+
     // [modules.hostvalue.union]: a Box^ fits a ConstBox^ seat -- the get-only view -- and never
     // the other way around, where set() would be a lie.
     LHAT_TEST("a Box^ fits a ConstBox^ seat and not the reverse");

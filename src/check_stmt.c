@@ -71,6 +71,7 @@ static LhatType *chk_gc_type(Checker *c)
         return NULL;
     }
     gc->v.table.sealed = true;
+    gc->v.table.immutable_shape = LHAT_IMMUTABLE_COMPLETE;
     gc->v.table.is_namespace = true;
     gc->v.table.is_module = true;
 
@@ -126,6 +127,8 @@ LhatType *chk_environment_type(Checker *c)
     // the program's.
     env->v.table.sealed = true;
     modules_type->v.table.sealed = true;
+    env->v.table.immutable_shape = LHAT_IMMUTABLE_BUILDING;
+    modules_type->v.table.immutable_shape = LHAT_IMMUTABLE_BUILDING;
     // And both are reached through rather than held: L^.print, L^.modules.a.
     env->v.table.is_namespace = true;
     env->v.table.is_module = true;
@@ -762,6 +765,7 @@ void chk_register_module_type(Checker *c, const char *module_name,
                 return;
             }
             made->v.table.sealed = true;
+            made->v.table.immutable_shape = LHAT_IMMUTABLE_BUILDING;
             made->v.table.is_namespace = true;
             made->v.table.is_module = true;
             made->v.table.registry_segment = true;
@@ -870,6 +874,7 @@ static bool import_takes_in(LhatType *place, LhatType *module)
         place->v.table.base = module;
         // A segment of the registry now, not only the way to one ([modules.host.machine]).
         place->v.table.sealed = true;
+        place->v.table.immutable_shape = LHAT_IMMUTABLE_BUILDING;
         place->v.table.is_namespace = true;
     }
     return place->v.table.base == module;
@@ -1076,6 +1081,7 @@ static void check_require_stmt(Checker *c, const LhatNode *node)
             return;
         }
         made->v.table.sealed = true;
+        made->v.table.immutable_shape = LHAT_IMMUTABLE_BUILDING;
         made->v.table.is_namespace = true;
         made->v.table.is_module = true;
         made->v.table.registry_segment = true;
@@ -2297,6 +2303,7 @@ static void check_enumdef(Checker *c, const LhatNode *node)
         return;
     }
     LhatType *decl = lhat_type_enum_decl(c->result->types, name, length);
+    decl->v.error.immutable_building = true;
     Binding *binding = chk_scope_add(c->scope, name, length, decl, node->offset);
     if (binding != NULL) {
         binding->reached = true;
@@ -2326,6 +2333,8 @@ static void check_enumdef(Checker *c, const LhatNode *node)
                                                    value_type),
                              member->v.named.name);
     }
+    decl->v.error.immutable_building = false;
+    (void)lhat_type_deeply_immutable(decl, NULL);
 }
 
 // [syntax.stmt.visible]: every name a scope defines is visible throughout it, so they are
@@ -2512,6 +2521,7 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
                 // holds stays as mutable as it was.
                 if (table != NULL) {
                     table->v.table.sealed = true;
+                    table->v.table.immutable_shape = LHAT_IMMUTABLE_COMPLETE;
                     table->v.table.is_namespace = true;  // named through
                     table->v.table.is_module = true;
                 }
@@ -2531,6 +2541,7 @@ LhatType *chk_collect_exports(Checker *c, const LhatNode *statements)
             chk_member_declared_at(c, made, target_name_node(named));
         }
     }
+    if (table != NULL) (void)lhat_type_deeply_immutable(table, NULL);
     return table;
 }
 
