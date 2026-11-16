@@ -1,0 +1,12 @@
+var^count = 0
+
+let^Counter = def^{
+    self^{},
+    get = p^ -> number^ { return^ count },
+    set = p^value:number^ {
+        count := value
+    },
+}
+
+Counter.set(5)
+print(Counter.get()) # 5

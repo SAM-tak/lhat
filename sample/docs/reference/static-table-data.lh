@@ -1,0 +1,11 @@
+let^Counter = def^{
+    self^{},
+    state = { value = 0 },
+    increment = p^ {
+        def^.state.value += 1
+    },
+}
+
+Counter.increment()
+Counter.state.value += 2
+print(Counter.state.value) # 3

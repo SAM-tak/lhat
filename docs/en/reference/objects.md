@@ -174,6 +174,33 @@ Within `doubled`, `self^.value` accesses the field and `def^.double` accesses th
 Static members are not local variables, so bare `double(…)` does not reference that member. Use `def^.double(…)` through the enclosing definition.
 `self^` refers to the receiving instance; `def^` refers to the definition in which the method was written.
 
+### Mutable static member data
+
+Definition tables are sealed after construction, so static members themselves cannot be replaced.
+There are two ways to keep mutable state shared among instances.
+
+#### Store a table in a static member
+
+Place a table holding the state outside `self^{…}` and update its contents.
+Sealing the definition does not seal the contents of tables referenced by its static members.
+
+<<< @/../sample/docs/reference/static-table-data.lh{lhat}
+
+`Counter.state` cannot be replaced, but `Counter.state.value` can be updated.
+The definition holds one state table, without copying it per instance. External code can also access it directly.
+`increment` is a `p^` because it operates on mutable static state.
+An `f^` cannot reference mutable `def^.state`, but can still use immutable constants and `def^.new()` on the same definition.
+
+#### Reference an outer variable from procedures
+
+Another option is to keep the state outside the definition and expose static procedures that capture an outer `var^`.
+
+<<< @/../sample/docs/reference/static-variable-data.lh{lhat}
+
+Here `get` and `set` share the same `count`, reading and updating state without replacing definition members.
+Even the read-only `get` must be a `p^` because it references an outer mutable variable.
+An `f^` cannot call these procedures. To use the current value in a function, retrieve it in the caller and pass it as an argument.
+
 ### Definition and construction rules
 
 `def^{…}` creates a definition with an instance template and shared members.
