@@ -1006,63 +1006,87 @@ static Binding *read_binding_from(Scope *from, const char *name, size_t length,
     return b;
 }
 
-static void check_capture(Checker *c, const LhatNode *node, const Binding *b)
+static bool capture_crosses_function(Checker *c, const Binding *b)
 {
-    if (b->import_root || c->this_link == NULL) return;
+    if (c->this_link == NULL) return false;
     // Find the actual binding, including repeated hats and old-world reads.
     for (const Scope *s = c->scope; s != NULL; s = s->parent) {
         for (const Binding *local = s->bindings; local != NULL; local = local->next) {
-            if (local == b) return;
+            if (local == b) return false;
         }
         if (s->function == NULL) continue;
         // A method's receiver is an explicit input. Its binding is installed
         // just outside the body for member inference, rather than among the
         // ordinary parameters. A nested f^ has a different body identity.
         if (b->declaration == s->function &&
-            chk_name_is(b->name, b->name_length, "self^")) return;
-        bool descriptor = b->names_type && b->type != NULL &&
-                          b->type->kind == LHAT_TYPE_ERROR_SET;
-        if (!b->immutable || (!descriptor &&
-            !lhat_type_deeply_immutable(b->type, &c->read_provisional))) {
-            chk_report_named(c, node, LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE,
-                             b->name, b->name_length);
-            return;
-        }
+            chk_name_is(b->name, b->name_length, "self^")) return false;
+        return true;
+    }
+    return false;
+}
+
+static bool sealed_definition(const LhatType *type)
+{
+    return type != NULL && type->kind == LHAT_TYPE_TABLE &&
+           type->v.table.is_definition && type->v.table.sealed;
+}
+
+static void check_capture(Checker *c, const LhatNode *node, const Binding *b)
+{
+    if (b->import_root || !capture_crosses_function(c, b)) return;
+    bool descriptor = b->names_type && b->type != NULL &&
+                      b->type->kind == LHAT_TYPE_ERROR_SET;
+    // A sealed definition is a stable path to a member. Check the selected
+    // value after lookup; a bare definition still needs the whole proof.
+    bool member_path = node == c->namespace_prefix && sealed_definition(b->type);
+    if (!b->immutable || (!descriptor && !member_path &&
+        !lhat_type_deeply_immutable(b->type, &c->read_provisional))) {
+        chk_report_named(c, node, LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE,
+                         b->name, b->name_length);
     }
 }
 
-// import^ and L^ read the registry instead of capturing a cell. They must
-// not bypass the immutable-environment rule by reading a mutable export.
+// Sealed namespaces and definitions are stable paths to selected members.
+// Check the selected value, including inside a p^ enclosed by an f^.
 void chk_check_namespace_read(Checker *c, const LhatNode *node,
                               LhatType *owner, LhatType *value)
 {
-    if (!c->in_function || owner == NULL || owner->kind != LHAT_TYPE_TABLE ||
-        (!owner->v.table.is_namespace && !owner->v.table.is_module) ||
+    if (owner == NULL || owner->kind != LHAT_TYPE_TABLE ||
+        (!owner->v.table.is_namespace && !owner->v.table.is_module &&
+         !sealed_definition(owner)) ||
         owner->v.table.immutable_shape == LHAT_IMMUTABLE_HOST) return;
+    bool in_function = false;
+    for (Scope *s = c->scope; s != NULL; s = s->parent) {
+        if (s->function != NULL) { in_function = true; break; }
+    }
+    if (!in_function) return;
     const LhatNode *root = node->v.access.target;
     while (root != NULL && (root->kind == LHAT_NODE_MEMBER || root->kind == LHAT_NODE_INDEX)) {
         root = root->v.access.target;
     }
     if (root == NULL) return;
-    // A namespace supplied as an explicit input, or obtained locally, is
+    // An owner supplied as an explicit input, or obtained locally, is
     // governed by the input rules rather than the capture rules.
     if (root->checked_binding != NULL) {
         for (Scope *s = c->scope; s != NULL; s = s->parent) {
             for (Binding *b = s->bindings; b != NULL; b = b->next) {
-                if (b->declaration == root->checked_binding && chk_scope_within_body(c, s)) return;
+                if (b->declaration == root->checked_binding &&
+                    !capture_crosses_function(c, b)) return;
             }
         }
     } else if (root->kind != LHAT_NODE_HAT_IDENT && root->kind != LHAT_NODE_IDENT) {
         return;
     }
     if (value != NULL && value->kind == LHAT_TYPE_TABLE &&
-        (value->v.table.is_namespace || value->v.table.is_module) &&
+        (value->v.table.is_namespace || value->v.table.is_module || sealed_definition(value)) &&
         c->namespace_prefix == node) return;
     const char *name = NULL;
     size_t length = 0;
     if (node->kind == LHAT_NODE_MEMBER && chk_node_name(c, node->v.access.argument, &name, &length)) {
         const LhatTypeMember *m = chk_find_member(owner, name, length);
         if (m != NULL && m->names_type && value != NULL && value->kind == LHAT_TYPE_ERROR_SET) return;
+        // The prototype also reaches its definition through its link.
+        if (sealed_definition(owner) && chk_name_is(name, length, "self^")) value = owner;
     }
     if (!lhat_type_deeply_immutable(value, &c->read_provisional)) {
         chk_report_named(c, node, LHAT_CHECK_ERR_FUNCTION_CAPTURES_MUTABLE, name, length);
@@ -2379,7 +2403,10 @@ LhatType *chk_infer_call(Checker *c, const LhatNode *node)
         if (chk_node_name(c, node->v.access.target->v.access.argument, &called,
                           &called_length) &&
                 chk_name_is(called, called_length, "new")) {
+            const LhatNode *prefix = c->namespace_prefix;
+            c->namespace_prefix = node->v.access.target->v.access.target;
             LhatType *owner = chk_infer(c, node->v.access.target->v.access.target);
+            c->namespace_prefix = prefix;
             bool field = false;
             const LhatTypeMember *hole = chk_hole_of(owner, &field);
             if (hole != NULL) {

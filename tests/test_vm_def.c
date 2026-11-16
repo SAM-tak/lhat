@@ -2393,6 +2393,20 @@ static void test_definition_sealing(void)
     LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
     CHECK_INTEGER(&r, 21);
     run_dispose(&r);
+
+    LHAT_TEST("operators use def^ constants and new beside mutable static state");
+    run_checked_text(&r,
+        "let^ D = def^{ self^{ n = 1 }, state = { n = 0 }, scale = 2,\n"
+        "  op^+ = f^self^, n:number^ -> Self^ {\n"
+        "    let^ result = def^.new()\n"
+        "    result.n := self^.n + n * def^.scale\n"
+        "    return^ result } }\n"
+        "let^ calculate = f^{ (D.new() + 2).n }\n"
+        "let^ before = calculate()\nD.state.n := 100\n"
+        "return^ before * 10 + calculate()\n");
+    LHAT_CHECK_EQ_INT(lhat_check_error_count(&r.checked), 0);
+    CHECK_INTEGER(&r, 55);
+    run_dispose(&r);
 }
 
 int main(void)

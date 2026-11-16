@@ -458,7 +458,7 @@ typedef struct {
     // restored around a nested one the same way `in_function` is, so an f^
     // written inside another measures against its own.
     Scope *body_scope;
-    // A namespace used as the prefix of a longer member/index path.
+    // A sealed namespace or definition used as a member/index path prefix.
     const LhatNode *namespace_prefix;
 
 

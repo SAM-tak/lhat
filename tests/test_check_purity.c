@@ -1295,6 +1295,44 @@ static void test_function_captures(void)
          "let^ D = def^{ self^{}, state = { n = 1 } }\nlet^ f = f^{ D.state.n }\n", true},
         {"definition bodies also check static data written later",
          "let^ D = def^{ self^{}, read = f^{ def^.state.n }, state = { n = 1 } }\n", true},
+        {"constant members remain readable beside mutable static data",
+         "let^ D = def^{ self^{}, n = 2, state = { n = 1 } }\n"
+         "let^ f = f^{ D.n }\n", false},
+        {"def^ and Self^ read constants without capturing all static data",
+         "let^ D = def^{ self^{}, n = 2, read = f^{ def^.n + Self^.n }, "
+         "state = { n = 1 } }\n", false},
+        {"constructors remain callable beside mutable static data",
+         "let^ D = def^{ self^{ n = 1 }, state = { n = 1 }, make = f^{ def^.new() } }\n"
+         "let^ f = f^{ D.new() }\n", false},
+        {"passing the whole definition still checks every member",
+         "let^ D = def^{ self^{}, n = 2, state = {} }\nlet^ f = f^{ D }\n", true},
+        {"aliasing the whole definition inside a function still checks every member",
+         "let^ D = def^{ self^{}, n = 2, state = {} }\n"
+         "let^ f = f^{ let^ alias = D return^ alias.n }\n", true},
+        {"a mutable binding cannot become a stable member path",
+         "var^ D = def^{ self^{}, n = 2, state = {} }\nlet^ f = f^{ D.n }\n", true},
+        {"constant-key indexing checks the selected member",
+         "let^ D = def^{ self^{}, n = 2, state = {} }\nlet^ f = f^{ D[\"n\"] }\n", false},
+        {"indexing a mutable member is refused",
+         "let^ D = def^{ self^{}, n = 2, state = {} }\nlet^ f = f^{ D[\"state\"] }\n", true},
+        {"a dynamic key must be safe for every reachable member",
+         "let^ D = def^{ self^{}, n = 2, state = {} }\n"
+         "let^ f = f^key:string^{ D[key] }\n", true},
+        {"immutable definitions can be traversed to constant members",
+         "let^ D = def^{ self^{}, same = def^, n = 2, state = {} }\n"
+         "let^ f = f^{ D.same.n }\n", false},
+        {"a selected nested definition cannot escape with mutable members",
+         "let^ D = def^{ self^{}, same = def^, state = {} }\n"
+         "let^ f = f^{ D.same }\n", true},
+        {"an intervening procedure cannot hide a mutable definition member",
+         "let^ D = def^{ self^{}, state = {} }\n"
+         "let^ f = f^{ let^ p = p^{ return^ D.state } return^ p }\n", true},
+        {"an intervening procedure can read a constant definition member",
+         "let^ D = def^{ self^{}, n = 2, state = {} }\n"
+         "let^ f = f^{ let^ p = p^{ return^ D.n } return^ p }\n", false},
+        {"mutable definition inputs remain explicit inputs",
+         "let^ D = def^{ self^{}, state = {} }\n"
+         "let^ f = f^d:t^{state:t^{}}{ d.state }\n", false},
         {"baked prototype trees are recursively sealed",
          "let^ D = def^{ self^{ tree = { child = { n = 1 } } } }\n"
          "let^ f = f^{ D.self^.tree.child.n }\n", false},

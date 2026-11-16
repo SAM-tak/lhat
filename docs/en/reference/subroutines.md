@@ -26,6 +26,9 @@ Copy an immutable value into a `let^` binding or pass the value as an argument o
 Tables, definitions, and enums may be captured only when all reachable values are proven immutable.
 A shallow seal or a structural type annotation is insufficient. Module reads follow the same rule.
 Definition tables are sealed after construction; their instances remain mutable.
+Reading a member through an immutable binding to a definition checks the selected value:
+`def^.constant` and `def^.new()` remain usable beside mutable static state, while `def^.state` is rejected if mutable.
+Passing or returning the whole definition still requires all reachable values to be immutable.
 Changes through aliases to explicit inputs, host changes, and reload are outside this guarantee.
 `fresh^` promises a fresh result; `mutable^self^` marks a function method that mutates its receiver.
 Whether such methods can be called inside a function also depends on the value's origin.
